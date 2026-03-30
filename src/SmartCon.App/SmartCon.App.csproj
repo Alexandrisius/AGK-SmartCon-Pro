@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SmartCon.App</RootNamespace>
+    <AssemblyName>SmartCon.App</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <!-- Копировать NuGet-зависимости в output для деплоя в Revit -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitApiPath)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitApiPath)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
+    <ProjectReference Include="..\SmartCon.Revit\SmartCon.Revit.csproj" />
+    <ProjectReference Include="..\SmartCon.UI\SmartCon.UI.csproj" />
+    <ProjectReference Include="..\SmartCon.PipeConnect\SmartCon.PipeConnect.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Resources\SmartCon.addin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="Resources\Icons\*.png" />
+  </ItemGroup>
+
+  <!-- Post-build: копирование DLL и .addin в папку аддинов Revit для отладки -->
+  <Target Name="DeployToRevit" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+    <ItemGroup>
+      <SmartConDlls Include="$(TargetDir)SmartCon.*.dll" />
+      <SmartConDeps Include="$(TargetDir)CommunityToolkit.*.dll;$(TargetDir)Microsoft.Extensions.*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SmartConDlls);@(SmartConDeps)"
+            DestinationFolder="$(RevitAddinsPath)\SmartCon"
+            SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)Resources\SmartCon.addin"
+            DestinationFolder="$(RevitAddinsPath)"
+            SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

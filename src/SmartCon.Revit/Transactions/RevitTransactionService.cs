@@ -1,0 +1,70 @@
+using Autodesk.Revit.DB;
+using SmartCon.Core.Services.Interfaces;
+
+namespace SmartCon.Revit.Transactions;
+
+/// <summary>
+/// Реализация ITransactionService (I-03).
+/// Каждая транзакция оборачивается в using, подключает SmartConFailurePreprocessor (I-07).
+/// </summary>
+public sealed class RevitTransactionService : ITransactionService
+{
+    private readonly IRevitContext _revitContext;
+
+    public RevitTransactionService(IRevitContext revitContext)
+    {
+        _revitContext = revitContext;
+    }
+
+    public bool RunInTransaction(string name, Action<Document> action)
+    {
+        var doc = _revitContext.GetDocument();
+
+        using var transaction = new Transaction(doc, name);
+
+        var options = transaction.GetFailureHandlingOptions();
+        options.SetFailuresPreprocessor(new SmartConFailurePreprocessor());
+        transaction.SetFailureHandlingOptions(options);
+
+        try
+        {
+            transaction.Start();
+            action(doc);
+            transaction.Commit();
+            return true;
+        }
+        catch
+        {
+            if (transaction.HasStarted())
+            {
+                transaction.RollBack();
+            }
+
+            throw;
+        }
+    }
+
+    public bool RunInTransactionGroup(string name, Action<Document> action)
+    {
+        var doc = _revitContext.GetDocument();
+
+        using var group = new TransactionGroup(doc, name);
+
+        try
+        {
+            group.Start();
+            action(doc);
+            group.Assimilate();
+            return true;
+        }
+        catch
+        {
+            if (group.HasStarted())
+            {
+                group.RollBack();
+            }
+
+            throw;
+        }
+    }
+}

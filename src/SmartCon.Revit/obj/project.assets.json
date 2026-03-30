@@ -1,0 +1,103 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0-windows7.0": {
+      "SmartCon.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "compile": {
+          "bin/placeholder/SmartCon.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/SmartCon.Core.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SmartCon.Core/1.0.0": {
+      "type": "project",
+      "path": "../SmartCon.Core/SmartCon.Core.csproj",
+      "msbuildProject": "../SmartCon.Core/SmartCon.Core.csproj"
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net8.0-windows7.0": [
+      "SmartCon.Core >= 1.0.0"
+    ]
+  },
+  "packageFolders": {
+    "C:\\Users\\a.klimovich\\.nuget\\packages\\": {},
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "D:\\projects\\revit\\AGK-SmartCon-Pro\\src\\SmartCon.Revit\\SmartCon.Revit.csproj",
+      "projectName": "SmartCon.Revit",
+      "projectPath": "D:\\projects\\revit\\AGK-SmartCon-Pro\\src\\SmartCon.Revit\\SmartCon.Revit.csproj",
+      "packagesPath": "C:\\Users\\a.klimovich\\.nuget\\packages\\",
+      "outputPath": "D:\\projects\\revit\\AGK-SmartCon-Pro\\src\\SmartCon.Revit\\obj\\",
+      "projectStyle": "PackageReference",
+      "fallbackFolders": [
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+      ],
+      "configFilePaths": [
+        "C:\\Users\\a.klimovich\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0-windows"
+      ],
+      "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0-windows7.0": {
+          "targetAlias": "net8.0-windows",
+          "projectReferences": {
+            "D:\\projects\\revit\\AGK-SmartCon-Pro\\src\\SmartCon.Core\\SmartCon.Core.csproj": {
+              "projectPath": "D:\\projects\\revit\\AGK-SmartCon-Pro\\src\\SmartCon.Core\\SmartCon.Core.csproj"
+            }
+          }
+        }
+      },
+      "warningProperties": {
+        "allWarningsAsErrors": true,
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      },
+      "SdkAnalysisLevel": "10.0.200"
+    },
+    "frameworks": {
+      "net8.0-windows7.0": {
+        "targetAlias": "net8.0-windows",
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.201/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}

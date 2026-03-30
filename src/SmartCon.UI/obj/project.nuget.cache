@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "z8lixG0Y4uE=",
+  "success": true,
+  "projectFilePath": "D:\\projects\\revit\\AGK-SmartCon-Pro\\src\\SmartCon.UI\\SmartCon.UI.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\a.klimovich\\.nuget\\packages\\communitytoolkit.mvvm\\8.4.0\\communitytoolkit.mvvm.8.4.0.nupkg.sha512"
+  ],
+  "logs": []
+}

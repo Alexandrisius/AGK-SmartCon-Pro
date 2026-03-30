@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SmartCon.Core</RootNamespace>
+    <AssemblyName>SmartCon.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SmartCon.Tests" />
+    <InternalsVisibleTo Include="SmartCon.Revit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Только RevitAPI.dll (value-типы как carriers: ElementId, XYZ, Domain).
+         RevitAPIUI запрещён в Core (I-09). -->
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitApiPath)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

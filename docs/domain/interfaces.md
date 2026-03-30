@@ -1,0 +1,322 @@
+# Интерфейсы и контракты
+
+> Загружать: при реализации или вызове сервисов.
+> **Правило:** Интерфейсы объявлены в `SmartCon.Core/Services/Interfaces/`. Реализации — в `SmartCon.Revit/` или `SmartCon.Core/Services/Implementation/`.
+
+---
+
+## IRevitContext
+
+Доступ к актуальному Document и UIDocument. Не кешировать — запрашивать при каждой операции.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IRevitContext.cs`
+**Реализация:** `SmartCon.Revit/Context/RevitContext.cs`
+
+```csharp
+public interface IRevitContext
+{
+    Document GetDocument();
+    string GetRevitVersion();  // "2025", "2026"
+    // UIDocument не экспонируется в Core (I-09). Доступен через RevitContext в Revit-слое.
+}
+```
+
+---
+
+## IRevitContextWriter
+
+Обновление контекста Revit. Вызывается из `IExternalCommand.Execute()` и `IExternalEventHandler.Execute()` перед любой работой с `IRevitContext`. Отделён от `IRevitContext` по ISP (Interface Segregation Principle).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IRevitContextWriter.cs`
+**Реализация:** `SmartCon.Revit/Context/RevitContext.cs` (тот же класс, что и IRevitContext)
+
+```csharp
+public interface IRevitContextWriter
+{
+    // object вместо UIApplication — Core не зависит от RevitAPIUI (I-09). Передавать UIApplication.
+    void SetContext(object revitUIApplication);
+}
+```
+
+---
+
+## ITransactionService
+
+Все изменения модели — только через этот интерфейс. Создание `new Transaction(doc)` напрямую запрещено.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/ITransactionService.cs`
+**Реализация:** `SmartCon.Revit/Transactions/RevitTransactionService.cs`
+
+```csharp
+public interface ITransactionService
+{
+    /// Запускает Transaction, выполняет action, делает Commit.
+    /// При исключении — Rollback. Возвращает false при неудаче.
+    bool RunInTransaction(string name, Action<Document> action);
+
+    /// Запускает TransactionGroup. Используется для PipeConnect (одна запись Undo).
+    bool RunInTransactionGroup(string name, Action<Document> action);
+}
+```
+
+---
+
+## IElementSelectionService
+
+Интерактивный выбор элементов в Revit с кастомным фильтром.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IElementSelectionService.cs`
+**Реализация:** `SmartCon.Revit/Selection/ElementSelectionService.cs`
+
+```csharp
+public interface IElementSelectionService
+{
+    /// Выбор одного элемента со свободным коннектором.
+    /// Фильтрация (ISelectionFilter) — деталь реализации Revit-слоя. Core не ссылается на RevitAPIUI (I-09).
+    /// Возвращает (ElementId, XYZ clickPoint) или null при ESC/отмене.
+    (ElementId ElementId, XYZ ClickPoint)? PickElementWithFreeConnector(string statusMessage);
+}
+```
+
+---
+
+## IFittingMapper
+
+Поиск подходящих фитингов по типам коннекторов.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IFittingMapper.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/FittingMapper.cs`
+
+```csharp
+public interface IFittingMapper
+{
+    /// Упорядоченный по Priority список подходящих маппингов.
+    IReadOnlyList<FittingMappingRule> GetMappings(
+        ConnectionTypeCode from, ConnectionTypeCode to);
+
+    /// Минимальная цепочка фитингов через промежуточные типы (алгоритм Дейкстры).
+    /// Пустой список = соединение невозможно.
+    IReadOnlyList<FittingMappingRule> FindShortestFittingPath(
+        ConnectionTypeCode from, ConnectionTypeCode to);
+
+    void LoadFromFile(string jsonPath);
+}
+```
+
+---
+
+## IFittingMappingRepository
+
+CRUD для правил маппинга фитингов. Хранение в JSON (AppData).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IFittingMappingRepository.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/JsonFittingMappingRepository.cs`
+
+```csharp
+public interface IFittingMappingRepository
+{
+    IReadOnlyList<ConnectorTypeDefinition> GetConnectorTypes();
+    void SaveConnectorTypes(IReadOnlyList<ConnectorTypeDefinition> types);
+
+    IReadOnlyList<FittingMappingRule> GetMappingRules();
+    void SaveMappingRules(IReadOnlyList<FittingMappingRule> rules);
+
+    string GetStoragePath();
+}
+```
+
+---
+
+## IFormulaSolver
+
+Универсальный AST-парсер и решатель формул Revit. Поддерживает: if(), and(), or(), арифметику, сравнения, тригонометрию.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IFormulaSolver.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/FormulaSolver.cs`
+
+```csharp
+public interface IFormulaSolver
+{
+    /// Прямое вычисление формулы при заданных параметрах (Internal Units).
+    double Evaluate(string formula, IReadOnlyDictionary<string, double> parameterValues);
+
+    /// Обратное решение: найти значение variableName при котором formula = targetValue.
+    double SolveFor(string formula, string variableName, double targetValue,
+                    IReadOnlyDictionary<string, double> otherValues);
+
+    /// Парсинг size_lookup(...) — извлечение имени таблицы и порядка параметров.
+    (string TableName, IReadOnlyList<string> ParameterOrder) ParseSizeLookup(string formula);
+}
+```
+
+---
+
+## IParameterResolver
+
+Определяет каким параметром управляется размер коннектора и меняет его значение.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IParameterResolver.cs`
+**Реализация:** `SmartCon.Revit/Parameters/RevitParameterResolver.cs`
+
+```csharp
+public interface IParameterResolver
+{
+    /// Параметр(ы), от которых зависит радиус коннектора.
+    IReadOnlyList<ParameterDependency> GetConnectorRadiusDependencies(
+        Document doc, ElementId elementId, int connectorIndex);
+
+    /// Установить нужный радиус, меняя зависимые параметры.
+    bool TrySetConnectorRadius(Document doc, ElementId elementId,
+        int connectorIndex, double targetRadiusInternalUnits);
+}
+```
+
+---
+
+## ILookupTableService
+
+Работа с таблицами поиска семейств (FamilySizeTableManager).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/ILookupTableService.cs`
+**Реализация:** `SmartCon.Revit/Parameters/RevitLookupTableService.cs`
+
+```csharp
+public interface ILookupTableService
+{
+    /// Существует ли в таблице поиска строка с данным радиусом?
+    bool ConnectorRadiusExistsInTable(Document doc, ElementId familySymbolId,
+        double radiusInternalUnits);
+
+    /// Ближайший существующий в таблице радиус.
+    double GetNearestAvailableRadius(Document doc, ElementId familySymbolId,
+        double targetRadiusInternalUnits);
+}
+```
+
+---
+
+## IElementChainIterator
+
+Обход цепочек соединённых MEP-элементов.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IElementChainIterator.cs`
+**Реализация:** `SmartCon.Revit/Selection/ElementChainIterator.cs`
+
+```csharp
+public interface IElementChainIterator
+{
+    /// Строит ConnectionGraph начиная с элемента. BFS через AllRefs.
+    ConnectionGraph BuildGraph(Document doc, ElementId startElementId,
+        IReadOnlySet<ElementId>? stopAtElements = null);
+
+    /// Свободные коннекторы на границах цепочки.
+    IReadOnlyList<ConnectorProxy> GetChainEndConnectors(
+        Document doc, ConnectionGraph graph);
+}
+```
+
+---
+
+## IDialogService
+
+Абстракция для открытия окон из ViewModel (MVVM).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IDialogService.cs`
+**Реализация:** `SmartCon.PipeConnect/Services/PipeConnectDialogService.cs`
+
+```csharp
+public interface IDialogService
+{
+    /// Открыть MiniTypeSelector рядом с курсором. Возвращает выбранный тип или null.
+    ConnectorTypeDefinition? ShowMiniTypeSelector(
+        IReadOnlyList<ConnectorTypeDefinition> availableTypes);
+
+    /// Показать предупреждение пользователю.
+    void ShowWarning(string title, string message);
+}
+```
+
+---
+
+## ITransformService *(Phase 2)*
+
+Перемещение и поворот элементов. Работает с Vec3 — конвертация Vec3↔XYZ внутри реализации.
+Все вызовы должны быть внутри открытой Transaction.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/ITransformService.cs`
+**Реализация:** `SmartCon.Revit/Transform/RevitTransformService.cs`
+
+```csharp
+public interface ITransformService
+{
+    void MoveElement(Document doc, ElementId elementId, Vec3 offset);
+    void RotateElement(Document doc, ElementId elementId,
+        Vec3 axisOrigin, Vec3 axisDirection, double angleRadians);
+    void MoveElements(Document doc, ICollection<ElementId> elementIds, Vec3 offset);
+    void RotateElements(Document doc, ICollection<ElementId> elementIds,
+        Vec3 axisOrigin, Vec3 axisDirection, double angleRadians);
+}
+```
+
+---
+
+## IConnectorService *(Phase 2)*
+
+Работа с коннекторами: ближайший к точке клика, обновление после трансформации, ConnectTo.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IConnectorService.cs`
+**Реализация:** `SmartCon.Revit/Selection/ConnectorService.cs`
+
+```csharp
+public interface IConnectorService
+{
+    /// Ближайший свободный коннектор к точке клика. null если нет свободных.
+    ConnectorProxy? GetNearestFreeConnector(Document doc, ElementId elementId, XYZ clickPoint);
+
+    /// Перечитать коннектор после трансформации (I-05: не кешировать).
+    ConnectorProxy? RefreshConnector(Document doc, ElementId elementId, int connectorIndex);
+
+    /// ConnectTo. Возвращает true при успехе.
+    bool ConnectTo(Document doc,
+        ElementId elementId1, int connectorIndex1,
+        ElementId elementId2, int connectorIndex2);
+}
+```
+
+---
+
+## IFamilyConnectorService *(Phase 3)*
+
+Запись ConnectionTypeCode в Description коннектора семейства через EditFamily API.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyConnectorService.cs`
+**Реализация:** `SmartCon.Revit/Family/RevitFamilyConnectorService.cs`
+
+```csharp
+public interface IFamilyConnectorService
+{
+    /// Записать ConnectionTypeCode в Description коннектора семейства.
+    /// Использует EditFamily API. Вызывать внутри Transaction (I-03).
+    bool SetConnectorTypeCode(Document doc, ElementId elementId,
+                              int connectorIndex, ConnectionTypeCode typeCode);
+}
+```
+
+---
+
+## IRevitUIContext *(Phase 2, Revit layer only)*
+
+Доступ к UIDocument и UIApplication. **НЕ экспонируется в Core** (I-09).
+Используется ElementSelectionService для PickObject.
+
+**Файл:** `SmartCon.Revit/Context/IRevitUIContext.cs`
+**Реализация:** `SmartCon.Revit/Context/RevitContext.cs`
+
+```csharp
+// Только в Revit-слое — не Core!
+public interface IRevitUIContext
+{
+    UIDocument GetUIDocument();
+    UIApplication GetUIApplication();
+}
+```
