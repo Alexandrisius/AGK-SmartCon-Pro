@@ -1,13 +1,11 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using System.Collections.ObjectModel;
 using SmartCon.Core.Models;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
 /// <summary>
 /// Редактируемая обёртка FittingMappingRule для DataGrid в MappingEditorView.
-/// Поддерживает открытие FamilySelector для управления списком семейств с приоритетами.
+/// FittingFamilies хранятся как CSV (FamilyName через запятую) для простоты редактирования.
 /// </summary>
 public sealed partial class MappingRuleItem : ObservableObject
 {
@@ -20,39 +18,31 @@ public sealed partial class MappingRuleItem : ObservableObject
     [ObservableProperty]
     private bool _isDirectConnect;
 
-    /// <summary>Список семейств с приоритетами (1, 2, 3...).</summary>
-    public ObservableCollection<FittingMapping> FittingFamilies { get; } = [];
+    [ObservableProperty]
+    private string _fittingFamiliesCsv = string.Empty;
 
-    /// <summary>Для отображения в DataGrid: "1. СварнойШов, 2. Отвод..."</summary>
-    public string FamiliesDisplayText =>
-        FittingFamilies.Count == 0
-            ? "(не задано)"
-            : string.Join(", ", FittingFamilies.OrderBy(f => f.Priority)
-                .Select(f => $"{f.Priority}.{f.FamilyName}"));
-
-    public static MappingRuleItem From(FittingMappingRule r)
-    {
-        var item = new MappingRuleItem
+    public static MappingRuleItem From(FittingMappingRule r) =>
+        new()
         {
             FromTypeCode = r.FromType.Value,
             ToTypeCode = r.ToType.Value,
             IsDirectConnect = r.IsDirectConnect,
+            FittingFamiliesCsv = string.Join(", ", r.FittingFamilies.Select(f => f.FamilyName)),
         };
 
-        foreach (var f in r.FittingFamilies.OrderBy(f => f.Priority))
-        {
-            item.FittingFamilies.Add(f);
-        }
+    public FittingMappingRule ToRule()
+    {
+        var families = FittingFamiliesCsv
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select((name, i) => new FittingMapping { FamilyName = name, Priority = i + 1 })
+            .ToList();
 
-        return item;
-    }
-
-    public FittingMappingRule ToRule() =>
-        new()
+        return new FittingMappingRule
         {
             FromType = new ConnectionTypeCode(FromTypeCode),
             ToType = new ConnectionTypeCode(ToTypeCode),
             IsDirectConnect = IsDirectConnect,
-            FittingFamilies = FittingFamilies.ToList()
+            FittingFamilies = families,
         };
+    }
 }

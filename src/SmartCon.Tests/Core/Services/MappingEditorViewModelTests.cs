@@ -22,14 +22,12 @@ public sealed class MappingEditorViewModelTests
     private static MappingEditorViewModel MakeVm(
         IReadOnlyList<ConnectorTypeDefinition>? types = null,
         IReadOnlyList<FittingMappingRule>? rules = null,
-        IReadOnlyList<string>? families = null,
-        IDialogService? dialogService = null)
+        IReadOnlyList<string>? families = null)
     {
         var repoMock = new Mock<IFittingMappingRepository>();
         repoMock.Setup(r => r.GetConnectorTypes()).Returns(types ?? []);
         repoMock.Setup(r => r.GetMappingRules()).Returns(rules ?? []);
-        var dialogMock = new Mock<IDialogService>();
-        return new MappingEditorViewModel(repoMock.Object, dialogService ?? dialogMock.Object, families ?? []);
+        return new MappingEditorViewModel(repoMock.Object, families ?? []);
     }
 
     // ── Constructor ───────────────────────────────────────────────────────
@@ -133,9 +131,8 @@ public sealed class MappingEditorViewModelTests
         var repoMock = new Mock<IFittingMappingRepository>();
         repoMock.Setup(r => r.GetConnectorTypes()).Returns(SomeTypes());
         repoMock.Setup(r => r.GetMappingRules()).Returns([]);
-        var dialogMock = new Mock<IDialogService>();
 
-        var vm = new MappingEditorViewModel(repoMock.Object, dialogMock.Object, []);
+        var vm = new MappingEditorViewModel(repoMock.Object, []);
         vm.SaveTypesCommand.Execute(null);
 
         repoMock.Verify(r => r.SaveConnectorTypes(It.Is<IReadOnlyList<ConnectorTypeDefinition>>(
@@ -148,9 +145,8 @@ public sealed class MappingEditorViewModelTests
         var repoMock = new Mock<IFittingMappingRepository>();
         repoMock.Setup(r => r.GetConnectorTypes()).Returns([]);
         repoMock.Setup(r => r.GetMappingRules()).Returns([]);
-        var dialogMock = new Mock<IDialogService>();
 
-        var vm = new MappingEditorViewModel(repoMock.Object, dialogMock.Object, []);
+        var vm = new MappingEditorViewModel(repoMock.Object, []);
         vm.SaveTypesCommand.Execute(null);
 
         repoMock.Verify(r => r.SaveConnectorTypes(It.Is<IReadOnlyList<ConnectorTypeDefinition>>(
@@ -194,9 +190,8 @@ public sealed class MappingEditorViewModelTests
         var repoMock = new Mock<IFittingMappingRepository>();
         repoMock.Setup(r => r.GetConnectorTypes()).Returns([]);
         repoMock.Setup(r => r.GetMappingRules()).Returns(SomeRules());
-        var dialogMock = new Mock<IDialogService>();
 
-        var vm = new MappingEditorViewModel(repoMock.Object, dialogMock.Object, []);
+        var vm = new MappingEditorViewModel(repoMock.Object, []);
         vm.SaveRulesCommand.Execute(null);
 
         repoMock.Verify(r => r.SaveMappingRules(It.Is<IReadOnlyList<FittingMappingRule>>(

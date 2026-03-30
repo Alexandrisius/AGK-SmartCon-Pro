@@ -25,7 +25,6 @@ public sealed class SettingsCommand : IExternalCommand
 
             var revitContext = ServiceHost.GetService<IRevitContext>();
             var mappingRepo  = ServiceHost.GetService<IFittingMappingRepository>();
-            var dialogSvc    = ServiceHost.GetService<IDialogService>();
 
             var doc = revitContext.GetDocument();
 
@@ -36,7 +35,7 @@ public sealed class SettingsCommand : IExternalCommand
                 .OrderBy(n => n)
                 .ToList();
 
-            var vm   = new MappingEditorViewModel(mappingRepo, dialogSvc, familyNames);
+            var vm   = new MappingEditorViewModel(mappingRepo, familyNames);
             var view = new MappingEditorView(vm);
             view.Show();
 

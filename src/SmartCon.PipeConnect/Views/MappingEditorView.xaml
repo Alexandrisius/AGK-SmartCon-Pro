@@ -95,27 +95,9 @@
 
                             <DataGridCheckBoxColumn Header="Прямое" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="65" />
 
-                            <DataGridTemplateColumn Header="Семейства фитингов" Width="*">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0"
-                                                       Text="{Binding FamiliesDisplayText}"
-                                                       VerticalAlignment="Center"
-                                                       Margin="4,0"
-                                                       TextTrimming="CharacterEllipsis" />
-                                            <Button Grid.Column="1" Content="..." Width="24" Height="20"
-                                                    Command="{Binding DataContext.EditFamiliesCommand,
-                                                              RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Семейства (через запятую)"
+                                                Binding="{Binding FittingFamiliesCsv, UpdateSourceTrigger=PropertyChanged}"
+                                                Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
 

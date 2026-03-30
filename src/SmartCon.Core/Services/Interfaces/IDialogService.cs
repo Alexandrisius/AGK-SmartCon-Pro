@@ -15,14 +15,6 @@ public interface IDialogService
         IReadOnlyList<ConnectorTypeDefinition> availableTypes);
 
     /// <summary>
-    /// Открыть редактор семейств фитингов с приоритетами.
-    /// Возвращает список семейств или null если отменено.
-    /// </summary>
-    IEnumerable<FittingMapping>? ShowFamilySelector(
-        IEnumerable<FittingMapping> currentFamilies,
-        IReadOnlyList<string> availableFamilyNames);
-
-    /// <summary>
     /// Показать предупреждение пользователю.
     /// </summary>
     void ShowWarning(string title, string message);

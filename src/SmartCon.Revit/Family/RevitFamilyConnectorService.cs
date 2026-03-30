@@ -1,3 +1,5 @@
+using System;
+using System.Diagnostics;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Models;
@@ -51,33 +53,55 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
                                               int connectorIndex, ConnectorTypeDefinition typeDef)
     {
         RevitFamily? family = instance.Symbol?.Family;
-        if (family is null) return false;
+        if (family is null)
+        {
+            Debug.WriteLine("[SmartCon] SetFittingConnectorTypeCode: family is null");
+            return false;
+        }
+
+        Debug.WriteLine($"[SmartCon] Processing family: {family.Name}");
 
         // Origin нужного коннектора в глобальных координатах проекта.
         var cm = instance.GetConnectorManager();
         var conn = cm?.FindByIndex(connectorIndex);
-        if (conn is null) return false;
+        if (conn is null)
+        {
+            Debug.WriteLine($"[SmartCon] Connector not found by index: {connectorIndex}");
+            return false;
+        }
 
         var targetOriginGlobal = conn.CoordinateSystem.Origin;
+        Debug.WriteLine($"[SmartCon] Target connector origin (global): {targetOriginGlobal}");
+
+        // Трансформ: локальное пространство семейства → глобальное пространство проекта.
         var transform = instance.GetTransform();
 
         // EditFamily — doc.IsModifiable уже проверен выше.
         var familyDoc = doc.EditFamily(family);
+        Debug.WriteLine($"[SmartCon] EditFamily opened: {familyDoc.Title}");
         try
         {
-            // Находим ConnectorElement с ближайшим origin.
+            // OfCategory(OST_ConnectorElem) — правильный способ получить все ConnectorElement в семействе.
             var connElems = new FilteredElementCollector(familyDoc)
                 .OfCategory(BuiltInCategory.OST_ConnectorElem)
                 .WhereElementIsNotElementType()
-                .Cast<ConnectorElement>();
+                .Cast<ConnectorElement>()
+                .ToList();
 
+            Debug.WriteLine($"[SmartCon] Found {connElems.Count} ConnectorElement(s) in family");
+
+            // Находим ConnectorElement с ближайшим к targetOriginGlobal origin:
+            // переводим каждый локальный origin в глобальные координаты через transform.OfPoint().
             ConnectorElement? target = null;
             double minDist = double.MaxValue;
 
             foreach (var ce in connElems)
             {
-                var globalOrigin = transform.OfPoint(ce.Origin);
+                var localOrigin = ce.Origin;
+                var globalOrigin = transform.OfPoint(localOrigin);
                 var dist = globalOrigin.DistanceTo(targetOriginGlobal);
+
+                Debug.WriteLine($"[SmartCon]   ConnectorElement Id={ce.Id.Value}, localOrigin={localOrigin}, globalOrigin={globalOrigin}, dist={dist}");
 
                 if (dist < minDist)
                 {
@@ -86,42 +110,99 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
                 }
             }
 
+            Debug.WriteLine($"[SmartCon] Closest connector: Id={target?.Id.Value}, minDist={minDist}");
+
             // Допуск 0.1 фут (~30 мм) — исключает ложные совпадения.
-            if (target is null || minDist > 0.1) return false;
+            if (target is null || minDist > 0.1)
+            {
+                Debug.WriteLine($"[SmartCon] Target not found or distance too large (>0.1 ft)");
+                return false;
+            }
+
+            // Логируем все параметры ConnectorElement для диагностики
+            Debug.WriteLine($"[SmartCon] All parameters on target ConnectorElement (Id={target.Id.Value}):");
+            foreach (Parameter p in target.Parameters)
+            {
+                var name = p.Definition?.Name ?? "N/A";
+                var isShared = p.IsShared ? "Shared" : "Built-in";
+                Debug.WriteLine($"[SmartCon]   Param: {name}, Type={isShared}, ReadOnly={p.IsReadOnly}, Value={p.AsValueString()}");
+            }
 
             // Транзакция на family doc (отдельный документ — new Transaction допустим, I-03 не нарушается).
             using var familyTx = new Transaction(familyDoc, "SetConnectorDescription");
             familyTx.Start();
 
-            // ALL_MODEL_DESCRIPTION — системный параметр «Описание».
+            // Пробуем ALL_MODEL_DESCRIPTION (системный «Описание»),
+            // затем LookupParameter("Description") как запасной вариант.
             var descParam = target.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION)
                          ?? target.LookupParameter("Description");
 
-            if (descParam is null || descParam.IsReadOnly)
+            Debug.WriteLine($"[SmartCon] descParam from ALL_MODEL_DESCRIPTION or LookupParameter('Description'): {descParam?.Definition?.Name ?? "NULL"}");
+
+            // Дополнительно пробуем LookupParameter с русским именем
+            if (descParam is null)
             {
+                descParam = target.LookupParameter("Описание");
+                Debug.WriteLine($"[SmartCon] Trying LookupParameter('Описание'): {descParam?.Definition?.Name ?? "NULL"}");
+            }
+
+            // Пробуем любой параметр с "Description" в имени
+            if (descParam is null)
+            {
+                foreach (Parameter p in target.Parameters)
+                {
+                    var name = p.Definition?.Name ?? "";
+                    if (name.Contains("escription", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("Описание")) // "Описание"
+                    {
+                        Debug.WriteLine($"[SmartCon] Found candidate parameter: {name}");
+                        descParam = p;
+                        break;
+                    }
+                }
+            }
+
+            if (descParam is null)
+            {
+                Debug.WriteLine("[SmartCon] ERROR: descParam is null - no Description parameter found!");
+                familyTx.RollBack();
+                return false;
+            }
+
+            if (descParam.IsReadOnly)
+            {
+                Debug.WriteLine($"[SmartCon] ERROR: descParam '{descParam.Definition?.Name}' is ReadOnly!");
                 familyTx.RollBack();
                 return false;
             }
 
             // Формат: "КОД.НАЗВАНИЕ.ОПИСАНИЕ" — читается через ConnectionTypeCode.Parse
-            descParam.Set($"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}");
+            var value = $"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}";
+            Debug.WriteLine($"[SmartCon] Setting parameter '{descParam.Definition?.Name}' to value: {value}");
+            descParam.Set(value);
             familyTx.Commit();
+            Debug.WriteLine("[SmartCon] familyTx committed successfully");
 
             // Явно освобождаем familyTx чтобы familyDoc.IsModifiable стал false
             familyTx.Dispose();
+            Debug.WriteLine($"[SmartCon] familyTx disposed, familyDoc.IsModifiable = {familyDoc.IsModifiable}");
 
             // Загружаем изменённое семейство обратно в проект.
             // LoadFamily требует familyDoc.IsModifiable = false (транзакция закрыта).
-            familyDoc.LoadFamily(doc, new FamilyLoadOptions());
+            Debug.WriteLine("[SmartCon] Starting LoadFamily...");
+            var loadedFamily = familyDoc.LoadFamily(doc, new FamilyLoadOptions());
+            Debug.WriteLine($"[SmartCon] LoadFamily completed, loaded: {loadedFamily?.Name}");
 
             // Закрываем familyDoc (изменения уже загружены в проект)
             familyDoc.Close(false);
+            Debug.WriteLine("[SmartCon] familyDoc closed");
 
             return true;
         }
         finally
         {
-            // familyDoc уже закрыт в try-блоке.
+            // familyDoc уже закрыт в try-блоке после SaveAs.
+            // Не вызываем Close повторно.
         }
     }
 

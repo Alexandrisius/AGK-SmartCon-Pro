@@ -21,16 +21,6 @@ public sealed class PipeConnectDialogService : IDialogService
         return vm.SelectedType;
     }
 
-    public IEnumerable<FittingMapping>? ShowFamilySelector(
-        IEnumerable<FittingMapping> currentFamilies,
-        IReadOnlyList<string> availableFamilyNames)
-    {
-        var vm = new FamilySelectorViewModel(currentFamilies, availableFamilyNames);
-        var view = new FamilySelectorView(vm);
-        view.ShowDialog();
-        return view.GetResult();
-    }
-
     public void ShowWarning(string title, string message)
     {
         TaskDialog.Show(title, message);

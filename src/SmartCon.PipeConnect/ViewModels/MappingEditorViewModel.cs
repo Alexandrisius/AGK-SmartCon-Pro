@@ -13,7 +13,6 @@ namespace SmartCon.PipeConnect.ViewModels;
 public sealed partial class MappingEditorViewModel : ObservableObject
 {
     private readonly IFittingMappingRepository _repository;
-    private readonly IDialogService _dialogService;
 
     public ObservableCollection<ConnectorTypeItem> ConnectorTypes { get; } = [];
     public ObservableCollection<MappingRuleItem> MappingRules { get; } = [];
@@ -32,11 +31,9 @@ public sealed partial class MappingEditorViewModel : ObservableObject
 
     public MappingEditorViewModel(
         IFittingMappingRepository repository,
-        IDialogService dialogService,
         IReadOnlyList<string> availableFamilyNames)
     {
         _repository = repository;
-        _dialogService = dialogService;
         AvailableFamilyNames = availableFamilyNames;
 
         foreach (var t in _repository.GetConnectorTypes())
@@ -90,35 +87,6 @@ public sealed partial class MappingEditorViewModel : ObservableObject
     {
         if (SelectedRule is not null)
             MappingRules.Remove(SelectedRule);
-    }
-
-    [RelayCommand]
-    private void EditFamilies()
-    {
-        if (SelectedRule is null) return;
-
-        var result = _dialogService.ShowFamilySelector(
-            SelectedRule.FittingFamilies,
-            AvailableFamilyNames);
-
-        if (result is null) return; // Отменено
-
-        // Обновляем коллекцию семейств
-        SelectedRule.FittingFamilies.Clear();
-        var priority = 1;
-        foreach (var f in result)
-        {
-            SelectedRule.FittingFamilies.Add(new FittingMapping
-            {
-                FamilyName = f.FamilyName,
-                SymbolName = f.SymbolName,
-                Priority = priority++
-            });
-        }
-
-        // Уведомляем об изменении свойства для обновления UI
-        OnPropertyChanged(nameof(SelectedRule));
-        StatusMessage = $"✔ Семейств в правиле: {SelectedRule.FittingFamilies.Count}";
     }
 
     [RelayCommand]

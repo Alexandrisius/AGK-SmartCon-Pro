@@ -34,7 +34,7 @@ public sealed class MappingRuleItemTests
     }
 
     [Fact]
-    public void From_SingleFamily_PopulatesCollection()
+    public void From_SingleFamily_CsvIsName()
     {
         var item = MappingRuleItem.From(new FittingMappingRule
         {
@@ -42,12 +42,11 @@ public sealed class MappingRuleItemTests
             ToType   = new ConnectionTypeCode(2),
             FittingFamilies = [new FittingMapping { FamilyName = "Переходник", Priority = 1 }],
         });
-        Assert.Single(item.FittingFamilies);
-        Assert.Equal("Переходник", item.FittingFamilies[0].FamilyName);
+        Assert.Equal("Переходник", item.FittingFamiliesCsv);
     }
 
     [Fact]
-    public void From_MultipleFamilies_PopulatesCollectionInPriorityOrder()
+    public void From_MultipleFamilies_JoinedWithComma()
     {
         var item = MappingRuleItem.From(new FittingMappingRule
         {
@@ -59,46 +58,18 @@ public sealed class MappingRuleItemTests
                 new FittingMapping { FamilyName = "Б", Priority = 2 },
             ],
         });
-        Assert.Equal(2, item.FittingFamilies.Count);
-        Assert.Equal("А", item.FittingFamilies[0].FamilyName);
-        Assert.Equal("Б", item.FittingFamilies[1].FamilyName);
+        Assert.Equal("А, Б", item.FittingFamiliesCsv);
     }
 
     [Fact]
-    public void From_NoFamilies_EmptyCollection()
+    public void From_NoFamilies_EmptyCsv()
     {
         var item = MappingRuleItem.From(new FittingMappingRule
         {
             FromType = new ConnectionTypeCode(1),
             ToType   = new ConnectionTypeCode(2),
         });
-        Assert.Empty(item.FittingFamilies);
-    }
-
-    [Fact]
-    public void FamiliesDisplayText_SingleFamily_ShowsPriorityAndName()
-    {
-        var item = new MappingRuleItem();
-        item.FittingFamilies.Add(new FittingMapping { FamilyName = "Муфта", Priority = 1 });
-
-        Assert.Equal("1.Муфта", item.FamiliesDisplayText);
-    }
-
-    [Fact]
-    public void FamiliesDisplayText_MultipleFamilies_ShowsCommaSeparated()
-    {
-        var item = new MappingRuleItem();
-        item.FittingFamilies.Add(new FittingMapping { FamilyName = "Муфта", Priority = 1 });
-        item.FittingFamilies.Add(new FittingMapping { FamilyName = "Переходник", Priority = 2 });
-
-        Assert.Equal("1.Муфта, 2.Переходник", item.FamiliesDisplayText);
-    }
-
-    [Fact]
-    public void FamiliesDisplayText_NoFamilies_ShowsNotSet()
-    {
-        var item = new MappingRuleItem();
-        Assert.Equal("(не задано)", item.FamiliesDisplayText);
+        Assert.Equal(string.Empty, item.FittingFamiliesCsv);
     }
 
     // ── ToRule ────────────────────────────────────────────────────────────
@@ -120,66 +91,60 @@ public sealed class MappingRuleItemTests
     }
 
     [Fact]
-    public void ToRule_SingleFamily_OneFitting()
+    public void ToRule_CsvSingleFamily_OneFitting()
     {
-        var item = new MappingRuleItem();
-        item.FittingFamilies.Add(new FittingMapping { FamilyName = "Переходник", Priority = 1 });
-
+        var item = new MappingRuleItem { FittingFamiliesCsv = "Переходник" };
         var rule = item.ToRule();
         Assert.Single(rule.FittingFamilies);
         Assert.Equal("Переходник", rule.FittingFamilies[0].FamilyName);
     }
 
     [Fact]
-    public void ToRule_MultipleFamilies_PreservesPriority()
+    public void ToRule_CsvMultipleFamilies_AssignsPriorityByOrder()
     {
-        var item = new MappingRuleItem();
-        item.FittingFamilies.Add(new FittingMapping { FamilyName = "А", Priority = 1 });
-        item.FittingFamilies.Add(new FittingMapping { FamilyName = "Б", Priority = 2 });
-        item.FittingFamilies.Add(new FittingMapping { FamilyName = "В", Priority = 3 });
-
+        var item = new MappingRuleItem { FittingFamiliesCsv = "А, Б, В" };
         var rule = item.ToRule();
         Assert.Equal(3, rule.FittingFamilies.Count);
-        Assert.Equal("А", rule.FittingFamilies[0].FamilyName);
         Assert.Equal(1, rule.FittingFamilies[0].Priority);
-        Assert.Equal("Б", rule.FittingFamilies[1].FamilyName);
         Assert.Equal(2, rule.FittingFamilies[1].Priority);
+        Assert.Equal(3, rule.FittingFamilies[2].Priority);
     }
 
     [Fact]
-    public void ToRule_NoFamilies_EmptyList()
+    public void ToRule_CsvWithSpaces_Trimmed()
     {
-        var item = new MappingRuleItem();
+        var item = new MappingRuleItem { FittingFamiliesCsv = "  Муфта  ,  Переходник  " };
+        var rule = item.ToRule();
+        Assert.Equal("Муфта", rule.FittingFamilies[0].FamilyName);
+        Assert.Equal("Переходник", rule.FittingFamilies[1].FamilyName);
+    }
+
+    [Fact]
+    public void ToRule_EmptyCsv_NoFamilies()
+    {
+        var item = new MappingRuleItem { FittingFamiliesCsv = "" };
         var rule = item.ToRule();
         Assert.Empty(rule.FittingFamilies);
     }
 
-    // ── Round-trip ────────────────────────────────────────────────────────
+    [Fact]
+    public void ToRule_OnlyCommas_NoFamilies()
+    {
+        var item = new MappingRuleItem { FittingFamiliesCsv = ",  ,  ," };
+        var rule = item.ToRule();
+        Assert.Empty(rule.FittingFamilies);
+    }
 
     [Fact]
-    public void FullRoundTrip_PreservesAllData()
+    public void PropertyChanged_RaisedOnFittingFamiliesCsvChange()
     {
-        var originalRule = new FittingMappingRule
+        var item = new MappingRuleItem();
+        var changed = false;
+        item.PropertyChanged += (_, e) =>
         {
-            FromType = new ConnectionTypeCode(1),
-            ToType = new ConnectionTypeCode(2),
-            IsDirectConnect = true,
-            FittingFamilies =
-            [
-                new FittingMapping { FamilyName = "СварнойШов", SymbolName = "DN50", Priority = 1 },
-                new FittingMapping { FamilyName = "Переходник_С-Р", SymbolName = "*", Priority = 2 },
-            ]
+            if (e.PropertyName == nameof(item.FittingFamiliesCsv)) changed = true;
         };
-
-        var item = MappingRuleItem.From(originalRule);
-        var resultRule = item.ToRule();
-
-        Assert.Equal(originalRule.FromType.Value, resultRule.FromType.Value);
-        Assert.Equal(originalRule.ToType.Value, resultRule.ToType.Value);
-        Assert.Equal(originalRule.IsDirectConnect, resultRule.IsDirectConnect);
-        Assert.Equal(2, resultRule.FittingFamilies.Count);
-        Assert.Equal("СварнойШов", resultRule.FittingFamilies[0].FamilyName);
-        Assert.Equal("DN50", resultRule.FittingFamilies[0].SymbolName);
-        Assert.Equal(1, resultRule.FittingFamilies[0].Priority);
+        item.FittingFamiliesCsv = "Новое";
+        Assert.True(changed);
     }
 }
