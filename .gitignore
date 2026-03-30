@@ -1,0 +1,45 @@
+## Build results
+bin/
+obj/
+out/
+
+## Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.csproj.user
+*.sln.docstates
+
+## Build artifacts
+*.dll
+*.exe
+*.pdb
+*.cache
+*.ilk
+*.meta
+
+## NuGet
+*.nupkg
+packages/
+project.lock.json
+
+## Test results
+TestResults/
+*.trx
+*.coverage
+
+## Revit specific
+*.addin.bak
+
+## OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## IDE
+.idea/
+*.swp
+*.swo
+*~
