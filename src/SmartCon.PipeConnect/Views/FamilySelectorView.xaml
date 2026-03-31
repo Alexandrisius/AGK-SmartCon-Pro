@@ -1,0 +1,94 @@
+<Window x:Class="SmartCon.PipeConnect.Views.FamilySelectorView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Выбор семейств фитингов"
+        Width="640" Height="460"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Основное содержимое: Доступные | Кнопки | Выбранные -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Левый список: доступные семейства -->
+            <DockPanel Grid.Column="0">
+                <TextBlock DockPanel.Dock="Top"
+                           Text="Доступные семейства:"
+                           FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBlock DockPanel.Dock="Top"
+                           Text="(OST_PipeFitting, MultiPort, 2 коннектора)"
+                           FontSize="10" Foreground="Gray"
+                           TextWrapping="Wrap" Margin="0,0,0,6" />
+                <ListBox ItemsSource="{Binding AvailableFamilies}"
+                         SelectedItem="{Binding SelectedAvailable, Mode=TwoWay}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+            </DockPanel>
+
+            <!-- Центральные кнопки -->
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Margin="10,0">
+                <Button Content="▶▶ Добавить"
+                        Width="115" Margin="0,0,0,8"
+                        Command="{Binding AddCommand}" />
+                <Button Content="◀◀ Убрать"
+                        Width="115"
+                        Command="{Binding RemoveCommand}" />
+            </StackPanel>
+
+            <!-- Правый список: выбранные семейства (порядок = приоритет) -->
+            <DockPanel Grid.Column="2">
+                <TextBlock DockPanel.Dock="Top"
+                           Text="Выбранные (порядок = приоритет):"
+                           FontWeight="SemiBold" Margin="0,0,0,4" />
+                <StackPanel DockPanel.Dock="Bottom"
+                            Orientation="Horizontal"
+                            Margin="0,6,0,0">
+                    <Button Content="▲ Вверх" Width="85" Margin="0,0,6,0"
+                            Command="{Binding MoveUpCommand}" />
+                    <Button Content="▼ Вниз" Width="85"
+                            Command="{Binding MoveDownCommand}" />
+                </StackPanel>
+                <ListBox ItemsSource="{Binding SelectedFamilies}"
+                         SelectedItem="{Binding SelectedMapping, Mode=TwoWay}"
+                         AlternationCount="999"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Foreground="Gray" MinWidth="22"
+                                           Text="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem},
+                                               Path=(ItemsControl.AlternationIndex),
+                                               StringFormat='{}{0}. '}" />
+                                <TextBlock Text="{Binding}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Grid>
+
+        <!-- Нижние кнопки -->
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,12,0,0">
+            <Button Content="Отмена"
+                    Width="100" Margin="0,0,10,0"
+                    Command="{Binding CancelCommand}" />
+            <Button Content="Подтвердить"
+                    Width="115"
+                    Command="{Binding ConfirmCommand}" />
+        </StackPanel>
+    </Grid>
+</Window>

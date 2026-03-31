@@ -18,4 +18,12 @@ public interface IDialogService
     /// Показать предупреждение пользователю.
     /// </summary>
     void ShowWarning(string title, string message);
+
+    /// <summary>
+    /// Открыть окно выбора семейств фитингов для правила маппинга.
+    /// Возвращает упорядоченный по приоритету список FittingMapping или null при отмене.
+    /// </summary>
+    IReadOnlyList<FittingMapping>? ShowFamilySelector(
+        IReadOnlyList<string> availableFamilies,
+        IReadOnlyList<FittingMapping> currentSelection);
 }

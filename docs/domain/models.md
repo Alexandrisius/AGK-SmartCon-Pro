@@ -222,6 +222,23 @@ public readonly record struct Vec3(double X, double Y, double Z)
 
 ---
 
+## FamilyInfo *(Phase 3C)*
+
+Информация о семействе фитинга, прошедшем фильтрацию по критериям PipeConnect (OST_PipeFitting + MultiPort + 2 коннектора). Используется в `IFittingFamilyRepository` и `FamilySelectorViewModel`.
+
+**Файл:** `SmartCon.Core/Models/FamilyInfo.cs`
+
+```csharp
+public sealed record FamilyInfo(
+    string FamilyName,
+    string? PartTypeName,       // "MultiPort"
+    int ConnectorCount,          // всегда 2 после фильтрации
+    IReadOnlyList<string> SymbolNames  // доступные типоразмеры
+);
+```
+
+---
+
 ## AlignmentResult *(Phase 2)*
 
 Результат вычисления `ConnectorAligner.ComputeAlignment()`.

@@ -193,16 +193,13 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             var loadedFamily = familyDoc.LoadFamily(doc, new FamilyLoadOptions());
             Debug.WriteLine($"[SmartCon] LoadFamily completed, loaded: {loadedFamily?.Name}");
 
-            // Закрываем familyDoc (изменения уже загружены в проект)
-            familyDoc.Close(false);
-            Debug.WriteLine("[SmartCon] familyDoc closed");
-
             return true;
         }
         finally
         {
-            // familyDoc уже закрыт в try-блоке после SaveAs.
-            // Не вызываем Close повторно.
+            // Закрываем familyDoc во всех случаях: успех, ранний return false, исключение.
+            familyDoc.Close(false);
+            Debug.WriteLine("[SmartCon] familyDoc closed");
         }
     }
 

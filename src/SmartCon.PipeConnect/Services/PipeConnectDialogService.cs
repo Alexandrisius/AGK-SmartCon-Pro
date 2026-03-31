@@ -25,4 +25,14 @@ public sealed class PipeConnectDialogService : IDialogService
     {
         TaskDialog.Show(title, message);
     }
+
+    public IReadOnlyList<FittingMapping>? ShowFamilySelector(
+        IReadOnlyList<string> availableFamilies,
+        IReadOnlyList<FittingMapping> currentSelection)
+    {
+        var vm   = new FamilySelectorViewModel(availableFamilies, currentSelection);
+        var view = new FamilySelectorView(vm);
+        view.ShowDialog();
+        return vm.GetResult();
+    }
 }

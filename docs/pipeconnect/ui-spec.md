@@ -195,16 +195,70 @@ ViewModel обновляет UI
 +--------------------------------------------+
 ```
 
+### Колонка «Семейства» в правилах маппинга
+
+Вместо ввода CSV — кнопка **«Выбрать...»** и поле `FamiliesSummary` (например: "Угольник DN50, Переходник DN50-40").
+Кнопка открывает `FamilySelectorView` (модально). Результат сохраняется в `MappingRuleItem.FittingFamilies`.
+
 ### Источник семейств
-ComboBox семейств заполняется из загруженных в текущий проект Revit:
-```csharp
-var families = new FilteredElementCollector(doc)
-    .OfClass(typeof(FamilySymbol))
-    .Cast<FamilySymbol>()
-    .Where(fs => /* фильтр по категории трубных фитингов */);
-```
+Семейства загружаются при открытии окна через `IFittingFamilyRepository.GetEligibleFittingFamilies(doc)`.
+Критерии: `OST_PipeFitting` + `PartType=MultiPort` + ровно 2 `ConnectorElement`.
 
 ### Хранение
 JSON в `%APPDATA%/SmartCon/`:
 - `connector-types.json`
 - `fitting-mapping.json`
+
+---
+
+## 4. FamilySelectorView (окно выбора семейств)
+
+**Файл View:** `SmartCon.PipeConnect/Views/FamilySelectorView.xaml`
+**Файл VM:** `SmartCon.PipeConnect/ViewModels/FamilySelectorViewModel.cs`
+**Тип:** Модальное (modal) диалоговое окно, 640×460
+
+### Когда появляется
+Кнопка **«Выбрать...»** в DataGrid правил маппинга (MappingEditorView, вкладка «Правила маппинга»).
+
+### Layout
+
+```
++----------------------------------------------------------+
+| Выбор семейств фитингов                             [X]  |
++----------------------------------------------------------+
+| Доступные семейства:      |         | Выбранные:          |
+| (OST_PipeFitting,         | [▶▶     | (порядок = приоритет)|
+|  MultiPort, 2 коннектора) |  Добав.] | +------------------+|
+| +--------------------+   | [◀◀     | | 1. Угольник DN50  ||
+| | Угольник DN50      |   |  Убрать] | | 2. Переходник     ||
+| | Переходник DN50-40 |   |         | +------------------+||
+| | Муфта DN50         |   |         | [▲ Вверх] [▼ Вниз]  |
+| +--------------------+   |         |                      |
++----------------------------------------------------------+
+| [ Отмена ]                              [ Подтвердить ]  |
++----------------------------------------------------------+
+```
+
+### ViewModel: `FamilySelectorViewModel`
+
+| Свойство | Тип | Описание |
+|---|---|---|
+| `AvailableFamilies` | `ObservableCollection<string>` | Семейства, не выбранные, отсортированы A→Z |
+| `SelectedFamilies` | `ObservableCollection<string>` | Выбранные, порядок = приоритет |
+| `SelectedAvailable` | `string?` | Выделенный элемент в левом списке |
+| `SelectedMapping` | `string?` | Выделенный элемент в правом списке |
+| `Confirmed` | `bool` | true = подтверждено |
+
+| Команда | Описание |
+|---|---|
+| `AddCommand` | Переместить `SelectedAvailable` → `SelectedFamilies`. CanExecute: `SelectedAvailable != null` |
+| `RemoveCommand` | Вернуть `SelectedMapping` → `AvailableFamilies` (в алфавитной позиции). CanExecute: `SelectedMapping != null` |
+| `MoveUpCommand` | Сдвинуть `SelectedMapping` вверх. CanExecute: индекс > 0 |
+| `MoveDownCommand` | Сдвинуть `SelectedMapping` вниз. CanExecute: индекс < Count-1 |
+| `ConfirmCommand` | Confirmed=true, RequestClose |
+| `CancelCommand` | Confirmed=false, RequestClose |
+
+### Результат
+`GetResult()` → `IReadOnlyList<FittingMapping>?`
+- null при отмене
+- Список FittingMapping с Priority = позиция+1 при подтверждении

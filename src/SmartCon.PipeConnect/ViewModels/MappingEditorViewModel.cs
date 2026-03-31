@@ -13,11 +13,12 @@ namespace SmartCon.PipeConnect.ViewModels;
 public sealed partial class MappingEditorViewModel : ObservableObject
 {
     private readonly IFittingMappingRepository _repository;
+    private readonly IDialogService _dialogService;
 
     public ObservableCollection<ConnectorTypeItem> ConnectorTypes { get; } = [];
     public ObservableCollection<MappingRuleItem> MappingRules { get; } = [];
 
-    /// <summary>Список семейств, загруженных из текущего Revit-проекта.</summary>
+    /// <summary>Список имён семейств (OST_PipeFitting, MultiPort, 2 коннектора), загруженных при открытии окна.</summary>
     public IReadOnlyList<string> AvailableFamilyNames { get; }
 
     [ObservableProperty]
@@ -31,16 +32,18 @@ public sealed partial class MappingEditorViewModel : ObservableObject
 
     public MappingEditorViewModel(
         IFittingMappingRepository repository,
-        IReadOnlyList<string> availableFamilyNames)
+        IReadOnlyList<string> availableFamilyNames,
+        IDialogService dialogService)
     {
         _repository = repository;
+        _dialogService = dialogService;
         AvailableFamilyNames = availableFamilyNames;
 
         foreach (var t in _repository.GetConnectorTypes())
             ConnectorTypes.Add(ConnectorTypeItem.From(t));
 
         foreach (var r in _repository.GetMappingRules())
-            MappingRules.Add(MappingRuleItem.From(r));
+            MappingRules.Add(MappingRuleItem.From(r, _dialogService, AvailableFamilyNames));
     }
 
     [RelayCommand]
@@ -77,7 +80,7 @@ public sealed partial class MappingEditorViewModel : ObservableObject
     [RelayCommand]
     private void AddRule()
     {
-        var item = new MappingRuleItem();
+        var item = new MappingRuleItem(_dialogService, AvailableFamilyNames);
         MappingRules.Add(item);
         SelectedRule = item;
     }

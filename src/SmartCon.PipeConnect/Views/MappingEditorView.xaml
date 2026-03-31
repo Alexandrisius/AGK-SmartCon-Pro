@@ -95,9 +95,27 @@
 
                             <DataGridCheckBoxColumn Header="Прямое" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="65" />
 
-                            <DataGridTextColumn Header="Семейства (через запятую)"
-                                                Binding="{Binding FittingFamiliesCsv, UpdateSourceTrigger=PropertyChanged}"
-                                                Width="*" />
+                            <DataGridTemplateColumn Header="Семейства" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding FamiliesSummary}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="2,0,4,0"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <Button Grid.Column="1"
+                                                    Content="Выбрать..."
+                                                    Padding="6,2"
+                                                    Command="{Binding OpenFamilySelectorCommand}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
 

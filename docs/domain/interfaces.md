@@ -233,6 +233,12 @@ public interface IDialogService
 
     /// Показать предупреждение пользователю.
     void ShowWarning(string title, string message);
+
+    /// Открыть окно выбора семейств фитингов для правила маппинга.
+    /// Возвращает упорядоченный по приоритету список или null при отмене.
+    IReadOnlyList<FittingMapping>? ShowFamilySelector(
+        IReadOnlyList<string> availableFamilies,
+        IReadOnlyList<FittingMapping> currentSelection);
 }
 ```
 
@@ -301,6 +307,30 @@ public interface IFamilyConnectorService
                               int connectorIndex, ConnectionTypeCode typeCode);
 }
 ```
+
+---
+
+## IFittingFamilyRepository *(Phase 3C)*
+
+Получение семейств фитингов из проекта, подходящих для PipeConnect-маппинга.
+Критерии: `OST_PipeFitting` + `PartType=MultiPort` + ровно 2 `ConnectorElement`.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IFittingFamilyRepository.cs`
+**Реализация:** `SmartCon.Revit/Family/FittingFamilyRepository.cs`
+
+```csharp
+public interface IFittingFamilyRepository
+{
+    /// Вызывать ВНЕ транзакции (EditFamily требует doc.IsModifiable == false).
+    IReadOnlyList<FamilyInfo> GetEligibleFittingFamilies(Document doc);
+}
+```
+
+**Алгоритм:**
+1. `FilteredElementCollector` → все `Family` с `FamilyCategory = OST_PipeFitting`
+2. Фильтр `FAMILY_PART_TYPE == PartType.MultiPort` (без EditFamily)
+3. `doc.EditFamily(family)` → считать `OST_ConnectorElem` → оставить только с count == 2
+4. Вернуть `FamilyInfo` с именем, PartTypeName, ConnectorCount, SymbolNames
 
 ---
 

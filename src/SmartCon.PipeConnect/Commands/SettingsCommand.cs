@@ -10,32 +10,31 @@ namespace SmartCon.PipeConnect.Commands;
 
 /// <summary>
 /// Команда открытия окна настроек SmartCon (маппинг фитингов, типы коннекторов).
-/// Phase 3B: открывает немодальное MappingEditorView.
+/// Phase 3B/3C: открывает немодальное MappingEditorView.
 /// IExternalCommand — уже на Revit main thread, Show() допустим напрямую.
+/// TransactionMode.Manual — без активной транзакции, EditFamily разрешён.
 /// </summary>
-[Transaction(TransactionMode.ReadOnly)]
+[Transaction(TransactionMode.Manual)]
 public sealed class SettingsCommand : IExternalCommand
 {
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
         try
         {
-            var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
+            var contextWriter    = ServiceHost.GetService<IRevitContextWriter>();
             contextWriter.SetContext(commandData.Application);
 
-            var revitContext = ServiceHost.GetService<IRevitContext>();
-            var mappingRepo  = ServiceHost.GetService<IFittingMappingRepository>();
+            var revitContext     = ServiceHost.GetService<IRevitContext>();
+            var mappingRepo      = ServiceHost.GetService<IFittingMappingRepository>();
+            var familyRepo       = ServiceHost.GetService<IFittingFamilyRepository>();
+            var dialogService    = ServiceHost.GetService<IDialogService>();
 
             var doc = revitContext.GetDocument();
 
-            var familyNames = new FilteredElementCollector(doc)
-                .OfClass(typeof(Family))
-                .Cast<Family>()
-                .Select(f => f.Name)
-                .OrderBy(n => n)
-                .ToList();
+            var eligibleFamilies = familyRepo.GetEligibleFittingFamilies(doc);
+            var familyNames      = eligibleFamilies.Select(f => f.FamilyName).ToList();
 
-            var vm   = new MappingEditorViewModel(mappingRepo, familyNames);
+            var vm   = new MappingEditorViewModel(mappingRepo, familyNames, dialogService);
             var view = new MappingEditorView(vm);
             view.Show();
 

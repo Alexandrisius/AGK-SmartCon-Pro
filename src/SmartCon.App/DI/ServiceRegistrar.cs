@@ -40,6 +40,7 @@ public static class ServiceRegistrar
         // --- Mapping & Family (Phase 3) ---
         services.AddSingleton<IFittingMappingRepository, JsonFittingMappingRepository>();
         services.AddSingleton<IFamilyConnectorService, RevitFamilyConnectorService>();
+        services.AddSingleton<IFittingFamilyRepository, FittingFamilyRepository>();
         services.AddSingleton<IDialogService, PipeConnectDialogService>();
 
         // --- External Events (ADR-008: generic) ---
