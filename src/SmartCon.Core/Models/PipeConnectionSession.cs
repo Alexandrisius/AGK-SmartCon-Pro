@@ -12,6 +12,10 @@ public sealed class PipeConnectionSession
     public ConnectionGraph? DynamicChain { get; set; }
     public List<FittingMappingRule> ProposedFittings { get; set; } = [];
     public double RotationAngleDeg { get; set; }
+    /// <summary>Phase 4: нужен переходник (размер подобран приближённо или S4 провалился).</summary>
+    public bool NeedsAdapter { get; set; }
+    public double OriginalDynamicRadius { get; set; }
+    public double ActualDynamicRadius { get; set; }
     public bool MoveEntireChain { get; set; }
     public PipeConnectState State { get; set; } = PipeConnectState.AwaitingStaticSelection;
 
@@ -25,6 +29,9 @@ public sealed class PipeConnectionSession
         DynamicChain = null;
         ProposedFittings = [];
         RotationAngleDeg = 0;
+        NeedsAdapter = false;
+        OriginalDynamicRadius = 0;
+        ActualDynamicRadius = 0;
         MoveEntireChain = false;
         State = PipeConnectState.AwaitingStaticSelection;
     }

@@ -157,6 +157,11 @@ public sealed class PipeConnectionSession
     public double RotationAngleDeg { get; set; } = 0;
     public bool MoveEntireChain { get; set; } = false;
     public PipeConnectState State { get; set; } = PipeConnectState.AwaitingStaticSelection;
+
+    // Phase 4 — результат подбора параметров (S4)
+    public bool   NeedsAdapter          { get; set; } = false; // радиус не совпал точно
+    public double OriginalDynamicRadius { get; set; } = 0.0;   // до изменения
+    public double ActualDynamicRadius   { get; set; } = 0.0;   // после подбора
 }
 ```
 
@@ -194,8 +199,10 @@ public enum PipeConnectState
 public sealed record ParameterDependency(
     BuiltInParameter? BuiltIn,
     string? SharedParamName,
-    string? Formula,          // null если прямой параметр (без формулы)
-    bool IsInstance           // false = параметр типа
+    string? Formula,              // null если прямой параметр (без формулы)
+    bool IsInstance,              // false = параметр типа
+    string? DirectParamName = null, // имя параметра семейства, прямо управляющего Radius
+    string? RootParamName   = null  // корневой параметр (если Formula это цепочка формул)
 );
 ```
 

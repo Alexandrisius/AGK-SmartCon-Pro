@@ -11,12 +11,22 @@ namespace SmartCon.PipeConnect.Commands;
 
 /// <summary>
 /// Точка входа PipeConnect с Ribbon.
-/// Phase 3: workflow S1 → S1.1(TypeCode) → S2 → S2.1(TypeCode) → S3 → Committed.
-/// Два клика — выравнивание + ConnectTo в одном TransactionGroup (одна запись Undo).
+/// Phase 4: workflow S1 → S1.1 → S2 → S2.1 → S3(Align) → S4(ResolvingParams) → S5(Connect).
+/// Два клика — выравнивание + подбор параметра + ConnectTo в одном TransactionGroup (одна запись Undo).
 /// </summary>
 [Transaction(TransactionMode.Manual)]
 public sealed class PipeConnectCommand : IExternalCommand
 {
+    /// <summary>
+    /// Результат анализа S4 (до TransactionGroup). Иммутабельный.
+    /// </summary>
+    private sealed record ParameterResolutionPlan(
+        bool   Skip,               // радиусы совпадают → S4 пропускается
+        double TargetRadius,       // целевой радиус (internal units)
+        bool   ExpectNeedsAdapter, // нашли только ближайший или провал S4
+        string? WarningMessage     // null = нет предупреждения
+    );
+
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
         try
@@ -24,14 +34,16 @@ public sealed class PipeConnectCommand : IExternalCommand
             var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
             contextWriter.SetContext(commandData.Application);
 
-            var revitContext    = ServiceHost.GetService<IRevitContext>();
-            var selectionSvc    = ServiceHost.GetService<IElementSelectionService>();
-            var connectorSvc    = ServiceHost.GetService<IConnectorService>();
-            var transformSvc    = ServiceHost.GetService<ITransformService>();
-            var txService       = ServiceHost.GetService<ITransactionService>();
-            var mappingRepo     = ServiceHost.GetService<IFittingMappingRepository>();
-            var familyConnSvc   = ServiceHost.GetService<IFamilyConnectorService>();
-            var dialogSvc       = ServiceHost.GetService<IDialogService>();
+            var revitContext  = ServiceHost.GetService<IRevitContext>();
+            var selectionSvc  = ServiceHost.GetService<IElementSelectionService>();
+            var connectorSvc  = ServiceHost.GetService<IConnectorService>();
+            var transformSvc  = ServiceHost.GetService<ITransformService>();
+            var txService     = ServiceHost.GetService<ITransactionService>();
+            var mappingRepo   = ServiceHost.GetService<IFittingMappingRepository>();
+            var familyConnSvc = ServiceHost.GetService<IFamilyConnectorService>();
+            var dialogSvc     = ServiceHost.GetService<IDialogService>();
+            var paramResolver = ServiceHost.GetService<IParameterResolver>();
+            var lookupSvc     = ServiceHost.GetService<ILookupTableService>();
 
             var doc = revitContext.GetDocument();
 
@@ -84,6 +96,11 @@ public sealed class PipeConnectCommand : IExternalCommand
                 staticProxy.OriginVec3,  staticProxy.BasisZVec3,  staticProxy.BasisXVec3,
                 dynamicProxy.OriginVec3, dynamicProxy.BasisZVec3, dynamicProxy.BasisXVec3);
 
+            // ── S4: анализ параметров (ВНЕ TransactionGroup — EditFamily запрещён внутри) ──
+            var plan = BuildResolutionPlan(
+                doc, dynamicProxy, staticProxy.Radius,
+                paramResolver, lookupSvc);
+
             bool connectSucceeded = false;
 
             // ── TransactionGroup: одна запись Undo ─────────────────────────────────
@@ -92,10 +109,30 @@ public sealed class PipeConnectCommand : IExternalCommand
                 // Transaction 1: выравнивание (Align)
                 txService.RunInTransaction("Align", alignDoc =>
                 {
-                    ApplyAlignment(alignDoc, dynamicProxy, alignResult, connectorSvc, transformSvc, staticProxy.OriginVec3);
+                    ApplyAlignment(alignDoc, dynamicProxy, alignResult,
+                        connectorSvc, transformSvc, staticProxy.OriginVec3);
                 });
 
-                // Transaction 2: ConnectTo (Connect)
+                // Transaction 2: подбор параметра (SetParam) — Phase 4
+                if (!plan.Skip)
+                {
+                    txService.RunInTransaction("SetParam", paramDoc =>
+                    {
+                        bool success = paramResolver.TrySetConnectorRadius(
+                            paramDoc,
+                            dynamicProxy.OwnerElementId,
+                            dynamicProxy.ConnectorIndex,
+                            plan.TargetRadius);
+
+                        if (!success || plan.ExpectNeedsAdapter)
+                        {
+                            // Флаг для Phase 5 (FittingMapper): понадобится переходник
+                            // В Phase 4 просто продолжаем, не отменяем (D4)
+                        }
+                    });
+                }
+
+                // Transaction 3: соединение (Connect)
                 txService.RunInTransaction("Connect", connectDoc =>
                 {
                     connectSucceeded = connectorSvc.ConnectTo(
@@ -104,6 +141,10 @@ public sealed class PipeConnectCommand : IExternalCommand
                         dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex);
                 });
             });
+
+            // Показать предупреждение S4 после завершения TransactionGroup
+            if (plan.WarningMessage is not null)
+                dialogSvc.ShowWarning("SmartCon", plan.WarningMessage);
 
             if (!connectSucceeded)
             {
@@ -168,6 +209,72 @@ public sealed class PipeConnectCommand : IExternalCommand
         }
 
         return selected;
+    }
+
+    /// <summary>
+    /// S4 — анализ параметров ДО TransactionGroup.
+    /// Определяет стратегию подбора размера динамического элемента под статический.
+    /// Вызов EditFamily и LookupTable — разрешены здесь (нет активной транзакции).
+    /// </summary>
+    private static ParameterResolutionPlan BuildResolutionPlan(
+        Document doc,
+        Core.Models.ConnectorProxy dynamicProxy,
+        double staticRadius,
+        IParameterResolver paramResolver,
+        ILookupTableService lookupSvc)
+    {
+        const double eps = 1e-6; // ~0.3 мкм
+
+        // 1. Радиусы совпадают → пропустить S4
+        if (System.Math.Abs(staticRadius - dynamicProxy.Radius) < eps)
+            return new ParameterResolutionPlan(Skip: true, TargetRadius: staticRadius,
+                ExpectNeedsAdapter: false, WarningMessage: null);
+
+        var dynId    = dynamicProxy.OwnerElementId;
+        var connIdx  = dynamicProxy.ConnectorIndex;
+        double dynDn = System.Math.Round(staticRadius * 2.0 * 304.8); // мм для сообщений
+
+        // 2. MEP Curve (Pipe) → прямая запись, без EditFamily
+        var element = doc.GetElement(dynId);
+        if (element is MEPCurve or Autodesk.Revit.DB.Plumbing.FlexPipe)
+            return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
+                ExpectNeedsAdapter: false, WarningMessage: null);
+
+        // 3. Анализ семейства: GetConnectorRadiusDependencies (EditFamily здесь)
+        var deps = paramResolver.GetConnectorRadiusDependencies(doc, dynId, connIdx);
+        var dep  = deps.Count > 0 ? deps[0] : null;
+
+        // 4. LookupTable: есть ли точный размер?
+        bool hasTable  = lookupSvc.HasLookupTable(doc, dynId, connIdx);
+
+        if (hasTable)
+        {
+            bool exactMatch = lookupSvc.ConnectorRadiusExistsInTable(doc, dynId, connIdx, staticRadius);
+            if (exactMatch)
+                return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
+                    ExpectNeedsAdapter: false, WarningMessage: null);
+
+            // Нет точного → берём ближайший
+            double nearest   = lookupSvc.GetNearestAvailableRadius(doc, dynId, connIdx, staticRadius);
+            double nearestDn = System.Math.Round(nearest * 2.0 * 304.8);
+            return new ParameterResolutionPlan(
+                Skip: false, TargetRadius: nearest,
+                ExpectNeedsAdapter: true,
+                WarningMessage: $"Размер DN{dynDn} отсутствует в таблице. Будет выбран DN{nearestDn}, нужен переходник.");
+        }
+
+        // 5. Нет таблицы и нет dep → полный провал
+        if (dep is null)
+            return new ParameterResolutionPlan(
+                Skip: false, TargetRadius: staticRadius,
+                ExpectNeedsAdapter: true,
+                WarningMessage: "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.");
+
+        // 6. Dep найден → TrySetConnectorRadius разберётся с формулой и ChangeTypeId внутри транзакции.
+        // Нелинейные формулы (SolveFor=null) или несовместимые типы → NeedsAdapter будет выставлен там.
+        return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
+            ExpectNeedsAdapter: !dep.IsInstance && dep.Formula is null,
+            WarningMessage: null);
     }
 
     /// <summary>

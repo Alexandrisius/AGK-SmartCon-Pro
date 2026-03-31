@@ -1,0 +1,107 @@
+﻿  ╨Ю╨┐╤А╨╡╨┤╨╡╨╗╨╡╨╜╨╕╨╡ ╨┐╤А╨╛╨╡╨║╤В╨╛╨▓ ╨┤╨╗╤П ╨▓╨╛╤Б╤Б╤В╨░╨╜╨╛╨▓╨╗╨╡╨╜╨╕╤П...
+  ╨Т╤Б╨╡ ╨┐╤А╨╛╨╡╨║╤В╤Л ╨╛╨▒╨╜╨╛╨▓╨╗╨╡╨╜╤Л ╨┤╨╗╤П ╨▓╨╛╤Б╤Б╤В╨░╨╜╨╛╨▓╨╗╨╡╨╜╨╕╤П.
+  SmartCon.Core -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Core\bin\Debug\net8.0-windows\SmartCon.Core.dll
+  SmartCon.UI -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.UI\bin\Debug\net8.0-windows\SmartCon.UI.dll
+  SmartCon.PipeConnect -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.PipeConnect\bin\Debug\net8.0-windows\SmartCon.PipeConnect.dll
+  SmartCon.Tests -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Tests\bin\Debug\net8.0-windows\SmartCon.Tests.dll
+╨в╨╡╤Б╤В╨╛╨▓╤Л╨╣ ╨╖╨░╨┐╤Г╤Б╨║ ╨┤╨╗╤П D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Tests\bin\Debug\net8.0-windows\SmartCon.Tests.dll (.NETCoreApp,Version=v8.0)
+╨Ю╨▒╤Й╨╡╨╡ ╨║╨╛╨╗╨╕╤З╨╡╤Б╤В╨▓╨╛ ╤В╨╡╤Б╤В╨╛╨▓╤Л╤Е ╤Д╨░╨╣╨╗╨╛╨▓ (1), ╤Б╨╛╨╛╤В╨▓╨╡╤В╤Б╤В╨▓╤Г╤О╤Й╨╕╤Е ╤Г╨║╨░╨╖╨░╨╜╨╜╨╛╨╝╤Г ╤И╨░╨▒╨╗╨╛╨╜╤Г.
+dotnet : [xUnit.net 00:00:00.23]     SmartCon.Tests.Core.Models.ConnectionGraphTests.NewGraph_ContainsRootNode [FAIL]
+строка:1 знак:1
++ dotnet test src\SmartCon.Tests\SmartCon.Tests.csproj -c Debug 2>&1 |  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([xUnit.net 00:0...RootNode [FAIL]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[xUnit.net 00:00:00.23]     SmartCon.Tests.Core.Models.PipeConnectionSessionTests.NewSession_HasDefaultState [FAIL]
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Models.ConnectionGraphTests.NewGraph_ContainsRootNode [2 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   System.IO.FileNotFoundException : Could not load file or assembly 'RevitAPI, Version=25.0.0.0, Culture=neutral, PublicKeyToken=null'. ╨Э╨╡ ╤Г╨┤╨░╨╡╤В╤Б╤П ╨╜╨░╨╣╤В╨╕ ╤Г╨║╨░╨╖╨░╨╜╨╜╤Л╨╣ ╤Д╨░╨╣╨╗.
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Models.ConnectionGraphTests.NewGraph_ContainsRootNode()
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Models.PipeConnectionSessionTests.NewSession_HasDefaultState [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   System.IO.FileNotFoundException : Could not load file or assembly 'RevitAPI, Version=25.0.0.0, Culture=neutral, PublicKeyToken=null'. ╨Э╨╡ ╤Г╨┤╨░╨╡╤В╤Б╤П ╨╜╨░╨╣╤В╨╕ ╤Г╨║╨░╨╖╨░╨╜╨╜╤Л╨╣ ╤Д╨░╨╣╨╗.
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Models.PipeConnectionSessionTests.NewSession_HasDefaultState()
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.23]     SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_RootOnly_ReturnsRoot [FAIL]
+[xUnit.net 00:00:00.23]     SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_MiddleNode_ReturnsAllReachable [FAIL]
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_RootOnly_ReturnsRoot [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   System.IO.FileNotFoundException : Could not load file or assembly 'RevitAPI, Version=25.0.0.0, Culture=neutral, PublicKeyToken=null'. ╨Э╨╡ ╤Г╨┤╨░╨╡╤В╤Б╤П ╨╜╨░╨╣╤В╨╕ ╤Г╨║╨░╨╖╨░╨╜╨╜╤Л╨╣ ╤Д╨░╨╣╨╗.
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_RootOnly_ReturnsRoot()
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_MiddleNode_ReturnsAllReachable [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   System.IO.FileNotFoundException : Could not load file or assembly 'RevitAPI, Version=25.0.0.0, Culture=neutral, PublicKeyToken=null'. ╨Э╨╡ ╤Г╨┤╨░╨╡╤В╤Б╤П ╨╜╨░╨╣╤В╨╕ ╤Г╨║╨░╨╖╨░╨╜╨╜╤Л╨╣ ╤Д╨░╨╣╨╗.
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_MiddleNode_ReturnsAllReachable()
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.23]     SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_LinearChain_ReturnsAllNodes [FAIL]
+[xUnit.net 00:00:00.23]     SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_Branching_ReturnsAllBranches [FAIL]
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_LinearChain_ReturnsAllNodes [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   System.IO.FileNotFoundException : Could not load file or assembly 'RevitAPI, Version=25.0.0.0, Culture=neutral, PublicKeyToken=null'. ╨Э╨╡ ╤Г╨┤╨░╨╡╤В╤Б╤П ╨╜╨░╨╣╤В╨╕ ╤Г╨║╨░╨╖╨░╨╜╨╜╤Л╨╣ ╤Д╨░╨╣╨╗.
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_LinearChain_ReturnsAllNodes()
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_Branching_ReturnsAllBranches [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   System.IO.FileNotFoundException : Could not load file or assembly 'RevitAPI, Version=25.0.0.0, Culture=neutral, PublicKeyToken=null'. ╨Э╨╡ ╤Г╨┤╨░╨╡╤В╤Б╤П ╨╜╨░╨╣╤В╨╕ ╤Г╨║╨░╨╖╨░╨╜╨╜╤Л╨╣ ╤Д╨░╨╣╨╗.
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Models.ConnectionGraphTests.GetChainFrom_Branching_ReturnsAllBranches()
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.23]     SmartCon.Tests.Core.Models.PipeConnectionSessionTests.Reset_RestoresDefaultState [FAIL]
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Models.PipeConnectionSessionTests.Reset_RestoresDefaultState [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   System.IO.FileNotFoundException : Could not load file or assembly 'RevitAPI, Version=25.0.0.0, Culture=neutral, PublicKeyToken=null'. ╨Э╨╡ ╤Г╨┤╨░╨╡╤В╤Б╤П ╨╜╨░╨╣╤В╨╕ ╤Г╨║╨░╨╖╨░╨╜╨╜╤Л╨╣ ╤Д╨░╨╣╨╗.
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Core.Models.PipeConnectionSession.set_StaticConnector
+   at SmartCon.Core.Models.PipeConnectionSession.Reset() in D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Core\Models\PipeConnectionSession.cs:line 27
+   at SmartCon.Tests.Core.Models.PipeConnectionSessionTests.Reset_RestoresDefaultState() in D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Tests\Core\Models\PipeConnectionSessionTests.cs:line 37
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.25]     SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(radiusFt: 0,049200000000000001, expectedDiamMm: 15) [
+FAIL]
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(radiusFt: 0,049200000000000001, expectedDiamMm: 15) [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   Assert.Equal() Failure: Values are not within tolerance 1
+Expected: 15
+Actual:   30
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(Double radiusFt, Double expectedDiamMm) in D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Tests\Core\Services\ParameterResolutionFlowTests.cs:line 104
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.25]     SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(radiusFt: 0,13120000000000001, expectedDiamMm: 40) [F
+AIL]
+[xUnit.net 00:00:00.25]     SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(radiusFt: 0,082100000000000006, expectedDiamMm: 25) [
+FAIL]
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(radiusFt: 0,13120000000000001, expectedDiamMm: 40) [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   Assert.Equal() Failure: Values are not within tolerance 1
+Expected: 40
+Actual:   80
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(Double radiusFt, Double expectedDiamMm) in D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Tests\Core\Services\ParameterResolutionFlowTests.cs:line 104
+   at InvokeStub_ParameterResolutionFlowTests.FeetToMm_DiameterConversion(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  ╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜ SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(radiusFt: 0,082100000000000006, expectedDiamMm: 25) [< 1 ms]
+  ╨б╨╛╨╛╨▒╤Й╨╡╨╜╨╕╨╡ ╨╛╨▒ ╨╛╤И╨╕╨▒╨║╨╡:
+   Assert.Equal() Failure: Values are not within tolerance 1
+Expected: 25
+Actual:   50
+  ╨в╤А╨░╤Б╤Б╨╕╤А╨╛╨▓╨║╨░ ╤Б╤В╨╡╨║╨░:
+     at SmartCon.Tests.Core.Services.ParameterResolutionFlowTests.FeetToMm_DiameterConversion(Double radiusFt, Double expectedDiamMm) in D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Tests\Core\Services\ParameterResolutionFlowTests.cs:line 104
+   at InvokeStub_ParameterResolutionFlowTests.FeetToMm_DiameterConversion(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+
+╨Э╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜!: ╨╜╨╡ ╨┐╤А╨╛╨╣╨┤╨╡╨╜╨╛    10, ╨┐╤А╨╛╨╣╨┤╨╡╨╜╨╛   198, ╨┐╤А╨╛╨┐╤Г╤Й╨╡╨╜╨╛     0, ╨▓╤Б╨╡╨│╨╛   208, ╨┤╨╗╨╕╤В╨╡╨╗╤М╨╜╨╛╤Б╤В╤М 98 ms. - SmartCon.Tests.dll (net8.0)

@@ -334,6 +334,55 @@ public interface IFittingFamilyRepository
 
 ---
 
+## IParameterResolver *(Phase 4)*
+
+Анализ зависимостей параметров коннектора семейства и запись нового радиуса.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IParameterResolver.cs`
+**Реализация:** `SmartCon.Revit/Parameters/RevitParameterResolver.cs`
+
+```csharp
+public interface IParameterResolver
+{
+    /// Вернуть цепочку зависимостей параметра CONNECTOR_RADIUS.
+    /// Вызывать ВНЕ транзакции (требует EditFamily).
+    IReadOnlyList<ParameterDependency> GetConnectorRadiusDependencies(
+        Document doc, ElementId elementId, int connectorIndex);
+
+    /// Установить радиус коннектора (через параметр семейства или ChangeTypeId).
+    /// Вызывать ВНУТРИ транзакции.
+    bool TrySetConnectorRadius(
+        Document doc, ElementId elementId, int connectorIndex, double targetRadius);
+}
+```
+
+---
+
+## ILookupTableService *(Phase 4)*
+
+Работа с LookupTable (size_lookup) семейства Revit.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/ILookupTableService.cs`
+**Реализация:** `SmartCon.Revit/Parameters/RevitLookupTableService.cs`
+
+```csharp
+public interface ILookupTableService
+{
+    /// Есть ли LookupTable у коннектора.
+    bool HasLookupTable(Document doc, ElementId elementId, int connectorIndex);
+
+    /// Доступен ли точный радиус в таблице.
+    bool ConnectorRadiusExistsInTable(
+        Document doc, ElementId elementId, int connectorIndex, double radiusFt);
+
+    /// Найти ближайший доступный радиус из таблицы.
+    double GetNearestAvailableRadius(
+        Document doc, ElementId elementId, int connectorIndex, double targetRadiusFt);
+}
+```
+
+---
+
 ## IRevitUIContext *(Phase 2, Revit layer only)*
 
 Доступ к UIDocument и UIApplication. **НЕ экспонируется в Core** (I-09).

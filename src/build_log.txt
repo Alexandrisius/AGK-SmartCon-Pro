@@ -4,11 +4,11 @@
   SmartCon.UI -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.UI\bin\Debug\net8.0-windows\SmartCon.UI.dll
   SmartCon.Revit -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Revit\bin\Debug\net8.0-windows\SmartCon.Revit.dll
   SmartCon.PipeConnect -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.PipeConnect\bin\Debug\net8.0-windows\SmartCon.PipeConnect.dll
-  SmartCon.Tests -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Tests\bin\Debug\net8.0-windows\SmartCon.Tests.dll
   SmartCon.App -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.App\bin\Debug\net8.0-windows\SmartCon.App.dll
+  SmartCon.Tests -> D:\projects\revit\AGK-SmartCon-Pro\src\SmartCon.Tests\bin\Debug\net8.0-windows\SmartCon.Tests.dll
 
 ╨б╨▒╨╛╤А╨║╨░ ╤Г╤Б╨┐╨╡╤И╨╜╨╛ ╨╖╨░╨▓╨╡╤А╤И╨╡╨╜╨░.
     ╨Я╤А╨╡╨┤╤Г╨┐╤А╨╡╨╢╨┤╨╡╨╜╨╕╨╣: 0
     ╨Ю╤И╨╕╨▒╨╛╨║: 0
 
-╨Я╤А╨╛╤И╨╗╨╛ ╨▓╤А╨╡╨╝╨╡╨╜╨╕ 00:00:01.97
+╨Я╤А╨╛╤И╨╗╨╛ ╨▓╤А╨╡╨╝╨╡╨╜╨╕ 00:00:03.51

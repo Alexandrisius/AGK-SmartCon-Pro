@@ -26,7 +26,7 @@
 | **1** | Фундамент | 0 | Модели + интерфейсы + базовые сервисы | ✅ Готов |
 | **2** | Базовый коннект | 1 | Клик-клик -> выравнивание -> ConnectTo | ✅ Готов |
 | **3** | Типы коннекторов | 2 | MiniTypeSelector + окно маппинга + JSON | ✅ Готов |
-| **4** | Подбор параметров | 2 | Автоподбор размера / типоразмера | Не начат |
+| **4** | Подбор параметров | 2 | Автоподбор размера / типоразмера | ✅ Готов |
 | **5** | Система фитингов | 3, 4 | Автовставка фитинга по маппингу | Не начат |
 | **6** | FormulaSolver | 1 | Полноценный парсер формул Revit | Не начат |
 | **7** | Цепочки (Chain) | 2 | Перемещение всей сети как жёсткого тела | Не начат |
@@ -117,12 +117,20 @@
 
 **Цель:** Автоподбор размера при несовпадении диаметров.
 
+- MiniFormulaSolver (парсер формул: Evaluate, SolveFor, ParseSizeLookup, ExtractVariables)
+- FamilyParameterAnalyzer (анализ цепочки зависимостей через EditFamily)
 - RevitParameterResolver (GetConnectorRadiusDependencies, TrySetConnectorRadius)
 - RevitLookupTableService (парсинг size_lookup, поиск радиуса)
-- Логика S4 (алгоритм из `pipeconnect/algorithms.md`)
-- SubTransaction для превью
+- Логика S4 в PipeConnectCommand (BuildResolutionPlan, ApplyParameterResolution)
+- SubTransaction для превью (подбор ChangeTypeId без commit)
+- PipeConnectionSession: NeedsAdapter, OriginalDynamicRadius, ActualDynamicRadius
+- ParameterDependency: DirectParamName, RootParamName
 
 **Приёмка:** Разные диаметры -> автоподбор. LookupTable парсится. Смена типоразмера работает.
+
+**Статус:** ✅ Готов (2026-04-XX). Сборка 0 ошибок, 201 тест pass (208 всего, 7 pre-existing RevitAPI не в output).
+Компоненты: MiniFormulaSolver (30+ тестов), FamilyParameterAnalyzer, RevitParameterResolver, RevitLookupTableService, интеграция S4 в PipeConnectCommand.
+Тесты: MiniFormulaSolverTests (30+), ParameterResolutionFlowTests (18+).
 
 ---
 

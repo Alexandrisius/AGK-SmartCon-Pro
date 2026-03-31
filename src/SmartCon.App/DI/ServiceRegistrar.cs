@@ -7,6 +7,7 @@ using SmartCon.Core.Services.Implementation;
 using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
+using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
 using SmartCon.Revit.Transform;
 using SmartCon.Revit.Transactions;
@@ -42,6 +43,10 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyConnectorService, RevitFamilyConnectorService>();
         services.AddSingleton<IFittingFamilyRepository, FittingFamilyRepository>();
         services.AddSingleton<IDialogService, PipeConnectDialogService>();
+
+        // --- Parameter Resolution (Phase 4) ---
+        services.AddSingleton<IParameterResolver, RevitParameterResolver>();
+        services.AddSingleton<ILookupTableService, RevitLookupTableService>();
 
         // --- External Events (ADR-008: generic) ---
         var genericHandler = new ActionExternalEventHandler(revitContext);
