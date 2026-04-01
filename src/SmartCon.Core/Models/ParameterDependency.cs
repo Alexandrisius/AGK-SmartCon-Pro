@@ -13,5 +13,6 @@ public sealed record ParameterDependency(
     string? Formula,                 // формула directParam: "diameter / 2"
     bool IsInstance,                 // false = параметр типа (нужен ChangeTypeId)
     string? DirectParamName = null,  // FamilyParameter напрямую связанный с CONNECTOR_RADIUS
-    string? RootParamName   = null   // корневой параметр (фигурирует в size_lookup / формуле)
+    string? RootParamName   = null,  // корневой параметр (фигурирует в size_lookup / формуле)
+    bool IsDiameter         = false  // true = параметр хранит диаметр, а не радиус
 );

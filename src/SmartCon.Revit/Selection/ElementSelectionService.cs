@@ -19,7 +19,9 @@ public sealed class ElementSelectionService : IElementSelectionService
     }
 
     /// <inheritdoc />
-    public (ElementId ElementId, XYZ ClickPoint)? PickElementWithFreeConnector(string statusMessage)
+    public (ElementId ElementId, XYZ ClickPoint)? PickElementWithFreeConnector(
+        string statusMessage,
+        ElementId? excludeElementId = null)
     {
         var uiDoc = _uiContext.GetUIDocument();
 
@@ -27,7 +29,7 @@ public sealed class ElementSelectionService : IElementSelectionService
         {
             var reference = uiDoc.Selection.PickObject(
                 ObjectType.Element,
-                new FreeConnectorFilter(),
+                new FreeConnectorFilter(excludeElementId),
                 statusMessage);
 
             var elementId = reference.ElementId;

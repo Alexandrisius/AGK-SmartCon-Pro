@@ -1,10 +1,10 @@
 using System;
-using System.Diagnostics;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
+using SmartCon.Revit.Logging;
 using RevitFamily = Autodesk.Revit.DB.Family;
 
 namespace SmartCon.Revit.Family;
@@ -55,30 +55,38 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
         RevitFamily? family = instance.Symbol?.Family;
         if (family is null)
         {
-            Debug.WriteLine("[SmartCon] SetFittingConnectorTypeCode: family is null");
+            SmartConLogger.Log("[SmartCon] SetFittingConnectorTypeCode: family is null");
             return false;
         }
 
-        Debug.WriteLine($"[SmartCon] Processing family: {family.Name}");
+        SmartConLogger.Log($"[SmartCon] Processing family: {family.Name}");
 
         // Origin нужного коннектора в глобальных координатах проекта.
         var cm = instance.GetConnectorManager();
         var conn = cm?.FindByIndex(connectorIndex);
         if (conn is null)
         {
-            Debug.WriteLine($"[SmartCon] Connector not found by index: {connectorIndex}");
+            SmartConLogger.Log($"[SmartCon] Connector not found by index: {connectorIndex}");
             return false;
         }
 
         var targetOriginGlobal = conn.CoordinateSystem.Origin;
-        Debug.WriteLine($"[SmartCon] Target connector origin (global): {targetOriginGlobal}");
+        var transform          = instance.GetTransform();
 
-        // Трансформ: локальное пространство семейства → глобальное пространство проекта.
-        var transform = instance.GetTransform();
+        SmartConLogger.Log($"[SmartCon] conn.CoordinateSystem.Origin (world) = ({targetOriginGlobal.X:F6}, {targetOriginGlobal.Y:F6}, {targetOriginGlobal.Z:F6})");
+        SmartConLogger.Log($"[SmartCon] GetTransform: Origin=({transform.Origin.X:F6},{transform.Origin.Y:F6},{transform.Origin.Z:F6})");
+        SmartConLogger.Log($"[SmartCon] GetTransform: BasisX=({transform.BasisX.X:F4},{transform.BasisX.Y:F4},{transform.BasisX.Z:F4})");
+        SmartConLogger.Log($"[SmartCon] GetTransform: BasisY=({transform.BasisY.X:F4},{transform.BasisY.Y:F4},{transform.BasisY.Z:F4})");
+        SmartConLogger.Log($"[SmartCon] GetTransform: BasisZ=({transform.BasisZ.X:F4},{transform.BasisZ.Y:F4},{transform.BasisZ.Z:F4})");
+        SmartConLogger.Log($"[SmartCon] GetTransform: Scale={transform.Scale:F6}, IsIdentity={transform.IsIdentity}");
+
+        // Также логируем цель в локальных координатах семейства для кросс-проверки.
+        var targetOriginLocal = transform.Inverse.OfPoint(targetOriginGlobal);
+        SmartConLogger.Log($"[SmartCon] targetOriginLocal (family space) = ({targetOriginLocal.X:F6}, {targetOriginLocal.Y:F6}, {targetOriginLocal.Z:F6})");
 
         // EditFamily — doc.IsModifiable уже проверен выше.
         var familyDoc = doc.EditFamily(family);
-        Debug.WriteLine($"[SmartCon] EditFamily opened: {familyDoc.Title}");
+        SmartConLogger.Log($"[SmartCon] EditFamily opened: {familyDoc.Title}");
         try
         {
             // OfCategory(OST_ConnectorElem) — правильный способ получить все ConnectorElement в семействе.
@@ -88,118 +96,271 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
                 .Cast<ConnectorElement>()
                 .ToList();
 
-            Debug.WriteLine($"[SmartCon] Found {connElems.Count} ConnectorElement(s) in family");
+            SmartConLogger.Log($"[SmartCon] Found {connElems.Count} ConnectorElement(s) in family");
 
-            // Находим ConnectorElement с ближайшим к targetOriginGlobal origin:
-            // переводим каждый локальный origin в глобальные координаты через transform.OfPoint().
+            // Поиск ConnectorElement по направлению в локальных координатах семейства.
+            // Для параметрических фитингов (отводы, краны) размер изменяется,
+            // поэтому ce.Origin масштабируется, но НАПРАВЛЕНИЕ сохраняется.
+            // Алгоритм: dot product нормированных векторов targetOriginLocal и ce.Origin.
+            // Score=2.0  → точное совпадение позиции (distLocal<0.001 ft)
+            // Score≈1.0  → одинаковое направление (параметрическая семья другого размера)
+            // Score<0.99 → нет совпадения
+            var targetLen = targetOriginLocal.GetLength();
+            var targetDir = targetLen > 1e-6 ? targetOriginLocal.Divide(targetLen) : null;
+
             ConnectorElement? target = null;
-            double minDist = double.MaxValue;
-
+            double bestScore = -2.0;
             foreach (var ce in connElems)
             {
-                var localOrigin = ce.Origin;
-                var globalOrigin = transform.OfPoint(localOrigin);
-                var dist = globalOrigin.DistanceTo(targetOriginGlobal);
-
-                Debug.WriteLine($"[SmartCon]   ConnectorElement Id={ce.Id.Value}, localOrigin={localOrigin}, globalOrigin={globalOrigin}, dist={dist}");
-
-                if (dist < minDist)
+                var distLocal = ce.Origin.DistanceTo(targetOriginLocal);
+                double score;
+                if (distLocal < 0.001) // точное совпадение (~0.3 мм)
                 {
-                    minDist = dist;
-                    target = ce;
+                    score = 2.0;
                 }
+                else if (targetDir is not null && ce.Origin.GetLength() > 1e-6)
+                {
+                    score = ce.Origin.Normalize().DotProduct(targetDir);
+                }
+                else
+                {
+                    score = -distLocal; // fallback: ближайшая по расстоянию
+                }
+                SmartConLogger.Log($"[SmartCon]   CE Id={ce.Id.Value}: origin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}) distLocal={distLocal:F4} score={score:F4}");
+                if (score > bestScore) { bestScore = score; target = ce; }
             }
 
-            Debug.WriteLine($"[SmartCon] Closest connector: Id={target?.Id.Value}, minDist={minDist}");
+            SmartConLogger.Log($"[SmartCon] Best match: Id={target?.Id.Value}, bestScore={bestScore:F4}");
 
-            // Допуск 0.1 фут (~30 мм) — исключает ложные совпадения.
-            if (target is null || minDist > 0.1)
+            // Валидно если: точное совпадение (score=2.0) или направление совпадает (score≥0.99).
+            if (target is null || bestScore < 0.99)
             {
-                Debug.WriteLine($"[SmartCon] Target not found or distance too large (>0.1 ft)");
+                SmartConLogger.Log($"[SmartCon] No valid match (bestScore={bestScore:F4} < 0.99)");
                 return false;
             }
 
             // Логируем все параметры ConnectorElement для диагностики
-            Debug.WriteLine($"[SmartCon] All parameters on target ConnectorElement (Id={target.Id.Value}):");
+            SmartConLogger.Log($"[SmartCon] All parameters on target ConnectorElement (Id={target.Id.Value}):");
             foreach (Parameter p in target.Parameters)
             {
-                var name = p.Definition?.Name ?? "N/A";
+                var name     = p.Definition?.Name ?? "N/A";
                 var isShared = p.IsShared ? "Shared" : "Built-in";
-                Debug.WriteLine($"[SmartCon]   Param: {name}, Type={isShared}, ReadOnly={p.IsReadOnly}, Value={p.AsValueString()}");
+                SmartConLogger.Log($"[SmartCon]   Param: {name}, Type={isShared}, ReadOnly={p.IsReadOnly}, Value={p.AsValueString()}");
             }
 
             // Транзакция на family doc (отдельный документ — new Transaction допустим, I-03 не нарушается).
             using var familyTx = new Transaction(familyDoc, "SetConnectorDescription");
             familyTx.Start();
 
-            // Пробуем ALL_MODEL_DESCRIPTION (системный «Описание»),
-            // затем LookupParameter("Description") как запасной вариант.
-            var descParam = target.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION)
-                         ?? target.LookupParameter("Description");
-
-            Debug.WriteLine($"[SmartCon] descParam from ALL_MODEL_DESCRIPTION or LookupParameter('Description'): {descParam?.Definition?.Name ?? "NULL"}");
-
-            // Дополнительно пробуем LookupParameter с русским именем
-            if (descParam is null)
-            {
-                descParam = target.LookupParameter("Описание");
-                Debug.WriteLine($"[SmartCon] Trying LookupParameter('Описание'): {descParam?.Definition?.Name ?? "NULL"}");
-            }
-
-            // Пробуем любой параметр с "Description" в имени
-            if (descParam is null)
-            {
-                foreach (Parameter p in target.Parameters)
-                {
-                    var name = p.Definition?.Name ?? "";
-                    if (name.Contains("escription", StringComparison.OrdinalIgnoreCase) ||
-                        name.Contains("Описание")) // "Описание"
-                    {
-                        Debug.WriteLine($"[SmartCon] Found candidate parameter: {name}");
-                        descParam = p;
-                        break;
-                    }
-                }
-            }
-
-            if (descParam is null)
-            {
-                Debug.WriteLine("[SmartCon] ERROR: descParam is null - no Description parameter found!");
-                familyTx.RollBack();
-                return false;
-            }
-
-            if (descParam.IsReadOnly)
-            {
-                Debug.WriteLine($"[SmartCon] ERROR: descParam '{descParam.Definition?.Name}' is ReadOnly!");
-                familyTx.RollBack();
-                return false;
-            }
+            // RBS_CONNECTOR_DESCRIPTION — единственный locale-независимый BIP для параметра
+            // "Описание соединителя" / "Connector Description" на ConnectorElement.
+            var descParam = target.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
+            SmartConLogger.Log($"[SmartCon] descParam found: '{descParam?.Definition?.Name ?? "NULL"}', IsReadOnly={descParam?.IsReadOnly}");
 
             // Формат: "КОД.НАЗВАНИЕ.ОПИСАНИЕ" — читается через ConnectionTypeCode.Parse
             var value = $"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}";
-            Debug.WriteLine($"[SmartCon] Setting parameter '{descParam.Definition?.Name}' to value: {value}");
-            descParam.Set(value);
-            familyTx.Commit();
-            Debug.WriteLine("[SmartCon] familyTx committed successfully");
+
+            bool success;
+            if (descParam is not null && !descParam.IsReadOnly)
+            {
+                // Path 1: прямая запись (параметр доступен).
+                SmartConLogger.Log($"[SmartCon] Path1: param='{descParam.Definition?.Name}', StorageType={descParam.StorageType}, valueBefore='{descParam.AsString()}'");
+                bool setOk = descParam.Set(value);
+                SmartConLogger.Log($"[SmartCon] Path1: Set()={setOk}, valueAfter='{descParam.AsString()}'");
+                success = setOk;
+            }
+            else if (descParam is not null && descParam.IsReadOnly)
+            {
+                // Path 2: параметр ReadOnly из-за driving FamilyParameter.
+                SmartConLogger.Log($"[SmartCon] Path2: '{descParam.Definition?.Name}' ReadOnly → trying FamilyManager");
+                success = TrySetDrivingFamilyParameter(familyDoc.FamilyManager, target, descParam, value);
+                if (!success)
+                {
+                    SmartConLogger.Log("[SmartCon] Path2 failed → trying SystemClassification = Global (Path3)");
+                    success = TrySetViaSystemClassificationChange(familyDoc, target, value);
+                }
+            }
+            else
+            {
+                // Path 3: descParam is null — параметр скрыт при SystemClassification = Fitting.
+                // TrySetViaSystemClassificationChange переключит на Global, сделает Regenerate,
+                // и параметр появится.
+                SmartConLogger.Log("[SmartCon] Path3: descParam NULL (likely Fitting hides it) → switching to Global");
+                success = TrySetViaSystemClassificationChange(familyDoc, target, value);
+            }
+
+            if (!success)
+            {
+                familyTx.RollBack();
+                return false;
+            }
+
+            var txStatus = familyTx.Commit();
+            SmartConLogger.Log($"[SmartCon] familyTx.Commit() status = {txStatus}");
+
+            if (txStatus != Autodesk.Revit.DB.TransactionStatus.Committed)
+            {
+                SmartConLogger.Log($"[SmartCon] FATAL: transaction not committed, status={txStatus}, returning false");
+                return false;
+            }
 
             // Явно освобождаем familyTx чтобы familyDoc.IsModifiable стал false
             familyTx.Dispose();
-            Debug.WriteLine($"[SmartCon] familyTx disposed, familyDoc.IsModifiable = {familyDoc.IsModifiable}");
+            SmartConLogger.Log($"[SmartCon] familyTx disposed, familyDoc.IsModifiable = {familyDoc.IsModifiable}");
+
+            if (familyDoc.IsModifiable)
+            {
+                SmartConLogger.Log("[SmartCon] WARNING: familyDoc.IsModifiable is still true after Dispose! LoadFamily may reload unchanged family.");
+            }
 
             // Загружаем изменённое семейство обратно в проект.
             // LoadFamily требует familyDoc.IsModifiable = false (транзакция закрыта).
-            Debug.WriteLine("[SmartCon] Starting LoadFamily...");
+            SmartConLogger.Log("[SmartCon] Starting LoadFamily...");
             var loadedFamily = familyDoc.LoadFamily(doc, new FamilyLoadOptions());
-            Debug.WriteLine($"[SmartCon] LoadFamily completed, loaded: {loadedFamily?.Name}");
+            SmartConLogger.Log($"[SmartCon] LoadFamily result: {(loadedFamily is null ? "NULL (existing family kept)" : $"loaded '{loadedFamily.Name}'")}");
 
             return true;
         }
         finally
         {
-            // Закрываем familyDoc во всех случаях: успех, ранний return false, исключение.
             familyDoc.Close(false);
-            Debug.WriteLine("[SmartCon] familyDoc closed");
+            SmartConLogger.Log("[SmartCon] familyDoc closed");
+        }
+    }
+
+    /// <summary>
+    /// Находит FamilyParameter, управляющий connParam на connElem (через AssociatedParameters),
+    /// и устанавливает его значение через FamilyManager.Set для всех типоразмеров.
+    /// Вызывать внутри открытой транзакции на familyDoc.
+    /// </summary>
+    private static bool TrySetDrivingFamilyParameter(
+        FamilyManager fm, ConnectorElement connElem, Parameter connParam, string value)
+    {
+        FamilyParameter? drivingFp = null;
+
+        foreach (FamilyParameter fp in fm.Parameters)
+        {
+            try
+            {
+                foreach (Parameter assoc in fp.AssociatedParameters)
+                {
+                    if (assoc.Id == connParam.Id && assoc.Element?.Id == connElem.Id)
+                    {
+                        drivingFp = fp;
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Log($"[SmartCon] AssociatedParameters error for '{fp.Definition?.Name}': {ex.Message}");
+            }
+            if (drivingFp is not null) break;
+        }
+
+        if (drivingFp is null)
+        {
+            SmartConLogger.Log("[SmartCon] TrySetDrivingFamilyParameter: no driving FamilyParameter found");
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(drivingFp.Formula))
+        {
+            SmartConLogger.Log($"[SmartCon] TrySetDrivingFamilyParameter: '{drivingFp.Definition?.Name}' has formula '{drivingFp.Formula}' — cannot set");
+            return false;
+        }
+
+        try
+        {
+            if (!drivingFp.IsInstance)
+            {
+                foreach (FamilyType ft in fm.Types)
+                {
+                    fm.CurrentType = ft;
+                    fm.Set(drivingFp, value);
+                }
+            }
+            else
+            {
+                fm.Set(drivingFp, value);
+            }
+            SmartConLogger.Log($"[SmartCon] TrySetDrivingFamilyParameter: set '{drivingFp.Definition?.Name}' = '{value}' (isInstance={drivingFp.IsInstance})");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Log($"[SmartCon] TrySetDrivingFamilyParameter failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Path 3: если Описание соединителя ReadOnly из-за SystemClassification = Fitting,
+    /// временно меняет SystemClassification на Global (разблокирует параметр),
+    /// записывает value, восстанавливает исходный SystemClassification.
+    /// Вызывать внутри открытой транзакции на familyDoc.
+    /// </summary>
+    private static bool TrySetViaSystemClassificationChange(Document familyDoc, ConnectorElement target, string value)
+    {
+        // Ищем параметр системной классификации по имени (локаль-независимо).
+        Parameter? sysParam = null;
+        foreach (Parameter p in target.Parameters)
+        {
+            var name = p.Definition?.Name ?? "";
+            if (string.Equals(name, "System Classification", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "Классификация систем",  StringComparison.OrdinalIgnoreCase))
+            {
+                sysParam = p;
+                break;
+            }
+        }
+
+        if (sysParam is null)
+        {
+            SmartConLogger.Log("[SmartCon] TrySetViaSystemClassificationChange: 'System Classification' param not found");
+            return false;
+        }
+
+        if (sysParam.IsReadOnly)
+        {
+            SmartConLogger.Log("[SmartCon] TrySetViaSystemClassificationChange: SystemClassification is ReadOnly, cannot change");
+            return false;
+        }
+
+        int originalSysClass = sysParam.AsInteger();
+        int globalValue      = (int)PipeSystemType.Global;
+        SmartConLogger.Log($"[SmartCon] TrySetViaSystemClassificationChange: sysClass {originalSysClass} → {globalValue} (Global)");
+
+        try
+        {
+            sysParam.Set(globalValue);
+
+            // Regenerate нужен чтобы Revit снял ReadOnly с параметра описания после смены классификации.
+            familyDoc.Regenerate();
+
+            // После смены на Global — переищем параметр описания (IsReadOnly мог измениться).
+            var descParam = target.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
+
+            SmartConLogger.Log($"[SmartCon] TrySetViaSystemClassificationChange: descParam after Global='{descParam?.Definition?.Name ?? "NULL"}', IsReadOnly={descParam?.IsReadOnly}");
+
+            if (descParam is null || descParam.IsReadOnly)
+            {
+                SmartConLogger.Log("[SmartCon] TrySetViaSystemClassificationChange: Description still NULL/ReadOnly after Global switch");
+                sysParam.Set(originalSysClass);
+                return false;
+            }
+
+            bool setOk = descParam.Set(value);
+            SmartConLogger.Log($"[SmartCon] TrySetViaSystemClassificationChange: Set()={setOk}, valueAfter='{descParam.AsString()}'");
+            sysParam.Set(originalSysClass);
+            SmartConLogger.Log($"[SmartCon] TrySetViaSystemClassificationChange: SystemClassification restored to {originalSysClass}");
+            return setOk;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Log($"[SmartCon] TrySetViaSystemClassificationChange failed: {ex.Message}");
+            try { sysParam.Set(originalSysClass); } catch { }
+            return false;
         }
     }
 

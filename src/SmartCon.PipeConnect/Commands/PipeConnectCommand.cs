@@ -61,7 +61,7 @@ public sealed class PipeConnectCommand : IExternalCommand
             }
 
             // ── S1.1: тип коннектора Dynamic ───────────────────────────────────────
-            if (!dynamicProxy.ConnectionTypeCode.IsDefined)
+            if (!IsKnownTypeCode(dynamicProxy.ConnectionTypeCode, mappingRepo))
             {
                 var result = EnsureTypeCode(doc, dynamicProxy, mappingRepo, familyConnSvc, txService, dialogSvc);
                 if (result is null) return Result.Cancelled;
@@ -71,7 +71,8 @@ public sealed class PipeConnectCommand : IExternalCommand
 
             // ── S2: выбор Static-элемента (неподвижный ориентир) ──────────────────
             var staticPick = selectionSvc.PickElementWithFreeConnector(
-                "PipeConnect: выберите ВТОРОЙ элемент (неподвижный ориентир)");
+                "PipeConnect: выберите ВТОРОЙ элемент (неподвижный ориентир)",
+                excludeElementId: dynamicPick.Value.ElementId);
             if (staticPick is null) return Result.Cancelled;
 
             var staticProxy = connectorSvc.GetNearestFreeConnector(
@@ -83,7 +84,7 @@ public sealed class PipeConnectCommand : IExternalCommand
             }
 
             // ── S2.1: тип коннектора Static ────────────────────────────────────────
-            if (!staticProxy.ConnectionTypeCode.IsDefined)
+            if (!IsKnownTypeCode(staticProxy.ConnectionTypeCode, mappingRepo))
             {
                 var result = EnsureTypeCode(doc, staticProxy, mappingRepo, familyConnSvc, txService, dialogSvc);
                 if (result is null) return Result.Cancelled;
@@ -111,6 +112,8 @@ public sealed class PipeConnectCommand : IExternalCommand
                 {
                     ApplyAlignment(alignDoc, dynamicProxy, alignResult,
                         connectorSvc, transformSvc, staticProxy.OriginVec3);
+                    // Регенерация внутри транзакции: обновляем позиции коннекторов
+                    alignDoc.Regenerate();
                 });
 
                 // Transaction 2: подбор параметра (SetParam) — Phase 4
@@ -129,6 +132,8 @@ public sealed class PipeConnectCommand : IExternalCommand
                             // Флаг для Phase 5 (FittingMapper): понадобится переходник
                             // В Phase 4 просто продолжаем, не отменяем (D4)
                         }
+                        // Регенерация внутри транзакции: обновляем геометрию коннекторов
+                        paramDoc.Regenerate();
                     });
                 }
 
@@ -165,6 +170,17 @@ public sealed class PipeConnectCommand : IExternalCommand
             message = ex.Message;
             return Result.Failed;
         }
+    }
+
+    /// <summary>
+    /// Возвращает true, если код определён (не 0) И существует в таблице маппинга.
+    /// False — нужно показать MiniTypeSelector (пустой или "чужой" код).
+    /// </summary>
+    private static bool IsKnownTypeCode(ConnectionTypeCode code, IFittingMappingRepository mappingRepo)
+    {
+        if (!code.IsDefined) return false;
+        var types = mappingRepo.GetConnectorTypes();
+        return types.Any(t => t.Code == code.Value);
     }
 
     /// <summary>

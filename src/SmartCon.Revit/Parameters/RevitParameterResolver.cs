@@ -53,55 +53,114 @@ public sealed class RevitParameterResolver : IParameterResolver
             return [dep];
         }
 
-        // FamilyInstance → EditFamily (только вовне транзакции)
+        // FamilyInstance → GetMEPConnectorInfo (надёжный прямой API, без EditFamily)
         if (element is not FamilyInstance instance) return [];
 
-        if (doc.IsModifiable)
-        {
-            Debug.WriteLine("[SmartCon][Resolver] GetConnectorRadiusDependencies вызван внутри транзакции для FamilyInstance — запрещено (EditFamily)");
-            return [];
-        }
-
-        var family = instance.Symbol?.Family;
-        if (family is null) return [];
-
-        // Получить origin коннектора для поиска в family doc
         var cm        = instance.MEPModel?.ConnectorManager;
         var connector = cm?.FindByIndex(connectorIndex);
         if (connector is null) return [];
 
-        var targetOriginGlobal = connector.CoordinateSystem.Origin;
-        var instanceTransform  = instance.GetTransform();
+        var mepInfo = connector.GetMEPConnectorInfo() as MEPFamilyConnectorInfo;
+        if (mepInfo is null) return [];
 
-        Document? familyDoc = null;
-        try
+        // Определяем, к какому FamilyParameter привязан CONNECTOR_RADIUS / CONNECTOR_DIAMETER
+        var radiusParamId = mepInfo.GetAssociateFamilyParameterId(new ElementId(BuiltInParameter.CONNECTOR_RADIUS));
+        var diamParamId   = mepInfo.GetAssociateFamilyParameterId(new ElementId(BuiltInParameter.CONNECTOR_DIAMETER));
+
+        bool useRadius   = radiusParamId.Value > 0;
+        bool useDiameter = !useRadius && diamParamId.Value > 0;
+
+        if (!useRadius && !useDiameter)
         {
-            familyDoc = doc.EditFamily(family);
-            var (directName, rootName, formula, isInstance) =
-                FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                    familyDoc, instanceTransform, targetOriginGlobal);
+            Debug.WriteLine("[SmartCon][Resolver] GetMEPConnectorInfo: нет привязанного параметра к CONNECTOR_RADIUS/DIAMETER");
+            return [];
+        }
 
-            if (directName is null) return [];
+        var activeParamId = useRadius ? radiusParamId : diamParamId;
+        bool isDiameter   = useDiameter;
 
+        // Получаем имя параметра через элемент в doc (ParameterElement)
+        var familyParamElem = doc.GetElement(activeParamId);
+        var paramName = familyParamElem?.Name;
+        if (string.IsNullOrEmpty(paramName))
+        {
+            Debug.WriteLine("[SmartCon][Resolver] GetMEPConnectorInfo: не удалось получить имя параметра");
+            return [];
+        }
+
+        Debug.WriteLine($"[SmartCon][Resolver] GetMEPConnectorInfo: paramName={paramName}, isDiameter={isDiameter}");
+
+        // Проверяем: параметр экземпляра или типа?
+        var instParam = element.LookupParameter(paramName);
+        bool isInstance = instParam is not null;
+        bool isReadOnly = instParam?.IsReadOnly ?? false;
+
+        // Параметр экземпляра, записываемый → прямая запись
+        if (isInstance && !isReadOnly)
+        {
             var dep = new ParameterDependency(
                 BuiltIn: null,
                 SharedParamName: null,
-                Formula: formula,
-                IsInstance: isInstance,
-                DirectParamName: directName,
-                RootParamName: rootName);
-
+                Formula: null,
+                IsInstance: true,
+                DirectParamName: paramName,
+                RootParamName: null,
+                IsDiameter: isDiameter);
             Cache(elementId, connectorIndex, dep);
             return [dep];
         }
-        catch (Exception ex)
+
+        // Параметр экземпляра ReadOnly → есть формула → пытаемся EditFamily для её анализа
+        if (isInstance && isReadOnly && !doc.IsModifiable)
         {
-            Debug.WriteLine($"[SmartCon][Resolver] EditFamily failed: {ex.Message}");
-            return [];
+            var family = instance.Symbol?.Family;
+            if (family is not null)
+            {
+                Document? familyDoc = null;
+                try
+                {
+                    familyDoc = doc.EditFamily(family);
+                    var (directName, rootName, formula, _) =
+                        FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
+                            familyDoc, instance.GetTransform(), connector.CoordinateSystem.Origin);
+
+                    if (directName is not null && formula is not null && rootName is not null)
+                    {
+                        var dep = new ParameterDependency(
+                            BuiltIn: null,
+                            SharedParamName: null,
+                            Formula: formula,
+                            IsInstance: true,
+                            DirectParamName: directName,
+                            RootParamName: rootName,
+                            IsDiameter: isDiameter);
+                        Cache(elementId, connectorIndex, dep);
+                        return [dep];
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[SmartCon][Resolver] EditFamily (formula fallback) failed: {ex.Message}");
+                }
+                finally
+                {
+                    familyDoc?.Close(false);
+                }
+            }
         }
-        finally
+
+        // Параметр типа (не на экземпляре) ИЛИ формула не разрешена → ChangeTypeId
         {
-            familyDoc?.Close(false);
+            var dep = new ParameterDependency(
+                BuiltIn: null,
+                SharedParamName: null,
+                Formula: null,
+                IsInstance: false,
+                DirectParamName: paramName,
+                RootParamName: null,
+                IsDiameter: isDiameter);
+            Cache(elementId, connectorIndex, dep);
+            return [dep];
         }
     }
 
@@ -127,13 +186,18 @@ public sealed class RevitParameterResolver : IParameterResolver
 
         if (dep is not null)
         {
+            // Если параметр хранит диаметр — цель = radius * 2
+            double targetValue = dep.IsDiameter
+                ? targetRadiusInternalUnits * 2.0
+                : targetRadiusInternalUnits;
+
             // Параметр экземпляра без формулы → прямая запись
             if (dep.IsInstance && dep.Formula is null && dep.DirectParamName is not null)
             {
                 var param = element.LookupParameter(dep.DirectParamName);
                 if (param is not null && !param.IsReadOnly)
                 {
-                    param.Set(targetRadiusInternalUnits);
+                    param.Set(targetValue);
                     return true;
                 }
             }
@@ -142,7 +206,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             if (dep.IsInstance && dep.Formula is not null && dep.RootParamName is not null)
             {
                 var value = MiniFormulaSolver.SolveFor(
-                    dep.Formula, dep.RootParamName, targetRadiusInternalUnits);
+                    dep.Formula, dep.RootParamName, targetValue);
                 if (value is not null)
                 {
                     var param = element.LookupParameter(dep.RootParamName);

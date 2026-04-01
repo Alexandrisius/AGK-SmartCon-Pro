@@ -32,8 +32,8 @@ public static class ConnectorExtensions
     }
 
     /// <summary>
-    /// Получить все свободные (не подключённые) коннекторы элемента.
-    /// Исключает ConnectorType.Curve (I-08).
+    /// Получить все свободные (не подключённые) трубопроводные коннекторы элемента.
+    /// Исключает ConnectorType.Curve (I-08). Фильтрует по Domain.DomainPiping.
     /// </summary>
     public static IReadOnlyList<Connector> GetFreeConnectors(this ConnectorManager connectorManager)
     {
@@ -44,6 +44,9 @@ public static class ConnectorExtensions
         foreach (Connector connector in connectorManager.Connectors)
         {
             if (connector.ConnectorType == ConnectorType.Curve)
+                continue;
+
+            if (connector.Domain != Domain.DomainPiping)
                 continue;
 
             if (!connector.IsConnected)
@@ -82,8 +85,8 @@ public static class ConnectorExtensions
     }
 
     /// <summary>
-    /// Найти ближайший свободный коннектор к заданной точке.
-    /// Исключает ConnectorType.Curve (I-08).
+    /// Найти ближайший свободный трубопроводный коннектор к заданной точке.
+    /// Исключает ConnectorType.Curve (I-08). Фильтрует по Domain.DomainPiping.
     /// Возвращает null если нет свободных коннекторов.
     /// </summary>
     public static Connector? FindNearestFreeConnector(
@@ -98,6 +101,9 @@ public static class ConnectorExtensions
         foreach (Connector connector in connectorManager.Connectors)
         {
             if (connector.ConnectorType == ConnectorType.Curve)
+                continue;
+
+            if (connector.Domain != Domain.DomainPiping)
                 continue;
 
             if (connector.IsConnected)
