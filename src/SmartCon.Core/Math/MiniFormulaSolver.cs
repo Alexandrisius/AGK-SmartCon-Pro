@@ -21,9 +21,10 @@ internal static class MiniFormulaSolver
     internal static double Evaluate(string formula,
         IReadOnlyDictionary<string, double> variables)
     {
-        var tokens = Tokenize(formula);
-        // Нормализуем словарь до OrdinalIgnoreCase чтобы "Diameter" и "diameter" совпадали
-        var ci = new Dictionary<string, double>(variables, System.StringComparer.OrdinalIgnoreCase);
+        // Нормализуем имена с пробелами до токенизации
+        var (normFormula, normVars) = NormalizeForEvaluate(formula, variables);
+        var tokens = Tokenize(normFormula);
+        var ci = new Dictionary<string, double>(normVars, System.StringComparer.OrdinalIgnoreCase);
         var parser  = new Parser(tokens, ci);
         return parser.ParseExpr();
     }
@@ -42,20 +43,23 @@ internal static class MiniFormulaSolver
     {
         var others = otherValues ?? new Dictionary<string, double>();
 
+        // Нормализуем имена с пробелами до токенизации
+        var (normFormula, normVarName, normOthers) = NormalizeForSolveFor(formula, variableName, others);
+
         // Быстрая проверка: переменная присутствует в токенах
-        var vars = ExtractVariables(formula);
-        if (!vars.Any(v => string.Equals(v, variableName, System.StringComparison.OrdinalIgnoreCase)))
+        var vars = ExtractVariables(normFormula);
+        if (!vars.Any(v => string.Equals(v, normVarName, System.StringComparison.OrdinalIgnoreCase)))
             return null;
 
         try
         {
-            var dict0 = BuildVars(others, variableName, 0.0);
-            var dict1 = BuildVars(others, variableName, 1.0);
-            var dict2 = BuildVars(others, variableName, 2.0);
+            var dict0 = BuildVars(normOthers, normVarName, 0.0);
+            var dict1 = BuildVars(normOthers, normVarName, 1.0);
+            var dict2 = BuildVars(normOthers, normVarName, 2.0);
 
-            double f0 = Evaluate(formula, dict0);
-            double f1 = Evaluate(formula, dict1);
-            double f2 = Evaluate(formula, dict2);
+            double f0 = Evaluate(normFormula, dict0);
+            double f1 = Evaluate(normFormula, dict1);
+            double f2 = Evaluate(normFormula, dict2);
 
             double a = f1 - f0;
             double b = f0;
@@ -74,6 +78,79 @@ internal static class MiniFormulaSolver
         {
             return null;
         }
+    }
+
+    // ── Нормализация имён с пробелами ──────────────────────────────────────
+
+    /// <summary>
+    /// Заменяет имена переменных с пробелами на псевдонимы __p0__, __p1__
+    /// чтобы токенизатор не разбивал их на отдельные токены.
+    /// Длинные имена заменяются первыми, чтобы избежать частичных совпадений.
+    /// </summary>
+    private static (string normFormula, Dictionary<string, double> normVars)
+        NormalizeForEvaluate(string formula, IReadOnlyDictionary<string, double> variables)
+    {
+        var spaced = variables.Keys
+            .Where(k => k.Contains(' '))
+            .OrderByDescending(k => k.Length)
+            .ToList();
+
+        if (spaced.Count == 0)
+            return (formula, new Dictionary<string, double>(variables, System.StringComparer.OrdinalIgnoreCase));
+
+        var normFormula = formula;
+        var aliases     = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+        int idx         = 0;
+        foreach (var name in spaced)
+        {
+            var alias = $"__p{idx++}__";
+            normFormula    = normFormula.Replace(name, alias);
+            aliases[name]  = alias;
+        }
+
+        var normVars = new Dictionary<string, double>(System.StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in variables)
+        {
+            var key = aliases.TryGetValue(kv.Key, out var a) ? a : kv.Key;
+            normVars[key] = kv.Value;
+        }
+        return (normFormula, normVars);
+    }
+
+    /// <summary>
+    /// Нормализует formula, variableName и otherValues: имена с пробелами → псевдонимы.
+    /// </summary>
+    private static (string normFormula, string normVarName, IReadOnlyDictionary<string, double> normOthers)
+        NormalizeForSolveFor(string formula, string variableName, IReadOnlyDictionary<string, double> others)
+    {
+        var spaced = new List<string>();
+        if (variableName.Contains(' ')) spaced.Add(variableName);
+        foreach (var k in others.Keys)
+            if (k.Contains(' ') && !spaced.Any(s => string.Equals(s, k, System.StringComparison.OrdinalIgnoreCase)))
+                spaced.Add(k);
+        spaced = spaced.OrderByDescending(s => s.Length).ToList();
+
+        if (spaced.Count == 0)
+            return (formula, variableName, others);
+
+        var normFormula = formula;
+        var aliases     = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+        int idx         = 0;
+        foreach (var name in spaced)
+        {
+            var alias     = $"__p{idx++}__";
+            normFormula   = normFormula.Replace(name, alias);
+            aliases[name] = alias;
+        }
+
+        string normVarName = aliases.TryGetValue(variableName, out var av) ? av : variableName;
+        var normOthers     = new Dictionary<string, double>(System.StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in others)
+        {
+            var key = aliases.TryGetValue(kv.Key, out var a) ? a : kv.Key;
+            normOthers[key] = kv.Value;
+        }
+        return (normFormula, normVarName, normOthers);
     }
 
     /// <summary>

@@ -152,6 +152,42 @@ public sealed class MiniFormulaSolverTests
         Assert.Equal(5.0, result!.Value, Eps);
     }
 
+    // ── SolveFor: имена с пробелами (ADSK_Диаметр условный) ──────────────
+
+    [Fact]
+    public void SolveFor_SpacedVariableName_DivisionBy2_Returns50()
+    {
+        // 'ADSK_Диаметр условный / 2' — имя с пробелами и кириллицей
+        var result = MiniFormulaSolver.SolveFor(
+            "ADSK_Диаметр условный / 2", "ADSK_Диаметр условный", 25.0);
+        Assert.NotNull(result);
+        Assert.Equal(50.0, result!.Value, Eps);
+    }
+
+    [Fact]
+    public void SolveFor_SpacedVariableName_ReturnsDoubleTarget()
+    {
+        // Реальный случай: Условный радиус = ADSK_Диаметр условный / 2
+        // SolveFor('ADSK_Диаметр условный / 2', 'ADSK_Диаметр условный', 7.5) → 15
+        var result = MiniFormulaSolver.SolveFor(
+            "ADSK_Диаметр условный / 2", "ADSK_Диаметр условный", 7.5);
+        Assert.NotNull(result);
+        Assert.Equal(15.0, result!.Value, Eps);
+    }
+
+    [Fact]
+    public void Evaluate_SpacedVariableName_Correct()
+    {
+        // Evaluate('ADSK_Диаметр условный / 2', {'ADSK_Диаметр условный': 30}) → 15
+        var result = MiniFormulaSolver.Evaluate(
+            "ADSK_Диаметр условный / 2",
+            new System.Collections.Generic.Dictionary<string, double>
+            {
+                ["ADSK_Диаметр условный"] = 30.0
+            });
+        Assert.Equal(15.0, result, Eps);
+    }
+
     // ── SolveFor: возвращает null ─────────────────────────────────────────
 
     [Fact]

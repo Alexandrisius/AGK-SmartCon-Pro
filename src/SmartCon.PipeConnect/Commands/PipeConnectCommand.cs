@@ -6,6 +6,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Logging;
 
 namespace SmartCon.PipeConnect.Commands;
 
@@ -31,6 +32,8 @@ public sealed class PipeConnectCommand : IExternalCommand
     {
         try
         {
+            SmartConLogger.LogSessionStart("PipeConnectCommand");
+
             var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
             contextWriter.SetContext(commandData.Application);
 
@@ -107,16 +110,8 @@ public sealed class PipeConnectCommand : IExternalCommand
             // ── TransactionGroup: одна запись Undo ─────────────────────────────────
             txService.RunInTransactionGroup("PipeConnect — Соединить", groupDoc =>
             {
-                // Transaction 1: выравнивание (Align)
-                txService.RunInTransaction("Align", alignDoc =>
-                {
-                    ApplyAlignment(alignDoc, dynamicProxy, alignResult,
-                        connectorSvc, transformSvc, staticProxy.OriginVec3);
-                    // Регенерация внутри транзакции: обновляем позиции коннекторов
-                    alignDoc.Regenerate();
-                });
-
-                // Transaction 2: подбор параметра (SetParam) — Phase 4
+                // Transaction 1: подбор параметра (SetParam) — Phase 4 — СНАЧАЛА,
+                // чтобы после смены размера выравнивание выполнялось по актуальной геометрии.
                 if (!plan.Skip)
                 {
                     txService.RunInTransaction("SetParam", paramDoc =>
@@ -132,10 +127,31 @@ public sealed class PipeConnectCommand : IExternalCommand
                             // Флаг для Phase 5 (FittingMapper): понадобится переходник
                             // В Phase 4 просто продолжаем, не отменяем (D4)
                         }
-                        // Регенерация внутри транзакции: обновляем геометрию коннекторов
+                        // Регенерация: обновляем геометрию коннекторов после смены размера
                         paramDoc.Regenerate();
                     });
+
+                    // Пересчитываем выравнивание по НОВОЙ геометрии коннектора после SetParam.
+                    // Если размер изменился — origin коннектора мог сдвинуться,
+                    // поэтому alignResult нужно пересчитать чтобы избежать зазора.
+                    var refreshedDynamic = connectorSvc.RefreshConnector(
+                        groupDoc, dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex);
+                    if (refreshedDynamic is not null)
+                    {
+                        alignResult = ConnectorAligner.ComputeAlignment(
+                            staticProxy.OriginVec3,  staticProxy.BasisZVec3,  staticProxy.BasisXVec3,
+                            refreshedDynamic.OriginVec3, refreshedDynamic.BasisZVec3, refreshedDynamic.BasisXVec3);
+                    }
                 }
+
+                // Transaction 2: выравнивание (Align) — по актуальной геометрии
+                txService.RunInTransaction("Align", alignDoc =>
+                {
+                    ApplyAlignment(alignDoc, dynamicProxy, alignResult,
+                        connectorSvc, transformSvc, staticProxy.OriginVec3);
+                    // Регенерация внутри транзакции: обновляем позиции коннекторов
+                    alignDoc.Regenerate();
+                });
 
                 // Transaction 3: соединение (Connect)
                 txService.RunInTransaction("Connect", connectDoc =>
@@ -144,6 +160,8 @@ public sealed class PipeConnectCommand : IExternalCommand
                         connectDoc,
                         staticProxy.OwnerElementId,  staticProxy.ConnectorIndex,
                         dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex);
+                    // Регенерация: обновляем отображение соединения в UI
+                    connectDoc.Regenerate();
                 });
             });
 
@@ -241,55 +259,93 @@ public sealed class PipeConnectCommand : IExternalCommand
     {
         const double eps = 1e-6; // ~0.3 мкм
 
+        SmartConLogger.LookupSection("BuildResolutionPlan (S4)");
+        SmartConLogger.Lookup($"  dynamic: elementId={dynamicProxy.OwnerElementId.Value}, connIdx={dynamicProxy.ConnectorIndex}, radius={dynamicProxy.Radius:F6} ft ({dynamicProxy.Radius * 304.8:F2} mm)");
+        SmartConLogger.Lookup($"  staticRadius={staticRadius:F6} ft ({staticRadius * 304.8:F2} mm)");
+        SmartConLogger.Lookup($"  delta={System.Math.Abs(staticRadius - dynamicProxy.Radius):F6} ft");
+
         // 1. Радиусы совпадают → пропустить S4
         if (System.Math.Abs(staticRadius - dynamicProxy.Radius) < eps)
+        {
+            SmartConLogger.Lookup("  → Радиусы совпадают (< eps) → Plan(Skip=true)");
+            SmartConLogger.Info($"[S4] Радиусы совпадают, S4 пропущен");
             return new ParameterResolutionPlan(Skip: true, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: false, WarningMessage: null);
+        }
 
         var dynId    = dynamicProxy.OwnerElementId;
         var connIdx  = dynamicProxy.ConnectorIndex;
-        double dynDn = System.Math.Round(staticRadius * 2.0 * 304.8); // мм для сообщений
+        double staticDn = System.Math.Round(staticRadius * 2.0 * 304.8);
+        double dynDn    = System.Math.Round(dynamicProxy.Radius * 2.0 * 304.8);
+        SmartConLogger.Lookup($"  static=DN{staticDn}, dynamic=DN{dynDn} — нужно подбрать");
 
         // 2. MEP Curve (Pipe) → прямая запись, без EditFamily
         var element = doc.GetElement(dynId);
+        SmartConLogger.Lookup($"  element='{element?.Name}' ({element?.GetType().Name})");
+
         if (element is MEPCurve or Autodesk.Revit.DB.Plumbing.FlexPipe)
+        {
+            SmartConLogger.Lookup("  → MEPCurve/FlexPipe: прямая запись RBS_PIPE_DIAMETER_PARAM → Plan(Skip=false, target=staticRadius)");
+            SmartConLogger.Info($"[S4] MEPCurve DN{dynDn} → DN{staticDn}: прямая запись");
             return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: false, WarningMessage: null);
+        }
 
         // 3. Анализ семейства: GetConnectorRadiusDependencies (EditFamily здесь)
+        SmartConLogger.Lookup("  → GetConnectorRadiusDependencies...");
         var deps = paramResolver.GetConnectorRadiusDependencies(doc, dynId, connIdx);
         var dep  = deps.Count > 0 ? deps[0] : null;
+        SmartConLogger.Lookup($"  deps.Count={deps.Count}, dep={( dep is null ? "null" : $"IsInstance={dep.IsInstance}, Formula='{dep.Formula}', DirectParamName='{dep.DirectParamName}', IsDiameter={dep.IsDiameter}")}");
 
         // 4. LookupTable: есть ли точный размер?
+        SmartConLogger.Lookup("  → HasLookupTable...");
         bool hasTable  = lookupSvc.HasLookupTable(doc, dynId, connIdx);
+        SmartConLogger.Lookup($"  hasTable={hasTable}");
 
         if (hasTable)
         {
+            SmartConLogger.Lookup("  → ConnectorRadiusExistsInTable...");
             bool exactMatch = lookupSvc.ConnectorRadiusExistsInTable(doc, dynId, connIdx, staticRadius);
+            SmartConLogger.Lookup($"  exactMatch={exactMatch}");
+
             if (exactMatch)
+            {
+                SmartConLogger.Lookup("  → Точное совпадение в таблице → Plan(Skip=false, target=staticRadius)");
+                SmartConLogger.Info($"[S4] LookupTable: DN{staticDn} найден точно");
                 return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
                     ExpectNeedsAdapter: false, WarningMessage: null);
+            }
 
             // Нет точного → берём ближайший
+            SmartConLogger.Lookup("  → GetNearestAvailableRadius...");
             double nearest   = lookupSvc.GetNearestAvailableRadius(doc, dynId, connIdx, staticRadius);
             double nearestDn = System.Math.Round(nearest * 2.0 * 304.8);
+            SmartConLogger.Lookup($"  nearest={nearest:F6} ft = DN{nearestDn}");
+            SmartConLogger.Warn($"[S4] LookupTable: DN{staticDn} не найден, ближайший=DN{nearestDn} (NeedsAdapter)");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: nearest,
                 ExpectNeedsAdapter: true,
-                WarningMessage: $"Размер DN{dynDn} отсутствует в таблице. Будет выбран DN{nearestDn}, нужен переходник.");
+                WarningMessage: $"Размер DN{staticDn} отсутствует в таблице. Будет выбран DN{nearestDn}, нужен переходник.");
         }
 
         // 5. Нет таблицы и нет dep → полный провал
         if (dep is null)
+        {
+            SmartConLogger.Lookup("  → Нет таблицы И нет dep → Plan(NeedsAdapter=true, warning)");
+            SmartConLogger.Warn($"[S4] Нет таблицы, dep=null — неудача S4 (NeedsAdapter)");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: true,
                 WarningMessage: "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.");
+        }
 
         // 6. Dep найден → TrySetConnectorRadius разберётся с формулой и ChangeTypeId внутри транзакции.
         // Нелинейные формулы (SolveFor=null) или несовместимые типы → NeedsAdapter будет выставлен там.
+        bool expectAdapter = !dep.IsInstance && dep.Formula is null;
+        SmartConLogger.Lookup($"  → Dep найден: IsInstance={dep.IsInstance}, Formula='{dep.Formula}' → Plan(target=staticRadius, ExpectNeedsAdapter={expectAdapter})");
+        SmartConLogger.Info($"[S4] dep найден: IsInstance={dep.IsInstance}, Formula='{dep.Formula}', DirectParamName='{dep.DirectParamName}', IsDiameter={dep.IsDiameter}");
         return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
-            ExpectNeedsAdapter: !dep.IsInstance && dep.Formula is null,
+            ExpectNeedsAdapter: expectAdapter,
             WarningMessage: null);
     }
 
