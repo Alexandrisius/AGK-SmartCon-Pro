@@ -595,7 +595,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     /// <summary>
     /// Подобрать размеры коннекторов вставленного фитинга.
-    /// Двухфазный: GetDeps (вне транзакции) → TrySet (внутри транзакции).
+    ///
+    /// Парный режим (type-параметры, IsInstance=false):
+    ///   — Выбирает типоразмер фитинга через TrySetFittingTypeForPair:
+    ///     приоритет — точное совпадение со static, затем минимальное отклонение по dynamic.
+    ///   — Если достигнутый радиус dynamic-стороны фитинга ≠ исходному dynRadius
+    ///     → подгоняет dynamic-элемент под размер фитинга.
+    ///
+    /// Обычный режим (instance-параметры, IsInstance=true):
+    ///   — Записывает каждый коннектор фитинга независимо.
     /// </summary>
     private void SizeFittingConnectors(Document doc, ElementId fittingId, ConnectorProxy? fitConn2)
     {
@@ -604,24 +612,64 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             var allConns = _connSvc.GetAllFreeConnectors(doc, fittingId).ToList();
             if (allConns.Count == 0) return;
 
-            // Фаза 1: анализ зависимостей (вне транзакции, может использовать EditFamily)
-            foreach (var c in allConns)
-                _paramResolver.GetConnectorRadiusDependencies(doc, fittingId, c.ConnectorIndex);
-
             int conn2Idx = fitConn2?.ConnectorIndex ?? -1;
+            int conn1Idx = allConns.FirstOrDefault(c => c.ConnectorIndex != conn2Idx)?.ConnectorIndex ?? -1;
 
-            // Фаза 2: применить размеры (внутри транзакции)
-            _txService.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
+            // Фаза 1: анализ зависимостей (вне транзакции, может использовать EditFamily)
+            var depsByIdx = new Dictionary<int, IReadOnlyList<ParameterDependency>>();
+            foreach (var c in allConns)
+                depsByIdx[c.ConnectorIndex] = _paramResolver.GetConnectorRadiusDependencies(doc, fittingId, c.ConnectorIndex);
+
+            // Парный режим: оба коннектора управляются type-параметром (IsInstance=false).
+            // Смена ChangeTypeId влияет сразу на оба — перебирать по одному нельзя.
+            bool usePairMode = conn1Idx >= 0 && conn2Idx >= 0
+                && depsByIdx.TryGetValue(conn1Idx, out var d1) && d1.Count > 0 && !d1[0].IsInstance
+                && depsByIdx.TryGetValue(conn2Idx, out var d2) && d2.Count > 0 && !d2[0].IsInstance;
+
+            if (usePairMode)
             {
-                foreach (var c in allConns)
+                double achievedDynRadius = _ctx.DynamicConnector.Radius;
+
+                // Фаза 2: выбрать тип фитинга с приоритетом static-стороны
+                _txService.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
                 {
-                    double targetRadius = c.ConnectorIndex == conn2Idx
-                        ? _ctx.DynamicConnector.Radius
-                        : _ctx.StaticConnector.Radius;
-                    _paramResolver.TrySetConnectorRadius(txDoc, fittingId, c.ConnectorIndex, targetRadius);
+                    var (_, dynR) = _paramResolver.TrySetFittingTypeForPair(
+                        txDoc, fittingId,
+                        conn1Idx, _ctx.StaticConnector.Radius,
+                        conn2Idx, _ctx.DynamicConnector.Radius);
+                    achievedDynRadius = dynR;
+                    txDoc.Regenerate();
+                });
+
+                // Фаза 3: если dynamic-сторона фитинга ≠ исходному dynRadius → подогнать dynamic-элемент
+                const double eps = 1e-6;
+                if (System.Math.Abs(achievedDynRadius - _ctx.DynamicConnector.Radius) > eps)
+                {
+                    var dynId      = _ctx.DynamicConnector.OwnerElementId;
+                    var dynConnIdx = _ctx.DynamicConnector.ConnectorIndex;
+                    _paramResolver.GetConnectorRadiusDependencies(doc, dynId, dynConnIdx);
+                    _txService.RunInTransaction("PipeConnect — Подгонка dynamic под фитинг", txDoc =>
+                    {
+                        _paramResolver.TrySetConnectorRadius(txDoc, dynId, dynConnIdx, achievedDynRadius);
+                        txDoc.Regenerate();
+                    });
                 }
-                txDoc.Regenerate();
-            });
+            }
+            else
+            {
+                // Обычный режим: instance-параметры — каждый коннектор независимо
+                _txService.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
+                {
+                    foreach (var c in allConns)
+                    {
+                        double targetRadius = c.ConnectorIndex == conn2Idx
+                            ? _ctx.DynamicConnector.Radius
+                            : _ctx.StaticConnector.Radius;
+                        _paramResolver.TrySetConnectorRadius(txDoc, fittingId, c.ConnectorIndex, targetRadius);
+                    }
+                    txDoc.Regenerate();
+                });
+            }
         }
         catch
         {

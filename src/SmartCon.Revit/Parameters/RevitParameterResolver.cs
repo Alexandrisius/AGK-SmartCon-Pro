@@ -434,6 +434,132 @@ public sealed class RevitParameterResolver : IParameterResolver
         return false;
     }
 
+    public (bool StaticExact, double AchievedDynRadius) TrySetFittingTypeForPair(
+        Document doc, ElementId fittingId,
+        int staticConnIdx, double staticRadius,
+        int dynConnIdx,    double dynRadius)
+    {
+        SmartConLogger.LookupSection("TrySetFittingTypeForPair");
+        SmartConLogger.Lookup($"  fittingId={fittingId.Value}, staticConn={staticConnIdx} R={staticRadius:F6} ft ({staticRadius * 304.8:F2}mm), dynConn={dynConnIdx} R={dynRadius:F6} ft ({dynRadius * 304.8:F2}mm)");
+
+        var element = doc.GetElement(fittingId) as FamilyInstance;
+        if (element is null)
+        {
+            SmartConLogger.Lookup("  element=null → return (false, dynRadius)");
+            return (false, dynRadius);
+        }
+
+        var family = element.Symbol?.Family;
+        if (family is null)
+        {
+            SmartConLogger.Lookup("  family=null → return (false, dynRadius)");
+            return (false, dynRadius);
+        }
+
+        var symbolIds = family.GetFamilySymbolIds().ToList();
+        SmartConLogger.Lookup($"  Семейство '{family.Name}': {symbolIds.Count} типоразмеров");
+
+        // Лучший кандидат среди типов с точным совпадением static-коннектора
+        ElementId? bestExactId        = null;
+        double     bestExactDynDelta  = double.MaxValue;
+        double     bestExactDynRadius = dynRadius;
+
+        // Лучший кандидат среди всех типов (fallback — минимальное отклонение по static)
+        ElementId? bestFallbackId          = null;
+        double     bestFallbackStaticDelta = double.MaxValue;
+        double     bestFallbackDynRadius   = dynRadius;
+
+        foreach (var symbolId in symbolIds)
+        {
+            using var st = new SubTransaction(doc);
+            try
+            {
+                st.Start();
+
+                var inst = doc.GetElement(fittingId) as FamilyInstance;
+                if (inst is null) { st.RollBack(); continue; }
+
+                var sym = doc.GetElement(symbolId) as FamilySymbol;
+                SmartConLogger.Lookup($"  Пробуем symbolId={symbolId.Value} ('{sym?.Name}')...");
+
+                inst.ChangeTypeId(symbolId);
+                doc.Regenerate();
+
+                var cm         = inst.MEPModel?.ConnectorManager;
+                var staticConn = cm?.FindByIndex(staticConnIdx);
+                var dynConn    = cm?.FindByIndex(dynConnIdx);
+
+                if (staticConn is null || dynConn is null)
+                {
+                    SmartConLogger.Lookup($"    conn=null после смены типа — RollBack");
+                    st.RollBack();
+                    continue;
+                }
+
+                double staticDelta = System.Math.Abs(staticConn.Radius - staticRadius);
+                double dynDelta    = System.Math.Abs(dynConn.Radius    - dynRadius);
+                SmartConLogger.Lookup($"    staticR={staticConn.Radius:F6} (Δ={staticDelta:F6}), dynR={dynConn.Radius:F6} (Δ={dynDelta:F6})");
+
+                if (staticDelta < Epsilon)
+                {
+                    if (dynDelta < bestExactDynDelta)
+                    {
+                        bestExactDynDelta  = dynDelta;
+                        bestExactId        = symbolId;
+                        bestExactDynRadius = dynConn.Radius;
+                        SmartConLogger.Lookup($"    → Новый лучший (static exact): dynΔ={dynDelta:F6}");
+                    }
+                }
+
+                if (staticDelta < bestFallbackStaticDelta)
+                {
+                    bestFallbackStaticDelta = staticDelta;
+                    bestFallbackId          = symbolId;
+                    bestFallbackDynRadius   = dynConn.Radius;
+                    SmartConLogger.Lookup($"    → Новый лучший fallback: staticΔ={staticDelta:F6}");
+                }
+
+                st.RollBack();
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Lookup($"  ИСКЛЮЧЕНИЕ для symbolId={symbolId.Value}: {ex.Message}");
+                SmartConLogger.Warn($"[TrySetFittingTypeForPair] symbolId={symbolId.Value}: {ex.Message}");
+                try { st.RollBack(); } catch { /* ignored */ }
+            }
+        }
+
+        bool       staticExact  = bestExactId is not null;
+        ElementId? winnerId     = bestExactId ?? bestFallbackId;
+        double     achievedDynR = staticExact ? bestExactDynRadius : bestFallbackDynRadius;
+
+        SmartConLogger.Lookup($"  Победитель: staticExact={staticExact}, symbolId={winnerId?.Value}, achievedDynR={achievedDynR:F6} ft ({achievedDynR * 304.8:F2}mm)");
+
+        if (winnerId is not null)
+        {
+            try
+            {
+                var inst = doc.GetElement(fittingId) as FamilyInstance;
+                if (inst is not null)
+                {
+                    inst.ChangeTypeId(winnerId);
+                    SmartConLogger.Lookup($"  → ChangeTypeId({winnerId.Value}) применён");
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Lookup($"  ИСКЛЮЧЕНИЕ при применении победителя: {ex.Message}");
+                SmartConLogger.Warn($"[TrySetFittingTypeForPair] ChangeTypeId winner failed: {ex.Message}");
+            }
+        }
+        else
+        {
+            SmartConLogger.Lookup("  → Ни одного подходящего типоразмера не найдено");
+        }
+
+        return (staticExact, achievedDynR);
+    }
+
     private void Cache(ElementId elementId, int connectorIndex, ParameterDependency dep)
         => _cache[(elementId.Value, connectorIndex)] = dep;
 }

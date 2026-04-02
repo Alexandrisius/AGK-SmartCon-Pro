@@ -353,6 +353,16 @@ public interface IParameterResolver
     /// Вызывать ВНУТРИ транзакции.
     bool TrySetConnectorRadius(
         Document doc, ElementId elementId, int connectorIndex, double targetRadius);
+
+    /// Подбирает типоразмер фитинга-переходника:
+    /// 1. staticConnIdx должен точно совпасть с staticRadius.
+    /// 2. Среди подходящих типов — dynConnIdx максимально близок к dynRadius.
+    /// Возвращает (StaticExact, AchievedDynRadius) — фактический радиус dynConn после смены типа.
+    /// Вызывать ВНУТРИ транзакции.
+    (bool StaticExact, double AchievedDynRadius) TrySetFittingTypeForPair(
+        Document doc, ElementId fittingId,
+        int staticConnIdx, double staticRadius,
+        int dynConnIdx,    double dynRadius);
 }
 ```
 

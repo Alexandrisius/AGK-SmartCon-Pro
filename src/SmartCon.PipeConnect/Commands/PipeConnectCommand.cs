@@ -192,10 +192,6 @@ public sealed class PipeConnectCommand : IExternalCommand
                 fittingInsertSvc, paramResolver, eventHandler);
 
             var view = new PipeConnectEditorView(vm);
-            view.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
-            var workArea = System.Windows.SystemParameters.WorkArea;
-            view.Left = System.Math.Max(workArea.Left + 20, workArea.Right - 540);
-            view.Top  = workArea.Top + 40;
             view.Show();
 
             return Result.Succeeded;
