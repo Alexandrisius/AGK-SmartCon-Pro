@@ -136,9 +136,9 @@ public sealed class PipeConnectCommand : IExternalCommand
                         plan.TargetRadius);
                     txDoc.Regenerate();
                 });
-                // Перечитать коннектор после изменения размера
-                dynamicProxy = connectorSvc.GetNearestFreeConnector(
-                    doc, dynamicProxy.OwnerElementId, dynamicProxy.Origin) ?? dynamicProxy;
+                // Перечитать коннектор после изменения размера (по индексу — позиция могла сместиться)
+                dynamicProxy = connectorSvc.RefreshConnector(
+                    doc, dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex) ?? dynamicProxy;
             }
 
             // S3: Align — перемещение + поворот dynamic к static
@@ -168,9 +168,9 @@ public sealed class PipeConnectCommand : IExternalCommand
                 txDoc.Regenerate();
             });
 
-            // Перечитать актуальный dynamic после выравнивания
-            dynamicProxy = connectorSvc.GetNearestFreeConnector(
-                doc, dynamicProxy.OwnerElementId, dynamicProxy.Origin) ?? dynamicProxy;
+            // Перечитать актуальный dynamic после выравнивания (по индексу — после алайнмента Origin сместился к static)
+            dynamicProxy = connectorSvc.RefreshConnector(
+                doc, dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex) ?? dynamicProxy;
 
             // Предупреждение S4
             if (plan.WarningMessage is not null)
