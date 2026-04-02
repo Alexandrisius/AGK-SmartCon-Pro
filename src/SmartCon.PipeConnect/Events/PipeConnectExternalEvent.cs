@@ -4,14 +4,16 @@ using SmartCon.Core.Services.Interfaces;
 namespace SmartCon.PipeConnect.Events;
 
 /// <summary>
-/// Выделенный IExternalEventHandler для операций PipeConnect (выравнивание, ConnectTo).
-/// Используется WPF-слоем (Phase 6+) для вызова Revit API из UI-потока (I-01, ADR-008).
-/// В Phase 2 операции выполняются напрямую из PipeConnectCommand.Execute().
+/// Выделенный IExternalEventHandler для операций PipeConnect (Phase 2+, ADR-008).
+/// Поддерживает два режима:
+/// — Enqueue(ExternalEvent, action): явная передача ExternalEvent (Phase 2).
+/// — Raise(action): использует внутренний ExternalEvent, инициализированный через Initialize() (Phase 8).
 /// </summary>
 public sealed class PipeConnectExternalEvent : IExternalEventHandler
 {
     private readonly IRevitContextWriter _contextWriter;
     private volatile Action<UIApplication>? _pendingAction;
+    private ExternalEvent? _ownedEvent;
 
     public PipeConnectExternalEvent(IRevitContextWriter contextWriter)
     {
@@ -19,8 +21,25 @@ public sealed class PipeConnectExternalEvent : IExternalEventHandler
     }
 
     /// <summary>
-    /// Поставить действие в очередь и поднять ExternalEvent.
-    /// Вызывать только из WPF UI-потока.
+    /// Инициализировать внутренний ExternalEvent. Вызывается из ServiceRegistrar после Create().
+    /// </summary>
+    public void Initialize(ExternalEvent revitEvent)
+    {
+        _ownedEvent = revitEvent;
+    }
+
+    /// <summary>
+    /// Поднять ExternalEvent с внутренним _ownedEvent. Требует предварительного Initialize().
+    /// Вызывать из WPF UI-потока (I-01).
+    /// </summary>
+    public void Raise(Action<UIApplication> action)
+    {
+        _pendingAction = action ?? throw new ArgumentNullException(nameof(action));
+        _ownedEvent?.Raise();
+    }
+
+    /// <summary>
+    /// Поставить действие в очередь через явный ExternalEvent (Phase 2 backward compat).
     /// </summary>
     public void Enqueue(ExternalEvent externalEvent, Action<UIApplication> action)
     {

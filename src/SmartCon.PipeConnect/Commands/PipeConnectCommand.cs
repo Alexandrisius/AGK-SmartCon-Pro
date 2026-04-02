@@ -7,13 +7,18 @@ using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Logging;
+using SmartCon.PipeConnect.Events;
+using SmartCon.PipeConnect.ViewModels;
+using SmartCon.PipeConnect.Views;
 
 namespace SmartCon.PipeConnect.Commands;
 
 /// <summary>
 /// Точка входа PipeConnect с Ribbon.
-/// Phase 4: workflow S1 → S1.1 → S2 → S2.1 → S3(Align) → S4(ResolvingParams) → S5(Connect).
-/// Два клика — выравнивание + подбор параметра + ConnectTo в одном TransactionGroup (одна запись Undo).
+/// Phase 5+8: workflow S1 → S1.1 → S2 → S2.1 → S3(plan) → S4(plan) → S5(FittingMapper)
+///            → S6: открыть PipeConnectEditorView (модальное окно).
+/// Все транзакции (Align, SetParam, InsertFitting, ConnectTo) выполняются
+/// через ExternalEvent внутри PipeConnectEditorViewModel.
 /// </summary>
 [Transaction(TransactionMode.Manual)]
 public sealed class PipeConnectCommand : IExternalCommand
@@ -34,19 +39,22 @@ public sealed class PipeConnectCommand : IExternalCommand
         {
             SmartConLogger.LogSessionStart("PipeConnectCommand");
 
-            var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
+            var contextWriter    = ServiceHost.GetService<IRevitContextWriter>();
             contextWriter.SetContext(commandData.Application);
 
-            var revitContext  = ServiceHost.GetService<IRevitContext>();
-            var selectionSvc  = ServiceHost.GetService<IElementSelectionService>();
-            var connectorSvc  = ServiceHost.GetService<IConnectorService>();
-            var transformSvc  = ServiceHost.GetService<ITransformService>();
-            var txService     = ServiceHost.GetService<ITransactionService>();
-            var mappingRepo   = ServiceHost.GetService<IFittingMappingRepository>();
-            var familyConnSvc = ServiceHost.GetService<IFamilyConnectorService>();
-            var dialogSvc     = ServiceHost.GetService<IDialogService>();
-            var paramResolver = ServiceHost.GetService<IParameterResolver>();
-            var lookupSvc     = ServiceHost.GetService<ILookupTableService>();
+            var revitContext     = ServiceHost.GetService<IRevitContext>();
+            var selectionSvc     = ServiceHost.GetService<IElementSelectionService>();
+            var connectorSvc     = ServiceHost.GetService<IConnectorService>();
+            var transformSvc     = ServiceHost.GetService<ITransformService>();
+            var txService        = ServiceHost.GetService<ITransactionService>();
+            var mappingRepo      = ServiceHost.GetService<IFittingMappingRepository>();
+            var familyConnSvc    = ServiceHost.GetService<IFamilyConnectorService>();
+            var dialogSvc        = ServiceHost.GetService<IDialogService>();
+            var paramResolver    = ServiceHost.GetService<IParameterResolver>();
+            var lookupSvc        = ServiceHost.GetService<ILookupTableService>();
+            var fittingMapper    = ServiceHost.GetService<IFittingMapper>();
+            var fittingInsertSvc = ServiceHost.GetService<IFittingInsertService>();
+            var eventHandler     = ServiceHost.GetService<PipeConnectExternalEvent>();
 
             var doc = revitContext.GetDocument();
 
@@ -101,81 +109,94 @@ public sealed class PipeConnectCommand : IExternalCommand
                 dynamicProxy.OriginVec3, dynamicProxy.BasisZVec3, dynamicProxy.BasisXVec3);
 
             // ── S4: анализ параметров (ВНЕ TransactionGroup — EditFamily запрещён внутри) ──
-            var plan = BuildResolutionPlan(
-                doc, dynamicProxy, staticProxy.Radius,
-                paramResolver, lookupSvc);
+            var plan = BuildResolutionPlan(doc, dynamicProxy, staticProxy.Radius, paramResolver, lookupSvc);
 
-            bool connectSucceeded = false;
+            // ── S5: подбор фитингов из маппинга ────────────────────────────────────
+            var proposed = fittingMapper.GetMappings(
+                staticProxy.ConnectionTypeCode, dynamicProxy.ConnectionTypeCode);
 
-            // ── TransactionGroup: одна запись Undo ─────────────────────────────────
-            txService.RunInTransactionGroup("PipeConnect — Соединить", groupDoc =>
+            if (proposed.Count == 0 &&
+                staticProxy.ConnectionTypeCode.IsDefined &&
+                dynamicProxy.ConnectionTypeCode.IsDefined)
             {
-                // Transaction 1: подбор параметра (SetParam) — Phase 4 — СНАЧАЛА,
-                // чтобы после смены размера выравнивание выполнялось по актуальной геометрии.
-                if (!plan.Skip)
+                proposed = fittingMapper.FindShortestFittingPath(
+                    staticProxy.ConnectionTypeCode, dynamicProxy.ConnectionTypeCode);
+            }
+
+            // ── S3+S4 выполняем ЗДЕСЬ на Revit-потоке, ДО открытия окна ─────────
+            // S4: EditFamily запрещён внутри TransactionGroup → нужно сделать заранее
+            if (!plan.Skip)
+            {
+                txService.RunInTransaction("PipeConnect — Подгонка размера", txDoc =>
                 {
-                    txService.RunInTransaction("SetParam", paramDoc =>
-                    {
-                        bool success = paramResolver.TrySetConnectorRadius(
-                            paramDoc,
-                            dynamicProxy.OwnerElementId,
-                            dynamicProxy.ConnectorIndex,
-                            plan.TargetRadius);
+                    paramResolver.TrySetConnectorRadius(
+                        txDoc,
+                        dynamicProxy.OwnerElementId,
+                        dynamicProxy.ConnectorIndex,
+                        plan.TargetRadius);
+                    txDoc.Regenerate();
+                });
+                // Перечитать коннектор после изменения размера
+                dynamicProxy = connectorSvc.GetNearestFreeConnector(
+                    doc, dynamicProxy.OwnerElementId, dynamicProxy.Origin) ?? dynamicProxy;
+            }
 
-                        if (!success || plan.ExpectNeedsAdapter)
-                        {
-                            // Флаг для Phase 5 (FittingMapper): понадобится переходник
-                            // В Phase 4 просто продолжаем, не отменяем (D4)
-                        }
-                        // Регенерация: обновляем геометрию коннекторов после смены размера
-                        paramDoc.Regenerate();
-                    });
+            // S3: Align — перемещение + поворот dynamic к static
+            txService.RunInTransaction("PipeConnect — Выравнивание", txDoc =>
+            {
+                var dynId = dynamicProxy.OwnerElementId;
 
-                    // Пересчитываем выравнивание по НОВОЙ геометрии коннектора после SetParam.
-                    // Если размер изменился — origin коннектора мог сдвинуться,
-                    // поэтому alignResult нужно пересчитать чтобы избежать зазора.
-                    var refreshedDynamic = connectorSvc.RefreshConnector(
-                        groupDoc, dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex);
-                    if (refreshedDynamic is not null)
-                    {
-                        alignResult = ConnectorAligner.ComputeAlignment(
-                            staticProxy.OriginVec3,  staticProxy.BasisZVec3,  staticProxy.BasisXVec3,
-                            refreshedDynamic.OriginVec3, refreshedDynamic.BasisZVec3, refreshedDynamic.BasisXVec3);
-                    }
+                if (!VectorUtils.IsZero(alignResult.InitialOffset))
+                    transformSvc.MoveElement(txDoc, dynId, alignResult.InitialOffset);
+
+                if (alignResult.BasisZRotation is { } bzRot)
+                    transformSvc.RotateElement(txDoc, dynId,
+                        alignResult.RotationCenter, bzRot.Axis, bzRot.AngleRadians);
+
+                if (alignResult.BasisXSnap is { } bxSnap)
+                    transformSvc.RotateElement(txDoc, dynId,
+                        alignResult.RotationCenter, bxSnap.Axis, bxSnap.AngleRadians);
+
+                txDoc.Regenerate();
+                var refreshed = connectorSvc.RefreshConnector(txDoc, dynId, dynamicProxy.ConnectorIndex);
+                if (refreshed is not null)
+                {
+                    var corr = staticProxy.OriginVec3 - refreshed.OriginVec3;
+                    if (!VectorUtils.IsZero(corr))
+                        transformSvc.MoveElement(txDoc, dynId, corr);
                 }
-
-                // Transaction 2: выравнивание (Align) — по актуальной геометрии
-                txService.RunInTransaction("Align", alignDoc =>
-                {
-                    ApplyAlignment(alignDoc, dynamicProxy, alignResult,
-                        connectorSvc, transformSvc, staticProxy.OriginVec3);
-                    // Регенерация внутри транзакции: обновляем позиции коннекторов
-                    alignDoc.Regenerate();
-                });
-
-                // Transaction 3: соединение (Connect)
-                txService.RunInTransaction("Connect", connectDoc =>
-                {
-                    connectSucceeded = connectorSvc.ConnectTo(
-                        connectDoc,
-                        staticProxy.OwnerElementId,  staticProxy.ConnectorIndex,
-                        dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex);
-                    // Регенерация: обновляем отображение соединения в UI
-                    connectDoc.Regenerate();
-                });
+                txDoc.Regenerate();
             });
 
-            // Показать предупреждение S4 после завершения TransactionGroup
+            // Перечитать актуальный dynamic после выравнивания
+            dynamicProxy = connectorSvc.GetNearestFreeConnector(
+                doc, dynamicProxy.OwnerElementId, dynamicProxy.Origin) ?? dynamicProxy;
+
+            // Предупреждение S4
             if (plan.WarningMessage is not null)
                 dialogSvc.ShowWarning("SmartCon", plan.WarningMessage);
 
-            if (!connectSucceeded)
+            // ── S6: открыть PipeConnectEditor ──────────────────────────────────────
+            var sessionCtx = new PipeConnectSessionContext
             {
-                TaskDialog.Show("SmartCon",
-                    "Выравнивание выполнено, но ConnectTo не удался.\n" +
-                    "Возможно, элементы принадлежат разным системам.");
-                return Result.Succeeded;
-            }
+                StaticConnector         = staticProxy,
+                DynamicConnector        = dynamicProxy,
+                AlignResult             = alignResult,
+                ParamTargetRadius       = null,   // уже применено выше
+                ParamExpectNeedsAdapter = plan.ExpectNeedsAdapter,
+                ProposedFittings        = proposed.ToList(),
+            };
+
+            var vm = new PipeConnectEditorViewModel(
+                sessionCtx, txService, connectorSvc, transformSvc,
+                fittingInsertSvc, paramResolver, eventHandler);
+
+            var view = new PipeConnectEditorView(vm);
+            view.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+            var workArea = System.Windows.SystemParameters.WorkArea;
+            view.Left = System.Math.Max(workArea.Left + 20, workArea.Right - 540);
+            view.Top  = workArea.Top + 40;
+            view.Show();
 
             return Result.Succeeded;
         }
@@ -349,40 +370,4 @@ public sealed class PipeConnectCommand : IExternalCommand
             WarningMessage: null);
     }
 
-    /// <summary>
-    /// Применить AlignmentResult: шаги 1–4 алгоритма выравнивания.
-    /// </summary>
-    private static void ApplyAlignment(
-        Document doc,
-        Core.Models.ConnectorProxy dynamicProxy,
-        AlignmentResult result,
-        IConnectorService connectorSvc,
-        ITransformService transformSvc,
-        Vec3 staticOrigin)
-    {
-        var dynId = dynamicProxy.OwnerElementId;
-
-        // Шаг 1: перемещение (совмещение Origins)
-        if (!VectorUtils.IsZero(result.InitialOffset))
-            transformSvc.MoveElement(doc, dynId, result.InitialOffset);
-
-        // Шаг 2: поворот BasisZ (антипараллельность)
-        if (result.BasisZRotation is { } bzRot)
-            transformSvc.RotateElement(doc, dynId,
-                result.RotationCenter, bzRot.Axis, bzRot.AngleRadians);
-
-        // Шаг 3: снэп BasisX ("красивый" угол, кратный 15°)
-        if (result.BasisXSnap is { } bxSnap)
-            transformSvc.RotateElement(doc, dynId,
-                result.RotationCenter, bxSnap.Axis, bxSnap.AngleRadians);
-
-        // Шаг 4: коррекция позиции (после поворота Origin мог сместиться)
-        var refreshed = connectorSvc.RefreshConnector(doc, dynId, dynamicProxy.ConnectorIndex);
-        if (refreshed is not null)
-        {
-            var correction = staticOrigin - refreshed.OriginVec3;
-            if (!VectorUtils.IsZero(correction))
-                transformSvc.MoveElement(doc, dynId, correction);
-        }
-    }
 }

@@ -67,4 +67,10 @@ public sealed class RevitTransactionService : ITransactionService
             throw;
         }
     }
+
+    public ITransactionGroupSession BeginGroupSession(string name)
+    {
+        var doc = _revitContext.GetDocument();
+        return new RevitTransactionGroupSession(doc, name);
+    }
 }

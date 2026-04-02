@@ -27,4 +27,10 @@ public interface IConnectorService
     bool ConnectTo(Document doc,
         ElementId elementId1, int connectorIndex1,
         ElementId elementId2, int connectorIndex2);
+
+    /// <summary>
+    /// Получить все свободные коннекторы элемента (исключая ConnectorType.Curve).
+    /// Используется для ComboBox выбора коннектора в PipeConnectEditor (Phase 8).
+    /// </summary>
+    IReadOnlyList<ConnectorProxy> GetAllFreeConnectors(Document doc, ElementId elementId);
 }

@@ -7,6 +7,7 @@ using SmartCon.Core.Services.Implementation;
 using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
+using SmartCon.Revit.Fittings;
 using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
 using SmartCon.Revit.Transform;
@@ -48,15 +49,20 @@ public static class ServiceRegistrar
         services.AddSingleton<IParameterResolver, RevitParameterResolver>();
         services.AddSingleton<ILookupTableService, RevitLookupTableService>();
 
+        // --- Fitting System (Phase 5) ---
+        services.AddSingleton<IFittingMapper, FittingMapper>();
+        services.AddSingleton<IFittingInsertService, RevitFittingInsertService>();
+
         // --- External Events (ADR-008: generic) ---
         var genericHandler = new ActionExternalEventHandler(revitContext);
         var genericEvent = ExternalEvent.Create(genericHandler);
         services.AddSingleton(genericHandler);
         services.AddSingleton(genericEvent);
 
-        // --- External Events (Phase 2: PipeConnect-specific handler) ---
-        // ExternalEvent создаётся и передаётся в Phase 6 (WPF-слой).
-        // В Phase 2 PipeConnectCommand работает напрямую на Revit-потоке.
-        services.AddSingleton<PipeConnectExternalEvent>();
+        // --- External Events (Phase 8: PipeConnect modeless editor) ---
+        var pipeConnectHandler = new PipeConnectExternalEvent(revitContext);
+        var pipeConnectEvent   = ExternalEvent.Create(pipeConnectHandler);
+        pipeConnectHandler.Initialize(pipeConnectEvent);
+        services.AddSingleton(pipeConnectHandler);
     }
 }

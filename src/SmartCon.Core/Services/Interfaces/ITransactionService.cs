@@ -15,7 +15,15 @@ public interface ITransactionService
     bool RunInTransaction(string name, Action<Document> action);
 
     /// <summary>
-    /// Запускает TransactionGroup. Используется для PipeConnect (одна запись Undo).
+    /// Запускает TransactionGroup. Используется для одноразовых операций (одна запись Undo).
     /// </summary>
     bool RunInTransactionGroup(string name, Action<Document> action);
+
+    /// <summary>
+    /// Открывает долгоживущую TransactionGroup и возвращает сессию.
+    /// Сессия остаётся открытой пока не будет вызван Assimilate() или RollBack().
+    /// Используется для Phase 8: PipeConnectEditor (модальное окно + серия операций).
+    /// Вызывать только из ExternalEventHandler.Execute() (I-01).
+    /// </summary>
+    ITransactionGroupSession BeginGroupSession(string name);
 }

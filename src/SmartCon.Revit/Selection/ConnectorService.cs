@@ -55,4 +55,21 @@ public sealed class ConnectorService : IConnectorService
         conn1.ConnectTo(conn2);
         return true;
     }
+
+    public IReadOnlyList<ConnectorProxy> GetAllFreeConnectors(Document doc, ElementId elementId)
+    {
+        var element = doc.GetElement(elementId);
+        if (element is null) return [];
+
+        var cm = element.GetConnectorManager();
+        if (cm is null) return [];
+
+        // cm.Connectors — только коннекторы данного элемента (не обходит MEP-сеть).
+        // cm.GetFreeConnectors() обходит всю сеть и возвращает чужие коннекторы.
+        return cm.Connectors
+                 .Cast<Connector>()
+                 .Where(c => c.ConnectorType != ConnectorType.Curve && !c.IsConnected)
+                 .Select(c => c.ToProxy())
+                 .ToList();
+    }
 }
