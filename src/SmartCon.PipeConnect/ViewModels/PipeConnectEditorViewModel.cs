@@ -2,48 +2,40 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
-using Autodesk.Revit.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
-using SmartCon.PipeConnect.Events;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
 /// <summary>
-/// ViewModel немодального окна PipeConnectEditor (Phase 8, S6).
-/// К моменту открытия окна S3+S4 уже выполнены PipeConnectCommand.
-/// Каждая операция — отдельная Transaction (без долгоживущей TransactionGroup).
-/// Отмена: удаляет вставленный фитинг и откатывает накопленный поворот.
+/// ViewModel модального окна PipeConnectEditor.
+/// Все изменения модели выполняются внутри единой TransactionGroup.
+/// Cancel → group.RollBack() — полный откат всех изменений.
+/// Connect → group.Assimilate() — одна запись Undo.
 /// </summary>
 public sealed partial class PipeConnectEditorViewModel : ObservableObject
 {
-    // ── Services ──────────────────────────────────────────────────────────────
     private readonly ITransactionService      _txService;
+    private readonly Document                 _doc;
     private readonly IConnectorService        _connSvc;
     private readonly ITransformService        _transformSvc;
     private readonly IFittingInsertService    _fittingInsertSvc;
     private readonly IParameterResolver       _paramResolver;
-    private readonly PipeConnectExternalEvent _eventHandler;
-
-    // ── Session state ─────────────────────────────────────────────────────────
     private readonly PipeConnectSessionContext _ctx;
+
+    private ITransactionGroupSession? _groupSession;
     private ElementId?      _currentFittingId;
     private ConnectorProxy? _activeDynamic;
-    private ConnectorProxy? _activeFittingConn2;   // fitting-коннектор со стороны dynamic
+    private ConnectorProxy? _activeFittingConn2;
     private bool            _isClosing;
 
-    // ── Connector cycling ─────────────────────────────────────────────────────
     private List<ConnectorProxy>  _allDynamicConnectors = [];
     private readonly HashSet<int> _visitedConnectorIndices = [];
     private int                   _connectorCyclePos = 0;
 
-    // ── Undo tracking ─────────────────────────────────────────────────────────
-    private double _totalRotationDeg = 0.0;   // для отмены поворотов
-
-    // ── Observable properties ─────────────────────────────────────────────────
     [ObservableProperty] private bool    _moveEntireChain;
     [ObservableProperty] private bool    _isBusy;
     [ObservableProperty] private string  _statusMessage = "Инициализация…";
@@ -58,23 +50,22 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     public PipeConnectEditorViewModel(
         PipeConnectSessionContext  ctx,
+        Document                   doc,
         ITransactionService        txService,
         IConnectorService          connSvc,
         ITransformService          transformSvc,
         IFittingInsertService      fittingInsertSvc,
-        IParameterResolver         paramResolver,
-        PipeConnectExternalEvent   eventHandler)
+        IParameterResolver         paramResolver)
     {
         _ctx              = ctx;
+        _doc              = doc;
         _txService        = txService;
         _connSvc          = connSvc;
         _transformSvc     = transformSvc;
         _fittingInsertSvc = fittingInsertSvc;
         _paramResolver    = paramResolver;
-        _eventHandler     = eventHandler;
         _activeDynamic    = ctx.DynamicConnector;
 
-        // ── Список фитингов ─────────────────────────────────────────────────
         bool hasMandatoryFittings = ctx.ProposedFittings.Count > 0 &&
             ctx.ProposedFittings.Any(r => !r.IsDirectConnect && r.FittingFamilies.Count > 0);
 
@@ -93,75 +84,57 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         SelectedFitting = AvailableFittings.Count > 0 ? AvailableFittings[0] : null;
     }
 
-    // ── Initialization ────────────────────────────────────────────────────────
-
     /// <summary>
-    /// Вызывается из View.Loaded.
-    /// Сразу вставляет фитинг с высшим приоритетом (если задан маппинг).
+    /// Вызывается из View.Loaded. Открывает TransactionGroup, применяет S3+S4, вставляет фитинг.
     /// </summary>
-    public void OnWindowLoaded()
+    public void Init()
     {
-        // Активируем сразу — каждая операция сама открывает Transaction
+        _groupSession = _txService.BeginGroupSession("PipeConnect");
         IsSessionActive = true;
 
-        var defaultFitting = SelectedFitting;
-        if (defaultFitting is null || defaultFitting.IsDirectConnect)
+        try
         {
-            StatusMessage = "Готово к соединению";
-            // Загрузить список коннекторов без Revit-транзакции
-            _eventHandler.Raise(app =>
+            // S4: подгонка размера (если нужно)
+            if (_ctx.ParamTargetRadius is { } targetRadius)
             {
-                var conns = GetFreeConnectorsSnapshot(app.ActiveUIDocument.Document);
-                Application.Current.Dispatcher.Invoke(() =>
+                _groupSession.RunInTransaction("PipeConnect — Подгонка размера", doc =>
                 {
-                    InitConnectorCycle(conns);
-                    StatusMessage = "Готово к соединению";
+                    _paramResolver.TrySetConnectorRadius(
+                        doc,
+                        _ctx.DynamicConnector.OwnerElementId,
+                        _ctx.DynamicConnector.ConnectorIndex,
+                        targetRadius);
+                    doc.Regenerate();
                 });
-            });
-            return;
+                _activeDynamic = _connSvc.RefreshConnector(
+                    _doc, _ctx.DynamicConnector.OwnerElementId, _ctx.DynamicConnector.ConnectorIndex)
+                    ?? _ctx.DynamicConnector;
+            }
+
+            // Загрузить коннекторы
+            var conns = GetFreeConnectorsSnapshot();
+            InitConnectorCycle(conns);
+
+            // Вставить фитинг по умолчанию
+            var defaultFitting = SelectedFitting;
+            if (defaultFitting is not null && !defaultFitting.IsDirectConnect)
+            {
+                StatusMessage = "Установка фитинга…";
+                InsertFittingSilent(defaultFitting);
+            }
+            else
+            {
+                StatusMessage = "Готово к соединению";
+            }
         }
-
-        // Есть фитинг по умолчанию — вставляем сразу
-        IsBusy = true;
-        StatusMessage = "Установка фитинга…";
-
-        _eventHandler.Raise(app =>
+        catch (Exception ex)
         {
-            var doc             = app.ActiveUIDocument.Document;
-            ElementId?      newId    = null;
-            ConnectorProxy? fitConn2 = null;
-            string          msg      = string.Empty;
-
-            try
-            {
-                _txService.RunInTransaction("PipeConnect — Вставка фитинга", txDoc =>
-                {
-                    (newId, fitConn2, msg) = DoInsertFittingCore(txDoc, defaultFitting);
-                });
-
-                if (newId is not null)
-                {
-                    SizeFittingConnectors(doc, newId, fitConn2);
-                    fitConn2 = RealignAfterSizing(doc, newId) ?? fitConn2;
-                }
-            }
-            catch (Exception ex)
-            {
-                msg = $"Ошибка вставки: {ex.Message}";
-            }
-
-            _currentFittingId   = newId;
-            _activeFittingConn2 = fitConn2;
-            app.ActiveUIDocument?.RefreshActiveView();
-
-            var conns = GetFreeConnectorsSnapshot(doc);
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                IsBusy        = false;
-                StatusMessage = msg;
-                InitConnectorCycle(conns);
-            });
-        });
+            StatusMessage = $"Ошибка инициализации: {ex.Message}";
+            _groupSession.RollBack();
+            _groupSession = null;
+            IsSessionActive = false;
+            RequestClose?.Invoke();
+        }
     }
 
     // ── Rotation ──────────────────────────────────────────────────────────────
@@ -175,70 +148,58 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private void ExecuteRotate(int angleDeg)
     {
         IsBusy = true;
-        _eventHandler.Raise(app =>
+        try
         {
-            try
+            _groupSession!.RunInTransaction("PipeConnect — Поворот", doc =>
             {
-                _txService.RunInTransaction("PipeConnect — Поворот", doc =>
+                var dynId      = _ctx.DynamicConnector.OwnerElementId;
+                var axisOrigin = _ctx.StaticConnector.OriginVec3;
+                var axisDir    = _ctx.StaticConnector.BasisZVec3;
+                var radians    = angleDeg * System.Math.PI / 180.0;
+
+                var idsToRotate = new List<ElementId> { dynId };
+                if (_currentFittingId is not null)
+                    idsToRotate.Add(_currentFittingId);
+
+                var activeIdx = _activeDynamic?.ConnectorIndex
+                             ?? _ctx.DynamicConnector.ConnectorIndex;
+                var dynElem = doc.GetElement(dynId);
+                ConnectorManager? cm = dynElem switch
                 {
-                    var dynId      = _ctx.DynamicConnector.OwnerElementId;
-                    var axisOrigin = _ctx.StaticConnector.OriginVec3;
-                    var axisDir    = _ctx.StaticConnector.BasisZVec3;
-                    var radians    = angleDeg * System.Math.PI / 180.0;
-
-                    // Собрать ID для группового поворота: dynamic + фитинг + трубы/элементы
-                    // подключённые к не-активным коннекторам dynamic-элемента
-                    var idsToRotate = new List<ElementId> { dynId };
-                    if (_currentFittingId is not null)
-                        idsToRotate.Add(_currentFittingId);
-
-                    var activeIdx = _activeDynamic?.ConnectorIndex
-                                 ?? _ctx.DynamicConnector.ConnectorIndex;
-                    var dynElem = doc.GetElement(dynId);
-                    ConnectorManager? cm = dynElem switch
+                    FamilyInstance fi => fi.MEPModel?.ConnectorManager,
+                    MEPCurve mc       => mc.ConnectorManager,
+                    _                 => null
+                };
+                if (cm is not null)
+                {
+                    foreach (Connector c in cm.Connectors)
                     {
-                        FamilyInstance fi => fi.MEPModel?.ConnectorManager,
-                        MEPCurve mc       => mc.ConnectorManager,
-                        _                 => null
-                    };
-                    if (cm is not null)
-                    {
-                        foreach (Connector c in cm.Connectors)
+                        if (c.ConnectorType == ConnectorType.Curve) continue;
+                        if ((int)c.Id == activeIdx) continue;
+                        if (!c.IsConnected) continue;
+                        foreach (Connector refConn in c.AllRefs)
                         {
-                            if (c.ConnectorType == ConnectorType.Curve) continue;
-                            if ((int)c.Id == activeIdx) continue;
-                            if (!c.IsConnected) continue;
-                            foreach (Connector refConn in c.AllRefs)
-                            {
-                                var refId = refConn.Owner?.Id;
-                                if (refId is not null && refId != dynId)
-                                    idsToRotate.Add(refId);
-                            }
+                            var refId = refConn.Owner?.Id;
+                            if (refId is not null && refId != dynId)
+                                idsToRotate.Add(refId);
                         }
                     }
+                }
 
-                    _transformSvc.RotateElements(doc, idsToRotate, axisOrigin, axisDir, radians);
-                    doc.Regenerate();
-                });
+                _transformSvc.RotateElements(doc, idsToRotate, axisOrigin, axisDir, radians);
+                doc.Regenerate();
+            });
 
-                _totalRotationDeg += angleDeg;
-                app.ActiveUIDocument?.RefreshActiveView();
-
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    IsBusy        = false;
-                    StatusMessage = $"Повёрнуто на {angleDeg:+#;-#;0}°";
-                });
-            }
-            catch (Exception ex)
-            {
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    IsBusy        = false;
-                    StatusMessage = $"Ошибка поворота: {ex.Message}";
-                });
-            }
-        });
+            StatusMessage = $"Повёрнуто на {angleDeg:+#;-#;0}°";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка поворота: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     // ── Cycle connector ───────────────────────────────────────────────────────
@@ -254,68 +215,51 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         IsBusy = true;
         StatusMessage = "Переключение коннектора…";
 
-        _eventHandler.Raise(app =>
+        try
         {
-            ConnectorProxy? refreshed = null;
+            var alignTarget = _activeFittingConn2 ?? _ctx.StaticConnector;
 
-            try
+            _groupSession!.RunInTransaction("PipeConnect — Смена коннектора", doc =>
             {
-                // Целевой коннектор выравнивания:
-                // — если фитинг вставлен → fitConn2 (коннектор фитинга со стороны dynamic)
-                // — иначе → статический коннектор напрямую
-                var alignTarget = _activeFittingConn2 ?? _ctx.StaticConnector;
+                var freshTarget = _connSvc.RefreshConnector(
+                    doc, target.OwnerElementId, target.ConnectorIndex) ?? target;
 
-                _txService.RunInTransaction("PipeConnect — Смена коннектора", doc =>
+                var reAlign = ConnectorAligner.ComputeAlignment(
+                    alignTarget.OriginVec3, alignTarget.BasisZVec3, alignTarget.BasisXVec3,
+                    freshTarget.OriginVec3, freshTarget.BasisZVec3, freshTarget.BasisXVec3);
+
+                var dynId = target.OwnerElementId;
+                if (!VectorUtils.IsZero(reAlign.InitialOffset))
+                    _transformSvc.MoveElement(doc, dynId, reAlign.InitialOffset);
+                if (reAlign.BasisZRotation is { } bz)
+                    _transformSvc.RotateElement(doc, dynId, reAlign.RotationCenter, bz.Axis, bz.AngleRadians);
+                if (reAlign.BasisXSnap is { } bx)
+                    _transformSvc.RotateElement(doc, dynId, reAlign.RotationCenter, bx.Axis, bx.AngleRadians);
+
+                doc.Regenerate();
+                var r = _connSvc.RefreshConnector(doc, dynId, target.ConnectorIndex);
+                if (r is not null)
                 {
-                    // Обновить позицию target: snapshot может быть устаревшим после предыдущих поворотов
-                    var freshTarget = _connSvc.RefreshConnector(
-                        doc, target.OwnerElementId, target.ConnectorIndex) ?? target;
+                    var corr = alignTarget.OriginVec3 - r.OriginVec3;
+                    if (!VectorUtils.IsZero(corr))
+                        _transformSvc.MoveElement(doc, dynId, corr);
+                }
+                doc.Regenerate();
+                _activeDynamic = _connSvc.RefreshConnector(doc, dynId, target.ConnectorIndex);
+            });
 
-                    var reAlign = ConnectorAligner.ComputeAlignment(
-                        alignTarget.OriginVec3, alignTarget.BasisZVec3, alignTarget.BasisXVec3,
-                        freshTarget.OriginVec3, freshTarget.BasisZVec3, freshTarget.BasisXVec3);
-
-                    var dynId = target.OwnerElementId;
-                    if (!VectorUtils.IsZero(reAlign.InitialOffset))
-                        _transformSvc.MoveElement(doc, dynId, reAlign.InitialOffset);
-                    if (reAlign.BasisZRotation is { } bz)
-                        _transformSvc.RotateElement(doc, dynId, reAlign.RotationCenter, bz.Axis, bz.AngleRadians);
-                    if (reAlign.BasisXSnap is { } bx)
-                        _transformSvc.RotateElement(doc, dynId, reAlign.RotationCenter, bx.Axis, bx.AngleRadians);
-
-                    doc.Regenerate();
-                    var r = _connSvc.RefreshConnector(doc, dynId, target.ConnectorIndex);
-                    if (r is not null)
-                    {
-                        var corr = alignTarget.OriginVec3 - r.OriginVec3;
-                        if (!VectorUtils.IsZero(corr))
-                            _transformSvc.MoveElement(doc, dynId, corr);
-                    }
-                    doc.Regenerate();
-                    refreshed = _connSvc.RefreshConnector(doc, dynId, target.ConnectorIndex);
-                    _totalRotationDeg = 0.0;
-                });
-
-                _activeDynamic = refreshed ?? target;
-                app.ActiveUIDocument?.RefreshActiveView();
-
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    _visitedConnectorIndices.Add(target.ConnectorIndex);
-                    IsBusy        = false;
-                    StatusMessage = "Коннектор изменён";
-                    CycleConnectorCommand.NotifyCanExecuteChanged();
-                });
-            }
-            catch (Exception ex)
-            {
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    IsBusy        = false;
-                    StatusMessage = $"Ошибка: {ex.Message}";
-                });
-            }
-        });
+            _visitedConnectorIndices.Add(target.ConnectorIndex);
+            StatusMessage = "Коннектор изменён";
+            CycleConnectorCommand.NotifyCanExecuteChanged();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     private bool CanCycleConnector() => IsSessionActive && !IsBusy && _allDynamicConnectors.Count > 1;
@@ -342,7 +286,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         return first;
     }
 
-    // ── Insert fitting (ручная вставка из ComboBox) ───────────────────────────
+    // ── Insert fitting ────────────────────────────────────────────────────────
 
     [RelayCommand(CanExecute = nameof(CanInsertFitting))]
     private void InsertFitting()
@@ -352,60 +296,86 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         IsBusy = true;
         StatusMessage = "Вставка фитинга…";
 
-        var fitting = SelectedFitting;
-        _eventHandler.Raise(app =>
+        try
         {
-            var doc             = app.ActiveUIDocument.Document;
-            ElementId?      newId    = null;
-            ConnectorProxy? fitConn2 = null;
-            string          rMsg     = string.Empty;
+            InsertFittingSilent(SelectedFitting);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка вставки: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
-            try
+    private void InsertFittingSilent(FittingCardItem fitting)
+    {
+        if (fitting.IsDirectConnect)
+        {
+            _groupSession!.RunInTransaction("PipeConnect — Прямое соединение", doc =>
             {
-                _txService.RunInTransaction("PipeConnect — Вставка фитинга", txDoc =>
-                {
-                    if (_currentFittingId is not null)
-                    {
-                        _fittingInsertSvc.DeleteElement(txDoc, _currentFittingId);
-                        _currentFittingId   = null;
-                        _activeFittingConn2 = null;
-                    }
+                doc.Regenerate();
+            });
+            StatusMessage = "Прямое соединение";
+            return;
+        }
 
-                    if (fitting.IsDirectConnect)
-                    {
-                        txDoc.Regenerate();
-                        rMsg = "Прямое соединение";
-                        return;
-                    }
+        var primary = fitting.PrimaryFitting;
+        if (primary is null)
+        {
+            StatusMessage = "Нет данных о семействе фитинга";
+            return;
+        }
 
-                    (newId, fitConn2, rMsg) = DoInsertFittingCore(txDoc, fitting);
-                });
+        // Транзакция 1: удалить старый фитинг + вставить новый + выровнять
+        ElementId? insertedId = null;
+        ConnectorProxy? fitConn2 = null;
 
-                if (newId is not null)
-                {
-                    SizeFittingConnectors(doc, newId, fitConn2);
-                    fitConn2 = RealignAfterSizing(doc, newId) ?? fitConn2;
-                }
-
-                _currentFittingId   = newId;
-                _activeFittingConn2 = fitConn2;
-                app.ActiveUIDocument?.RefreshActiveView();
-
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    IsBusy        = false;
-                    StatusMessage = rMsg;
-                });
-            }
-            catch (Exception ex)
+        _groupSession!.RunInTransaction("PipeConnect — Вставка фитинга", doc =>
+        {
+            if (_currentFittingId is not null)
             {
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    IsBusy        = false;
-                    StatusMessage = $"Ошибка вставки: {ex.Message}";
-                });
+                _fittingInsertSvc.DeleteElement(doc, _currentFittingId);
+                _currentFittingId   = null;
+                _activeFittingConn2 = null;
             }
+
+            insertedId = _fittingInsertSvc.InsertFitting(
+                doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
+
+            if (insertedId is null) return;
+
+            fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
+                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc);
+
+            if (fitConn2 is not null && _activeDynamic is not null)
+            {
+                var activeProxy = _connSvc.RefreshConnector(
+                    doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                    ?? _activeDynamic;
+
+                var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
+                if (!VectorUtils.IsZero(offset))
+                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+            }
+
+            doc.Regenerate();
         });
+
+        if (insertedId is null)
+        {
+            StatusMessage = $"Семейство '{primary.FamilyName}' не найдено в проекте";
+            return;
+        }
+
+        _currentFittingId   = insertedId;
+        _activeFittingConn2 = fitConn2;
+        StatusMessage = $"Вставлен: {fitting.DisplayName}";
+
+        // Транзакция 2: подгонка размера фитинга (отдельная транзакция после коммита вставки)
+        SizeFittingConnectors(_doc, insertedId, fitConn2);
     }
 
     // ── Connect ───────────────────────────────────────────────────────────────
@@ -416,119 +386,82 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         IsBusy = true;
         StatusMessage = "Соединение…";
 
-        _eventHandler.Raise(app =>
+        try
         {
-            bool ok = false;
-            try
+            _groupSession!.RunInTransaction("PipeConnect — ConnectTo", doc =>
             {
-                _txService.RunInTransaction("PipeConnect — ConnectTo", doc =>
+                if (_currentFittingId is not null)
                 {
-                    if (_currentFittingId is not null)
-                    {
-                        var fConns = _connSvc.GetAllFreeConnectors(doc, _currentFittingId);
-                        var fc1 = fConns
-                            .OrderBy(c => (_ctx.StaticConnector.Origin - c.Origin).GetLength())
-                            .FirstOrDefault();
+                    var fConns = _connSvc.GetAllFreeConnectors(doc, _currentFittingId);
+                    var fc1 = fConns
+                        .OrderBy(c => (_ctx.StaticConnector.Origin - c.Origin).GetLength())
+                        .FirstOrDefault();
 
-                        if (fc1 is not null)
-                            _connSvc.ConnectTo(doc,
-                                _ctx.StaticConnector.OwnerElementId, _ctx.StaticConnector.ConnectorIndex,
-                                _currentFittingId, fc1.ConnectorIndex);
-
-                        var fc2 = fConns.FirstOrDefault(c => c.ConnectorIndex != (fc1?.ConnectorIndex ?? -1));
-                        var dyn = _activeDynamic ?? _ctx.DynamicConnector;
-                        var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
-                        if (fc2 is not null)
-                            _connSvc.ConnectTo(doc, _currentFittingId, fc2.ConnectorIndex,
-                                dynR.OwnerElementId, dynR.ConnectorIndex);
-
-                        ok = fc1 is not null;
-                    }
-                    else
-                    {
-                        var dyn = _activeDynamic ?? _ctx.DynamicConnector;
-                        var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
-                        ok = _connSvc.ConnectTo(doc,
+                    if (fc1 is not null)
+                        _connSvc.ConnectTo(doc,
                             _ctx.StaticConnector.OwnerElementId, _ctx.StaticConnector.ConnectorIndex,
-                            dynR.OwnerElementId, dynR.ConnectorIndex);
-                    }
-                    doc.Regenerate();
-                });
+                            _currentFittingId, fc1.ConnectorIndex);
 
-                Application.Current.Dispatcher.Invoke(() =>
+                    var fc2 = fConns.FirstOrDefault(c => c.ConnectorIndex != (fc1?.ConnectorIndex ?? -1));
+                    var dyn = _activeDynamic ?? _ctx.DynamicConnector;
+                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+                    if (fc2 is not null)
+                        _connSvc.ConnectTo(doc, _currentFittingId, fc2.ConnectorIndex,
+                            dynR.OwnerElementId, dynR.ConnectorIndex);
+                }
+                else
                 {
-                    IsBusy          = false;
-                    IsSessionActive = false;
-                    StatusMessage   = ok ? "Соединение выполнено" : "ConnectTo не удалось";
-                    RequestClose?.Invoke();
-                });
-            }
-            catch (Exception ex)
-            {
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    IsBusy        = false;
-                    StatusMessage = $"Ошибка: {ex.Message}";
-                });
-            }
-        });
+                    var dyn = _activeDynamic ?? _ctx.DynamicConnector;
+                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+                    _connSvc.ConnectTo(doc,
+                        _ctx.StaticConnector.OwnerElementId, _ctx.StaticConnector.ConnectorIndex,
+                        dynR.OwnerElementId, dynR.ConnectorIndex);
+                }
+                doc.Regenerate();
+            });
+
+            _groupSession.Assimilate();
+            _groupSession = null;
+            StatusMessage = "Соединение выполнено";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            IsSessionActive = false;
+            RequestClose?.Invoke();
+        }
     }
 
     // ── Cancel ────────────────────────────────────────────────────────────────
 
     [RelayCommand]
-    private void Cancel()
+    public void Cancel()
     {
         if (_isClosing) return;
         _isClosing = true;
 
-        if (!IsSessionActive || (_currentFittingId is null && _totalRotationDeg == 0.0))
+        if (!IsSessionActive)
         {
             RequestClose?.Invoke();
             return;
         }
 
-        IsBusy = true;
-        _eventHandler.Raise(app =>
+        try
         {
-            try
-            {
-                // Удалить вставленный фитинг
-                if (_currentFittingId is not null)
-                {
-                    _txService.RunInTransaction("PipeConnect — Отмена (фитинг)", doc =>
-                    {
-                        _fittingInsertSvc.DeleteElement(doc, _currentFittingId);
-                        doc.Regenerate();
-                    });
-                    _currentFittingId = null;
-                }
-
-                // Откатить накопленный поворот
-                if (_totalRotationDeg != 0.0)
-                {
-                    _txService.RunInTransaction("PipeConnect — Отмена (поворот)", doc =>
-                    {
-                        var radians = -_totalRotationDeg * System.Math.PI / 180.0;
-                        _transformSvc.RotateElement(doc,
-                            _ctx.DynamicConnector.OwnerElementId,
-                            _ctx.StaticConnector.OriginVec3,
-                            _ctx.StaticConnector.BasisZVec3,
-                            radians);
-                        doc.Regenerate();
-                    });
-                    _totalRotationDeg = 0.0;
-                }
-            }
-            catch { /* best-effort cancel */ }
-
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                IsBusy          = false;
-                IsSessionActive = false;
-                RequestClose?.Invoke();
-            });
-        });
+            _groupSession?.RollBack();
+        }
+        catch { /* best-effort cancel */ }
+        finally
+        {
+            _groupSession = null;
+            IsSessionActive = false;
+            IsBusy = false;
+            RequestClose?.Invoke();
+        }
     }
 
     public bool IsClosing => _isClosing;
@@ -558,53 +491,6 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Вставить фитинг и выровнять. Вызывается внутри RunInTransaction.
-    /// Возвращает (вставленный Id, fitConn2 = коннектор фитинга со стороны dynamic, сообщение).
-    /// </summary>
-    private (ElementId? id, ConnectorProxy? fitConn2, string message) DoInsertFittingCore(
-        Document doc, FittingCardItem item)
-    {
-        var primary = item.PrimaryFitting;
-        if (primary is null)
-            return (null, null, "Нет данных о семействе фитинга");
-
-        var insertedId = _fittingInsertSvc.InsertFitting(
-            doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
-
-        if (insertedId is null)
-            return (null, null, $"Семейство '{primary.FamilyName}' не найдено в проекте");
-
-        var fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-            doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc);
-
-        if (fitConn2 is not null && _activeDynamic is not null)
-        {
-            var activeProxy = _connSvc.RefreshConnector(
-                doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
-                ?? _activeDynamic;
-
-            var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
-            if (!VectorUtils.IsZero(offset))
-                _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
-        }
-
-        doc.Regenerate();
-        return (insertedId, fitConn2, $"Вставлен: {item.DisplayName}");
-    }
-
-    /// <summary>
-    /// Подобрать размеры коннекторов вставленного фитинга.
-    ///
-    /// Парный режим (type-параметры, IsInstance=false):
-    ///   — Выбирает типоразмер фитинга через TrySetFittingTypeForPair:
-    ///     приоритет — точное совпадение со static, затем минимальное отклонение по dynamic.
-    ///   — Если достигнутый радиус dynamic-стороны фитинга ≠ исходному dynRadius
-    ///     → подгоняет dynamic-элемент под размер фитинга.
-    ///
-    /// Обычный режим (instance-параметры, IsInstance=true):
-    ///   — Записывает каждый коннектор фитинга независимо.
-    /// </summary>
     private void SizeFittingConnectors(Document doc, ElementId fittingId, ConnectorProxy? fitConn2)
     {
         try
@@ -615,40 +501,35 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             int conn2Idx = fitConn2?.ConnectorIndex ?? -1;
             int conn1Idx = allConns.FirstOrDefault(c => c.ConnectorIndex != conn2Idx)?.ConnectorIndex ?? -1;
 
-            // Фаза 1: анализ зависимостей (вне транзакции, может использовать EditFamily)
             var depsByIdx = new Dictionary<int, IReadOnlyList<ParameterDependency>>();
             foreach (var c in allConns)
                 depsByIdx[c.ConnectorIndex] = _paramResolver.GetConnectorRadiusDependencies(doc, fittingId, c.ConnectorIndex);
 
-            // Парный режим: оба коннектора управляются type-параметром (IsInstance=false).
-            // Смена ChangeTypeId влияет сразу на оба — перебирать по одному нельзя.
             bool usePairMode = conn1Idx >= 0 && conn2Idx >= 0
                 && depsByIdx.TryGetValue(conn1Idx, out var d1) && d1.Count > 0 && !d1[0].IsInstance
                 && depsByIdx.TryGetValue(conn2Idx, out var d2) && d2.Count > 0 && !d2[0].IsInstance;
 
             if (usePairMode)
             {
-                double achievedDynRadius = _ctx.DynamicConnector.Radius;
+                double currentDynRadius = _activeDynamic?.Radius ?? _ctx.DynamicConnector.Radius;
+                double achievedDynRadius = currentDynRadius;
 
-                // Фаза 2: выбрать тип фитинга с приоритетом static-стороны
-                _txService.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
+                _groupSession!.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
                 {
                     var (_, dynR) = _paramResolver.TrySetFittingTypeForPair(
                         txDoc, fittingId,
                         conn1Idx, _ctx.StaticConnector.Radius,
-                        conn2Idx, _ctx.DynamicConnector.Radius);
+                        conn2Idx, currentDynRadius);
                     achievedDynRadius = dynR;
                     txDoc.Regenerate();
                 });
 
-                // Фаза 3: если dynamic-сторона фитинга ≠ исходному dynRadius → подогнать dynamic-элемент
                 const double eps = 1e-6;
-                if (System.Math.Abs(achievedDynRadius - _ctx.DynamicConnector.Radius) > eps)
+                if (System.Math.Abs(achievedDynRadius - currentDynRadius) > eps)
                 {
                     var dynId      = _ctx.DynamicConnector.OwnerElementId;
                     var dynConnIdx = _ctx.DynamicConnector.ConnectorIndex;
-                    _paramResolver.GetConnectorRadiusDependencies(doc, dynId, dynConnIdx);
-                    _txService.RunInTransaction("PipeConnect — Подгонка dynamic под фитинг", txDoc =>
+                    _groupSession.RunInTransaction("PipeConnect — Подгонка dynamic под фитинг", txDoc =>
                     {
                         _paramResolver.TrySetConnectorRadius(txDoc, dynId, dynConnIdx, achievedDynRadius);
                         txDoc.Regenerate();
@@ -657,38 +538,32 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             }
             else
             {
-                // Обычный режим: instance-параметры — каждый коннектор независимо
-                _txService.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
+                double currentDynRadius = _activeDynamic?.Radius ?? _ctx.DynamicConnector.Radius;
+
+                _groupSession!.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
                 {
                     foreach (var c in allConns)
                     {
                         double targetRadius = c.ConnectorIndex == conn2Idx
-                            ? _ctx.DynamicConnector.Radius
+                            ? currentDynRadius
                             : _ctx.StaticConnector.Radius;
                         _paramResolver.TrySetConnectorRadius(txDoc, fittingId, c.ConnectorIndex, targetRadius);
                     }
                     txDoc.Regenerate();
                 });
             }
+
+            RealignAfterSizing(doc, fittingId);
         }
-        catch
-        {
-            // best-effort: fitting connector sizing may not work for all family types
-        }
+        catch { /* best-effort */ }
     }
 
-    /// <summary>
-    /// После смены типоразмера фитинга его коннекторы смещаются.
-    /// Повторно выравниваем фитинг к статическому коннектору и
-    /// подтягиваем dynamic-элемент к обновлённому fitConn2.
-    /// Возвращает обновлённый fitConn2 (или null при ошибке).
-    /// </summary>
     private ConnectorProxy? RealignAfterSizing(Document doc, ElementId fittingId)
     {
         ConnectorProxy? newFitConn2 = null;
         try
         {
-            _txService.RunInTransaction("PipeConnect — Выравнивание после размера", txDoc =>
+            _groupSession!.RunInTransaction("PipeConnect — Выравнивание после размера", txDoc =>
             {
                 newFitConn2 = _fittingInsertSvc.AlignFittingToStatic(
                     txDoc, fittingId, _ctx.StaticConnector, _transformSvc, _connSvc);
@@ -713,18 +588,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 txDoc.Regenerate();
             });
         }
-        catch
-        {
-            // best-effort
-        }
+        catch { /* best-effort */ }
         return newFitConn2;
     }
 
-    private List<ConnectorProxy> GetFreeConnectorsSnapshot(Document doc)
+    private List<ConnectorProxy> GetFreeConnectorsSnapshot()
     {
         try
         {
-            return _connSvc.GetAllFreeConnectors(doc, _ctx.DynamicConnector.OwnerElementId).ToList();
+            return _connSvc.GetAllFreeConnectors(_doc, _ctx.DynamicConnector.OwnerElementId).ToList();
         }
         catch { return []; }
     }

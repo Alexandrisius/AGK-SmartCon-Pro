@@ -18,11 +18,11 @@ public partial class PipeConnectEditorView : Window
         InitializeComponent();
         DataContext = viewModel;
         viewModel.RequestClose += Close;
-        Loaded += (_, _) => viewModel.OnWindowLoaded();
+        Loaded += (_, _) => viewModel.Init();
         Closing += (_, e) =>
         {
             if (viewModel.IsSessionActive && !viewModel.IsBusy && !viewModel.IsClosing)
-                viewModel.CancelCommand.Execute(null);
+                viewModel.Cancel();
         };
         PositionNearCursor();
     }

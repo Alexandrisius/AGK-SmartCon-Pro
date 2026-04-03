@@ -7,7 +7,6 @@ using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Logging;
-using SmartCon.PipeConnect.Events;
 using SmartCon.PipeConnect.ViewModels;
 using SmartCon.PipeConnect.Views;
 
@@ -15,10 +14,10 @@ namespace SmartCon.PipeConnect.Commands;
 
 /// <summary>
 /// Точка входа PipeConnect с Ribbon.
-/// Phase 5+8: workflow S1 → S1.1 → S2 → S2.1 → S3(plan) → S4(plan) → S5(FittingMapper)
-///            → S6: открыть PipeConnectEditorView (модальное окно).
-/// Все транзакции (Align, SetParam, InsertFitting, ConnectTo) выполняются
-/// через ExternalEvent внутри PipeConnectEditorViewModel.
+/// Workflow S1 → S1.1 → S2 → S2.1 → S3(plan) → S4(plan) → S5(FittingMapper)
+///            → S6: открыть PipeConnectEditorView (МОДАЛЬНОЕ окно).
+/// Все изменения модели (S3, S4, фитинги, повороты, соединение) выполняются
+/// внутри единой TransactionGroup в ViewModel. Cancel = полный RollBack().
 /// </summary>
 [Transaction(TransactionMode.Manual)]
 public sealed class PipeConnectCommand : IExternalCommand
@@ -54,7 +53,6 @@ public sealed class PipeConnectCommand : IExternalCommand
             var lookupSvc        = ServiceHost.GetService<ILookupTableService>();
             var fittingMapper    = ServiceHost.GetService<IFittingMapper>();
             var fittingInsertSvc = ServiceHost.GetService<IFittingInsertService>();
-            var eventHandler     = ServiceHost.GetService<PipeConnectExternalEvent>();
 
             var doc = revitContext.GetDocument();
 
@@ -123,76 +121,29 @@ public sealed class PipeConnectCommand : IExternalCommand
                     staticProxy.ConnectionTypeCode, dynamicProxy.ConnectionTypeCode);
             }
 
-            // ── S3+S4 выполняем ЗДЕСЬ на Revit-потоке, ДО открытия окна ─────────
-            // S4: EditFamily запрещён внутри TransactionGroup → нужно сделать заранее
-            if (!plan.Skip)
-            {
-                txService.RunInTransaction("PipeConnect — Подгонка размера", txDoc =>
-                {
-                    paramResolver.TrySetConnectorRadius(
-                        txDoc,
-                        dynamicProxy.OwnerElementId,
-                        dynamicProxy.ConnectorIndex,
-                        plan.TargetRadius);
-                    txDoc.Regenerate();
-                });
-                // Перечитать коннектор после изменения размера (по индексу — позиция могла сместиться)
-                dynamicProxy = connectorSvc.RefreshConnector(
-                    doc, dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex) ?? dynamicProxy;
-            }
-
-            // S3: Align — перемещение + поворот dynamic к static
-            txService.RunInTransaction("PipeConnect — Выравнивание", txDoc =>
-            {
-                var dynId = dynamicProxy.OwnerElementId;
-
-                if (!VectorUtils.IsZero(alignResult.InitialOffset))
-                    transformSvc.MoveElement(txDoc, dynId, alignResult.InitialOffset);
-
-                if (alignResult.BasisZRotation is { } bzRot)
-                    transformSvc.RotateElement(txDoc, dynId,
-                        alignResult.RotationCenter, bzRot.Axis, bzRot.AngleRadians);
-
-                if (alignResult.BasisXSnap is { } bxSnap)
-                    transformSvc.RotateElement(txDoc, dynId,
-                        alignResult.RotationCenter, bxSnap.Axis, bxSnap.AngleRadians);
-
-                txDoc.Regenerate();
-                var refreshed = connectorSvc.RefreshConnector(txDoc, dynId, dynamicProxy.ConnectorIndex);
-                if (refreshed is not null)
-                {
-                    var corr = staticProxy.OriginVec3 - refreshed.OriginVec3;
-                    if (!VectorUtils.IsZero(corr))
-                        transformSvc.MoveElement(txDoc, dynId, corr);
-                }
-                txDoc.Regenerate();
-            });
-
-            // Перечитать актуальный dynamic после выравнивания (по индексу — после алайнмента Origin сместился к static)
-            dynamicProxy = connectorSvc.RefreshConnector(
-                doc, dynamicProxy.OwnerElementId, dynamicProxy.ConnectorIndex) ?? dynamicProxy;
-
             // Предупреждение S4
             if (plan.WarningMessage is not null)
                 dialogSvc.ShowWarning("SmartCon", plan.WarningMessage);
 
-            // ── S6: открыть PipeConnectEditor ──────────────────────────────────────
+            // ── S6: открыть PipeConnectEditor (МОДАЛЬНОЕ окно) ─────────────────────
+            // S3+S4 применяются ВНУТРИ TransactionGroup в ViewModel,
+            // чтобы Cancel мог выполнить полный RollBack().
             var sessionCtx = new PipeConnectSessionContext
             {
                 StaticConnector         = staticProxy,
                 DynamicConnector        = dynamicProxy,
                 AlignResult             = alignResult,
-                ParamTargetRadius       = null,   // уже применено выше
+                ParamTargetRadius       = plan.Skip ? null : plan.TargetRadius,
                 ParamExpectNeedsAdapter = plan.ExpectNeedsAdapter,
                 ProposedFittings        = proposed.ToList(),
             };
 
             var vm = new PipeConnectEditorViewModel(
-                sessionCtx, txService, connectorSvc, transformSvc,
-                fittingInsertSvc, paramResolver, eventHandler);
+                sessionCtx, doc, txService, connectorSvc, transformSvc,
+                fittingInsertSvc, paramResolver);
 
             var view = new PipeConnectEditorView(vm);
-            view.Show();
+            view.ShowDialog();
 
             return Result.Succeeded;
         }
