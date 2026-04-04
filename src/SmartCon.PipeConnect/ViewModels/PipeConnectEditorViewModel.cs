@@ -25,6 +25,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private readonly ITransformService        _transformSvc;
     private readonly IFittingInsertService    _fittingInsertSvc;
     private readonly IParameterResolver       _paramResolver;
+    private readonly IDynamicSizeResolver     _sizeResolver;
     private readonly PipeConnectSessionContext _ctx;
 
     private ITransactionGroupSession? _groupSession;
@@ -46,6 +47,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     public ObservableCollection<FittingCardItem> AvailableFittings { get; } = [];
 
     [ObservableProperty] private int _rotationAngleDeg = 15;
+    [ObservableProperty] private SizeOption? _selectedDynamicSize;
+    [ObservableProperty] private bool _hasSizeOptions;
+
+    public ObservableCollection<SizeOption> AvailableDynamicSizes { get; } = [];
 
     public event Action? RequestClose;
 
@@ -56,7 +61,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         IConnectorService          connSvc,
         ITransformService          transformSvc,
         IFittingInsertService      fittingInsertSvc,
-        IParameterResolver         paramResolver)
+        IParameterResolver         paramResolver,
+        IDynamicSizeResolver       sizeResolver)
     {
         _ctx              = ctx;
         _doc              = doc;
@@ -65,6 +71,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _transformSvc     = transformSvc;
         _fittingInsertSvc = fittingInsertSvc;
         _paramResolver    = paramResolver;
+        _sizeResolver     = sizeResolver;
         _activeDynamic    = ctx.DynamicConnector;
 
         bool hasMandatoryFittings = ctx.ProposedFittings.Count > 0 &&
@@ -87,9 +94,103 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     AvailableFittings.Add(new FittingCardItem(rule, family));
                 }
             }
+
+            if (rule.FromType.Value == rule.ToType.Value && rule.ReducerFamilies.Count > 0)
+            {
+                foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
+                {
+                    AvailableFittings.Add(new FittingCardItem(rule, reducer, isReducer: true));
+                }
+            }
         }
 
         SelectedFitting = AvailableFittings.Count > 0 ? AvailableFittings[0] : null;
+
+        LoadDynamicSizes();
+    }
+
+    private void LoadDynamicSizes()
+    {
+        SmartConLogger.LookupSection("PipeConnectEditorViewModel.LoadDynamicSizes");
+
+        try
+        {
+            var dynId = _ctx.DynamicConnector.OwnerElementId;
+            var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
+            SmartConLogger.Lookup($"  elementId={dynId.Value}, connIdx={dynIdx}");
+
+            var sizes = _sizeResolver.GetAvailableSizes(_doc, dynId, dynIdx);
+            SmartConLogger.Lookup($"  SizeResolver вернул {sizes.Count} размеров");
+
+            var currentRadius = _ctx.DynamicConnector.Radius;
+            var currentDn = (int)Math.Round(currentRadius * 2.0 * 304.8);
+            SmartConLogger.Lookup($"  Текущий размер: DN {currentDn} (radius={currentRadius * 304.8:F2} мм)");
+
+            AvailableDynamicSizes.Add(new SizeOption
+            {
+                DisplayName = $"АВТОПОДБОР (DN {currentDn})",
+                Radius = currentRadius,
+                Source = "",
+                IsAutoSelect = true
+            });
+
+            foreach (var size in sizes)
+            {
+                var dn = (int)Math.Round(size.Radius * 2.0 * 304.8);
+                var label = $"DN {dn}";
+                if (!AvailableDynamicSizes.Any(s => s.DisplayName == label))
+                {
+                    AvailableDynamicSizes.Add(new SizeOption
+                    {
+                        DisplayName = label,
+                        Radius = size.Radius,
+                        Source = size.Source,
+                        IsAutoSelect = false
+                    });
+                    SmartConLogger.Lookup($"  Добавлен размер: {label} (source={size.Source})");
+                }
+            }
+
+            SelectedDynamicSize = AvailableDynamicSizes.Count > 0 ? AvailableDynamicSizes[0] : null;
+            HasSizeOptions = AvailableDynamicSizes.Count > 1;
+            SmartConLogger.Lookup($"  Итого: {AvailableDynamicSizes.Count} опций, HasSizeOptions={HasSizeOptions}");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"[LoadDynamicSizes] Ошибка: {ex.Message}");
+            HasSizeOptions = false;
+        }
+    }
+
+    /// <summary>
+    /// Обновить пункт "АВТОПОДБОР" в списке размеров после Init() или смены размера.
+    /// </summary>
+    private void RefreshAutoSelectSize()
+    {
+        if (_activeDynamic is null) return;
+
+        var actualDn = (int)Math.Round(_activeDynamic.Radius * 2.0 * 304.8);
+        var autoLabel = $"АВТОПОДБОР (DN {actualDn})";
+
+        // Обновить первый элемент (АВТОПОДБОР)
+        if (AvailableDynamicSizes.Count > 0)
+        {
+            var autoOption = new SizeOption
+            {
+                DisplayName = autoLabel,
+                Radius = _activeDynamic.Radius,
+                Source = "",
+                IsAutoSelect = true
+            };
+            AvailableDynamicSizes[0] = autoOption;
+            SmartConLogger.Lookup($"[RefreshAutoSelectSize] Обновлено: {autoLabel}");
+        }
+
+        // Если текущий выбранный — АВТОПОДБОР, обновить его
+        if (SelectedDynamicSize?.IsAutoSelect == true)
+        {
+            SelectedDynamicSize = AvailableDynamicSizes[0];
+        }
     }
 
     /// <summary>
@@ -269,6 +370,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             {
                 StatusMessage = "Готово к соединению";
             }
+
+            // Обновить "АВТОПОДБОР" в списке размеров — после Init() размер мог измениться
+            RefreshAutoSelectSize();
         }
         catch (Exception ex)
         {
@@ -432,6 +536,84 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         return first;
     }
 
+    // ── Change dynamic size ───────────────────────────────────────────────────
+
+    [RelayCommand(CanExecute = nameof(CanChangeDynamicSize))]
+    private void ChangeDynamicSize()
+    {
+        if (SelectedDynamicSize is null || SelectedDynamicSize.IsAutoSelect) return;
+
+        IsBusy = true;
+        var targetDn = (int)Math.Round(SelectedDynamicSize.Radius * 2.0 * 304.8);
+        StatusMessage = $"Изменение размера на DN {targetDn}…";
+        SmartConLogger.Info($"[ChangeDynamicSize] Попытка смены размера на DN {targetDn} (radius={SelectedDynamicSize.Radius * 304.8:F2} мм, source={SelectedDynamicSize.Source})");
+
+        try
+        {
+            var dynId = _ctx.DynamicConnector.OwnerElementId;
+            var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
+            var targetRadius = SelectedDynamicSize.Radius;
+
+            _groupSession!.RunInTransaction("PipeConnect — Смена размера dynamic", doc =>
+            {
+                bool success = _paramResolver.TrySetConnectorRadius(doc, dynId, dynIdx, targetRadius);
+                SmartConLogger.Info($"[ChangeDynamicSize] TrySetConnectorRadius: {(success ? "OK" : "FAILED")}");
+                doc.Regenerate();
+
+                var refreshed = _connSvc.RefreshConnector(doc, dynId, dynIdx);
+                if (refreshed is not null)
+                {
+                    var correction = _ctx.StaticConnector.OriginVec3 - refreshed.OriginVec3;
+                    if (!VectorUtils.IsZero(correction))
+                    {
+                        var distMm = VectorUtils.Length(correction) * 304.8;
+                        SmartConLogger.Info($"[ChangeDynamicSize] PositionCorrection: {distMm:F3} мм");
+                        _transformSvc.MoveElement(doc, dynId, correction);
+                    }
+                }
+
+                doc.Regenerate();
+                _activeDynamic = _connSvc.RefreshConnector(doc, dynId, dynIdx) ?? _activeDynamic;
+                if (_activeDynamic is not null)
+                {
+                    var actualDn = (int)Math.Round(_activeDynamic.Radius * 2.0 * 304.8);
+                    SmartConLogger.Info($"[ChangeDynamicSize] Фактический размер после смены: DN {actualDn}");
+                }
+            });
+
+            StatusMessage = $"Размер изменён на DN {targetDn}";
+
+            if (_currentFittingId is not null)
+            {
+                StatusMessage = "Обновление фитинга…";
+                var currentFitting = SelectedFitting;
+                if (currentFitting is not null && !currentFitting.IsDirectConnect)
+                {
+                    SmartConLogger.Info($"[ChangeDynamicSize] Автообновление фитинга: {currentFitting.DisplayName}");
+                    InsertFittingSilentNoDynamicAdjust(currentFitting);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[ChangeDynamicSize] Ошибка: {ex.Message}");
+            StatusMessage = $"Ошибка смены размера: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool CanChangeDynamicSize() =>
+        IsSessionActive && !IsBusy &&
+        SelectedDynamicSize is not null && !SelectedDynamicSize.IsAutoSelect;
+
+    partial void OnSelectedDynamicSizeChanged(SizeOption? value)
+    {
+        ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
+    }
+
     // ── Insert fitting ────────────────────────────────────────────────────────
 
     [RelayCommand(CanExecute = nameof(CanInsertFitting))]
@@ -521,7 +703,80 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         StatusMessage = $"Вставлен: {fitting.DisplayName}";
 
         // Транзакция 2: подгонка размера фитинга (отдельная транзакция после коммита вставки)
-        var newFitConn2 = SizeFittingConnectors(_doc, insertedId, fitConn2);
+        var newFitConn2 = SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: true);
+        if (newFitConn2 is not null)
+            _activeFittingConn2 = newFitConn2;
+    }
+
+    /// <summary>
+    /// Вставка фитинга БЕЗ подгонки dynamic. Используется при ChangeDynamicSize
+    /// когда пользователь уже выбрал нужный размер dynamic.
+    /// </summary>
+    private void InsertFittingSilentNoDynamicAdjust(FittingCardItem fitting)
+    {
+        if (fitting.IsDirectConnect)
+        {
+            _groupSession!.RunInTransaction("PipeConnect — Прямое соединение", doc =>
+            {
+                doc.Regenerate();
+            });
+            StatusMessage = "Прямое соединение";
+            return;
+        }
+
+        var primary = fitting.PrimaryFitting;
+        if (primary is null)
+        {
+            StatusMessage = "Нет данных о семействе фитинга";
+            return;
+        }
+
+        ElementId? insertedId = null;
+        ConnectorProxy? fitConn2 = null;
+
+        _groupSession!.RunInTransaction("PipeConnect — Вставка фитинга", doc =>
+        {
+            if (_currentFittingId is not null)
+            {
+                _fittingInsertSvc.DeleteElement(doc, _currentFittingId);
+                _currentFittingId   = null;
+                _activeFittingConn2 = null;
+            }
+
+            insertedId = _fittingInsertSvc.InsertFitting(
+                doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
+
+            if (insertedId is null) return;
+
+            fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
+                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc);
+
+            if (fitConn2 is not null && _activeDynamic is not null)
+            {
+                var activeProxy = _connSvc.RefreshConnector(
+                    doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                    ?? _activeDynamic;
+
+                var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
+                if (!VectorUtils.IsZero(offset))
+                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+            }
+
+            doc.Regenerate();
+        });
+
+        if (insertedId is null)
+        {
+            StatusMessage = $"Семейство '{primary.FamilyName}' не найдено в проекте";
+            return;
+        }
+
+        _currentFittingId   = insertedId;
+        _activeFittingConn2 = fitConn2;
+        StatusMessage = $"Вставлен: {fitting.DisplayName}";
+
+        // Подгонка размера фитинга БЕЗ изменения размера dynamic
+        var newFitConn2 = SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
         if (newFitConn2 is not null)
             _activeFittingConn2 = newFitConn2;
     }
@@ -788,7 +1043,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private ConnectorProxy? SizeFittingConnectors(Document doc, ElementId fittingId, ConnectorProxy? fitConn2)
+    private ConnectorProxy? SizeFittingConnectors(Document doc, ElementId fittingId, ConnectorProxy? fitConn2, bool adjustDynamicToFit = true)
     {
         ConnectorProxy? result = null;
         try
@@ -829,19 +1084,16 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
             if (usePairMode)
             {
-                // Используем ИСХОДНЫЙ радиус dynamic (до S4) для подбора фитинга.
-                // Алгоритм: фитинг подбирается к static точно, а к dynamic — максимально близко
-                // к его оригинальному размеру. После этого dynamic подгоняется под достигнутый
-                // радиус фитинга (а не наоборот).
-                double originalDynRadius = _ctx.DynamicConnector.Radius;
-                double achievedDynRadius = originalDynRadius;
+                // Используем ТЕКУЩИЙ радиус dynamic (может быть изменён через ChangeDynamicSize).
+                double currentDynRadius = _activeDynamic?.Radius ?? _ctx.DynamicConnector.Radius;
+                double achievedDynRadius = currentDynRadius;
 
                 _groupSession!.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
                 {
                     var (_, dynR) = _paramResolver.TrySetFittingTypeForPair(
                         txDoc, fittingId,
                         conn1Idx, _ctx.StaticConnector.Radius,
-                        conn2Idx, originalDynRadius);
+                        conn2Idx, currentDynRadius);
                     achievedDynRadius = dynR;
                     txDoc.Regenerate();
                 });
@@ -850,28 +1102,33 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 const double eps = 1e-6;
                 var dynId      = _ctx.DynamicConnector.OwnerElementId;
                 var dynConnIdx = _ctx.DynamicConnector.ConnectorIndex;
-                double currentDynRadius = _activeDynamic?.Radius ?? originalDynRadius;
-                if (System.Math.Abs(achievedDynRadius - currentDynRadius) > eps)
+                double actualDynRadius = _activeDynamic?.Radius ?? currentDynRadius;
+                if (adjustDynamicToFit && System.Math.Abs(achievedDynRadius - actualDynRadius) > eps)
                 {
+                    SmartConLogger.Info($"[SizeFitting] Подгонка dynamic: {actualDynRadius * 304.8:F2}мм → {achievedDynRadius * 304.8:F2}мм");
                     _groupSession.RunInTransaction("PipeConnect — Подгонка dynamic под фитинг", txDoc =>
                     {
                         _paramResolver.TrySetConnectorRadius(txDoc, dynId, dynConnIdx, achievedDynRadius);
                         txDoc.Regenerate();
                     });
                 }
+                else if (!adjustDynamicToFit)
+                {
+                    SmartConLogger.Info($"[SizeFitting] Пропуск подгонки dynamic (adjustDynamicToFit=false). Фактический dynamic={actualDynRadius * 304.8:F2}мм, фитинг достиг={achievedDynRadius * 304.8:F2}мм");
+                }
             }
             else
             {
                 // Для фитингов с независимыми параметрами коннекторов:
-                // conn1 (к static) → staticRadius, conn2 (к dynamic) → исходный радиус dynamic
-                double originalDynRadius = _ctx.DynamicConnector.Radius;
+                // conn1 (к static) → staticRadius, conn2 (к dynamic) → ТЕКУЩИЙ радиус dynamic
+                double currentDynRadius = _activeDynamic?.Radius ?? _ctx.DynamicConnector.Radius;
 
                 _groupSession!.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
                 {
                     foreach (var c in allConns)
                     {
                         double targetRadius = c.ConnectorIndex == conn2Idx
-                            ? originalDynRadius
+                            ? currentDynRadius
                             : _ctx.StaticConnector.Radius;
                         _paramResolver.TrySetConnectorRadius(txDoc, fittingId, c.ConnectorIndex, targetRadius);
                     }

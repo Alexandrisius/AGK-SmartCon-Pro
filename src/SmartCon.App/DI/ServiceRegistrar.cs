@@ -48,6 +48,7 @@ public static class ServiceRegistrar
         // --- Parameter Resolution (Phase 4) ---
         services.AddSingleton<IParameterResolver, RevitParameterResolver>();
         services.AddSingleton<ILookupTableService, RevitLookupTableService>();
+        services.AddSingleton<IDynamicSizeResolver, RevitDynamicSizeResolver>();
 
         // --- Fitting System (Phase 5) ---
         services.AddSingleton<IFittingMapper, FittingMapper>();

@@ -27,10 +27,18 @@ public sealed partial class MappingRuleItem : ObservableObject
 
     public ObservableCollection<FittingMapping> FittingFamilies { get; } = [];
 
+    public ObservableCollection<FittingMapping> ReducerFamilies { get; } = [];
+
     /// <summary>Суммарное отображение выбранных семейств для DataGrid.</summary>
     public string FamiliesSummary =>
         FittingFamilies.Count > 0
             ? string.Join(", ", FittingFamilies.Select(f => f.FamilyName))
+            : "(не выбраны)";
+
+    /// <summary>Суммарное отображение выбранных переходников сечения для DataGrid.</summary>
+    public string ReducerFamiliesSummary =>
+        ReducerFamilies.Count > 0
+            ? string.Join(", ", ReducerFamilies.Select(f => f.FamilyName))
             : "(не выбраны)";
 
     public MappingRuleItem(IDialogService dialogService, IReadOnlyList<string> availableFamilyNames)
@@ -38,10 +46,14 @@ public sealed partial class MappingRuleItem : ObservableObject
         _dialogService = dialogService;
         _availableFamilyNames = availableFamilyNames;
         FittingFamilies.CollectionChanged += OnFamiliesChanged;
+        ReducerFamilies.CollectionChanged += OnReducersChanged;
     }
 
     private void OnFamiliesChanged(object? sender, NotifyCollectionChangedEventArgs e)
         => OnPropertyChanged(nameof(FamiliesSummary));
+
+    private void OnReducersChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => OnPropertyChanged(nameof(ReducerFamiliesSummary));
 
     public static MappingRuleItem From(
         FittingMappingRule r,
@@ -56,6 +68,8 @@ public sealed partial class MappingRuleItem : ObservableObject
         };
         foreach (var f in r.FittingFamilies.OrderBy(f => f.Priority))
             item.FittingFamilies.Add(f);
+        foreach (var f in r.ReducerFamilies.OrderBy(f => f.Priority))
+            item.ReducerFamilies.Add(f);
         return item;
     }
 
@@ -73,11 +87,26 @@ public sealed partial class MappingRuleItem : ObservableObject
             FittingFamilies.Add(f);
     }
 
+    [RelayCommand]
+    private void OpenReducerFamilySelector()
+    {
+        var result = _dialogService.ShowFamilySelector(
+            _availableFamilyNames,
+            ReducerFamilies.ToList());
+
+        if (result is null) return;
+
+        ReducerFamilies.Clear();
+        foreach (var f in result)
+            ReducerFamilies.Add(f);
+    }
+
     public FittingMappingRule ToRule() => new()
     {
         FromType = new ConnectionTypeCode(FromTypeCode),
         ToType = new ConnectionTypeCode(ToTypeCode),
         IsDirectConnect = IsDirectConnect,
         FittingFamilies = FittingFamilies.ToList(),
+        ReducerFamilies = ReducerFamilies.ToList(),
     };
 }

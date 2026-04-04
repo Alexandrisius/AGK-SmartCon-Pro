@@ -17,26 +17,33 @@ public sealed partial class FittingCardItem : ObservableObject
     /// <summary>Конкретное семейство фитинга, null = прямое соединение.</summary>
     public FittingMapping? PrimaryFitting { get; }
 
+    /// <summary>Фитинг является переходником сечения.</summary>
+    public bool IsReducer { get; }
+
     public bool IsDirectConnect => Rule.IsDirectConnect && PrimaryFitting is null;
 
     public override string ToString() => DisplayName;
 
-    public FittingCardItem(FittingMappingRule rule, FittingMapping? fitting = null)
+    public FittingCardItem(FittingMappingRule rule, FittingMapping? fitting = null, bool isReducer = false)
     {
         Rule = rule;
         PrimaryFitting = fitting;
-        DisplayName = BuildDisplayName(rule, fitting);
+        IsReducer = isReducer;
+        DisplayName = BuildDisplayName(rule, fitting, isReducer);
     }
 
-    private static string BuildDisplayName(FittingMappingRule rule, FittingMapping? fitting)
+    private static string BuildDisplayName(FittingMappingRule rule, FittingMapping? fitting, bool isReducer)
     {
         if (rule.IsDirectConnect && fitting is null)
             return "Без фитинга (прямое соединение)";
 
         if (fitting is not null)
-            return fitting.SymbolName != "*"
+        {
+            var baseName = fitting.SymbolName != "*"
                 ? $"{fitting.FamilyName} — {fitting.SymbolName}"
                 : fitting.FamilyName;
+            return isReducer ? $"🔧 {baseName} (переход)" : baseName;
+        }
 
         return $"Тип {rule.FromType.Value} → {rule.ToType.Value}";
     }

@@ -81,6 +81,14 @@ public sealed class JsonFittingMappingRepository : IFittingMappingRepository
                         Priority = f.Priority,
                     })
                     .ToList(),
+                ReducerFamilies = (r.ReducerFamilies ?? [])
+                    .Select(f => new FittingMapping
+                    {
+                        FamilyName = f.FamilyName ?? string.Empty,
+                        SymbolName = f.SymbolName ?? "*",
+                        Priority = f.Priority,
+                    })
+                    .ToList(),
             })
             .ToList();
     }
@@ -102,9 +110,16 @@ public sealed class JsonFittingMappingRepository : IFittingMappingRepository
                         Priority = f.Priority,
                     })
                     .ToList(),
+                ReducerFamilies = r.ReducerFamilies
+                    .Select(f => new FittingMappingDto
+                    {
+                        FamilyName = f.FamilyName,
+                        SymbolName = f.SymbolName,
+                        Priority = f.Priority,
+                    })
+                    .ToList(),
             })
             .ToList();
-        // Сохраняем и типы тоже — не перетираем их
         if (root.ConnectorTypes == null || root.ConnectorTypes.Count == 0)
             root.ConnectorTypes = [];
         WriteFile(root);
@@ -158,5 +173,6 @@ public sealed class JsonFittingMappingRepository : IFittingMappingRepository
         public int ToType { get; set; }
         public bool IsDirectConnect { get; set; }
         public List<FittingMappingDto>? FittingFamilies { get; set; }
+        public List<FittingMappingDto>? ReducerFamilies { get; set; }
     }
 }

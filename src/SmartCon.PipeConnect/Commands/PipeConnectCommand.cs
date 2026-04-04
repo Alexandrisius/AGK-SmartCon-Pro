@@ -51,6 +51,7 @@ public sealed class PipeConnectCommand : IExternalCommand
             var dialogSvc        = ServiceHost.GetService<IDialogService>();
             var paramResolver    = ServiceHost.GetService<IParameterResolver>();
             var lookupSvc        = ServiceHost.GetService<ILookupTableService>();
+            var sizeResolver     = ServiceHost.GetService<IDynamicSizeResolver>();
             var fittingMapper    = ServiceHost.GetService<IFittingMapper>();
             var fittingInsertSvc = ServiceHost.GetService<IFittingInsertService>();
 
@@ -140,7 +141,7 @@ public sealed class PipeConnectCommand : IExternalCommand
 
             var vm = new PipeConnectEditorViewModel(
                 sessionCtx, doc, txService, connectorSvc, transformSvc,
-                fittingInsertSvc, paramResolver);
+                fittingInsertSvc, paramResolver, sizeResolver);
 
             // Init() вызывается ДО ShowDialog: открывает TransactionGroup,
             // применяет S3 (выравнивание), S4 (размер), вставляет и размещает фитинг.
