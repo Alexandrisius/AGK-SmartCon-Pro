@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "revit-api": {
+      "source": "hopesy/skills",
+      "sourceType": "github",
+      "computedHash": "a67bdd8c455d0ad4d69a2c20584dcdb636471ab1004ef0deb3df87441b8adb9d"
+    },
+    "saury-revit": {
+      "source": "hopesy/skills",
+      "sourceType": "github",
+      "computedHash": "9167396f8a3d36488c6ffe4fe66a2336c8a6de8655eddef81b58ef1c8d50e514"
+    }
+  }
+}
