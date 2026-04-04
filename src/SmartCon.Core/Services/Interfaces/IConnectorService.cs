@@ -29,8 +29,20 @@ public interface IConnectorService
         ElementId elementId2, int connectorIndex2);
 
     /// <summary>
+    /// Отсоединить указанный коннектор от всех существующих соединений.
+    /// Используется для изоляции dynamic-элемента перед перемещением.
+    /// </summary>
+    void DisconnectAllFromConnector(Document doc, ElementId elementId, int connectorIndex);
+
+    /// <summary>
     /// Получить все свободные коннекторы элемента (исключая ConnectorType.Curve).
     /// Используется для ComboBox выбора коннектора в PipeConnectEditor (Phase 8).
     /// </summary>
     IReadOnlyList<ConnectorProxy> GetAllFreeConnectors(Document doc, ElementId elementId);
+
+    /// <summary>
+    /// Получить ВСЕ коннекторы элемента (свободные И соединённые), исключая ConnectorType.Curve.
+    /// Используется для предварительного отсоединения dynamic-элемента.
+    /// </summary>
+    IReadOnlyList<ConnectorProxy> GetAllConnectors(Document doc, ElementId elementId);
 }

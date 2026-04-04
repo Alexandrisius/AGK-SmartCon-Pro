@@ -107,7 +107,7 @@ public sealed class PipeConnectCommand : IExternalCommand
                 dynamicProxy.OriginVec3, dynamicProxy.BasisZVec3, dynamicProxy.BasisXVec3);
 
             // ── S4: анализ параметров (ВНЕ TransactionGroup — EditFamily запрещён внутри) ──
-            var plan = BuildResolutionPlan(doc, dynamicProxy, staticProxy.Radius, paramResolver, lookupSvc);
+            var plan = BuildResolutionPlan(doc, dynamicProxy, staticProxy.Radius, paramResolver, lookupSvc, connectorSvc);
 
             // ── S5: подбор фитингов из маппинга ────────────────────────────────────
             var proposed = fittingMapper.GetMappings(
@@ -141,6 +141,11 @@ public sealed class PipeConnectCommand : IExternalCommand
             var vm = new PipeConnectEditorViewModel(
                 sessionCtx, doc, txService, connectorSvc, transformSvc,
                 fittingInsertSvc, paramResolver);
+
+            // Init() вызывается ДО ShowDialog: открывает TransactionGroup,
+            // применяет S3 (выравнивание), S4 (размер), вставляет и размещает фитинг.
+            // Окно открывается уже с готовой цепочкой элементов.
+            vm.Init();
 
             var view = new PipeConnectEditorView(vm);
             view.ShowDialog();
@@ -223,7 +228,8 @@ public sealed class PipeConnectCommand : IExternalCommand
         Core.Models.ConnectorProxy dynamicProxy,
         double staticRadius,
         IParameterResolver paramResolver,
-        ILookupTableService lookupSvc)
+        ILookupTableService lookupSvc,
+        IConnectorService connectorSvc)
     {
         const double eps = 1e-6; // ~0.3 мкм
 
@@ -231,6 +237,26 @@ public sealed class PipeConnectCommand : IExternalCommand
         SmartConLogger.Lookup($"  dynamic: elementId={dynamicProxy.OwnerElementId.Value}, connIdx={dynamicProxy.ConnectorIndex}, radius={dynamicProxy.Radius:F6} ft ({dynamicProxy.Radius * 304.8:F2} mm)");
         SmartConLogger.Lookup($"  staticRadius={staticRadius:F6} ft ({staticRadius * 304.8:F2} mm)");
         SmartConLogger.Lookup($"  delta={System.Math.Abs(staticRadius - dynamicProxy.Radius):F6} ft");
+
+        var dynId   = dynamicProxy.OwnerElementId;
+        var connIdx = dynamicProxy.ConnectorIndex;
+        var element = doc.GetElement(dynId);
+        SmartConLogger.Lookup($"  element='{element?.Name}' ({element?.GetType().Name})");
+
+        // 0. Прогрев кеша для ВСЕХ свободных коннекторов FamilyInstance — обязательно.
+        //    TrySetConnectorRadius позже берёт dep из кеша; если кеш пустой — fallback к TryChangeTypeTo
+        //    что часто бесполезно для семейств с одним типоразмером.
+        //    Прогреваем все коннекторы, потому что пользователь может переключить коннектор через CycleConnector.
+        if (element is Autodesk.Revit.DB.FamilyInstance)
+        {
+            SmartConLogger.Lookup("  → Прогрев кеша для ВСЕХ свободных коннекторов FamilyInstance...");
+            var allFreeConns = connectorSvc.GetAllFreeConnectors(doc, dynId);
+            foreach (var c in allFreeConns)
+            {
+                SmartConLogger.Lookup($"    connIdx={c.ConnectorIndex}, radius={c.Radius * 304.8:F2}mm");
+                paramResolver.GetConnectorRadiusDependencies(doc, dynId, c.ConnectorIndex);
+            }
+        }
 
         // 1. Радиусы совпадают → пропустить S4
         if (System.Math.Abs(staticRadius - dynamicProxy.Radius) < eps)
@@ -241,15 +267,11 @@ public sealed class PipeConnectCommand : IExternalCommand
                 ExpectNeedsAdapter: false, WarningMessage: null);
         }
 
-        var dynId    = dynamicProxy.OwnerElementId;
-        var connIdx  = dynamicProxy.ConnectorIndex;
         double staticDn = System.Math.Round(staticRadius * 2.0 * 304.8);
         double dynDn    = System.Math.Round(dynamicProxy.Radius * 2.0 * 304.8);
         SmartConLogger.Lookup($"  static=DN{staticDn}, dynamic=DN{dynDn} — нужно подбрать");
 
         // 2. MEP Curve (Pipe) → прямая запись, без EditFamily
-        var element = doc.GetElement(dynId);
-        SmartConLogger.Lookup($"  element='{element?.Name}' ({element?.GetType().Name})");
 
         if (element is MEPCurve or Autodesk.Revit.DB.Plumbing.FlexPipe)
         {

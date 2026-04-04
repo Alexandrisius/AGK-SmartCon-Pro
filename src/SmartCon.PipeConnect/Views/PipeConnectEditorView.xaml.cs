@@ -18,7 +18,8 @@ public partial class PipeConnectEditorView : Window
         InitializeComponent();
         DataContext = viewModel;
         viewModel.RequestClose += Close;
-        Loaded += (_, _) => viewModel.Init();
+        // Init() вызывается из PipeConnectCommand.Execute() ДО ShowDialog(),
+        // чтобы вся цепочка (выравнивание, фитинг, размеры) была готова до открытия окна.
         Closing += (_, e) =>
         {
             if (viewModel.IsSessionActive && !viewModel.IsBusy && !viewModel.IsClosing)

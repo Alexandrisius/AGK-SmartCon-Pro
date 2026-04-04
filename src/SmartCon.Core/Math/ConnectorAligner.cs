@@ -89,10 +89,19 @@ public static class ConnectorAligner
 
     /// <summary>
     /// Шаг 3: снэп BasisX к ближайшему "красивому" углу.
+    /// Пропускается если staticBasisZ параллелен глобальной оси Y — в этом случае
+    /// поворот вокруг Y наклоняет элемент из горизонтальной плоскости (визуальный артефакт).
     /// </summary>
     internal static RotationStep? ComputeBasisXSnap(
         Vec3 dynamicBasisX, Vec3 staticBasisX, Vec3 staticBasisZ)
     {
+        // Если ось вращения (staticBasisZ) параллельна глобальному Y — пропуск.
+        // Вращение вокруг Y наклоняет фитинги (отводы, тройники) из их естественной плоскости.
+        var bzNorm = VectorUtils.Normalize(staticBasisZ);
+        var dotWithY = System.Math.Abs(VectorUtils.DotProduct(bzNorm, Vec3.BasisY));
+        if (dotWithY > 0.9999)
+            return null;
+
         var currentAngle = VectorUtils.AngleBetweenInPlane(dynamicBasisX, staticBasisX, staticBasisZ);
         var snappedAngle = VectorUtils.RoundToNearestAngle(currentAngle, BasisXSnapStepDegrees);
         var deltaAngle = snappedAngle - currentAngle;
@@ -121,5 +130,67 @@ public static class ConnectorAligner
         var kDotV = VectorUtils.DotProduct(k, v);
 
         return v * cosA + kCrossV * sinA + k * (kDotV * (1.0 - cosA));
+    }
+
+    /// <summary>
+    /// Вычисляет поворот вокруг оси Z-коннектора (connectorBasisZ), чтобы BasisY
+    /// элемента совпало (или было максимально близко) с глобальной осью Y (0,1,0)
+    /// с квантованием по шагу 15°.
+    ///
+    /// Алгоритм:
+    /// 1. Проецируем текущий elementBasisY в плоскость, перпендикулярную connectorBasisZ.
+    /// 2. Проецируем глобальный Y в ту же плоскость.
+    /// 3. Вычисляем угол от текущей проекции до ближайшего кратного 15° относительно проекции globalY.
+    ///
+    /// Если конфигурация вырождена (BasisZ параллелен глобальному Y), возвращает null.
+    /// </summary>
+    /// <param name="connectorBasisZ">Ось Z коннектора (ось вращения)</param>
+    /// <param name="elementBasisY">Текущий BasisY элемента в мировых координатах</param>
+    /// <param name="rotationCenter">Центр вращения (обычно origin static-коннектора)</param>
+    public static RotationStep? ComputeGlobalYAlignmentSnap(
+        Vec3 connectorBasisZ,
+        Vec3 elementBasisY,
+        Vec3 rotationCenter)
+    {
+        var globalY = Vec3.BasisY; // (0, 1, 0)
+
+        // Проектируем BasisY элемента в плоскость перпендикулярную connectorBasisZ
+        var projCurrent = ProjectOntoPlane(elementBasisY, connectorBasisZ);
+        var projTargetY  = ProjectOntoPlane(globalY,      connectorBasisZ);
+
+        // Если проекция глобального Y вырождается (BasisZ параллелен Y) — нет смысла выравнивать
+        if (VectorUtils.Length(projTargetY) < 1e-6)
+            return null;
+
+        // Если текущая проекция вырождается — нет опорного вектора
+        if (VectorUtils.Length(projCurrent) < 1e-6)
+            return null;
+
+        var fromNorm = VectorUtils.Normalize(projCurrent);
+        var toNorm   = VectorUtils.Normalize(projTargetY);
+
+        // Угол от текущего BasisY до globalY в плоскости (−PI, PI]
+        var currentAngle = VectorUtils.AngleBetweenInPlane(fromNorm, toNorm, connectorBasisZ);
+
+        // Округляем до ближайшего кратного 15°
+        var snappedAngle = VectorUtils.RoundToNearestAngle(currentAngle, BasisXSnapStepDegrees);
+        var delta = snappedAngle - currentAngle;
+
+        if (System.Math.Abs(delta) < VectorUtils.Tolerance)
+            return null;
+
+        return new RotationStep(VectorUtils.Normalize(connectorBasisZ), delta);
+    }
+
+    /// <summary>
+    /// Проекция вектора v на плоскость с нормалью n (v без компоненты вдоль n).
+    /// </summary>
+    private static Vec3 ProjectOntoPlane(Vec3 v, Vec3 n)
+    {
+        var nLen = VectorUtils.Length(n);
+        if (nLen < VectorUtils.Tolerance) return v;
+        var nUnit = VectorUtils.Normalize(n);
+        var dot = VectorUtils.DotProduct(v, nUnit);
+        return v - nUnit * dot;
     }
 }

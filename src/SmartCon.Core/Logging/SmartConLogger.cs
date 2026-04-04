@@ -49,12 +49,11 @@ public static class SmartConLogger
     // ── LookupTable / ParameterResolver диагностика ───────────────────────
 
     /// <summary>
-    /// Пишет одновременно в smartcon.log и lookup-diagnostic.log.
+    /// Пишет ТОЛЬКО в lookup-diagnostic.log (не в smartcon.log).
     /// Используется в RevitLookupTableService, RevitParameterResolver, FamilyParameterAnalyzer.
     /// </summary>
     public static void Lookup(string message)
     {
-        Write(LogPath,       "LKP", message);
         Write(LookupLogPath, "LKP", message);
     }
 

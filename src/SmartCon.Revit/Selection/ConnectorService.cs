@@ -64,11 +64,43 @@ public sealed class ConnectorService : IConnectorService
         var cm = element.GetConnectorManager();
         if (cm is null) return [];
 
-        // cm.Connectors — только коннекторы данного элемента (не обходит MEP-сеть).
-        // cm.GetFreeConnectors() обходит всю сеть и возвращает чужие коннекторы.
         return cm.Connectors
                  .Cast<Connector>()
                  .Where(c => c.ConnectorType != ConnectorType.Curve && !c.IsConnected)
+                 .Select(c => c.ToProxy())
+                 .ToList();
+    }
+
+    public void DisconnectAllFromConnector(Document doc, ElementId elementId, int connectorIndex)
+    {
+        var element = doc.GetElement(elementId);
+        if (element is null) return;
+
+        var cm = element.GetConnectorManager();
+        if (cm is null) return;
+
+        var connector = cm.FindByIndex(connectorIndex);
+        if (connector is null) return;
+
+        // DisconnectFrom возвращает набор отсоединённых коннекторов;
+        // вызываем пока остаются соединения (могут быть каскадные).
+        while (connector.IsConnected)
+        {
+            connector.DisconnectFrom(connector.AllRefs.Cast<Connector>().First());
+        }
+    }
+
+    public IReadOnlyList<ConnectorProxy> GetAllConnectors(Document doc, ElementId elementId)
+    {
+        var element = doc.GetElement(elementId);
+        if (element is null) return [];
+
+        var cm = element.GetConnectorManager();
+        if (cm is null) return [];
+
+        return cm.Connectors
+                 .Cast<Connector>()
+                 .Where(c => c.ConnectorType != ConnectorType.Curve)
                  .Select(c => c.ToProxy())
                  .ToList();
     }
