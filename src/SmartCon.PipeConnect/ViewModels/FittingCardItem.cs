@@ -5,7 +5,7 @@ namespace SmartCon.PipeConnect.ViewModels;
 
 /// <summary>
 /// Элемент выпадающего списка фитингов в PipeConnectEditorView.
-/// Один элемент = одно правило маппинга (FittingMappingRule).
+/// Один элемент = одно конкретное семейство (FittingMapping) из правила маппинга.
 /// </summary>
 public sealed partial class FittingCardItem : ObservableObject
 {
@@ -14,33 +14,29 @@ public sealed partial class FittingCardItem : ObservableObject
     /// <summary>Отображаемое имя в ComboBox.</summary>
     public string DisplayName { get; }
 
-    /// <summary>Первый (приоритетный) вариант семейства, null = прямое соединение.</summary>
+    /// <summary>Конкретное семейство фитинга, null = прямое соединение.</summary>
     public FittingMapping? PrimaryFitting { get; }
 
-    public bool IsDirectConnect => Rule.IsDirectConnect && Rule.FittingFamilies.Count == 0;
+    public bool IsDirectConnect => Rule.IsDirectConnect && PrimaryFitting is null;
 
     public override string ToString() => DisplayName;
 
-    public FittingCardItem(FittingMappingRule rule)
+    public FittingCardItem(FittingMappingRule rule, FittingMapping? fitting = null)
     {
         Rule = rule;
-        PrimaryFitting = rule.FittingFamilies
-            .OrderBy(f => f.Priority)
-            .FirstOrDefault();
-
-        DisplayName = BuildDisplayName(rule);
+        PrimaryFitting = fitting;
+        DisplayName = BuildDisplayName(rule, fitting);
     }
 
-    private static string BuildDisplayName(FittingMappingRule rule)
+    private static string BuildDisplayName(FittingMappingRule rule, FittingMapping? fitting)
     {
-        if (rule.IsDirectConnect && rule.FittingFamilies.Count == 0)
+        if (rule.IsDirectConnect && fitting is null)
             return "Без фитинга (прямое соединение)";
 
-        var primary = rule.FittingFamilies.OrderBy(f => f.Priority).FirstOrDefault();
-        if (primary is not null)
-            return primary.SymbolName != "*"
-                ? $"{primary.FamilyName} — {primary.SymbolName}"
-                : primary.FamilyName;
+        if (fitting is not null)
+            return fitting.SymbolName != "*"
+                ? $"{fitting.FamilyName} — {fitting.SymbolName}"
+                : fitting.FamilyName;
 
         return $"Тип {rule.FromType.Value} → {rule.ToType.Value}";
     }

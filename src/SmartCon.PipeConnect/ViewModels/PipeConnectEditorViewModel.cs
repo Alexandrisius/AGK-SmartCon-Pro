@@ -79,8 +79,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             }));
 
         foreach (var rule in ctx.ProposedFittings)
+        {
             if (!rule.IsDirectConnect && rule.FittingFamilies.Count > 0)
-                AvailableFittings.Add(new FittingCardItem(rule));
+            {
+                foreach (var family in rule.FittingFamilies.OrderBy(f => f.Priority))
+                {
+                    AvailableFittings.Add(new FittingCardItem(rule, family));
+                }
+            }
+        }
 
         SelectedFitting = AvailableFittings.Count > 0 ? AvailableFittings[0] : null;
     }
