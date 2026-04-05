@@ -234,19 +234,29 @@ Static → Dynamic → Тройник_A
 - При −: элементы уровня N восстанавливаются из snapshot → возвращаются в **исходное положение в модели** (до присоединения к цепочке)
 - Если между + и − были Rotate/Resize — вращения/размеры **теряются** для этих элементов при откате (корректное поведение)
 
-### 3.5. Подбор размеров
+### 3.5. Подбор размеров (ИСПРАВЛЕНО v2.4)
 
-- **FamilyInstance: ChangeTypeId + fallback reducer**
-  - Для FamilyInstance: ищем FamilySymbol с нужным DN → `ChangeTypeId`
-  - DN определяется через привязку параметра к размеру коннектора (см. 3.6)
-  - Если нет символа нужного DN → вставляем **reducer** между элементами
+> **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ vs v2.3:** Три ошибки в предыдущей версии:
+> 1. MEPCurve ошибочно пропускал `TrySetConnectorRadius` → шёл сразу в reducer.
+>    Факт: `TrySetConnectorRadius` для MEPCurve **УЖЕ пишет** `RBS_PIPE_DIAMETER_PARAM` (строки 237-250).
+> 2. Целевой радиус брался из `parentProxy.Radius` → каскадный сбой при неудаче Level 1.
+> 3. Подгонялся только один коннектор → многопортовые фитинги (тройники) оставались "переходными".
 
-- **MEPCurve (труба, flex pipe): НЕ меняем типоразмер**
-  - Типоразмер трубы влияет на материал и тип коннекторов — менять нельзя
-  - Если DN предыдущего элемента ≠ DN трубы → вставляем **reducer** между ними
-  - Труба остаётся со своим исходным типоразмером
+**Единый алгоритм для ВСЕХ типов элементов (FamilyInstance, MEPCurve, FlexPipe):**
 
-- DN определяется из коннектора предыдущего элемента (через ConnectionEdge)
+1. `targetRadius = _ctx.DynamicConnector.Radius` — **ВСЕГДА** радиус Dynamic-коннектора
+   (вся цепочка подгоняется под Dynamic, а не каскадно parent→child)
+2. Для КАЖДОГО элемента: `TrySetConnectorRadius(doc, elemId, connIdx, targetRadius)`
+   — Работает для **всех** типов: MEPCurve пишет `RBS_PIPE_DIAMETER_PARAM`, FamilyInstance — параметр/тип
+3. После `TrySetConnectorRadius` + `doc.Regenerate()` → **ВЕРИФИКАЦИЯ**:
+   `RefreshConnector` → сравнить фактический радиус с `targetRadius`
+   — Если `|actual - target| > 1e-5`: подгонка НЕ удалась → InsertReducer
+   — Если совпадает: OK, reducer не нужен
+4. Для **многопортовых фитингов** (тройники): подгонять ВСЕ коннекторы элемента,
+   участвующие в графе цепочки (не только parent-facing)
+
+**ВАЖНО:** `TrySetConnectorRadius` может вернуть `true`, но Revit округлит/ограничит значение.
+Поэтому `return true` **НЕ является гарантией** — нужна верификация через `RefreshConnector`.
 
 ### 3.6. Определение DN элемента
 
@@ -603,24 +613,42 @@ return result
              _transformSvc.MoveElement(doc, elemId, correction)
          doc.Regenerate()
 
-       // ── d. AdjustSize + InsertReducer (если DN не совпадает) ──
+       // ── d. AdjustSize + InsertReducer (ИСПРАВЛЕНО v2.4) ──
+       // КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ vs v2.3:
+       //   1. targetRadius = DynamicConnector.Radius (НЕ parentProxy.Radius)
+       //   2. TrySetConnectorRadius вызывается для ВСЕХ типов (включая MEPCurve)
+       //   3. Верификация фактического радиуса после Regenerate
+       //   4. Для многопортовых фитингов — подгонка ВСЕХ коннекторов в графе
+
        ElementId? reducerId = null
+       targetRadius = _ctx.DynamicConnector.Radius
+
        если parentProxy != null:
          elemRefreshed = _connSvc.RefreshConnector(doc, elemId, edge.ElemConnIdx)
-         если elemRefreshed != null И |parentProxy.Radius - elemRefreshed.Radius| > 1e-5:
+         если elemRefreshed != null И |targetRadius - elemRefreshed.Radius| > 1e-5:
+
+           // d.1. Подгонка parent-facing коннектора (единый путь для всех типов)
+           _paramResolver.TrySetConnectorRadius(
+             doc, elemId, edge.ElemConnIdx, targetRadius)
+
+           // d.2. Для FamilyInstance: подогнать ВСЕ коннекторы элемента в графе цепочки
            elem = doc.GetElement(elemId)
-
            если elem is FamilyInstance:
-             success = _paramResolver.TrySetConnectorRadius(
-               doc, elemId, edge.ElemConnIdx, parentProxy.Radius)
-             doc.Regenerate()
-             // Refresh после AdjustSize — DN мог измениться
-             elemRefreshed = _connSvc.RefreshConnector(doc, elemId, edge.ElemConnIdx)
-             если !success И elemRefreshed != null:
-               reducerId = _networkMover.InsertReducer(doc, parentProxy, elemRefreshed)
-               если reducerId != null: _snapshotStore.TrackReducer(elemId, reducerId)
+             allElemConns = _connSvc.GetAllConnectors(doc, elemId)
+             для каждого c в allElemConns:
+               если c.ConnectorIndex != edge.ElemConnIdx:  // уже обработан выше
+                 // Проверить: коннектор участвует в графе?
+                 если graph.Edges.Any(e =>
+                   (comparer.Equals(e.FromElementId, elemId) && e.FromConnectorIndex == c.ConnectorIndex) ||
+                   (comparer.Equals(e.ToElementId, elemId) && e.ToConnectorIndex == c.ConnectorIndex)):
+                   _paramResolver.TrySetConnectorRadius(doc, elemId, c.ConnectorIndex, targetRadius)
 
-           если elem is MEPCurve:  // НЕ меняем типоразмер трубы
+           doc.Regenerate()
+
+           // d.3. ВЕРИФИКАЦИЯ фактического радиуса (Revit мог округлить/ограничить)
+           elemRefreshed = _connSvc.RefreshConnector(doc, elemId, edge.ElemConnIdx)
+           если elemRefreshed != null И |targetRadius - elemRefreshed.Radius| > 1e-5:
+             // Подгонка НЕ удалась → InsertReducer
              reducerId = _networkMover.InsertReducer(doc, parentProxy, elemRefreshed)
              если reducerId != null: _snapshotStore.TrackReducer(elemId, reducerId)
 
@@ -828,14 +856,16 @@ return result
 
 **Стало:**
 
-> **ВАЖНО:** Конвертер `BoolToVisibilityConverter` существует в `SmartCon.UI\Converters\`,
-> но **не зарегистрирован** как StaticResource. Нужно добавить в ресурсы окна:
+> **ВАЖНО (обновлено v2.4):** Конвертер `BoolToVisibilityConverter` существует в `SmartCon.UI\Converters\`,
+> но при реализации были проблемы с подтягиванием из другой сборки через XAML.
+> **Рекомендация:** создать **локальный** конвертер в `SmartCon.PipeConnect\Converters\BoolToVisibilityConverter.cs`
+> (простой 1-классовый файл) и зарегистрировать в ресурсах окна:
 > ```xml
 > <Window.Resources>
 >     <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
 > </Window.Resources>
 > ```
-> и namespace: `xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"`
+> и namespace: `xmlns:converters="clr-namespace:SmartCon.PipeConnect.Converters"`
 
 ```xml
 <!-- ── Глубина цепочки ─────────────────────────────────────── -->
@@ -892,7 +922,7 @@ private void IncrementChainDepth() { ... }  // см. алгоритм 5.4
 [RelayCommand(CanExecute = nameof(CanDecrementChain))]
 private void DecrementChainDepth() { ... }  // см. алгоритм 5.5
 
-private const int MaxChainLevel = 10; // 30 элементов ≈ 4-5 уровней BFS, 10 — с запасом
+private const int MaxChainLevel = 30; // линейная сеть: 10 труб + 10 отводов = 20 уровней BFS
 
 private bool CanIncrementChain()
     => IsSessionActive && !IsBusy
@@ -1024,6 +1054,40 @@ InsertReducer(doc, parentConn, childConn):
 | `ITransactionGroupSession` | `RunInTransaction` (внутри открытой TransactionGroup) | `RevitTransactionGroupSession.cs` |
 | `ConnectorAligner` | `ComputeAlignment` (выравнивание элемента к коннектору) | `ConnectorAligner.cs` |
 
+### 7.4. Рефакторинг `RevitParameterResolver.TrySetConnectorRadius` (НОВОЕ v2.4)
+
+> **Файл:** `SmartCon.Revit/Parameters/RevitParameterResolver.cs`
+>
+> **Проблема обнаружена при реализации:** Строки 306-311 — если `dep.IsInstance=true`
+> и прямая запись не удалась (ReadOnly или SolveFor вернул null), код возвращает `false`
+> **БЕЗ попытки** `TryChangeTypeTo`. Это критично для отводов/тройников: их параметр DN
+> экземплярный, но значения ограничены lookup-таблицей ТИПОРАЗМЕРА. Смена типа может
+> разблокировать нужный DN.
+
+**Требуемое изменение (после строки 311):**
+
+```csharp
+// БЫЛО:
+if (dep.IsInstance)
+{
+    SmartConLogger.Lookup("  dep.IsInstance=True: все ветки исчерпаны → return false");
+    return false;  // ← БАГ: не пробует TryChangeTypeTo
+}
+
+// СТАЛО:
+if (dep.IsInstance)
+{
+    // Fallback: прямая запись не сработала → пробуем сменить типоразмер.
+    // У многих фитингов IsInstance=true, но допустимые значения
+    // определяются lookup-таблицей типоразмера.
+    SmartConLogger.Lookup("  dep.IsInstance=True: fallback → TryChangeTypeTo...");
+    return TryChangeTypeTo(doc, elementId, connectorIndex, targetRadiusInternalUnits);
+}
+```
+
+**Почему это безопасно:** `TryChangeTypeTo` использует `SubTransaction` для каждой попытки —
+если нужного типоразмера нет, элемент не изменится.
+
 ---
 
 ## 8. Интеграция с PipeConnectCommand
@@ -1047,6 +1111,34 @@ var stopAt = new HashSet<ElementId>(new ElementIdEqualityComparer())
 var chainGraph = chainIterator.BuildGraph(doc, dynamicPick.Value.ElementId, stopAt);
 SmartConLogger.Info($"[Chain] Граф: {chainGraph.TotalChainElements} элементов, " +
     $"{chainGraph.MaxLevel} уровней");
+
+// ── S6.2: ПРОГРЕВ КЕША (НОВОЕ v2.4) ─────────────────────────
+// КРИТИЧНО: GetConnectorRadiusDependencies для FamilyInstance с ReadOnly-параметрами
+// вызывает doc.EditFamily() — это ЗАПРЕЩЕНО внутри открытой транзакции.
+// Код имеет guard (!doc.IsModifiable), но без кеша теряется формульный путь →
+// fallback на TryChangeTypeTo (менее точный).
+// Поэтому ВСЕ deps кешируются ЗДЕСЬ, ДО открытия UI и транзакций.
+foreach (var level in chainGraph.Levels.Values)
+{
+    foreach (var elemId in level)
+    {
+        var elem = doc.GetElement(elemId);
+        if (elem is null) continue;
+        var cm = elem switch
+        {
+            FamilyInstance fi => fi.MEPModel?.ConnectorManager,
+            MEPCurve mc       => mc.ConnectorManager,
+            _                 => null
+        };
+        if (cm is null) continue;
+        foreach (Connector c in cm.Connectors)
+        {
+            if (c.ConnectorType == ConnectorType.Curve) continue;
+            paramResolver.GetConnectorRadiusDependencies(doc, elemId, (int)c.Id);
+        }
+    }
+}
+SmartConLogger.Info($"[Chain] Кеш deps прогрет для {chainGraph.TotalChainElements} элементов");
 ```
 
 **Изменить создание контекста:**
@@ -1154,11 +1246,13 @@ public bool MoveEntireChain { get; set; }  // и MoveEntireChain = false в Rese
 | 6 | `SmartCon.Revit/Network/NetworkMover.cs` | **Создать** | InsertReducer через IFittingInsertService + IParameterResolver |
 | 7 | `SmartCon.Core/Models/ConnectionGraph.cs` | **Изменить** | +Levels, +SaveConnection, +GetOriginalConnections, +TotalChainElements, +MaxLevel. **`ElementIdEqualityComparer` → `public`** |
 | 8 | `SmartCon.Core/Models/PipeConnectSessionContext.cs` | **Изменить** | +ChainGraph |
-| 9 | `SmartCon.PipeConnect/Commands/PipeConnectCommand.cs` | **Изменить** | BuildGraph перед окном, передать ChainGraph + INetworkMover |
+| 9 | `SmartCon.PipeConnect/Commands/PipeConnectCommand.cs` | **Изменить** | BuildGraph + **Pre-caching deps (S6.2)** + передать ChainGraph + INetworkMover |
 | 10 | `SmartCon.App/DI/ServiceRegistrar.cs` | **Изменить** | +IElementChainIterator, +INetworkMover |
-| 11 | `SmartCon.PipeConnect/Views/PipeConnectEditorView.xaml` | **Изменить** | CheckBox → Grid с [−] depth [+] hint. **+BoolToVisibilityConverter в ресурсы окна** |
+| 11 | `SmartCon.PipeConnect/Views/PipeConnectEditorView.xaml` | **Изменить** | CheckBox → Grid с [−] depth [+] hint |
+| 11a | `SmartCon.PipeConnect/Converters/BoolToVisibilityConverter.cs` | **Создать** | Локальный конвертер (проблемы с cross-assembly XAML) |
 | 12 | `SmartCon.PipeConnect/ViewModels/PipeConnectEditorViewModel.cs` | **Изменить** | +_networkMover, +_chainGraph, +_snapshotStore, +chainDepth, +/−, +InitChain, +CaptureSnapshot, +FindEdgeToParent, +IsInCurrentChain, +UpdateChainUI, изменить ExecuteRotate, −MoveEntireChain |
 | 13 | `SmartCon.Core/Models/PipeConnectionSession.cs` | **Изменить** | −MoveEntireChain, −Reset().MoveEntireChain |
+| 14 | `SmartCon.Revit/Parameters/RevitParameterResolver.cs` | **Изменить** | Строки 306-311: fallback `dep.IsInstance=true` → `TryChangeTypeTo` (секция 7.4) |
 
 ---
 
@@ -1188,17 +1282,27 @@ public bool MoveEntireChain { get; set; }  // и MoveEntireChain = false в Rese
 
 **Верификация:** InsertReducer вставляет и выравнивает reducer корректно.
 
+### Фаза 3.5: Рефакторинг RevitParameterResolver (НОВОЕ v2.4)
+
+7a. Изменить `RevitParameterResolver.cs` строки 306-311: fallback `dep.IsInstance=true` → `TryChangeTypeTo` (секция 7.4)
+
+**Верификация:** Отвод с экземплярным ReadOnly-параметром DN меняет размер через смену типоразмера.
+
 ### Фаза 4: Команда и контекст
 
 10. Добавить `ChainGraph` в `PipeConnectSessionContext.cs`
-11. Изменить `PipeConnectCommand.cs` — вызвать `BuildGraph` после S5, передать в контекст
+11. Изменить `PipeConnectCommand.cs`:
+    - Вызвать `BuildGraph` после S5
+    - **Добавить Pre-caching (S6.2):** цикл по всем коннекторам графа → `GetConnectorRadiusDependencies` (ВНЕ транзакции!)
+    - Передать ChainGraph в контекст
 12. Добавить `INetworkMover` в создание ViewModel
 
-**Верификация:** PipeConnect запускается, граф построен (лог), окно открывается.
+**Верификация:** PipeConnect запускается, граф построен (лог), кеш прогрет (лог), окно открывается.
 
 ### Фаза 5: UI + ViewModel
 
-13. Изменить `PipeConnectEditorView.xaml` — заменить CheckBox на Grid с [−] depth [+]
+13. Создать `SmartCon.PipeConnect/Converters/BoolToVisibilityConverter.cs` (локальный)
+13a. Изменить `PipeConnectEditorView.xaml` — заменить CheckBox на Grid с [−] depth [+]
 14. Изменить `PipeConnectEditorViewModel.cs`:
     - Добавить поля: `_chainGraph`, `_snapshotStore`, `_chainDepth`, `_chainDepthHint`, `_hasChain`
     - Добавить зависимость: `INetworkMover _networkMover`
@@ -1285,6 +1389,24 @@ public bool MoveEntireChain { get; set; }  // и MoveEntireChain = false в Rese
 **Проблема:** Snapshot захвачен ДО +. Если между + и − была операция Rotate, элемент находится не там где был при захвате.
 
 **Решение:** Это корректное поведение: − возвращает элемент в ИСХОДНОЕ состояние (до +), а не в промежуточное. Элемент "выпадает" из цепочки и возвращается на своё место в модели.
+
+### Риск 10: EditFamily внутри транзакции (НОВОЕ v2.4)
+
+**Проблема (обнаружена при реализации):** `RevitParameterResolver.GetConnectorRadiusDependencies()` для FamilyInstance с ReadOnly-параметрами вызывает `doc.EditFamily()` (строка 159). Revit **запрещает** `EditFamily` при `doc.IsModifiable=true` (внутри транзакции) → `InvalidOperationException`.
+
+**Решение:** Код имеет guard `!doc.IsModifiable` (строка 149) — не крашится. НО без кеша теряется формульный путь → fallback на менее точный `TryChangeTypeTo`. **Фикс:** Pre-caching всех deps в `PipeConnectCommand.Execute()` ДО UI (секция 8, S6.2).
+
+### Риск 11: Каскадный сбой подгонки размеров (НОВОЕ v2.4)
+
+**Проблема (обнаружена при реализации):** Если `targetRadius = parentProxy.Radius` и Level 1 не смог сменить DN (остался DN65), то Level 2 видит "одинаковый DN с Level 1" → пропускает подгонку. Вся цепочка остаётся с исходным размером.
+
+**Решение:** `targetRadius = _ctx.DynamicConnector.Radius` — всегда радиус Dynamic-коннектора. Каждый элемент подгоняется независимо, без каскадной зависимости.
+
+### Риск 12: TrySetConnectorRadius возвращает true но размер не тот (НОВОЕ v2.4)
+
+**Проблема (обнаружена при реализации):** `param.Set(targetValue)` может вернуть `true`, но Revit под капотом округляет/ограничивает значение (lookup-таблицы, формулы семейства). Код считал подгонку успешной, а размер остался исходным.
+
+**Решение:** После `TrySetConnectorRadius` + `doc.Regenerate()` — ОБЯЗАТЕЛЬНО `RefreshConnector` + проверка `|actual - target| > 1e-5`. Только если фактический радиус совпал — подгонка считается успешной.
 
 ---
 
@@ -1373,3 +1495,17 @@ public bool MoveEntireChain { get; set; }  // и MoveEntireChain = false в Rese
 | 29 | `AlignFittingToStatic` — комментарий про возврат conn2 | Метод возвращает ВТОРОЙ коннектор (смотрящий на child) — именно тот что нужен |
 | 30 | `PipeConnectCommand` — комментарий про контекст ExternalEvent | Все `ServiceHost.GetService` вызываются в `Execute()` ДО `ExternalEventActionQueue` |
 | 31 | `MaxChainLevel` 20 → 10 | 30 элементов ≈ 4-5 уровней BFS, 10 достаточно с запасом |
+
+### v2.4 — исправления по результатам первой реализации
+
+> Источник: анализ реальных багов при попытке реализации плана v2.3.
+> Все 7 пунктов верифицированы против кодовой базы.
+
+| # | Что изменено | Причина |
+|---|-------------|---------|
+| 32 | **КРИТИЧЕСКОЕ:** Секция 3.5 полностью переписана — единый подход к размерам | 3 ошибки: MEPCurve пропускал TrySetConnectorRadius; targetRadius из parent вместо Dynamic; только 1 коннектор у многопортовых фитингов |
+| 33 | **КРИТИЧЕСКОЕ:** Алгоритм 5.4 шаг d полностью переписан | `targetRadius = DynamicConnector.Radius`, вызов для ВСЕХ типов, многопортовые фитинги, верификация фактического радиуса |
+| 34 | **КРИТИЧЕСКОЕ:** Добавлен Pre-caching (секция 8, S6.2) | `GetConnectorRadiusDependencies` вызывает `EditFamily` для ReadOnly-параметров → ЗАПРЕЩЕНО внутри транзакции. Прогрев кеша ДО UI |
+| 35 | **КРИТИЧЕСКОЕ:** Секция 7.4 — рефакторинг `TrySetConnectorRadius` | `dep.IsInstance=true` → `return false` без попытки `TryChangeTypeTo`. Нужен fallback для фитингов с lookup-таблицами |
+| 36 | `MaxChainLevel` 10 → 30 | Линейная сеть: 10 труб + 10 отводов = 20 уровней BFS. 30 с запасом |
+| 37 | `BoolToVisibilityConverter` — локальный в `SmartCon.PipeConnect` | Проблемы с подтягиванием из другой сборки через XAML |
