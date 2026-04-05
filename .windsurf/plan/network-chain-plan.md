@@ -1,6 +1,6 @@
 # План: Перемещение цепочки элементов сети (Network Chain Movement)
 
-**Статус:** Draft v2 (полная переработка)  
+**Статус:** Draft v2.5 (верифицирован: Revit API + кодовая база + инварианты)  
 **Дата:** 2025-07-13  
 **Контекст:** SmartCon — плагин для Revit 2025, .NET 8 / C# 12 / WPF, MEP-соединения, PipeConnect  
 **Фаза roadmap:** Phase 7 — Цепочки (Chain)
@@ -387,8 +387,6 @@ public sealed record ElementSnapshot
     public ElementId? FamilySymbolId { get; init; }
     // Соединения (из графа)
     public IReadOnlyList<ConnectionRecord> Connections { get; init; } = [];
-    // Reducer-ы вставленные при + (заполняется после операции)
-    public List<ElementId> InsertedReducerIds { get; } = [];
 }
 ```
 
@@ -403,6 +401,7 @@ namespace SmartCon.Core.Models;
 public sealed class NetworkSnapshotStore
 {
     private readonly Dictionary<long, ElementSnapshot> _snapshots = new();
+    private readonly Dictionary<long, List<ElementId>> _reducers = new();
 
     public void Save(ElementSnapshot snapshot)
         => _snapshots[snapshot.ElementId.Value] = snapshot;
@@ -410,11 +409,20 @@ public sealed class NetworkSnapshotStore
     public ElementSnapshot? Get(ElementId elementId)
         => _snapshots.TryGetValue(elementId.Value, out var s) ? s : null;
 
+    /// <summary>
+    /// Запомнить reducer, вставленный при + для элемента.
+    /// Reducer удаляется при − (DecrementChainDepth).
+    /// </summary>
     public void TrackReducer(ElementId elementId, ElementId reducerId)
     {
-        if (_snapshots.TryGetValue(elementId.Value, out var s))
-            s.InsertedReducerIds.Add(reducerId);
+        var key = elementId.Value;
+        if (!_reducers.TryGetValue(key, out var list))
+        { list = []; _reducers[key] = list; }
+        list.Add(reducerId);
     }
+
+    public IReadOnlyList<ElementId> GetReducers(ElementId elementId)
+        => _reducers.TryGetValue(elementId.Value, out var list) ? list : [];
 }
 ```
 
@@ -451,7 +459,7 @@ public ConnectionGraph? ChainGraph { get; init; }
      если conn.ConnectorType == Curve → continue
      для каждого refConn в conn.AllRefs:
        если refConn.Owner != null И refConn.Owner.Id в stopAtElements:
-         excludedConnIdx = (int)conn.Id
+         excludedConnIdx = conn.Id
          break
 
 2. Инициализация:
@@ -472,7 +480,7 @@ public ConnectionGraph? ChainGraph { get; init; }
 
        для каждого conn в cm.Connectors:
          если conn.ConnectorType == ConnectorType.Curve → continue
-         если elemId == startElementId И (int)conn.Id == excludedConnIdx → continue
+         если elemId == startElementId И conn.Id == excludedConnIdx → continue
          если !conn.IsConnected → continue
 
          для каждого refConn в conn.AllRefs:
@@ -486,13 +494,13 @@ public ConnectionGraph? ChainGraph { get; init; }
            graph.AddNode(neighborId)
            graph.AddElementAtLevel(bfsLevel, neighborId)
            graph.AddEdge(new ConnectionEdge(
-             elemId, (int)conn.Id, neighborId, (int)refConn.Id))
+             elemId, conn.Id, neighborId, refConn.Id))
 
            // Сохранить соединения ОБЕИХ сторон
            graph.SaveConnection(elemId, new ConnectionRecord(
-             elemId, (int)conn.Id, neighborId, (int)refConn.Id))
+             elemId, conn.Id, neighborId, refConn.Id))
            graph.SaveConnection(neighborId, new ConnectionRecord(
-             neighborId, (int)refConn.Id, elemId, (int)conn.Id))
+             neighborId, refConn.Id, elemId, conn.Id))
 
      currentLevelIds = nextLevelIds
 
@@ -721,8 +729,7 @@ return result
 
        // ── b. Удалить reducer-ы ──
        snapshot = _snapshotStore.Get(elemId)
-       если snapshot != null:
-         для каждого reducerId в snapshot.InsertedReducerIds:
+       для каждого reducerId в _snapshotStore.GetReducers(elemId):
            rConns = _connSvc.GetAllConnectors(doc, reducerId)
            для каждого rc в rConns:
              если !rc.IsFree: _connSvc.DisconnectAllFromConnector(doc, reducerId, rc.ConnectorIndex)
@@ -811,10 +818,8 @@ return result
      // + reducer-ы всех уровней
      для level = 1 до _chainDepth:
        для каждого elemId в _chainGraph.Levels[level]:
-         snapshot = _snapshotStore.Get(elemId)
-         если snapshot != null:
-           для каждого reducerId в snapshot.InsertedReducerIds:
-             idsToRotate.Add(reducerId)
+         для каждого reducerId в _snapshotStore.GetReducers(elemId):
+           idsToRotate.Add(reducerId)
 
 4. _transformSvc.RotateElements(doc, idsToRotate, axisOrigin, axisDir, radians)
    doc.Regenerate()
@@ -1118,7 +1123,7 @@ SmartConLogger.Info($"[Chain] Граф: {chainGraph.TotalChainElements} элем
 // Код имеет guard (!doc.IsModifiable), но без кеша теряется формульный путь →
 // fallback на TryChangeTypeTo (менее точный).
 // Поэтому ВСЕ deps кешируются ЗДЕСЬ, ДО открытия UI и транзакций.
-foreach (var level in chainGraph.Levels.Values)
+foreach (var level in chainGraph.Levels)
 {
     foreach (var elemId in level)
     {
@@ -1134,7 +1139,7 @@ foreach (var level in chainGraph.Levels.Values)
         foreach (Connector c in cm.Connectors)
         {
             if (c.ConnectorType == ConnectorType.Curve) continue;
-            paramResolver.GetConnectorRadiusDependencies(doc, elemId, (int)c.Id);
+            paramResolver.GetConnectorRadiusDependencies(doc, elemId, c.Id);
         }
     }
 }
@@ -1432,7 +1437,7 @@ public bool MoveEntireChain { get; set; }  // и MoveEntireChain = false в Rese
 4. **Snapshot ДО модификации:** Захватывается перед +, восстанавливается при −. Элемент возвращается в исходное состояние.
 5. **Идемпотентность:** Повторный + на том же уровне невозможен (CanIncrementChain = false).
 6. **Нет хардкода DN:** Размеры определяются через `Connector.Radius` (universal) и `IParameterResolver`.
-7. **Нет утечки элементов:** Reducers отслеживаются в `InsertedReducerIds`, удаляются при −, откатываются при Cancel.
+7. **Нет утечки элементов:** Reducers отслеживаются в `NetworkSnapshotStore._reducers`, удаляются при −, откатываются при Cancel.
 
 ---
 
@@ -1440,7 +1445,7 @@ public bool MoveEntireChain { get; set; }  // и MoveEntireChain = false в Rese
 
 1. **Reducer не найден:** Если `IFittingMapper` не вернул правило с ReducerFamilies — допускаем ConnectTo с разным DN (Revit покажет warning) или блокируем +? **Рекомендация:** допускаем + лог.
 2. **MEPSystem:** Сейчас план только для FamilyInstance и MEPCurve. MEPSystem (воздуховоды, кабельные лотки) — аналогичная логика, но другие `BuiltInParameter`. **Рекомендация:** defer на Phase 8.
-3. **Глубина > 5 уровней:** Производительность при 50+ элементах не тестирована. **Рекомендация:** ограничить MaxLevel = 10 в UI (configurable).
+3. **Глубина > 20 уровней:** Производительность при 100+ элементах не тестирована. `MaxChainLevel = 30` (v2.4) покрывает линейную сеть 10 труб + 10 отводов = 20 уровней. При необходимости снизить.
 4. **Undo после Connect:** После Assimilate вся операция — одна запись Undo. Нет гранулярного отката уровней после Connect. **Рекомендация:** это ожидаемое поведение (ADR-003).
 
 ---
@@ -1509,3 +1514,16 @@ public bool MoveEntireChain { get; set; }  // и MoveEntireChain = false в Rese
 | 35 | **КРИТИЧЕСКОЕ:** Секция 7.4 — рефакторинг `TrySetConnectorRadius` | `dep.IsInstance=true` → `return false` без попытки `TryChangeTypeTo`. Нужен fallback для фитингов с lookup-таблицами |
 | 36 | `MaxChainLevel` 10 → 30 | Линейная сеть: 10 труб + 10 отводов = 20 уровней BFS. 30 с запасом |
 | 37 | `BoolToVisibilityConverter` — локальный в `SmartCon.PipeConnect` | Проблемы с подтягиванием из другой сборки через XAML |
+
+### v2.5 — верификация плана (Revit API + кодовая база + алгоритмы)
+
+> Источник: полная верификация плана v2.4 по Revit 2026 API docs, 10 файлам кодовой базы,
+> инвариантам I-01..I-10, dependency-rule.md. Все Revit API утверждения проверены через skill скрипты.
+
+| # | Что изменено | Причина |
+|---|-------------|---------|
+| 38 | **БАГ:** S6.2 `chainGraph.Levels.Values` → `chainGraph.Levels` | `Levels` — `IReadOnlyList`, не Dictionary. У `IReadOnlyList` нет `.Values` |
+| 39 | **DESIGN:** `ElementSnapshot` — убран мутабельный `List<ElementId> InsertedReducerIds` | `sealed record` с мутабельным `List` нарушает иммутабельность. Reducer-трекинг перенесён в `NetworkSnapshotStore._reducers` + `GetReducers()` |
+| 40 | Алгоритмы 5.5, 5.6, гарантия #7 — `snapshot.InsertedReducerIds` → `_snapshotStore.GetReducers(elemId)` | Следствие п.39 |
+| 41 | Открытый вопрос #3 обновлён: `MaxLevel=10` → `MaxChainLevel=30` с обоснованием | Противоречие между секцией 6.3 (=30) и вопросом 16.3 (=10). Приведено в соответствие |
+| 42 | Убраны избыточные `(int)conn.Id` cast-ы в алгоритмах 5.1, S6.2 | `Connector.Id` возвращает `int` (верифицировано по Revit API). Cast `(int)` избыточен |
