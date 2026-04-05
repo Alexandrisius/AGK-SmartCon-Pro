@@ -93,7 +93,20 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <DataGridCheckBoxColumn Header="Прямое" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="70" />
+                            <DataGridCheckBoxColumn Header="Прямое" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="70">
+                                <DataGridCheckBoxColumn.ElementStyle>
+                                    <Style TargetType="CheckBox">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridCheckBoxColumn.ElementStyle>
+                                <DataGridCheckBoxColumn.EditingElementStyle>
+                                    <Style TargetType="CheckBox">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                    </Style>
+                                </DataGridCheckBoxColumn.EditingElementStyle>
+                            </DataGridCheckBoxColumn>
 
                             <DataGridTemplateColumn Header="Фитинги" Width="*">
                                 <DataGridTemplateColumn.CellTemplate>

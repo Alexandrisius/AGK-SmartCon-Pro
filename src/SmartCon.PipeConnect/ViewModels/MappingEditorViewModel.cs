@@ -68,7 +68,9 @@ public sealed partial class MappingEditorViewModel : ObservableObject
         try
         {
             _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
-            StatusMessage = $"✔ Типы сохранены ({ConnectorTypes.Count} шт.) — {_repository.GetStoragePath()}";
+            // Также сохраняем правила — они могут быть изменены
+            _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
+            StatusMessage = $"✔ Типы и правила сохранены — {_repository.GetStoragePath()}";
         }
         catch (Exception ex)
         {
@@ -98,7 +100,9 @@ public sealed partial class MappingEditorViewModel : ObservableObject
         try
         {
             _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
-            StatusMessage = $"✔ Правила сохранены ({MappingRules.Count} шт.) — {_repository.GetStoragePath()}";
+            // Также сохраняем типы — они могут быть изменены
+            _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
+            StatusMessage = $"✔ Правила и типы сохранены — {_repository.GetStoragePath()}";
         }
         catch (Exception ex)
         {
