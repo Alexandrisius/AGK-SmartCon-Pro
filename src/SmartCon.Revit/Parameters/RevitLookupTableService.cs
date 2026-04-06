@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Math;
 using SmartCon.Core.Math.FormulaEngine.Solver;
+using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
 using RevitFamily = Autodesk.Revit.DB.Family;
@@ -24,7 +25,8 @@ public sealed class RevitLookupTableService : ILookupTableService
     // ── ILookupTableService ───────────────────────────────────────────────
 
     public bool ConnectorRadiusExistsInTable(Document doc, ElementId elementId,
-        int connectorIndex, double radiusInternalUnits)
+        int connectorIndex, double radiusInternalUnits,
+        IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
         SmartConLogger.LookupSection("ConnectorRadiusExistsInTable");
         SmartConLogger.Lookup($"  elementId={elementId.Value}, connIdx={connectorIndex}, radiusInternal={radiusInternalUnits:F6} ft ({radiusInternalUnits * 304.8:F2} mm)");
@@ -36,7 +38,7 @@ public sealed class RevitLookupTableService : ILookupTableService
             return false;
         }
 
-        var values = ExtractColumnValues(ctx.CsvLines, ctx.ColIndex);
+        var values = ExtractColumnValues(ctx.CsvLines, ctx.ColIndex, ctx.AllQueryColumns, constraints);
         double targetMm = ToMillimeters(radiusInternalUnits, ctx.IsRadius);
 
         SmartConLogger.Lookup($"  targetMm={targetMm:F3} (isRadius={ctx.IsRadius}), значений в колонке: {values.Count}");
@@ -48,7 +50,8 @@ public sealed class RevitLookupTableService : ILookupTableService
     }
 
     public double GetNearestAvailableRadius(Document doc, ElementId elementId,
-        int connectorIndex, double targetRadiusInternalUnits)
+        int connectorIndex, double targetRadiusInternalUnits,
+        IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
         SmartConLogger.LookupSection("GetNearestAvailableRadius");
         SmartConLogger.Lookup($"  elementId={elementId.Value}, connIdx={connectorIndex}, targetInternal={targetRadiusInternalUnits:F6} ft");
@@ -60,7 +63,7 @@ public sealed class RevitLookupTableService : ILookupTableService
             return targetRadiusInternalUnits;
         }
 
-        var values = ExtractColumnValues(ctx.CsvLines, ctx.ColIndex);
+        var values = ExtractColumnValues(ctx.CsvLines, ctx.ColIndex, ctx.AllQueryColumns, constraints);
         if (values.Count == 0)
         {
             SmartConLogger.Lookup("  → колонка пуста → вернуть target как есть");
@@ -100,10 +103,17 @@ public sealed class RevitLookupTableService : ILookupTableService
 
     // ── Построение контекста ──────────────────────────────────────────────
 
+    /// <summary>
+    /// Маппинг одного query-столбца CSV: индекс столбца и имя FamilyParameter.
+    /// Нужен для фильтрации строк по ограничениям других коннекторов.
+    /// </summary>
+    private sealed record QueryColumnMapping(int CsvColIndex, string ParameterName);
+
     private sealed record LookupContext(
         string[] CsvLines,
         int ColIndex,
-        bool IsRadius);   // true = значения в мм уже радиусы, false = диаметры (делить на 2)
+        bool IsRadius,
+        IReadOnlyList<QueryColumnMapping> AllQueryColumns);   // ВСЕ query-столбцы таблицы
 
     /// <summary>
     /// Открывает семейство, ищет FamilySizeTableManager, находит таблицу и столбец
@@ -250,8 +260,19 @@ public sealed class RevitLookupTableService : ILookupTableService
             }
             else
             {
-                tableStoresDiameters = isDiameter;
-                SmartConLogger.Lookup($"  tableStoresDiameters={tableStoresDiameters} (SolveFor=null, fallback isDiameter)");
+                // SolveFor не смог решить (size_lookup формула).
+                // Если rootName — query-параметр size_lookup, то столбец хранит DN (диаметры).
+                bool isQueryParam = false;
+                try
+                {
+                    var sl = FormulaSolver.ParseSizeLookupStatic(formula);
+                    isQueryParam = sl is not null && sl.Value.QueryParameters
+                        .Any(q => string.Equals(q, rootName, StringComparison.OrdinalIgnoreCase));
+                }
+                catch { /* формула не парсится — оставляем false */ }
+
+                tableStoresDiameters = isQueryParam || isDiameter;
+                SmartConLogger.Lookup($"  tableStoresDiameters={tableStoresDiameters} (SolveFor=null, isQueryParam={isQueryParam}, isDiameter={isDiameter})");
             }
         }
         else
@@ -283,68 +304,81 @@ public sealed class RevitLookupTableService : ILookupTableService
         string searchParamName,
         bool tableStoresDiameters)
     {
-        // Проверить: есть ли формула size_lookup(tableName, ..., searchParamName, ...) у любого параметра
         var fm = familyDoc.FamilyManager;
-        int colIndex = -1;
-        string? foundInParam = null;
-        string? foundFormula = null;
+        int    targetColIndex = -1;
+        string? foundInParam  = null;
+        bool   foundViaDependsOn = false;
+        IReadOnlyList<QueryColumnMapping>? allQueryColumns = null;
 
-        SmartConLogger.Lookup($"    Перебор параметров семейства (кол-во: {fm.Parameters.Size}):");
-
+        // Snapshot: материализуем fm.Parameters чтобы избежать вложенной энумерации
+        // Revit COM-коллекция ParameterSet не поддерживает реентерабельное перечисление
+        var paramSnapshot = new List<(string? Name, string? Formula)>();
+        var formulaByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (FamilyParameter fp in fm.Parameters)
         {
-            if (string.IsNullOrEmpty(fp.Formula)) continue;
+            var name = fp.Definition?.Name;
+            var formula = fp.Formula;
+            paramSnapshot.Add((name, formula));
+            if (name != null && !string.IsNullOrEmpty(formula))
+                formulaByName.TryAdd(name, formula);
+        }
 
-            SmartConLogger.Lookup($"      FamilyParam '{fp.Definition?.Name}', formula='{fp.Formula}'");
+        SmartConLogger.Lookup($"    Перебор параметров семейства (кол-во: {paramSnapshot.Count}):");
 
-            var parsed = FormulaSolver.ParseSizeLookupStatic(fp.Formula);
-            if (parsed is null)
-            {
-                SmartConLogger.Lookup($"        → ParseSizeLookup=null (не size_lookup)");
-                continue;
-            }
+        foreach (var (fpName, fpFormula) in paramSnapshot)
+        {
+            if (string.IsNullOrEmpty(fpFormula)) continue;
 
-            var resolvedTableName = ResolveTableAlias(fm, parsed.Value.TableName);
-            SmartConLogger.Lookup($"        → ParseSizeLookup OK: tableName='{parsed.Value.TableName}'→'{resolvedTableName}', target='{parsed.Value.TargetParameter}', queryParams=[{string.Join(", ", parsed.Value.QueryParameters)}]");
+            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula);
+            if (parsed is null) continue;
 
+            var resolvedTableName = ResolveTableAlias(formulaByName, parsed.Value.TableName);
             if (!string.Equals(resolvedTableName, tableName, StringComparison.OrdinalIgnoreCase))
-            {
-                SmartConLogger.Lookup($"        → tableName не совпадает ('{resolvedTableName}' != '{tableName}') — пропускаем");
                 continue;
+
+            var queryParams = parsed.Value.QueryParameters;
+            SmartConLogger.Lookup($"      FamilyParam '{fpName}': queryParams=[{string.Join(", ", queryParams)}]");
+
+            // При первом совпадении таблицы строим маппинг ВСЕХ query-столбцов
+            // col[0]=комментарии, col[1]=queryParams[0], col[2]=queryParams[1], ...
+            if (allQueryColumns is null)
+            {
+                allQueryColumns = queryParams
+                    .Select((name, idx) => new QueryColumnMapping(idx + 1, name))
+                    .ToList();
             }
 
-            // Найти позицию searchParamName среди QueryParameters
-            var queryParams = parsed.Value.QueryParameters;
-            SmartConLogger.Lookup($"        → Ищем '{searchParamName}' среди queryParams: [{string.Join(", ", queryParams)}]");
-
-            for (int i = 0; i < queryParams.Count; i++)
+            // Найти позицию searchParamName
+            if (targetColIndex < 0)
             {
-                if (string.Equals(queryParams[i], searchParamName, StringComparison.OrdinalIgnoreCase)
-                    || DependsOn(fm, queryParams[i], searchParamName))
+                for (int i = 0; i < queryParams.Count; i++)
                 {
-                    // colIndex в CSV: col[0] = комментарии, col[queryParamIndex+1] = значения param
-                    colIndex     = i + 1;
-                    foundInParam = fp.Definition?.Name;
-                    foundFormula = fp.Formula;
-                    SmartConLogger.Lookup($"        → НАЙДЕНО! queryParamIndex={i}, colIndex={colIndex} (col[0]=комментарии)");
-                    break;
+                    bool direct  = string.Equals(queryParams[i], searchParamName, StringComparison.OrdinalIgnoreCase);
+                    bool depends = !direct && DependsOn(formulaByName, queryParams[i], searchParamName);
+                    SmartConLogger.Lookup($"        [{i}] '{queryParams[i]}': direct={direct}, depends={depends}");
+                    if (direct || depends)
+                    {
+                        targetColIndex    = i + 1;
+                        foundInParam      = fpName;
+                        foundViaDependsOn = depends;
+                        SmartConLogger.Lookup($"        → searchParam '{searchParamName}' @ queryIdx={i}, colIndex={targetColIndex}, viaDependsOn={depends}");
+                        break;
+                    }
                 }
             }
 
-            if (colIndex >= 0) break;
-
-            SmartConLogger.Lookup($"        → '{searchParamName}' не найден в queryParams этой формулы");
+            if (targetColIndex >= 0 && allQueryColumns is not null) break;
         }
 
-        if (colIndex < 0)
+        if (targetColIndex < 0)
         {
-            SmartConLogger.Lookup($"    ✗ Таблица '{tableName}': параметр '{searchParamName}' не найден ни в одной формуле size_lookup");
+            SmartConLogger.Lookup($"    ✗ Таблица '{tableName}': параметр '{searchParamName}' не найден");
             return null;
         }
 
-        SmartConLogger.Lookup($"    ✓ Таблица '{tableName}': colIndex={colIndex}, найдено в параметре '{foundInParam}' (formula='{foundFormula}')");
+        SmartConLogger.Lookup($"    ✓ Таблица '{tableName}': colIndex={targetColIndex}, найдено в '{foundInParam}'");
+        SmartConLogger.Lookup($"      AllQueryColumns: [{string.Join(", ", (allQueryColumns ?? []).Select(q => $"col[{q.CsvColIndex}]={q.ParameterName}"))}]");
 
-        // Экспортировать таблицу в temp CSV и прочитать
         var tempPath = Path.GetTempFileName();
         try
         {
@@ -353,7 +387,16 @@ public sealed class RevitLookupTableService : ILookupTableService
             var lines = File.ReadAllLines(tempPath);
             SmartConLogger.Lookup($"    → Экспортировано {lines.Length} строк");
             SmartConLogger.LookupLines($"    CSV таблицы '{tableName}'", lines, 30);
-            return new LookupContext(lines, colIndex, !tableStoresDiameters);
+            // Когда столбец найден через DependsOn (queryParam зависит от searchParam),
+            // query column хранит производное значение (обычно DN = radius * 2).
+            // Переопределяем tableStoresDiameters = true.
+            bool effectiveStoresDiam = tableStoresDiameters;
+            if (foundViaDependsOn && !tableStoresDiameters)
+            {
+                effectiveStoresDiam = true;
+                SmartConLogger.Lookup($"    → DependsOn match: override tableStoresDiameters=true (column stores DN, not radius)");
+            }
+            return new LookupContext(lines, targetColIndex, !effectiveStoresDiam, allQueryColumns ?? []);
         }
         catch (Exception ex)
         {
@@ -372,12 +415,25 @@ public sealed class RevitLookupTableService : ILookupTableService
     /// <summary>
     /// Извлечь уникальные числовые значения из указанного столбца CSV.
     /// Первая строка CSV — заголовок (пропускается).
+    /// constraints — если заданы, пропускать строки где другие query-столбцы не совпадают.
     /// </summary>
-    private static List<double> ExtractColumnValues(string[] csvLines, int colIndex)
+    private static List<double> ExtractColumnValues(
+        string[] csvLines,
+        int colIndex,
+        IReadOnlyList<QueryColumnMapping> allQueryColumns,
+        IReadOnlyList<LookupColumnConstraint>? constraints)
     {
         var result = new List<double>();
 
-        SmartConLogger.Lookup($"    ExtractColumnValues: colIndex={colIndex}, строк={csvLines.Length}");
+        SmartConLogger.Lookup($"    [LookupSvc] ExtractColumnValues: colIndex={colIndex}, строк={csvLines.Length}, " +
+            $"queryColumns={allQueryColumns.Count}, constraints={constraints?.Count ?? 0}");
+
+        if (constraints is { Count: > 0 })
+        {
+            foreach (var c in constraints)
+                SmartConLogger.Lookup($"      constraint: connIdx={c.ConnectorIndex}, param='{c.ParameterName}', value={c.ValueMm:F1}mm");
+            SmartConLogger.Lookup($"      allQueryColumns: [{string.Join(", ", allQueryColumns.Select(q => $"col[{q.CsvColIndex}]='{q.ParameterName}'"))}]");
+        }
 
         if (csvLines.Length == 0)
         {
@@ -387,8 +443,7 @@ public sealed class RevitLookupTableService : ILookupTableService
 
         SmartConLogger.Lookup($"    Заголовок CSV (строка 0): '{csvLines[0]}'");
 
-        // Пропускаем заголовок (строка 0)
-        int parsed = 0, skipped = 0;
+        int parsed = 0, skipped = 0, filteredOut = 0;
         for (int row = 1; row < csvLines.Length; row++)
         {
             var line = csvLines[row];
@@ -398,31 +453,96 @@ public sealed class RevitLookupTableService : ILookupTableService
 
             if (colIndex >= cols.Length)
             {
-                SmartConLogger.Lookup($"    Строка {row}: colIndex={colIndex} >= cols.Length={cols.Length} — пропуск. Содержимое: '{line}'");
                 skipped++;
                 continue;
             }
 
-            var cell = cols[colIndex].Trim().Trim('"');
-            SmartConLogger.Lookup($"    Строка {row}: raw='{line}' | col[{colIndex}]='{cell}'");
+            // Фильтрация по constraints (multi-column): проверяем значения других query-столбцов
+            if (constraints is { Count: > 0 } && allQueryColumns.Count > 1)
+            {
+                bool rowOk = true;
+                foreach (var constraint in constraints)
+                {
+                    // Phase 1: сопоставление по имени параметра
+                    var colMap = allQueryColumns.FirstOrDefault(q =>
+                        string.Equals(q.ParameterName, constraint.ParameterName,
+                            StringComparison.OrdinalIgnoreCase));
 
-            // Revit хранит значения в формате "50 mm", "50.0", etc.
+                    if (colMap is not null)
+                    {
+                        // Если constraint попал в целевой столбец — пропускаем (same-DN порт)
+                        if (colMap.CsvColIndex == colIndex) continue;
+
+                        // Имя совпало — проверяем значение
+                        if (colMap.CsvColIndex >= cols.Length) { rowOk = false; break; }
+
+                        var constraintCell = cols[colMap.CsvColIndex].Trim().Trim('"');
+                        if (!TryParseRevitValue(constraintCell, out double constraintVal))
+                            continue;
+
+                        if (System.Math.Abs(constraintVal - constraint.ValueMm) > 0.02)
+                        {
+                            if (filteredOut < 3)
+                                SmartConLogger.Lookup($"      row[{row}] FILTERED(name): col[{colMap.CsvColIndex}]='{constraintCell}'={constraintVal:F1}mm ≠ {constraint.ValueMm:F1}mm");
+                            rowOk = false;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        // Phase 2: имя не совпало — ищем по ЗНАЧЕНИЮ в query columns
+                        bool found = false;
+                        bool matchesTarget = false;
+                        foreach (var q in allQueryColumns)
+                        {
+                            if (q.CsvColIndex >= cols.Length) continue;
+                            var cv = cols[q.CsvColIndex].Trim().Trim('"');
+                            if (!TryParseRevitValue(cv, out double cVal)) continue;
+                            if (System.Math.Abs(cVal - constraint.ValueMm) <= 0.5)
+                            {
+                                if (q.CsvColIndex == colIndex)
+                                    matchesTarget = true; // совпал с целевым столбцом — same-DN порт
+                                else
+                                {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!found && !matchesTarget)
+                        {
+                            if (filteredOut < 3)
+                                SmartConLogger.Lookup($"      row[{row}] FILTERED(value): constraint DN={constraint.ValueMm:F0}mm не найден ни в одном query column");
+                            rowOk = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (!rowOk)
+                {
+                    filteredOut++;
+                    continue;
+                }
+            }
+
+            var cell = cols[colIndex].Trim().Trim('"');
             if (TryParseRevitValue(cell, out double value))
             {
-                SmartConLogger.Lookup($"      → parsed={value:F3} мм");
                 result.Add(value);
                 parsed++;
             }
             else
             {
-                SmartConLogger.Lookup($"      → НЕ УДАЛОСЬ распарсить '{cell}'");
                 skipped++;
             }
         }
 
         var distinct = result.Distinct().OrderBy(v => v).ToList();
-        SmartConLogger.Lookup($"    → Итого: распарсено={parsed}, пропущено={skipped}, уникальных={distinct.Count}");
+        SmartConLogger.Lookup($"    → Итого: распарсено={parsed}, пропущено={skipped}, отфильтровано={filteredOut}, уникальных={distinct.Count}");
         SmartConLogger.Lookup($"    → Уникальные значения (мм): [{string.Join(", ", distinct.Select(v => $"{v:F2}"))}]");
+        if (constraints is { Count: > 0 })
+            SmartConLogger.Info($"[MultiCol] S4 LookupTable фильтрация: parsed={parsed}, filteredOut={filteredOut}, unique={distinct.Count}");
         return distinct;
     }
 
@@ -483,15 +603,14 @@ public sealed class RevitLookupTableService : ILookupTableService
     /// Нужно чтобы резолвить size_lookup(BP_LookupTable, ...) где BP_LookupTable
     /// — параметр с formula='"BP_A0206_Giacomini_R910_ВР-ВР"'.
     /// </summary>
-    private static string ResolveTableAlias(FamilyManager fm, string token)
+    private static string ResolveTableAlias(IReadOnlyDictionary<string, string> formulaByName, string token)
     {
         if (token.StartsWith("\"") && token.EndsWith("\""))
             return token.Trim('"');
-        foreach (FamilyParameter fp in fm.Parameters)
+        if (formulaByName.TryGetValue(token, out var formula))
         {
-            if (!string.Equals(fp.Definition?.Name, token, StringComparison.OrdinalIgnoreCase)) continue;
-            var f = fp.Formula?.Trim();
-            if (f is not null && f.StartsWith("\"") && f.EndsWith("\""))
+            var f = formula.Trim();
+            if (f.StartsWith("\"") && f.EndsWith("\""))
                 return f.Trim('"');
         }
         return token;
@@ -503,23 +622,18 @@ public sealed class RevitLookupTableService : ILookupTableService
     /// Нужно чтобы найти BP_NominalDiameter как queryParam когда searchParam='DN'
     /// и BP_NominalDiameter имеет формулу 'DN / 2 * 2 + ...'.
     /// </summary>
-    private static bool DependsOn(FamilyManager fm, string paramName, string target)
+    private static bool DependsOn(IReadOnlyDictionary<string, string> formulaByName, string paramName, string target)
     {
         if (string.Equals(paramName, target, StringComparison.OrdinalIgnoreCase)) return true;
-        foreach (FamilyParameter fp in fm.Parameters)
-        {
-            if (!string.Equals(fp.Definition?.Name, paramName, StringComparison.OrdinalIgnoreCase)) continue;
-            if (string.IsNullOrEmpty(fp.Formula)) return false;
+        if (!formulaByName.TryGetValue(paramName, out var formula)) return false;
 
-            var vars = FormulaSolver.ExtractVariablesStatic(fp.Formula);
-            if (vars.Count > 0)
-                return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
+        var vars = FormulaSolver.ExtractVariablesStatic(formula);
+        if (vars.Count > 0)
+            return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
 
-            // ExtractVariablesStatic вернул [] — парсер не смог разобрать формулу
-            // (имена переменных с пробелами, спецсимволы °, ³ и т.д.)
-            // Fallback: проверяем содержит ли формула target как подстроку
-            return fp.Formula.Contains(target, StringComparison.OrdinalIgnoreCase);
-        }
-        return false;
+        // ExtractVariablesStatic вернул [] — парсер не смог разобрать формулу
+        // (имена переменных с пробелами, спецсимволы °, ³ и т.д.)
+        // Fallback: проверяем содержит ли формула target как подстроку
+        return formula.Contains(target, StringComparison.OrdinalIgnoreCase);
     }
 }

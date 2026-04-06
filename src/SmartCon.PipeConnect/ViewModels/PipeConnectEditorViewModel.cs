@@ -137,8 +137,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
             SmartConLogger.Lookup($"  elementId={dynId.Value}, connIdx={dynIdx}");
 
-            var sizes = _sizeResolver.GetAvailableSizes(_doc, dynId, dynIdx);
+            SmartConLogger.Info($"[MultiCol] LoadDynamicSizes: constraints={_ctx.LookupConstraints.Count} для dynId={dynId.Value}, connIdx={dynIdx}");
+            var sizes = _sizeResolver.GetAvailableSizes(_doc, dynId, dynIdx, _ctx.LookupConstraints);
             SmartConLogger.Lookup($"  SizeResolver вернул {sizes.Count} размеров");
+            SmartConLogger.Info($"[MultiCol] LoadDynamicSizes: SizeResolver вернул {sizes.Count} размеров");
 
             var currentRadius = _ctx.DynamicConnector.Radius;
             var currentDn = (int)Math.Round(currentRadius * 2.0 * 304.8);

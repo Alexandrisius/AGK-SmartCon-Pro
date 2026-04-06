@@ -28,10 +28,12 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         _lookupTableSvc = lookupTableSvc;
     }
 
-    public IReadOnlyList<SizeOption> GetAvailableSizes(Document doc, ElementId elementId, int connectorIndex)
+    public IReadOnlyList<SizeOption> GetAvailableSizes(Document doc, ElementId elementId,
+        int connectorIndex,
+        IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
         SmartConLogger.LookupSection("RevitDynamicSizeResolver.GetAvailableSizes");
-        SmartConLogger.Lookup($"  elementId={elementId.Value}, connIdx={connectorIndex}");
+        SmartConLogger.Lookup($"  elementId={elementId.Value}, connIdx={connectorIndex}, constraints={constraints?.Count ?? 0}");
 
         var element = doc.GetElement(elementId);
         if (element is null)
@@ -66,7 +68,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         SmartConLogger.Lookup($"  family='{instance.Symbol?.Family?.Name}', symbol='{instance.Symbol?.Name}'");
 
-        var sizes = TryGetLookupTableSizes(doc, elementId, connectorIndex);
+        var sizes = TryGetLookupTableSizes(doc, elementId, connectorIndex, constraints);
         if (sizes.Count > 0)
         {
             SmartConLogger.Lookup($"  → LookupTable: {sizes.Count} размеров");
@@ -129,7 +131,9 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         return result;
     }
 
-    private List<SizeOption> TryGetLookupTableSizes(Document doc, ElementId elementId, int connectorIndex)
+    private List<SizeOption> TryGetLookupTableSizes(Document doc, ElementId elementId,
+        int connectorIndex,
+        IReadOnlyList<LookupColumnConstraint>? constraints)
     {
         SmartConLogger.LookupSection("RevitDynamicSizeResolver.TryGetLookupTableSizes");
 
@@ -166,7 +170,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
             try
             {
-                return ExtractSizesFromFamily(familyDoc, element, connectorIndex);
+                return ExtractSizesFromFamily(familyDoc, element, connectorIndex, constraints);
             }
             finally
             {
@@ -182,7 +186,9 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         }
     }
 
-    private List<SizeOption> ExtractSizesFromFamily(Document familyDoc, FamilyInstance instance, int connectorIndex)
+    private List<SizeOption> ExtractSizesFromFamily(Document familyDoc, FamilyInstance instance,
+        int connectorIndex,
+        IReadOnlyList<LookupColumnConstraint>? constraints)
     {
         SmartConLogger.LookupSection("RevitDynamicSizeResolver.ExtractSizesFromFamily");
 
@@ -228,8 +234,27 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             double refRadius = 1.0;
             double directRef = isDiameter ? refRadius * 2.0 : refRadius;
             var rootRef = FormulaSolver.SolveForStatic(formula, rootName, directRef);
-            tableStoresDiameters = rootRef.HasValue && Math.Abs(rootRef.Value / refRadius - 2.0) < 0.1;
-            SmartConLogger.Lookup($"  tableStoresDiameters={tableStoresDiameters} (SolveFor rootRef={rootRef?.ToString() ?? "null"})");
+            if (rootRef.HasValue)
+            {
+                tableStoresDiameters = Math.Abs(rootRef.Value / refRadius - 2.0) < 0.1;
+                SmartConLogger.Lookup($"  tableStoresDiameters={tableStoresDiameters} (SolveFor rootRef={rootRef.Value:F3})");
+            }
+            else
+            {
+                // SolveFor не смог решить (size_lookup формула).
+                // Если rootName — query-параметр size_lookup, то столбец хранит DN (диаметры).
+                bool isQueryParam = false;
+                try
+                {
+                    var sl = FormulaSolver.ParseSizeLookupStatic(formula);
+                    isQueryParam = sl is not null && sl.Value.QueryParameters
+                        .Any(q => string.Equals(q, rootName, StringComparison.OrdinalIgnoreCase));
+                }
+                catch { /* формула не парсится — оставляем false */ }
+
+                tableStoresDiameters = isQueryParam || isDiameter;
+                SmartConLogger.Lookup($"  tableStoresDiameters={tableStoresDiameters} (SolveFor=null, isQueryParam={isQueryParam}, isDiameter={isDiameter})");
+            }
         }
         else
         {
@@ -238,30 +263,45 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         }
 
         var tableNames = fstm.GetAllSizeTableNames().ToList();
-        var allValues = new SortedSet<double>();
+        var constrainedValues = new SortedSet<double>();
+        var unconstrainedValues = new SortedSet<double>();
 
         SmartConLogger.Lookup($"  Таблицы: [{string.Join(", ", tableNames)}]");
 
         foreach (var tableName in tableNames)
         {
-            var colIndex = FindColumnIndex(fm, fstm, tableName, searchParamName);
+            var (colIndex, allQueryColumns, viaDependsOn) = FindColumnIndex(fm, fstm, tableName, searchParamName);
             if (colIndex < 0)
             {
                 SmartConLogger.Lookup($"  Таблица '{tableName}': colIndex не найден → пропуск");
                 continue;
             }
 
-            SmartConLogger.Lookup($"  Таблица '{tableName}': colIndex={colIndex}");
+            // Когда столбец найден через DependsOn (queryParam зависит от searchParam),
+            // query column хранит производное значение (обычно DN = radius * 2).
+            bool effectiveStoresDiam = tableStoresDiameters;
+            if (viaDependsOn && !tableStoresDiameters)
+            {
+                effectiveStoresDiam = true;
+                SmartConLogger.Lookup($"  DependsOn match: override tableStoresDiameters=true (column stores DN, not radius)");
+            }
+
+            bool isMultiColumn = allQueryColumns.Count > 1;
+            SmartConLogger.Lookup($"  Таблица '{tableName}': colIndex={colIndex}, queryColumns={allQueryColumns.Count}, multiColumn={isMultiColumn}, storesDiam={effectiveStoresDiam}");
 
             var tempPath = Path.GetTempFileName();
             try
             {
                 fstm.ExportSizeTable(tableName, tempPath);
                 var lines = File.ReadAllLines(tempPath);
-                var values = ExtractColumnValues(lines, colIndex, tableStoresDiameters);
+                var values = ExtractColumnValues(lines, colIndex, effectiveStoresDiam, allQueryColumns, constraints);
                 SmartConLogger.Lookup($"  Экспортировано {values.Count} значений из таблицы '{tableName}'");
+
+                var target = (isMultiColumn && constraints is { Count: > 0 })
+                    ? constrainedValues
+                    : unconstrainedValues;
                 foreach (var v in values)
-                    allValues.Add(v);
+                    target.Add(v);
             }
             catch (Exception ex)
             {
@@ -272,6 +312,12 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                 try { File.Delete(tempPath); } catch { }
             }
         }
+
+        // Если есть результаты из multi-column таблиц с constraints — используем только их,
+        // чтобы single-column таблицы не «размывали» отфильтрованный набор
+        var allValues = constrainedValues.Count > 0 ? constrainedValues : unconstrainedValues;
+        if (constrainedValues.Count > 0 && unconstrainedValues.Count > 0)
+            SmartConLogger.Lookup($"  [MultiCol] Приоритет multi-column: {constrainedValues.Count} constrained, {unconstrainedValues.Count} unconstrained → используем constrained");
 
         var result = new List<SizeOption>();
         foreach (var radius in allValues)
@@ -289,64 +335,188 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         return result;
     }
 
-    private int FindColumnIndex(FamilyManager fm, FamilySizeTableManager fstm, string tableName, string searchParamName)
+    // Маппинг query-столбца: (csvColIndex, parameterName)
+    private readonly record struct QueryColumnEntry(int CsvColIndex, string ParameterName);
+
+    /// <summary>
+    /// Находит colIndex для searchParamName и возвращает все query-столбцы таблицы.
+    /// colIndex = -1 если не найден.
+    /// </summary>
+    private (int ColIndex, IReadOnlyList<QueryColumnEntry> AllQueryColumns, bool FoundViaDependsOn) FindColumnIndex(
+        FamilyManager fm, FamilySizeTableManager fstm, string tableName, string searchParamName)
     {
         SmartConLogger.Lookup($"    FindColumnIndex: table='{tableName}', searchParam='{searchParamName}'");
 
+        int    targetCol       = -1;
+        bool   foundViaDependsOn = false;
+        IReadOnlyList<QueryColumnEntry>? allQueryColumns = null;
+
+        // Snapshot: материализуем fm.Parameters чтобы избежать вложенной энумерации
+        // Revit COM-коллекция ParameterSet не поддерживает реентерабельное перечисление
+        var paramSnapshot = new List<(string? Name, string? Formula)>();
+        var formulaByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (FamilyParameter fp in fm.Parameters)
         {
-            if (string.IsNullOrEmpty(fp.Formula)) continue;
+            var name = fp.Definition?.Name;
+            var formula = fp.Formula;
+            paramSnapshot.Add((name, formula));
+            if (name != null && !string.IsNullOrEmpty(formula))
+                formulaByName.TryAdd(name, formula);
+        }
 
-            var parsed = FormulaSolver.ParseSizeLookupStatic(fp.Formula);
+        foreach (var (fpName, fpFormula) in paramSnapshot)
+        {
+            if (string.IsNullOrEmpty(fpFormula)) continue;
+
+            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula);
             if (parsed is null) continue;
 
-            var resolvedTableName = ResolveTableAlias(fm, parsed.Value.TableName);
+            var resolvedTableName = ResolveTableAlias(formulaByName, parsed.Value.TableName);
             if (!string.Equals(resolvedTableName, tableName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             var queryParams = parsed.Value.QueryParameters;
-            SmartConLogger.Lookup($"      FP='{fp.Definition?.Name}': query=[{string.Join(", ", queryParams)}]");
+            SmartConLogger.Lookup($"      FP='{fpName}': query=[{string.Join(", ", queryParams)}]");
 
-            for (int i = 0; i < queryParams.Count; i++)
+            if (allQueryColumns is null)
+                allQueryColumns = queryParams.Select((n, i) => new QueryColumnEntry(i + 1, n)).ToList();
+
+            if (targetCol < 0)
             {
-                bool direct = string.Equals(queryParams[i], searchParamName, StringComparison.OrdinalIgnoreCase);
-                bool depends = !direct && DependsOn(fm, queryParams[i], searchParamName);
-                SmartConLogger.Lookup($"        [{i}] '{queryParams[i]}': direct={direct}, depends={depends}");
-
-                if (direct || depends)
+                for (int i = 0; i < queryParams.Count; i++)
                 {
-                    SmartConLogger.Lookup($"      → colIndex={i + 1}");
-                    return i + 1;
+                    bool direct  = string.Equals(queryParams[i], searchParamName, StringComparison.OrdinalIgnoreCase);
+                    bool depends = !direct && DependsOn(formulaByName, queryParams[i], searchParamName);
+                    SmartConLogger.Lookup($"        [{i}] '{queryParams[i]}': direct={direct}, depends={depends}");
+                    if (direct || depends)
+                    {
+                        targetCol = i + 1;
+                        foundViaDependsOn = depends;
+                        SmartConLogger.Lookup($"      → colIndex={targetCol}, viaDependsOn={depends}");
+                        break;
+                    }
                 }
             }
+
+            if (targetCol >= 0 && allQueryColumns is not null) break;
         }
 
-        SmartConLogger.Lookup("      → colIndex=-1 (не найден)");
-        return -1;
+        if (targetCol < 0)
+            SmartConLogger.Lookup("      → colIndex=-1 (не найден)");
+
+        return (targetCol, allQueryColumns ?? [], foundViaDependsOn);
     }
 
-    private List<double> ExtractColumnValues(string[] csvLines, int colIndex, bool tableStoresDiameters)
+    private List<double> ExtractColumnValues(
+        string[] csvLines,
+        int colIndex,
+        bool tableStoresDiameters,
+        IReadOnlyList<QueryColumnEntry> allQueryColumns,
+        IReadOnlyList<LookupColumnConstraint>? constraints)
     {
         var result = new List<double>();
         if (csvLines.Length == 0) return result;
 
+        SmartConLogger.Lookup($"    [SizeResolver] ExtractColumnValues: colIndex={colIndex}, rows={csvLines.Length}, " +
+            $"queryColumns={allQueryColumns.Count}, constraints={constraints?.Count ?? 0}");
+
+        if (constraints is { Count: > 0 })
+        {
+            foreach (var c in constraints)
+                SmartConLogger.Lookup($"      constraint: connIdx={c.ConnectorIndex}, param='{c.ParameterName}', value={c.ValueMm:F1}mm");
+            SmartConLogger.Lookup($"      allQueryColumns: [{string.Join(", ", allQueryColumns.Select(q => $"col[{q.CsvColIndex}]='{q.ParameterName}'"))}]");
+        }
+
+        int parsed = 0, skipped = 0, filteredOut = 0;
         for (int row = 1; row < csvLines.Length; row++)
         {
             var line = csvLines[row];
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (string.IsNullOrWhiteSpace(line)) { skipped++; continue; }
 
             var cols = line.Split(',');
-            if (colIndex >= cols.Length) continue;
+            if (colIndex >= cols.Length) { skipped++; continue; }
+
+            // Фильтрация по constraints (multi-column)
+            if (constraints is { Count: > 0 } && allQueryColumns.Count > 1)
+            {
+                bool rowOk = true;
+                foreach (var constraint in constraints)
+                {
+                    // Phase 1: сопоставление по имени параметра
+                    var col = allQueryColumns.FirstOrDefault(q =>
+                        string.Equals(q.ParameterName, constraint.ParameterName,
+                            StringComparison.OrdinalIgnoreCase));
+
+                    if (col.ParameterName is not null)
+                    {
+                        // Если constraint попал в целевой столбец — пропускаем (same-DN порт)
+                        if (col.CsvColIndex == colIndex) continue;
+
+                        // Имя совпало — проверяем значение
+                        if (col.CsvColIndex >= cols.Length) { rowOk = false; break; }
+                        var cv = cols[col.CsvColIndex].Trim().Trim('"');
+                        if (!TryParseRevitValue(cv, out double cVal)) continue;
+                        if (System.Math.Abs(cVal - constraint.ValueMm) > 0.02)
+                        {
+                            if (filteredOut < 5)
+                                SmartConLogger.Lookup($"      row[{row}] FILTERED(name): col[{col.CsvColIndex}]='{cv}'={cVal:F1}mm ≠ {constraint.ValueMm:F1}mm");
+                            rowOk = false;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        // Phase 2: имя не совпало — ищем по ЗНАЧЕНИЮ в query columns
+                        bool found = false;
+                        bool matchesTarget = false;
+                        foreach (var q in allQueryColumns)
+                        {
+                            if (q.CsvColIndex >= cols.Length) continue;
+                            var cv = cols[q.CsvColIndex].Trim().Trim('"');
+                            if (!TryParseRevitValue(cv, out double cVal)) continue;
+                            if (System.Math.Abs(cVal - constraint.ValueMm) <= 0.5)
+                            {
+                                if (q.CsvColIndex == colIndex)
+                                    matchesTarget = true; // совпал с целевым столбцом — same-DN порт
+                                else
+                                {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!found && !matchesTarget)
+                        {
+                            if (filteredOut < 5)
+                                SmartConLogger.Lookup($"      row[{row}] FILTERED(value): constraint DN={constraint.ValueMm:F0}mm не найден ни в одном query column");
+                            rowOk = false;
+                            break;
+                        }
+                        // found=true → constraint ограничивает non-target column
+                        // matchesTarget && !found → constraint от same-DN порта, пропускаем (избыточный)
+                    }
+                }
+                if (!rowOk) { filteredOut++; continue; }
+            }
 
             var cell = cols[colIndex].Trim().Trim('"');
             if (TryParseRevitValue(cell, out double value))
             {
-                double radius = tableStoresDiameters ? value / 2.0 : value;
+                double radius      = tableStoresDiameters ? value / 2.0 : value;
                 double radiusInFeet = radius / 304.8;
                 result.Add(radiusInFeet);
+                parsed++;
+            }
+            else
+            {
+                skipped++;
             }
         }
 
+        var distinct = result.Distinct().ToList();
+        SmartConLogger.Lookup($"    [SizeResolver] → parsed={parsed}, skipped={skipped}, filteredOut={filteredOut}, unique={distinct.Count}");
+        if (constraints is { Count: > 0 })
+            SmartConLogger.Info($"[MultiCol] Dropdown фильтрация: parsed={parsed}, filteredOut={filteredOut}, unique={distinct.Count}");
         return result;
     }
 
@@ -368,38 +538,32 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             CultureInfo.InvariantCulture, out value);
     }
 
-    private static string ResolveTableAlias(FamilyManager fm, string token)
+    private static string ResolveTableAlias(IReadOnlyDictionary<string, string> formulaByName, string token)
     {
         if (token.StartsWith("\"") && token.EndsWith("\""))
             return token.Trim('"');
-        foreach (FamilyParameter fp in fm.Parameters)
+        if (formulaByName.TryGetValue(token, out var formula))
         {
-            if (!string.Equals(fp.Definition?.Name, token, StringComparison.OrdinalIgnoreCase)) continue;
-            var f = fp.Formula?.Trim();
-            if (f is not null && f.StartsWith("\"") && f.EndsWith("\""))
+            var f = formula.Trim();
+            if (f.StartsWith("\"") && f.EndsWith("\""))
                 return f.Trim('"');
         }
         return token;
     }
 
-    private static bool DependsOn(FamilyManager fm, string paramName, string target)
+    private static bool DependsOn(IReadOnlyDictionary<string, string> formulaByName, string paramName, string target)
     {
         if (string.Equals(paramName, target, StringComparison.OrdinalIgnoreCase)) return true;
-        foreach (FamilyParameter fp in fm.Parameters)
-        {
-            if (!string.Equals(fp.Definition?.Name, paramName, StringComparison.OrdinalIgnoreCase)) continue;
-            if (string.IsNullOrEmpty(fp.Formula)) return false;
+        if (!formulaByName.TryGetValue(paramName, out var formula)) return false;
 
-            var vars = FormulaSolver.ExtractVariablesStatic(fp.Formula);
-            if (vars.Count > 0)
-                return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
+        var vars = FormulaSolver.ExtractVariablesStatic(formula);
+        if (vars.Count > 0)
+            return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
 
-            // ExtractVariablesStatic вернул [] — парсер не смог разобрать формулу
-            // (имена переменных с пробелами, спецсимволы °, ³ и т.д.)
-            // Fallback: проверяем содержит ли формула target как подстроку
-            return fp.Formula.Contains(target, StringComparison.OrdinalIgnoreCase);
-        }
-        return false;
+        // ExtractVariablesStatic вернул [] — парсер не смог разобрать формулу
+        // (имена переменных с пробелами, спецсимволы °, ³ и т.д.)
+        // Fallback: проверяем содержит ли формула target как подстроку
+        return formula.Contains(target, StringComparison.OrdinalIgnoreCase);
     }
 
     private List<SizeOption> GetFamilySymbolSizes(Document doc, FamilyInstance instance, int connectorIndex)

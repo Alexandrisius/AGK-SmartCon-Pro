@@ -29,7 +29,8 @@ public sealed class PipeConnectCommand : IExternalCommand
         bool   Skip,               // радиусы совпадают → S4 пропускается
         double TargetRadius,       // целевой радиус (internal units)
         bool   ExpectNeedsAdapter, // нашли только ближайший или провал S4
-        string? WarningMessage     // null = нет предупреждения
+        string? WarningMessage,    // null = нет предупреждения
+        IReadOnlyList<LookupColumnConstraint> LookupConstraints  // multi-column constraints
     );
 
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
@@ -176,6 +177,7 @@ public sealed class PipeConnectCommand : IExternalCommand
                 ParamExpectNeedsAdapter = plan.ExpectNeedsAdapter,
                 ProposedFittings        = proposed.ToList(),
                 ChainGraph              = chainGraph,
+                LookupConstraints       = plan.LookupConstraints,
             };
 
             var vm = new PipeConnectEditorViewModel(
@@ -298,13 +300,27 @@ public sealed class PipeConnectCommand : IExternalCommand
             }
         }
 
+        // 0.1 Построить multi-column constraints от других коннекторов фитинга
+        var lookupConstraints = BuildMultiColumnConstraints(
+            doc, dynId, connIdx, connectorSvc, paramResolver);
+        if (lookupConstraints.Count > 0)
+        {
+            var constraintStr = string.Join(", ", lookupConstraints.Select(c => $"{c.ParameterName}={c.ValueMm:F0}mm"));
+            SmartConLogger.Lookup($"  Multi-column constraints: [{constraintStr}]");
+            SmartConLogger.Info($"[S4] [MultiCol] constraints: [{constraintStr}]");
+        }
+        else
+        {
+            SmartConLogger.Info($"[S4] [MultiCol] constraints: [] (нет других коннекторов с dep)");
+        }
+
         // 1. Радиусы совпадают → пропустить S4
         if (System.Math.Abs(staticRadius - dynamicProxy.Radius) < eps)
         {
             SmartConLogger.Lookup("  → Радиусы совпадают (< eps) → Plan(Skip=true)");
-            SmartConLogger.Info($"[S4] Радиусы совпадают, S4 пропущен");
+            SmartConLogger.Info($"[S4] Радиусы совпадают, S4 пропущен (constraints={lookupConstraints.Count})");
             return new ParameterResolutionPlan(Skip: true, TargetRadius: staticRadius,
-                ExpectNeedsAdapter: false, WarningMessage: null);
+                ExpectNeedsAdapter: false, WarningMessage: null, LookupConstraints: lookupConstraints);
         }
 
         double staticDn = System.Math.Round(staticRadius * 2.0 * 304.8);
@@ -318,7 +334,7 @@ public sealed class PipeConnectCommand : IExternalCommand
             SmartConLogger.Lookup("  → MEPCurve/FlexPipe: прямая запись RBS_PIPE_DIAMETER_PARAM → Plan(Skip=false, target=staticRadius)");
             SmartConLogger.Info($"[S4] MEPCurve DN{dynDn} → DN{staticDn}: прямая запись");
             return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
-                ExpectNeedsAdapter: false, WarningMessage: null);
+                ExpectNeedsAdapter: false, WarningMessage: null, LookupConstraints: []);
         }
 
         // 3. Анализ семейства: GetConnectorRadiusDependencies (EditFamily здесь)
@@ -335,27 +351,28 @@ public sealed class PipeConnectCommand : IExternalCommand
         if (hasTable)
         {
             SmartConLogger.Lookup("  → ConnectorRadiusExistsInTable...");
-            bool exactMatch = lookupSvc.ConnectorRadiusExistsInTable(doc, dynId, connIdx, staticRadius);
+            bool exactMatch = lookupSvc.ConnectorRadiusExistsInTable(doc, dynId, connIdx, staticRadius, lookupConstraints);
             SmartConLogger.Lookup($"  exactMatch={exactMatch}");
 
             if (exactMatch)
             {
                 SmartConLogger.Lookup("  → Точное совпадение в таблице → Plan(Skip=false, target=staticRadius)");
-                SmartConLogger.Info($"[S4] LookupTable: DN{staticDn} найден точно");
+                SmartConLogger.Info($"[S4] LookupTable: DN{staticDn} найден точно (constraints={lookupConstraints.Count})");
                 return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
-                    ExpectNeedsAdapter: false, WarningMessage: null);
+                    ExpectNeedsAdapter: false, WarningMessage: null, LookupConstraints: lookupConstraints);
             }
 
             // Нет точного → берём ближайший
             SmartConLogger.Lookup("  → GetNearestAvailableRadius...");
-            double nearest   = lookupSvc.GetNearestAvailableRadius(doc, dynId, connIdx, staticRadius);
+            double nearest   = lookupSvc.GetNearestAvailableRadius(doc, dynId, connIdx, staticRadius, lookupConstraints);
             double nearestDn = System.Math.Round(nearest * 2.0 * 304.8);
             SmartConLogger.Lookup($"  nearest={nearest:F6} ft = DN{nearestDn}");
             SmartConLogger.Warn($"[S4] LookupTable: DN{staticDn} не найден, ближайший=DN{nearestDn} (NeedsAdapter)");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: nearest,
                 ExpectNeedsAdapter: true,
-                WarningMessage: $"Размер DN{staticDn} отсутствует в таблице. Будет выбран DN{nearestDn}, нужен переходник.");
+                WarningMessage: $"Размер DN{staticDn} отсутствует в таблице. Будет выбран DN{nearestDn}, нужен переходник.",
+                LookupConstraints: lookupConstraints);
         }
 
         // 5. Нет таблицы и нет dep → полный провал
@@ -366,7 +383,8 @@ public sealed class PipeConnectCommand : IExternalCommand
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: true,
-                WarningMessage: "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.");
+                WarningMessage: "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.",
+                LookupConstraints: lookupConstraints);
         }
 
         // 6. Dep найден → TrySetConnectorRadius разберётся с формулой и ChangeTypeId внутри транзакции.
@@ -376,7 +394,71 @@ public sealed class PipeConnectCommand : IExternalCommand
         SmartConLogger.Info($"[S4] dep найден: IsInstance={dep.IsInstance}, Formula='{dep.Formula}', DirectParamName='{dep.DirectParamName}', IsDiameter={dep.IsDiameter}");
         return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
             ExpectNeedsAdapter: expectAdapter,
-            WarningMessage: null);
+            WarningMessage: null,
+            LookupConstraints: lookupConstraints);
     }
 
+    /// <summary>
+    /// Построить multi-column constraints от ДРУГИХ коннекторов элемента.
+    /// Каждый другой коннектор с известным RootParamName даёт ограничение на строки CSV.
+    /// </summary>
+    private static List<LookupColumnConstraint> BuildMultiColumnConstraints(
+        Document doc,
+        ElementId elementId,
+        int currentConnectorIndex,
+        IConnectorService connectorSvc,
+        IParameterResolver paramResolver)
+    {
+        var constraints = new List<LookupColumnConstraint>();
+
+        var element = doc.GetElement(elementId);
+        if (element is not FamilyInstance)
+        {
+            SmartConLogger.Lookup($"  [MultiCol] element is not FamilyInstance → constraints=[]");
+            return constraints;
+        }
+
+        var allConns = connectorSvc.GetAllConnectors(doc, elementId);
+        SmartConLogger.Lookup($"  [MultiCol] BuildMultiColumnConstraints: elementId={elementId.Value}, currentConn={currentConnectorIndex}, allConns={allConns.Count}");
+        SmartConLogger.Info($"[S4] [MultiCol] allConns={allConns.Count} для elementId={elementId.Value}, currentConn={currentConnectorIndex}");
+
+        if (allConns.Count <= 1)
+        {
+            SmartConLogger.Lookup($"  [MultiCol] Только 1 коннектор → constraints=[] (single-port element)");
+            return constraints;
+        }
+
+        foreach (var conn in allConns)
+        {
+            if (conn.ConnectorIndex == currentConnectorIndex)
+            {
+                SmartConLogger.Lookup($"    conn[{conn.ConnectorIndex}]: SKIP (текущий коннектор)");
+                continue;
+            }
+
+            var deps = paramResolver.GetConnectorRadiusDependencies(doc, elementId, conn.ConnectorIndex);
+            if (deps.Count == 0)
+            {
+                SmartConLogger.Lookup($"    conn[{conn.ConnectorIndex}]: deps=0, radius={conn.Radius * 304.8:F2}mm → SKIP (нет dep)");
+                continue;
+            }
+
+            var dep = deps[0];
+            var paramName = dep.RootParamName ?? dep.DirectParamName;
+            SmartConLogger.Lookup($"    conn[{conn.ConnectorIndex}]: RootParam='{dep.RootParamName}', DirectParam='{dep.DirectParamName}', Formula='{dep.Formula}', radius={conn.Radius * 304.8:F2}mm");
+
+            if (paramName is null)
+            {
+                SmartConLogger.Lookup($"    conn[{conn.ConnectorIndex}]: paramName=null → SKIP");
+                continue;
+            }
+
+            var valueMm = System.Math.Round(conn.Radius * 2.0 * 304.8);
+            constraints.Add(new LookupColumnConstraint(conn.ConnectorIndex, paramName, valueMm));
+            SmartConLogger.Lookup($"    conn[{conn.ConnectorIndex}]: → CONSTRAINT: param='{paramName}', DN={valueMm}mm");
+        }
+
+        SmartConLogger.Lookup($"  [MultiCol] Итого constraints: {constraints.Count}");
+        return constraints;
+    }
 }

@@ -31,4 +31,11 @@ public sealed class PipeConnectSessionContext
     /// Граф цепочки dynamic-элемента, построенный ДО disconnect. null = нет цепочки.
     /// </summary>
     public ConnectionGraph? ChainGraph { get; init; }
+
+    /// <summary>
+    /// Ограничения multi-column lookup-таблицы от других коннекторов фитинга.
+    /// Используются для фильтрации dropdown и проверки ConnectorRadiusExistsInTable.
+    /// Пустой список = нет ограничений (single-column или нет таблицы).
+    /// </summary>
+    public IReadOnlyList<LookupColumnConstraint> LookupConstraints { get; init; } = [];
 }
