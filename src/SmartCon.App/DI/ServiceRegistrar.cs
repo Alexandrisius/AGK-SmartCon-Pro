@@ -1,5 +1,6 @@
 using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
+using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Events;
 using SmartCon.PipeConnect.Services;
@@ -50,6 +51,9 @@ public static class ServiceRegistrar
         services.AddSingleton<IParameterResolver, RevitParameterResolver>();
         services.AddSingleton<ILookupTableService, RevitLookupTableService>();
         services.AddSingleton<IDynamicSizeResolver, RevitDynamicSizeResolver>();
+
+        // --- Formula Solver (Phase 6) ---
+        services.AddSingleton<IFormulaSolver, FormulaSolver>();
 
         // --- Fitting System (Phase 5) ---
         services.AddSingleton<IFittingMapper, FittingMapper>();

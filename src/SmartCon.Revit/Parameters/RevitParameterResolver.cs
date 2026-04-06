@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Math;
+using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
@@ -285,7 +286,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             if (dep.IsInstance && dep.Formula is not null && dep.RootParamName is not null)
             {
                 SmartConLogger.Lookup($"  SolveFor('{dep.Formula}', '{dep.RootParamName}', {targetValue:F6})...");
-                var value = MiniFormulaSolver.SolveFor(
+                var value = FormulaSolver.SolveForStatic(
                     dep.Formula, dep.RootParamName, targetValue);
                 SmartConLogger.Lookup($"  SolveFor результат: {(value is null ? "null (нелинейная/не поддерживается)" : $"{value.Value:F6}")}");
                 if (value is not null)

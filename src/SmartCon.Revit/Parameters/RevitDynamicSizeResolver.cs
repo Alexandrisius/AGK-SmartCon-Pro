@@ -6,6 +6,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
@@ -226,7 +227,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         {
             double refRadius = 1.0;
             double directRef = isDiameter ? refRadius * 2.0 : refRadius;
-            var rootRef = Core.Math.MiniFormulaSolver.SolveFor(formula, rootName, directRef);
+            var rootRef = FormulaSolver.SolveForStatic(formula, rootName, directRef);
             tableStoresDiameters = rootRef.HasValue && Math.Abs(rootRef.Value / refRadius - 2.0) < 0.1;
             SmartConLogger.Lookup($"  tableStoresDiameters={tableStoresDiameters} (SolveFor rootRef={rootRef?.ToString() ?? "null"})");
         }
@@ -290,11 +291,13 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
     private int FindColumnIndex(FamilyManager fm, FamilySizeTableManager fstm, string tableName, string searchParamName)
     {
+        SmartConLogger.Lookup($"    FindColumnIndex: table='{tableName}', searchParam='{searchParamName}'");
+
         foreach (FamilyParameter fp in fm.Parameters)
         {
             if (string.IsNullOrEmpty(fp.Formula)) continue;
 
-            var parsed = Core.Math.MiniFormulaSolver.ParseSizeLookup(fp.Formula);
+            var parsed = FormulaSolver.ParseSizeLookupStatic(fp.Formula);
             if (parsed is null) continue;
 
             var resolvedTableName = ResolveTableAlias(fm, parsed.Value.TableName);
@@ -302,15 +305,23 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                 continue;
 
             var queryParams = parsed.Value.QueryParameters;
+            SmartConLogger.Lookup($"      FP='{fp.Definition?.Name}': query=[{string.Join(", ", queryParams)}]");
+
             for (int i = 0; i < queryParams.Count; i++)
             {
-                if (string.Equals(queryParams[i], searchParamName, StringComparison.OrdinalIgnoreCase)
-                    || DependsOn(fm, queryParams[i], searchParamName))
+                bool direct = string.Equals(queryParams[i], searchParamName, StringComparison.OrdinalIgnoreCase);
+                bool depends = !direct && DependsOn(fm, queryParams[i], searchParamName);
+                SmartConLogger.Lookup($"        [{i}] '{queryParams[i]}': direct={direct}, depends={depends}");
+
+                if (direct || depends)
                 {
+                    SmartConLogger.Lookup($"      → colIndex={i + 1}");
                     return i + 1;
                 }
             }
         }
+
+        SmartConLogger.Lookup("      → colIndex=-1 (не найден)");
         return -1;
     }
 
@@ -378,8 +389,15 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         {
             if (!string.Equals(fp.Definition?.Name, paramName, StringComparison.OrdinalIgnoreCase)) continue;
             if (string.IsNullOrEmpty(fp.Formula)) return false;
-            var vars = Core.Math.MiniFormulaSolver.ExtractVariables(fp.Formula);
-            return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
+
+            var vars = FormulaSolver.ExtractVariablesStatic(fp.Formula);
+            if (vars.Count > 0)
+                return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
+
+            // ExtractVariablesStatic вернул [] — парсер не смог разобрать формулу
+            // (имена переменных с пробелами, спецсимволы °, ³ и т.д.)
+            // Fallback: проверяем содержит ли формула target как подстроку
+            return fp.Formula.Contains(target, StringComparison.OrdinalIgnoreCase);
         }
         return false;
     }

@@ -16,8 +16,9 @@ public static class SmartConLogger
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "AGK", "SmartCon");
 
-    private static readonly string LogPath        = Path.Combine(LogDir, "smartcon.log");
-    private static readonly string LookupLogPath  = Path.Combine(LogDir, "lookup-diagnostic.log");
+    private static readonly string LogPath         = Path.Combine(LogDir, "smartcon.log");
+    private static readonly string LookupLogPath   = Path.Combine(LogDir, "lookup-diagnostic.log");
+    private static readonly string FormulaLogPath  = Path.Combine(LogDir, "formula-diagnostic.log");
 
     private static readonly object _lock = new();
 
@@ -44,6 +45,9 @@ public static class SmartConLogger
         Write(LookupLogPath, "INF", header);
         Write(LookupLogPath, "INF", line);
         Write(LookupLogPath, "INF", header);
+        Write(FormulaLogPath, "INF", header);
+        Write(FormulaLogPath, "INF", line);
+        Write(FormulaLogPath, "INF", header);
     }
 
     // ── LookupTable / ParameterResolver диагностика ───────────────────────
@@ -73,6 +77,31 @@ public static class SmartConLogger
             Write(LookupLogPath, "CSV", $"  [{i}] {lines[i]}");
         if (lines.Length > maxLines)
             Write(LookupLogPath, "CSV", $"  ... (ещё {lines.Length - maxLines} строк скрыто)");
+    }
+
+    // ── Formula диагностика ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Пишет ТОЛЬКО в formula-diagnostic.log.
+    /// Используется FormulaSolver для отслеживания всех операций с формулами:
+    /// какие решились, какие упали, с какими параметрами.
+    /// Формирует базу знаний всех встреченных формул для будущих правок.
+    /// </summary>
+    public static void Formula(string message)
+    {
+        Write(FormulaLogPath, "FRM", message);
+    }
+
+    /// <summary>Запись успешной операции с формулой.</summary>
+    public static void FormulaOk(string operation, string formula, string detail)
+    {
+        Write(FormulaLogPath, " OK", $"[{operation}] '{formula}' → {detail}");
+    }
+
+    /// <summary>Запись неудачной операции с формулой.</summary>
+    public static void FormulaFail(string operation, string formula, string reason)
+    {
+        Write(FormulaLogPath, "FAIL", $"[{operation}] '{formula}' → {reason}");
     }
 
     // ── Внутренняя запись ─────────────────────────────────────────────────

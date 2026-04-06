@@ -129,10 +129,14 @@ public interface IFittingMappingRepository
 
 ## IFormulaSolver
 
-Универсальный AST-парсер и решатель формул Revit. Поддерживает: if(), and(), or(), арифметику, сравнения, тригонометрию.
+Универсальный AST-парсер и решатель формул Revit (Phase 6 — implemented).
+Поддерживает: if() с неограниченной вложенностью, and(), or(), not(), арифметику, сравнения, тригонометрию, log/ln/exp, size_lookup().
+Комбинированный SolveFor: IF-упрощение → алгебраическая инверсия → бисекция.
 
 **Файл:** `SmartCon.Core/Services/Interfaces/IFormulaSolver.cs`
-**Реализация:** `SmartCon.Core/Services/Implementation/FormulaSolver.cs`
+**Реализация:** `SmartCon.Core/Math/FormulaEngine/Solver/FormulaSolver.cs`
+**DI:** `ServiceRegistrar.cs` → `IFormulaSolver → FormulaSolver` (Singleton)
+**Заменяет:** ~~`MiniFormulaSolver.cs`~~ (удалён)
 
 ```csharp
 public interface IFormulaSolver

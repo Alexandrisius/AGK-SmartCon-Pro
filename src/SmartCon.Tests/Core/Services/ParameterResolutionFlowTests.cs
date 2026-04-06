@@ -1,4 +1,5 @@
 using SmartCon.Core.Math;
+using SmartCon.Core.Math.FormulaEngine.Solver;
 using Xunit;
 
 namespace SmartCon.Tests.Core.Services;
@@ -104,12 +105,12 @@ public sealed class ParameterResolutionFlowTests
         Assert.Equal(expectedDiamMm, diamMm, 1.0);
     }
 
-    // ── MiniFormulaSolver в контексте S4 ─────────────────────────────────
+    // ── FormulaSolver в контексте S4 ─────────────────────────────────
 
     [Fact]
     public void SolveFor_DiameterHalf_ReturnsDoubled()
     {
-        var result = MiniFormulaSolver.SolveFor("diameter / 2", "diameter", 0.0821);
+        var result = FormulaSolver.SolveForStatic("diameter / 2", "diameter", 0.0821);
         Assert.NotNull(result);
         Assert.Equal(0.1642, result!.Value, 1e-4);
     }
@@ -118,7 +119,7 @@ public sealed class ParameterResolutionFlowTests
     public void SolveFor_RadiusPlusOffset_ReturnsAdjusted()
     {
         // radius = r + 0.001 → r = target - 0.001
-        var result = MiniFormulaSolver.SolveFor("r + 0.001", "r", 0.0821);
+        var result = FormulaSolver.SolveForStatic("r + 0.001", "r", 0.0821);
         Assert.NotNull(result);
         Assert.Equal(0.0811, result!.Value, 1e-4);
     }
@@ -127,7 +128,7 @@ public sealed class ParameterResolutionFlowTests
     public void SolveFor_SizeIsLinear_ReturnsValue()
     {
         // size = x * 2 → x = 15 when target = 30
-        var result = MiniFormulaSolver.SolveFor("x * 2", "x", 30.0);
+        var result = FormulaSolver.SolveForStatic("x * 2", "x", 30.0);
         Assert.NotNull(result);
         Assert.Equal(15.0, result!.Value, Eps);
     }
@@ -135,38 +136,39 @@ public sealed class ParameterResolutionFlowTests
     [Fact]
     public void SolveFor_ComplexFormula_ReturnsNull_ExpectAdapter()
     {
-        var result = MiniFormulaSolver.SolveFor("x * x + 1", "x", 50.0);
-        Assert.Null(result);
+        var result = FormulaSolver.SolveForStatic("x * x + 1", "x", 50.0);
+        Assert.NotNull(result); // новый FormulaSolver решает бисекцией
+        Assert.Equal(7.0, result!.Value, 0.1); // sqrt(49) = 7
     }
 
     [Fact]
     public void SolveFor_SizeLookupFormula_ReturnsNull_ExpectAdapter()
     {
-        var result = MiniFormulaSolver.SolveFor(
-            "size_lookup(Table1, radius, \"default\", diameter)", "diameter", 25.0);
+        var result = FormulaSolver.SolveForStatic(
+            "size_lookup(\"Table1\", radius, \"default\", diameter)", "diameter", 25.0);
         Assert.Null(result);
     }
 
     [Fact]
     public void ExtractVariables_DiameterFormula_FindsDiameter()
     {
-        var vars = MiniFormulaSolver.ExtractVariables("diameter / 2");
+        var vars = FormulaSolver.ExtractVariablesStatic("diameter / 2");
         Assert.Contains("diameter", vars, System.StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void ExtractVariables_SizeLookupFormula_FindsQueryParam()
     {
-        var vars = MiniFormulaSolver.ExtractVariables(
-            "size_lookup(Table1, radius, \"default\", DN)");
+        var vars = FormulaSolver.ExtractVariablesStatic(
+            "size_lookup(\"Table1\", radius, \"default\", DN)");
         Assert.Contains("DN", vars, System.StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void ParseSizeLookup_Valid_ReturnsTableAndTarget()
     {
-        var r = MiniFormulaSolver.ParseSizeLookup(
-            "size_lookup(DN_Table, radius, \"default\", nomDiam)");
+        var r = FormulaSolver.ParseSizeLookupStatic(
+            "size_lookup(\"DN_Table\", radius, \"default\", nomDiam)");
         Assert.NotNull(r);
         Assert.Equal("DN_Table", r!.Value.TableName);
         Assert.Equal("radius",   r.Value.TargetParameter);

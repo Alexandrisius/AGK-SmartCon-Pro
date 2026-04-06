@@ -4,24 +4,24 @@ using System.Linq;
 namespace SmartCon.Core.Math;
 
 /// <summary>
-/// Минимальный решатель формул для Phase 4 (S4 — ResolvingParameters).
-/// Поддерживает: числа, переменные, +, -, *, /, унарный минус, скобки.
-/// Для сложных формул (if, trig, нелинейные) — SolveFor возвращает null.
-/// Phase 6 (FormulaSolver) добавит полную поддержку через AST.
+/// ╨Ь╨╕╨╜╨╕╨╝╨░╨╗╤М╨╜╤Л╨╣ ╤А╨╡╤И╨░╤В╨╡╨╗╤М ╤Д╨╛╤А╨╝╤Г╨╗ ╨┤╨╗╤П Phase 4 (S4 тАФ ResolvingParameters).
+/// ╨Я╨╛╨┤╨┤╨╡╤А╨╢╨╕╨▓╨░╨╡╤В: ╤З╨╕╤Б╨╗╨░, ╨┐╨╡╤А╨╡╨╝╨╡╨╜╨╜╤Л╨╡, +, -, *, /, ╤Г╨╜╨░╤А╨╜╤Л╨╣ ╨╝╨╕╨╜╤Г╤Б, ╤Б╨║╨╛╨▒╨║╨╕.
+/// ╨Ф╨╗╤П ╤Б╨╗╨╛╨╢╨╜╤Л╤Е ╤Д╨╛╤А╨╝╤Г╨╗ (if, trig, ╨╜╨╡╨╗╨╕╨╜╨╡╨╣╨╜╤Л╨╡) тАФ SolveFor ╨▓╨╛╨╖╨▓╤А╨░╤Й╨░╨╡╤В null.
+/// Phase 6 (FormulaSolver) ╨┤╨╛╨▒╨░╨▓╨╕╤В ╨┐╨╛╨╗╨╜╤Г╤О ╨┐╨╛╨┤╨┤╨╡╤А╨╢╨║╤Г ╤З╨╡╤А╨╡╨╖ AST.
 /// </summary>
 internal static class MiniFormulaSolver
 {
-    // ── Публичное API ──────────────────────────────────────────────────────
+    // тФАтФА ╨Я╤Г╨▒╨╗╨╕╤З╨╜╨╛╨╡ API тФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФА
 
     /// <summary>
-    /// Вычислить простое выражение: "diameter / 2", "DN * 2 + 1".
-    /// Неизвестные переменные трактуются как 0.
-    /// Функциональные вызовы (size_lookup, if, ...) трактуются как 0.
+    /// ╨Т╤Л╤З╨╕╤Б╨╗╨╕╤В╤М ╨┐╤А╨╛╤Б╤В╨╛╨╡ ╨▓╤Л╤А╨░╨╢╨╡╨╜╨╕╨╡: "diameter / 2", "DN * 2 + 1".
+    /// ╨Э╨╡╨╕╨╖╨▓╨╡╤Б╤В╨╜╤Л╨╡ ╨┐╨╡╤А╨╡╨╝╨╡╨╜╨╜╤Л╨╡ ╤В╤А╨░╨║╤В╤Г╤О╤В╤Б╤П ╨║╨░╨║ 0.
+    /// ╨д╤Г╨╜╨║╤Ж╨╕╨╛╨╜╨░╨╗╤М╨╜╤Л╨╡ ╨▓╤Л╨╖╨╛╨▓╤Л (size_lookup, if, ...) ╤В╤А╨░╨║╤В╤Г╤О╤В╤Б╤П ╨║╨░╨║ 0.
     /// </summary>
     internal static double Evaluate(string formula,
         IReadOnlyDictionary<string, double> variables)
     {
-        // Нормализуем имена с пробелами до токенизации
+        // ╨Э╨╛╤А╨╝╨░╨╗╨╕╨╖╤Г╨╡╨╝ ╨╕╨╝╨╡╨╜╨░ ╤Б ╨┐╤А╨╛╨▒╨╡╨╗╨░╨╝╨╕ ╨┤╨╛ ╤В╨╛╨║╨╡╨╜╨╕╨╖╨░╤Ж╨╕╨╕
         var (normFormula, normVars) = NormalizeForEvaluate(formula, variables);
         var tokens = Tokenize(normFormula);
         var ci = new Dictionary<string, double>(normVars, System.StringComparer.OrdinalIgnoreCase);
@@ -30,12 +30,12 @@ internal static class MiniFormulaSolver
     }
 
     /// <summary>
-    /// Обратное решение линейной формулы.
-    /// Пример: SolveFor("diameter / 2", "diameter", 25) → 50.
-    /// Возвращает null если:
-    ///   — переменная не фигурирует в формуле,
-    ///   — формула нелинейна (x*x, if, trig, size_lookup),
-    ///   — деление на ноль.
+    /// ╨Ю╨▒╤А╨░╤В╨╜╨╛╨╡ ╤А╨╡╤И╨╡╨╜╨╕╨╡ ╨╗╨╕╨╜╨╡╨╣╨╜╨╛╨╣ ╤Д╨╛╤А╨╝╤Г╨╗╤Л.
+    /// ╨Я╤А╨╕╨╝╨╡╤А: SolveFor("diameter / 2", "diameter", 25) тЖТ 50.
+    /// ╨Т╨╛╨╖╨▓╤А╨░╤Й╨░╨╡╤В null ╨╡╤Б╨╗╨╕:
+    ///   тАФ ╨┐╨╡╤А╨╡╨╝╨╡╨╜╨╜╨░╤П ╨╜╨╡ ╤Д╨╕╨│╤Г╤А╨╕╤А╤Г╨╡╤В ╨▓ ╤Д╨╛╤А╨╝╤Г╨╗╨╡,
+    ///   тАФ ╤Д╨╛╤А╨╝╤Г╨╗╨░ ╨╜╨╡╨╗╨╕╨╜╨╡╨╣╨╜╨░ (x*x, if, trig, size_lookup),
+    ///   тАФ ╨┤╨╡╨╗╨╡╨╜╨╕╨╡ ╨╜╨░ ╨╜╨╛╨╗╤М.
     /// </summary>
     internal static double? SolveFor(string formula, string variableName,
         double targetValue,
@@ -43,10 +43,10 @@ internal static class MiniFormulaSolver
     {
         var others = otherValues ?? new Dictionary<string, double>();
 
-        // Нормализуем имена с пробелами до токенизации
+        // ╨Э╨╛╤А╨╝╨░╨╗╨╕╨╖╤Г╨╡╨╝ ╨╕╨╝╨╡╨╜╨░ ╤Б ╨┐╤А╨╛╨▒╨╡╨╗╨░╨╝╨╕ ╨┤╨╛ ╤В╨╛╨║╨╡╨╜╨╕╨╖╨░╤Ж╨╕╨╕
         var (normFormula, normVarName, normOthers) = NormalizeForSolveFor(formula, variableName, others);
 
-        // Быстрая проверка: переменная присутствует в токенах
+        // ╨С╤Л╤Б╤В╤А╨░╤П ╨┐╤А╨╛╨▓╨╡╤А╨║╨░: ╨┐╨╡╤А╨╡╨╝╨╡╨╜╨╜╨░╤П ╨┐╤А╨╕╤Б╤Г╤В╤Б╤В╨▓╤Г╨╡╤В ╨▓ ╤В╨╛╨║╨╡╨╜╨░╤Е
         var vars = ExtractVariables(normFormula);
         if (!vars.Any(v => string.Equals(v, normVarName, System.StringComparison.OrdinalIgnoreCase)))
             return null;
@@ -64,11 +64,11 @@ internal static class MiniFormulaSolver
             double a = f1 - f0;
             double b = f0;
 
-            // Проверка линейности: f(2) ≈ 2*a + b
+            // ╨Я╤А╨╛╨▓╨╡╤А╨║╨░ ╨╗╨╕╨╜╨╡╨╣╨╜╨╛╤Б╤В╨╕: f(2) тЙИ 2*a + b
             if (System.Math.Abs(f2 - (2.0 * a + b)) > 1e-6)
                 return null;
 
-            // Переменная не влияет (коэффициент ≈ 0)
+            // ╨Я╨╡╤А╨╡╨╝╨╡╨╜╨╜╨░╤П ╨╜╨╡ ╨▓╨╗╨╕╤П╨╡╤В (╨║╨╛╤Н╤Д╤Д╨╕╤Ж╨╕╨╡╨╜╤В тЙИ 0)
             if (System.Math.Abs(a) < 1e-12)
                 return null;
 
@@ -80,12 +80,12 @@ internal static class MiniFormulaSolver
         }
     }
 
-    // ── Нормализация имён с пробелами ──────────────────────────────────────
+    // тФАтФА ╨Э╨╛╤А╨╝╨░╨╗╨╕╨╖╨░╤Ж╨╕╤П ╨╕╨╝╤С╨╜ ╤Б ╨┐╤А╨╛╨▒╨╡╨╗╨░╨╝╨╕ тФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФА
 
     /// <summary>
-    /// Заменяет имена переменных с пробелами на псевдонимы __p0__, __p1__
-    /// чтобы токенизатор не разбивал их на отдельные токены.
-    /// Длинные имена заменяются первыми, чтобы избежать частичных совпадений.
+    /// ╨Ч╨░╨╝╨╡╨╜╤П╨╡╤В ╨╕╨╝╨╡╨╜╨░ ╨┐╨╡╤А╨╡╨╝╨╡╨╜╨╜╤Л╤Е ╤Б ╨┐╤А╨╛╨▒╨╡╨╗╨░╨╝╨╕ ╨╜╨░ ╨┐╤Б╨╡╨▓╨┤╨╛╨╜╨╕╨╝╤Л __p0__, __p1__
+    /// ╤З╤В╨╛╨▒╤Л ╤В╨╛╨║╨╡╨╜╨╕╨╖╨░╤В╨╛╤А ╨╜╨╡ ╤А╨░╨╖╨▒╨╕╨▓╨░╨╗ ╨╕╤Е ╨╜╨░ ╨╛╤В╨┤╨╡╨╗╤М╨╜╤Л╨╡ ╤В╨╛╨║╨╡╨╜╤Л.
+    /// ╨Ф╨╗╨╕╨╜╨╜╤Л╨╡ ╨╕╨╝╨╡╨╜╨░ ╨╖╨░╨╝╨╡╨╜╤П╤О╤В╤Б╤П ╨┐╨╡╤А╨▓╤Л╨╝╨╕, ╤З╤В╨╛╨▒╤Л ╨╕╨╖╨▒╨╡╨╢╨░╤В╤М ╤З╨░╤Б╤В╨╕╤З╨╜╤Л╤Е ╤Б╨╛╨▓╨┐╨░╨┤╨╡╨╜╨╕╨╣.
     /// </summary>
     private static (string normFormula, Dictionary<string, double> normVars)
         NormalizeForEvaluate(string formula, IReadOnlyDictionary<string, double> variables)
@@ -118,7 +118,7 @@ internal static class MiniFormulaSolver
     }
 
     /// <summary>
-    /// Нормализует formula, variableName и otherValues: имена с пробелами → псевдонимы.
+    /// ╨Э╨╛╤А╨╝╨░╨╗╨╕╨╖╤Г╨╡╤В formula, variableName ╨╕ otherValues: ╨╕╨╝╨╡╨╜╨░ ╤Б ╨┐╤А╨╛╨▒╨╡╨╗╨░╨╝╨╕ тЖТ ╨┐╤Б╨╡╨▓╨┤╨╛╨╜╨╕╨╝╤Л.
     /// </summary>
     private static (string normFormula, string normVarName, IReadOnlyDictionary<string, double> normOthers)
         NormalizeForSolveFor(string formula, string variableName, IReadOnlyDictionary<string, double> others)
@@ -154,11 +154,11 @@ internal static class MiniFormulaSolver
     }
 
     /// <summary>
-    /// Парсинг вызова size_lookup:
+    /// ╨Я╨░╤А╤Б╨╕╨╜╨│ ╨▓╤Л╨╖╨╛╨▓╨░ size_lookup:
     ///   size_lookup(TableName, TargetParam, "DefaultValue", QueryParam1, QueryParam2, ...)
-    /// Возвращает (TableName, TargetParameter, QueryParameters) или null если строка
-    /// не является вызовом size_lookup.
-    /// QueryParameters — аргументы начиная с позиции 3 (0-based).
+    /// ╨Т╨╛╨╖╨▓╤А╨░╤Й╨░╨╡╤В (TableName, TargetParameter, QueryParameters) ╨╕╨╗╨╕ null ╨╡╤Б╨╗╨╕ ╤Б╤В╤А╨╛╨║╨░
+    /// ╨╜╨╡ ╤П╨▓╨╗╤П╨╡╤В╤Б╤П ╨▓╤Л╨╖╨╛╨▓╨╛╨╝ size_lookup.
+    /// QueryParameters тАФ ╨░╤А╨│╤Г╨╝╨╡╨╜╤В╤Л ╨╜╨░╤З╨╕╨╜╨░╤П ╤Б ╨┐╨╛╨╖╨╕╤Ж╨╕╨╕ 3 (0-based).
     /// </summary>
     internal static (string TableName, string TargetParameter,
                      IReadOnlyList<string> QueryParameters)? ParseSizeLookup(string formula)
@@ -170,7 +170,7 @@ internal static class MiniFormulaSolver
         var parenStart = trimmed.IndexOf('(', idx);
         if (parenStart < 0) return null;
 
-        // Найти закрывающую скобку (с учётом вложенности)
+        // ╨Э╨░╨╣╤В╨╕ ╨╖╨░╨║╤А╤Л╨▓╨░╤О╤Й╤Г╤О ╤Б╨║╨╛╨▒╨║╤Г (╤Б ╤Г╤З╤С╤В╨╛╨╝ ╨▓╨╗╨╛╨╢╨╡╨╜╨╜╨╛╤Б╤В╨╕)
         int depth    = 1;
         int parenEnd = parenStart + 1;
         while (parenEnd < trimmed.Length && depth > 0)
@@ -184,12 +184,12 @@ internal static class MiniFormulaSolver
         var argsStr = trimmed.Substring(parenStart + 1, parenEnd - parenStart - 2);
         var args    = SplitArgs(argsStr);
 
-        // Минимум: TableName, TargetParam, Default, QueryParam1
+        // ╨Ь╨╕╨╜╨╕╨╝╤Г╨╝: TableName, TargetParam, Default, QueryParam1
         if (args.Count < 4) return null;
 
         var tableName   = args[0].Trim().Trim('"');
         var targetParam = args[1].Trim().Trim('"');
-        // args[2] = default value (строковый литерал) — пропускаем
+        // args[2] = default value (╤Б╤В╤А╨╛╨║╨╛╨▓╤Л╨╣ ╨╗╨╕╤В╨╡╤А╨░╨╗) тАФ ╨┐╤А╨╛╨┐╤Г╤Б╨║╨░╨╡╨╝
         var queryParams = args.Skip(3)
                               .Select(a => a.Trim().Trim('"'))
                               .Where(a => a.Length > 0)
@@ -199,8 +199,8 @@ internal static class MiniFormulaSolver
     }
 
     /// <summary>
-    /// Извлечь имена всех переменных из формулы (исключая вызовы функций).
-    /// Используется FamilyParameterAnalyzer для поиска корневого параметра.
+    /// ╨Ш╨╖╨▓╨╗╨╡╤З╤М ╨╕╨╝╨╡╨╜╨░ ╨▓╤Б╨╡╤Е ╨┐╨╡╤А╨╡╨╝╨╡╨╜╨╜╤Л╤Е ╨╕╨╖ ╤Д╨╛╤А╨╝╤Г╨╗╤Л (╨╕╤Б╨║╨╗╤О╤З╨░╤П ╨▓╤Л╨╖╨╛╨▓╤Л ╤Д╤Г╨╜╨║╤Ж╨╕╨╣).
+    /// ╨Ш╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╡╤В╤Б╤П FamilyParameterAnalyzer ╨┤╨╗╤П ╨┐╨╛╨╕╤Б╨║╨░ ╨║╨╛╤А╨╜╨╡╨▓╨╛╨│╨╛ ╨┐╨░╤А╨░╨╝╨╡╤В╤А╨░.
     /// </summary>
     internal static IReadOnlyList<string> ExtractVariables(string formula)
     {
@@ -224,7 +224,7 @@ internal static class MiniFormulaSolver
             var name = tokens[i].Text;
             if (knownFunctions.Contains(name)) continue;
 
-            // Если следующий токен — '(' → это вызов функции, не переменная
+            // ╨Х╤Б╨╗╨╕ ╤Б╨╗╨╡╨┤╤Г╤О╤Й╨╕╨╣ ╤В╨╛╨║╨╡╨╜ тАФ '(' тЖТ ╤Н╤В╨╛ ╨▓╤Л╨╖╨╛╨▓ ╤Д╤Г╨╜╨║╤Ж╨╕╨╕, ╨╜╨╡ ╨┐╨╡╤А╨╡╨╝╨╡╨╜╨╜╨░╤П
             bool isCall = (i + 1 < tokens.Count && tokens[i + 1].Type == TokenType.LParen);
             if (!isCall)
                 result.Add(name);
@@ -233,7 +233,7 @@ internal static class MiniFormulaSolver
         return result.ToList();
     }
 
-    // ── Токенизатор ────────────────────────────────────────────────────────
+    // тФАтФА ╨в╨╛╨║╨╡╨╜╨╕╨╖╨░╤В╨╛╤А тФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФА
 
     private enum TokenType
     {
@@ -256,7 +256,7 @@ internal static class MiniFormulaSolver
 
             if (char.IsWhiteSpace(c)) { i++; continue; }
 
-            // Строковый литерал "..."
+            // ╨б╤В╤А╨╛╨║╨╛╨▓╤Л╨╣ ╨╗╨╕╤В╨╡╤А╨░╨╗ "..."
             if (c == '"')
             {
                 int start = i++;
@@ -266,12 +266,12 @@ internal static class MiniFormulaSolver
                 continue;
             }
 
-            // Числовой литерал
+            // ╨з╨╕╤Б╨╗╨╛╨▓╨╛╨╣ ╨╗╨╕╤В╨╡╤А╨░╨╗
             if (char.IsDigit(c) || (c == '.' && i + 1 < input.Length && char.IsDigit(input[i + 1])))
             {
                 int start = i;
                 while (i < input.Length && (char.IsDigit(input[i]) || input[i] == '.')) i++;
-                // научная нотация
+                // ╨╜╨░╤Г╤З╨╜╨░╤П ╨╜╨╛╤В╨░╤Ж╨╕╤П
                 if (i < input.Length && (input[i] == 'e' || input[i] == 'E'))
                 {
                     i++;
@@ -286,7 +286,7 @@ internal static class MiniFormulaSolver
                 continue;
             }
 
-            // Идентификатор
+            // ╨Ш╨┤╨╡╨╜╤В╨╕╤Д╨╕╨║╨░╤В╨╛╤А
             if (char.IsLetter(c) || c == '_')
             {
                 int start = i;
@@ -304,7 +304,7 @@ internal static class MiniFormulaSolver
                 case '(': result.Add(new Token(TokenType.LParen, "(")); i++; break;
                 case ')': result.Add(new Token(TokenType.RParen, ")")); i++; break;
                 case ',': result.Add(new Token(TokenType.Comma,  ",")); i++; break;
-                default:  i++; break; // пропускаем неизвестные символы
+                default:  i++; break; // ╨┐╤А╨╛╨┐╤Г╤Б╨║╨░╨╡╨╝ ╨╜╨╡╨╕╨╖╨▓╨╡╤Б╤В╨╜╤Л╨╡ ╤Б╨╕╨╝╨▓╨╛╨╗╤Л
             }
         }
 
@@ -312,7 +312,7 @@ internal static class MiniFormulaSolver
         return result;
     }
 
-    // ── Парсер (recursive descent) ─────────────────────────────────────────
+    // тФАтФА ╨Я╨░╤А╤Б╨╡╤А (recursive descent) тФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФА
 
     private sealed class Parser
     {
@@ -367,25 +367,25 @@ internal static class MiniFormulaSolver
         // factor = number | string | '(' expr ')' | '-' factor | identifier ['(' arglist ')']
         private double ParseFactor()
         {
-            // Унарный минус
+            // ╨г╨╜╨░╤А╨╜╤Л╨╣ ╨╝╨╕╨╜╤Г╤Б
             if (Current.Type == TokenType.Minus)
             {
                 Consume();
                 return -ParseFactor();
             }
 
-            // Число
+            // ╨з╨╕╤Б╨╗╨╛
             if (Current.Type == TokenType.Number)
                 return Consume().NumValue;
 
-            // Строковый литерал → 0
+            // ╨б╤В╤А╨╛╨║╨╛╨▓╤Л╨╣ ╨╗╨╕╤В╨╡╤А╨░╨╗ тЖТ 0
             if (Current.Type == TokenType.String)
             {
                 Consume();
                 return 0.0;
             }
 
-            // Скобки: ( expr )
+            // ╨б╨║╨╛╨▒╨║╨╕: ( expr )
             if (Current.Type == TokenType.LParen)
             {
                 Consume(); // (
@@ -394,12 +394,12 @@ internal static class MiniFormulaSolver
                 return val;
             }
 
-            // Идентификатор или вызов функции
+            // ╨Ш╨┤╨╡╨╜╤В╨╕╤Д╨╕╨║╨░╤В╨╛╤А ╨╕╨╗╨╕ ╨▓╤Л╨╖╨╛╨▓ ╤Д╤Г╨╜╨║╤Ж╨╕╨╕
             if (Current.Type == TokenType.Identifier)
             {
                 var name = Consume().Text;
 
-                // Вызов функции: name ( ... ) → пропускаем аргументы, возвращаем 0
+                // ╨Т╤Л╨╖╨╛╨▓ ╤Д╤Г╨╜╨║╤Ж╨╕╨╕: name ( ... ) тЖТ ╨┐╤А╨╛╨┐╤Г╤Б╨║╨░╨╡╨╝ ╨░╤А╨│╤Г╨╝╨╡╨╜╤В╤Л, ╨▓╨╛╨╖╨▓╤А╨░╤Й╨░╨╡╨╝ 0
                 if (Current.Type == TokenType.LParen)
                 {
                     Consume(); // (
@@ -414,18 +414,18 @@ internal static class MiniFormulaSolver
                     return 0.0;
                 }
 
-                // Переменная
+                // ╨Я╨╡╤А╨╡╨╝╨╡╨╜╨╜╨░╤П
                 if (_variables.TryGetValue(name, out double v))
                     return v;
 
-                return 0.0; // неизвестная переменная
+                return 0.0; // ╨╜╨╡╨╕╨╖╨▓╨╡╤Б╤В╨╜╨░╤П ╨┐╨╡╤А╨╡╨╝╨╡╨╜╨╜╨░╤П
             }
 
             return 0.0; // fallback
         }
     }
 
-    // ── Вспомогательные методы ─────────────────────────────────────────────
+    // тФАтФА ╨Т╤Б╨┐╨╛╨╝╨╛╨│╨░╤В╨╡╨╗╤М╨╜╤Л╨╡ ╨╝╨╡╤В╨╛╨┤╤Л тФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФАтФА
 
     private static Dictionary<string, double> BuildVars(
         IReadOnlyDictionary<string, double> others,
@@ -441,7 +441,7 @@ internal static class MiniFormulaSolver
     }
 
     /// <summary>
-    /// Разбить строку аргументов по запятой с учётом вложенных скобок.
+    /// ╨а╨░╨╖╨▒╨╕╤В╤М ╤Б╤В╤А╨╛╨║╤Г ╨░╤А╨│╤Г╨╝╨╡╨╜╤В╨╛╨▓ ╨┐╨╛ ╨╖╨░╨┐╤П╤В╨╛╨╣ ╤Б ╤Г╤З╤С╤В╨╛╨╝ ╨▓╨╗╨╛╨╢╨╡╨╜╨╜╤Л╤Е ╤Б╨║╨╛╨▒╨╛╨║.
     /// </summary>
     private static List<string> SplitArgs(string argsStr)
     {

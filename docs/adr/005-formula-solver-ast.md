@@ -1,7 +1,8 @@
 # ADR-005: AST-парсер для формул Revit (универсальный модуль)
 
-**Статус:** accepted
+**Статус:** implemented
 **Дата:** 2026-03-25
+**Реализовано:** 2026-04-06
 
 ## Контекст
 
@@ -50,6 +51,24 @@ Radius = if(DN < 50mm, DN / 2 - 1mm, DN / 2 - 2mm)
 **Минусы:**
 - Значительный объём реализации (~500-800 строк)
 - Обратное решение нелинейных формул — приближённое
+
+## Реализация (Phase 6)
+
+**Расположение:** `SmartCon.Core/Math/FormulaEngine/`
+
+| Компонент | Файл | Строк |
+|---|---|---|
+| UnitStripper | `UnitStripper.cs` | ~60 |
+| Tokenizer | `Token.cs`, `TokenType.cs`, `Tokenizer.cs` | ~150 |
+| Parser | `Parser.cs` + `Ast/*.cs` (10 файлов) | ~350 |
+| Evaluator | `Evaluator.cs` | ~200 |
+| Solver | `Solver/FormulaSolver.cs`, `IfSimplifier.cs`, `AlgebraicInverter.cs`, `BisectionSolver.cs`, `VariableExtractor.cs` | ~350 |
+| SizeLookupParser | `SizeLookupParser.cs` | ~75 |
+
+**Тесты:** 413 (8 файлов в `SmartCon.Tests/Core/Math/FormulaEngine/`)
+**DI:** `IFormulaSolver → FormulaSolver` (Singleton)
+**MiniFormulaSolver:** удалён, все потребители мигрированы.
+**Диагностика:** `%APPDATA%/AGK/SmartCon/formula-diagnostic.log`
 
 ## Альтернативы
 

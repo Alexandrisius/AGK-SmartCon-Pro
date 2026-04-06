@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
+using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Revit.Extensions;
 using RevitTransform = Autodesk.Revit.DB.Transform;
 
@@ -178,9 +179,44 @@ internal static class FamilyParameterAnalyzer
             return (directName, null, null, directIsInst, foundViaDiameter);
         }
 
-        // 5. Есть формула → найти корневой параметр по реальным именам FP (longest-first)
-        //    Это нужно для имён с пробелами, например 'ADSK_Диаметр условный',
-        //    которые ExtractVariables ошибочно разбивал на отдельные токены.
+        // 5. Есть формула → найти корневой параметр
+
+        // 5a. Если формула содержит size_lookup → корневой параметр = первый query-параметр.
+        //     Без этого generic search ниже выбирает BP_LookupTable (имя таблицы, longest-first)
+        //     вместо реального query-параметра (DN_test_2, BP_NominalDiameter и т.д.).
+        string? rootParamName = null;
+        bool    rootIsInst    = directIsInst;
+
+        try
+        {
+            var sizeLookup = FormulaSolver.ParseSizeLookupStatic(formula);
+            if (sizeLookup is not null && sizeLookup.Value.QueryParameters.Count > 0)
+            {
+                var queryName = sizeLookup.Value.QueryParameters[0];
+                var queryFp   = FindFamilyParameter(fm, queryName);
+                if (queryFp is not null)
+                {
+                    rootParamName = queryName;
+                    rootIsInst    = queryFp.IsInstance;
+                    SmartConLogger.Lookup($"    → rootParam из size_lookup query[0]: '{rootParamName}', isInstance={rootIsInst}");
+                }
+                else
+                {
+                    SmartConLogger.Lookup($"    → size_lookup query[0]='{queryName}' но FamilyParameter не найден, fallback на generic search");
+                }
+            }
+        }
+        catch
+        {
+            // Формула не парсится (спецсимволы и т.д.) → fallback на generic search
+        }
+
+        // 5b. Generic fallback: найти корневой параметр по реальным именам FP (longest-first)
+        //     Это нужно для имён с пробелами, например 'ADSK_Диаметр условный',
+        //     которые ExtractVariables ошибочно разбивал на отдельные токены.
+        if (rootParamName is null)
+        {
+
         var candidates = new List<(string Name, FamilyParameter Fp)>();
         foreach (FamilyParameter candidate in fm.Parameters)
         {
@@ -193,9 +229,6 @@ internal static class FamilyParameterAnalyzer
 
         SmartConLogger.Lookup($"  Поиск rootParam в формуле '{formula}' (кандидатов: {candidates.Count}):");
 
-        string? rootParamName = null;
-        bool    rootIsInst    = directIsInst;
-
         foreach (var (name, candidateFp) in candidates)
         {
             if (!ContainsParamReference(formula, name)) continue;
@@ -207,6 +240,8 @@ internal static class FamilyParameterAnalyzer
 
         if (rootParamName is null)
             SmartConLogger.Lookup("    → rootParam не найден");
+
+        } // end if (rootParamName is null) — generic fallback block
 
         SmartConLogger.Lookup($"  → return ('{directName}', '{rootParamName}', '{formula}', {rootIsInst}, isDiameter={foundViaDiameter})");
         return (directName, rootParamName, formula, rootIsInst, foundViaDiameter);

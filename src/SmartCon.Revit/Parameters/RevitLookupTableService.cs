@@ -6,6 +6,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Math;
+using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
 using RevitFamily = Autodesk.Revit.DB.Family;
@@ -241,7 +242,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         {
             double refRadius  = 1.0;
             double directRef  = isDiameter ? refRadius * 2.0 : refRadius;
-            var    rootRef    = MiniFormulaSolver.SolveFor(formula, rootName, directRef);
+            var    rootRef    = FormulaSolver.SolveForStatic(formula, rootName, directRef);
             if (rootRef.HasValue)
             {
                 tableStoresDiameters = System.Math.Abs(rootRef.Value / refRadius - 2.0) < 0.1;
@@ -296,7 +297,7 @@ public sealed class RevitLookupTableService : ILookupTableService
 
             SmartConLogger.Lookup($"      FamilyParam '{fp.Definition?.Name}', formula='{fp.Formula}'");
 
-            var parsed = MiniFormulaSolver.ParseSizeLookup(fp.Formula);
+            var parsed = FormulaSolver.ParseSizeLookupStatic(fp.Formula);
             if (parsed is null)
             {
                 SmartConLogger.Lookup($"        → ParseSizeLookup=null (не size_lookup)");
@@ -509,8 +510,15 @@ public sealed class RevitLookupTableService : ILookupTableService
         {
             if (!string.Equals(fp.Definition?.Name, paramName, StringComparison.OrdinalIgnoreCase)) continue;
             if (string.IsNullOrEmpty(fp.Formula)) return false;
-            var vars = MiniFormulaSolver.ExtractVariables(fp.Formula);
-            return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
+
+            var vars = FormulaSolver.ExtractVariablesStatic(fp.Formula);
+            if (vars.Count > 0)
+                return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
+
+            // ExtractVariablesStatic вернул [] — парсер не смог разобрать формулу
+            // (имена переменных с пробелами, спецсимволы °, ³ и т.д.)
+            // Fallback: проверяем содержит ли формула target как подстроку
+            return fp.Formula.Contains(target, StringComparison.OrdinalIgnoreCase);
         }
         return false;
     }
