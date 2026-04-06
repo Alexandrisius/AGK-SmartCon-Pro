@@ -31,6 +31,9 @@ public sealed record ElementSnapshot
     public double ConnectorRadius { get; init; }
     public ElementId? FamilySymbolId { get; init; }
 
+    // Per-connector радиусы (для многопортовых элементов с разными DN)
+    public IReadOnlyDictionary<int, double> ConnectorRadii { get; init; } = new Dictionary<int, double>();
+
     // Соединения (из графа)
     public IReadOnlyList<ConnectionRecord> Connections { get; init; } = [];
 }

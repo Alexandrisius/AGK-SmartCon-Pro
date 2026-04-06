@@ -1103,18 +1103,21 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                             fi.ChangeTypeId(snapshot.FamilySymbolId);
                         }
 
-                        // Шаг 1b: ВСЕГДА восстановить размер через TrySetConnectorRadius
-                        // При + размер менялся через TrySetConnectorRadius (параметр экземпляра),
-                        // поэтому ChangeTypeId может не помочь — Symbol.Id не менялся.
+                        // Шаг 1b: Восстановить размер КАЖДОГО коннектора к его ИСХОДНОМУ радиусу
+                        // Используем per-connector ConnectorRadii из snapshot, а не единый ConnectorRadius.
+                        // Критично для многопортовых элементов (коллекторы, гребёнки) с разными DN.
                         var fiConns = _connSvc.GetAllConnectors(doc, elemId);
                         foreach (var fc in fiConns)
                         {
-                            double delta = System.Math.Abs(fc.Radius - snapshot.ConnectorRadius);
+                            double targetR = snapshot.ConnectorRadii.TryGetValue(fc.ConnectorIndex, out var snapR)
+                                ? snapR
+                                : snapshot.ConnectorRadius; // fallback
+                            double delta = System.Math.Abs(fc.Radius - targetR);
                             if (delta > 1e-5)
                             {
                                 SmartConLogger.Info($"[Chain−]   c. FI: TrySetConnectorRadius(connIdx={fc.ConnectorIndex}, " +
-                                    $"current={fc.Radius * 304.8:F2}mm → target={snapshot.ConnectorRadius * 304.8:F2}mm)");
-                                _paramResolver.TrySetConnectorRadius(doc, elemId, fc.ConnectorIndex, snapshot.ConnectorRadius);
+                                    $"current={fc.Radius * 304.8:F2}mm → target={targetR * 304.8:F2}mm)");
+                                _paramResolver.TrySetConnectorRadius(doc, elemId, fc.ConnectorIndex, targetR);
                             }
                         }
                         doc.Regenerate();
@@ -1284,10 +1287,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             curveEnd = line.GetEndPoint(1);
         }
 
-        // Радиус и позиция первого не-Curve коннектора
+        // Радиус и позиция коннекторов
         double connRadius = 0;
         XYZ? firstConnOrigin = null;
         int firstConnIdx = -1;
+        var connRadiiDict = new Dictionary<int, double>();
         var conns = _connSvc.GetAllConnectors(doc, elemId);
         if (conns.Count > 0)
         {
@@ -1295,6 +1299,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             firstConnOrigin = conns[0].Origin;
             firstConnIdx = conns[0].ConnectorIndex;
         }
+        foreach (var c in conns)
+            connRadiiDict[c.ConnectorIndex] = c.Radius;
 
         return new ElementSnapshot
         {
@@ -1309,6 +1315,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             FirstConnectorOrigin = firstConnOrigin,
             FirstConnectorIndex = firstConnIdx,
             ConnectorRadius = connRadius,
+            ConnectorRadii = connRadiiDict,
             FamilySymbolId = familySymbolId,
             Connections = graph.GetOriginalConnections(elemId),
         };
