@@ -1,6 +1,7 @@
 <Window x:Class="SmartCon.PipeConnect.Views.PipeConnectEditorView"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:converters="clr-namespace:SmartCon.PipeConnect.Converters"
         Title="Настройка соединения элементов"
         Width="600" Height="500"
         ResizeMode="NoResize"
@@ -9,6 +10,8 @@
         Background="#F5F5F5">
 
     <Window.Resources>
+
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
 
         <!-- Modern blue button -->
         <Style x:Key="ModernButton" TargetType="Button">
@@ -251,12 +254,37 @@
                         ToolTip="Вставить выбранный фитинг (примерка)"/>
             </Grid>
 
-            <!-- ── Переместить всю сеть ───────────────────────────────────────── -->
-            <CheckBox Grid.Row="10"
-                      Content="Переместить всю сеть"
-                      IsChecked="{Binding MoveEntireChain, Mode=TwoWay}"
-                      IsEnabled="{Binding IsSessionActive}"
-                      Foreground="#444"/>
+            <!-- ── Глубина цепочки ─────────────────────────────────────── -->
+            <Grid Grid.Row="10" Margin="0,4,0,0"
+                  Visibility="{Binding HasChain, Converter={StaticResource BoolToVisibility}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="4"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="4"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Сеть:"
+                           VerticalAlignment="Center" Foreground="#444" FontSize="12"/>
+                <Button Grid.Column="2" Content="−" Width="28" Height="28"
+                        Command="{Binding DecrementChainDepthCommand}"
+                        Style="{StaticResource ModernButton}" FontSize="14" Padding="0"
+                        ToolTip="Отсоединить последний уровень"/>
+                <TextBlock Grid.Column="4" Text="{Binding ChainDepth}" Width="24"
+                           TextAlignment="Center" VerticalAlignment="Center"
+                           FontSize="14" FontWeight="SemiBold" Foreground="#333"/>
+                <Button Grid.Column="6" Content="+" Width="28" Height="28"
+                        Command="{Binding IncrementChainDepthCommand}"
+                        Style="{StaticResource ModernButton}" FontSize="14" Padding="0"
+                        ToolTip="Присоединить следующий уровень"/>
+                <TextBlock Grid.Column="8" Text="{Binding ChainDepthHint}"
+                           Foreground="#888" FontSize="10"
+                           VerticalAlignment="Center" TextWrapping="NoWrap"/>
+            </Grid>
 
             <!-- ── Статус ─────────────────────────────────────────────────────── -->
             <Border Grid.Row="11"

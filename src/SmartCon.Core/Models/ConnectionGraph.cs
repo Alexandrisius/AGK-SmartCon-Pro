@@ -11,17 +11,23 @@ public sealed class ConnectionGraph
 {
     private readonly List<ElementId> _nodes;
     private readonly List<ConnectionEdge> _edges;
+    private readonly List<List<ElementId>> _levels = [];
+    private readonly Dictionary<long, List<ConnectionRecord>> _originalConnections = new();
 
     public ConnectionGraph(ElementId rootId)
     {
         RootId = rootId;
         _nodes = [rootId];
         _edges = [];
+        _levels.Add([rootId]);
     }
 
     public ElementId RootId { get; }
     public IReadOnlyList<ElementId> Nodes => _nodes;
     public IReadOnlyList<ConnectionEdge> Edges => _edges;
+    public IReadOnlyList<IReadOnlyList<ElementId>> Levels => _levels;
+    public int TotalChainElements => Nodes.Count - 1;
+    public int MaxLevel => _levels.Count - 1;
 
     /// <summary>
     /// Добавить узел в граф. Вызывается из BuildGraph (BFS).
@@ -38,6 +44,37 @@ public sealed class ConnectionGraph
     {
         _edges.Add(edge);
     }
+
+    /// <summary>
+    /// Добавить элемент на указанный BFS-уровень.
+    /// </summary>
+    internal void AddElementAtLevel(int level, ElementId elementId)
+    {
+        while (_levels.Count <= level) _levels.Add([]);
+        _levels[level].Add(elementId);
+    }
+
+    /// <summary>
+    /// Сохранить запись об исходном соединении элемента (до disconnect).
+    /// </summary>
+    internal void SaveConnection(ElementId elementId, ConnectionRecord record)
+    {
+        var key = elementId.Value;
+        if (!_originalConnections.TryGetValue(key, out var list))
+        {
+            list = [];
+            _originalConnections[key] = list;
+        }
+        if (!list.Any(r => r.ThisConnectorIndex == record.ThisConnectorIndex
+                        && r.NeighborElementId.Value == record.NeighborElementId.Value))
+            list.Add(record);
+    }
+
+    /// <summary>
+    /// Получить исходные соединения элемента, сохранённые при BuildGraph.
+    /// </summary>
+    public IReadOnlyList<ConnectionRecord> GetOriginalConnections(ElementId elementId)
+        => _originalConnections.TryGetValue(elementId.Value, out var list) ? list : [];
 
     /// <summary>
     /// Все ElementId, достижимые из startId (включая сам startId).
@@ -75,7 +112,7 @@ public sealed class ConnectionGraph
 /// EqualityComparer для ElementId — сравнивает по Value (IntegerValue).
 /// Revit ElementId не реализует IEquatable корректно для HashSet.
 /// </summary>
-internal sealed class ElementIdEqualityComparer : IEqualityComparer<ElementId>
+public sealed class ElementIdEqualityComparer : IEqualityComparer<ElementId>
 {
     public static readonly ElementIdEqualityComparer Instance = new();
 

@@ -26,4 +26,9 @@ public sealed class PipeConnectSessionContext
     /// Пустой список = прямое соединение.
     /// </summary>
     public IReadOnlyList<FittingMappingRule> ProposedFittings { get; init; } = [];
+
+    /// <summary>
+    /// Граф цепочки dynamic-элемента, построенный ДО disconnect. null = нет цепочки.
+    /// </summary>
+    public ConnectionGraph? ChainGraph { get; init; }
 }

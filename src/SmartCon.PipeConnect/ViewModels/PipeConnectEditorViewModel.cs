@@ -26,6 +26,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private readonly IFittingInsertService    _fittingInsertSvc;
     private readonly IParameterResolver       _paramResolver;
     private readonly IDynamicSizeResolver     _sizeResolver;
+    private readonly INetworkMover            _networkMover;
     private readonly PipeConnectSessionContext _ctx;
 
     private ITransactionGroupSession? _groupSession;
@@ -38,7 +39,20 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private readonly HashSet<int> _visitedConnectorIndices = [];
     private int                   _connectorCyclePos = 0;
 
-    [ObservableProperty] private bool    _moveEntireChain;
+    // ── Chain ───────────────────────────────────────────────
+    private ConnectionGraph? _chainGraph;
+    private readonly NetworkSnapshotStore _snapshotStore = new();
+
+    private int    _chainDepthField;
+    [ObservableProperty] private string _chainDepthHint = "нет цепочки";
+    [ObservableProperty] private bool   _hasChain;
+
+    public int ChainDepth
+    {
+        get => _chainDepthField;
+        set => SetProperty(ref _chainDepthField, value);
+    }
+
     [ObservableProperty] private bool    _isBusy;
     [ObservableProperty] private string  _statusMessage = "Инициализация…";
     [ObservableProperty] private FittingCardItem? _selectedFitting;
@@ -62,7 +76,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         ITransformService          transformSvc,
         IFittingInsertService      fittingInsertSvc,
         IParameterResolver         paramResolver,
-        IDynamicSizeResolver       sizeResolver)
+        IDynamicSizeResolver       sizeResolver,
+        INetworkMover              networkMover)
     {
         _ctx              = ctx;
         _doc              = doc;
@@ -72,7 +87,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _fittingInsertSvc = fittingInsertSvc;
         _paramResolver    = paramResolver;
         _sizeResolver     = sizeResolver;
+        _networkMover     = networkMover;
         _activeDynamic    = ctx.DynamicConnector;
+        _chainGraph       = ctx.ChainGraph;
 
         bool hasMandatoryFittings = ctx.ProposedFittings.Count > 0 &&
             ctx.ProposedFittings.Any(r => !r.IsDirectConnect && r.FittingFamilies.Count > 0);
@@ -107,6 +124,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         SelectedFitting = AvailableFittings.Count > 0 ? AvailableFittings[0] : null;
 
         LoadDynamicSizes();
+        UpdateChainUI();
     }
 
     private void LoadDynamicSizes()
@@ -408,6 +426,20 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 if (_currentFittingId is not null)
                     idsToRotate.Add(_currentFittingId);
 
+                // Элементы цепочки до ChainDepth + reducer-ы
+                if (_chainGraph is not null && ChainDepth > 0)
+                {
+                    for (int level = 1; level <= ChainDepth && level < _chainGraph.Levels.Count; level++)
+                    {
+                        foreach (var elemId in _chainGraph.Levels[level])
+                        {
+                            idsToRotate.Add(elemId);
+                            foreach (var reducerId in _snapshotStore.GetReducers(elemId))
+                                idsToRotate.Add(reducerId);
+                        }
+                    }
+                }
+
                 var activeIdx = _activeDynamic?.ConnectorIndex
                              ?? _ctx.DynamicConnector.ConnectorIndex;
                 var dynElem = doc.GetElement(dynId);
@@ -434,6 +466,24 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 }
 
                 _transformSvc.RotateElements(doc, idsToRotate, axisOrigin, axisDir, radians);
+                doc.Regenerate();
+
+                // GlobalYSnap ТОЛЬКО для dynamic (элементы цепочки — rigid body)
+                var dynElemForSnap = doc.GetElement(dynId);
+                if (dynElemForSnap is FamilyInstance fiForSnap)
+                {
+                    var t = fiForSnap.GetTransform();
+                    var elemBasisY = new Vec3(t.BasisY.X, t.BasisY.Y, t.BasisY.Z);
+                    var staticBZ = _ctx.StaticConnector.BasisZVec3;
+                    var globalYSnap = ConnectorAligner.ComputeGlobalYAlignmentSnap(
+                        staticBZ, elemBasisY, axisOrigin);
+                    if (globalYSnap is not null)
+                    {
+                        _transformSvc.RotateElement(doc, dynId,
+                            axisOrigin, globalYSnap.Axis, globalYSnap.AngleRadians);
+                    }
+                }
+
                 doc.Regenerate();
             });
 
@@ -612,6 +662,711 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     partial void OnSelectedDynamicSizeChanged(SizeOption? value)
     {
         ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
+    }
+
+    // ── Chain depth (+/−) ─────────────────────────────────────────────────────
+
+    private const int MaxChainLevel = 30;
+
+    [RelayCommand(CanExecute = nameof(CanIncrementChain))]
+    private void IncrementChainDepth()
+    {
+        if (_chainGraph is null) return;
+        var graph = _chainGraph;
+        int nextLevel = ChainDepth + 1;
+        if (nextLevel >= graph.Levels.Count) return;
+        var levelElements = graph.Levels[nextLevel];
+
+        IsBusy = true;
+        StatusMessage = $"Присоединение уровня {nextLevel}…";
+
+        try
+        {
+            SmartConLogger.Info($"[Chain+] ═══ УРОВЕНЬ {nextLevel} ═══ ({levelElements.Count} элементов)");
+
+            // Захватить snapshot КАЖДОГО элемента уровня ДО модификации
+            foreach (var elemId in levelElements)
+            {
+                var snapshot = CaptureSnapshot(_doc, elemId, graph);
+                _snapshotStore.Save(snapshot);
+                SmartConLogger.Info($"[Chain+] Snapshot: elemId={elemId.Value}, " +
+                    $"isMepCurve={snapshot.IsMepCurve}, " +
+                    $"R={snapshot.ConnectorRadius * 304.8:F2}mm (DN{System.Math.Round(snapshot.ConnectorRadius * 2.0 * 304.8)}), " +
+                    $"symbolId={snapshot.FamilySymbolId?.Value}, connections={snapshot.Connections.Count}");
+            }
+
+            var comparer = ElementIdEqualityComparer.Instance;
+
+            _groupSession!.RunInTransaction($"Цепочка: уровень {nextLevel}", doc =>
+            {
+                int elemIndex = 0;
+                foreach (var elemId in levelElements)
+                {
+                    elemIndex++;
+                    var elemRaw = doc.GetElement(elemId);
+                    string elemName = elemRaw?.Name ?? "?";
+                    string elemType = elemRaw?.GetType().Name ?? "?";
+                    SmartConLogger.Info($"[Chain+] ── Элемент {elemIndex}/{levelElements.Count}: " +
+                        $"id={elemId.Value} '{elemName}' ({elemType}) ──");
+
+                    // ── a. Disconnect от ВСЕХ соседей ──
+                    var allConns = _connSvc.GetAllConnectors(doc, elemId);
+                    int disconnected = 0;
+                    foreach (var c in allConns)
+                    {
+                        if (!c.IsFree)
+                        {
+                            SmartConLogger.Info($"[Chain+]   a. Disconnect connIdx={c.ConnectorIndex} " +
+                                $"(R={c.Radius * 304.8:F2}mm)");
+                            _connSvc.DisconnectAllFromConnector(doc, elemId, c.ConnectorIndex);
+                            disconnected++;
+                        }
+                    }
+                    SmartConLogger.Info($"[Chain+]   a. Disconnect done: {disconnected} соединений разорвано, " +
+                        $"всего коннекторов={allConns.Count}");
+
+                    // ── b. Найти ребро к родителю (уровень N-1) ──
+                    var edge = FindEdgeToParent(elemId, nextLevel, graph);
+                    if (edge is null)
+                    {
+                        SmartConLogger.Warn($"[Chain+]   b. Ребро к родителю НЕ НАЙДЕНО → skip");
+                        continue;
+                    }
+                    SmartConLogger.Info($"[Chain+]   b. Ребро: parent={edge.Value.ParentId.Value} " +
+                        $"parentConnIdx={edge.Value.ParentConnIdx}, elemConnIdx={edge.Value.ElemConnIdx}");
+
+                    // Получаем parentProxy для определения targetRadius
+                    var parentProxy = _connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
+                    if (parentProxy is null)
+                    {
+                        SmartConLogger.Warn($"[Chain+]   parentProxy=NULL → skip");
+                        continue;
+                    }
+                    SmartConLogger.Info($"[Chain+]   parent: R={parentProxy.Radius * 304.8:F2}mm " +
+                        $"(DN{System.Math.Round(parentProxy.Radius * 2.0 * 304.8)}) " +
+                        $"origin=({parentProxy.Origin.X:F4},{parentProxy.Origin.Y:F4},{parentProxy.Origin.Z:F4})");
+
+                    // ══════════════════════════════════════════════════════════════
+                    // ПОРЯДОК: СНАЧАЛА AdjustSize, ПОТОМ Align
+                    // После смены размера (напр. DN65→DN15) геометрия элемента
+                    // полностью перестраивается, коннекторы смещаются.
+                    // Выравнивание нужно делать ПОСЛЕ смены размера.
+                    // ══════════════════════════════════════════════════════════════
+
+                    // ── c. AdjustSize ──
+                    // Каскадный подбор: targetRadius = радиус РОДИТЕЛЬСКОГО коннектора
+                    ElementId? reducerId = null;
+                    double targetRadius = parentProxy.Radius;
+                    double targetDn = System.Math.Round(targetRadius * 2.0 * 304.8);
+
+                    {
+                        var elemRefreshed = _connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
+                        double elemRadius = elemRefreshed?.Radius ?? 0;
+                        double elemDn = System.Math.Round(elemRadius * 2.0 * 304.8);
+                        double delta = System.Math.Abs(targetRadius - elemRadius);
+
+                        SmartConLogger.Info($"[Chain+]   c. AdjustSize: target={targetRadius * 304.8:F2}mm (DN{targetDn}), " +
+                            $"elem={elemRadius * 304.8:F2}mm (DN{elemDn}), delta={delta * 304.8:F4}mm, needsAdjust={delta > 1e-5}");
+
+                        if (elemRefreshed is not null && delta > 1e-5)
+                        {
+                            // c.1. Подгонка parent-facing коннектора
+                            SmartConLogger.Info($"[Chain+]   c.1 TrySetConnectorRadius(elemId={elemId.Value}, " +
+                                $"connIdx={edge.Value.ElemConnIdx}, target={targetRadius * 304.8:F2}mm)...");
+                            bool setResult = _paramResolver.TrySetConnectorRadius(
+                                doc, elemId, edge.Value.ElemConnIdx, targetRadius);
+                            SmartConLogger.Info($"[Chain+]   c.1 TrySetConnectorRadius → {(setResult ? "OK" : "FAILED")}");
+
+                            // c.2. Для FamilyInstance: подогнать ВСЕ коннекторы элемента в графе
+                            var elem = doc.GetElement(elemId);
+                            if (elem is FamilyInstance)
+                            {
+                                var allElemConns = _connSvc.GetAllConnectors(doc, elemId);
+                                foreach (var c in allElemConns)
+                                {
+                                    if (c.ConnectorIndex != edge.Value.ElemConnIdx)
+                                    {
+                                        bool inGraph = false;
+                                        foreach (var e in graph.Edges)
+                                        {
+                                            if ((comparer.Equals(e.FromElementId, elemId) && e.FromConnectorIndex == c.ConnectorIndex) ||
+                                                (comparer.Equals(e.ToElementId, elemId) && e.ToConnectorIndex == c.ConnectorIndex))
+                                            {
+                                                inGraph = true;
+                                                break;
+                                            }
+                                        }
+                                        if (inGraph)
+                                        {
+                                            SmartConLogger.Info($"[Chain+]   c.2 TrySetConnectorRadius(connIdx={c.ConnectorIndex}, " +
+                                                $"currentR={c.Radius * 304.8:F2}mm, target={targetRadius * 304.8:F2}mm)...");
+                                            bool r2 = _paramResolver.TrySetConnectorRadius(doc, elemId, c.ConnectorIndex, targetRadius);
+                                            SmartConLogger.Info($"[Chain+]   c.2 → {(r2 ? "OK" : "FAILED")}");
+                                        }
+                                    }
+                                }
+                            }
+
+                            doc.Regenerate();
+
+                            // c.3. ВЕРИФИКАЦИЯ фактического радиуса
+                            elemRefreshed = _connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
+                            double actualRadius = elemRefreshed?.Radius ?? 0;
+                            double actualDn = System.Math.Round(actualRadius * 2.0 * 304.8);
+                            double verifyDelta = System.Math.Abs(targetRadius - actualRadius);
+
+                            SmartConLogger.Info($"[Chain+]   c.3 Верификация: actualR={actualRadius * 304.8:F2}mm " +
+                                $"(DN{actualDn}), targetR={targetRadius * 304.8:F2}mm (DN{targetDn}), " +
+                                $"delta={verifyDelta * 304.8:F4}mm, match={verifyDelta <= 1e-5}");
+
+                            if (elemRefreshed is not null && verifyDelta > 1e-5)
+                            {
+                                SmartConLogger.Info($"[Chain+]   c.3 Подгонка НЕ удалась → InsertReducer...");
+                                reducerId = _networkMover.InsertReducer(doc, parentProxy, elemRefreshed);
+                                if (reducerId is not null)
+                                {
+                                    SmartConLogger.Info($"[Chain+]   c.3 Reducer вставлен: id={reducerId.Value}");
+                                    _snapshotStore.TrackReducer(elemId, reducerId);
+                                }
+                                else
+                                {
+                                    SmartConLogger.Warn($"[Chain+]   c.3 Reducer не найден в маппинге!");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            SmartConLogger.Info($"[Chain+]   c. Размеры совпадают, подгонка не нужна");
+                        }
+
+                        doc.Regenerate();
+                    }
+
+                    // ── d. Align: ПОСЛЕ смены размера — геометрия актуальна ──
+                    // Обновляем parentProxy (parent мог сместиться при Regenerate)
+                    parentProxy = _connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
+                    var elemProxyForAlign = _connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
+
+                    // Если вставлен reducer — выравниваем к reducer.conn2, иначе к parent
+                    ConnectorProxy? alignTarget = parentProxy;
+
+                    if (reducerId is not null)
+                    {
+                        // Reducer уже выровнен к parent (InsertReducer делает AlignFittingToStatic).
+                        // Нужно выровнять child элемент ко ВТОРОМУ коннектору reducer-а.
+                        var rConns = _connSvc.GetAllFreeConnectors(doc, reducerId);
+                        if (rConns.Count >= 2 && parentProxy is not null)
+                        {
+                            var rConn1 = rConns
+                                .OrderBy(rc => VectorUtils.DistanceTo(rc.OriginVec3, parentProxy.OriginVec3))
+                                .First();
+                            alignTarget = rConns.FirstOrDefault(rc => rc.ConnectorIndex != rConn1.ConnectorIndex);
+                            SmartConLogger.Info($"[Chain+]   d. Align target = reducer conn2 " +
+                                $"(R={alignTarget?.Radius * 304.8:F2}mm, " +
+                                $"origin=({alignTarget?.Origin.X:F4},{alignTarget?.Origin.Y:F4},{alignTarget?.Origin.Z:F4}))");
+                        }
+                    }
+
+                    if (alignTarget is not null && elemProxyForAlign is not null)
+                    {
+                        SmartConLogger.Info($"[Chain+]   d. Align: elem R={elemProxyForAlign.Radius * 304.8:F2}mm " +
+                            $"→ target R={alignTarget.Radius * 304.8:F2}mm");
+
+                        var alignResult = ConnectorAligner.ComputeAlignment(
+                            alignTarget.OriginVec3, alignTarget.BasisZVec3, alignTarget.BasisXVec3,
+                            elemProxyForAlign.OriginVec3, elemProxyForAlign.BasisZVec3, elemProxyForAlign.BasisXVec3);
+
+                        if (!VectorUtils.IsZero(alignResult.InitialOffset))
+                        {
+                            SmartConLogger.Info($"[Chain+]   d. Move offset=({alignResult.InitialOffset.X * 304.8:F2}," +
+                                $"{alignResult.InitialOffset.Y * 304.8:F2},{alignResult.InitialOffset.Z * 304.8:F2})mm");
+                            _transformSvc.MoveElement(doc, elemId, alignResult.InitialOffset);
+                        }
+                        if (alignResult.BasisZRotation is { } bzRot)
+                        {
+                            SmartConLogger.Info($"[Chain+]   d. RotateBZ angle={bzRot.AngleRadians * 180 / System.Math.PI:F2}°");
+                            _transformSvc.RotateElement(doc, elemId,
+                                alignResult.RotationCenter, bzRot.Axis, bzRot.AngleRadians);
+                        }
+                        if (alignResult.BasisXSnap is { } bxSnap)
+                        {
+                            SmartConLogger.Info($"[Chain+]   d. RotateBX angle={bxSnap.AngleRadians * 180 / System.Math.PI:F2}°");
+                            _transformSvc.RotateElement(doc, elemId,
+                                alignResult.RotationCenter, bxSnap.Axis, bxSnap.AngleRadians);
+                        }
+
+                        doc.Regenerate();
+
+                        // Коррекция позиции (после поворотов Origin мог сместиться)
+                        var refreshedAfterAlign = _connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
+                        if (refreshedAfterAlign is not null)
+                        {
+                            var correction = alignTarget.OriginVec3 - refreshedAfterAlign.OriginVec3;
+                            if (!VectorUtils.IsZero(correction))
+                            {
+                                SmartConLogger.Info($"[Chain+]   d. PosCorrection dist={VectorUtils.Length(correction) * 304.8:F3}mm");
+                                _transformSvc.MoveElement(doc, elemId, correction);
+                            }
+                        }
+                        doc.Regenerate();
+                    }
+
+                    // ── e. ConnectTo ──
+                    if (reducerId is not null && parentProxy is not null)
+                    {
+                        SmartConLogger.Info($"[Chain+]   e. ConnectTo через reducer id={reducerId.Value}");
+                        var rConnsForConnect = _connSvc.GetAllFreeConnectors(doc, reducerId);
+                        SmartConLogger.Info($"[Chain+]   e. Reducer free conns: {rConnsForConnect.Count}");
+                        var rConn1 = rConnsForConnect
+                            .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, parentProxy.OriginVec3))
+                            .FirstOrDefault();
+                        var rConn2 = rConnsForConnect.FirstOrDefault(c => c.ConnectorIndex != (rConn1?.ConnectorIndex ?? -1));
+
+                        // Соединить parent ↔ reducer_conn1
+                        if (rConn1 is not null)
+                        {
+                            SmartConLogger.Info($"[Chain+]   e. ConnectTo: parent({edge.Value.ParentId.Value}:{edge.Value.ParentConnIdx}) ↔ reducer({reducerId.Value}:{rConn1.ConnectorIndex})");
+                            _connSvc.ConnectTo(doc, edge.Value.ParentId, edge.Value.ParentConnIdx,
+                                reducerId, rConn1.ConnectorIndex);
+                        }
+                        // Соединить reducer_conn2 ↔ child
+                        if (rConn2 is not null)
+                        {
+                            SmartConLogger.Info($"[Chain+]   e. ConnectTo: reducer({reducerId.Value}:{rConn2.ConnectorIndex}) ↔ elem({elemId.Value}:{edge.Value.ElemConnIdx})");
+                            _connSvc.ConnectTo(doc, reducerId, rConn2.ConnectorIndex,
+                                elemId, edge.Value.ElemConnIdx);
+                        }
+                    }
+                    else
+                    {
+                        // Прямое соединение
+                        SmartConLogger.Info($"[Chain+]   e. ConnectTo прямое: parent({edge.Value.ParentId.Value}:{edge.Value.ParentConnIdx}) ↔ elem({elemId.Value}:{edge.Value.ElemConnIdx})");
+                        _connSvc.ConnectTo(doc, edge.Value.ParentId, edge.Value.ParentConnIdx,
+                            elemId, edge.Value.ElemConnIdx);
+                    }
+
+                    SmartConLogger.Info($"[Chain+] ── Элемент {elemId.Value} готов ──");
+                }
+
+                doc.Regenerate();
+            });
+
+            ChainDepth = nextLevel;
+            UpdateChainUI();
+            StatusMessage = $"Уровень {nextLevel} присоединён";
+            SmartConLogger.Info($"[Chain+] ═══ УРОВЕНЬ {nextLevel} ГОТОВ ═══");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[Chain+] Ошибка: {ex.Message}\n{ex.StackTrace}");
+            StatusMessage = $"Ошибка цепочки: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool CanIncrementChain()
+        => IsSessionActive && !IsBusy
+        && _chainGraph is not null
+        && ChainDepth < _chainGraph.MaxLevel
+        && ChainDepth < MaxChainLevel;
+
+    [RelayCommand(CanExecute = nameof(CanDecrementChain))]
+    private void DecrementChainDepth()
+    {
+        if (_chainGraph is null || ChainDepth <= 0) return;
+        var graph = _chainGraph;
+        var levelElements = graph.Levels[ChainDepth];
+
+        IsBusy = true;
+        StatusMessage = $"Откат уровня {ChainDepth}…";
+
+        try
+        {
+            SmartConLogger.Info($"[Chain−] ═══ ОТКАТ УРОВНЯ {ChainDepth} ═══ ({levelElements.Count} элементов)");
+
+            _groupSession!.RunInTransaction($"Цепочка: откат уровня {ChainDepth}", doc =>
+            {
+                foreach (var elemId in levelElements)
+                {
+                    var elemRaw = doc.GetElement(elemId);
+                    SmartConLogger.Info($"[Chain−] ── Элемент id={elemId.Value} '{elemRaw?.Name}' ({elemRaw?.GetType().Name}) ──");
+
+                    // ── a. Disconnect от всех текущих соединений ──
+                    var allConns = _connSvc.GetAllConnectors(doc, elemId);
+                    int disconnected = 0;
+                    foreach (var c in allConns)
+                    {
+                        if (!c.IsFree)
+                        {
+                            _connSvc.DisconnectAllFromConnector(doc, elemId, c.ConnectorIndex);
+                            disconnected++;
+                        }
+                    }
+                    SmartConLogger.Info($"[Chain−]   a. Disconnect: {disconnected} соединений разорвано");
+
+                    // ── b. Удалить reducer-ы ──
+                    var reducers = _snapshotStore.GetReducers(elemId);
+                    SmartConLogger.Info($"[Chain−]   b. Reducers для удаления: {reducers.Count}");
+                    foreach (var reducerId in reducers)
+                    {
+                        SmartConLogger.Info($"[Chain−]   b. Удаление reducer id={reducerId.Value}");
+                        var rConns = _connSvc.GetAllConnectors(doc, reducerId);
+                        foreach (var rc in rConns)
+                        {
+                            if (!rc.IsFree)
+                                _connSvc.DisconnectAllFromConnector(doc, reducerId, rc.ConnectorIndex);
+                        }
+                        _fittingInsertSvc.DeleteElement(doc, reducerId);
+                    }
+
+                    // ── c. Восстановить размер и позицию из snapshot ──
+                    var snapshot = _snapshotStore.Get(elemId);
+                    if (snapshot is null)
+                    {
+                        SmartConLogger.Warn($"[Chain−]   c. Snapshot не найден → skip");
+                        continue;
+                    }
+                    var elem = doc.GetElement(elemId);
+                    SmartConLogger.Info($"[Chain−]   c. Восстановление: isMepCurve={snapshot.IsMepCurve}, " +
+                        $"snapR={snapshot.ConnectorRadius * 304.8:F2}mm (DN{System.Math.Round(snapshot.ConnectorRadius * 2.0 * 304.8)}), " +
+                        $"symbolId={snapshot.FamilySymbolId?.Value}");
+
+                    if (elem is MEPCurve mc)
+                    {
+                        // Шаг 1: ВСЕГДА восстановить ДИАМЕТР (работает для Pipe, FlexPipe и любого MEPCurve)
+                        var diamParam = mc.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM);
+                        if (diamParam is not null && !diamParam.IsReadOnly)
+                        {
+                            double targetDiam = snapshot.ConnectorRadius * 2.0;
+                            SmartConLogger.Info($"[Chain−]   c. MEPCurve: restore diameter={targetDiam * 304.8:F2}mm");
+                            diamParam.Set(targetDiam);
+                        }
+                        else
+                        {
+                            SmartConLogger.Info($"[Chain−]   c. MEPCurve: TrySetConnectorRadius fallback...");
+                            var conns = _connSvc.GetAllConnectors(doc, elemId);
+                            if (conns.Count > 0)
+                                _paramResolver.TrySetConnectorRadius(doc, elemId, conns[0].ConnectorIndex, snapshot.ConnectorRadius);
+                        }
+                        doc.Regenerate();
+
+                        // Шаг 2: Восстановить позицию ТОЛЬКО для Line-based curves (Pipe)
+                        // FlexPipe имеет NurbSpline — не восстанавливаем позицию, он адаптируется при соединении
+                        if (snapshot.CurveStart is not null && snapshot.CurveEnd is not null
+                            && mc.Location is LocationCurve lc && lc.Curve is Line)
+                        {
+                            SmartConLogger.Info($"[Chain−]   c. MEPCurve: restore curve " +
+                                $"({snapshot.CurveStart.X:F4},{snapshot.CurveStart.Y:F4},{snapshot.CurveStart.Z:F4}) → " +
+                                $"({snapshot.CurveEnd.X:F4},{snapshot.CurveEnd.Y:F4},{snapshot.CurveEnd.Z:F4})");
+                            try
+                            {
+                                lc.Curve = Line.CreateBound(snapshot.CurveStart, snapshot.CurveEnd);
+                            }
+                            catch (Exception exCurve)
+                            {
+                                SmartConLogger.Warn($"[Chain−]   c. MEPCurve: Line.CreateBound failed: {exCurve.Message}");
+                            }
+                        }
+                        else if (snapshot.FirstConnectorOrigin is not null)
+                        {
+                            // FlexPipe или другой MEPCurve без Line — перемещаем к исходной позиции коннектора
+                            var currentConn = _connSvc.RefreshConnector(doc, elemId, snapshot.FirstConnectorIndex);
+                            if (currentConn is not null)
+                            {
+                                var offset = new Vec3(
+                                    snapshot.FirstConnectorOrigin.X - currentConn.Origin.X,
+                                    snapshot.FirstConnectorOrigin.Y - currentConn.Origin.Y,
+                                    snapshot.FirstConnectorOrigin.Z - currentConn.Origin.Z);
+                                if (!VectorUtils.IsZero(offset))
+                                {
+                                    SmartConLogger.Info($"[Chain−]   c. MEPCurve(FlexPipe): MoveElement to snap connector, " +
+                                        $"dist={VectorUtils.Length(offset) * 304.8:F2}mm");
+                                    _transformSvc.MoveElement(doc, elemId, offset);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            SmartConLogger.Info($"[Chain−]   c. MEPCurve: skip restore (no position data)");
+                        }
+                        doc.Regenerate();
+                    }
+                    else if (elem is FamilyInstance fi && snapshot.FiOrigin is not null)
+                    {
+                        // Шаг 1a: Восстановить FamilySymbol если изменился
+                        if (snapshot.FamilySymbolId is not null && fi.Symbol.Id != snapshot.FamilySymbolId)
+                        {
+                            SmartConLogger.Info($"[Chain−]   c. FI: ChangeTypeId {fi.Symbol.Id.Value} → {snapshot.FamilySymbolId.Value}");
+                            fi.ChangeTypeId(snapshot.FamilySymbolId);
+                        }
+
+                        // Шаг 1b: ВСЕГДА восстановить размер через TrySetConnectorRadius
+                        // При + размер менялся через TrySetConnectorRadius (параметр экземпляра),
+                        // поэтому ChangeTypeId может не помочь — Symbol.Id не менялся.
+                        var fiConns = _connSvc.GetAllConnectors(doc, elemId);
+                        foreach (var fc in fiConns)
+                        {
+                            double delta = System.Math.Abs(fc.Radius - snapshot.ConnectorRadius);
+                            if (delta > 1e-5)
+                            {
+                                SmartConLogger.Info($"[Chain−]   c. FI: TrySetConnectorRadius(connIdx={fc.ConnectorIndex}, " +
+                                    $"current={fc.Radius * 304.8:F2}mm → target={snapshot.ConnectorRadius * 304.8:F2}mm)");
+                                _paramResolver.TrySetConnectorRadius(doc, elemId, fc.ConnectorIndex, snapshot.ConnectorRadius);
+                            }
+                        }
+                        doc.Regenerate();
+
+                        // Шаг 2: Восстановить позицию
+                        if (fi.Location is LocationPoint lp)
+                        {
+                            SmartConLogger.Info($"[Chain−]   c. FI: set Point=({snapshot.FiOrigin.X:F4},{snapshot.FiOrigin.Y:F4},{snapshot.FiOrigin.Z:F4})");
+                            lp.Point = snapshot.FiOrigin;
+                        }
+                        doc.Regenerate();
+
+                        // Шаг 3: Восстановить ориентацию НАПРЯМУЮ (без ConnectorAligner!)
+                        // ConnectorAligner делает BasisZ АНТИПАРАЛЛЕЛЬНЫМИ (для соединения),
+                        // а нам нужно вернуть BasisZ В ТО ЖЕ направление → прямой поворот.
+                        var currentT = fi.GetTransform();
+                        var curBZ = new Vec3(currentT.BasisZ.X, currentT.BasisZ.Y, currentT.BasisZ.Z);
+                        var snapBZ = new Vec3(snapshot.FiBasisZ!.X, snapshot.FiBasisZ.Y, snapshot.FiBasisZ.Z);
+                        SmartConLogger.Info($"[Chain−]   c. FI: curBZ=({curBZ.X:F3},{curBZ.Y:F3},{curBZ.Z:F3}), " +
+                            $"snapBZ=({snapBZ.X:F3},{snapBZ.Y:F3},{snapBZ.Z:F3})");
+
+                        // Поворот BasisZ: от текущего к целевому (ПАРАЛЛЕЛЬНО, не антипараллельно)
+                        double angleBZ = VectorUtils.AngleBetween(curBZ, snapBZ);
+                        if (angleBZ > 1e-6 && angleBZ < System.Math.PI - 1e-6)
+                        {
+                            var axisBZ = VectorUtils.CrossProduct(curBZ, snapBZ);
+                            double axisLen = VectorUtils.Length(axisBZ);
+                            if (axisLen > 1e-10)
+                            {
+                                axisBZ = new Vec3(axisBZ.X / axisLen, axisBZ.Y / axisLen, axisBZ.Z / axisLen);
+                                SmartConLogger.Info($"[Chain−]   c. FI: RotBZ angle={angleBZ * 180 / System.Math.PI:F2}°");
+                                _transformSvc.RotateElement(doc, elemId,
+                                    new Vec3(snapshot.FiOrigin.X, snapshot.FiOrigin.Y, snapshot.FiOrigin.Z),
+                                    axisBZ, angleBZ);
+                                doc.Regenerate();
+                            }
+                        }
+                        else if (angleBZ >= System.Math.PI - 1e-6)
+                        {
+                            // BasisZ антипараллельны — поворот на 180° вокруг любой перпендикулярной оси
+                            var perpAxis = System.Math.Abs(curBZ.Z) < 0.9
+                                ? new Vec3(0, 0, 1) : new Vec3(1, 0, 0);
+                            SmartConLogger.Info($"[Chain−]   c. FI: RotBZ 180° (antiparallel)");
+                            _transformSvc.RotateElement(doc, elemId,
+                                new Vec3(snapshot.FiOrigin.X, snapshot.FiOrigin.Y, snapshot.FiOrigin.Z),
+                                perpAxis, System.Math.PI);
+                            doc.Regenerate();
+                        }
+
+                        // Поворот BasisX: после BasisZ восстановлен, подгоняем BasisX
+                        currentT = fi.GetTransform();
+                        var curBX = new Vec3(currentT.BasisX.X, currentT.BasisX.Y, currentT.BasisX.Z);
+                        var snapBX = new Vec3(snapshot.FiBasisX!.X, snapshot.FiBasisX.Y, snapshot.FiBasisX.Z);
+                        double angleBX = VectorUtils.AngleBetween(curBX, snapBX);
+                        if (angleBX > 1e-4)
+                        {
+                            // Ось вращения = BasisZ (уже восстановленный)
+                            var rotAxis = new Vec3(currentT.BasisZ.X, currentT.BasisZ.Y, currentT.BasisZ.Z);
+                            // Определяем знак угла через cross product
+                            var cross = VectorUtils.CrossProduct(curBX, snapBX);
+                            double dot = cross.X * rotAxis.X + cross.Y * rotAxis.Y + cross.Z * rotAxis.Z;
+                            double signedAngle = dot >= 0 ? angleBX : -angleBX;
+                            SmartConLogger.Info($"[Chain−]   c. FI: RotBX angle={signedAngle * 180 / System.Math.PI:F2}°");
+                            _transformSvc.RotateElement(doc, elemId,
+                                new Vec3(snapshot.FiOrigin.X, snapshot.FiOrigin.Y, snapshot.FiOrigin.Z),
+                                rotAxis, signedAngle);
+                            doc.Regenerate();
+                        }
+
+                        // Шаг 4: Финальная коррекция позиции
+                        if (fi.Location is LocationPoint lp2)
+                        {
+                            var correction = new Vec3(
+                                snapshot.FiOrigin.X - lp2.Point.X,
+                                snapshot.FiOrigin.Y - lp2.Point.Y,
+                                snapshot.FiOrigin.Z - lp2.Point.Z);
+                            if (!VectorUtils.IsZero(correction))
+                            {
+                                SmartConLogger.Info($"[Chain−]   c. FI: final correction={VectorUtils.Length(correction) * 304.8:F2}mm");
+                                _transformSvc.MoveElement(doc, elemId, correction);
+                            }
+                            doc.Regenerate();
+                        }
+                    }
+
+                    // ── d. Восстановить исходные соединения ──
+                    SmartConLogger.Info($"[Chain−]   d. Восстановление соединений: {snapshot.Connections.Count} записей");
+                    foreach (var connRecord in snapshot.Connections)
+                    {
+                        var neighborId = connRecord.NeighborElementId;
+                        bool inChain = IsInCurrentChain(neighborId, ChainDepth - 1, graph);
+                        SmartConLogger.Info($"[Chain−]   d. connRecord: this={connRecord.ThisElementId.Value}:{connRecord.ThisConnectorIndex} " +
+                            $"↔ neighbor={neighborId.Value}:{connRecord.NeighborConnectorIndex}, inChain={inChain}");
+                        if (inChain) continue;
+
+                        var neighborConn = _connSvc.RefreshConnector(doc, neighborId, connRecord.NeighborConnectorIndex);
+                        if (neighborConn is null)
+                        {
+                            SmartConLogger.Warn($"[Chain−]   d. neighborConn=null → skip");
+                            continue;
+                        }
+                        if (!neighborConn.IsFree)
+                        {
+                            SmartConLogger.Info($"[Chain−]   d. neighbor busy → disconnect first");
+                            _connSvc.DisconnectAllFromConnector(doc, neighborId, connRecord.NeighborConnectorIndex);
+                        }
+
+                        try
+                        {
+                            _connSvc.ConnectTo(doc,
+                                connRecord.ThisElementId, connRecord.ThisConnectorIndex,
+                                connRecord.NeighborElementId, connRecord.NeighborConnectorIndex);
+                            SmartConLogger.Info($"[Chain−]   d. ConnectTo OK");
+                        }
+                        catch (Exception exConn)
+                        {
+                            SmartConLogger.Warn($"[Chain−]   d. ConnectTo FAILED: {exConn.Message}");
+                        }
+                    }
+                }
+
+                doc.Regenerate();
+            });
+
+            ChainDepth--;
+            UpdateChainUI();
+            StatusMessage = $"Уровень {ChainDepth + 1} отсоединён";
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[Chain−] Ошибка: {ex.Message}");
+            StatusMessage = $"Ошибка отката: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool CanDecrementChain()
+        => IsSessionActive && !IsBusy && ChainDepth > 0;
+
+    // ── Chain helpers ─────────────────────────────────────────────────────────
+
+    private ElementSnapshot CaptureSnapshot(Document doc, ElementId elemId, ConnectionGraph graph)
+    {
+        var elem = doc.GetElement(elemId);
+        bool isMepCurve = elem is MEPCurve;
+
+        XYZ? fiOrigin = null, fiBasisX = null, fiBasisY = null, fiBasisZ = null;
+        XYZ? curveStart = null, curveEnd = null;
+        ElementId? familySymbolId = null;
+
+        if (elem is FamilyInstance fi)
+        {
+            var t = fi.GetTransform();
+            fiOrigin = t.Origin;
+            fiBasisX = t.BasisX;
+            fiBasisY = t.BasisY;
+            fiBasisZ = t.BasisZ;
+            familySymbolId = fi.Symbol.Id;
+        }
+
+        if (elem is MEPCurve mc && mc.Location is LocationCurve lc && lc.Curve is Line line)
+        {
+            curveStart = line.GetEndPoint(0);
+            curveEnd = line.GetEndPoint(1);
+        }
+
+        // Радиус и позиция первого не-Curve коннектора
+        double connRadius = 0;
+        XYZ? firstConnOrigin = null;
+        int firstConnIdx = -1;
+        var conns = _connSvc.GetAllConnectors(doc, elemId);
+        if (conns.Count > 0)
+        {
+            connRadius = conns[0].Radius;
+            firstConnOrigin = conns[0].Origin;
+            firstConnIdx = conns[0].ConnectorIndex;
+        }
+
+        return new ElementSnapshot
+        {
+            ElementId = elemId,
+            IsMepCurve = isMepCurve,
+            FiOrigin = fiOrigin,
+            FiBasisX = fiBasisX,
+            FiBasisY = fiBasisY,
+            FiBasisZ = fiBasisZ,
+            CurveStart = curveStart,
+            CurveEnd = curveEnd,
+            FirstConnectorOrigin = firstConnOrigin,
+            FirstConnectorIndex = firstConnIdx,
+            ConnectorRadius = connRadius,
+            FamilySymbolId = familySymbolId,
+            Connections = graph.GetOriginalConnections(elemId),
+        };
+    }
+
+    private record struct ParentEdge(ElementId ParentId, int ParentConnIdx, int ElemConnIdx);
+
+    private static ParentEdge? FindEdgeToParent(ElementId elemId, int level, ConnectionGraph graph)
+    {
+        var comparer = ElementIdEqualityComparer.Instance;
+        var parentLevel = graph.Levels[level - 1];
+        var parentIds = new HashSet<ElementId>(parentLevel, comparer);
+
+        foreach (var edge in graph.Edges)
+        {
+            if (comparer.Equals(edge.ToElementId, elemId) && parentIds.Contains(edge.FromElementId))
+                return new ParentEdge(edge.FromElementId, edge.FromConnectorIndex, edge.ToConnectorIndex);
+            if (comparer.Equals(edge.FromElementId, elemId) && parentIds.Contains(edge.ToElementId))
+                return new ParentEdge(edge.ToElementId, edge.ToConnectorIndex, edge.FromConnectorIndex);
+        }
+        return null;
+    }
+
+    private static bool IsInCurrentChain(ElementId elemId, int maxLevel, ConnectionGraph graph)
+    {
+        var comparer = ElementIdEqualityComparer.Instance;
+        for (int level = 0; level <= maxLevel && level < graph.Levels.Count; level++)
+        {
+            foreach (var id in graph.Levels[level])
+            {
+                if (comparer.Equals(id, elemId))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private void UpdateChainUI()
+    {
+        if (_chainGraph is null || _chainGraph.TotalChainElements == 0)
+        {
+            ChainDepthHint = "нет цепочки";
+            HasChain = false;
+            IncrementChainDepthCommand.NotifyCanExecuteChanged();
+            DecrementChainDepthCommand.NotifyCanExecuteChanged();
+            return;
+        }
+        HasChain = true;
+        int total = _chainGraph.TotalChainElements;
+        int maxLvl = _chainGraph.MaxLevel;
+        int attached = 0;
+        for (int l = 1; l <= ChainDepth && l < _chainGraph.Levels.Count; l++)
+            attached += _chainGraph.Levels[l].Count;
+
+        ChainDepthHint = $"{attached}/{total} в {ChainDepth}/{maxLvl} ур.";
+
+        IncrementChainDepthCommand.NotifyCanExecuteChanged();
+        DecrementChainDepthCommand.NotifyCanExecuteChanged();
     }
 
     // ── Insert fitting ────────────────────────────────────────────────────────
@@ -1030,6 +1785,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         CycleConnectorCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
+        IncrementChainDepthCommand.NotifyCanExecuteChanged();
+        DecrementChainDepthCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsSessionActiveChanged(bool value)
@@ -1039,6 +1796,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         CycleConnectorCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
+        IncrementChainDepthCommand.NotifyCanExecuteChanged();
+        DecrementChainDepthCommand.NotifyCanExecuteChanged();
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

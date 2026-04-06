@@ -126,9 +126,47 @@ public sealed class PipeConnectCommand : IExternalCommand
             if (plan.WarningMessage is not null)
                 dialogSvc.ShowWarning("SmartCon", plan.WarningMessage);
 
-            // ── S6: открыть PipeConnectEditor (МОДАЛЬНОЕ окно) ─────────────────────
+            // ── S6.1: построить граф цепочки dynamic (ДО disconnect) ──────
+            var chainIterator = ServiceHost.GetService<IElementChainIterator>();
+            var stopAt = new HashSet<ElementId>(new ElementIdEqualityComparer())
+            {
+                staticPick.Value.ElementId
+            };
+            var chainGraph = chainIterator.BuildGraph(doc, dynamicPick.Value.ElementId, stopAt);
+            SmartConLogger.Info($"[Chain] Граф: {chainGraph.TotalChainElements} элементов, " +
+                $"{chainGraph.MaxLevel} уровней");
+
+            // ── S6.2: ПРОГРЕВ КЕША ─────────────────────────────────
+            // GetConnectorRadiusDependencies для FamilyInstance с ReadOnly-параметрами
+            // вызывает doc.EditFamily() — ЗАПРЕЩЕНО внутри открытой транзакции.
+            // Прогреваем ВСЕ deps ЗДЕСЬ, ДО открытия UI и транзакций.
+            foreach (var level in chainGraph.Levels)
+            {
+                foreach (var elemId in level)
+                {
+                    var elem = doc.GetElement(elemId);
+                    if (elem is null) continue;
+                    var cm = elem switch
+                    {
+                        FamilyInstance fi => fi.MEPModel?.ConnectorManager,
+                        MEPCurve mc       => mc.ConnectorManager,
+                        _                 => null
+                    };
+                    if (cm is null) continue;
+                    foreach (Connector c in cm.Connectors)
+                    {
+                        if (c.ConnectorType == ConnectorType.Curve) continue;
+                        paramResolver.GetConnectorRadiusDependencies(doc, elemId, c.Id);
+                    }
+                }
+            }
+            SmartConLogger.Info($"[Chain] Кеш deps прогрет для {chainGraph.TotalChainElements} элементов");
+
+            // ── S7: открыть PipeConnectEditor (МОДАЛЬНОЕ окно) ─────────────────────
             // S3+S4 применяются ВНУТРИ TransactionGroup в ViewModel,
             // чтобы Cancel мог выполнить полный RollBack().
+            var networkMover = ServiceHost.GetService<INetworkMover>();
+
             var sessionCtx = new PipeConnectSessionContext
             {
                 StaticConnector         = staticProxy,
@@ -137,11 +175,12 @@ public sealed class PipeConnectCommand : IExternalCommand
                 ParamTargetRadius       = plan.Skip ? null : plan.TargetRadius,
                 ParamExpectNeedsAdapter = plan.ExpectNeedsAdapter,
                 ProposedFittings        = proposed.ToList(),
+                ChainGraph              = chainGraph,
             };
 
             var vm = new PipeConnectEditorViewModel(
                 sessionCtx, doc, txService, connectorSvc, transformSvc,
-                fittingInsertSvc, paramResolver, sizeResolver);
+                fittingInsertSvc, paramResolver, sizeResolver, networkMover);
 
             // Init() вызывается ДО ShowDialog: открывает TransactionGroup,
             // применяет S3 (выравнивание), S4 (размер), вставляет и размещает фитинг.

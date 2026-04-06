@@ -16,7 +16,6 @@ public sealed class PipeConnectionSession
     public bool NeedsAdapter { get; set; }
     public double OriginalDynamicRadius { get; set; }
     public double ActualDynamicRadius { get; set; }
-    public bool MoveEntireChain { get; set; }
     public PipeConnectState State { get; set; } = PipeConnectState.AwaitingStaticSelection;
 
     /// <summary>
@@ -32,7 +31,6 @@ public sealed class PipeConnectionSession
         NeedsAdapter = false;
         OriginalDynamicRadius = 0;
         ActualDynamicRadius = 0;
-        MoveEntireChain = false;
         State = PipeConnectState.AwaitingStaticSelection;
     }
 }

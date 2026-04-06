@@ -1,7 +1,7 @@
 # План: Перемещение цепочки элементов сети (Network Chain Movement)
 
-**Статус:** Draft v2.5 (верифицирован: Revit API + кодовая база + инварианты)  
-**Дата:** 2025-07-13  
+**Статус:** Draft v2.6 (реализован + отлажен: все баги исправлены)  
+**Дата:** 2026-04-06  
 **Контекст:** SmartCon — плагин для Revit 2025, .NET 8 / C# 12 / WPF, MEP-соединения, PipeConnect  
 **Фаза roadmap:** Phase 7 — Цепочки (Chain)
 
@@ -1527,3 +1527,19 @@ public bool MoveEntireChain { get; set; }  // и MoveEntireChain = false в Rese
 | 40 | Алгоритмы 5.5, 5.6, гарантия #7 — `snapshot.InsertedReducerIds` → `_snapshotStore.GetReducers(elemId)` | Следствие п.39 |
 | 41 | Открытый вопрос #3 обновлён: `MaxLevel=10` → `MaxChainLevel=30` с обоснованием | Противоречие между секцией 6.3 (=30) и вопросом 16.3 (=10). Приведено в соответствие |
 | 42 | Убраны избыточные `(int)conn.Id` cast-ы в алгоритмах 5.1, S6.2 | `Connector.Id` возвращает `int` (верифицировано по Revit API). Cast `(int)` избыточен |
+
+### v2.6 — исправления по результатам реальной реализации и отладки
+
+> Источник: реальное тестирование в Revit 2025 на сети из 21 элемента (17 уровней BFS),
+> включая Pipe, FlexPipe, Отводы, Тройники, R910. Все 8 исправлений верифицированы логами.
+
+| # | Что изменено | Причина |
+|---|-------------|---------|
+| 43 | **КРИТИЧЕСКОЕ:** Порядок шагов в `+`: **AdjustSize → Align** вместо Align → AdjustSize | После смены размера (DN65→DN15) геометрия полностью перестраивается. Align до смены размера давал зазоры — коннекторы смещались после AdjustSize |
+| 44 | **КРИТИЧЕСКОЕ:** `targetRadius = parentProxy.Radius` (каскадный) вместо `_ctx.DynamicConnector.Radius` | Каждый элемент должен подгоняться под фактический DN своего непосредственного parent-а, а не под исходный DN dynamic |
+| 45 | **КРИТИЧЕСКОЕ:** В `−` для FamilyInstance: восстановление размера через `TrySetConnectorRadius` для ВСЕХ коннекторов | При `+` размер менялся через `TrySetConnectorRadius` (параметр экземпляра), а не через `ChangeTypeId`. Поэтому `fi.Symbol.Id == snapshot.FamilySymbolId` → `ChangeTypeId` пропускался → размер НЕ восстанавливался |
+| 46 | **КРИТИЧЕСКОЕ:** В `−` для FamilyInstance: убран `ConnectorAligner` из восстановления ориентации | `ConnectorAligner.ComputeAlignment` делает BasisZ **антипараллельными** (для соединения), что разворачивало элементы на 180° при откате. Заменён на прямое вычисление углов между текущим и snapshot BasisZ/BasisX |
+| 47 | **КРИТИЧЕСКОЕ:** В `−` для MEPCurve: восстановление диаметра отделено от восстановления позиции | FlexPipe наследует MEPCurve, но `lc.Curve is Line` = false (NurbSpline). Старый код `if (elem is MEPCurve && CurveStart is not null)` пропускал ВСЁ для FlexPipe, включая восстановление диаметра |
+| 48 | `ElementSnapshot` + `CaptureSnapshot`: добавлены `FirstConnectorOrigin` и `FirstConnectorIndex` | FlexPipe не имеет Line curve → `CurveStart`/`CurveEnd` = null. Для перемещения FlexPipe при `−` используется MoveElement к исходной позиции первого коннектора |
+| 49 | В `−` для Align после AdjustSize: `parentProxy` обновляется через `RefreshConnector` | После `doc.Regenerate()` в AdjustSize позиция parent-а может измениться — нужен актуальный `parentProxy` для выравнивания |
+| 50 | В `−` шаг d (соединения): `ConnectTo` обёрнут в `try/catch` + подробное логирование | Ошибка одного соединения не должна блокировать восстановление остальных. Логирование `inChain=true/false` для каждого `connRecord` |

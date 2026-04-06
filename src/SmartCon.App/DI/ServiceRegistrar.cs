@@ -8,6 +8,7 @@ using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
 using SmartCon.Revit.Fittings;
+using SmartCon.Revit.Network;
 using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
 using SmartCon.Revit.Transform;
@@ -53,6 +54,10 @@ public static class ServiceRegistrar
         // --- Fitting System (Phase 5) ---
         services.AddSingleton<IFittingMapper, FittingMapper>();
         services.AddSingleton<IFittingInsertService, RevitFittingInsertService>();
+
+        // --- Chain (Phase 7) ---
+        services.AddSingleton<IElementChainIterator, ElementChainIterator>();
+        services.AddSingleton<INetworkMover, NetworkMover>();
 
         // --- External Events (ADR-008: generic) ---
         var genericHandler = new ActionExternalEventHandler(revitContext);

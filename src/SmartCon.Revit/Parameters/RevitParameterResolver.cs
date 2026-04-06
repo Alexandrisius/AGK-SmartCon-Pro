@@ -306,8 +306,11 @@ public sealed class RevitParameterResolver : IParameterResolver
             // dep.IsInstance=True, но ни одна ветка не вернула (прямая запись не удалась, формулы нет)
             if (dep.IsInstance)
             {
-                SmartConLogger.Lookup("  dep.IsInstance=True: все ветки исчерпаны → return false (тип не меняем)");
-                return false;
+                // Fallback: прямая запись не сработала → пробуем сменить типоразмер.
+                // У многих фитингов IsInstance=true, но допустимые значения
+                // определяются lookup-таблицей типоразмера.
+                SmartConLogger.Lookup("  dep.IsInstance=True: fallback → TryChangeTypeTo...");
+                return TryChangeTypeTo(doc, elementId, connectorIndex, targetRadiusInternalUnits);
             }
         }
         else
