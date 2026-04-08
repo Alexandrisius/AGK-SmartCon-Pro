@@ -320,31 +320,31 @@ internal sealed class Parser
     /// </summary>
     private string ReadSizeLookupStringArg()
     {
+        // Строковый литерал — возвращаем как есть
         if (Current.Type == TokenType.String)
             return Advance().Text;
 
-        // Числовой аргумент (default value: 0, 22, 33.5 и т.д.)
-        if (Current.Type == TokenType.Number)
-            return Advance().Text;
-
-        if (Current.Type == TokenType.Identifier)
+        // Собираем токены до разделителя (Comma/RParen) на глубине 0.
+        // Обрабатывает: простые идентификаторы (D1), числа (22),
+        // выражения (D2 + 4, 1.2 * D3), имена с пробелами (ADSK_Диаметр условный).
+        var parts = new List<string>();
+        int parenDepth = 0;
+        while (Current.Type != TokenType.EOF)
         {
-            var first = Advance().Text;
+            if (parenDepth == 0 && Current.Type is TokenType.Comma or TokenType.RParen)
+                break;
 
-            // Собираем последовательные идентификаторы (имена с пробелами)
-            if (Current.Type == TokenType.Identifier)
-            {
-                var parts = new List<string> { first };
-                while (Current.Type == TokenType.Identifier)
-                    parts.Add(Advance().Text);
-                return string.Join(" ", parts);
-            }
+            if (Current.Type == TokenType.LParen) parenDepth++;
+            if (Current.Type == TokenType.RParen) parenDepth--;
 
-            return first;
+            parts.Add(Advance().Text);
         }
 
-        throw new FormulaParseException(
-            $"Expected identifier, string or number in size_lookup at position {_pos}, got {Current.Type}");
+        if (parts.Count == 0)
+            throw new FormulaParseException(
+                $"Expected identifier, string or number in size_lookup at position {_pos}, got {Current.Type}");
+
+        return string.Join(" ", parts);
     }
 
     private FunctionCallNode ParseFunctionCall()

@@ -6,10 +6,6 @@ using SmartCon.PipeConnect.Views;
 
 namespace SmartCon.PipeConnect.Services;
 
-/// <summary>
-/// Реализация IDialogService для PipeConnect-слоя.
-/// Открывает WPF-окна. Должна вызываться с Revit main thread (STA).
-/// </summary>
 public sealed class PipeConnectDialogService : IDialogService
 {
     public ConnectorTypeDefinition? ShowMiniTypeSelector(
@@ -34,5 +30,17 @@ public sealed class PipeConnectDialogService : IDialogService
         var view = new FamilySelectorView(vm);
         view.ShowDialog();
         return vm.GetResult();
+    }
+
+    public bool ShowFittingCtcSetup(
+        string familyName,
+        string symbolName,
+        List<FittingCtcSetupItem> connectors,
+        IReadOnlyList<ConnectorTypeDefinition> availableTypes)
+    {
+        var vm   = new FittingCtcSetupViewModel(familyName, symbolName, connectors, availableTypes);
+        var view = new FittingCtcSetupView(vm);
+        view.ShowDialog();
+        return vm.IsValid;
     }
 }

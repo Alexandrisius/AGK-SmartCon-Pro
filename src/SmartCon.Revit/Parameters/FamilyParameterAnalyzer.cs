@@ -31,7 +31,9 @@ internal static class FamilyParameterAnalyzer
                      string? Formula, bool IsInstance, bool IsDiameter)
         AnalyzeConnectorRadiusParam(Document familyDoc,
                                     RevitTransform instanceTransform,
-                                    XYZ targetOriginGlobal)
+                                    XYZ targetOriginGlobal,
+                                    bool handFlipped = false,
+                                    bool facingFlipped = false)
     {
         // 1. Найти ConnectorElement по ближайшему origin (аналогично RevitFamilyConnectorService)
         SmartConLogger.LookupSection("FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam");
@@ -56,6 +58,15 @@ internal static class FamilyParameterAnalyzer
         // Score≈1.0  → совпадение направления (параметрическое семейство другого размера)
         // Score<0.99 → нет совпадения
         var targetOriginLocal = instanceTransform.Inverse.OfPoint(targetOriginGlobal);
+
+        // GetTransform() НЕ учитывает HandFlipped/FacingFlipped.
+        // Компенсируем flip для корректного сравнения с CE.Origin (unflipped family space).
+        if (handFlipped)
+            targetOriginLocal = new XYZ(-targetOriginLocal.X, targetOriginLocal.Y, targetOriginLocal.Z);
+        if (facingFlipped)
+            targetOriginLocal = new XYZ(targetOriginLocal.X, -targetOriginLocal.Y, targetOriginLocal.Z);
+        if (handFlipped || facingFlipped)
+            SmartConLogger.Lookup($"  flip-corrected targetOriginLocal=({targetOriginLocal.X:F4}, {targetOriginLocal.Y:F4}, {targetOriginLocal.Z:F4})");
         var targetLen = targetOriginLocal.GetLength();
         var targetDir = targetLen > 1e-6 ? targetOriginLocal.Divide(targetLen) : null;
 

@@ -83,6 +83,17 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
         var targetOriginLocal = transform.Inverse.OfPoint(targetOriginGlobal);
         SmartConLogger.Info($"[SmartCon] targetOriginLocal (family space) = ({targetOriginLocal.X:F6}, {targetOriginLocal.Y:F6}, {targetOriginLocal.Z:F6})");
 
+        // GetTransform() НЕ учитывает HandFlipped/FacingFlipped.
+        // Connector world positions учитывают flip → inverse даёт зеркальные локальные координаты.
+        // Для корректного сравнения с CE.Origin (unflipped family space) — компенсируем flip.
+        SmartConLogger.Info($"[SmartCon] HandFlipped={instance.HandFlipped}, FacingFlipped={instance.FacingFlipped}");
+        if (instance.HandFlipped)
+            targetOriginLocal = new XYZ(-targetOriginLocal.X, targetOriginLocal.Y, targetOriginLocal.Z);
+        if (instance.FacingFlipped)
+            targetOriginLocal = new XYZ(targetOriginLocal.X, -targetOriginLocal.Y, targetOriginLocal.Z);
+        if (instance.HandFlipped || instance.FacingFlipped)
+            SmartConLogger.Info($"[SmartCon] targetOriginLocal (flip-corrected) = ({targetOriginLocal.X:F6}, {targetOriginLocal.Y:F6}, {targetOriginLocal.Z:F6})");
+
         // EditFamily — doc.IsModifiable уже проверен выше.
         var familyDoc = doc.EditFamily(family);
         SmartConLogger.Info($"[SmartCon] EditFamily opened: {familyDoc.Title}");

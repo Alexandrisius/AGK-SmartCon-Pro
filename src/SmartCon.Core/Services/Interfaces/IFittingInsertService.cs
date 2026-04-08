@@ -18,8 +18,10 @@ public interface IFittingInsertService
     ElementId? InsertFitting(Document doc, string familyName, string symbolName, XYZ position);
 
     /// <summary>
-    /// Выровнять фитинг так, чтобы его ближайший к staticOrigin коннектор
+    /// Выровнять фитинг так, чтобы коннектор, соответствующий staticProxy по типу (CTC),
     /// совпал по позиции и ориентации со staticProxy.
+    /// <paramref name="dynamicTypeCode"/> — тип коннектора dynamic-стороны (из FittingMappingRule).
+    /// Используется для определения ориентации: коннектор фитинга с CTC == dynamicTypeCode → к трубе.
     /// Возвращает ConnectorProxy второго коннектора фитинга после выравнивания (null при ошибке).
     /// </summary>
     ConnectorProxy? AlignFittingToStatic(
@@ -27,7 +29,8 @@ public interface IFittingInsertService
         ElementId fittingId,
         ConnectorProxy staticProxy,
         ITransformService transformSvc,
-        IConnectorService connSvc);
+        IConnectorService connSvc,
+        ConnectionTypeCode dynamicTypeCode = default);
 
     /// <summary>
     /// Удалить элемент из документа.

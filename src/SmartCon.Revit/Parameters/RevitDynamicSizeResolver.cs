@@ -204,6 +204,21 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         SmartConLogger.Lookup($"  FamilySizeTableManager: {fstm.NumberOfSizeTables} таблиц");
 
         var fm = familyDoc.FamilyManager;
+
+        // PRE-CACHE: материализуем fm.Parameters ДО вызова FPA,
+        // чтобы избежать COM-коррупции ParameterSet после AssociatedParameters доступа
+        var paramSnapshot = new List<(string? Name, string? Formula)>();
+        var formulaByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (FamilyParameter fp in fm.Parameters)
+        {
+            var fpName = fp.Definition?.Name;
+            var fpFormula = fp.Formula;
+            paramSnapshot.Add((fpName, fpFormula));
+            if (fpName != null && !string.IsNullOrEmpty(fpFormula))
+                formulaByName.TryAdd(fpName, fpFormula);
+        }
+        SmartConLogger.Lookup($"  Pre-cached formulaByName: {formulaByName.Count} записей из {paramSnapshot.Count} параметров");
+
         var cm = instance.MEPModel?.ConnectorManager;
         var connector = cm?.FindByIndex(connectorIndex);
         if (connector is null)
@@ -217,7 +232,8 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         var (directName, rootName, formula, _, isDiameter) =
             FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                familyDoc, instanceTransform, targetOrigin);
+                familyDoc, instanceTransform, targetOrigin,
+                instance.HandFlipped, instance.FacingFlipped);
 
         SmartConLogger.Lookup($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}', isDiameter={isDiameter}");
 
@@ -270,7 +286,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         foreach (var tableName in tableNames)
         {
-            var (colIndex, allQueryColumns, viaDependsOn) = FindColumnIndex(fm, fstm, tableName, searchParamName);
+            var (colIndex, allQueryColumns, viaDependsOn) = FindColumnIndex(tableName, searchParamName, paramSnapshot, formulaByName);
             if (colIndex < 0)
             {
                 SmartConLogger.Lookup($"  Таблица '{tableName}': colIndex не найден → пропуск");
@@ -342,27 +358,16 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
     /// Находит colIndex для searchParamName и возвращает все query-столбцы таблицы.
     /// colIndex = -1 если не найден.
     /// </summary>
-    private (int ColIndex, IReadOnlyList<QueryColumnEntry> AllQueryColumns, bool FoundViaDependsOn) FindColumnIndex(
-        FamilyManager fm, FamilySizeTableManager fstm, string tableName, string searchParamName)
+    private static (int ColIndex, IReadOnlyList<QueryColumnEntry> AllQueryColumns, bool FoundViaDependsOn) FindColumnIndex(
+        string tableName, string searchParamName,
+        IReadOnlyList<(string? Name, string? Formula)> paramSnapshot,
+        IReadOnlyDictionary<string, string> formulaByName)
     {
         SmartConLogger.Lookup($"    FindColumnIndex: table='{tableName}', searchParam='{searchParamName}'");
 
         int    targetCol       = -1;
         bool   foundViaDependsOn = false;
         IReadOnlyList<QueryColumnEntry>? allQueryColumns = null;
-
-        // Snapshot: материализуем fm.Parameters чтобы избежать вложенной энумерации
-        // Revit COM-коллекция ParameterSet не поддерживает реентерабельное перечисление
-        var paramSnapshot = new List<(string? Name, string? Formula)>();
-        var formulaByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (FamilyParameter fp in fm.Parameters)
-        {
-            var name = fp.Definition?.Name;
-            var formula = fp.Formula;
-            paramSnapshot.Add((name, formula));
-            if (name != null && !string.IsNullOrEmpty(formula))
-                formulaByName.TryAdd(name, formula);
-        }
 
         foreach (var (fpName, fpFormula) in paramSnapshot)
         {
@@ -582,35 +587,41 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         var radii = new SortedSet<double>();
 
-        foreach (var symbolId in symbolIds)
+        // Обёртка в Transaction — SubTransaction требует активной Transaction
+        // TODO: мигрировать на ITransactionService (I-03)
+        using var tr = new Transaction(doc, "GetFamilySymbolSizes_Temp");
+        try
         {
-            using var st = new SubTransaction(doc);
-            try
+            tr.Start();
+            foreach (var symbolId in symbolIds)
             {
-                st.Start();
-
-                var inst = doc.GetElement(instance.Id) as FamilyInstance;
-                if (inst is null) { st.RollBack(); continue; }
-
-                var sym = doc.GetElement(symbolId) as FamilySymbol;
-                inst.ChangeTypeId(symbolId);
-                doc.Regenerate();
-
-                var cm = inst.MEPModel?.ConnectorManager;
-                var conn = cm?.FindByIndex(connectorIndex);
-                if (conn is not null)
+                try
                 {
-                    radii.Add(conn.Radius);
-                    SmartConLogger.Lookup($"  symbol '{sym?.Name}': radius={conn.Radius * 304.8:F2} мм");
-                }
+                    var inst = doc.GetElement(instance.Id) as FamilyInstance;
+                    if (inst is null) continue;
 
-                st.RollBack();
+                    var sym = doc.GetElement(symbolId) as FamilySymbol;
+                    inst.ChangeTypeId(symbolId);
+                    doc.Regenerate();
+
+                    var cm = inst.MEPModel?.ConnectorManager;
+                    var conn = cm?.FindByIndex(connectorIndex);
+                    if (conn is not null)
+                    {
+                        radii.Add(conn.Radius);
+                        SmartConLogger.Lookup($"  symbol '{sym?.Name}': radius={conn.Radius * 304.8:F2} мм");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Lookup($"  ИСКЛЮЧЕНИЕ symbolId={symbolId.Value}: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                SmartConLogger.Lookup($"  ИСКЛЮЧЕНИЕ symbolId={symbolId.Value}: {ex.Message}");
-                try { st.RollBack(); } catch { }
-            }
+        }
+        finally
+        {
+            if (tr.GetStatus() == TransactionStatus.Started)
+                tr.RollBack();
         }
 
         var result = new List<SizeOption>();

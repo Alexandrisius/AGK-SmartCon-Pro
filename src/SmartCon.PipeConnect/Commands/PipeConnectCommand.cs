@@ -182,7 +182,8 @@ public sealed class PipeConnectCommand : IExternalCommand
 
             var vm = new PipeConnectEditorViewModel(
                 sessionCtx, doc, txService, connectorSvc, transformSvc,
-                fittingInsertSvc, paramResolver, sizeResolver, networkMover);
+                fittingInsertSvc, paramResolver, sizeResolver, networkMover,
+                mappingRepo, dialogSvc);
 
             // Init() вызывается ДО ShowDialog: открывает TransactionGroup,
             // применяет S3 (выравнивание), S4 (размер), вставляет и размещает фитинг.
@@ -461,4 +462,5 @@ public sealed class PipeConnectCommand : IExternalCommand
         SmartConLogger.Lookup($"  [MultiCol] Итого constraints: {constraints.Count}");
         return constraints;
     }
+
 }

@@ -179,7 +179,8 @@ public sealed class RevitLookupTableService : ILookupTableService
             SmartConLogger.Lookup($"  → EditFamily('{family.Name}')...");
             familyDoc = doc.EditFamily(family);
             SmartConLogger.Lookup($"  → familyDoc открыт: '{familyDoc?.Title}'");
-            return BuildLookupContextFromFamily(familyDoc!, instanceTransform, targetOriginGlobal);
+            return BuildLookupContextFromFamily(familyDoc!, instanceTransform, targetOriginGlobal,
+                instance.HandFlipped, instance.FacingFlipped);
         }
         catch (Exception ex)
         {
@@ -200,7 +201,9 @@ public sealed class RevitLookupTableService : ILookupTableService
     private static LookupContext? BuildLookupContextFromFamily(
         Document familyDoc,
         RevitTransform instanceTransform,
-        XYZ targetOriginGlobal)
+        XYZ targetOriginGlobal,
+        bool handFlipped = false,
+        bool facingFlipped = false)
     {
         SmartConLogger.LookupSection("BuildLookupContextFromFamily");
 
@@ -225,11 +228,27 @@ public sealed class RevitLookupTableService : ILookupTableService
         var tableNames = fstm.GetAllSizeTableNames().ToList();
         SmartConLogger.Lookup($"  Таблицы ({tableNames.Count}): [{string.Join(", ", tableNames)}]");
 
+        // PRE-CACHE: материализуем fm.Parameters ДО вызова FPA,
+        // чтобы избежать COM-коррупции ParameterSet после AssociatedParameters доступа
+        var fm = familyDoc.FamilyManager;
+        var paramSnapshot = new List<(string? Name, string? Formula)>();
+        var formulaByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (FamilyParameter fp in fm.Parameters)
+        {
+            var name = fp.Definition?.Name;
+            var formula_ = fp.Formula;
+            paramSnapshot.Add((name, formula_));
+            if (name != null && !string.IsNullOrEmpty(formula_))
+                formulaByName.TryAdd(name, formula_);
+        }
+        SmartConLogger.Lookup($"  Pre-cached formulaByName: {formulaByName.Count} записей из {paramSnapshot.Count} параметров");
+
         // Анализ параметра коннектора
         SmartConLogger.Lookup("  → FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam...");
         var (directName, rootName, formula, isInstance, isDiameter) =
             FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                familyDoc, instanceTransform, targetOriginGlobal);
+                familyDoc, instanceTransform, targetOriginGlobal,
+                handFlipped, facingFlipped);
 
         SmartConLogger.Lookup($"  FPA результат: directName='{directName}', rootName='{rootName}', formula='{formula}', isInstance={isInstance}, isDiameter={isDiameter}");
 
@@ -285,7 +304,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         foreach (var tableName in tableNames)
         {
             SmartConLogger.Lookup($"  → TryGetContextForTable('{tableName}', searchParam='{searchParamName}')...");
-            var ctx = TryGetContextForTable(familyDoc, fstm, tableName, searchParamName, tableStoresDiameters);
+            var ctx = TryGetContextForTable(fstm, tableName, searchParamName, tableStoresDiameters, paramSnapshot, formulaByName);
             if (ctx is not null)
             {
                 SmartConLogger.Lookup($"  ✓ Контекст найден: tableName='{tableName}', colIndex={ctx.ColIndex}, isRadius={ctx.IsRadius}, строк CSV={ctx.CsvLines.Length}");
@@ -298,30 +317,17 @@ public sealed class RevitLookupTableService : ILookupTableService
     }
 
     private static LookupContext? TryGetContextForTable(
-        Document familyDoc,
         FamilySizeTableManager fstm,
         string tableName,
         string searchParamName,
-        bool tableStoresDiameters)
+        bool tableStoresDiameters,
+        IReadOnlyList<(string? Name, string? Formula)> paramSnapshot,
+        IReadOnlyDictionary<string, string> formulaByName)
     {
-        var fm = familyDoc.FamilyManager;
         int    targetColIndex = -1;
         string? foundInParam  = null;
         bool   foundViaDependsOn = false;
         IReadOnlyList<QueryColumnMapping>? allQueryColumns = null;
-
-        // Snapshot: материализуем fm.Parameters чтобы избежать вложенной энумерации
-        // Revit COM-коллекция ParameterSet не поддерживает реентерабельное перечисление
-        var paramSnapshot = new List<(string? Name, string? Formula)>();
-        var formulaByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (FamilyParameter fp in fm.Parameters)
-        {
-            var name = fp.Definition?.Name;
-            var formula = fp.Formula;
-            paramSnapshot.Add((name, formula));
-            if (name != null && !string.IsNullOrEmpty(formula))
-                formulaByName.TryAdd(name, formula);
-        }
 
         SmartConLogger.Lookup($"    Перебор параметров семейства (кол-во: {paramSnapshot.Count}):");
 

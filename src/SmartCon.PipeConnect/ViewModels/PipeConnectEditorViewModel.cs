@@ -27,12 +27,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private readonly IParameterResolver       _paramResolver;
     private readonly IDynamicSizeResolver     _sizeResolver;
     private readonly INetworkMover            _networkMover;
+    private readonly IFittingMappingRepository _mappingRepo;
+    private readonly IDialogService           _dialogSvc;
     private readonly PipeConnectSessionContext _ctx;
 
     private ITransactionGroupSession? _groupSession;
     private ElementId?      _currentFittingId;
     private ConnectorProxy? _activeDynamic;
     private ConnectorProxy? _activeFittingConn2;
+    private FittingMappingRule? _activeFittingRule;
     private bool            _isClosing;
 
     private List<ConnectorProxy>  _allDynamicConnectors = [];
@@ -77,7 +80,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         IFittingInsertService      fittingInsertSvc,
         IParameterResolver         paramResolver,
         IDynamicSizeResolver       sizeResolver,
-        INetworkMover              networkMover)
+        INetworkMover              networkMover,
+        IFittingMappingRepository  mappingRepo,
+        IDialogService             dialogSvc)
     {
         _ctx              = ctx;
         _doc              = doc;
@@ -88,6 +93,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _paramResolver    = paramResolver;
         _sizeResolver     = sizeResolver;
         _networkMover     = networkMover;
+        _mappingRepo      = mappingRepo;
+        _dialogSvc        = dialogSvc;
         _activeDynamic    = ctx.DynamicConnector;
         _chainGraph       = ctx.ChainGraph;
 
@@ -1378,6 +1385,14 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         DecrementChainDepthCommand.NotifyCanExecuteChanged();
     }
 
+    private ConnectionTypeCode ResolveDynamicTypeFromRule(FittingMappingRule? rule)
+    {
+        if (rule is null) return default;
+        if (rule.FromType.Value == _ctx.StaticConnector.ConnectionTypeCode.Value)
+            return rule.ToType;
+        return rule.FromType;
+    }
+
     // ── Insert fitting ────────────────────────────────────────────────────────
 
     [RelayCommand(CanExecute = nameof(CanInsertFitting))]
@@ -1406,6 +1421,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     {
         if (fitting.IsDirectConnect)
         {
+            _activeFittingRule = null;
             _groupSession!.RunInTransaction("PipeConnect — Прямое соединение", doc =>
             {
                 doc.Regenerate();
@@ -1421,7 +1437,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             return;
         }
 
-        // Транзакция 1: удалить старый фитинг + вставить новый + выровнять
+        _activeFittingRule = fitting.Rule;
+        var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+
+        if (!EnsureFittingCtcForInsert(fitting))
+        {
+            StatusMessage = "Типы коннекторов не назначены";
+            return;
+        }
+
         ElementId? insertedId = null;
         ConnectorProxy? fitConn2 = null;
 
@@ -1439,8 +1463,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
             if (insertedId is null) return;
 
+            doc.Regenerate();
+
             fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc);
+                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                dynamicTypeCode: dynCtc);
 
             if (fitConn2 is not null && _activeDynamic is not null)
             {
@@ -1466,20 +1493,16 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _activeFittingConn2 = fitConn2;
         StatusMessage = $"Вставлен: {fitting.DisplayName}";
 
-        // Транзакция 2: подгонка размера фитинга (отдельная транзакция после коммита вставки)
         var newFitConn2 = SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: true);
         if (newFitConn2 is not null)
             _activeFittingConn2 = newFitConn2;
     }
 
-    /// <summary>
-    /// Вставка фитинга БЕЗ подгонки dynamic. Используется при ChangeDynamicSize
-    /// когда пользователь уже выбрал нужный размер dynamic.
-    /// </summary>
     private void InsertFittingSilentNoDynamicAdjust(FittingCardItem fitting)
     {
         if (fitting.IsDirectConnect)
         {
+            _activeFittingRule = null;
             _groupSession!.RunInTransaction("PipeConnect — Прямое соединение", doc =>
             {
                 doc.Regenerate();
@@ -1492,6 +1515,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         if (primary is null)
         {
             StatusMessage = "Нет данных о семействе фитинга";
+            return;
+        }
+
+        _activeFittingRule = fitting.Rule;
+        var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+
+        if (!EnsureFittingCtcForInsert(fitting))
+        {
+            StatusMessage = "Типы коннекторов не назначены";
             return;
         }
 
@@ -1512,8 +1544,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
             if (insertedId is null) return;
 
+            doc.Regenerate();
+
             fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc);
+                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                dynamicTypeCode: dynCtc);
 
             if (fitConn2 is not null && _activeDynamic is not null)
             {
@@ -1539,7 +1574,6 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _activeFittingConn2 = fitConn2;
         StatusMessage = $"Вставлен: {fitting.DisplayName}";
 
-        // Подгонка размера фитинга БЕЗ изменения размера dynamic
         var newFitConn2 = SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
         if (newFitConn2 is not null)
             _activeFittingConn2 = newFitConn2;
@@ -1918,7 +1952,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             _groupSession!.RunInTransaction("PipeConnect — Выравнивание после размера", txDoc =>
             {
                 newFitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                    txDoc, fittingId, _ctx.StaticConnector, _transformSvc, _connSvc);
+                    txDoc, fittingId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                    dynamicTypeCode: ResolveDynamicTypeFromRule(_activeFittingRule));
 
                 if (newFitConn2 is not null && _activeDynamic is not null)
                 {
@@ -2019,6 +2054,290 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         catch (Exception ex)
         {
             SmartConLogger.Warn($"[DIAG {label}] Ошибка логирования: {ex.Message}");
+        }
+    }
+
+    // ── Fitting CTC setup (before insert) ──────────────────────────────────
+
+    private bool EnsureFittingCtcForInsert(FittingCardItem fitting)
+    {
+        if (_doc.IsModifiable) return true;
+
+        var primary = fitting.PrimaryFitting;
+        if (primary is null) return true;
+
+        var symbol = FindFamilySymbol(_doc, primary.FamilyName, primary.SymbolName);
+        if (symbol is null) return true;
+
+        if (IsFittingCtcDefined(symbol)) return true;
+
+        var types = _mappingRepo.GetConnectorTypes();
+        if (types.Count == 0) return true;
+
+        var items = BuildConnectorItems(symbol, types, fitting.Rule);
+
+        SmartConLogger.Info($"[CTC] Фитинг '{symbol.Family.Name}' ({symbol.Name}): CTC не задан → диалог");
+
+        if (!_dialogSvc.ShowFittingCtcSetup(
+                symbol.Family.Name, symbol.Name, items, types))
+        {
+            _dialogSvc.ShowWarning("SmartCon",
+                "Типы коннекторов не назначены. Фитинг не будет вставлен.");
+            return false;
+        }
+
+        ApplyFittingCtcToFamily(symbol, items);
+        return true;
+    }
+
+    private bool IsFittingCtcDefined(FamilySymbol symbol)
+    {
+        Document? familyDoc = null;
+        try
+        {
+            familyDoc = _doc.EditFamily(symbol.Family);
+            var connElems = new FilteredElementCollector(familyDoc)
+                .OfCategory(BuiltInCategory.OST_ConnectorElem)
+                .WhereElementIsNotElementType()
+                .Cast<ConnectorElement>()
+                .ToList();
+
+            if (connElems.Count < 2) return true;
+
+            foreach (var ce in connElems)
+            {
+                var desc = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION)?.AsString();
+                var ctc = ConnectionTypeCode.Parse(desc);
+                if (!ctc.IsDefined) return false;
+            }
+
+            return true;
+        }
+        finally
+        {
+            familyDoc?.Close(false);
+        }
+    }
+
+    private List<FittingCtcSetupItem> BuildConnectorItems(
+        FamilySymbol symbol, IReadOnlyList<ConnectorTypeDefinition> types, FittingMappingRule rule)
+    {
+        Document? familyDoc = null;
+        try
+        {
+            familyDoc = _doc.EditFamily(symbol.Family);
+
+            var connElems = new FilteredElementCollector(familyDoc)
+                .OfCategory(BuiltInCategory.OST_ConnectorElem)
+                .WhereElementIsNotElementType()
+                .Cast<ConnectorElement>()
+                .ToList();
+
+            var items = new List<FittingCtcSetupItem>();
+
+            var staticCTC = _ctx.StaticConnector.ConnectionTypeCode;
+            ConnectionTypeCode? preSelectForStatic = null;
+            ConnectionTypeCode? preSelectForDynamic = null;
+            if (rule.FromType.Value == staticCTC.Value)
+            {
+                preSelectForStatic = rule.FromType;
+                preSelectForDynamic = rule.ToType;
+            }
+            else if (rule.ToType.Value == staticCTC.Value)
+            {
+                preSelectForStatic = rule.ToType;
+                preSelectForDynamic = rule.FromType;
+            }
+
+            for (int i = 0; i < connElems.Count; i++)
+            {
+                var ce = connElems[i];
+                var desc = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION)?.AsString();
+                var currentCtc = ConnectionTypeCode.Parse(desc);
+
+                string paramName = GetConnectorParamName(ce, familyDoc);
+                double diamMm = ce.Radius * 2.0 * 304.8;
+
+                ConnectorTypeDefinition? preSelect = null;
+                if (preSelectForStatic.HasValue && preSelectForDynamic.HasValue)
+                {
+                    var code = i == 0 ? preSelectForStatic.Value : preSelectForDynamic.Value;
+                    preSelect = types.FirstOrDefault(t => t.Code == code.Value);
+                }
+
+                items.Add(new FittingCtcSetupItem
+                {
+                    ConnectorIndex = i,
+                    ParameterName = paramName,
+                    DiameterMm = diamMm,
+                    SelectedType = currentCtc.IsDefined
+                        ? types.FirstOrDefault(t => t.Code == currentCtc.Value)
+                        : null,
+                    PreSelectedType = preSelect
+                });
+            }
+
+            return items;
+        }
+        finally
+        {
+            familyDoc?.Close(false);
+        }
+    }
+
+    private static string GetConnectorParamName(ConnectorElement ce, Document familyDoc)
+    {
+        var radiusParam = ce.get_Parameter(BuiltInParameter.CONNECTOR_RADIUS);
+        var diamParam = ce.get_Parameter(BuiltInParameter.CONNECTOR_DIAMETER);
+
+        foreach (FamilyParameter fp in familyDoc.FamilyManager.GetParameters())
+        {
+            if (fp.AssociatedParameters.Size == 0) continue;
+            try
+            {
+                foreach (Parameter assoc in fp.AssociatedParameters)
+                {
+                    bool idMatch = (radiusParam is not null && assoc.Id == radiusParam.Id)
+                                || (diamParam is not null && assoc.Id == diamParam.Id);
+                    bool elemMatch = assoc.Element?.Id == ce.Id;
+
+                    if (idMatch && elemMatch)
+                        return fp.Definition?.Name ?? string.Empty;
+                }
+            }
+            catch { }
+        }
+
+        return string.Empty;
+    }
+
+    private void ApplyFittingCtcToFamily(FamilySymbol symbol, List<FittingCtcSetupItem> items)
+    {
+        if (_doc.IsModifiable) return;
+
+        Document? familyDoc = null;
+        try
+        {
+            familyDoc = _doc.EditFamily(symbol.Family);
+
+            var connElems = new FilteredElementCollector(familyDoc)
+                .OfCategory(BuiltInCategory.OST_ConnectorElem)
+                .WhereElementIsNotElementType()
+                .Cast<ConnectorElement>()
+                .ToList();
+
+            bool anyWritten = false;
+
+            {
+                using var familyTx = new Transaction(familyDoc, "SetFittingCtcDescriptions");
+                familyTx.Start();
+
+                for (int i = 0; i < items.Count && i < connElems.Count; i++)
+                {
+                    if (items[i].SelectedType is null) continue;
+
+                    var ce = connElems[i];
+                    var typeDef = items[i].SelectedType!;
+                    var value = $"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}";
+
+                    var descParam = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
+
+                    if (descParam is not null && !descParam.IsReadOnly)
+                    {
+                        anyWritten |= descParam.Set(value);
+                    }
+                    else if (descParam is not null)
+                    {
+                        anyWritten |= SetDrivingFamilyParameter(
+                            familyDoc.FamilyManager, ce, descParam, value);
+                    }
+                }
+
+                if (anyWritten)
+                    familyTx.Commit();
+            }
+
+            if (anyWritten)
+            {
+                familyDoc.LoadFamily(_doc, new FamilyLoadOptions());
+                SmartConLogger.Info($"[CTC] CTC записан для '{symbol.Family.Name}'");
+            }
+        }
+        finally
+        {
+            familyDoc?.Close(false);
+        }
+    }
+
+    private static bool SetDrivingFamilyParameter(
+        FamilyManager fm, ConnectorElement connElem, Parameter connParam, string value)
+    {
+        FamilyParameter? drivingFp = null;
+
+        foreach (FamilyParameter fp in fm.Parameters)
+        {
+            try
+            {
+                foreach (Parameter assoc in fp.AssociatedParameters)
+                {
+                    if (assoc.Id == connParam.Id && assoc.Element?.Id == connElem.Id)
+                    {
+                        drivingFp = fp;
+                        break;
+                    }
+                }
+            }
+            catch { }
+            if (drivingFp is not null) break;
+        }
+
+        if (drivingFp is null) return false;
+        if (!string.IsNullOrEmpty(drivingFp.Formula)) return false;
+
+        try
+        {
+            if (!drivingFp.IsInstance)
+            {
+                foreach (FamilyType ft in fm.Types)
+                {
+                    fm.CurrentType = ft;
+                    fm.Set(drivingFp, value);
+                }
+            }
+            else
+            {
+                fm.Set(drivingFp, value);
+            }
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static FamilySymbol? FindFamilySymbol(Document doc, string familyName, string symbolName)
+    {
+        return new FilteredElementCollector(doc)
+            .OfClass(typeof(FamilySymbol))
+            .Cast<FamilySymbol>()
+            .FirstOrDefault(s =>
+                string.Equals(s.Family.Name, familyName, StringComparison.OrdinalIgnoreCase) &&
+                (symbolName == "*" || string.Equals(s.Name, symbolName, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private sealed class FamilyLoadOptions : IFamilyLoadOptions
+    {
+        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
+        {
+            overwriteParameterValues = true;
+            return true;
+        }
+
+        public bool OnSharedFamilyFound(
+            Autodesk.Revit.DB.Family sharedFamily, bool familyInUse,
+            out FamilySource source, out bool overwriteParameterValues)
+        {
+            source = FamilySource.Family;
+            overwriteParameterValues = true;
+            return true;
         }
     }
 }

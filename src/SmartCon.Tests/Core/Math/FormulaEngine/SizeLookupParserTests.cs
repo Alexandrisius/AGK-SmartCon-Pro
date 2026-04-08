@@ -205,4 +205,58 @@ public class SizeLookupParserTests
         Assert.Equal("A", result!.Value.TargetParameter);
         Assert.Equal("BP_NominalDiameter", result.Value.QueryParameters[0]);
     }
+
+    // ── Выражения в default value (пресс-фитинги) ───────────────────────
+
+    [Fact]
+    public void ParseSizeLookup_ExpressionDefault_AddNumber()
+    {
+        // size_lookup(LT, "D2", D2 + 4, D1, D2, D3) — после UnitStripper "D2 + 4"
+        var result = FormulaSolver.ParseSizeLookupStatic(
+            "size_lookup(LT, \"D2\", D2 + 4, D1, D2, D3)");
+        Assert.NotNull(result);
+        Assert.Equal("LT", result!.Value.TableName);
+        Assert.Equal("D2", result.Value.TargetParameter);
+        Assert.Equal(3, result.Value.QueryParameters.Count);
+        Assert.Equal("D1", result.Value.QueryParameters[0]);
+        Assert.Equal("D2", result.Value.QueryParameters[1]);
+        Assert.Equal("D3", result.Value.QueryParameters[2]);
+    }
+
+    [Fact]
+    public void ParseSizeLookup_ExpressionDefault_MulVariable()
+    {
+        // size_lookup(LT, "Z3", 1.2 * D3, D1, D2, D3)
+        var result = FormulaSolver.ParseSizeLookupStatic(
+            "size_lookup(LT, \"Z3\", 1.2 * D3, D1, D2, D3)");
+        Assert.NotNull(result);
+        Assert.Equal("Z3", result!.Value.TargetParameter);
+        Assert.Equal(3, result.Value.QueryParameters.Count);
+        Assert.Equal("D1", result.Value.QueryParameters[0]);
+    }
+
+    [Fact]
+    public void ParseSizeLookup_ExpressionDefault_SubExpression()
+    {
+        // size_lookup(LT, "L1", D1 - 2, D1, D2, D3)
+        var result = FormulaSolver.ParseSizeLookupStatic(
+            "size_lookup(LT, \"L1\", D1 - 2, D1, D2, D3)");
+        Assert.NotNull(result);
+        Assert.Equal("L1", result!.Value.TargetParameter);
+        Assert.Equal(3, result.Value.QueryParameters.Count);
+    }
+
+    // ── ExtractVariablesStatic (регрессия DependsOn) ─────────────────────
+
+    [Theory]
+    [InlineData("2 * R3", new[] { "R3" })]
+    [InlineData("2 * R1", new[] { "R1" })]
+    [InlineData("R2 / 2 + 1", new[] { "R2" })]
+    public void ExtractVariablesStatic_SimpleFormulas(string formula, string[] expected)
+    {
+        var result = FormulaSolver.ExtractVariablesStatic(formula);
+        Assert.Equal(expected.Length, result.Count);
+        foreach (var e in expected)
+            Assert.Contains(e, result, StringComparer.OrdinalIgnoreCase);
+    }
 }

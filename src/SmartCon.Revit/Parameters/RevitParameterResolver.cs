@@ -160,7 +160,8 @@ public sealed class RevitParameterResolver : IParameterResolver
                     familyDoc = doc.EditFamily(family);
                     var (directName, rootName, formula, _, _) =
                         FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                            familyDoc, instance.GetTransform(), connector.CoordinateSystem.Origin);
+                            familyDoc, instance.GetTransform(), connector.CoordinateSystem.Origin,
+                            instance.HandFlipped, instance.FacingFlipped);
 
                     SmartConLogger.Lookup($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}'");
 

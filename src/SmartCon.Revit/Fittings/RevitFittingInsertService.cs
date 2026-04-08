@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
@@ -37,7 +38,8 @@ public sealed class RevitFittingInsertService : IFittingInsertService
         ElementId fittingId,
         ConnectorProxy staticProxy,
         ITransformService transformSvc,
-        IConnectorService connSvc)
+        IConnectorService connSvc,
+        ConnectionTypeCode dynamicTypeCode = default)
     {
         var fitting = doc.GetElement(fittingId);
         if (fitting is null) return null;
@@ -45,17 +47,72 @@ public sealed class RevitFittingInsertService : IFittingInsertService
         var cm = fitting.GetConnectorManager();
         if (cm is null) return null;
 
-        // Получаем все свободные коннекторы фитинга
         var fittingConns = cm.Connectors
             .Cast<Connector>()
             .Where(c => c.ConnectorType != ConnectorType.Curve)
-            .OrderBy(c => c.Origin.DistanceTo(staticProxy.Origin))
             .ToList();
 
         if (fittingConns.Count < 2) return null;
 
-        var fitConn1 = fittingConns[0]; // ближайший к static
-        var fitConn2 = fittingConns[1]; // дальний
+        Connector? fitConn1 = null;
+        Connector? fitConn2 = null;
+
+        var connCtcMap = new List<(Connector Conn, ConnectionTypeCode Ctc)>();
+        foreach (var c in fittingConns)
+        {
+            var ctc = ConnectionTypeCode.Parse(GetConnectorDescriptionSafe(c));
+            connCtcMap.Add((c, ctc));
+            SmartConLogger.Info($"[FitAlign] conn[{c.Id}] CTC={ctc.Value} R={c.Radius * 304.8:F1}mm (static CTC={staticProxy.ConnectionTypeCode.Value}, dyn CTC={dynamicTypeCode.Value})");
+        }
+
+        if (staticProxy.ConnectionTypeCode.IsDefined)
+        {
+            // Стратегия 1: прямое совпадение CTC фитинга == static CTC
+            var directMatch = connCtcMap.FirstOrDefault(x =>
+                x.Ctc.IsDefined && x.Ctc.Value == staticProxy.ConnectionTypeCode.Value);
+            if (directMatch.Conn is not null)
+            {
+                fitConn1 = directMatch.Conn;
+                fitConn2 = fittingConns.FirstOrDefault(c => c.Id != fitConn1.Id);
+                SmartConLogger.Info($"[FitAlign] Стратегия 1 (CTC match): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2?.Id}]");
+            }
+
+            // Стратегия 2: conn с CTC == dynamicTypeCode → fc2 (к dynamic), другой → fc1
+            if (fitConn1 is null && dynamicTypeCode.IsDefined)
+            {
+                var dynMatch = connCtcMap.FirstOrDefault(x =>
+                    x.Ctc.IsDefined && x.Ctc.Value == dynamicTypeCode.Value);
+                if (dynMatch.Conn is not null)
+                {
+                    fitConn2 = dynMatch.Conn;
+                    fitConn1 = fittingConns.FirstOrDefault(c => c.Id != fitConn2.Id);
+                    SmartConLogger.Info($"[FitAlign] Стратегия 2 (dynamicTypeCode match): fc2=conn[{fitConn2.Id}] (CTC={dynMatch.Ctc.Value}), fc1=conn[{fitConn1?.Id}]");
+                }
+            }
+
+            // Стратегия 3: исключение — один conn с определённым CTC ≠ static → fc2
+            if (fitConn1 is null)
+            {
+                var definedOther = connCtcMap
+                    .Where(x => x.Ctc.IsDefined && x.Ctc.Value != staticProxy.ConnectionTypeCode.Value)
+                    .ToList();
+                if (definedOther.Count == 1)
+                {
+                    fitConn2 = definedOther[0].Conn;
+                    fitConn1 = fittingConns.FirstOrDefault(c => c.Id != fitConn2.Id);
+                    SmartConLogger.Info($"[FitAlign] Стратегия 3 (исключение): fc2=conn[{fitConn2.Id}] (CTC={definedOther[0].Ctc.Value}≠static), fc1=conn[{fitConn1?.Id}]");
+                }
+            }
+        }
+
+        // Стратегия 4: fallback по расстоянию
+        if (fitConn1 is null)
+        {
+            var ordered = fittingConns.OrderBy(c => c.Origin.DistanceTo(staticProxy.Origin)).ToList();
+            fitConn1 = ordered[0];
+            fitConn2 = ordered[1];
+            SmartConLogger.Info($"[FitAlign] Стратегия 4 (distance fallback): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2.Id}]");
+        }
 
         var fitConn1Proxy = fitConn1.ToProxy();
         if (fitConn1Proxy is null) return null;
@@ -93,6 +150,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
         doc.Regenerate();
 
         // Возвращаем ConnectorProxy второго коннектора фитинга после выравнивания
+        if (fitConn2 is null) return null;
         return connSvc.RefreshConnector(doc, fittingId, fitConn2.ToProxy()?.ConnectorIndex ?? -1)
                ?? fitConn2.ToProxy();
     }
@@ -103,6 +161,12 @@ public sealed class RevitFittingInsertService : IFittingInsertService
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
+
+    private static string? GetConnectorDescriptionSafe(Connector connector)
+    {
+        try { return connector.Description; }
+        catch (Autodesk.Revit.Exceptions.InvalidOperationException) { return null; }
+    }
 
     private static FamilySymbol? FindFamilySymbol(Document doc, string familyName, string symbolName)
     {
