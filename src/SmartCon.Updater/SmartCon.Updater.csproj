@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>SmartCon.Updater</AssemblyName>
+    <RootNamespace>SmartCon.Updater</RootNamespace>
+    <PublishTrimmed>false</PublishTrimmed>
+    <SelfContained>false</SelfContained>
+    <UseWPF>false</UseWPF>
+  </PropertyGroup>
+
+</Project>

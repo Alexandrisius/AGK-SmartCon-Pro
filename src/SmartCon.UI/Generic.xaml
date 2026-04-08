@@ -471,6 +471,32 @@
     </Style>
 
     <!-- ══════════════════════════════════════════════════════════════════
+         PROGRESSBAR
+         ══════════════════════════════════════════════════════════════════ -->
+    <Style x:Key="FlatProgressBar" TargetType="ProgressBar">
+        <Setter Property="Height" Value="6"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="Background" Value="#E0E0E0"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Grid>
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="3"/>
+                        <Border x:Name="PART_Track"
+                                CornerRadius="3"/>
+                        <Border x:Name="PART_Indicator"
+                                HorizontalAlignment="Left"
+                                Background="{TemplateBinding Foreground}"
+                                CornerRadius="3"/>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══════════════════════════════════════════════════════════════════
          STATUS BAR
          ══════════════════════════════════════════════════════════════════ -->
     <Style x:Key="StatusBarBorder" TargetType="Border">

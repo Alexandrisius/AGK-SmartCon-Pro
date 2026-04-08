@@ -32,8 +32,6 @@ public sealed class MappingEditorViewModelTests
         return new MappingEditorViewModel(repoMock.Object, families ?? [], svc);
     }
 
-    // ── Constructor ───────────────────────────────────────────────────────
-
     [Fact]
     public void Constructor_LoadsTypesFromRepository()
     {
@@ -68,8 +66,6 @@ public sealed class MappingEditorViewModelTests
         Assert.Equal("FamilyA", vm.AvailableFamilyNames[0]);
     }
 
-    // ── AddType ───────────────────────────────────────────────────────────
-
     [Fact]
     public void AddTypeCommand_AddsItemToCollection()
     {
@@ -103,8 +99,6 @@ public sealed class MappingEditorViewModelTests
         Assert.Same(vm.ConnectorTypes[0], vm.SelectedType);
     }
 
-    // ── DeleteType ────────────────────────────────────────────────────────
-
     [Fact]
     public void DeleteTypeCommand_RemovesSelectedItem()
     {
@@ -124,8 +118,6 @@ public sealed class MappingEditorViewModelTests
         Assert.Null(ex);
         Assert.Equal(2, vm.ConnectorTypes.Count);
     }
-
-    // ── SaveTypes ─────────────────────────────────────────────────────────
 
     [Fact]
     public void SaveTypesCommand_CallsRepositorySave()
@@ -155,8 +147,6 @@ public sealed class MappingEditorViewModelTests
             list => list.Count == 0)), Times.Once);
     }
 
-    // ── AddRule ───────────────────────────────────────────────────────────
-
     [Fact]
     public void AddRuleCommand_AddsItemToCollection()
     {
@@ -173,8 +163,6 @@ public sealed class MappingEditorViewModelTests
         Assert.NotNull(vm.SelectedRule);
     }
 
-    // ── DeleteRule ────────────────────────────────────────────────────────
-
     [Fact]
     public void DeleteRuleCommand_RemovesSelectedRule()
     {
@@ -183,8 +171,6 @@ public sealed class MappingEditorViewModelTests
         vm.DeleteRuleCommand.Execute(null);
         Assert.Empty(vm.MappingRules);
     }
-
-    // ── SaveRules ─────────────────────────────────────────────────────────
 
     [Fact]
     public void SaveRulesCommand_CallsRepositorySave()

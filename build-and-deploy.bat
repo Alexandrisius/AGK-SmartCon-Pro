@@ -10,7 +10,7 @@ set "FRAMEWORK=net8.0-windows"
 set "REVIT_VERSION=2025"
 
 echo.
-echo [1/3] Building solution...
+echo [1/4] Building solution...
 dotnet build "%SLN_PATH%" -c %CONFIG% --verbosity minimal
 if errorlevel 1 (
     echo.
@@ -21,7 +21,7 @@ if errorlevel 1 (
 echo [OK] Build successful
 
 echo.
-echo [2/3] Preparing deployment folder...
+echo [2/4] Preparing deployment folder...
 set "ADDIN_FOLDER=%APPDATA%\Autodesk\Revit\Addins\%REVIT_VERSION%"
 set "SMARTCON_FOLDER=%ADDIN_FOLDER%\SmartCon"
 
@@ -30,9 +30,21 @@ if not exist "%SMARTCON_FOLDER%" mkdir "%SMARTCON_FOLDER%"
 echo [OK] Folder ready: %SMARTCON_FOLDER%
 
 echo.
-echo [3/3] Deploying files...
+echo [3/4] Deploying plugin files...
 copy /Y "src\SmartCon.App\bin\%CONFIG%\%FRAMEWORK%\*.dll" "%SMARTCON_FOLDER%\"
 copy /Y "src\SmartCon.App\Resources\SmartCon.addin" "%ADDIN_FOLDER%\"
+
+echo.
+echo [4/4] Deploying updater...
+set "UPDATER_FRAMEWORK=net8.0"
+copy /Y "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.exe" "%SMARTCON_FOLDER%\" 2>nul
+copy /Y "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.dll" "%SMARTCON_FOLDER%\" 2>nul
+if exist "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.deps.json" (
+    copy /Y "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.deps.json" "%SMARTCON_FOLDER%\" 2>nul
+)
+if exist "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.runtimeconfig.json" (
+    copy /Y "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.runtimeconfig.json" "%SMARTCON_FOLDER%\" 2>nul
+)
 
 echo.
 echo ==========================================

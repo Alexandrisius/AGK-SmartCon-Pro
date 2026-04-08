@@ -5,12 +5,26 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <!-- MSB3277: transitive conflicts from RevitAPIUI deps (SSONET, CefSharp) — safe to suppress -->
     <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
     <Company>AGK</Company>
     <Product>SmartCon</Product>
     <Copyright>Copyright © AGK 2026</Copyright>
     <RevitApiPath>C:\Program Files\Autodesk\Revit 2025</RevitApiPath>
     <RevitAddinsPath>$(AppData)\Autodesk\Revit\Addins\2025</RevitAddinsPath>
+    <SmartConVersionFile>$(MSBuildThisFileDirectory)..\Version.txt</SmartConVersionFile>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+
+  <Target Name="SetSmartConVersion" BeforeTargets="PrepareForBuild">
+    <ReadLinesFromFile File="$(SmartConVersionFile)">
+      <Output TaskParameter="Lines" PropertyName="SmartConVersion" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <Version>$(SmartConVersion)</Version>
+      <AssemblyVersion>$(SmartConVersion).0</AssemblyVersion>
+      <FileVersion>$(SmartConVersion).0</FileVersion>
+      <InformationalVersion>$(SmartConVersion)</InformationalVersion>
+    </PropertyGroup>
+    <Message Importance="High" Text="SmartCon version: $(SmartConVersion)" />
+  </Target>
 </Project>

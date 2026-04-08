@@ -1,10 +1,10 @@
 using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
 using SmartCon.Core.Math.FormulaEngine.Solver;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Events;
 using SmartCon.PipeConnect.Services;
-using SmartCon.Core.Services.Implementation;
 using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
@@ -14,6 +14,7 @@ using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
 using SmartCon.Revit.Transform;
 using SmartCon.Revit.Transactions;
+using SmartCon.Revit.Updates;
 
 namespace SmartCon.App.DI;
 
@@ -74,5 +75,9 @@ public static class ServiceRegistrar
         var pipeConnectEvent   = ExternalEvent.Create(pipeConnectHandler);
         pipeConnectHandler.Initialize(pipeConnectEvent);
         services.AddSingleton(pipeConnectHandler);
+
+        // --- Update Service ---
+        services.AddSingleton<IUpdateSettingsRepository, JsonUpdateSettingsRepository>();
+        services.AddSingleton<IUpdateService, GitHubUpdateService>();
     }
 }

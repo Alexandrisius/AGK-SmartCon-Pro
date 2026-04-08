@@ -7,9 +7,6 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-/// <summary>
-/// ViewModel немодального окна управления типами коннекторов и правилами маппинга (3B).
-/// </summary>
 public sealed partial class MappingEditorViewModel : ObservableObject
 {
     private readonly IFittingMappingRepository _repository;
@@ -18,7 +15,6 @@ public sealed partial class MappingEditorViewModel : ObservableObject
     public ObservableCollection<ConnectorTypeItem> ConnectorTypes { get; } = [];
     public ObservableCollection<MappingRuleItem> MappingRules { get; } = [];
 
-    /// <summary>Список имён семейств (OST_PipeFitting, MultiPort, 2 коннектора), загруженных при открытии окна.</summary>
     public IReadOnlyList<string> AvailableFamilyNames { get; }
 
     [ObservableProperty]
@@ -68,14 +64,13 @@ public sealed partial class MappingEditorViewModel : ObservableObject
         try
         {
             _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
-            // Также сохраняем правила — они могут быть изменены
             _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
-            StatusMessage = $"✔ Типы и правила сохранены — {_repository.GetStoragePath()}";
+            StatusMessage = $"Типы и правила сохранены - {_repository.GetStoragePath()}";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"✘ Ошибка: {ex.Message}";
-            MessageBox.Show(ex.ToString(), "SmartCon — ошибка сохранения");
+            StatusMessage = $"Ошибка: {ex.Message}";
+            MessageBox.Show(ex.ToString(), "SmartCon - ошибка сохранения");
         }
     }
 
@@ -100,14 +95,13 @@ public sealed partial class MappingEditorViewModel : ObservableObject
         try
         {
             _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
-            // Также сохраняем типы — они могут быть изменены
             _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
-            StatusMessage = $"✔ Правила и типы сохранены — {_repository.GetStoragePath()}";
+            StatusMessage = $"Правила и типы сохранены - {_repository.GetStoragePath()}";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"✘ Ошибка: {ex.Message}";
-            MessageBox.Show(ex.ToString(), "SmartCon — ошибка сохранения");
+            StatusMessage = $"Ошибка: {ex.Message}";
+            MessageBox.Show(ex.ToString(), "SmartCon - ошибка сохранения");
         }
     }
 }
