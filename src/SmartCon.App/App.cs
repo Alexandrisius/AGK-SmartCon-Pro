@@ -1,17 +1,16 @@
+using System.IO;
+using System.Reflection;
 using Autodesk.Revit.UI;
 using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
 
 namespace SmartCon.App;
 
-/// <summary>
-/// Точка входа плагина SmartCon. Реализует IExternalApplication.
-/// Регистрирует DI-контейнер и создаёт Ribbon UI при запуске Revit.
-/// </summary>
 public sealed class App : IExternalApplication
 {
     public Result OnStartup(UIControlledApplication application)
     {
+        AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
         try
         {
             ServiceLocator.Initialize(application);
@@ -30,5 +29,17 @@ public sealed class App : IExternalApplication
     {
         ServiceLocator.Dispose();
         return Result.Succeeded;
+    }
+
+    private static Assembly? OnAssemblyResolve(object? sender, ResolveEventArgs args)
+    {
+        var name = new AssemblyName(args.Name).Name;
+        var loaded = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == name);
+        if (loaded != null) return loaded;
+        var pluginDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
+        if (pluginDir is null) return null;
+        var path = Path.Combine(pluginDir, name + ".dll");
+        return File.Exists(path) ? Assembly.LoadFrom(path) : null;
     }
 }

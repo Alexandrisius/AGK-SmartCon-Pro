@@ -1,181 +1,237 @@
 <Window x:Class="SmartCon.PipeConnect.Views.MappingEditorView"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         Title="Настройки SmartCon"
-        Width="930" Height="520"
+        Width="930" Height="420"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
-        ShowInTaskbar="True">
-    <Grid Margin="8">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-        <TabControl Grid.Row="0">
+        ShowInTaskbar="True"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
 
-            <!-- Вкладка: Типы коннекторов -->
-            <TabItem Header="Типы коннекторов">
-                <Grid Margin="4">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+    <Window.Resources>
+        <ui:SingletonResources/>
+    </Window.Resources>
 
-                    <DataGrid Grid.Row="0"
-                              ItemsSource="{Binding ConnectorTypes}"
-                              SelectedItem="{Binding SelectedType, Mode=TwoWay}"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              SelectionMode="Single"
-                              GridLinesVisibility="Horizontal"
-                              HeadersVisibility="Column">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Код" Binding="{Binding Code, UpdateSourceTrigger=PropertyChanged}" Width="80" />
-                            <DataGridTextColumn Header="Название" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="250" />
-                            <DataGridTextColumn Header="Описание" Binding="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Width="*" />
-                        </DataGrid.Columns>
-                    </DataGrid>
+    <TabControl Margin="8" Style="{DynamicResource FlatTabControl}">
 
-                    <StackPanel Grid.Row="1" Orientation="Horizontal"
-                                HorizontalAlignment="Left" Margin="0,8,0,0">
+        <!-- Вкладка: Типы коннекторов -->
+        <TabItem Header="Типы коннекторов" Style="{DynamicResource FlatTabItem}">
+            <Grid Margin="6">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <DataGrid Grid.Row="0"
+                          ItemsSource="{Binding ConnectorTypes}"
+                          SelectedItem="{Binding SelectedType, Mode=TwoWay}"
+                          Style="{DynamicResource CompactDataGrid}"
+                          RowStyle="{DynamicResource CompactDataGridRow}"
+                          CellStyle="{DynamicResource CompactDataGridCell}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Код" Binding="{Binding Code, UpdateSourceTrigger=PropertyChanged}" Width="80">
+                            <DataGridTextColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.HeaderStyle>
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                            <DataGridTextColumn.EditingElementStyle>
+                                <Style TargetType="TextBox">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="TextAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.EditingElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Название" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="250">
+                            <DataGridTextColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                                </Style>
+                            </DataGridTextColumn.HeaderStyle>
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Margin" Value="4,0,0,0"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                            <DataGridTextColumn.EditingElementStyle>
+                                <Style TargetType="TextBox">
+                                    <Setter Property="Margin" Value="4,0,0,0"/>
+                                </Style>
+                            </DataGridTextColumn.EditingElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Описание" Binding="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Width="*">
+                            <DataGridTextColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                                </Style>
+                            </DataGridTextColumn.HeaderStyle>
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Margin" Value="4,0,0,0"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                            <DataGridTextColumn.EditingElementStyle>
+                                <Style TargetType="TextBox">
+                                    <Setter Property="Margin" Value="4,0,0,0"/>
+                                </Style>
+                            </DataGridTextColumn.EditingElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Grid Grid.Row="1" Margin="0,6,0,0">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                         <Button Content="+ Добавить" Width="90" Margin="0,0,8,0"
-                                Command="{Binding AddTypeCommand}" />
-                        <Button Content="Удалить" Width="80" Margin="0,0,8,0"
-                                Command="{Binding DeleteTypeCommand}" />
-                        <Button Content="Сохранить" Width="90"
-                                Command="{Binding SaveTypesCommand}" />
+                                Command="{Binding AddTypeCommand}"
+                                Style="{DynamicResource PrimaryButton}"/>
+                        <Button Content="Удалить" Width="80"
+                                Command="{Binding DeleteTypeCommand}"
+                                Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
+                    <Button Content="Сохранить" Width="90"
+                            HorizontalAlignment="Right"
+                            Command="{Binding SaveTypesCommand}"
+                            Style="{DynamicResource AccentButton}"/>
                 </Grid>
-            </TabItem>
+            </Grid>
+        </TabItem>
 
-            <!-- Вкладка: Правила маппинга -->
-            <TabItem Header="Правила маппинга">
-                <Grid Margin="4">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+        <!-- Вкладка: Правила маппинга -->
+        <TabItem Header="Правила маппинга" Style="{DynamicResource FlatTabItem}">
+            <Grid Margin="6">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-                    <DataGrid Grid.Row="0"
-                              ItemsSource="{Binding MappingRules}"
-                              SelectedItem="{Binding SelectedRule, Mode=TwoWay}"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              SelectionMode="Single"
-                              GridLinesVisibility="Horizontal"
-                              HeadersVisibility="Column">
-                        <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="Тип соединения 1" Width="170">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
-                                                      RelativeSource={RelativeSource AncestorType=Window}}"
-                                                  DisplayMemberPath="Name"
-                                                  SelectedValuePath="Code"
-                                                  SelectedValue="{Binding FromTypeCode, UpdateSourceTrigger=PropertyChanged}"
-                                                  BorderThickness="0" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
+                <DataGrid Grid.Row="0"
+                          ItemsSource="{Binding MappingRules}"
+                          SelectedItem="{Binding SelectedRule, Mode=TwoWay}"
+                          Style="{DynamicResource CompactDataGrid}"
+                          RowStyle="{DynamicResource CompactDataGridRow}"
+                          CellStyle="{DynamicResource CompactDataGridCell}">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="Тип соединения 1" Width="170">
+                            <DataGridTemplateColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTemplateColumn.HeaderStyle>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
+                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                                              DisplayMemberPath="Name"
+                                              SelectedValuePath="Code"
+                                              SelectedValue="{Binding FromTypeCode, UpdateSourceTrigger=PropertyChanged}"
+                                              Style="{DynamicResource CompactComboBox}"
+                                              BorderThickness="0" Height="24"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
 
-                            <DataGridTemplateColumn Header="Тип соединения 2" Width="170">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
-                                                      RelativeSource={RelativeSource AncestorType=Window}}"
-                                                  DisplayMemberPath="Name"
-                                                  SelectedValuePath="Code"
-                                                  SelectedValue="{Binding ToTypeCode, UpdateSourceTrigger=PropertyChanged}"
-                                                  BorderThickness="0" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Тип соединения 2" Width="170">
+                            <DataGridTemplateColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTemplateColumn.HeaderStyle>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
+                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                                              DisplayMemberPath="Name"
+                                              SelectedValuePath="Code"
+                                              SelectedValue="{Binding ToTypeCode, UpdateSourceTrigger=PropertyChanged}"
+                                              Style="{DynamicResource CompactComboBox}"
+                                              BorderThickness="0" Height="24"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
 
-                            <DataGridCheckBoxColumn Header="Прямое" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="70">
-                                <DataGridCheckBoxColumn.ElementStyle>
-                                    <Style TargetType="CheckBox">
-                                        <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Setter Property="VerticalAlignment" Value="Center"/>
-                                    </Style>
-                                </DataGridCheckBoxColumn.ElementStyle>
-                                <DataGridCheckBoxColumn.EditingElementStyle>
-                                    <Style TargetType="CheckBox">
-                                        <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Setter Property="VerticalAlignment" Value="Center"/>
-                                    </Style>
-                                </DataGridCheckBoxColumn.EditingElementStyle>
-                            </DataGridCheckBoxColumn>
+                        <DataGridCheckBoxColumn Header="Прямое" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="65">
+                            <DataGridCheckBoxColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridCheckBoxColumn.HeaderStyle>
+                            <DataGridCheckBoxColumn.ElementStyle>
+                                <Style TargetType="CheckBox" BasedOn="{StaticResource CompactCheckBox}">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridCheckBoxColumn.ElementStyle>
+                            <DataGridCheckBoxColumn.EditingElementStyle>
+                                <Style TargetType="CheckBox" BasedOn="{StaticResource CompactCheckBox}">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridCheckBoxColumn.EditingElementStyle>
+                        </DataGridCheckBoxColumn>
 
-                            <DataGridTemplateColumn Header="Фитинги" Width="*">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Button Content="{Binding FamiliesSummary}"
-                                                Padding="4,2"
-                                                HorizontalContentAlignment="Left"
-                                                Command="{Binding OpenFamilySelectorCommand}"
-                                                BorderThickness="0"
-                                                Background="Transparent"
-                                                Cursor="Hand"
-                                                ToolTip="Нажмите для выбора семейств фитингов">
-                                            <Button.Style>
-                                                <Style TargetType="Button">
-                                                    <Setter Property="Background" Value="Transparent"/>
-                                                    <Style.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Background" Value="#E3F2FD"/>
-                                                        </Trigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Button.Style>
-                                        </Button>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Фитинги" Width="*">
+                            <DataGridTemplateColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTemplateColumn.HeaderStyle>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding FamiliesSummary}"
+                                            Style="{DynamicResource GhostButton}"
+                                            HorizontalContentAlignment="Left"
+                                            Command="{Binding OpenFamilySelectorCommand}"
+                                            ToolTip="Нажмите для выбора семейств фитингов"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
 
-                            <DataGridTemplateColumn Header="Переходы сечения" Width="*">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Button Content="{Binding ReducerFamiliesSummary}"
-                                                Padding="4,2"
-                                                HorizontalContentAlignment="Left"
-                                                Command="{Binding OpenReducerFamilySelectorCommand}"
-                                                BorderThickness="0"
-                                                Background="Transparent"
-                                                Cursor="Hand"
-                                                ToolTip="Нажмите для выбора семейств переходников">
-                                            <Button.Style>
-                                                <Style TargetType="Button">
-                                                    <Setter Property="Background" Value="Transparent"/>
-                                                    <Style.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Background" Value="#E3F2FD"/>
-                                                        </Trigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Button.Style>
-                                        </Button>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
+                        <DataGridTemplateColumn Header="Переходы сечения" Width="*">
+                            <DataGridTemplateColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTemplateColumn.HeaderStyle>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding ReducerFamiliesSummary}"
+                                            Style="{DynamicResource GhostButton}"
+                                            HorizontalContentAlignment="Left"
+                                            Command="{Binding OpenReducerFamilySelectorCommand}"
+                                            ToolTip="Нажмите для выбора семейств переходников"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
 
-                    <StackPanel Grid.Row="1" Orientation="Horizontal"
-                                HorizontalAlignment="Left" Margin="0,8,0,0">
+                <Grid Grid.Row="1" Margin="0,6,0,0">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                         <Button Content="+ Добавить" Width="90" Margin="0,0,8,0"
-                                Command="{Binding AddRuleCommand}" />
-                        <Button Content="Удалить" Width="80" Margin="0,0,8,0"
-                                Command="{Binding DeleteRuleCommand}" />
-                        <Button Content="Сохранить" Width="90"
-                                Command="{Binding SaveRulesCommand}" />
+                                Command="{Binding AddRuleCommand}"
+                                Style="{DynamicResource PrimaryButton}"/>
+                        <Button Content="Удалить" Width="80"
+                                Command="{Binding DeleteRuleCommand}"
+                                Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
+                    <Button Content="Сохранить" Width="90"
+                            HorizontalAlignment="Right"
+                            Command="{Binding SaveRulesCommand}"
+                            Style="{DynamicResource AccentButton}"/>
                 </Grid>
-            </TabItem>
+            </Grid>
+        </TabItem>
 
-        </TabControl>
-        <TextBlock Grid.Row="1" Text="{Binding StatusMessage}"
-                   Margin="0,6,0,0" FontSize="11" />
-    </Grid>
+    </TabControl>
 </Window>

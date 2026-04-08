@@ -1,13 +1,21 @@
 <Window x:Class="SmartCon.PipeConnect.Views.FittingCtcSetupView"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         Title="Назначение типов коннекторов"
         Width="420" SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        WindowStyle="ToolWindow">
-    <Grid Margin="12">
+        WindowStyle="ToolWindow"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Window.Resources>
+        <ui:SingletonResources/>
+    </Window.Resources>
+
+    <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -15,27 +23,27 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Margin="0,0,0,8" TextWrapping="Wrap">
-            <Run Text="Семейство: " /><Run Text="{Binding FamilyName, Mode=OneWay}" FontWeight="Bold" />
+        <TextBlock Grid.Row="0" Margin="0,0,0,8" TextWrapping="Wrap" FontSize="12">
+            <Run Text="Семейство: " /><Run Text="{Binding FamilyName, Mode=OneWay}" FontWeight="SemiBold" />
             <LineBreak />
-            <Run Text="Типоразмер: " /><Run Text="{Binding SymbolName, Mode=OneWay}" FontWeight="Bold" />
+            <Run Text="Типоразмер: " /><Run Text="{Binding SymbolName, Mode=OneWay}" FontWeight="SemiBold" />
         </TextBlock>
 
         <TextBlock Grid.Row="1" Margin="0,0,0,8" TextWrapping="Wrap"
-                   Text="У фитинга не заданы типы коннекторов. Назначьте тип каждому коннектору:" />
+                   Text="У фитинга не заданы типы коннекторов. Назначьте тип каждому коннектору:"
+                   Foreground="#666" FontSize="11"/>
 
         <ItemsControl Grid.Row="2" ItemsSource="{Binding Connectors}">
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border BorderBrush="#DDDDDD" BorderThickness="1" Margin="0,4" Padding="8,6"
-                            CornerRadius="3">
+                    <Border Style="{DynamicResource CardBorder}" Margin="0,3" Padding="8,6">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                             <TextBlock Grid.Row="0" Margin="0,0,0,4" TextTrimming="CharacterEllipsis">
+                             <TextBlock Grid.Row="0" Margin="0,0,0,4" TextTrimming="CharacterEllipsis" FontSize="12">
                                  <Run Text="Коннектор " />
                                  <Run Text="{Binding ConnectorIndex, Mode=OneWay}" />
                                  <Run Text=" (" />
@@ -46,7 +54,8 @@
                             <ComboBox Grid.Row="1"
                                       ItemsSource="{Binding DataContext.AvailableTypes, RelativeSource={RelativeSource AncestorType=Window}}"
                                       SelectedItem="{Binding SelectedType, Mode=TwoWay}"
-                                      DisplayMemberPath="Name" />
+                                      DisplayMemberPath="Name"
+                                      Style="{DynamicResource CompactComboBox}"/>
                         </Grid>
                     </Border>
                 </DataTemplate>
@@ -56,9 +65,11 @@
         <StackPanel Grid.Row="3" Orientation="Horizontal"
                     HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="Отмена" Width="80" Margin="0,0,8,0"
-                    Command="{Binding CancelCommand}" IsCancel="True" />
+                    Command="{Binding CancelCommand}" IsCancel="True"
+                    Style="{DynamicResource SecondaryButton}"/>
             <Button Content="OK" Width="80"
-                    Command="{Binding SelectCommand}" IsDefault="True" />
+                    Command="{Binding SelectCommand}" IsDefault="True"
+                    Style="{DynamicResource AccentButton}"/>
         </StackPanel>
     </Grid>
 </Window>
