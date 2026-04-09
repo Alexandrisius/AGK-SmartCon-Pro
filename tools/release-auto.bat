@@ -4,6 +4,7 @@ title SmartCon Auto-Release (Patch++)
 
 echo.
 echo  [SmartCon] Auto-release: patch++
+echo  You will be prompted to enter changelog text.
 echo.
 
 powershell -ExecutionPolicy Bypass -NoProfile -Command ^

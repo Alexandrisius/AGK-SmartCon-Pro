@@ -7,6 +7,7 @@ param(
     [switch]$SkipTests,
     [switch]$SkipInstaller,
     [switch]$DryRun,
+    [string]$Changelog,
     [string]$GitHubOwner = "AGK-Engineering",
     [string]$GitHubRepo = "AGK-SmartCon-Pro"
 )
@@ -49,8 +50,21 @@ elseif ($MajorIncrement) {
 
 Write-Host "New version: $newVersion" -ForegroundColor Yellow
 
+if (-not $Changelog -and -not $DryRun) {
+    Write-Host ""
+    Write-Host "Enter changelog for v$newVersion (empty line to finish):" -ForegroundColor Cyan
+    $changelogLines = [System.Collections.Generic.List[string]]::new()
+    while ($true) {
+        $line = Read-Host "  "
+        if ([string]::IsNullOrWhiteSpace($line)) { break }
+        $changelogLines.Add($line)
+    }
+    $Changelog = $changelogLines -join "`r`n"
+}
+
 if ($DryRun) {
     Write-Warn "DRY RUN - no changes will be made"
+    Write-Host "Changelog: $Changelog"
     return
 }
 
@@ -157,16 +171,27 @@ Write-Ok "Pushed $branch + tag v$newVersion"
 
 # --- 9. GitHub Release ---
 Write-Step "Creating GitHub Release"
-$releaseArgs = @("release", "create", "v$newVersion", $zipPath, "--title", "SmartCon v$newVersion", "--generate-notes")
+
+$notesFile = Join-Path $ArtifactsDir "release-notes-tmp.md"
+if (-not [string]::IsNullOrWhiteSpace($Changelog)) {
+    Set-Content -Path $notesFile -Value $Changelog -NoNewline
+    $notesFlag = @("--notes-file", $notesFile)
+} else {
+    $notesFlag = @("--generate-notes")
+}
 
 $installerName = "SmartCon-$newVersion-setup.exe"
 $installerPath = Join-Path $ArtifactsDir $installerName
 if ($installerBuilt -and (Test-Path $installerPath)) {
-    $releaseArgs = @("release", "create", "v$newVersion", $zipPath, $installerPath, "--title", "SmartCon v$newVersion", "--generate-notes")
+    $releaseArgs = @("release", "create", "v$newVersion", $zipPath, $installerPath, "--title", "SmartCon v$newVersion") + $notesFlag
+} else {
+    $releaseArgs = @("release", "create", "v$newVersion", $zipPath, "--title", "SmartCon v$newVersion") + $notesFlag
 }
 
 & gh @releaseArgs
-if ($LASTEXITCODE -ne 0) { Write-Err "GitHub release creation failed!"; throw "gh release create failed" }
+$ghExit = $LASTEXITCODE
+if (Test-Path $notesFile) { Remove-Item $notesFile -Force -ErrorAction SilentlyContinue }
+if ($ghExit -ne 0) { Write-Err "GitHub release creation failed!"; throw "gh release create failed" }
 Write-Ok "GitHub Release v$newVersion created"
 
 Write-Host ""
