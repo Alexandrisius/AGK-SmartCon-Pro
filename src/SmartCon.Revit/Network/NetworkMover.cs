@@ -33,30 +33,36 @@ public sealed class NetworkMover : INetworkMover
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Reducer используется только при IsDirectConnect=true (физически совместимые типы,
+    /// например ВР↔НР) когда DN не совпадает. Ищем правило в таблице маппинга по паре
+    /// parent→child и берём ReducerFamilies[0]. Никакого сравнения CTC — только запрос к таблице.
+    /// </remarks>
     public ElementId? InsertReducer(Document doc,
         ConnectorProxy parentConn, ConnectorProxy childConn)
     {
-        // 1. Найти reducer в маппинге (reducer соединяет ОДИН тип коннектора)
-        var mappings = _fittingMapper.GetMappings(
-            parentConn.ConnectionTypeCode, parentConn.ConnectionTypeCode);
+        var parentCtc = parentConn.ConnectionTypeCode;
+        var childCtc  = childConn.ConnectionTypeCode;
+
+        // 1. Запрос к таблице маппинга — только ReducerFamilies из подходящего правила
+        var rules = _fittingMapper.GetMappings(parentCtc, childCtc);
 
         FittingMapping? reducerFamily = null;
-        foreach (var rule in mappings)
+        foreach (var rule in rules)
         {
             if (rule.ReducerFamilies.Count > 0)
             {
                 reducerFamily = rule.ReducerFamilies[0];
+                SmartConLogger.Info($"[NetworkMover] InsertReducer: правило {parentCtc.Value}↔{childCtc.Value} → {reducerFamily.FamilyName}/{reducerFamily.SymbolName}");
                 break;
             }
         }
 
         if (reducerFamily is null)
         {
-            SmartConLogger.Warn($"[NetworkMover] Reducer не найден для CTC={parentConn.ConnectionTypeCode.Value}");
+            SmartConLogger.Warn($"[NetworkMover] Reducer не найден в правиле {parentCtc.Value}↔{childCtc.Value}");
             return null;
         }
-
-        SmartConLogger.Info($"[NetworkMover] InsertReducer: {reducerFamily.FamilyName}/{reducerFamily.SymbolName}");
 
         // 2. Вставить reducer
         var reducerId = _fittingInsertSvc.InsertFitting(
@@ -70,27 +76,8 @@ public sealed class NetworkMover : INetworkMover
 
         // 3. Выровнять к parentConn
         _fittingInsertSvc.AlignFittingToStatic(
-            doc, reducerId, parentConn, _transformSvc, _connSvc);
-
-        // 4. Подогнать размер (TrySetFittingTypeForPair)
-        var allConns = _connSvc.GetAllFreeConnectors(doc, reducerId);
-        if (allConns.Count >= 2)
-        {
-            var conn1 = allConns
-                .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, parentConn.OriginVec3))
-                .First();
-            var conn2 = allConns.First(c => c.ConnectorIndex != conn1.ConnectorIndex);
-
-            _paramResolver.TrySetFittingTypeForPair(doc, reducerId,
-                conn1.ConnectorIndex, parentConn.Radius,
-                conn2.ConnectorIndex, childConn.Radius);
-
-            doc.Regenerate();
-        }
-
-        // 5. Повторно выровнять (после смены размера геометрия могла измениться)
-        _fittingInsertSvc.AlignFittingToStatic(
-            doc, reducerId, parentConn, _transformSvc, _connSvc);
+            doc, reducerId, parentConn, _transformSvc, _connSvc,
+            dynamicTypeCode: childConn.ConnectionTypeCode);
 
         doc.Regenerate();
 

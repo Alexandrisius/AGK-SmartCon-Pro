@@ -123,10 +123,6 @@ public sealed class PipeConnectCommand : IExternalCommand
                     staticProxy.ConnectionTypeCode, dynamicProxy.ConnectionTypeCode);
             }
 
-            // Предупреждение S4
-            if (plan.WarningMessage is not null)
-                dialogSvc.ShowWarning("SmartCon", plan.WarningMessage);
-
             // ── S6.1: построить граф цепочки dynamic (ДО disconnect) ──────
             var chainIterator = ServiceHost.GetService<IElementChainIterator>();
             var stopAt = new HashSet<ElementId>(new ElementIdEqualityComparer())

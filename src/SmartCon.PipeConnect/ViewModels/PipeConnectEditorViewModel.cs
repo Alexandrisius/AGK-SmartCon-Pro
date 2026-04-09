@@ -37,6 +37,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private ConnectorProxy? _activeFittingConn2;
     private FittingMappingRule? _activeFittingRule;
     private bool            _isClosing;
+    private bool            _needsPrimaryReducer;
+    private ElementId?      _primaryReducerId;
+    private bool            _userManuallyChangedSize;
 
     private List<ConnectorProxy>  _allDynamicConnectors = [];
     private readonly HashSet<int> _visitedConnectorIndices = [];
@@ -121,7 +124,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 }
             }
 
-            if (rule.FromType.Value == rule.ToType.Value && rule.ReducerFamilies.Count > 0)
+            if (rule.ReducerFamilies.Count > 0)
             {
                 foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
                 {
@@ -592,6 +595,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 var idsToRotate = new List<ElementId> { dynId };
                 if (_currentFittingId is not null)
                     idsToRotate.Add(_currentFittingId);
+                if (_primaryReducerId is not null)
+                    idsToRotate.Add(_primaryReducerId);
 
                 // Элементы цепочки до ChainDepth + reducer-ы
                 if (_chainGraph is not null && ChainDepth > 0)
@@ -811,13 +816,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     SmartConLogger.Info($"[ChangeDynamicSize] После смены: conn[{c.ConnectorIndex}] = DN {actualDn}");
                 }
 
-                _activeDynamic = _connSvc.RefreshConnector(doc, dynId, dynIdx) ?? _activeDynamic;
-                if (_activeDynamic is not null)
-                {
-                    var actualDn = (int)Math.Round(_activeDynamic.Radius * 2.0 * 304.8);
-                    SmartConLogger.Info($"[ChangeDynamicSize] Целевой коннектор после смены: DN {actualDn}");
-                }
-            });
+            _activeDynamic = _connSvc.RefreshConnector(doc, dynId, dynIdx) ?? _activeDynamic;
+            if (_activeDynamic is not null)
+            {
+                var actualDn = (int)Math.Round(_activeDynamic.Radius * 2.0 * 304.8);
+                SmartConLogger.Info($"[ChangeDynamicSize] Целевой коннектор после смены: DN {actualDn}");
+            }
+        });
+
+        _userManuallyChangedSize = true;
 
             var sizeInfo = BuildSizeChangeInfo(SelectedDynamicSize);
             StatusMessage = string.IsNullOrEmpty(sizeInfo)
@@ -1906,6 +1913,41 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             // Финальная валидация и корректировка перед соединением
             ValidateAndFixBeforeConnect();
 
+            // ── Вставка reducer если подгонка не удалась ──
+            if (_needsPrimaryReducer && _currentFittingId is null)
+            {
+                if (!EnsureReducerCtcForInsert())
+                {
+                    StatusMessage = "Типы коннекторов переходника не назначены";
+                    IsBusy = false;
+                    return;
+                }
+
+                if (_activeFittingRule is null)
+                    _activeFittingRule = _ctx.ProposedFittings
+                        .FirstOrDefault(r => r.ReducerFamilies.Count > 0);
+
+                StatusMessage = "Вставка переходника…";
+                _groupSession!.RunInTransaction("PipeConnect — Вставка перехода", doc =>
+                {
+                    var dyn = _activeDynamic ?? _ctx.DynamicConnector;
+                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+                    _primaryReducerId = _networkMover.InsertReducer(doc, _ctx.StaticConnector, dynR);
+
+                    if (_primaryReducerId is not null)
+                        SmartConLogger.Info($"[Connect] Reducer вставлен: id={_primaryReducerId.Value}");
+                    else
+                        SmartConLogger.Warn($"[Connect] Reducer не найден в маппинге — соединяем напрямую");
+                });
+
+                if (_primaryReducerId is not null)
+                {
+                    StatusMessage = "Подбор размера переходника…";
+                    var sizedConn2 = SizeFittingConnectors(
+                        _doc, _primaryReducerId, null, adjustDynamicToFit: false);
+                }
+            }
+
             // ── Диагностика: позиции ДО ConnectTo ──
             LogConnectorState("ДО ConnectTo");
 
@@ -1931,6 +1973,33 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     if (fc2 is not null)
                         _connSvc.ConnectTo(doc, _currentFittingId, fc2.ConnectorIndex,
                             dynR.OwnerElementId, dynR.ConnectorIndex);
+                }
+                else if (_primaryReducerId is not null)
+                {
+                    // Соединение через reducer: static ↔ reducer.conn1, reducer.conn2 ↔ dynamic
+                    var rConns = _connSvc.GetAllFreeConnectors(doc, _primaryReducerId);
+                    var rConn1 = rConns
+                        .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, _ctx.StaticConnector.OriginVec3))
+                        .FirstOrDefault();
+                    var rConn2 = rConns.FirstOrDefault(c => c.ConnectorIndex != (rConn1?.ConnectorIndex ?? -1));
+
+                    var dyn = _activeDynamic ?? _ctx.DynamicConnector;
+                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+
+                    if (rConn1 is not null)
+                    {
+                        SmartConLogger.Info($"[Connect] static({_ctx.StaticConnector.OwnerElementId.Value}:{_ctx.StaticConnector.ConnectorIndex}) ↔ reducer({_primaryReducerId.Value}:{rConn1.ConnectorIndex})");
+                        _connSvc.ConnectTo(doc,
+                            _ctx.StaticConnector.OwnerElementId, _ctx.StaticConnector.ConnectorIndex,
+                            _primaryReducerId, rConn1.ConnectorIndex);
+                    }
+                    if (rConn2 is not null)
+                    {
+                        SmartConLogger.Info($"[Connect] reducer({_primaryReducerId.Value}:{rConn2.ConnectorIndex}) ↔ dynamic({dynR.OwnerElementId.Value}:{dynR.ConnectorIndex})");
+                        _connSvc.ConnectTo(doc,
+                            _primaryReducerId, rConn2.ConnectorIndex,
+                            dynR.OwnerElementId, dynR.ConnectorIndex);
+                    }
                 }
                 else
                 {
@@ -2069,15 +2138,47 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 SmartConLogger.Lookup($"  прямое: static R={_ctx.StaticConnector.Radius * 304.8:F2}mm, dyn R={dynFresh.Radius * 304.8:F2}mm, Δ={rErr * 304.8:F2}mm");
                 if (rErr > radiusEps)
                 {
-                    SmartConLogger.Warn($"[Validate] Прямое: несовпадение Δ={rErr * 304.8:F2}мм — пытаемся подогнать dynamic");
-                    bool fixed2 = _paramResolver.TrySetConnectorRadius(
-                        doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, _ctx.StaticConnector.Radius);
-                    doc.Regenerate();
-                    if (fixed2)
+                    if (_userManuallyChangedSize)
                     {
-                        dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
-                        _activeDynamic = dynFresh;
+                        SmartConLogger.Warn($"[Validate] Пользователь вручную изменил размер (Δ={rErr * 304.8:F2}мм) → нужен reducer");
+                        _needsPrimaryReducer = true;
                     }
+                    else
+                    {
+                        SmartConLogger.Warn($"[Validate] Прямое: несовпадение Δ={rErr * 304.8:F2}мм — пытаемся подогнать dynamic");
+                        bool fixed2 = _paramResolver.TrySetConnectorRadius(
+                            doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, _ctx.StaticConnector.Radius);
+                        doc.Regenerate();
+
+                        if (fixed2)
+                        {
+                            dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
+                            double verifyDelta = System.Math.Abs(dynFresh.Radius - _ctx.StaticConnector.Radius);
+                            SmartConLogger.Lookup($"  → verify: actual R={dynFresh.Radius * 304.8:F2}mm, Δ={verifyDelta * 304.8:F2}mm");
+
+                            if (verifyDelta > radiusEps)
+                            {
+                                SmartConLogger.Warn($"[Validate] Фактический радиус ({dynFresh.Radius * 304.8:F2}mm) ≠ static ({_ctx.StaticConnector.Radius * 304.8:F2}mm) — откат на ближайший, нужен reducer");
+                                _needsPrimaryReducer = true;
+
+                                if (_ctx.ParamTargetRadius is { } bestRadius)
+                                {
+                                    _paramResolver.TrySetConnectorRadius(
+                                        doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, bestRadius);
+                                    doc.Regenerate();
+                                }
+
+                                dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
+                            }
+                        }
+                        else
+                        {
+                            SmartConLogger.Warn($"[Validate] TrySetConnectorRadius вернул false — нужен reducer");
+                            _needsPrimaryReducer = true;
+                        }
+                    }
+
+                    _activeDynamic = dynFresh;
                 }
 
                 // Позиция
@@ -2404,6 +2505,40 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         return true;
     }
 
+    private bool EnsureReducerCtcForInsert()
+    {
+        if (_doc.IsModifiable) return true;
+
+        var reducerRule = _ctx.ProposedFittings
+            .FirstOrDefault(r => r.ReducerFamilies.Count > 0);
+        if (reducerRule is null) return true;
+
+        var reducerFam = reducerRule.ReducerFamilies[0];
+        var symbol = FindFamilySymbol(_doc, reducerFam.FamilyName, reducerFam.SymbolName);
+        if (symbol is null) return true;
+
+        if (IsFittingCtcDefined(symbol)) return true;
+
+        var types = _mappingRepo.GetConnectorTypes();
+        if (types.Count == 0) return true;
+
+        bool crossConnect = reducerRule.FromType.Value != reducerRule.ToType.Value;
+        var items = BuildConnectorItems(symbol, types, reducerRule, crossConnect);
+
+        SmartConLogger.Info($"[CTC] Reducer '{symbol.Family.Name}' ({symbol.Name}): CTC не задан → диалог");
+
+        if (!_dialogSvc.ShowFittingCtcSetup(
+                symbol.Family.Name, symbol.Name, items, types))
+        {
+            _dialogSvc.ShowWarning("SmartCon",
+                "Типы коннекторов не назначены. Переходник не будет вставлен.");
+            return false;
+        }
+
+        ApplyFittingCtcToFamily(symbol, items);
+        return true;
+    }
+
     private bool IsFittingCtcDefined(FamilySymbol symbol)
     {
         Document? familyDoc = null;
@@ -2434,7 +2569,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     }
 
     private List<FittingCtcSetupItem> BuildConnectorItems(
-        FamilySymbol symbol, IReadOnlyList<ConnectorTypeDefinition> types, FittingMappingRule rule)
+        FamilySymbol symbol, IReadOnlyList<ConnectorTypeDefinition> types, FittingMappingRule rule,
+        bool crossConnect = false)
     {
         Document? familyDoc = null;
         try
@@ -2450,17 +2586,17 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             var items = new List<FittingCtcSetupItem>();
 
             var staticCTC = _ctx.StaticConnector.ConnectionTypeCode;
-            ConnectionTypeCode? preSelectForStatic = null;
-            ConnectionTypeCode? preSelectForDynamic = null;
+            ConnectionTypeCode? preSelectForConnToStatic = null;
+            ConnectionTypeCode? preSelectForConnToDynamic = null;
             if (rule.FromType.Value == staticCTC.Value)
             {
-                preSelectForStatic = rule.FromType;
-                preSelectForDynamic = rule.ToType;
+                preSelectForConnToStatic  = crossConnect ? rule.ToType   : rule.FromType;
+                preSelectForConnToDynamic = crossConnect ? rule.FromType : rule.ToType;
             }
             else if (rule.ToType.Value == staticCTC.Value)
             {
-                preSelectForStatic = rule.ToType;
-                preSelectForDynamic = rule.FromType;
+                preSelectForConnToStatic  = crossConnect ? rule.FromType : rule.ToType;
+                preSelectForConnToDynamic = crossConnect ? rule.ToType   : rule.FromType;
             }
 
             for (int i = 0; i < connElems.Count; i++)
@@ -2473,9 +2609,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 double diamMm = ce.Radius * 2.0 * 304.8;
 
                 ConnectorTypeDefinition? preSelect = null;
-                if (preSelectForStatic.HasValue && preSelectForDynamic.HasValue)
+                if (preSelectForConnToStatic.HasValue && preSelectForConnToDynamic.HasValue)
                 {
-                    var code = i == 0 ? preSelectForStatic.Value : preSelectForDynamic.Value;
+                    var code = i == 0 ? preSelectForConnToStatic.Value : preSelectForConnToDynamic.Value;
                     preSelect = types.FirstOrDefault(t => t.Code == code.Value);
                 }
 

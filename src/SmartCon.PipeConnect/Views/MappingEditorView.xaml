@@ -204,7 +204,8 @@
                                             Style="{DynamicResource GhostButton}"
                                             HorizontalContentAlignment="Left"
                                             Command="{Binding OpenFamilySelectorCommand}"
-                                            ToolTip="Нажмите для выбора семейств фитингов"/>
+                                            IsEnabled="{Binding CanSelectFittingFamilies}"
+                                            ToolTip="Нажмите для выбора семейств фитингов (недоступно при «Прямое» — используйте переходы сечения)"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -221,7 +222,8 @@
                                             Style="{DynamicResource GhostButton}"
                                             HorizontalContentAlignment="Left"
                                             Command="{Binding OpenReducerFamilySelectorCommand}"
-                                            ToolTip="Нажмите для выбора семейств переходников"/>
+                                            IsEnabled="{Binding CanSelectReducerFamilies}"
+                                            ToolTip="Нажмите для выбора семейств переходников (недоступно при непрямом — используйте фитинги)"/>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>

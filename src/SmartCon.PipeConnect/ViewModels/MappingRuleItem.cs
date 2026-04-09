@@ -25,6 +25,21 @@ public sealed partial class MappingRuleItem : ObservableObject
     [ObservableProperty]
     private bool _isDirectConnect;
 
+    public bool CanSelectFittingFamilies => !IsDirectConnect;
+
+    public bool CanSelectReducerFamilies => IsDirectConnect;
+
+    partial void OnIsDirectConnectChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanSelectFittingFamilies));
+        OnPropertyChanged(nameof(CanSelectReducerFamilies));
+
+        if (value && FittingFamilies.Count > 0)
+            FittingFamilies.Clear();
+        if (!value && ReducerFamilies.Count > 0)
+            ReducerFamilies.Clear();
+    }
+
     public ObservableCollection<FittingMapping> FittingFamilies { get; } = [];
 
     public ObservableCollection<FittingMapping> ReducerFamilies { get; } = [];

@@ -67,14 +67,42 @@ public sealed class RevitFittingInsertService : IFittingInsertService
 
         if (staticProxy.ConnectionTypeCode.IsDefined)
         {
-            // Стратегия 1: прямое совпадение CTC фитинга == static CTC
-            var directMatch = connCtcMap.FirstOrDefault(x =>
-                x.Ctc.IsDefined && x.Ctc.Value == staticProxy.ConnectionTypeCode.Value);
-            if (directMatch.Conn is not null)
+            // Стратегия 0 (Cross-connect / Reducer):
+            // staticCTC ≠ dynamicCTC — коннекторы РАЗНЫХ типов.
+            // Reducer conn с CTC==dynamicCTC → fc1 (к static), conn с CTC==staticCTC → fc2 (к dynamic).
+            // Перекрёстное назначение: ВР conn к НР элементу, НР conn к ВР элементу.
+            // Для СВАРКА↔СВАРКА: staticCTC==dynamicCTC → стратегия пропускается.
+            if (dynamicTypeCode.IsDefined
+                && staticProxy.ConnectionTypeCode.Value != dynamicTypeCode.Value)
             {
-                fitConn1 = directMatch.Conn;
-                fitConn2 = fittingConns.FirstOrDefault(c => c.Id != fitConn1.Id);
-                SmartConLogger.Info($"[FitAlign] Стратегия 1 (CTC match): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2?.Id}]");
+                var staticMatch = connCtcMap.FirstOrDefault(x =>
+                    x.Ctc.IsDefined && x.Ctc.Value == staticProxy.ConnectionTypeCode.Value);
+                var dynMatch = connCtcMap.FirstOrDefault(x =>
+                    x.Ctc.IsDefined && x.Ctc.Value == dynamicTypeCode.Value);
+
+                if (staticMatch.Conn is not null && dynMatch.Conn is not null)
+                {
+                    fitConn1 = dynMatch.Conn;
+                    fitConn2 = staticMatch.Conn;
+                    SmartConLogger.Info($"[FitAlign] Стратегия 0 (Cross-connect): staticCTC≠dynCTC " +
+                        $"({staticProxy.ConnectionTypeCode.Value}≠{dynamicTypeCode.Value}) → " +
+                        $"fc1=conn[{fitConn1.Id}] (CTC={dynMatch.Ctc.Value}→static), " +
+                        $"fc2=conn[{fitConn2.Id}] (CTC={staticMatch.Ctc.Value}→dynamic)");
+                }
+            }
+
+            // Стратегия 1: прямое совпадение CTC фитинга == static CTC
+            // Пропускается если Strategy 0 (cross-connect) уже назначила fc1
+            if (fitConn1 is null)
+            {
+                var directMatch = connCtcMap.FirstOrDefault(x =>
+                    x.Ctc.IsDefined && x.Ctc.Value == staticProxy.ConnectionTypeCode.Value);
+                if (directMatch.Conn is not null)
+                {
+                    fitConn1 = directMatch.Conn;
+                    fitConn2 = fittingConns.FirstOrDefault(c => c.Id != fitConn1.Id);
+                    SmartConLogger.Info($"[FitAlign] Стратегия 1 (CTC match): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2?.Id}]");
+                }
             }
 
             // Стратегия 2: conn с CTC == dynamicTypeCode → fc2 (к dynamic), другой → fc1
