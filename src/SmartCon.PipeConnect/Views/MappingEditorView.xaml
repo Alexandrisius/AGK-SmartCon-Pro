@@ -99,10 +99,22 @@
                                 Command="{Binding DeleteTypeCommand}"
                                 Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
-                    <Button Content="Сохранить" Width="90"
+                    <Button Width="110"
                             HorizontalAlignment="Right"
-                            Command="{Binding SaveTypesCommand}"
-                            Style="{DynamicResource AccentButton}"/>
+                            Command="{Binding SaveTypesCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource AccentButton}">
+                                <Setter Property="Content" Value="Сохранить"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsTypesSaved}" Value="True">
+                                        <Setter Property="Content" Value="✓ Сохранено"/>
+                                        <Setter Property="Background" Value="#27AE60"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </Grid>
             </Grid>
         </TabItem>
@@ -225,10 +237,22 @@
                                 Command="{Binding DeleteRuleCommand}"
                                 Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
-                    <Button Content="Сохранить" Width="90"
+                    <Button Width="110"
                             HorizontalAlignment="Right"
-                            Command="{Binding SaveRulesCommand}"
-                            Style="{DynamicResource AccentButton}"/>
+                            Command="{Binding SaveRulesCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource AccentButton}">
+                                <Setter Property="Content" Value="Сохранить"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRulesSaved}" Value="True">
+                                        <Setter Property="Content" Value="✓ Сохранено"/>
+                                        <Setter Property="Background" Value="#27AE60"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </Grid>
             </Grid>
         </TabItem>

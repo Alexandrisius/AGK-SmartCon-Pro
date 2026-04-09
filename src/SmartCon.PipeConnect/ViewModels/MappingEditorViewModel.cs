@@ -26,6 +26,12 @@ public sealed partial class MappingEditorViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    [ObservableProperty]
+    private bool _isTypesSaved;
+
+    [ObservableProperty]
+    private bool _isRulesSaved;
+
     public MappingEditorViewModel(
         IFittingMappingRepository repository,
         IReadOnlyList<string> availableFamilyNames,
@@ -59,13 +65,15 @@ public sealed partial class MappingEditorViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SaveTypes()
+    private async Task SaveTypes()
     {
         try
         {
             _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
             _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
-            StatusMessage = $"Типы и правила сохранены - {_repository.GetStoragePath()}";
+            IsTypesSaved = true;
+            await Task.Delay(2000);
+            IsTypesSaved = false;
         }
         catch (Exception ex)
         {
@@ -90,13 +98,15 @@ public sealed partial class MappingEditorViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SaveRules()
+    private async Task SaveRules()
     {
         try
         {
             _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
             _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
-            StatusMessage = $"Правила и типы сохранены - {_repository.GetStoragePath()}";
+            IsRulesSaved = true;
+            await Task.Delay(2000);
+            IsRulesSaved = false;
         }
         catch (Exception ex)
         {
