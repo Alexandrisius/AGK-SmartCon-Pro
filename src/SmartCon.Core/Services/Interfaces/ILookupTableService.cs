@@ -32,4 +32,15 @@ public interface ILookupTableService
     /// Есть ли у элемента size_lookup таблица, управляющая радиусом коннектора?
     /// </summary>
     bool HasLookupTable(Document doc, ElementId elementId, int connectorIndex);
+
+    /// <summary>
+    /// Получить ВСЕ строки таблицы поиска как полные конфигурации.
+    /// Каждая строка содержит радиусы ВСЕХ коннекторов (по маппингу столбец→коннектор).
+    /// Если constraints заданы — фильтрует строки как GetAvailableSizes.
+    /// Если constraints = null — возвращает все строки без фильтрации.
+    /// Вызывать ВНЕ транзакции.
+    /// </summary>
+    IReadOnlyList<SizeTableRow> GetAllSizeRows(Document doc, ElementId elementId,
+        int targetConnectorIndex,
+        IReadOnlyList<LookupColumnConstraint>? constraints = null);
 }

@@ -639,4 +639,260 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         SmartConLogger.Lookup($"  Итого: {result.Count} уникальных размеров из FamilySymbol");
         return result;
     }
+
+    // ── GetAvailableFamilySizes ──────────────────────────────────────────────
+
+    public IReadOnlyList<FamilySizeOption> GetAvailableFamilySizes(Document doc, ElementId elementId,
+        int targetConnectorIndex)
+    {
+        SmartConLogger.LookupSection("RevitDynamicSizeResolver.GetAvailableFamilySizes");
+        SmartConLogger.Lookup($"  elementId={elementId.Value}, targetConnIdx={targetConnectorIndex}");
+
+        var element = doc.GetElement(elementId);
+        if (element is null)
+            return [];
+
+        if (element is MEPCurve or FlexPipe)
+        {
+            var pipeSizes = GetPipeSizes(doc, element);
+            var currentRadius = pipeSizes.Count > 0 ? pipeSizes[0].Radius : 0;
+            return pipeSizes.Select(s => new FamilySizeOption
+            {
+                DisplayName = s.DisplayName,
+                Radius = s.Radius,
+                TargetConnectorIndex = targetConnectorIndex,
+                AllConnectorRadii = new Dictionary<int, double> { [targetConnectorIndex] = s.Radius },
+                Source = s.Source,
+                IsAutoSelect = false
+            }).ToList();
+        }
+
+        if (element is not FamilyInstance instance)
+            return [];
+
+        var options = new List<FamilySizeOption>();
+
+        var lookupRows = _lookupTableSvc.GetAllSizeRows(doc, elementId, targetConnectorIndex);
+        if (lookupRows.Count > 0)
+        {
+            SmartConLogger.Lookup($"  LookupTable: {lookupRows.Count} конфигураций");
+            foreach (var row in lookupRows)
+            {
+                var displayName = FamilySizeFormatter.BuildDisplayName(
+                    row.QueryParameterRadiiFt, row.TargetColumnIndex);
+                options.Add(new FamilySizeOption
+                {
+                    DisplayName = displayName,
+                    Radius = row.TargetRadiusFt,
+                    TargetConnectorIndex = targetConnectorIndex,
+                    AllConnectorRadii = row.ConnectorRadiiFt,
+                    QueryParameterRadiiFt = row.QueryParameterRadiiFt,
+                    UniqueParameterCount = row.UniqueQueryParameterCount,
+                    TargetColumnIndex = row.TargetColumnIndex,
+                    QueryParamConnectorGroups = row.QueryParamConnectorGroups,
+                    QueryParamNames = row.QueryParamNames,
+                    QueryParamRawValuesMm = row.QueryParamRawValuesMm,
+                    Source = "LookupTable",
+                    IsAutoSelect = false
+                });
+            }
+        }
+        else
+        {
+            var symbolConfigs = GetFamilySymbolConfigurations(doc, instance, targetConnectorIndex);
+            SmartConLogger.Lookup($"  FamilySymbol fallback: {symbolConfigs.Count} конфигураций");
+            options.AddRange(symbolConfigs);
+        }
+
+        var deduped = DeduplicateFamilyOptions(options);
+        var sorted = SortByTargetDn(deduped);
+        SmartConLogger.Lookup($"  → {sorted.Count} уникальных конфигураций (отсортировано)");
+        return sorted;
+    }
+
+    private List<FamilySizeOption> GetFamilySymbolConfigurations(Document doc, FamilyInstance instance, int targetConnectorIndex)
+    {
+        var family = instance.Symbol?.Family;
+        if (family is null) return [];
+
+        var symbolIds = family.GetFamilySymbolIds().ToList();
+        var currentSymbolId = instance.Symbol?.Id;
+        SmartConLogger.Lookup($"  FamilySymbol configs: '{family.Name}', {symbolIds.Count} symbols, current={currentSymbolId?.Value}");
+
+        var configs = new List<FamilySizeOption>();
+        var symbolData = new List<(ElementId SymbolId, Dictionary<int, double> ConnectorRadii, string SymbolName)>();
+
+        using var tr = new Transaction(doc, "GetFamilySymbolConfigs_Temp");
+        try
+        {
+            tr.Start();
+
+            foreach (var symbolId in symbolIds)
+            {
+                try
+                {
+                    var inst = doc.GetElement(instance.Id) as FamilyInstance;
+                    if (inst is null) continue;
+
+                    var sym = doc.GetElement(symbolId) as FamilySymbol;
+                    inst.ChangeTypeId(symbolId);
+                    doc.Regenerate();
+
+                    var cm = inst.MEPModel?.ConnectorManager;
+                    if (cm is null) continue;
+
+                    var connectorRadii = new Dictionary<int, double>();
+                    foreach (Connector c in cm.Connectors)
+                    {
+                        if (c.ConnectorType == ConnectorType.Curve) continue;
+                        connectorRadii[(int)c.Id] = c.Radius;
+                    }
+
+                    var targetRadius = connectorRadii.GetValueOrDefault(targetConnectorIndex, 0);
+                    if (targetRadius <= 0) continue;
+
+                    symbolData.Add((symbolId, connectorRadii, sym?.Name ?? ""));
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Lookup($"  error symbolId={symbolId.Value}: {ex.Message}");
+                }
+            }
+
+            var sharedParamGroups = AnalyzeSharedParameterGroups(symbolData);
+
+            foreach (var (symbolId, connectorRadii, symbolName) in symbolData)
+            {
+                var displayRadii = BuildDisplayRadii(connectorRadii, sharedParamGroups, targetConnectorIndex);
+                var displayName = FamilySizeFormatter.BuildDisplayNameLegacy(displayRadii, targetConnectorIndex);
+
+                configs.Add(new FamilySizeOption
+                {
+                    DisplayName = displayName,
+                    Radius = connectorRadii.GetValueOrDefault(targetConnectorIndex, 0),
+                    TargetConnectorIndex = targetConnectorIndex,
+                    AllConnectorRadii = connectorRadii,
+                    Source = "FamilySymbol",
+                    IsAutoSelect = false,
+                    SymbolName = symbolName,
+                    CurrentSymbolName = currentSymbolId is not null
+                        ? doc.GetElement(currentSymbolId)?.Name
+                        : null
+                });
+            }
+        }
+        finally
+        {
+            if (tr.GetStatus() == TransactionStatus.Started)
+                tr.RollBack();
+        }
+
+        return configs;
+    }
+
+    private static List<List<int>> AnalyzeSharedParameterGroups(
+        List<(ElementId SymbolId, Dictionary<int, double> ConnectorRadii, string SymbolName)> symbolData)
+    {
+        if (symbolData.Count == 0) return [];
+
+        var allIds = symbolData[0].ConnectorRadii.Keys.OrderBy(id => id).ToList();
+        var groups = new List<List<int>>();
+        var assigned = new HashSet<int>();
+
+        foreach (var id in allIds)
+        {
+            if (assigned.Contains(id)) continue;
+
+            var group = new List<int> { id };
+            assigned.Add(id);
+
+            foreach (var otherId in allIds)
+            {
+                if (assigned.Contains(otherId)) continue;
+
+                bool alwaysSame = symbolData.All(sd =>
+                {
+                    var r1 = sd.ConnectorRadii.GetValueOrDefault(id, -1);
+                    var r2 = sd.ConnectorRadii.GetValueOrDefault(otherId, -1);
+                    return System.Math.Abs(r1 - r2) < 1e-9;
+                });
+
+                if (alwaysSame)
+                {
+                    group.Add(otherId);
+                    assigned.Add(otherId);
+                }
+            }
+
+            groups.Add(group);
+        }
+
+        return groups;
+    }
+
+    private static Dictionary<int, double> BuildDisplayRadii(
+        Dictionary<int, double> connectorRadii,
+        List<List<int>> sharedParamGroups,
+        int targetConnectorIndex)
+    {
+        var result = new Dictionary<int, double>();
+
+        foreach (var group in sharedParamGroups)
+        {
+            var repId = group.Contains(targetConnectorIndex)
+                ? targetConnectorIndex
+                : group[0];
+
+            if (connectorRadii.TryGetValue(repId, out var radius))
+                result[repId] = radius;
+        }
+
+        return result;
+    }
+
+    private static List<FamilySizeOption> DeduplicateFamilyOptions(List<FamilySizeOption> options)
+    {
+        var seen = new HashSet<string>();
+        var result = new List<FamilySizeOption>();
+        foreach (var opt in options)
+        {
+            var key = string.Join("|", opt.AllConnectorRadii
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => $"{kvp.Key}:{kvp.Value:F8}"));
+            if (seen.Add(key))
+                result.Add(opt);
+        }
+        return result;
+    }
+
+    private static List<FamilySizeOption> SortByTargetDn(List<FamilySizeOption> options)
+    {
+        if (options.Count <= 1) return options;
+
+        return options
+            .OrderBy(o => FamilySizeFormatter.ToDn(o.Radius))
+            .ThenBy(o =>
+            {
+                if (o.QueryParameterRadiiFt.Count <= 1) return 0;
+                int targetIdx = o.TargetColumnIndex - 1;
+                if (targetIdx < 0 || targetIdx >= o.QueryParameterRadiiFt.Count) targetIdx = 0;
+                var others = o.QueryParameterRadiiFt
+                    .Where((_, i) => i != targetIdx)
+                    .Select(FamilySizeFormatter.ToDn)
+                    .ToList();
+                return others.Count > 0 ? others[0] : 0;
+            })
+            .ThenBy(o =>
+            {
+                if (o.QueryParameterRadiiFt.Count <= 2) return 0;
+                int targetIdx = o.TargetColumnIndex - 1;
+                if (targetIdx < 0 || targetIdx >= o.QueryParameterRadiiFt.Count) targetIdx = 0;
+                var others = o.QueryParameterRadiiFt
+                    .Where((_, i) => i != targetIdx)
+                    .Select(FamilySizeFormatter.ToDn)
+                    .ToList();
+                return others.Count > 1 ? others[1] : 0;
+            })
+            .ToList();
+    }
 }

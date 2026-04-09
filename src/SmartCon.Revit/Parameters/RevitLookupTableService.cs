@@ -101,6 +101,512 @@ public sealed class RevitLookupTableService : ILookupTableService
         return has;
     }
 
+    public IReadOnlyList<SizeTableRow> GetAllSizeRows(Document doc, ElementId elementId,
+        int targetConnectorIndex,
+        IReadOnlyList<LookupColumnConstraint>? constraints = null)
+    {
+        SmartConLogger.LookupSection("GetAllSizeRows");
+        SmartConLogger.Lookup($"  elementId={elementId.Value}, targetConnIdx={targetConnectorIndex}, constraints={constraints?.Count ?? 0}");
+
+        var element = doc.GetElement(elementId);
+        if (element is null or MEPCurve or FlexPipe)
+        {
+            SmartConLogger.Lookup("  element=null or MEPCurve → return []");
+            return [];
+        }
+
+        if (element is not FamilyInstance instance)
+        {
+            SmartConLogger.Lookup($"  not FamilyInstance → return []");
+            return [];
+        }
+
+        var family = instance.Symbol?.Family;
+        if (family is null)
+        {
+            SmartConLogger.Lookup("  family=null → return []");
+            return [];
+        }
+
+        if (doc.IsModifiable)
+        {
+            SmartConLogger.Lookup("  doc.IsModifiable=true → EditFamily запрещён → return []");
+            return [];
+        }
+
+        var cm = instance.MEPModel?.ConnectorManager;
+        if (cm is null)
+        {
+            SmartConLogger.Lookup("  ConnectorManager=null → return []");
+            return [];
+        }
+
+        var instanceTransform = instance.GetTransform();
+
+        Document? familyDoc = null;
+        try
+        {
+            familyDoc = doc.EditFamily(family);
+            if (familyDoc is null)
+            {
+                SmartConLogger.Lookup("  EditFamily вернул null → return []");
+                return [];
+            }
+
+            var fstm = FamilySizeTableManager.GetFamilySizeTableManager(familyDoc, familyDoc.OwnerFamily.Id);
+            if (fstm is null || fstm.NumberOfSizeTables == 0)
+            {
+                SmartConLogger.Lookup("  no size tables → return []");
+                return [];
+            }
+
+            var fm = familyDoc.FamilyManager;
+            var paramSnapshot = new List<(string? Name, string? Formula)>();
+            var formulaByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (FamilyParameter fp in fm.Parameters)
+            {
+                var name = fp.Definition?.Name;
+                var formula_ = fp.Formula;
+                paramSnapshot.Add((name, formula_));
+                if (name != null && !string.IsNullOrEmpty(formula_))
+                    formulaByName.TryAdd(name, formula_);
+            }
+
+            var currentRadii = new Dictionary<int, double>();
+            foreach (Connector c in cm.Connectors)
+            {
+                if (c.ConnectorType == ConnectorType.Curve) continue;
+                currentRadii[(int)c.Id] = c.Radius;
+            }
+
+            var allConnectorIndices = new List<int>();
+            foreach (Connector c in cm.Connectors)
+            {
+                if (c.ConnectorType == ConnectorType.Curve) continue;
+                allConnectorIndices.Add((int)c.Id);
+            }
+            SmartConLogger.Lookup($"  allConnectorIndices: [{string.Join(", ", allConnectorIndices)}]");
+
+            var connectorParamMap = new Dictionary<int, string>();
+            foreach (var connIdx in allConnectorIndices)
+            {
+                var connector = cm.FindByIndex(connIdx);
+                if (connector is null) continue;
+                var targetOriginGlobal = connector.CoordinateSystem.Origin;
+                var (directName, rootName, formula, _, isDiameter) =
+                    FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
+                        familyDoc, instanceTransform, targetOriginGlobal,
+                        instance.HandFlipped, instance.FacingFlipped);
+                var searchParam = rootName ?? directName;
+                if (searchParam is not null)
+                {
+                    connectorParamMap[connIdx] = searchParam;
+                    SmartConLogger.Lookup($"    conn[{connIdx}]: searchParam='{searchParam}', directName='{directName}', rootName='{rootName}'");
+                }
+                else
+                {
+                    SmartConLogger.Lookup($"    conn[{connIdx}]: searchParam=NULL (не найден)");
+                }
+            }
+            SmartConLogger.Lookup($"  connectorParamMap: [{string.Join(", ", connectorParamMap.Select(kvp => $"conn[{kvp.Key}]='{kvp.Value}'"))}]");
+
+            var tableNames = fstm.GetAllSizeTableNames().ToList();
+            var allRows = new List<SizeTableRow>();
+
+            foreach (var tableName in tableNames)
+            {
+                var tableRows = ExtractRowsFromTable(
+                    fstm, tableName, paramSnapshot, formulaByName,
+                    targetConnectorIndex, connectorParamMap,
+                    allConnectorIndices, currentRadii, constraints);
+                allRows.AddRange(tableRows);
+            }
+
+            var distinct = DeduplicateRows(allRows);
+
+            int maxConnCount = distinct.Count > 0 ? distinct.Max(r => r.ConnectorRadiiFt.Count) : 0;
+            if (maxConnCount > 0)
+                distinct = distinct.Where(r => r.ConnectorRadiiFt.Count == maxConnCount).ToList();
+
+            SmartConLogger.Lookup($"  → {distinct.Count} уникальных конфигураций");
+            return distinct;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Lookup($"  ИСКЛЮЧЕНИЕ: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Warn($"[LookupSvc] GetAllSizeRows failed: {ex.Message}");
+            return [];
+        }
+        finally
+        {
+            familyDoc?.Close(false);
+        }
+    }
+
+    private sealed record TableColumnInfo(
+        int CsvColIndex,
+        string ParameterName,
+        List<int> ConnectorIndices,
+        bool StoresDiameters);
+
+    private List<SizeTableRow> ExtractRowsFromTable(
+        FamilySizeTableManager fstm,
+        string tableName,
+        IReadOnlyList<(string? Name, string? Formula)> paramSnapshot,
+        IReadOnlyDictionary<string, string> formulaByName,
+        int targetConnectorIndex,
+        Dictionary<int, string> connectorParamMap,
+        List<int> allConnectorIndices,
+        Dictionary<int, double> currentRadii,
+        IReadOnlyList<LookupColumnConstraint>? constraints)
+    {
+        var result = new List<SizeTableRow>();
+
+        var queryParams = FindQueryParamsForTable(tableName, paramSnapshot, formulaByName);
+        if (queryParams.Count == 0)
+        {
+            SmartConLogger.Lookup($"    table '{tableName}': no query params → skip");
+            return result;
+        }
+
+        var targetParam = connectorParamMap.GetValueOrDefault(targetConnectorIndex);
+        if (targetParam is null)
+        {
+            SmartConLogger.Lookup($"    table '{tableName}': no param for target conn[{targetConnectorIndex}] → skip");
+            return result;
+        }
+
+        int targetColIndex = -1;
+        var columns = new List<TableColumnInfo>();
+        for (int i = 0; i < queryParams.Count; i++)
+        {
+            var qParam = queryParams[i];
+
+            var matchingConnectors = connectorParamMap
+                .Where(kvp => string.Equals(kvp.Value, qParam, StringComparison.OrdinalIgnoreCase))
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            if (matchingConnectors.Count == 0)
+            {
+                var qDigits = ExtractTrailingDigits(qParam);
+                if (qDigits is not null)
+                {
+                    matchingConnectors = connectorParamMap
+                        .Where(kvp =>
+                        {
+                            var cDigits = ExtractTrailingDigits(kvp.Value);
+                            return cDigits == qDigits;
+                        })
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+                }
+            }
+
+            if (matchingConnectors.Count == 0)
+            {
+                matchingConnectors = connectorParamMap
+                    .Where(kvp => DependsOn(formulaByName, kvp.Value, qParam)
+                               || DependsOn(formulaByName, qParam, kvp.Value))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+                SmartConLogger.Lookup($"    col[{i}] qp='{qParam}': strict=0, suffix=0, DependsOn=[{string.Join(",", matchingConnectors)}], connMap=[{string.Join(",", connectorParamMap.Select(kvp => $"{kvp.Key}:{kvp.Value}"))}]");
+            }
+            else
+            {
+                SmartConLogger.Lookup($"    col[{i}] qp='{qParam}': matched=[{string.Join(",", matchingConnectors)}]");
+            }
+
+            bool isTarget = string.Equals(qParam, targetParam, StringComparison.OrdinalIgnoreCase);
+            if (isTarget)
+                targetColIndex = i + 1;
+
+            columns.Add(new TableColumnInfo(
+                CsvColIndex: i + 1,
+                ParameterName: qParam,
+                ConnectorIndices: matchingConnectors,
+                StoresDiameters: true));
+        }
+
+        if (targetColIndex < 0)
+        {
+            for (int i = 0; i < queryParams.Count; i++)
+            {
+                if (DependsOn(formulaByName, queryParams[i], targetParam))
+                {
+                    targetColIndex = i + 1;
+                    break;
+                }
+            }
+        }
+
+        if (targetColIndex < 0)
+        {
+            var tDigits = ExtractTrailingDigits(targetParam);
+            if (tDigits is not null)
+            {
+                for (int i = 0; i < queryParams.Count; i++)
+                {
+                    var qDigits = ExtractTrailingDigits(queryParams[i]);
+                    if (qDigits == tDigits)
+                    {
+                        targetColIndex = i + 1;
+                        SmartConLogger.Lookup($"    targetCol suffix-fallback: '{targetParam}' (suffix={tDigits}) ≈ '{queryParams[i]}' (suffix={qDigits}) @ colIndex={targetColIndex}");
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (targetColIndex < 0)
+        {
+            SmartConLogger.Lookup($"    table '{tableName}': target param '{targetParam}' not found in query columns → skip");
+            return result;
+        }
+
+        SmartConLogger.Lookup($"    table '{tableName}': targetCol={targetColIndex}, columns={columns.Count}");
+
+        var sizeColumnIndices = new List<int>();
+        int remappedTargetColIndex = -1;
+        var assignedConnectors = new HashSet<int>();
+        for (int i = 0; i < columns.Count; i++)
+        {
+            if (columns[i].ConnectorIndices.Count == 0) continue;
+
+            var before = columns[i].ConnectorIndices.ToList();
+            columns[i].ConnectorIndices.RemoveAll(ci => assignedConnectors.Contains(ci));
+            if (columns[i].ConnectorIndices.Count == 0)
+            {
+                SmartConLogger.Lookup($"    assignedCol[{i}] '{columns[i].ParameterName}': before=[{string.Join(",", before)}] → all already assigned (skip)");
+                continue;
+            }
+
+            foreach (var ci in columns[i].ConnectorIndices)
+                assignedConnectors.Add(ci);
+
+            SmartConLogger.Lookup($"    assignedCol[{i}] '{columns[i].ParameterName}': before=[{string.Join(",", before)}] → after=[{string.Join(",", columns[i].ConnectorIndices)}], assignedSoFar=[{string.Join(",", assignedConnectors)}]");
+
+            if (columns[i].CsvColIndex == targetColIndex)
+                remappedTargetColIndex = sizeColumnIndices.Count + 1;
+            sizeColumnIndices.Add(i);
+        }
+
+        var unassignedCols = columns
+            .Select((col, idx) => (col, idx))
+            .Where(x => x.col.ConnectorIndices.Count == 0)
+            .ToList();
+        var freeConnectors = connectorParamMap.Keys
+            .Except(assignedConnectors)
+            .OrderBy(k => k)
+            .ToList();
+
+        if (unassignedCols.Count > 0 && freeConnectors.Count > 0)
+        {
+            SmartConLogger.Lookup($"    fallback: {unassignedCols.Count} unassigned cols, {freeConnectors.Count} free connectors [{string.Join(",", freeConnectors)}]");
+
+            foreach (var (col, idx) in unassignedCols.ToList())
+            {
+                if (freeConnectors.Count == 0) break;
+                var qDigits = ExtractTrailingDigits(col.ParameterName);
+                if (qDigits is null) continue;
+
+                int? matchedConn = null;
+                foreach (var fc in freeConnectors)
+                {
+                    var cParam = connectorParamMap[fc];
+                    var cDigits = ExtractTrailingDigits(cParam);
+                    if (cDigits == qDigits)
+                    {
+                        matchedConn = fc;
+                        break;
+                    }
+                }
+
+                if (matchedConn.HasValue)
+                {
+                    freeConnectors.Remove(matchedConn.Value);
+                    col.ConnectorIndices.Add(matchedConn.Value);
+                    assignedConnectors.Add(matchedConn.Value);
+
+                    if (col.CsvColIndex == targetColIndex)
+                        remappedTargetColIndex = sizeColumnIndices.Count + 1;
+                    sizeColumnIndices.Add(idx);
+
+                    var cParamName = connectorParamMap[matchedConn.Value];
+                    SmartConLogger.Lookup($"    suffix-fallback: col[{idx}] '{col.ParameterName}' (suffix={qDigits}) → conn[{matchedConn.Value}] (param={cParamName}, suffix={cParamName})");
+                }
+            }
+
+            foreach (var (col, idx) in unassignedCols.Where(x => x.col.ConnectorIndices.Count == 0))
+            {
+                SmartConLogger.Lookup($"    SKIP col[{idx}] '{col.ParameterName}' — не привязан к коннектору (не размерный)");
+            }
+        }
+
+        if (remappedTargetColIndex < 0 && sizeColumnIndices.Count > 0)
+            remappedTargetColIndex = 1;
+
+        var connectorGroups = sizeColumnIndices
+            .Select(idx => (IReadOnlyList<int>)columns[idx].ConnectorIndices.AsReadOnly())
+            .ToList();
+
+        int effectiveUniqueParamCount = sizeColumnIndices.Count;
+        if (effectiveUniqueParamCount == 0) effectiveUniqueParamCount = 1;
+
+        SmartConLogger.Lookup($"    sizeColumns={sizeColumnIndices.Count}/{columns.Count}, remappedTarget={remappedTargetColIndex}");
+
+        var tempPath = Path.GetTempFileName();
+        try
+        {
+            fstm.ExportSizeTable(tableName, tempPath);
+            var lines = File.ReadAllLines(tempPath);
+
+            for (int row = 1; row < lines.Length; row++)
+            {
+                var line = lines[row];
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                var cols = line.Split(',');
+                if (targetColIndex >= cols.Length) continue;
+
+                if (constraints is { Count: > 0 } && columns.Count > 1)
+                {
+                    bool rowOk = ApplyConstraintFilter(cols, columns, targetColIndex, constraints);
+                    if (!rowOk) continue;
+                }
+
+                var cell = cols[targetColIndex].Trim().Trim('"');
+                if (!TryParseRevitValue(cell, out double targetVal)) continue;
+
+                double targetRadiusFt = targetVal / 2.0 / 304.8;
+
+                var connectorRadii = new Dictionary<int, double>();
+                var queryParamRadii = new List<double>();
+                foreach (var colIdx in sizeColumnIndices)
+                {
+                    var col = columns[colIdx];
+                    if (col.CsvColIndex >= cols.Length) continue;
+                    var c = cols[col.CsvColIndex].Trim().Trim('"');
+                    if (!TryParseRevitValue(c, out double val)) continue;
+                    double rFt = val / 2.0 / 304.8;
+                    queryParamRadii.Add(rFt);
+                    foreach (var ci in col.ConnectorIndices)
+                        connectorRadii[ci] = rFt;
+                }
+
+                if (connectorRadii.Count == 0)
+                    connectorRadii[targetConnectorIndex] = targetRadiusFt;
+
+                var sizeQueryParamNames = new List<string>();
+                var sizeQueryParamValuesMm = new List<double>();
+                foreach (var colIdx in sizeColumnIndices)
+                {
+                    var col = columns[colIdx];
+                    if (col.CsvColIndex >= cols.Length) continue;
+                    var cv = cols[col.CsvColIndex].Trim().Trim('"');
+                    if (!TryParseRevitValue(cv, out double qval)) continue;
+                    sizeQueryParamNames.Add(col.ParameterName);
+                    sizeQueryParamValuesMm.Add(qval);
+                }
+
+                result.Add(new SizeTableRow
+                {
+                    TargetColumnIndex = remappedTargetColIndex > 0 ? remappedTargetColIndex : 1,
+                    TargetRadiusFt = targetRadiusFt,
+                    ConnectorRadiiFt = connectorRadii,
+                    QueryParameterRadiiFt = queryParamRadii,
+                    UniqueQueryParameterCount = effectiveUniqueParamCount,
+                    QueryParamConnectorGroups = connectorGroups,
+                    QueryParamNames = sizeQueryParamNames,
+                    QueryParamRawValuesMm = sizeQueryParamValuesMm
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Lookup($"    ExportSizeTable error: {ex.Message}");
+        }
+        finally
+        {
+            try { File.Delete(tempPath); } catch { }
+        }
+
+        return result;
+    }
+
+    private static List<string> FindQueryParamsForTable(
+        string tableName,
+        IReadOnlyList<(string? Name, string? Formula)> paramSnapshot,
+        IReadOnlyDictionary<string, string> formulaByName)
+    {
+        foreach (var (fpName, fpFormula) in paramSnapshot)
+        {
+            if (string.IsNullOrEmpty(fpFormula)) continue;
+            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula);
+            if (parsed is null) continue;
+            var resolved = ResolveTableAlias(formulaByName, parsed.Value.TableName);
+            if (string.Equals(resolved, tableName, StringComparison.OrdinalIgnoreCase))
+                return parsed.Value.QueryParameters.ToList();
+        }
+        return [];
+    }
+
+    private static bool ApplyConstraintFilter(
+        string[] cols,
+        List<TableColumnInfo> columns,
+        int targetColIndex,
+        IReadOnlyList<LookupColumnConstraint> constraints)
+    {
+        foreach (var constraint in constraints)
+        {
+            var col = columns.FirstOrDefault(c =>
+                string.Equals(c.ParameterName, constraint.ParameterName, StringComparison.OrdinalIgnoreCase));
+
+            if (col is not null)
+            {
+                if (col.CsvColIndex == targetColIndex) continue;
+                if (col.CsvColIndex >= cols.Length) return false;
+                var cv = cols[col.CsvColIndex].Trim().Trim('"');
+                if (!TryParseRevitValue(cv, out double cVal)) continue;
+                if (System.Math.Abs(cVal - constraint.ValueMm) > 0.02)
+                    return false;
+            }
+            else
+            {
+                bool found = false;
+                foreach (var q in columns)
+                {
+                    if (q.CsvColIndex >= cols.Length) continue;
+                    if (q.CsvColIndex == targetColIndex) continue;
+                    var cv = cols[q.CsvColIndex].Trim().Trim('"');
+                    if (!TryParseRevitValue(cv, out double cVal)) continue;
+                    if (System.Math.Abs(cVal - constraint.ValueMm) <= 0.5)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return false;
+            }
+        }
+        return true;
+    }
+
+    private static List<SizeTableRow> DeduplicateRows(List<SizeTableRow> rows)
+    {
+        var seen = new HashSet<string>();
+        var result = new List<SizeTableRow>();
+        foreach (var row in rows)
+        {
+            var key = string.Join("|", row.ConnectorRadiiFt
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => $"{kvp.Key}:{kvp.Value:F8}"));
+            if (seen.Add(key))
+                result.Add(row);
+        }
+        return result;
+    }
+
     // ── Построение контекста ──────────────────────────────────────────────
 
     /// <summary>
@@ -378,6 +884,26 @@ public sealed class RevitLookupTableService : ILookupTableService
 
         if (targetColIndex < 0)
         {
+            var sDigits = ExtractTrailingDigits(searchParamName);
+            if (sDigits is not null && allQueryColumns is not null)
+            {
+                for (int i = 0; i < allQueryColumns.Count; i++)
+                {
+                    if (allQueryColumns[i].ParameterName == searchParamName) continue;
+                    var qDigits = ExtractTrailingDigits(allQueryColumns[i].ParameterName);
+                    if (qDigits == sDigits)
+                    {
+                        targetColIndex = allQueryColumns[i].CsvColIndex;
+                        foundViaDependsOn = true;
+                        SmartConLogger.Lookup($"        → suffix-fallback: '{searchParamName}' (suffix={sDigits}) ≈ '{allQueryColumns[i].ParameterName}' (suffix={qDigits}) @ colIndex={targetColIndex}");
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (targetColIndex < 0)
+        {
             SmartConLogger.Lookup($"    ✗ Таблица '{tableName}': параметр '{searchParamName}' не найден");
             return null;
         }
@@ -641,5 +1167,12 @@ public sealed class RevitLookupTableService : ILookupTableService
         // (имена переменных с пробелами, спецсимволы °, ³ и т.д.)
         // Fallback: проверяем содержит ли формула target как подстроку
         return formula.Contains(target, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ExtractTrailingDigits(string name)
+    {
+        int i = name.Length - 1;
+        while (i >= 0 && char.IsDigit(name[i])) i--;
+        return i < name.Length - 1 ? name[(i + 1)..] : null;
     }
 }

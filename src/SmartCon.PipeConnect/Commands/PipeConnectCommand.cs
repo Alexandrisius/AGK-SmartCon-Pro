@@ -363,11 +363,43 @@ public sealed class PipeConnectCommand : IExternalCommand
                     ExpectNeedsAdapter: false, WarningMessage: null, LookupConstraints: lookupConstraints);
             }
 
-            // Нет точного → берём ближайший
-            SmartConLogger.Lookup("  → GetNearestAvailableRadius...");
-            double nearest   = lookupSvc.GetNearestAvailableRadius(doc, dynId, connIdx, staticRadius, lookupConstraints);
+            // Pass 1 failed — ближайший С constraints (другие коннекторы фиксированы)
+            SmartConLogger.Lookup("  → GetNearestAvailableRadius (with constraints)...");
+            double nearest = lookupSvc.GetNearestAvailableRadius(doc, dynId, connIdx, staticRadius, lookupConstraints);
             double nearestDn = System.Math.Round(nearest * 2.0 * 304.8);
-            SmartConLogger.Lookup($"  nearest={nearest:F6} ft = DN{nearestDn}");
+            SmartConLogger.Lookup($"  nearest={nearest:F6} ft = DN{nearestDn} (with constraints)");
+
+            // Pass 2: БЕЗ constraints — ищем ближайшую строку где целевой коннектор максимально близок к target.
+            // Позволяет другим коннекторам изменяться (тройник DN 65×65×65 → DN 50×50×50).
+            if (lookupConstraints.Count > 0)
+            {
+                SmartConLogger.Lookup("  → Pass 2: поиск БЕЗ constraints...");
+                double nearestUnconstrained = lookupSvc.GetNearestAvailableRadius(doc, dynId, connIdx, staticRadius, constraints: null);
+                double nearestUncDn = System.Math.Round(nearestUnconstrained * 2.0 * 304.8);
+                SmartConLogger.Lookup($"  nearestUnconstrained={nearestUnconstrained:F6} ft = DN{nearestUncDn}");
+
+                double deltaConstrained = System.Math.Abs(nearest - staticRadius);
+                double deltaUnconstrained = System.Math.Abs(nearestUnconstrained - staticRadius);
+                SmartConLogger.Lookup($"  delta_constrained={deltaConstrained * 304.8:F2}mm, delta_unconstrained={deltaUnconstrained * 304.8:F2}mm");
+
+                if (deltaUnconstrained < deltaConstrained - eps)
+                {
+                    SmartConLogger.Lookup($"  → Pass 2 ЛУЧШЕ: используем unconstrained result DN{nearestUncDn}");
+                    SmartConLogger.Info($"[S4] Pass 2 (unconstrained): DN{staticDn} → ближайший=DN{nearestUncDn} (другие коннекторы изменятся)");
+
+                    bool exactUnc = deltaUnconstrained < eps;
+                    return new ParameterResolutionPlan(
+                        Skip: false, TargetRadius: nearestUnconstrained,
+                        ExpectNeedsAdapter: !exactUnc,
+                        WarningMessage: exactUnc
+                            ? null
+                            : $"Размер DN{staticDn} не найден точно. Ближайший DN{nearestUncDn} (другие коннекторы изменятся).",
+                        LookupConstraints: []);
+                }
+            }
+
+            // Pass 1 result (constrained) is better or equal
+            SmartConLogger.Lookup($"  → Pass 1 result: DN{nearestDn} (constraints={lookupConstraints.Count})");
             SmartConLogger.Warn($"[S4] LookupTable: DN{staticDn} не найден, ближайший=DN{nearestDn} (NeedsAdapter)");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: nearest,

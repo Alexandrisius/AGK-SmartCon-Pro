@@ -64,10 +64,12 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     public ObservableCollection<FittingCardItem> AvailableFittings { get; } = [];
 
     [ObservableProperty] private int _rotationAngleDeg = 15;
-    [ObservableProperty] private SizeOption? _selectedDynamicSize;
+    [ObservableProperty] private FamilySizeOption? _selectedDynamicSize;
     [ObservableProperty] private bool _hasSizeOptions;
+    [ObservableProperty] private string? _sizeChangeInfo;
+    [ObservableProperty] private bool _hasSizeChangeInfo;
 
-    public ObservableCollection<SizeOption> AvailableDynamicSizes { get; } = [];
+    public ObservableCollection<FamilySizeOption> AvailableDynamicSizes { get; } = [];
 
     public event Action? RequestClose;
 
@@ -144,37 +146,93 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
             SmartConLogger.Lookup($"  elementId={dynId.Value}, connIdx={dynIdx}");
 
-            SmartConLogger.Info($"[MultiCol] LoadDynamicSizes: constraints={_ctx.LookupConstraints.Count} для dynId={dynId.Value}, connIdx={dynIdx}");
-            var sizes = _sizeResolver.GetAvailableSizes(_doc, dynId, dynIdx, _ctx.LookupConstraints);
-            SmartConLogger.Lookup($"  SizeResolver вернул {sizes.Count} размеров");
-            SmartConLogger.Info($"[MultiCol] LoadDynamicSizes: SizeResolver вернул {sizes.Count} размеров");
+            var sizes = _sizeResolver.GetAvailableFamilySizes(_doc, dynId, dynIdx);
+            SmartConLogger.Lookup($"  GetAvailableFamilySizes вернул {sizes.Count} конфигураций");
 
             var currentRadius = _ctx.DynamicConnector.Radius;
             var currentDn = (int)Math.Round(currentRadius * 2.0 * 304.8);
             SmartConLogger.Lookup($"  Текущий размер: DN {currentDn} (radius={currentRadius * 304.8:F2} мм)");
 
-            AvailableDynamicSizes.Add(new SizeOption
+            var currentConns = _connSvc.GetAllConnectors(_doc, dynId);
+            var currentRadii = new Dictionary<int, double>();
+            foreach (var c in currentConns)
+                currentRadii[c.ConnectorIndex] = c.Radius;
+
+            var queryParamGroups = sizes.Count > 0 ? sizes[0].QueryParamConnectorGroups : [];
+            var targetColIdx = sizes.Count > 0 ? sizes[0].TargetColumnIndex : 1;
+            var uniqueParamCount = sizes.Count > 0 ? sizes[0].UniqueParameterCount : 1;
+
+            IReadOnlyList<double> autoQueryParamRadii;
+            FamilySizeOption? closestOption = null;
+            if (sizes.Count > 0)
             {
-                DisplayName = $"АВТОПОДБОР (DN {currentDn})",
+                double minTotalDelta = double.MaxValue;
+                foreach (var s in sizes)
+                {
+                    double targetDelta = Math.Abs(s.Radius - currentRadius);
+                    double otherDelta = 0;
+                    foreach (var kvp in s.AllConnectorRadii)
+                    {
+                        if (kvp.Key == dynIdx) continue;
+                        if (currentRadii.TryGetValue(kvp.Key, out var curR))
+                            otherDelta += Math.Abs(kvp.Value - curR);
+                    }
+                    double totalDelta = targetDelta * 3.0 + otherDelta;
+                    if (totalDelta < minTotalDelta)
+                    {
+                        minTotalDelta = totalDelta;
+                        closestOption = s;
+                    }
+                }
+            }
+
+            if (closestOption is not null)
+            {
+                if (closestOption.QueryParameterRadiiFt.Count > 0)
+                {
+                    autoQueryParamRadii = closestOption.QueryParameterRadiiFt;
+                    targetColIdx = closestOption.TargetColumnIndex;
+                    queryParamGroups = closestOption.QueryParamConnectorGroups;
+                }
+                else
+                {
+                    autoQueryParamRadii = [closestOption.Radius];
+                    targetColIdx = 1;
+                    queryParamGroups = [[closestOption.TargetConnectorIndex]];
+                }
+            }
+            else if (queryParamGroups.Count > 0)
+            {
+                autoQueryParamRadii = BuildCurrentQueryParamRadii(currentRadii, queryParamGroups);
+            }
+            else
+            {
+                autoQueryParamRadii = [currentRadii.GetValueOrDefault(dynIdx, 0)];
+                targetColIdx = 1;
+            }
+
+            var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(autoQueryParamRadii, targetColIdx);
+
+            AvailableDynamicSizes.Add(new FamilySizeOption
+            {
+                DisplayName = autoDisplayName,
                 Radius = currentRadius,
+                TargetConnectorIndex = dynIdx,
+                AllConnectorRadii = currentRadii,
+                QueryParameterRadiiFt = autoQueryParamRadii,
+                UniqueParameterCount = uniqueParamCount,
+                TargetColumnIndex = targetColIdx,
+                QueryParamConnectorGroups = queryParamGroups,
                 Source = "",
                 IsAutoSelect = true
             });
 
             foreach (var size in sizes)
             {
-                var dn = (int)Math.Round(size.Radius * 2.0 * 304.8);
-                var label = $"DN {dn}";
-                if (!AvailableDynamicSizes.Any(s => s.DisplayName == label))
+                if (!AvailableDynamicSizes.Any(s => s.DisplayName == size.DisplayName))
                 {
-                    AvailableDynamicSizes.Add(new SizeOption
-                    {
-                        DisplayName = label,
-                        Radius = size.Radius,
-                        Source = size.Source,
-                        IsAutoSelect = false
-                    });
-                    SmartConLogger.Lookup($"  Добавлен размер: {label} (source={size.Source})");
+                    AvailableDynamicSizes.Add(size with { IsAutoSelect = false });
+                    SmartConLogger.Lookup($"  Добавлен: {size.DisplayName}");
                 }
             }
 
@@ -192,28 +250,112 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     /// <summary>
     /// Обновить пункт "АВТОПОДБОР" в списке размеров после Init() или смены размера.
     /// </summary>
+    private static IReadOnlyList<double> BuildCurrentQueryParamRadii(
+        IReadOnlyDictionary<int, double> currentRadii,
+        IReadOnlyList<IReadOnlyList<int>> queryParamGroups)
+    {
+        var result = new List<double>(queryParamGroups.Count);
+        foreach (var group in queryParamGroups)
+        {
+            double radius = 0;
+            foreach (var ci in group)
+            {
+                if (currentRadii.TryGetValue(ci, out var r))
+                {
+                    radius = r;
+                    break;
+                }
+            }
+            result.Add(radius);
+        }
+        return result.AsReadOnly();
+    }
+
     private void RefreshAutoSelectSize()
     {
         if (_activeDynamic is null) return;
 
-        var actualDn = (int)Math.Round(_activeDynamic.Radius * 2.0 * 304.8);
-        var autoLabel = $"АВТОПОДБОР (DN {actualDn})";
+        var dynId = _ctx.DynamicConnector.OwnerElementId;
+        var currentConns = _connSvc.GetAllConnectors(_doc, dynId);
+        var currentRadii = new Dictionary<int, double>();
+        foreach (var c in currentConns)
+            currentRadii[c.ConnectorIndex] = c.Radius;
 
-        // Обновить первый элемент (АВТОПОДБОР)
+        var autoOption = AvailableDynamicSizes.FirstOrDefault(s => s.IsAutoSelect);
+        var queryParamGroups = autoOption?.QueryParamConnectorGroups ?? [];
+        var targetColIdx = autoOption?.TargetColumnIndex ?? 1;
+
+        IReadOnlyList<double> autoQueryParamRadii;
+        var nonAutoSizes = AvailableDynamicSizes.Where(s => !s.IsAutoSelect).ToList();
+        if (nonAutoSizes.Count > 0)
+        {
+            double minTotalDelta = double.MaxValue;
+            FamilySizeOption? best = null;
+            var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
+            var targetRadius = currentRadii.GetValueOrDefault(dynIdx, 0);
+            foreach (var s in nonAutoSizes)
+            {
+                double targetDelta = Math.Abs(s.Radius - targetRadius);
+                double otherDelta = 0;
+                foreach (var kvp in s.AllConnectorRadii)
+                {
+                    if (kvp.Key == dynIdx) continue;
+                    if (currentRadii.TryGetValue(kvp.Key, out var curR))
+                        otherDelta += Math.Abs(kvp.Value - curR);
+                }
+                double totalDelta = targetDelta * 3.0 + otherDelta;
+                if (totalDelta < minTotalDelta)
+                {
+                    minTotalDelta = totalDelta;
+                    best = s;
+                }
+            }
+            if (best is not null)
+            {
+                if (best.QueryParameterRadiiFt.Count > 0)
+                {
+                    autoQueryParamRadii = best.QueryParameterRadiiFt;
+                    queryParamGroups = best.QueryParamConnectorGroups;
+                    targetColIdx = best.TargetColumnIndex;
+                }
+                else
+                {
+                    autoQueryParamRadii = [best.Radius];
+                    targetColIdx = 1;
+                    queryParamGroups = [[best.TargetConnectorIndex]];
+                }
+            }
+            else if (queryParamGroups.Count > 0)
+                autoQueryParamRadii = BuildCurrentQueryParamRadii(currentRadii, queryParamGroups);
+            else
+                autoQueryParamRadii = [currentRadii.GetValueOrDefault(dynIdx, 0)];
+        }
+        else if (queryParamGroups.Count > 0)
+            autoQueryParamRadii = BuildCurrentQueryParamRadii(currentRadii, queryParamGroups);
+        else
+            autoQueryParamRadii = [currentRadii.GetValueOrDefault(_ctx.DynamicConnector.ConnectorIndex, 0)];
+
+        var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(autoQueryParamRadii, targetColIdx);
+
         if (AvailableDynamicSizes.Count > 0)
         {
-            var autoOption = new SizeOption
+            var newAutoOption = new FamilySizeOption
             {
-                DisplayName = autoLabel,
+                DisplayName = autoDisplayName,
                 Radius = _activeDynamic.Radius,
+                TargetConnectorIndex = _ctx.DynamicConnector.ConnectorIndex,
+                AllConnectorRadii = currentRadii,
+                QueryParameterRadiiFt = autoQueryParamRadii,
+                UniqueParameterCount = autoOption?.UniqueParameterCount ?? 1,
+                TargetColumnIndex = targetColIdx,
+                QueryParamConnectorGroups = queryParamGroups,
                 Source = "",
                 IsAutoSelect = true
             };
-            AvailableDynamicSizes[0] = autoOption;
-            SmartConLogger.Lookup($"[RefreshAutoSelectSize] Обновлено: {autoLabel}");
+            AvailableDynamicSizes[0] = newAutoOption;
+            SmartConLogger.Lookup($"[RefreshAutoSelectSize] Обновлено: {autoDisplayName}");
         }
 
-        // Если текущий выбранный — АВТОПОДБОР, обновить его
         if (SelectedDynamicSize?.IsAutoSelect == true)
         {
             SelectedDynamicSize = AvailableDynamicSizes[0];
@@ -370,10 +512,26 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     var dynId = _ctx.DynamicConnector.OwnerElementId;
                     var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
 
-                    _paramResolver.TrySetConnectorRadius(doc, dynId, dynIdx, directTargetRadius);
+                    var bestMatch = FindBestOptionForRadius(directTargetRadius, dynIdx);
+                    bool appliedViaQP = bestMatch is not null
+                        && ApplyQueryParamsIfExists(doc, dynId, bestMatch);
+
+                    if (!appliedViaQP)
+                    {
+                        SmartConLogger.Info($"[SizeAdj] Query params not available, fallback to TrySetConnectorRadius for all connectors");
+                        if (bestMatch is not null)
+                        {
+                            foreach (var kvp in bestMatch.AllConnectorRadii)
+                                _paramResolver.TrySetConnectorRadius(doc, dynId, kvp.Key, kvp.Value);
+                        }
+                        else
+                        {
+                            _paramResolver.TrySetConnectorRadius(doc, dynId, dynIdx, directTargetRadius);
+                        }
+                    }
                     doc.Regenerate();
 
-                    // Баг 1: после смены размера семейство может сместиться (Revit переоценивает
+                    // После смены размера семейство может сместиться (Revit переоценивает
                     // геометрию). Корректируем позицию коннектора обратно к static-коннектору.
                     var refreshedAfterSize = _connSvc.RefreshConnector(doc, dynId, dynIdx);
                     if (refreshedAfterSize is not null)
@@ -603,20 +761,33 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         if (SelectedDynamicSize is null || SelectedDynamicSize.IsAutoSelect) return;
 
         IsBusy = true;
-        var targetDn = (int)Math.Round(SelectedDynamicSize.Radius * 2.0 * 304.8);
-        StatusMessage = $"Изменение размера на DN {targetDn}…";
-        SmartConLogger.Info($"[ChangeDynamicSize] Попытка смены размера на DN {targetDn} (radius={SelectedDynamicSize.Radius * 304.8:F2} мм, source={SelectedDynamicSize.Source})");
+        StatusMessage = $"Изменение размера на {SelectedDynamicSize.DisplayName}…";
+        SmartConLogger.Info($"[ChangeDynamicSize] Попытка смены размера на {SelectedDynamicSize.DisplayName} " +
+            $"(radius={SelectedDynamicSize.Radius * 304.8:F2} мм, source={SelectedDynamicSize.Source}, " +
+            $"allRadii={SelectedDynamicSize.AllConnectorRadii.Count} коннекторов)");
 
         try
         {
             var dynId = _ctx.DynamicConnector.OwnerElementId;
             var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
-            var targetRadius = SelectedDynamicSize.Radius;
+            var selectedOption = SelectedDynamicSize;
 
             _groupSession!.RunInTransaction("PipeConnect — Смена размера dynamic", doc =>
             {
-                bool success = _paramResolver.TrySetConnectorRadius(doc, dynId, dynIdx, targetRadius);
-                SmartConLogger.Info($"[ChangeDynamicSize] TrySetConnectorRadius: {(success ? "OK" : "FAILED")}");
+                bool appliedViaQueryParams = ApplyQueryParamsIfExists(doc, dynId, selectedOption);
+
+                if (!appliedViaQueryParams)
+                {
+                    foreach (var kvp in selectedOption.AllConnectorRadii)
+                    {
+                        var connIdx = kvp.Key;
+                        var targetRadius = kvp.Value;
+                        bool success = _paramResolver.TrySetConnectorRadius(doc, dynId, connIdx, targetRadius);
+                        SmartConLogger.Info($"[ChangeDynamicSize] TrySetConnectorRadius(connIdx={connIdx}, " +
+                            $"targetDN={FamilySizeFormatter.ToDn(targetRadius)}): {(success ? "OK" : "FAILED")}");
+                    }
+                }
+
                 doc.Regenerate();
 
                 var refreshed = _connSvc.RefreshConnector(doc, dynId, dynIdx);
@@ -632,15 +803,26 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 }
 
                 doc.Regenerate();
+
+                var allConnsAfter = _connSvc.GetAllConnectors(doc, dynId);
+                foreach (var c in allConnsAfter)
+                {
+                    var actualDn = FamilySizeFormatter.ToDn(c.Radius);
+                    SmartConLogger.Info($"[ChangeDynamicSize] После смены: conn[{c.ConnectorIndex}] = DN {actualDn}");
+                }
+
                 _activeDynamic = _connSvc.RefreshConnector(doc, dynId, dynIdx) ?? _activeDynamic;
                 if (_activeDynamic is not null)
                 {
                     var actualDn = (int)Math.Round(_activeDynamic.Radius * 2.0 * 304.8);
-                    SmartConLogger.Info($"[ChangeDynamicSize] Фактический размер после смены: DN {actualDn}");
+                    SmartConLogger.Info($"[ChangeDynamicSize] Целевой коннектор после смены: DN {actualDn}");
                 }
             });
 
-            StatusMessage = $"Размер изменён на DN {targetDn}";
+            var sizeInfo = BuildSizeChangeInfo(SelectedDynamicSize);
+            StatusMessage = string.IsNullOrEmpty(sizeInfo)
+                ? $"Размер изменён на {SelectedDynamicSize.DisplayName}"
+                : $"Размер изменён. {sizeInfo}";
 
             if (_currentFittingId is not null)
             {
@@ -664,13 +846,145 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         }
     }
 
+    private string? BuildSizeChangeInfo(FamilySizeOption selected)
+    {
+        if (selected.SymbolName is not null && selected.CurrentSymbolName is not null
+            && selected.SymbolName != selected.CurrentSymbolName)
+        {
+            return $"Типоразмер: {selected.CurrentSymbolName} → {selected.SymbolName}";
+        }
+        return null;
+    }
+
     private bool CanChangeDynamicSize() =>
         IsSessionActive && !IsBusy &&
         SelectedDynamicSize is not null && !SelectedDynamicSize.IsAutoSelect;
 
-    partial void OnSelectedDynamicSizeChanged(SizeOption? value)
+    private static bool ApplyQueryParamsIfExists(Document doc, ElementId elementId, FamilySizeOption option)
+    {
+        if (option.QueryParamNames.Count == 0 || option.QueryParamRawValuesMm.Count == 0)
+            return false;
+
+        var element = doc.GetElement(elementId);
+        if (element is null) return false;
+
+        var fi = element as FamilyInstance;
+        var symbol = fi?.Symbol;
+
+        int setCount = 0;
+        for (int i = 0; i < option.QueryParamNames.Count; i++)
+        {
+            var paramName = option.QueryParamNames[i];
+            double rawMm = option.QueryParamRawValuesMm[i];
+
+            var param = FindWritableParam(element, symbol, paramName);
+            if (param is null)
+            {
+                SmartConLogger.Info($"[ApplyQueryParams] SKIP '{paramName}': not found on element or symbol");
+                continue;
+            }
+
+            if (param.IsReadOnly)
+            {
+                SmartConLogger.Info($"[ApplyQueryParams] SKIP '{paramName}': ReadOnly (elem={element.Id.Value})");
+                continue;
+            }
+
+            double valueFt = rawMm / 304.8;
+            param.Set(valueFt);
+            setCount++;
+            SmartConLogger.Info($"[ApplyQueryParams] Set '{paramName}' = {rawMm:F2} mm ({valueFt:F6} ft) via {(symbol != null && symbol.LookupParameter(paramName) is not null ? "Symbol" : "Instance")}");
+        }
+
+        SmartConLogger.Info($"[ApplyQueryParams] Set {setCount}/{option.QueryParamNames.Count} query params for '{option.DisplayName}'");
+        return setCount > 0;
+    }
+
+    private static Parameter? FindWritableParam(Element element, FamilySymbol? symbol, string paramName)
+    {
+        var param = element.LookupParameter(paramName);
+        if (param is not null) return param;
+
+        if (symbol is not null)
+        {
+            param = symbol.LookupParameter(paramName);
+            if (param is not null) return param;
+        }
+
+        foreach (Parameter p in element.Parameters)
+        {
+            if (p.Definition is not null && string.Equals(p.Definition.Name, paramName, StringComparison.OrdinalIgnoreCase))
+                return p;
+        }
+
+        if (symbol is not null)
+        {
+            foreach (Parameter p in symbol.Parameters)
+            {
+                if (p.Definition is not null && string.Equals(p.Definition.Name, paramName, StringComparison.OrdinalIgnoreCase))
+                    return p;
+            }
+        }
+
+        return null;
+    }
+
+    private FamilySizeOption? FindBestOptionForRadius(double targetRadius, int dynIdx)
+    {
+        var nonAutoSizes = AvailableDynamicSizes.Where(s => !s.IsAutoSelect).ToList();
+        if (nonAutoSizes.Count == 0) return null;
+
+        var currentConns = _connSvc.GetAllConnectors(_doc, _ctx.DynamicConnector.OwnerElementId);
+        var currentRadii = new Dictionary<int, double>();
+        foreach (var c in currentConns)
+            currentRadii[c.ConnectorIndex] = c.Radius;
+
+        double minDelta = double.MaxValue;
+        FamilySizeOption? best = null;
+        foreach (var s in nonAutoSizes)
+        {
+            double delta = Math.Abs(s.Radius - targetRadius);
+            if (delta < minDelta)
+            {
+                minDelta = delta;
+                best = s;
+            }
+            else if (Math.Abs(delta - minDelta) < 1e-9 && best is not null)
+            {
+                double otherDeltaNew = 0, otherDeltaBest = 0;
+                foreach (var kvp in s.AllConnectorRadii)
+                {
+                    if (kvp.Key == dynIdx) continue;
+                    if (currentRadii.TryGetValue(kvp.Key, out var curR))
+                        otherDeltaNew += Math.Abs(kvp.Value - curR);
+                }
+                foreach (var kvp in best.AllConnectorRadii)
+                {
+                    if (kvp.Key == dynIdx) continue;
+                    if (currentRadii.TryGetValue(kvp.Key, out var curR))
+                        otherDeltaBest += Math.Abs(kvp.Value - curR);
+                }
+                if (otherDeltaNew < otherDeltaBest)
+                    best = s;
+            }
+        }
+        return best;
+    }
+
+    partial void OnSelectedDynamicSizeChanged(FamilySizeOption? value)
     {
         ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
+
+        if (value is null || value.IsAutoSelect)
+        {
+            SizeChangeInfo = null;
+            HasSizeChangeInfo = false;
+            return;
+        }
+
+        var info = BuildSizeChangeInfo(value);
+        SizeChangeInfo = info;
+        HasSizeChangeInfo = !string.IsNullOrEmpty(info);
     }
 
     // ── Chain depth (+/−) ─────────────────────────────────────────────────────

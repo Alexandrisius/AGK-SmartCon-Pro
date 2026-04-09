@@ -20,4 +20,13 @@ public interface IDynamicSizeResolver
     IReadOnlyList<SizeOption> GetAvailableSizes(Document doc, ElementId elementId,
         int connectorIndex,
         IReadOnlyList<LookupColumnConstraint>? constraints = null);
+
+    /// <summary>
+    /// Возвращает все доступные типоразмеры FamilyInstance с радиусами ВСЕХ коннекторов.
+    /// Каждый элемент списка — полная конфигурация семейства (напр. DN 65×50×65).
+    /// DisplayName формируется как "DN {target} × DN {other1} [× ...]".
+    /// Вызывать ВНЕ транзакции (EditFamily).
+    /// </summary>
+    IReadOnlyList<FamilySizeOption> GetAvailableFamilySizes(Document doc, ElementId elementId,
+        int targetConnectorIndex);
 }

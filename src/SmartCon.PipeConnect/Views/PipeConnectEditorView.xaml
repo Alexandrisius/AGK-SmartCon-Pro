@@ -93,35 +93,41 @@
             </Button>
 
             <!-- Размер dynamic -->
-            <Grid Grid.Row="6">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="8"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="95"/>
-                </Grid.ColumnDefinitions>
+            <StackPanel Grid.Row="6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="95"/>
+                    </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0"
-                           Text="Размер:"
-                           Style="{DynamicResource LabelText}"
-                           VerticalAlignment="Center"
-                           Width="58"/>
+                    <TextBlock Grid.Column="0"
+                               Text="Размер:"
+                               Style="{DynamicResource LabelText}"
+                               VerticalAlignment="Center"
+                               Width="58"/>
 
-                <ComboBox Grid.Column="2"
-                          ItemsSource="{Binding AvailableDynamicSizes}"
-                          SelectedItem="{Binding SelectedDynamicSize, Mode=TwoWay}"
-                          DisplayMemberPath="DisplayName"
-                          IsEnabled="{Binding IsSessionActive}"
-                          Style="{DynamicResource CompactComboBox}"
-                          ToolTip="Доступные размеры динамического семейства"/>
+                    <ComboBox Grid.Column="2"
+                              ItemsSource="{Binding AvailableDynamicSizes}"
+                              SelectedItem="{Binding SelectedDynamicSize, Mode=TwoWay}"
+                              DisplayMemberPath="DisplayName"
+                              IsEnabled="{Binding IsSessionActive}"
+                              Style="{DynamicResource CompactComboBox}"
+                              ToolTip="Доступные типоразмеры динамического семейства"/>
 
-                <Button Grid.Column="4"
-                        Content="Изменить"
-                        Style="{DynamicResource PrimaryButton}"
-                        Command="{Binding ChangeDynamicSizeCommand}"
-                        ToolTip="Изменить размер динамического семейства"/>
-            </Grid>
+                    <Button Grid.Column="4"
+                            Content="Изменить"
+                            Style="{DynamicResource PrimaryButton}"
+                            Command="{Binding ChangeDynamicSizeCommand}"
+                            ToolTip="Изменить размер динамического семейства"/>
+                </Grid>
+                <TextBlock Text="{Binding SizeChangeInfo}"
+                           FontSize="10" Foreground="#E65100" Margin="66,2,0,0"
+                           TextWrapping="Wrap"
+                           Visibility="{Binding HasSizeChangeInfo, Converter={StaticResource BoolToVisibility}}"/>
+            </StackPanel>
 
             <!-- Фитинг -->
             <Grid Grid.Row="8">
