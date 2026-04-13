@@ -2088,6 +2088,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 .Select(c => (Conn: c, Ctc: GetEffectiveConnectorCtc(elementId, c)))
                 .ToList();
 
+            var validPairs = new List<(ConnectorProxy Fc1, ConnectorProxy Fc2, double Score)>();
             foreach (var left in connCtcMap)
             {
                 if (!CtcGuesser.CanDirectConnect(left.Ctc, staticTypeCode, rules))
@@ -2098,7 +2099,16 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     && CtcGuesser.CanDirectConnect(x.Ctc, dynamicTypeCode, rules));
 
                 if (right.Conn is not null)
-                    return (left.Conn, right.Conn);
+                {
+                    double score = System.Math.Abs(left.Conn.Radius - _ctx.StaticConnector.Radius);
+                    validPairs.Add((left.Conn, right.Conn, score));
+                }
+            }
+
+            if (validPairs.Count > 0)
+            {
+                var best = validPairs.OrderBy(p => p.Score).First();
+                return (best.Fc1, best.Fc2);
             }
         }
 

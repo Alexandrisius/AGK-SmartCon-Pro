@@ -79,6 +79,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                 && directConnectRules.Count > 0
                 && dynamicTypeCode.IsDefined)
             {
+                var validPairs = new List<(Connector Fc1, Connector Fc2, double Score)>();
                 foreach (var left in connCtcMap)
                 {
                     if (!CtcGuesser.CanDirectConnect(left.Ctc, staticProxy.ConnectionTypeCode, directConnectRules))
@@ -90,13 +91,21 @@ public sealed class RevitFittingInsertService : IFittingInsertService
 
                     if (right.Conn is not null)
                     {
-                        fitConn1 = left.Conn;
-                        fitConn2 = right.Conn;
-                        SmartConLogger.Info($"[FitAlign] Стратегия 0 (direct-connect rules): " +
-                            $"fc1=conn[{fitConn1.Id}] (CTC={left.Ctc.Value} ↔ staticCTC={staticProxy.ConnectionTypeCode.Value}), " +
-                            $"fc2=conn[{fitConn2.Id}] (CTC={right.Ctc.Value} ↔ dynCTC={dynamicTypeCode.Value})");
-                        break;
+                        double staticR = staticProxy.Radius;
+                        double score = System.Math.Abs(left.Conn.Radius - staticR);
+                        validPairs.Add((left.Conn, right.Conn, score));
                     }
+                }
+
+                if (validPairs.Count > 0)
+                {
+                    var best = validPairs.OrderBy(p => p.Score).First();
+                    fitConn1 = best.Fc1;
+                    fitConn2 = best.Fc2;
+                    SmartConLogger.Info($"[FitAlign] Стратегия 0 (direct-connect rules): " +
+                        $"fc1=conn[{fitConn1.Id}] R={fitConn1.Radius * 304.8:F1}mm (→static R={staticProxy.Radius * 304.8:F1}mm), " +
+                        $"fc2=conn[{fitConn2.Id}] R={fitConn2.Radius * 304.8:F1}mm, " +
+                        $"score={best.Score * 304.8:F2}mm ({validPairs.Count} pairs)");
                 }
             }
 
@@ -179,10 +188,19 @@ public sealed class RevitFittingInsertService : IFittingInsertService
         var fitConn1Proxy = fitConn1!.ToProxy();
         if (fitConn1Proxy is null) return null;
 
+        SmartConLogger.Info($"[FitAlign] BEFORE: fc1=conn[{fitConn1.Id}] origin={fitConn1Proxy.OriginVec3} R={fitConn1.Radius * 304.8:F1}mm BZ={fitConn1Proxy.BasisZVec3}");
+        if (fitConn2 is not null)
+        {
+            var fc2p = fitConn2.ToProxy();
+            SmartConLogger.Info($"[FitAlign] BEFORE: fc2=conn[{fitConn2.Id}] origin={fc2p?.OriginVec3} R={fitConn2.Radius * 304.8:F1}mm BZ={fc2p?.BasisZVec3}");
+        }
+
         // Вычислить выравнивание фитинга к static коннектору
         var alignResult = ConnectorAligner.ComputeAlignment(
             staticProxy.OriginVec3, staticProxy.BasisZVec3, staticProxy.BasisXVec3,
             fitConn1Proxy.OriginVec3, fitConn1Proxy.BasisZVec3, fitConn1Proxy.BasisXVec3);
+
+        SmartConLogger.Info($"[FitAlign] Align: offset={alignResult.InitialOffset}, bzRot={alignResult.BasisZRotation?.AngleRadians * 180 / System.Math.PI:F1}°");
 
         // Шаг 1: перемещение
         if (!VectorUtils.IsZero(alignResult.InitialOffset))
@@ -210,6 +228,15 @@ public sealed class RevitFittingInsertService : IFittingInsertService
 
         // Регенерация для получения актуального положения fitConn2
         doc.Regenerate();
+
+        // Лог AFTER: позиции коннекторов после полного выравнивания
+        var afterFc1 = connSvc.RefreshConnector(doc, fittingId, fitConn1Proxy.ConnectorIndex);
+        SmartConLogger.Info($"[FitAlign] AFTER: fc1=conn[{fitConn1.Id}] origin={afterFc1?.OriginVec3} R={afterFc1?.Radius * 304.8:F1}mm distToStatic={VectorUtils.DistanceTo(afterFc1?.OriginVec3 ?? Vec3.Zero, staticProxy.OriginVec3) * 304.8:F2}mm");
+        if (fitConn2 is not null)
+        {
+            var afterFc2 = connSvc.RefreshConnector(doc, fittingId, fitConn2.ToProxy()?.ConnectorIndex ?? -1);
+            SmartConLogger.Info($"[FitAlign] AFTER: fc2=conn[{fitConn2.Id}] origin={afterFc2?.OriginVec3} R={afterFc2?.Radius * 304.8:F1}mm distToStatic={VectorUtils.DistanceTo(afterFc2?.OriginVec3 ?? Vec3.Zero, staticProxy.OriginVec3) * 304.8:F2}mm");
+        }
 
         // Возвращаем ConnectorProxy второго коннектора фитинга после выравнивания
         if (fitConn2 is null) return null;
