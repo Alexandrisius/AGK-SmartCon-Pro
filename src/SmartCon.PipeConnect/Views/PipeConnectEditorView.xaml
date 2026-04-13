@@ -161,9 +161,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="4"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="4"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Сеть:"
@@ -172,16 +170,16 @@
                         Command="{Binding DecrementChainDepthCommand}"
                         Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
                         ToolTip="Отсоединить последний уровень"/>
-                <TextBlock Grid.Column="4" Text="{Binding ChainDepth}" Width="24"
-                           TextAlignment="Center" VerticalAlignment="Center"
-                           FontSize="14" FontWeight="SemiBold" Foreground="#333"/>
-                <Button Grid.Column="6" Content="+" Width="28" Height="28"
+                <Button Grid.Column="4" Content="+" Width="28" Height="28"
                         Command="{Binding IncrementChainDepthCommand}"
                         Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
                         ToolTip="Присоединить следующий уровень"/>
-                <TextBlock Grid.Column="8" Text="{Binding ChainDepthHint}"
-                           Style="{DynamicResource CaptionText}"
-                           VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                <Button Grid.Column="6"
+                        Content="Подключить всё" Height="28"
+                        Padding="10,0"
+                        Command="{Binding ConnectAllChainCommand}"
+                        Style="{DynamicResource PrimaryButton}"
+                        ToolTip="Подключить все элементы сети сразу"/>
             </Grid>
 
             <!-- Статус -->

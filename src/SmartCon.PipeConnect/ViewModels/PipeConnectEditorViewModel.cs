@@ -1590,6 +1590,44 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private bool CanDecrementChain()
         => IsSessionActive && !IsBusy && ChainDepth > 0;
 
+    [RelayCommand(CanExecute = nameof(CanConnectAllChain))]
+    private void ConnectAllChain()
+    {
+        if (_chainGraph is null) return;
+
+        IsBusy = true;
+        StatusMessage = "Подключение всей сети…";
+
+        try
+        {
+            int targetLevel = _chainGraph.MaxLevel;
+            int processed = 0;
+
+            while (ChainDepth < targetLevel && ChainDepth < MaxChainLevel)
+            {
+                IncrementChainDepth();
+                processed++;
+            }
+
+            StatusMessage = $"Подключено {processed} уровней";
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[ConnectAll] Ошибка: {ex.Message}");
+            StatusMessage = $"Ошибка: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool CanConnectAllChain()
+        => IsSessionActive && !IsBusy
+        && _chainGraph is not null
+        && ChainDepth < _chainGraph.MaxLevel
+        && ChainDepth < MaxChainLevel;
+
     // ── Chain helpers ─────────────────────────────────────────────────────────
 
     private ElementSnapshot CaptureSnapshot(Document doc, ElementId elemId, ConnectionGraph graph)
@@ -1687,23 +1725,16 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     {
         if (_chainGraph is null || _chainGraph.TotalChainElements == 0)
         {
-            ChainDepthHint = "нет цепочки";
             HasChain = false;
-            IncrementChainDepthCommand.NotifyCanExecuteChanged();
-            DecrementChainDepthCommand.NotifyCanExecuteChanged();
-            return;
         }
-        HasChain = true;
-        int total = _chainGraph.TotalChainElements;
-        int maxLvl = _chainGraph.MaxLevel;
-        int attached = 0;
-        for (int l = 1; l <= ChainDepth && l < _chainGraph.Levels.Count; l++)
-            attached += _chainGraph.Levels[l].Count;
-
-        ChainDepthHint = $"{attached}/{total} в {ChainDepth}/{maxLvl} ур.";
+        else
+        {
+            HasChain = true;
+        }
 
         IncrementChainDepthCommand.NotifyCanExecuteChanged();
         DecrementChainDepthCommand.NotifyCanExecuteChanged();
+        ConnectAllChainCommand.NotifyCanExecuteChanged();
     }
 
     private ConnectionTypeCode ResolveDynamicTypeFromRule(FittingMappingRule? rule)
