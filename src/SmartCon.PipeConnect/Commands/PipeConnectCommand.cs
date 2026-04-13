@@ -138,31 +138,12 @@ public sealed class PipeConnectCommand : IExternalCommand
             SmartConLogger.Info($"[Chain] Граф: {chainGraph.TotalChainElements} элементов, " +
                 $"{chainGraph.MaxLevel} уровней");
 
-            // ── S6.2: ПРОГРЕВ КЕША ─────────────────────────────────
-            // GetConnectorRadiusDependencies для FamilyInstance с ReadOnly-параметрами
-            // вызывает doc.EditFamily() — ЗАПРЕЩЕНО внутри открытой транзакции.
-            // Прогреваем ВСЕ deps ЗДЕСЬ, ДО открытия UI и транзакций.
-            foreach (var level in chainGraph.Levels)
-            {
-                foreach (var elemId in level)
-                {
-                    var elem = doc.GetElement(elemId);
-                    if (elem is null) continue;
-                    var cm = elem switch
-                    {
-                        FamilyInstance fi => fi.MEPModel?.ConnectorManager,
-                        MEPCurve mc       => mc.ConnectorManager,
-                        _                 => null
-                    };
-                    if (cm is null) continue;
-                    foreach (Connector c in cm.Connectors)
-                    {
-                        if (c.ConnectorType == ConnectorType.Curve) continue;
-                        paramResolver.GetConnectorRadiusDependencies(doc, elemId, c.Id);
-                    }
-                }
-            }
-            SmartConLogger.Info($"[Chain] Кеш deps прогрет для {chainGraph.TotalChainElements} элементов");
+            // ── S6.2: ПРОГРЕВ КЕША — ЛЕНИВЫЙ ─────────────────────────
+            // Ранее грелось для ВСЕХ 241 элементов upfront (~26 сек для больших сетей).
+            // Теперь прогрев выполняется по уровням в IncrementChainDepth(),
+            // только для элементов следующего уровня — перед транзакцией.
+            // GetConnectorRadiusDependencies вызывает doc.EditFamily() —
+            // разрешено МЕЖДУ транзакциями, но НЕ внутри открытой транзакции.
 
             // ── S7: открыть PipeConnectEditor (МОДАЛЬНОЕ окно) ─────────────────────
             // S3+S4 применяются ВНУТРИ TransactionGroup в ViewModel,

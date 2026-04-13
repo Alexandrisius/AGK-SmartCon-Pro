@@ -432,7 +432,28 @@ public sealed class RevitParameterResolver : IParameterResolver
             try
             {
                 var inst = doc.GetElement(elementId) as FamilyInstance;
+                var prevSymbolName = inst?.Symbol?.Name;
                 inst?.ChangeTypeId(bestSymbolId);
+                doc.Regenerate();
+
+                var afterInst = doc.GetElement(elementId) as FamilyInstance;
+                SmartConLogger.Lookup($"  → ChangeTypeId: '{prevSymbolName}' → '{bestSymbolName}'");
+
+                if (afterInst is not null)
+                {
+                    var afterCm = afterInst.MEPModel?.ConnectorManager;
+                    if (afterCm is not null)
+                    {
+                        SmartConLogger.Lookup($"  → Диагностика после смены типа (connIdx={connectorIndex}, target={targetRadius * 304.8:F2}mm):");
+                        foreach (Connector ac in afterCm.Connectors)
+                        {
+                            if (ac.ConnectorType == ConnectorType.Curve) continue;
+                            SmartConLogger.Lookup($"     conn[{ac.Id}]: R={ac.Radius * 304.8:F2}mm, " +
+                            $"domain={ac.Domain}, connected={(ac.AllRefs?.Size > 0)}");
+                        }
+                    }
+                }
+
                 SmartConLogger.Lookup($"  → ChangeTypeId ближайшего выполнен → return false (NeedsAdapter)");
             }
             catch (Exception ex)

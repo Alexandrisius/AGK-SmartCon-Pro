@@ -50,6 +50,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     // ── Chain ───────────────────────────────────────────────
     private ConnectionGraph? _chainGraph;
     private readonly NetworkSnapshotStore _snapshotStore = new();
+    private readonly HashSet<long> _warmedElementIds = [];
 
     private int    _chainDepthField;
     [ObservableProperty] private string _chainDepthHint = "нет цепочки";
@@ -1085,6 +1086,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         {
             SmartConLogger.Info($"[Chain+] ═══ УРОВЕНЬ {nextLevel} ═══ ({levelElements.Count} элементов)");
 
+            WarmDepsForLevel(levelElements);
+
             // Захватить snapshot КАЖДОГО элемента уровня ДО модификации
             foreach (var elemId in levelElements)
             {
@@ -1178,37 +1181,69 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                                 doc, elemId, edge.Value.ElemConnIdx, targetRadius);
                             SmartConLogger.Info($"[Chain+]   c.1 TrySetConnectorRadius → {(setResult ? "OK" : "FAILED")}");
 
+                            // c.1→c.2: Regenerate чтобы ConnectorManager обновился после смены типа
+                            doc.Regenerate();
+
                             // c.2. Для FamilyInstance: подогнать ВСЕ коннекторы элемента в графе
                             var elem = doc.GetElement(elemId);
-                            if (elem is FamilyInstance)
+                            if (elem is FamilyInstance fiElem)
                             {
                                 var allElemConns = _connSvc.GetAllConnectors(doc, elemId);
+                                SmartConLogger.Info($"[Chain+]   c.2 FamilyInstance '{fiElem.Symbol?.Family?.Name}' " +
+                                    $"symbolId={fiElem.Symbol?.Id.Value}: {allElemConns.Count} коннекторов (после Regenerate):");
+                                foreach (var c in allElemConns)
+                                    SmartConLogger.Info($"[Chain+]     conn[{c.ConnectorIndex}]: R={c.Radius * 304.8:F2}mm, " +
+                                        $"isFree={c.IsFree}");
+
                                 foreach (var c in allElemConns)
                                 {
-                                    if (c.ConnectorIndex != edge.Value.ElemConnIdx)
+                                    if (c.ConnectorIndex == edge.Value.ElemConnIdx)
+                                        continue;
+
+                                    double connDelta = System.Math.Abs(c.Radius - targetRadius);
+                                    if (connDelta <= 1e-5)
                                     {
-                                        bool inGraph = false;
-                                        foreach (var e in graph.Edges)
+                                        SmartConLogger.Info($"[Chain+]   c.2 conn[{c.ConnectorIndex}]: " +
+                                            $"R={c.Radius * 304.8:F2}mm ≈ target — уже верно, skip");
+                                        continue;
+                                    }
+
+                                    bool inGraph = false;
+                                    foreach (var e in graph.Edges)
+                                    {
+                                        if ((comparer.Equals(e.FromElementId, elemId) && e.FromConnectorIndex == c.ConnectorIndex) ||
+                                            (comparer.Equals(e.ToElementId, elemId) && e.ToConnectorIndex == c.ConnectorIndex))
                                         {
-                                            if ((comparer.Equals(e.FromElementId, elemId) && e.FromConnectorIndex == c.ConnectorIndex) ||
-                                                (comparer.Equals(e.ToElementId, elemId) && e.ToConnectorIndex == c.ConnectorIndex))
-                                            {
-                                                inGraph = true;
-                                                break;
-                                            }
+                                            inGraph = true;
+                                            break;
                                         }
-                                        if (inGraph)
-                                        {
-                                            SmartConLogger.Info($"[Chain+]   c.2 TrySetConnectorRadius(connIdx={c.ConnectorIndex}, " +
-                                                $"currentR={c.Radius * 304.8:F2}mm, target={targetRadius * 304.8:F2}mm)...");
-                                            bool r2 = _paramResolver.TrySetConnectorRadius(doc, elemId, c.ConnectorIndex, targetRadius);
-                                            SmartConLogger.Info($"[Chain+]   c.2 → {(r2 ? "OK" : "FAILED")}");
-                                        }
+                                    }
+                                    if (inGraph)
+                                    {
+                                        SmartConLogger.Info($"[Chain+]   c.2 TrySetConnectorRadius(connIdx={c.ConnectorIndex}, " +
+                                            $"currentR={c.Radius * 304.8:F2}mm, target={targetRadius * 304.8:F2}mm)...");
+                                        bool r2 = _paramResolver.TrySetConnectorRadius(doc, elemId, c.ConnectorIndex, targetRadius);
+                                        SmartConLogger.Info($"[Chain+]   c.2 → {(r2 ? "OK" : "FAILED")}");
+                                    }
+                                    else
+                                    {
+                                        SmartConLogger.Info($"[Chain+]   c.2 conn[{c.ConnectorIndex}]: NOT in graph, " +
+                                            $"R={c.Radius * 304.8:F2}mm ≠ target {targetRadius * 304.8:F2}mm — пропущен");
                                     }
                                 }
                             }
 
                             doc.Regenerate();
+
+                            // c.2b. ДИАГНОСТИКА: все коннекторы FamilyInstance после подгонки
+                            if (doc.GetElement(elemId) is FamilyInstance)
+                            {
+                                var diagConns = _connSvc.GetAllConnectors(doc, elemId);
+                                foreach (var dc in diagConns)
+                                    SmartConLogger.Info($"[Chain+]   c.2b diag conn[{dc.ConnectorIndex}]: " +
+                                        $"R={dc.Radius * 304.8:F2}mm (DN{System.Math.Round(dc.Radius * 2.0 * 304.8)}), " +
+                                        $"isFree={dc.IsFree}");
+                            }
 
                             // c.3. ВЕРИФИКАЦИЯ фактического радиуса
                             elemRefreshed = _connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
@@ -1700,6 +1735,36 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         && ChainDepth < MaxChainLevel;
 
     // ── Chain helpers ─────────────────────────────────────────────────────────
+
+    private void WarmDepsForLevel(IReadOnlyList<ElementId> levelElements)
+    {
+        int warmedCount = 0;
+        foreach (var elemId in levelElements)
+        {
+            if (!_warmedElementIds.Add(elemId.Value))
+                continue;
+
+            var elem = _doc.GetElement(elemId);
+            if (elem is null) continue;
+
+            var cm = elem switch
+            {
+                FamilyInstance fi => fi.MEPModel?.ConnectorManager,
+                MEPCurve mc       => mc.ConnectorManager,
+                _                 => null
+            };
+            if (cm is null) continue;
+
+            foreach (Connector c in cm.Connectors)
+            {
+                if (c.ConnectorType == ConnectorType.Curve) continue;
+                _paramResolver.GetConnectorRadiusDependencies(_doc, elemId, c.Id);
+            }
+            warmedCount++;
+        }
+        if (warmedCount > 0)
+            SmartConLogger.Info($"[Chain] WarmDeps: прогрето {warmedCount} элементов для уровня");
+    }
 
     private ElementSnapshot CaptureSnapshot(Document doc, ElementId elemId, ConnectionGraph graph)
     {
