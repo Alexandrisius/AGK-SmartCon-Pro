@@ -13,6 +13,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $RootDir = Split-Path -Parent $PSScriptRoot
 $VersionFile = Join-Path $RootDir "Version.txt"
 $ArtifactsDir = Join-Path $RootDir "artifacts"
@@ -174,7 +179,7 @@ Write-Step "Creating GitHub Release"
 
 $notesFile = Join-Path $ArtifactsDir "release-notes-tmp.md"
 if (-not [string]::IsNullOrWhiteSpace($Changelog)) {
-    Set-Content -Path $notesFile -Value $Changelog -NoNewline
+    [System.IO.File]::WriteAllText($notesFile, $Changelog, [System.Text.UTF8Encoding]::new($false))
     $notesFlag = @("--notes-file", $notesFile)
 } else {
     $notesFlag = @("--generate-notes")
