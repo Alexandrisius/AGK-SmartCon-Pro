@@ -71,13 +71,17 @@ public sealed class PipeConnectCommand : IExternalCommand
                 return Result.Cancelled;
             }
 
+            // ── Хранилище виртуальных CTC ───────────────────────────────────────
+            var virtualCtcStore = new VirtualCtcStore();
+
             // ── S1.1: тип коннектора Dynamic ───────────────────────────────────────
             if (!IsKnownTypeCode(dynamicProxy.ConnectionTypeCode, mappingRepo))
             {
-                var result = EnsureTypeCode(doc, dynamicProxy, mappingRepo, familyConnSvc, txService, dialogSvc);
+                var result = EnsureTypeCode(doc, dynamicProxy, mappingRepo, familyConnSvc, txService, dialogSvc, virtualCtcStore);
                 if (result is null) return Result.Cancelled;
                 dynamicProxy = connectorSvc.GetNearestFreeConnector(
                     doc, dynamicProxy.OwnerElementId, dynamicProxy.Origin) ?? dynamicProxy;
+                dynamicProxy = dynamicProxy with { ConnectionTypeCode = new ConnectionTypeCode(result.Code) };
             }
 
             // ── S2: выбор Static-элемента (неподвижный ориентир) ──────────────────
@@ -97,10 +101,11 @@ public sealed class PipeConnectCommand : IExternalCommand
             // ── S2.1: тип коннектора Static ────────────────────────────────────────
             if (!IsKnownTypeCode(staticProxy.ConnectionTypeCode, mappingRepo))
             {
-                var result = EnsureTypeCode(doc, staticProxy, mappingRepo, familyConnSvc, txService, dialogSvc);
+                var result = EnsureTypeCode(doc, staticProxy, mappingRepo, familyConnSvc, txService, dialogSvc, virtualCtcStore);
                 if (result is null) return Result.Cancelled;
                 staticProxy = connectorSvc.GetNearestFreeConnector(
                     doc, staticProxy.OwnerElementId, staticProxy.Origin) ?? staticProxy;
+                staticProxy = staticProxy with { ConnectionTypeCode = new ConnectionTypeCode(result.Code) };
             }
 
             // ── S3: вычисление выравнивания (чистая математика Core, без Revit API) ─
@@ -174,12 +179,13 @@ public sealed class PipeConnectCommand : IExternalCommand
                 ProposedFittings        = proposed.ToList(),
                 ChainGraph              = chainGraph,
                 LookupConstraints       = plan.LookupConstraints,
+                VirtualCtcStore         = virtualCtcStore,
             };
 
             var vm = new PipeConnectEditorViewModel(
                 sessionCtx, doc, txService, connectorSvc, transformSvc,
                 fittingInsertSvc, paramResolver, sizeResolver, networkMover,
-                mappingRepo, dialogSvc);
+                mappingRepo, dialogSvc, familyConnSvc);
 
             // Init() вызывается ДО ShowDialog: открывает TransactionGroup,
             // применяет S3 (выравнивание), S4 (размер), вставляет и размещает фитинг.
@@ -223,7 +229,8 @@ public sealed class PipeConnectCommand : IExternalCommand
         IFittingMappingRepository mappingRepo,
         IFamilyConnectorService familyConnSvc,
         ITransactionService txService,
-        IDialogService dialogSvc)
+        IDialogService dialogSvc,
+        VirtualCtcStore virtualCtcStore)
     {
         var types = mappingRepo.GetConnectorTypes();
         if (types.Count == 0)
@@ -239,7 +246,7 @@ public sealed class PipeConnectCommand : IExternalCommand
 
         if (element is MEPCurve or FlexPipe)
         {
-            // Трубы: пишем в параметр типоразмера — нужна транзакция проекта.
+            // Трубы: пишем в параметр типоразмера — нужна транзакция проекта (быстро).
             txService.RunInTransaction("SetConnectorType", txDoc =>
             {
                 familyConnSvc.SetConnectorTypeCode(
@@ -248,10 +255,10 @@ public sealed class PipeConnectCommand : IExternalCommand
         }
         else
         {
-            // FamilyInstance: EditFamily запрещён внутри транзакции.
-            // Сервис сам открывает транзакции через ITransactionService.
-            familyConnSvc.SetConnectorTypeCode(
-                doc, proxy.OwnerElementId, proxy.ConnectorIndex, selected);
+            // FamilyInstance: виртуальный CTC — LoadFamily откладывается до Connect().
+            var ctc = new ConnectionTypeCode(selected.Code);
+            virtualCtcStore.Set(proxy.OwnerElementId, proxy.ConnectorIndex, ctc, selected);
+            SmartConLogger.Info($"[CTC] Virtual CTC для {proxy.OwnerElementId.Value}:{proxy.ConnectorIndex} = {selected.Code}.{selected.Name}");
         }
 
         return selected;

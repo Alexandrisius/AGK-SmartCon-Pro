@@ -421,6 +421,14 @@ public sealed class RevitParameterResolver : IParameterResolver
         if (bestSymbolId is not null)
         {
             SmartConLogger.Lookup($"  → Ближайший: symbolId={bestSymbolId.Value} ('{bestSymbolName}'), delta={bestDelta:F6} ft ({bestDelta * 304.8:F2} mm)");
+
+            var currentSymbolId = (doc.GetElement(elementId) as FamilyInstance)?.Symbol?.Id;
+            if (bestSymbolId == currentSymbolId)
+            {
+                SmartConLogger.Lookup($"  → Ближайший совпадает с текущим типом — пропуск ChangeTypeId (предотвращает сброс instance-параметров)");
+                return false;
+            }
+
             try
             {
                 var inst = doc.GetElement(elementId) as FamilyInstance;
@@ -432,7 +440,7 @@ public sealed class RevitParameterResolver : IParameterResolver
                 SmartConLogger.Lookup($"  ИСКЛЮЧЕНИЕ ChangeTypeId ближайшего: {ex.Message}");
                 SmartConLogger.Warn($"[Resolver] ChangeTypeId nearest failed: {ex.Message}");
             }
-            return false; // false = только ближайший (вызывающий выставит NeedsAdapter)
+            return false;
         }
 
         SmartConLogger.Lookup("  → Ни одного подходящего типоразмера не найдено → return false");

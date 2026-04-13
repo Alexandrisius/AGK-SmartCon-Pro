@@ -39,7 +39,9 @@ public sealed class RevitFittingInsertService : IFittingInsertService
         ConnectorProxy staticProxy,
         ITransformService transformSvc,
         IConnectorService connSvc,
-        ConnectionTypeCode dynamicTypeCode = default)
+        ConnectionTypeCode dynamicTypeCode = default,
+        IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null,
+        IReadOnlyList<FittingMappingRule>? directConnectRules = null)
     {
         var fitting = doc.GetElement(fittingId);
         if (fitting is null) return null;
@@ -60,19 +62,51 @@ public sealed class RevitFittingInsertService : IFittingInsertService
         var connCtcMap = new List<(Connector Conn, ConnectionTypeCode Ctc)>();
         foreach (var c in fittingConns)
         {
-            var ctc = ConnectionTypeCode.Parse(GetConnectorDescriptionSafe(c));
+            var ctc = ctcOverrides is not null && ctcOverrides.TryGetValue((int)c.Id, out var ovr)
+                ? ovr
+                : ConnectionTypeCode.Parse(GetConnectorDescriptionSafe(c));
             connCtcMap.Add((c, ctc));
             SmartConLogger.Info($"[FitAlign] conn[{c.Id}] CTC={ctc.Value} R={c.Radius * 304.8:F1}mm (static CTC={staticProxy.ConnectionTypeCode.Value}, dyn CTC={dynamicTypeCode.Value})");
         }
 
         if (staticProxy.ConnectionTypeCode.IsDefined)
         {
+            // Стратегия 0: семантическая ориентация по direct-connect rules.
+            // Выбираем такую пару (fc1, fc2), что:
+            // - fc1.CTC может напрямую соединиться со staticCTC
+            // - fc2.CTC может напрямую соединиться с dynamicCTC
+            if (directConnectRules is not null
+                && directConnectRules.Count > 0
+                && dynamicTypeCode.IsDefined)
+            {
+                foreach (var left in connCtcMap)
+                {
+                    if (!CtcGuesser.CanDirectConnect(left.Ctc, staticProxy.ConnectionTypeCode, directConnectRules))
+                        continue;
+
+                    var right = connCtcMap.FirstOrDefault(x =>
+                        x.Conn.Id != left.Conn.Id
+                        && CtcGuesser.CanDirectConnect(x.Ctc, dynamicTypeCode, directConnectRules));
+
+                    if (right.Conn is not null)
+                    {
+                        fitConn1 = left.Conn;
+                        fitConn2 = right.Conn;
+                        SmartConLogger.Info($"[FitAlign] Стратегия 0 (direct-connect rules): " +
+                            $"fc1=conn[{fitConn1.Id}] (CTC={left.Ctc.Value} ↔ staticCTC={staticProxy.ConnectionTypeCode.Value}), " +
+                            $"fc2=conn[{fitConn2.Id}] (CTC={right.Ctc.Value} ↔ dynCTC={dynamicTypeCode.Value})");
+                        break;
+                    }
+                }
+            }
+
             // Стратегия 0 (Cross-connect / Reducer):
             // staticCTC ≠ dynamicCTC — коннекторы РАЗНЫХ типов.
             // Reducer conn с CTC==dynamicCTC → fc1 (к static), conn с CTC==staticCTC → fc2 (к dynamic).
             // Перекрёстное назначение: ВР conn к НР элементу, НР conn к ВР элементу.
             // Для СВАРКА↔СВАРКА: staticCTC==dynamicCTC → стратегия пропускается.
-            if (dynamicTypeCode.IsDefined
+            if (fitConn1 is null
+                && dynamicTypeCode.IsDefined
                 && staticProxy.ConnectionTypeCode.Value != dynamicTypeCode.Value)
             {
                 var staticMatch = connCtcMap.FirstOrDefault(x =>
@@ -142,7 +176,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
             SmartConLogger.Info($"[FitAlign] Стратегия 4 (distance fallback): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2.Id}]");
         }
 
-        var fitConn1Proxy = fitConn1.ToProxy();
+        var fitConn1Proxy = fitConn1!.ToProxy();
         if (fitConn1Proxy is null) return null;
 
         // Вычислить выравнивание фитинга к static коннектору

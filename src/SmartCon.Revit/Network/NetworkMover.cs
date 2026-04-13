@@ -39,7 +39,9 @@ public sealed class NetworkMover : INetworkMover
     /// parent→child и берём ReducerFamilies[0]. Никакого сравнения CTC — только запрос к таблице.
     /// </remarks>
     public ElementId? InsertReducer(Document doc,
-        ConnectorProxy parentConn, ConnectorProxy childConn)
+        ConnectorProxy parentConn, ConnectorProxy childConn,
+        IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null,
+        IReadOnlyList<FittingMappingRule>? directConnectRules = null)
     {
         var parentCtc = parentConn.ConnectionTypeCode;
         var childCtc  = childConn.ConnectionTypeCode;
@@ -77,7 +79,9 @@ public sealed class NetworkMover : INetworkMover
         // 3. Выровнять к parentConn
         _fittingInsertSvc.AlignFittingToStatic(
             doc, reducerId, parentConn, _transformSvc, _connSvc,
-            dynamicTypeCode: childConn.ConnectionTypeCode);
+            dynamicTypeCode: childConn.ConnectionTypeCode,
+            ctcOverrides: ctcOverrides,
+            directConnectRules: directConnectRules);
 
         doc.Regenerate();
 

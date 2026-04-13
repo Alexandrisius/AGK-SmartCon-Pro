@@ -14,5 +14,7 @@ public interface INetworkMover
     /// Reducer выравнивается к parentConn. Возвращает ElementId вставленного reducer или null.
     /// </summary>
     ElementId? InsertReducer(Document doc,
-        ConnectorProxy parentConn, ConnectorProxy childConn);
+        ConnectorProxy parentConn, ConnectorProxy childConn,
+        IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null,
+        IReadOnlyList<FittingMappingRule>? directConnectRules = null);
 }

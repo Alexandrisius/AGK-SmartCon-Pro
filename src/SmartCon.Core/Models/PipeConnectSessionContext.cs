@@ -38,4 +38,10 @@ public sealed class PipeConnectSessionContext
     /// Пустой список = нет ограничений (single-column или нет таблицы).
     /// </summary>
     public IReadOnlyList<LookupColumnConstraint> LookupConstraints { get; init; } = [];
+
+    /// <summary>
+    /// Хранилище виртуальных CTC-назначений. LoadFamily откладывается до Connect().
+    /// Создаётся в PipeConnectCommand, передаётся в ViewModel.
+    /// </summary>
+    public VirtualCtcStore VirtualCtcStore { get; init; } = new();
 }

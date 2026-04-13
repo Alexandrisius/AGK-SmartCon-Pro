@@ -30,7 +30,9 @@ public interface IFittingInsertService
         ConnectorProxy staticProxy,
         ITransformService transformSvc,
         IConnectorService connSvc,
-        ConnectionTypeCode dynamicTypeCode = default);
+        ConnectionTypeCode dynamicTypeCode = default,
+        IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null,
+        IReadOnlyList<FittingMappingRule>? directConnectRules = null);
 
     /// <summary>
     /// Удалить элемент из документа.

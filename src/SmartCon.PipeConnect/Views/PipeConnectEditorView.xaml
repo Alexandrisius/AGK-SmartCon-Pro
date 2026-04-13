@@ -29,6 +29,7 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="10"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="8"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -132,12 +133,19 @@
             <!-- Фитинг -->
             <Grid Grid.Row="8">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="4"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="95"/>
                 </Grid.ColumnDefinitions>
 
-                <ComboBox Grid.Column="0"
+                <Button Grid.Column="0" Content="&#x1F527;" Width="28" Height="28"
+                        Command="{Binding ReassignFittingCtcCommand}"
+                        Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
+                        ToolTip="Изменить типы коннекторов фитинга"/>
+
+                <ComboBox Grid.Column="2"
                           ItemsSource="{Binding AvailableFittings}"
                           SelectedItem="{Binding SelectedFitting, Mode=TwoWay}"
                           DisplayMemberPath="DisplayName"
@@ -145,15 +153,46 @@
                           Style="{DynamicResource CompactComboBox}"
                           ToolTip="Выберите фитинг для соединения"/>
 
-                <Button Grid.Column="2"
+                <Button Grid.Column="4"
                         Content="Вставить"
                         Style="{DynamicResource PrimaryButton}"
                         Command="{Binding InsertFittingCommand}"
                         ToolTip="Вставить выбранный фитинг (примерка)"/>
             </Grid>
 
+            <!-- Переходник (reducer) -->
+            <Grid Grid.Row="9" Margin="0,2,0,0"
+                  Visibility="{Binding IsReducerVisible, Converter={StaticResource BoolToVisibility}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="4"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="95"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Content="&#x1F527;" Width="28" Height="28"
+                        Command="{Binding ReassignReducerCtcCommand}"
+                        Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
+                        ToolTip="Изменить типы коннекторов переходника"/>
+
+                <ComboBox Grid.Column="2"
+                          ItemsSource="{Binding AvailableReducers}"
+                          SelectedItem="{Binding SelectedReducer, Mode=TwoWay}"
+                          DisplayMemberPath="DisplayName"
+                          IsEnabled="{Binding IsSessionActive}"
+                          Style="{DynamicResource CompactComboBox}"
+                          ToolTip="Выберите переходник"/>
+
+                <Button Grid.Column="4"
+                        Content="Вставить"
+                        Style="{DynamicResource PrimaryButton}"
+                        Command="{Binding InsertReducerCommand}"
+                        ToolTip="Вставить выбранный переходник"/>
+            </Grid>
+
             <!-- Глубина цепочки -->
-            <Grid Grid.Row="10" Margin="0,2,0,0"
+            <Grid Grid.Row="11" Margin="0,2,0,0"
                   Visibility="{Binding HasChain, Converter={StaticResource BoolToVisibility}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -183,7 +222,7 @@
             </Grid>
 
             <!-- Статус -->
-            <Border Grid.Row="11"
+            <Border Grid.Row="12"
                     Style="{DynamicResource StatusBarBorder}"
                     VerticalAlignment="Bottom" Margin="0,8,0,0">
                 <TextBlock Text="{Binding StatusMessage}"
@@ -192,7 +231,7 @@
             </Border>
 
             <!-- Нижняя панель -->
-            <Grid Grid.Row="12" Margin="0,10,0,0">
+            <Grid Grid.Row="13" Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>

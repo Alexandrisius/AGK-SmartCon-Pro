@@ -29,7 +29,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private readonly INetworkMover            _networkMover;
     private readonly IFittingMappingRepository _mappingRepo;
     private readonly IDialogService           _dialogSvc;
+    private readonly IFamilyConnectorService  _familyConnSvc;
     private readonly PipeConnectSessionContext _ctx;
+    private readonly VirtualCtcStore          _virtualCtcStore;
 
     private ITransactionGroupSession? _groupSession;
     private ElementId?      _currentFittingId;
@@ -66,6 +68,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     public ObservableCollection<FittingCardItem> AvailableFittings { get; } = [];
 
+    [ObservableProperty] private FittingCardItem? _selectedReducer;
+    [ObservableProperty] private bool _isReducerVisible;
+    public ObservableCollection<FittingCardItem> AvailableReducers { get; } = [];
+
     [ObservableProperty] private int _rotationAngleDeg = 15;
     [ObservableProperty] private FamilySizeOption? _selectedDynamicSize;
     [ObservableProperty] private bool _hasSizeOptions;
@@ -87,7 +93,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         IDynamicSizeResolver       sizeResolver,
         INetworkMover              networkMover,
         IFittingMappingRepository  mappingRepo,
-        IDialogService             dialogSvc)
+        IDialogService             dialogSvc,
+        IFamilyConnectorService    familyConnSvc)
     {
         _ctx              = ctx;
         _doc              = doc;
@@ -100,6 +107,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _networkMover     = networkMover;
         _mappingRepo      = mappingRepo;
         _dialogSvc        = dialogSvc;
+        _familyConnSvc    = familyConnSvc;
+        _virtualCtcStore  = ctx.VirtualCtcStore;
         _activeDynamic    = ctx.DynamicConnector;
         _chainGraph       = ctx.ChainGraph;
 
@@ -128,7 +137,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             {
                 foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
                 {
-                    AvailableFittings.Add(new FittingCardItem(rule, reducer, isReducer: true));
+                    AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
                 }
             }
         }
@@ -492,7 +501,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 }
             });
 
-            _activeDynamic = _connSvc.RefreshConnector(
+            _activeDynamic = RefreshWithCtcOverride(
                 _doc, _ctx.DynamicConnector.OwnerElementId, _ctx.DynamicConnector.ConnectorIndex)
                 ?? _ctx.DynamicConnector;
 
@@ -549,7 +558,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                         }
                     }
                 });
-                _activeDynamic = _connSvc.RefreshConnector(
+                _activeDynamic = RefreshWithCtcOverride(
                     _doc, _ctx.DynamicConnector.OwnerElementId, _ctx.DynamicConnector.ConnectorIndex)
                     ?? _ctx.DynamicConnector;
                 StatusMessage = "Готово к соединению";
@@ -557,6 +566,29 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             else
             {
                 StatusMessage = "Готово к соединению";
+            }
+
+            // ── Детекция и вставка reducer ────────────────────────────────────
+            // Если после sizing радиусы не совпадают → нужен reducer.
+            // Вставляем сразу чтобы пользователь видел результат.
+            if (_currentFittingId is null && _activeDynamic is not null)
+            {
+                const double radiusEps = 1e-5;
+                var dynRadius = _activeDynamic.Radius;
+                var staticRadius = _ctx.StaticConnector.Radius;
+                if (Math.Abs(dynRadius - staticRadius) > radiusEps)
+                {
+                    _needsPrimaryReducer = true;
+                    SmartConLogger.Info($"[Init] Радиусы не совпадают: dyn={dynRadius * 304.8:F1}mm, static={staticRadius * 304.8:F1}mm → нужен reducer");
+
+                    if (AvailableReducers.Count > 0)
+                    {
+                        SelectedReducer = AvailableReducers[0];
+                        IsReducerVisible = true;
+                        StatusMessage = "Вставка переходника…";
+                        InsertReducerSilent();
+                    }
+                }
             }
 
             // Обновить "АВТОПОДБОР" в списке размеров — после Init() размер мог измениться
@@ -717,7 +749,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                         _transformSvc.MoveElement(doc, dynId, corr);
                 }
                 doc.Regenerate();
-                _activeDynamic = _connSvc.RefreshConnector(doc, dynId, target.ConnectorIndex);
+                _activeDynamic = RefreshWithCtcOverride(doc, dynId, target.ConnectorIndex);
             });
 
             _visitedConnectorIndices.Add(target.ConnectorIndex);
@@ -816,7 +848,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     SmartConLogger.Info($"[ChangeDynamicSize] После смены: conn[{c.ConnectorIndex}] = DN {actualDn}");
                 }
 
-            _activeDynamic = _connSvc.RefreshConnector(doc, dynId, dynIdx) ?? _activeDynamic;
+            _activeDynamic = RefreshWithCtcOverride(doc, dynId, dynIdx) ?? _activeDynamic;
             if (_activeDynamic is not null)
             {
                 var actualDn = (int)Math.Round(_activeDynamic.Radius * 2.0 * 304.8);
@@ -839,6 +871,45 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 {
                     SmartConLogger.Info($"[ChangeDynamicSize] Автообновление фитинга: {currentFitting.DisplayName}");
                     InsertFittingSilentNoDynamicAdjust(currentFitting);
+                }
+            }
+
+            if (_primaryReducerId is not null)
+            {
+                SmartConLogger.Info($"[ChangeDynamicSize] Автообновление reducer (id={_primaryReducerId})");
+                var newReducerConn2 = SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false);
+                if (newReducerConn2 is not null && _activeDynamic is not null)
+                {
+                    _groupSession!.RunInTransaction("PipeConnect — Позиция dynamic после reducer resize", doc =>
+                    {
+                        var dynProxy = _connSvc.RefreshConnector(
+                            doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                            ?? _activeDynamic;
+                        var offset = newReducerConn2.OriginVec3 - dynProxy.OriginVec3;
+                        if (!VectorUtils.IsZero(offset))
+                            _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                        doc.Regenerate();
+                    });
+                }
+            }
+
+            if (_activeDynamic is not null && _currentFittingId is null && _primaryReducerId is null)
+            {
+                const double radiusEps = 1e-5;
+                var dynRadius = _activeDynamic.Radius;
+                var staticRadius = _ctx.StaticConnector.Radius;
+                if (Math.Abs(dynRadius - staticRadius) > radiusEps)
+                {
+                    _needsPrimaryReducer = true;
+                    SmartConLogger.Info($"[ChangeDynamicSize] Радиусы не совпадают: dyn={dynRadius * 304.8:F1}mm, static={staticRadius * 304.8:F1}mm → нужен reducer");
+
+                    if (AvailableReducers.Count > 0)
+                    {
+                        SelectedReducer = AvailableReducers[0];
+                        IsReducerVisible = true;
+                        StatusMessage = "Вставка переходника…";
+                        InsertReducerSilent();
+                    }
                 }
             }
         }
@@ -1745,7 +1816,501 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         return rule.FromType;
     }
 
-    // ── Insert fitting ────────────────────────────────────────────────────────
+    // ── Virtual CTC helpers ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Обновить ConnectorProxy с учётом виртуальных CTC (для static/dynamic элементов).
+    /// </summary>
+    private ConnectorProxy? RefreshWithCtcOverride(Document doc, ElementId elemId, int connIdx)
+    {
+        var proxy = _connSvc.RefreshConnector(doc, elemId, connIdx);
+        if (proxy is null) return null;
+        var ctc = _virtualCtcStore.Get(elemId, connIdx);
+        return ctc.HasValue ? proxy with { ConnectionTypeCode = ctc.Value } : proxy;
+    }
+
+    /// <summary>
+    /// Автоугадывание CTC для фитинга по таблице маппинга (IsDirectConnect=true).
+    /// Записывает виртуальные CTC в store и возвращает overrides для AlignFittingToStatic.
+    /// </summary>
+    private IReadOnlyDictionary<int, ConnectionTypeCode> GuessCtcForFitting(ElementId fittingId, FittingMappingRule? rule)
+    {
+        var conns = _connSvc.GetAllConnectors(_doc, fittingId);
+
+        bool allDefined = conns.Count >= 2 && conns.All(c => c.ConnectionTypeCode.IsDefined);
+        if (allDefined)
+        {
+            foreach (var c in conns)
+                _virtualCtcStore.Set(fittingId, c.ConnectorIndex, c.ConnectionTypeCode);
+            SmartConLogger.Info($"[VirtualCTC] Fitting {fittingId.Value}: CTC уже определён → " +
+                string.Join(", ", conns.Select(c => $"conn[{c.ConnectorIndex}]={c.ConnectionTypeCode.Value}")));
+            return _virtualCtcStore.GetOverridesForElement(fittingId);
+        }
+
+        var staticCTC = _ctx.StaticConnector.ConnectionTypeCode;
+        var dynamicCTC = (_activeDynamic ?? _ctx.DynamicConnector).ConnectionTypeCode;
+        var mappingRules = _mappingRepo.GetMappingRules();
+
+        var (counterpartForStatic, counterpartForDynamic) =
+            CtcGuesser.GuessAdapterCtc(staticCTC, dynamicCTC, mappingRules);
+
+        if (conns.Count >= 2)
+        {
+            var staticOrigin = _ctx.StaticConnector.Origin;
+            var connForStatic = conns
+                .OrderBy(c => c.Origin.DistanceTo(staticOrigin))
+                .First();
+            var connForDynamic = conns.First(c => c.ConnectorIndex != connForStatic.ConnectorIndex);
+
+            _virtualCtcStore.Set(fittingId, connForStatic.ConnectorIndex, counterpartForStatic);
+            _virtualCtcStore.Set(fittingId, connForDynamic.ConnectorIndex, counterpartForDynamic);
+            SmartConLogger.Info($"[VirtualCTC] Fitting {fittingId.Value} (guessed): " +
+                $"conn[{connForStatic.ConnectorIndex}]={counterpartForStatic.Value}→static(R={connForStatic.Radius * 304.8:F1}mm), " +
+                $"conn[{connForDynamic.ConnectorIndex}]={counterpartForDynamic.Value}→dynamic(R={connForDynamic.Radius * 304.8:F1}mm)");
+        }
+
+        return _virtualCtcStore.GetOverridesForElement(fittingId);
+    }
+
+    /// <summary>
+    /// Автоугадывание CTC для reducer.
+    /// Same-type → оба коннектора = тот же CTC.
+    /// Cross-type → реверс: conn к static = dynamicCTC, conn к dynamic = staticCTC.
+    /// </summary>
+    private IReadOnlyDictionary<int, ConnectionTypeCode> GuessCtcForReducer(ElementId reducerId)
+    {
+        var conns = _connSvc.GetAllConnectors(_doc, reducerId);
+
+        bool allDefined = conns.Count >= 2 && conns.All(c => c.ConnectionTypeCode.IsDefined);
+        if (allDefined)
+        {
+            foreach (var c in conns)
+                _virtualCtcStore.Set(reducerId, c.ConnectorIndex, c.ConnectionTypeCode);
+            SmartConLogger.Info($"[VirtualCTC] Reducer {reducerId.Value}: CTC уже определён → " +
+                string.Join(", ", conns.Select(c => $"conn[{c.ConnectorIndex}]={c.ConnectionTypeCode.Value}")));
+            return _virtualCtcStore.GetOverridesForElement(reducerId);
+        }
+
+        var staticCTC = _ctx.StaticConnector.ConnectionTypeCode;
+        var dynamicCTC = (_activeDynamic ?? _ctx.DynamicConnector).ConnectionTypeCode;
+        var mappingRules = _mappingRepo.GetMappingRules();
+
+        var (ctcForStaticSide, ctcForDynamicSide) =
+            CtcGuesser.GuessReducerCtc(staticCTC, dynamicCTC, mappingRules);
+
+        if (conns.Count >= 2)
+        {
+            var staticOrigin = _ctx.StaticConnector.Origin;
+            var connForStatic = conns
+                .OrderBy(c => c.Origin.DistanceTo(staticOrigin))
+                .First();
+            var connForDynamic = conns.First(c => c.ConnectorIndex != connForStatic.ConnectorIndex);
+
+            _virtualCtcStore.Set(reducerId, connForStatic.ConnectorIndex, ctcForStaticSide);
+            _virtualCtcStore.Set(reducerId, connForDynamic.ConnectorIndex, ctcForDynamicSide);
+            SmartConLogger.Info($"[VirtualCTC] Reducer {reducerId.Value} (guessed): " +
+                $"conn[{connForStatic.ConnectorIndex}]={ctcForStaticSide.Value}→static(R={connForStatic.Radius * 304.8:F1}mm), " +
+                $"conn[{connForDynamic.ConnectorIndex}]={ctcForDynamicSide.Value}→dynamic(R={connForDynamic.Radius * 304.8:F1}mm)");
+        }
+
+        return _virtualCtcStore.GetOverridesForElement(reducerId);
+    }
+
+    /// <summary>
+    /// Построить FittingCtcSetupItems из project-level коннекторов + virtualCtcStore.
+    /// Показывает АКТУАЛЬНЫЕ виртуальные CTC (те что будут записаны в семейство).
+    /// </summary>
+    private List<FittingCtcSetupItem> BuildCtcItemsFromVirtualStore(
+        ElementId elementId, IReadOnlyList<ConnectorTypeDefinition> types)
+    {
+        var conns = _connSvc.GetAllConnectors(_doc, elementId);
+        var items = new List<FittingCtcSetupItem>();
+
+        foreach (var c in conns)
+        {
+            var vCtc = _virtualCtcStore.Get(elementId, c.ConnectorIndex);
+            var selectedType = vCtc.HasValue
+                ? types.FirstOrDefault(t => t.Code == vCtc.Value.Value)
+                : (c.ConnectionTypeCode.IsDefined
+                    ? types.FirstOrDefault(t => t.Code == c.ConnectionTypeCode.Value)
+                    : null);
+
+            double diamMm = c.Radius * 2.0 * 304.8;
+            items.Add(new FittingCtcSetupItem
+            {
+                ConnectorIndex = c.ConnectorIndex,
+                ParameterName = string.Empty,
+                DiameterMm = diamMm,
+                SelectedType = selectedType,
+            });
+        }
+
+        return items;
+    }
+
+    /// <summary>Найти ConnectorTypeDefinition по CTC коду.</summary>
+    private ConnectorTypeDefinition? FindTypeDef(ConnectionTypeCode ctc)
+    {
+        if (!ctc.IsDefined) return null;
+        return _mappingRepo.GetConnectorTypes().FirstOrDefault(t => t.Code == ctc.Value);
+    }
+
+    /// <summary>
+    /// Промоутить все виртуальные CTC (guessed) в pending writes.
+    /// Вызывается в Connect() — пользователь нажал СОЕДИНИТЬ = принял текущие CTC.
+    /// Пропускает элементы, у которых CTC уже определён в семействе (allDefined).
+    /// </summary>
+    private void PromoteGuessedCtcToPendingWrites()
+    {
+        PromoteElementCtcToPendingWrites(_currentFittingId);
+        PromoteElementCtcToPendingWrites(_primaryReducerId);
+    }
+
+    private void PromoteElementCtcToPendingWrites(ElementId? elementId)
+    {
+        if (elementId is null) return;
+
+        var overrides = _virtualCtcStore.GetOverridesForElement(elementId);
+        if (overrides.Count == 0) return;
+
+        var conns = _connSvc.GetAllConnectors(_doc, elementId);
+        bool allDefined = conns.Count >= 2 && conns.All(c => c.ConnectionTypeCode.IsDefined);
+        if (allDefined)
+        {
+            bool allMatch = true;
+            foreach (var c in conns)
+            {
+                var vCtc = _virtualCtcStore.Get(elementId, c.ConnectorIndex);
+                if (vCtc.HasValue && vCtc.Value.Value != c.ConnectionTypeCode.Value)
+                {
+                    allMatch = false;
+                    break;
+                }
+            }
+            if (allMatch) return;
+
+            SmartConLogger.Info($"[CTC] Virtual CTC differs from family CTC для {elementId.Value} — перезапись");
+        }
+
+        foreach (var (connIdx, ctc) in overrides)
+        {
+            var typeDef = FindTypeDef(ctc);
+            if (typeDef is not null)
+            {
+                _virtualCtcStore.Set(elementId, connIdx, ctc, typeDef);
+                SmartConLogger.Info($"[CTC] Promoted guessed CTC {ctc.Value} → pending write для {elementId.Value}:{connIdx}");
+            }
+        }
+    }
+
+    private ConnectionTypeCode GetEffectiveConnectorCtc(ElementId elementId, ConnectorProxy conn)
+    {
+        var vCtc = _virtualCtcStore.Get(elementId, conn.ConnectorIndex);
+        return vCtc ?? conn.ConnectionTypeCode;
+    }
+
+    private (ConnectorProxy? ToStatic, ConnectorProxy? ToDynamic) ResolveConnectorSidesForElement(
+        ElementId elementId,
+        IReadOnlyList<ConnectorProxy> conns,
+        ConnectionTypeCode dynamicTypeCode)
+    {
+        var rules = _mappingRepo.GetMappingRules();
+        var staticTypeCode = _ctx.StaticConnector.ConnectionTypeCode;
+
+        if (rules.Count > 0 && staticTypeCode.IsDefined && dynamicTypeCode.IsDefined)
+        {
+            var connCtcMap = conns
+                .Select(c => (Conn: c, Ctc: GetEffectiveConnectorCtc(elementId, c)))
+                .ToList();
+
+            foreach (var left in connCtcMap)
+            {
+                if (!CtcGuesser.CanDirectConnect(left.Ctc, staticTypeCode, rules))
+                    continue;
+
+                var right = connCtcMap.FirstOrDefault(x =>
+                    x.Conn.ConnectorIndex != left.Conn.ConnectorIndex
+                    && CtcGuesser.CanDirectConnect(x.Ctc, dynamicTypeCode, rules));
+
+                if (right.Conn is not null)
+                    return (left.Conn, right.Conn);
+            }
+        }
+
+        var toStatic = conns
+            .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, _ctx.StaticConnector.OriginVec3))
+            .FirstOrDefault();
+        var toDynamic = conns.FirstOrDefault(c => c.ConnectorIndex != (toStatic?.ConnectorIndex ?? -1));
+        return (toStatic, toDynamic);
+    }
+
+    // ── Insert fitting / reducer / reassign CTC ────────────────────────────────
+
+    /// <summary>Вставка reducer без UI-обёрток (для Init / ChangeDynamicSize).</summary>
+    private void InsertReducerSilent()
+    {
+        if (SelectedReducer is null) return;
+        var reducer = SelectedReducer;
+        var primary = reducer.PrimaryFitting;
+        if (primary is null) return;
+
+        _activeFittingRule = reducer.Rule;
+        var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+
+        ElementId? insertedId = null;
+        ConnectorProxy? fitConn2 = null;
+
+        _groupSession!.RunInTransaction("PipeConnect — Вставка reducer", doc =>
+        {
+            if (_primaryReducerId is not null)
+            {
+                _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
+                _primaryReducerId = null;
+            }
+
+            insertedId = _fittingInsertSvc.InsertFitting(
+                doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
+            if (insertedId is null) return;
+
+            doc.Regenerate();
+
+            var overrides = GuessCtcForReducer(insertedId);
+
+            fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
+                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                dynamicTypeCode: dynCtc,
+                ctcOverrides: overrides,
+                directConnectRules: _mappingRepo.GetMappingRules());
+
+            if (fitConn2 is not null && _activeDynamic is not null)
+            {
+                var activeProxy = _connSvc.RefreshConnector(
+                    doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                    ?? _activeDynamic;
+
+                var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
+                if (!VectorUtils.IsZero(offset))
+                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+            }
+
+            doc.Regenerate();
+        });
+
+        if (insertedId is not null)
+        {
+            _primaryReducerId = insertedId;
+            InsertReducerCommand.NotifyCanExecuteChanged();
+            ReassignReducerCtcCommand.NotifyCanExecuteChanged();
+            StatusMessage = $"Переходник: {reducer.DisplayName}";
+            SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanInsertReducer))]
+    private void InsertReducer()
+    {
+        if (SelectedReducer is null) return;
+        IsBusy = true;
+        StatusMessage = "Вставка переходника…";
+        try
+        {
+            var reducer = SelectedReducer;
+            var primary = reducer.PrimaryFitting;
+            if (primary is null) { StatusMessage = "Нет данных о семействе переходника"; return; }
+
+            _activeFittingRule = reducer.Rule;
+            var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+
+            ElementId? insertedId = null;
+            ConnectorProxy? fitConn2 = null;
+
+            _groupSession!.RunInTransaction("PipeConnect — Вставка reducer", doc =>
+            {
+                if (_primaryReducerId is not null)
+                {
+                    _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
+                    _primaryReducerId = null;
+                }
+
+                insertedId = _fittingInsertSvc.InsertFitting(
+                    doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
+                if (insertedId is null) return;
+
+                doc.Regenerate();
+
+                var overrides = GuessCtcForReducer(insertedId);
+
+                fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
+                    doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                    dynamicTypeCode: dynCtc,
+                    ctcOverrides: overrides,
+                    directConnectRules: _mappingRepo.GetMappingRules());
+
+                doc.Regenerate();
+            });
+
+            if (insertedId is not null)
+            {
+                _primaryReducerId = insertedId;
+                InsertReducerCommand.NotifyCanExecuteChanged();
+                ReassignReducerCtcCommand.NotifyCanExecuteChanged();
+                StatusMessage = $"Переходник: {reducer.DisplayName}";
+                SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
+            }
+            else
+            {
+                StatusMessage = $"Семейство '{primary.FamilyName}' не найдено";
+            }
+        }
+        catch (Exception ex) { StatusMessage = $"Ошибка: {ex.Message}"; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanReassignFittingCtc))]
+    private void ReassignFittingCtc()
+    {
+        if (_currentFittingId is null || _activeFittingRule is null) return;
+        IsBusy = true;
+        try
+        {
+            var types = _mappingRepo.GetConnectorTypes();
+            if (types.Count == 0) return;
+
+            var elem = _doc.GetElement(_currentFittingId) as FamilyInstance;
+            if (elem is null) return;
+
+            var items = BuildCtcItemsFromVirtualStore(_currentFittingId, types);
+
+            if (!_dialogSvc.ShowFittingCtcSetup(elem.Symbol.Family.Name, elem.Symbol.Name, items, types))
+                return;
+
+            foreach (var item in items)
+            {
+                if (item.SelectedType is not null)
+                {
+                    var ctc = new ConnectionTypeCode(item.SelectedType.Code);
+                    _virtualCtcStore.Set(_currentFittingId, item.ConnectorIndex, ctc, item.SelectedType);
+                }
+            }
+
+            // Переориентировать фитинг с новыми ctcOverrides (без удаления/перевставки)
+            var overrides = _virtualCtcStore.GetOverridesForElement(_currentFittingId);
+            var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+
+            ConnectorProxy? reorientedConn2 = null;
+
+            _groupSession!.RunInTransaction("PipeConnect — Переориентация фитинга", doc =>
+            {
+                var fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
+                    doc, _currentFittingId!, _ctx.StaticConnector, _transformSvc, _connSvc,
+                    dynamicTypeCode: dynCtc,
+                    ctcOverrides: overrides,
+                    directConnectRules: _mappingRepo.GetMappingRules());
+                reorientedConn2 = fitConn2;
+
+                if (fitConn2 is not null && _activeDynamic is not null)
+                {
+                    var dynProxy = _connSvc.RefreshConnector(
+                        doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                        ?? _activeDynamic;
+
+                    var offset = fitConn2.OriginVec3 - dynProxy.OriginVec3;
+                    if (!VectorUtils.IsZero(offset))
+                        _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                }
+
+                doc.Regenerate();
+            });
+
+            if (reorientedConn2 is not null)
+                _activeFittingConn2 = SizeFittingConnectors(_doc, _currentFittingId!, reorientedConn2);
+
+            StatusMessage = "CTC фитинга обновлён — переориентирован";
+        }
+        catch (Exception ex) { StatusMessage = $"Ошибка: {ex.Message}"; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanReassignReducerCtc))]
+    private void ReassignReducerCtc()
+    {
+        if (_primaryReducerId is null) return;
+        IsBusy = true;
+        try
+        {
+            var elem = _doc.GetElement(_primaryReducerId) as FamilyInstance;
+            if (elem is null) return;
+
+            var types = _mappingRepo.GetConnectorTypes();
+            if (types.Count == 0) return;
+
+            var items = BuildCtcItemsFromVirtualStore(_primaryReducerId, types);
+
+            if (!_dialogSvc.ShowFittingCtcSetup(elem.Symbol.Family.Name, elem.Symbol.Name, items, types))
+                return;
+
+            // Используем items[i].ConnectorIndex напрямую — он установлен в BuildCtcItemsFromVirtualStore
+            foreach (var item in items)
+            {
+                if (item.SelectedType is not null)
+                {
+                    var ctc = new ConnectionTypeCode(item.SelectedType.Code);
+                    _virtualCtcStore.Set(_primaryReducerId, item.ConnectorIndex, ctc, item.SelectedType);
+                }
+            }
+
+            // Переориентировать reducer с новыми ctcOverrides (без удаления/перевставки)
+            var overrides = _virtualCtcStore.GetOverridesForElement(_primaryReducerId);
+            var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+
+            ConnectorProxy? reorientedReducerConn2 = null;
+
+            _groupSession!.RunInTransaction("PipeConnect — Переориентация reducer", doc =>
+            {
+                var fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
+                    doc, _primaryReducerId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                    dynamicTypeCode: dynCtc,
+                    ctcOverrides: overrides,
+                    directConnectRules: _mappingRepo.GetMappingRules());
+                reorientedReducerConn2 = fitConn2;
+
+                if (fitConn2 is not null && _activeDynamic is not null)
+                {
+                    var dynProxy = _connSvc.RefreshConnector(
+                        doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                        ?? _activeDynamic;
+
+                    var offset = fitConn2.OriginVec3 - dynProxy.OriginVec3;
+                    if (!VectorUtils.IsZero(offset))
+                        _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                }
+
+                doc.Regenerate();
+            });
+
+            if (reorientedReducerConn2 is not null)
+            {
+                var sizedConn2 = SizeFittingConnectors(_doc, _primaryReducerId, reorientedReducerConn2, adjustDynamicToFit: false);
+                if (sizedConn2 is not null && _activeDynamic is not null)
+                {
+                    _groupSession!.RunInTransaction("PipeConnect — Позиция dynamic после reducer re-size", doc =>
+                    {
+                        var dynProxy = _connSvc.RefreshConnector(
+                            doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                            ?? _activeDynamic;
+                        var offset = sizedConn2.OriginVec3 - dynProxy.OriginVec3;
+                        if (!VectorUtils.IsZero(offset))
+                            _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                        doc.Regenerate();
+                    });
+                }
+            }
+
+            StatusMessage = "CTC переходника обновлён — переориентирован";
+        }
+        catch (Exception ex) { StatusMessage = $"Ошибка: {ex.Message}"; }
+        finally { IsBusy = false; }
+    }
 
     [RelayCommand(CanExecute = nameof(CanInsertFitting))]
     private void InsertFitting()
@@ -1792,14 +2357,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _activeFittingRule = fitting.Rule;
         var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
 
-        if (!EnsureFittingCtcForInsert(fitting))
-        {
-            StatusMessage = "Типы коннекторов не назначены";
-            return;
-        }
-
         ElementId? insertedId = null;
         ConnectorProxy? fitConn2 = null;
+        IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null;
 
         _groupSession!.RunInTransaction("PipeConnect — Вставка фитинга", doc =>
         {
@@ -1817,9 +2377,13 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
             doc.Regenerate();
 
+            ctcOverrides = GuessCtcForFitting(insertedId, fitting.Rule);
+
             fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
                 doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc,
-                dynamicTypeCode: dynCtc);
+                dynamicTypeCode: dynCtc,
+                ctcOverrides: ctcOverrides,
+                directConnectRules: _mappingRepo.GetMappingRules());
 
             if (fitConn2 is not null && _activeDynamic is not null)
             {
@@ -1873,14 +2437,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _activeFittingRule = fitting.Rule;
         var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
 
-        if (!EnsureFittingCtcForInsert(fitting))
-        {
-            StatusMessage = "Типы коннекторов не назначены";
-            return;
-        }
-
         ElementId? insertedId = null;
         ConnectorProxy? fitConn2 = null;
+        IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null;
 
         _groupSession!.RunInTransaction("PipeConnect — Вставка фитинга", doc =>
         {
@@ -1898,9 +2457,13 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
             doc.Regenerate();
 
+            ctcOverrides = GuessCtcForFitting(insertedId, fitting.Rule);
+
             fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
                 doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc,
-                dynamicTypeCode: dynCtc);
+                dynamicTypeCode: dynCtc,
+                ctcOverrides: ctcOverrides,
+                directConnectRules: _mappingRepo.GetMappingRules());
 
             if (fitConn2 is not null && _activeDynamic is not null)
             {
@@ -1945,15 +2508,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             ValidateAndFixBeforeConnect();
 
             // ── Вставка reducer если подгонка не удалась ──
-            if (_needsPrimaryReducer && _currentFittingId is null)
+            if (_needsPrimaryReducer && _currentFittingId is null && _primaryReducerId is null)
             {
-                if (!EnsureReducerCtcForInsert())
-                {
-                    StatusMessage = "Типы коннекторов переходника не назначены";
-                    IsBusy = false;
-                    return;
-                }
-
                 if (_activeFittingRule is null)
                     _activeFittingRule = _ctx.ProposedFittings
                         .FirstOrDefault(r => r.ReducerFamilies.Count > 0);
@@ -1963,10 +2519,16 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 {
                     var dyn = _activeDynamic ?? _ctx.DynamicConnector;
                     var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
-                    _primaryReducerId = _networkMover.InsertReducer(doc, _ctx.StaticConnector, dynR);
+
+                    _primaryReducerId = _networkMover.InsertReducer(
+                        doc, _ctx.StaticConnector, dynR,
+                        directConnectRules: _mappingRepo.GetMappingRules());
 
                     if (_primaryReducerId is not null)
+                    {
+                        var overrides = GuessCtcForReducer(_primaryReducerId);
                         SmartConLogger.Info($"[Connect] Reducer вставлен: id={_primaryReducerId.Value}");
+                    }
                     else
                         SmartConLogger.Warn($"[Connect] Reducer не найден в маппинге — соединяем напрямую");
                 });
@@ -1979,6 +2541,16 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 }
             }
 
+            // ── Промоутить guessed CTC → pending writes (пользователь принял нажав СОЕДИНИТЬ) ──
+            PromoteGuessedCtcToPendingWrites();
+
+            // ── Запись всех виртуальных CTC в семейства (LoadFamily) ──
+            if (_virtualCtcStore.HasPendingWrites)
+            {
+                StatusMessage = "Запись типов коннекторов…";
+                FlushVirtualCtcToFamilies();
+            }
+
             // ── Диагностика: позиции ДО ConnectTo ──
             LogConnectorState("ДО ConnectTo");
 
@@ -1988,19 +2560,17 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
                 if (_currentFittingId is not null)
                 {
-                    var fConns = _connSvc.GetAllFreeConnectors(doc, _currentFittingId);
-                    var fc1 = fConns
-                        .OrderBy(c => (_ctx.StaticConnector.Origin - c.Origin).GetLength())
-                        .FirstOrDefault();
+                    var fConns = _connSvc.GetAllFreeConnectors(doc, _currentFittingId).ToList();
+                    var dyn = _activeDynamic ?? _ctx.DynamicConnector;
+                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+                    var dynCtc = dynR.ConnectionTypeCode.IsDefined ? dynR.ConnectionTypeCode : dyn.ConnectionTypeCode;
+                    var (fc1, fc2) = ResolveConnectorSidesForElement(_currentFittingId, fConns, dynCtc);
 
                     if (fc1 is not null)
                         _connSvc.ConnectTo(doc,
                             _ctx.StaticConnector.OwnerElementId, _ctx.StaticConnector.ConnectorIndex,
                             _currentFittingId, fc1.ConnectorIndex);
 
-                    var fc2 = fConns.FirstOrDefault(c => c.ConnectorIndex != (fc1?.ConnectorIndex ?? -1));
-                    var dyn = _activeDynamic ?? _ctx.DynamicConnector;
-                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
                     if (fc2 is not null)
                         _connSvc.ConnectTo(doc, _currentFittingId, fc2.ConnectorIndex,
                             dynR.OwnerElementId, dynR.ConnectorIndex);
@@ -2008,14 +2578,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 else if (_primaryReducerId is not null)
                 {
                     // Соединение через reducer: static ↔ reducer.conn1, reducer.conn2 ↔ dynamic
-                    var rConns = _connSvc.GetAllFreeConnectors(doc, _primaryReducerId);
-                    var rConn1 = rConns
-                        .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, _ctx.StaticConnector.OriginVec3))
-                        .FirstOrDefault();
-                    var rConn2 = rConns.FirstOrDefault(c => c.ConnectorIndex != (rConn1?.ConnectorIndex ?? -1));
-
                     var dyn = _activeDynamic ?? _ctx.DynamicConnector;
                     var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+                    var dynCtc = dynR.ConnectionTypeCode.IsDefined ? dynR.ConnectionTypeCode : dyn.ConnectionTypeCode;
+                    var rConns = _connSvc.GetAllFreeConnectors(doc, _primaryReducerId).ToList();
+                    var (rConn1, rConn2) = ResolveConnectorSidesForElement(_primaryReducerId, rConns, dynCtc);
 
                     if (rConn1 is not null)
                     {
@@ -2088,14 +2655,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             if (_currentFittingId is not null)
             {
                 var fConns = _connSvc.GetAllFreeConnectors(doc, _currentFittingId).ToList();
-
-                // Conn1 фитинга (ближайший к static)
-                var fc1 = fConns
-                    .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, _ctx.StaticConnector.OriginVec3))
-                    .FirstOrDefault();
-
-                // Conn2 фитинга (дальний = dynamic-сторона)
-                var fc2 = fConns.FirstOrDefault(c => c.ConnectorIndex != (fc1?.ConnectorIndex ?? -1));
+                var dynTypeCode = dynFresh.ConnectionTypeCode.IsDefined
+                    ? dynFresh.ConnectionTypeCode
+                    : dyn.ConnectionTypeCode;
+                var (fc1, fc2) = ResolveConnectorSidesForElement(_currentFittingId, fConns, dynTypeCode);
 
                 if (fc1 is not null)
                 {
@@ -2160,6 +2723,54 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     SmartConLogger.Lookup($"  BasisZ: угол fc2↔dyn={angleZ * 180 / System.Math.PI:F1}° (идеал=180°, отклон={antiParallelErr:F1}°)");
                     if (antiParallelErr > angleEpsDeg)
                         SmartConLogger.Warn($"[Validate] ПРЕДУПРЕЖДЕНИЕ: BasisZ не антипараллельны (откл. {antiParallelErr:F1}°) — коннект может не пройти");
+                }
+            }
+            else if (_primaryReducerId is not null)
+            {
+                // Через reducer: static ↔ reducer.conn1, reducer.conn2 ↔ dynamic
+                var rConns = _connSvc.GetAllFreeConnectors(doc, _primaryReducerId).ToList();
+                var dynTypeCode = dynFresh.ConnectionTypeCode.IsDefined
+                    ? dynFresh.ConnectionTypeCode
+                    : dyn.ConnectionTypeCode;
+                var (rConn1, rConn2) = ResolveConnectorSidesForElement(_primaryReducerId, rConns, dynTypeCode);
+
+                if (rConn1 is not null)
+                {
+                    var posErr1 = VectorUtils.DistanceTo(rConn1.OriginVec3, _ctx.StaticConnector.OriginVec3);
+                    SmartConLogger.Lookup($"  reducer.conn1↔static расстояние={posErr1 * 304.8:F2}mm");
+                    if (posErr1 > positionEpsFt)
+                    {
+                        SmartConLogger.Warn($"[Validate] reducer.conn1 смещён от static на {posErr1 * 304.8:F2} мм — корректируем");
+                        var correction = _ctx.StaticConnector.OriginVec3 - rConn1.OriginVec3;
+                        _transformSvc.MoveElement(doc, _primaryReducerId, correction);
+                        doc.Regenerate();
+                        rConn1 = _connSvc.RefreshConnector(doc, _primaryReducerId, rConn1.ConnectorIndex) ?? rConn1;
+                        rConn2 = rConn2 is not null
+                            ? _connSvc.RefreshConnector(doc, _primaryReducerId, rConn2.ConnectorIndex) ?? rConn2
+                            : null;
+                    }
+
+                    double r1Err = System.Math.Abs(rConn1.Radius - _ctx.StaticConnector.Radius);
+                    SmartConLogger.Lookup($"  reducer.conn1 R={rConn1.Radius * 304.8:F2}mm, static R={_ctx.StaticConnector.Radius * 304.8:F2}mm, Δ={r1Err * 304.8:F2}mm");
+                }
+
+                if (rConn2 is not null)
+                {
+                    // Позиция: dynamic должен быть у reducer.conn2
+                    var posErr2 = VectorUtils.DistanceTo(dynFresh.OriginVec3, rConn2.OriginVec3);
+                    SmartConLogger.Lookup($"  позиция: dyn↔reducer.conn2 расстояние={posErr2 * 304.8:F2}mm");
+                    if (posErr2 > positionEpsFt)
+                    {
+                        SmartConLogger.Warn($"[Validate] dynamic смещён от reducer.conn2 на {posErr2 * 304.8:F2} мм — корректируем");
+                        var offset = rConn2.OriginVec3 - dynFresh.OriginVec3;
+                        _transformSvc.MoveElement(doc, dynFresh.OwnerElementId, offset);
+                        doc.Regenerate();
+                        dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
+                        _activeDynamic = dynFresh;
+                    }
+
+                    double r2Err = System.Math.Abs(rConn2.Radius - dynFresh.Radius);
+                    SmartConLogger.Lookup($"  reducer.conn2 R={rConn2.Radius * 304.8:F2}mm, dyn R={dynFresh.Radius * 304.8:F2}mm, Δ={r2Err * 304.8:F2}mm");
                 }
             }
             else
@@ -2264,8 +2875,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     // ── CanExecute helpers ────────────────────────────────────────────────────
 
-    private bool CanOperate()       => IsSessionActive && !IsBusy;
-    private bool CanInsertFitting() => IsSessionActive && !IsBusy && SelectedFitting is not null;
+    private bool CanOperate()        => IsSessionActive && !IsBusy;
+    private bool CanInsertFitting()  => IsSessionActive && !IsBusy && SelectedFitting is not null;
+    private bool CanInsertReducer()  => IsSessionActive && !IsBusy && SelectedReducer is not null && _primaryReducerId is null;
+    private bool CanReassignFittingCtc() => IsSessionActive && !IsBusy && _currentFittingId is not null;
+    private bool CanReassignReducerCtc() => IsSessionActive && !IsBusy && _primaryReducerId is not null;
 
     partial void OnIsBusyChanged(bool value)
     {
@@ -2273,6 +2887,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         RotateRightCommand.NotifyCanExecuteChanged();
         CycleConnectorCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
+        InsertReducerCommand.NotifyCanExecuteChanged();
+        ReassignFittingCtcCommand.NotifyCanExecuteChanged();
+        ReassignReducerCtcCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
         IncrementChainDepthCommand.NotifyCanExecuteChanged();
         DecrementChainDepthCommand.NotifyCanExecuteChanged();
@@ -2284,6 +2901,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         RotateRightCommand.NotifyCanExecuteChanged();
         CycleConnectorCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
+        InsertReducerCommand.NotifyCanExecuteChanged();
+        ReassignFittingCtcCommand.NotifyCanExecuteChanged();
+        ReassignReducerCtcCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
         IncrementChainDepthCommand.NotifyCanExecuteChanged();
         DecrementChainDepthCommand.NotifyCanExecuteChanged();
@@ -2373,7 +2993,16 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
                 _groupSession!.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
                 {
-                    foreach (var c in allConns)
+                    var sortedConns = allConns
+                        .OrderBy(c =>
+                        {
+                            if (!depsByIdx.TryGetValue(c.ConnectorIndex, out var deps) || deps.Count == 0)
+                                return 1;
+                            return deps[0].IsInstance ? 1 : 0;
+                        })
+                        .ToList();
+
+                    foreach (var c in sortedConns)
                     {
                         double targetRadius = c.ConnectorIndex == conn2Idx
                             ? currentDynRadius
@@ -2397,9 +3026,12 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         {
             _groupSession!.RunInTransaction("PipeConnect — Выравнивание после размера", txDoc =>
             {
+                var ctcOvr = _virtualCtcStore.GetOverridesForElement(fittingId);
                 newFitConn2 = _fittingInsertSvc.AlignFittingToStatic(
                     txDoc, fittingId, _ctx.StaticConnector, _transformSvc, _connSvc,
-                    dynamicTypeCode: ResolveDynamicTypeFromRule(_activeFittingRule));
+                    dynamicTypeCode: ResolveDynamicTypeFromRule(_activeFittingRule),
+                    ctcOverrides: ctcOvr.Count > 0 ? ctcOvr : null,
+                    directConnectRules: _mappingRepo.GetMappingRules());
 
                 if (newFitConn2 is not null && _activeDynamic is not null)
                 {
@@ -2413,7 +3045,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
                     txDoc.Regenerate();
 
-                    _activeDynamic = _connSvc.RefreshConnector(
+                    _activeDynamic = RefreshWithCtcOverride(
                         txDoc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
                         ?? _activeDynamic;
                 }
@@ -2692,9 +3324,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         return string.Empty;
     }
 
-    private void ApplyFittingCtcToFamily(FamilySymbol symbol, List<FittingCtcSetupItem> items)
+    private void ApplyFittingCtcToFamily(
+        FamilySymbol symbol, List<FittingCtcSetupItem> items,
+        ElementId? projectElementId = null)
     {
-        if (_doc.IsModifiable) return;
+        if (_doc.IsModifiable)
+        {
+            SmartConLogger.Warn($"[CTC] ApplyFittingCtcToFamily: _doc.IsModifiable=true, пропуск записи для '{symbol.Family.Name}'");
+            return;
+        }
 
         Document? familyDoc = null;
         try
@@ -2707,30 +3345,121 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 .Cast<ConnectorElement>()
                 .ToList();
 
+            List<FittingCtcSetupItem> orderedItems = items;
+            Dictionary<int, FittingCtcSetupItem>? spatialMap = null;
+            if (projectElementId is not null && connElems.Count >= 2)
+                spatialMap = BuildSpatialCtcMap(projectElementId, items, connElems);
+
             bool anyWritten = false;
 
             {
                 using var familyTx = new Transaction(familyDoc, "SetFittingCtcDescriptions");
                 familyTx.Start();
 
-                for (int i = 0; i < items.Count && i < connElems.Count; i++)
+                if (spatialMap is not null)
                 {
-                    if (items[i].SelectedType is null) continue;
-
-                    var ce = connElems[i];
-                    var typeDef = items[i].SelectedType!;
-                    var value = $"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}";
-
-                    var descParam = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
-
-                    if (descParam is not null && !descParam.IsReadOnly)
+                    for (int i = 0; i < connElems.Count; i++)
                     {
-                        anyWritten |= descParam.Set(value);
+                        if (!spatialMap.TryGetValue(i, out var item) || item.SelectedType is null) continue;
+
+                        var ce = connElems[i];
+                        var typeDef = item.SelectedType!;
+                        var value = $"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}";
+
+                        var descParam = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
+
+                        if (descParam is not null && !descParam.IsReadOnly)
+                        {
+                            anyWritten |= descParam.Set(value);
+                        }
+                        else if (descParam is not null)
+                        {
+                            anyWritten |= SetDrivingFamilyParameter(
+                                familyDoc.FamilyManager, ce, descParam, value);
+                        }
                     }
-                    else if (descParam is not null)
+                }
+                else
+                {
+                    // Fallback: сопоставление connElems ↔ projectConns по порядку создания.
+                    // Revit назначает Connector.Id (1,2,3...) в порядке ConnectorElement в family doc.
+                    // Сортируем connElems по ElementId, projectConns по ConnectorIndex — маппим 1-к-1.
+                    var itemByConnIdx = items
+                        .Where(it => it.ConnectorIndex >= 0)
+                        .ToDictionary(it => it.ConnectorIndex);
+
+                    Dictionary<int, FittingCtcSetupItem>? orderMap = null;
+                    if (projectElementId is not null)
                     {
-                        anyWritten |= SetDrivingFamilyParameter(
-                            familyDoc.FamilyManager, ce, descParam, value);
+                        var projectConns = _connSvc.GetAllConnectors(_doc, projectElementId);
+                        var sortedConnElems = connElems.OrderBy(ce => ce.Id.Value).ToList();
+                        var sortedProjectConns = projectConns.OrderBy(pc => pc.ConnectorIndex).ToList();
+
+                        orderMap = new Dictionary<int, FittingCtcSetupItem>();
+                        for (int i = 0; i < sortedConnElems.Count && i < sortedProjectConns.Count; i++)
+                        {
+                            var origIdx = connElems.IndexOf(sortedConnElems[i]);
+                            var pConnIdx = sortedProjectConns[i].ConnectorIndex;
+                            if (itemByConnIdx.TryGetValue(pConnIdx, out var item))
+                            {
+                                orderMap[origIdx] = item;
+                                SmartConLogger.Info($"[CTC] Order match: connElem[{origIdx}](id={sortedConnElems[i].Id.Value}) ↔ project conn[{pConnIdx}]");
+                            }
+                        }
+
+                        if (orderMap.Count == 0)
+                        {
+                            SmartConLogger.Warn($"[CTC] Order matching: 0 matches — positional fallback");
+                            orderMap = null;
+                        }
+                    }
+
+                    var mapToUse = orderMap;
+                    if (mapToUse is not null)
+                    {
+                        for (int i = 0; i < connElems.Count; i++)
+                        {
+                            if (!mapToUse.TryGetValue(i, out var item) || item.SelectedType is null) continue;
+
+                            var ce = connElems[i];
+                            var typeDef = item.SelectedType!;
+                            var value = $"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}";
+
+                            var descParam = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
+
+                            if (descParam is not null && !descParam.IsReadOnly)
+                            {
+                                anyWritten |= descParam.Set(value);
+                            }
+                            else if (descParam is not null)
+                            {
+                                anyWritten |= SetDrivingFamilyParameter(
+                                    familyDoc.FamilyManager, ce, descParam, value);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i < orderedItems.Count && i < connElems.Count; i++)
+                        {
+                            if (orderedItems[i].SelectedType is null) continue;
+
+                            var ce = connElems[i];
+                            var typeDef = orderedItems[i].SelectedType!;
+                            var value = $"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}";
+
+                            var descParam = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
+
+                            if (descParam is not null && !descParam.IsReadOnly)
+                            {
+                                anyWritten |= descParam.Set(value);
+                            }
+                            else if (descParam is not null)
+                            {
+                                anyWritten |= SetDrivingFamilyParameter(
+                                    familyDoc.FamilyManager, ce, descParam, value);
+                            }
+                        }
                     }
                 }
 
@@ -2748,6 +3477,59 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         {
             familyDoc?.Close(false);
         }
+    }
+
+    private Dictionary<int, FittingCtcSetupItem>? BuildSpatialCtcMap(
+        ElementId projectElementId,
+        List<FittingCtcSetupItem> items,
+        List<ConnectorElement> connElems)
+    {
+        var instance = _doc.GetElement(projectElementId) as FamilyInstance;
+        if (instance is null) return null;
+
+        var transform = instance.GetTotalTransform();
+        var projectConns = _connSvc.GetAllConnectors(_doc, projectElementId);
+
+        var itemByConnIdx = items
+            .Where(it => it.ConnectorIndex >= 0)
+            .ToDictionary(it => it.ConnectorIndex);
+
+        var result = new Dictionary<int, FittingCtcSetupItem>();
+        var usedItems = new HashSet<int>();
+
+        for (int i = 0; i < connElems.Count; i++)
+        {
+            var ce = connElems[i];
+            var globalOrigin = transform.OfPoint(ce.Origin);
+
+            ConnectorProxy? nearest = null;
+            double minDist = double.MaxValue;
+            foreach (var pc in projectConns)
+            {
+                var d = pc.Origin.DistanceTo(globalOrigin);
+                if (d < minDist)
+                {
+                    minDist = d;
+                    nearest = pc;
+                }
+            }
+
+            if (nearest is not null
+                && itemByConnIdx.TryGetValue(nearest.ConnectorIndex, out var item)
+                && usedItems.Add(nearest.ConnectorIndex))
+            {
+                result[i] = item;
+                SmartConLogger.Info($"[CTC] Spatial match: connElem[{i}](id={ce.Id.Value}) ↔ project conn[{nearest.ConnectorIndex}] (dist={minDist * 304.8:F2}mm)");
+            }
+        }
+
+        if (result.Count != items.Count)
+        {
+            SmartConLogger.Warn($"[CTC] Spatial matching: matched {result.Count}/{items.Count} items — fallback to positional");
+            return null;
+        }
+
+        return result;
     }
 
     private static bool SetDrivingFamilyParameter(
@@ -2792,6 +3574,53 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             return true;
         }
         catch { return false; }
+    }
+
+    /// <summary>
+    /// Записать все виртуальные CTC в семейства (EditFamily + LoadFamily).
+    /// Вызывается ТОЛЬКО в Connect() перед ConnectTo.
+    /// </summary>
+    private void FlushVirtualCtcToFamilies()
+    {
+        var pendingWrites = _virtualCtcStore.GetPendingWrites();
+        if (pendingWrites.Count == 0) return;
+
+        // Группируем по ElementId → собираем FamilySymbol → ApplyFittingCtcToFamily
+        var byElement = pendingWrites
+            .GroupBy(w => w.ElementId.Value)
+            .ToList();
+
+        foreach (var group in byElement)
+        {
+            var elemId = group.First().ElementId;
+            var elem = _doc.GetElement(elemId);
+            if (elem is null) continue;
+
+            if (elem is FamilyInstance fi)
+            {
+                var symbol = fi.Symbol;
+                var items = group.Select(w => new FittingCtcSetupItem
+                {
+                    ConnectorIndex = w.ConnectorIndex,
+                    ParameterName = string.Empty,
+                    DiameterMm = 0,
+                    SelectedType = w.TypeDef
+                }).ToList();
+
+                ApplyFittingCtcToFamily(symbol, items, projectElementId: elemId);
+            }
+            else if (elem is MEPCurve or FlexPipe)
+            {
+                // MEPCurve: пишем через IFamilyConnectorService внутри транзакции
+                _groupSession?.RunInTransaction("PipeConnect — SetConnectorType", doc =>
+                {
+                    foreach (var w in group)
+                        _familyConnSvc.SetConnectorTypeCode(doc, w.ElementId, w.ConnectorIndex, w.TypeDef);
+                });
+            }
+        }
+
+        SmartConLogger.Info($"[CTC] FlushVirtualCtcToFamilies: записано {pendingWrites.Count} CTC для {byElement.Count} элементов");
     }
 
     private static FamilySymbol? FindFamilySymbol(Document doc, string familyName, string symbolName)
