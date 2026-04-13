@@ -279,10 +279,14 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         }
 
         var tableNames = fstm.GetAllSizeTableNames().ToList();
-        var constrainedValues = new SortedSet<double>();
-        var unconstrainedValues = new SortedSet<double>();
-
         SmartConLogger.Lookup($"  Таблицы: [{string.Join(", ", tableNames)}]");
+
+        // Собираем значения PER TABLE для последующего пересечения.
+        // Семейство корректно работает только при DN, для которого ВСЕ таблицы имеют данные.
+        // Без пересечения справочные таблицы (напр. BP_SizePipeThread) добавляют
+        // DN-значения, отсутствующие в основной таблице семейства.
+        var perTableConstrained = new List<SortedSet<double>>();
+        var perTableUnconstrained = new List<SortedSet<double>>();
 
         foreach (var tableName in tableNames)
         {
@@ -313,11 +317,14 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                 var values = ExtractColumnValues(lines, colIndex, effectiveStoresDiam, allQueryColumns, constraints);
                 SmartConLogger.Lookup($"  Экспортировано {values.Count} значений из таблицы '{tableName}'");
 
-                var target = (isMultiColumn && constraints is { Count: > 0 })
-                    ? constrainedValues
-                    : unconstrainedValues;
-                foreach (var v in values)
-                    target.Add(v);
+                if (values.Count > 0)
+                {
+                    var set = new SortedSet<double>(values);
+                    if (isMultiColumn && constraints is { Count: > 0 })
+                        perTableConstrained.Add(set);
+                    else
+                        perTableUnconstrained.Add(set);
+                }
             }
             catch (Exception ex)
             {
@@ -328,6 +335,10 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                 try { File.Delete(tempPath); } catch { }
             }
         }
+
+        // Пересечение: DN допустим только если присутствует во ВСЕХ таблицах данной категории
+        var constrainedValues = IntersectRadiusSets(perTableConstrained);
+        var unconstrainedValues = IntersectRadiusSets(perTableUnconstrained);
 
         // Если есть результаты из multi-column таблиц с constraints — используем только их,
         // чтобы single-column таблицы не «размывали» отфильтрованный набор
@@ -348,6 +359,31 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         }
 
         SmartConLogger.Lookup($"  Итого: {result.Count} уникальных размеров из LookupTable");
+        return result;
+    }
+
+    /// <summary>
+    /// Пересечение нескольких наборов радиусов (ft) с допуском ε для float-imprecision.
+    /// Если наборов 0 — пустой результат. Если 1 — возвращает его. Иначе — пересечение.
+    /// </summary>
+    private static SortedSet<double> IntersectRadiusSets(List<SortedSet<double>> sets)
+    {
+        if (sets.Count == 0) return [];
+        if (sets.Count == 1) return sets[0];
+
+        var result = new SortedSet<double>(sets[0]);
+        for (int i = 1; i < sets.Count; i++)
+        {
+            var keep = new SortedSet<double>();
+            foreach (var v in result)
+            {
+                if (sets[i].Any(s => Math.Abs(s - v) < 1e-6))
+                    keep.Add(v);
+            }
+            result = keep;
+        }
+
+        SmartConLogger.Lookup($"  [Intersect] {sets.Count} наборов, [{string.Join(" ∩ ", sets.Select(s => s.Count))}] → {result.Count}");
         return result;
     }
 

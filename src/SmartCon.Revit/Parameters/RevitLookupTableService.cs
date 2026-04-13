@@ -211,7 +211,12 @@ public sealed class RevitLookupTableService : ILookupTableService
             SmartConLogger.Lookup($"  connectorParamMap: [{string.Join(", ", connectorParamMap.Select(kvp => $"conn[{kvp.Key}]='{kvp.Value}'"))}]");
 
             var tableNames = fstm.GetAllSizeTableNames().ToList();
-            var allRows = new List<SizeTableRow>();
+
+            // Собираем строки PER TABLE для последующего пересечения.
+            // Семейство корректно работает только при DN, для которого ВСЕ таблицы имеют данные.
+            // Без пересечения справочные таблицы (напр. BP_SizePipeThread) добавляют
+            // DN-значения, отсутствующие в основной таблице семейства.
+            var perTableRows = new List<List<SizeTableRow>>();
 
             foreach (var tableName in tableNames)
             {
@@ -219,7 +224,35 @@ public sealed class RevitLookupTableService : ILookupTableService
                     fstm, tableName, paramSnapshot, formulaByName,
                     targetConnectorIndex, connectorParamMap,
                     allConnectorIndices, currentRadii, constraints);
-                allRows.AddRange(tableRows);
+                if (tableRows.Count > 0)
+                    perTableRows.Add(tableRows);
+            }
+
+            List<SizeTableRow> allRows;
+            if (perTableRows.Count <= 1)
+            {
+                allRows = perTableRows.Count == 1 ? perTableRows[0] : [];
+            }
+            else
+            {
+                // Пересечение: DN допустим только если присутствует во ВСЕХ таблицах
+                var dnSets = perTableRows.Select(rows =>
+                    new HashSet<long>(rows.Select(r => RoundDnToMicrons(r.TargetRadiusFt)))).ToList();
+
+                var validDn = new HashSet<long>(dnSets[0]);
+                for (int i = 1; i < dnSets.Count; i++)
+                    validDn.IntersectWith(dnSets[i]);
+
+                SmartConLogger.Lookup($"  [Intersect] {perTableRows.Count} таблиц, DN: [{string.Join(" ∩ ", dnSets.Select(s => s.Count))}] → {validDn.Count}");
+
+                // Берём строки из таблицы с наибольшей детализацией коннекторов
+                var bestTable = perTableRows
+                    .OrderByDescending(t => t.Max(r => r.ConnectorRadiiFt.Count))
+                    .ThenByDescending(t => t.Count)
+                    .First();
+                allRows = bestTable
+                    .Where(r => validDn.Contains(RoundDnToMicrons(r.TargetRadiusFt)))
+                    .ToList();
             }
 
             var distinct = DeduplicateRows(allRows);
@@ -1107,6 +1140,13 @@ public sealed class RevitLookupTableService : ILookupTableService
     }
 
     // ── Конвертации единиц ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Округление радиуса (ft) до DN в микронах для надёжного сравнения между таблицами.
+    /// radius(ft) → diameter(mm) → microns.
+    /// </summary>
+    private static long RoundDnToMicrons(double radiusFt)
+        => (long)System.Math.Round(radiusFt * 304.8 * 2.0 * 1000.0);
 
     /// <summary>
     /// Конвертировать internal units (feet) в миллиметры.
