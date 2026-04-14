@@ -1924,6 +1924,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             var staticOrigin = _ctx.StaticConnector.Origin;
             var connForStatic = conns
                 .OrderBy(c => c.Origin.DistanceTo(staticOrigin))
+                .ThenBy(c => c.ConnectorIndex)
                 .First();
             var connForDynamic = conns.First(c => c.ConnectorIndex != connForStatic.ConnectorIndex);
 
@@ -1968,6 +1969,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             var staticOrigin = _ctx.StaticConnector.Origin;
             var connForStatic = conns
                 .OrderBy(c => c.Origin.DistanceTo(staticOrigin))
+                .ThenBy(c => c.ConnectorIndex)
                 .First();
             var connForDynamic = conns.First(c => c.ConnectorIndex != connForStatic.ConnectorIndex);
 
@@ -2140,6 +2142,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             if (_primaryReducerId is not null)
             {
                 _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
+                _virtualCtcStore.RemoveForElement(_primaryReducerId);
                 _primaryReducerId = null;
             }
 
@@ -2204,6 +2207,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 if (_primaryReducerId is not null)
                 {
                     _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
+                    _virtualCtcStore.RemoveForElement(_primaryReducerId);
                     _primaryReducerId = null;
                 }
 
@@ -2441,6 +2445,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             if (_currentFittingId is not null)
             {
                 _fittingInsertSvc.DeleteElement(doc, _currentFittingId);
+                _virtualCtcStore.RemoveForElement(_currentFittingId);
                 _currentFittingId   = null;
                 _activeFittingConn2 = null;
             }
@@ -2521,6 +2526,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             if (_currentFittingId is not null)
             {
                 _fittingInsertSvc.DeleteElement(doc, _currentFittingId);
+                _virtualCtcStore.RemoveForElement(_currentFittingId);
                 _currentFittingId   = null;
                 _activeFittingConn2 = null;
             }
@@ -2603,6 +2609,14 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     {
                         var overrides = GuessCtcForReducer(_primaryReducerId);
                         SmartConLogger.Info($"[Connect] Reducer вставлен: id={_primaryReducerId.Value}");
+
+                        var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+                        _fittingInsertSvc.AlignFittingToStatic(
+                            doc, _primaryReducerId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                            dynamicTypeCode: dynCtc,
+                            ctcOverrides: overrides,
+                            directConnectRules: _mappingRepo.GetMappingRules());
+                        doc.Regenerate();
                     }
                     else
                         SmartConLogger.Warn($"[Connect] Reducer не найден в маппинге — соединяем напрямую");
@@ -3420,7 +3434,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 .Cast<ConnectorElement>()
                 .ToList();
 
-            List<FittingCtcSetupItem> orderedItems = items;
+            List<FittingCtcSetupItem> orderedItems = items
+                .OrderBy(it => it.ConnectorIndex).ToList();
             Dictionary<int, FittingCtcSetupItem>? spatialMap = null;
             if (projectElementId is not null && connElems.Count >= 2)
                 spatialMap = BuildSpatialCtcMap(projectElementId, items, connElems);
@@ -3696,6 +3711,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         }
 
         SmartConLogger.Info($"[CTC] FlushVirtualCtcToFamilies: записано {pendingWrites.Count} CTC для {byElement.Count} элементов");
+
+        _virtualCtcStore.ClearPendingWrites();
     }
 
     private static FamilySymbol? FindFamilySymbol(Document doc, string familyName, string symbolName)

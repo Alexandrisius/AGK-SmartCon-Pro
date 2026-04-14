@@ -179,7 +179,8 @@ public sealed class RevitFittingInsertService : IFittingInsertService
         // Стратегия 4: fallback по расстоянию
         if (fitConn1 is null)
         {
-            var ordered = fittingConns.OrderBy(c => c.Origin.DistanceTo(staticProxy.Origin)).ToList();
+            var ordered = fittingConns.OrderBy(c => c.Origin.DistanceTo(staticProxy.Origin))
+                .ThenBy(c => c.Id).ToList();
             fitConn1 = ordered[0];
             fitConn2 = ordered[1];
             SmartConLogger.Info($"[FitAlign] Стратегия 4 (distance fallback): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2.Id}]");

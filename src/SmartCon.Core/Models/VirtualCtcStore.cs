@@ -68,6 +68,28 @@ public sealed class VirtualCtcStore
     }
 
     /// <summary>
+    /// Удалить все overrides и pending writes для указанного ElementId.
+    /// Вызывать при удалении фитинга (delete + insert = новый ElementId).
+    /// </summary>
+    public void RemoveForElement(ElementId elemId)
+    {
+        long val = elemId.Value;
+        _overrides.Keys.Where(k => k.ElemId == val).ToList()
+            .ForEach(k => _overrides.Remove(k));
+        _pendingWrites.Keys.Where(k => k.ElemId == val).ToList()
+            .ForEach(k => _pendingWrites.Remove(k));
+    }
+
+    /// <summary>
+    /// Удалить все pending writes (оставляя overrides для GetEffectiveConnectorCtc).
+    /// Вызывать после успешного FlushVirtualCtcToFamilies.
+    /// </summary>
+    public void ClearPendingWrites()
+    {
+        _pendingWrites.Clear();
+    }
+
+    /// <summary>
     /// Перенести все overrides и pending writes со старого ElementId на новый.
     /// Используется при перевставке фитинга (delete + insert = новый ElementId).
     /// Старые записи удаляются.
