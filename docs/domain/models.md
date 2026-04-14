@@ -264,3 +264,163 @@ public sealed class AlignmentResult
 
 public sealed record RotationStep(Vec3 Axis, double AngleRadians);
 ```
+
+---
+
+## PipeConnectSessionContext
+
+Immutable контекст сессии, создаваемый PipeConnectSessionBuilder и передаваемый в ViewModel.
+
+**Файл:** `SmartCon.Core/Models/PipeConnectSessionContext.cs`
+
+```csharp
+public sealed class PipeConnectSessionContext
+{
+    public required ConnectorProxy StaticConnector { get; init; }
+    public required ConnectorProxy DynamicConnector { get; init; }
+    public required AlignmentResult AlignResult { get; init; }
+    public double? ParamTargetRadius { get; init; }
+    public bool ParamExpectNeedsAdapter { get; init; }
+    public required List<FittingMappingRule> ProposedFittings { get; init; }
+    public ConnectionGraph? ChainGraph { get; init; }
+    public required VirtualCtcStore VirtualCtcStore { get; init; }
+    public IReadOnlyList<LookupColumnConstraint> LookupConstraints { get; init; } = [];
+}
+```
+
+---
+
+## VirtualCtcStore
+
+Виртуальное хранилище CTC overrides — хранит назначенные типы коннекторов до записи в семейство.
+
+**Файл:** `SmartCon.Core/Models/VirtualCtcStore.cs`
+
+```csharp
+public sealed class VirtualCtcStore
+{
+    public bool HasPendingWrites { get; }
+    public void Set(ElementId elementId, int connectorIndex, ConnectionTypeCode ctc, ConnectorTypeDefinition? definition);
+    public void RemoveForElement(ElementId elementId);
+    public ConnectionTypeCode? Get(ElementId elementId, int connectorIndex);
+    public IReadOnlyDictionary<int, ConnectionTypeCode> GetOverridesForElement(ElementId elementId);
+}
+```
+
+---
+
+## FamilySizeOption
+
+Типоразмер динамического семейства для выбора в UI.
+
+**Файл:** `SmartCon.Core/Models/FamilySizeOption.cs`
+
+```csharp
+public sealed class FamilySizeOption
+{
+    public string DisplayName { get; init; }
+    public double Radius { get; init; }
+    public bool IsAutoSelect { get; init; }
+    public string Source { get; init; }
+    public IReadOnlyList<double> AllConnectorRadii { get; init; }
+}
+```
+
+---
+
+## FittingCardItem
+
+Элемент списка фитингов/переходников в UI.
+
+**Файл:** `SmartCon.PipeConnect/ViewModels/FittingCardItem.cs`
+
+```csharp
+public sealed class FittingCardItem
+{
+    public string DisplayName { get; init; }
+    public bool IsDirectConnect { get; init; }
+    public FittingMapping? PrimaryFitting { get; init; }
+    public FittingMappingRule? Rule { get; init; }
+}
+```
+
+---
+
+## DynamicSizeLoadResult
+
+Результат загрузки динамических типоразмеров.
+
+**Файл:** `SmartCon.PipeConnect/Services/DynamicSizeLoader.cs`
+
+```csharp
+public sealed record DynamicSizeLoadResult(
+    IReadOnlyList<FamilySizeOption> Sizes,
+    FamilySizeOption? DefaultSelection,
+    bool HasSizeOptions
+);
+```
+
+---
+
+## ConnectorCycleState
+
+Состояние циклического перебора коннекторов.
+
+**Файл:** `SmartCon.PipeConnect/Services/ConnectorCycleService.cs`
+
+```csharp
+public sealed class ConnectorCycleState
+{
+    public int Count { get; }
+    public int CurrentIndex { get; }
+    public ConnectorProxy? FindNext();
+    public void Initialize(IReadOnlyList<ConnectorProxy> connectors, ConnectorProxy active);
+}
+```
+
+---
+
+## ConnectOperationContext
+
+Контекст операции соединения, передаваемый в ConnectExecutor.
+
+**Файл:** `SmartCon.PipeConnect/Services/ConnectExecutor.cs`
+
+```csharp
+public sealed class ConnectOperationContext
+{
+    public required Document Doc { get; init; }
+    public required ITransactionGroupSession GroupSession { get; init; }
+    public required PipeConnectSessionContext Session { get; init; }
+    public required VirtualCtcStore VirtualCtcStore { get; init; }
+}
+```
+
+---
+
+## NetworkSnapshot / NetworkSnapshotStore
+
+Снапшот позиции элемента для отката цепочки.
+
+**Файл:** `SmartCon.Core/Models/NetworkSnapshot.cs`, `NetworkSnapshotStore.cs`
+
+```csharp
+public sealed record NetworkSnapshot(ElementId ElementId, XYZ OriginalOrigin);
+public sealed class NetworkSnapshotStore { ... }
+```
+
+---
+
+## LookupColumnConstraint
+
+Ограничение колонки LookupTable для multi-column поиска.
+
+**Файл:** `SmartCon.Core/Models/LookupColumnConstraint.cs`
+
+```csharp
+public sealed record LookupColumnConstraint(
+    int ConnectorIndex,
+    string ParameterName,
+    double ValueMm
+);
+```

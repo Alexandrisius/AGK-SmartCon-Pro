@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
@@ -35,16 +36,18 @@ public sealed partial class FittingCardItem : ObservableObject
     private static string BuildDisplayName(FittingMappingRule rule, FittingMapping? fitting, bool isReducer)
     {
         if (rule.IsDirectConnect && fitting is null)
-            return "Без фитинга (прямое соединение)";
+            return LocalizationService.GetString("Fitting_DirectConnect");
 
         if (fitting is not null)
         {
             var baseName = fitting.SymbolName != "*"
                 ? $"{fitting.FamilyName} — {fitting.SymbolName}"
                 : fitting.FamilyName;
-            return isReducer ? $"🔧 {baseName} (переход)" : baseName;
+            return isReducer
+                ? string.Format(LocalizationService.GetString("Fitting_ReducerSuffix"), baseName)
+                : baseName;
         }
 
-        return $"Тип {rule.FromType.Value} → {rule.ToType.Value}";
+        return string.Format(LocalizationService.GetString("Fitting_TypeArrow"), rule.FromType.Value, rule.ToType.Value);
     }
 }

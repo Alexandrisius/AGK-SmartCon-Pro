@@ -3,6 +3,7 @@ using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
@@ -52,7 +53,7 @@ public sealed partial class MappingEditorViewModel : ObservableObject
     private void AddType()
     {
         var next = ConnectorTypes.Count > 0 ? ConnectorTypes.Max(t => t.Code) + 1 : 1;
-        var item = new ConnectorTypeItem { Code = next, Name = "Новый тип" };
+        var item = new ConnectorTypeItem { Code = next, Name = LocalizationService.GetString("Mapping_NewType") };
         ConnectorTypes.Add(item);
         SelectedType = item;
     }
@@ -77,8 +78,8 @@ public sealed partial class MappingEditorViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Ошибка: {ex.Message}";
-            MessageBox.Show(ex.ToString(), "SmartCon - ошибка сохранения");
+            StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
+            MessageBox.Show(ex.ToString(), LocalizationService.GetString("Mapping_SaveError"));
         }
     }
 
@@ -110,8 +111,8 @@ public sealed partial class MappingEditorViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Ошибка: {ex.Message}";
-            MessageBox.Show(ex.ToString(), "SmartCon - ошибка сохранения");
+            StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
+            MessageBox.Show(ex.ToString(), LocalizationService.GetString("Mapping_SaveError"));
         }
     }
 }

@@ -2,6 +2,9 @@ using SmartCon.Core.Models;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
+/// <summary>
+/// Builds fitting and reducer card items for the PipeConnect UI from proposed mapping rules.
+/// </summary>
 public static class FittingCardBuilder
 {
     public static (List<FittingCardItem> Fittings, List<FittingCardItem> Reducers) Build(

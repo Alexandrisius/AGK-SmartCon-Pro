@@ -3,18 +3,25 @@ using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// Result of a dynamic size change operation.
+/// </summary>
 public sealed record SizeChangeResult(
     ConnectorProxy? ActiveDynamic,
     bool UserManuallyChangedSize,
     string? SizeChangeInfo,
     bool NeedsPrimaryReducer);
 
+/// <summary>
+/// Handles dynamic size changes for PipeConnect, including applying family size options and detecting reducer needs.
+/// </summary>
 public sealed class PipeConnectSizeHandler(
     IConnectorService connSvc,
     ITransformService transformSvc,
@@ -36,7 +43,7 @@ public sealed class PipeConnectSizeHandler(
         var dynId = ctx.DynamicConnector.OwnerElementId;
         var dynIdx = ctx.DynamicConnector.ConnectorIndex;
 
-        groupSession.RunInTransaction("PipeConnect — Смена размера dynamic", d =>
+        groupSession.RunInTransaction(LocalizationService.GetString("Tx_ChangeSizeDynamic"), d =>
         {
             bool appliedViaQueryParams = ApplyQueryParamsIfExists(d, dynId, selectedOption);
 

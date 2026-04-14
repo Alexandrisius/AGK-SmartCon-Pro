@@ -27,11 +27,12 @@
 | **2** | Базовый коннект | 1 | Клик-клик -> выравнивание -> ConnectTo | ✅ Готов |
 | **3** | Типы коннекторов | 2 | MiniTypeSelector + окно маппинга + JSON | ✅ Готов |
 | **4** | Подбор параметров | 2 | Автоподбор размера / типоразмера | ✅ Готов |
-| **5** | Система фитингов | 3, 4 | Автовставка фитинга по маппингу | Не начат |
-| **6** | FormulaSolver | 1 | Полноценный парсер формул Revit | Не начат |
-| **7** | Цепочки (Chain) | 2 | Перемещение всей сети как жёсткого тела | Не начат |
-| **8** | Финальное окно | 5, 7 | PipeConnectEditor — PostProcessing UI | Не начат |
-| **9** | Продвинутое | 8, 6 | Дейкстра, труба/арматура, DN-фильтры, инсталлятор | Не начат |
+| **5** | Система фитингов | 3, 4 | Автовставка фитинга по маппингу | ✅ Готов |
+| **6** | FormulaSolver | 1 | Полноценный AST-парсер формул Revit | ✅ Готов |
+| **7** | Цепочки (Chain) | 2 | Перемещение всей сети как жёсткого тела | ✅ Готов |
+| **8** | Финальное окно | 5, 7 | PipeConnectEditor — PostProcessing UI | ✅ Готов |
+| **9** | Рефакторинг | 8 | ViewModel 631→384 строк, 12 handler-классов | ✅ Готов |
+| **10** | Open-source качество | 9 | Локализация, XML-docs, качество кода | ✅ Готов |
 
 ---
 
@@ -132,66 +133,55 @@
 Компоненты: MiniFormulaSolver (30+ тестов), FamilyParameterAnalyzer, RevitParameterResolver, RevitLookupTableService, интеграция S4 в PipeConnectCommand.
 Тесты: MiniFormulaSolverTests (30+), ParameterResolutionFlowTests (18+).
 
----
-
-## Фаза 5 — Система фитингов
-
-**Цель:** Автоматический подбор и вставка фитингов.
-
-- FittingMapper (GetMappings)
-- Фильтрация по размерам коннекторов
-- Вставка FamilyInstance + позиционирование
-- Автовыбор по приоритету
-
-**Приёмка:** TYPE-1 + TYPE-2 -> фитинг вставлен. Фильтрация работает. Прямое соединение для isDirectConnect.
+**Статус:** ✅ Готов. Автовставка фитинга, FittingMapper, IFittingInsertService, RevitFittingInsertService. Фильтрация по размерам. Прямое соединение для isDirectConnect.
 
 ---
 
 ## Фаза 6 — FormulaSolver
 
-**Цель:** Универсальный парсер формул Revit.
-
-- Tokenizer + AST Parser
-- Evaluate (арифметика, if, trig, единицы)
-- SolveFor (алгебраическая инверсия + бисекция)
-- ParseSizeLookup
-- 30+ unit-тестов
-
-**Приёмка:** Все тестовые формулы вычисляются корректно. SolveFor решает линейные и нелинейные.
+**Статус:** ✅ Готов. AST-парсер (Tokenizer + Parser), Evaluate, SolveFor (IF-упрощение + алгебра + бисекция), ParseSizeLookup. 30+ тестов.
 
 ---
 
 ## Фаза 7 — Цепочки (Chain)
 
-**Цель:** Перемещение подключённой сети.
-
-- ElementChainIterator (BFS через AllRefs)
-- BuildGraph с обработкой разветвлений
-- Transform всех Nodes как жёсткого тела
-- Toggle «Переместить всю сеть»
-
-**Приёмка:** BuildGraph обходит линейные + ветвления. Нет зацикливания. Перемещение работает.
+**Статус:** ✅ Готов. ElementChainIterator (BFS через AllRefs), ConnectionGraph, NetworkMover, INetworkMover. Обход линейных + ветвящихся цепочек. Перемещение как жёсткое тело.
 
 ---
 
 ## Фаза 8 — Финальное окно
 
-**Цель:** PipeConnectEditor — полный PostProcessing UI.
-
-- Немодальное WPF-окно
-- Поворот (произвольный угол, шаг, hotkeys)
-- Смена коннектора (переалайн)
-- Список фитингов (примерить = реальная вставка)
-- Соединить (Assimilate) / Отмена (RollBack)
-- Все действия через ExternalEvent
-
-**Приёмка:** Окно немодальное. Поворот/смена/фитинги работают. Одна Undo-запись.
+**Статус:** ✅ Готов. PipeConnectEditorView (немодальное), поворот, смена коннектора, список фитингов, Connect/Cancel через TransactionGroup Assimilate/RollBack. ExternalEvent pattern.
 
 ---
 
-## Фаза 9 — Продвинутое
+## Фаза 9 — Рефакторинг
 
-- **9A:** Дейкстра для цепочки фитингов (PathfinderService)
-- **9B:** Вставка трубы / арматуры из финального окна
-- **9C:** Фильтры по DN в маппинге (MinDN, MaxDN)
-- **9D:** Полноценный инсталлятор (WiX / Inno Setup)
+**Цель:** Декомпозиция ViewModel, улучшение качества кода.
+
+**Ключевые результаты:**
+- ViewModel 631→384 строк (5 partial файлов)
+- 12 handler-классов выделены из ViewModel
+- DynamicSizeLoader, ConnectorCycleService, FittingCardBuilder
+- ConnectExecutor, ChainOperationHandler, PositionCorrector
+- PipeConnectInitHandler, PipeConnectRotationHandler, PipeConnectSizeHandler
+- 577 тестов, 0 регрессий
+
+**Статус:** ✅ Готов (ветка refactoring-1).
+
+---
+
+## Фаза 10 — Open-source качество
+
+**Цель:** Локализация, XML-документация, качество кода.
+
+**Ключевые результаты:**
+- LocalizationService (RU/EN переключение)
+- LanguageManager (ResourceDictionary swap)
+- XAML DynamicResource для всех UI-строк
+- LocalizationService.GetString() для всех C#-строк
+- XML-docs для всех публичных типов
+- Ротация логов, константы вместо магических чисел
+- CHANGELOG.md обновлён
+
+**Статус:** ✅ Готов.

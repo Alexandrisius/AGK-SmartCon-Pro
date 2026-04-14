@@ -8,6 +8,9 @@ using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// Holds the result of loading dynamic sizes for a family element.
+/// </summary>
 public sealed class DynamicSizeLoadResult
 {
     public required List<FamilySizeOption> Sizes { get; init; }
@@ -15,6 +18,9 @@ public sealed class DynamicSizeLoadResult
     public required bool HasSizeOptions { get; init; }
 }
 
+/// <summary>
+/// Loads available dynamic sizes for family elements during PipeConnect sessions.
+/// </summary>
 public sealed class DynamicSizeLoader(
     IConnectorService connSvc,
     IDynamicSizeResolver sizeResolver)

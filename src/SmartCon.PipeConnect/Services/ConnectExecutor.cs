@@ -1,13 +1,18 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// Encapsulates the document, transaction session, and session context for a connect operation.
+/// </summary>
 public sealed class ConnectOperationContext
 {
     public required Document Doc { get; init; }
@@ -16,10 +21,19 @@ public sealed class ConnectOperationContext
     public required VirtualCtcStore VirtualCtcStore { get; init; }
 }
 
+/// <summary>
+/// Result of pre-connect validation with optional updated dynamic connector and reducer flag.
+/// </summary>
 public record ValidateResult(ConnectorProxy? ActiveDynamic, bool NeedsPrimaryReducer);
 
+/// <summary>
+/// Result of fitting sizing with the resolved secondary connector and updated dynamic connector.
+/// </summary>
 public record SizeFittingResult(ConnectorProxy? FitConn2, ConnectorProxy? ActiveDynamic);
 
+/// <summary>
+/// Executes the final connect operation including validation, sizing, and Revit connector linking.
+/// </summary>
 public sealed class ConnectExecutor
 {
     private readonly IConnectorService _connSvc;
@@ -55,17 +69,16 @@ public sealed class ConnectExecutor
         ElementId? primaryReducerId,
         bool userManuallyChangedSize)
     {
-        const double radiusEps = 1e-5;
-        const double positionEpsM = 0.0001;
-        const double positionEpsFt = positionEpsM / 0.3048;
-        const double angleEpsDeg = 1.0;
+        const double radiusEps = Tolerance.RadiusFt;
+        const double positionEpsFt = Tolerance.PositionRelaxedMm * MmToFeet;
+        const double angleEpsDeg = Tolerance.AngleDeg;
 
         SmartConLogger.DebugSection("ValidateAndFixBeforeConnect");
 
         ConnectorProxy? updatedDynamic = activeDynamic;
         bool needsPrimaryReducer = false;
 
-        context.GroupSession.RunInTransaction("PipeConnect — Финальная корректировка", doc =>
+        context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_FinalAdjustment"), doc =>
         {
             var staticConn = context.Session.StaticConnector;
             var dyn = updatedDynamic ?? context.Session.DynamicConnector;
@@ -107,7 +120,7 @@ public sealed class ConnectExecutor
         PipeConnectDiagnostics.LogConnectorState(
             context.Doc, staticConn, dyn, currentFittingId, _connSvc, "ДО ConnectTo");
 
-        context.GroupSession.RunInTransaction("PipeConnect — ConnectTo", doc =>
+        context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_ConnectTo"), doc =>
         {
             doc.Regenerate();
 
@@ -216,7 +229,7 @@ public sealed class ConnectExecutor
                 double currentDynRadius = currentDynamic?.Radius ?? context.Session.DynamicConnector.Radius;
                 double achievedDynRadius = currentDynRadius;
 
-                context.GroupSession.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
+                context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_FittingSize"), txDoc =>
                 {
                     var (_, dynR) = _paramResolver.TrySetFittingTypeForPair(
                         txDoc, fittingId,
@@ -233,7 +246,7 @@ public sealed class ConnectExecutor
                 if (adjustDynamicToFit && System.Math.Abs(achievedDynRadius - actualDynRadius) > eps)
                 {
                     SmartConLogger.Info($"[SizeFitting] Adjusting dynamic: {actualDynRadius * FeetToMm:F2}mm → {achievedDynRadius * FeetToMm:F2}mm");
-                    context.GroupSession.RunInTransaction("PipeConnect — Подгонка dynamic под фитинг", txDoc =>
+                    context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_FitDynamicToFitting"), txDoc =>
                     {
                         _paramResolver.TrySetConnectorRadius(txDoc, dynId, dynConnIdx, achievedDynRadius);
                         txDoc.Regenerate();
@@ -248,7 +261,7 @@ public sealed class ConnectExecutor
             {
                 double currentDynRadius = currentDynamic?.Radius ?? context.Session.DynamicConnector.Radius;
 
-                context.GroupSession.RunInTransaction("PipeConnect — Размер фитинга", txDoc =>
+                context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_FittingSize"), txDoc =>
                 {
                     var sortedConns = allConns
                         .OrderBy(c =>
@@ -291,7 +304,7 @@ public sealed class ConnectExecutor
 
         try
         {
-            context.GroupSession.RunInTransaction("PipeConnect — Выравнивание после размера", txDoc =>
+            context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_AlignAfterSize"), txDoc =>
             {
                 var ctcOvr = context.VirtualCtcStore.GetOverridesForElement(fittingId);
                 var staticConn = context.Session.StaticConnector;

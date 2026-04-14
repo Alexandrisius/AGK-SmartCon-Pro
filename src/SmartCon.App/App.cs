@@ -5,6 +5,7 @@ using Autodesk.Revit.UI;
 using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
 using SmartCon.Core.Logging;
+using SmartCon.PipeConnect.Services;
 
 namespace SmartCon.App;
 
@@ -23,6 +24,7 @@ public sealed class App : IExternalApplication
             CleanupStalePendingUpdate();
             ServiceLocator.Initialize(application);
             RibbonBuilder.CreateRibbon(application);
+            LanguageManager.Initialize();
 
             return Result.Succeeded;
         }

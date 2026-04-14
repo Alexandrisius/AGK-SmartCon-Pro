@@ -413,3 +413,104 @@ public interface IRevitUIContext
     UIApplication GetUIApplication();
 }
 ```
+
+---
+
+## ITransactionGroupSession
+
+Сессия TransactionGroup для PipeConnect (одна запись Undo).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/ITransactionGroupSession.cs`
+**Реализация:** `SmartCon.Revit/Transactions/RevitTransactionService.cs`
+
+```csharp
+public interface ITransactionGroupSession
+{
+    bool RunInTransaction(string name, Action<Document> action);
+    void Assimilate();
+    void RollBack();
+}
+```
+
+---
+
+## IFittingInsertService
+
+Вставка, удаление и позиционирование фитингов.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IFittingInsertService.cs`
+**Реализация:** `SmartCon.Revit/Fittings/RevitFittingInsertService.cs`
+
+```csharp
+public interface IFittingInsertService
+{
+    ElementId? InsertFitting(Document doc, string familyName, string symbolName, XYZ origin);
+    ConnectorProxy? AlignFittingToStatic(Document doc, ElementId fittingId, ConnectorProxy staticConn,
+        ITransformService transformSvc, IConnectorService connSvc,
+        ConnectionTypeCode? dynamicTypeCode = null,
+        IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null,
+        IReadOnlyList<FittingMappingRule>? directConnectRules = null);
+    void DeleteElement(Document doc, ElementId elementId);
+}
+```
+
+---
+
+## IDynamicSizeResolver
+
+Разрешение типоразмеров динамических семейств.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IDynamicSizeResolver.cs`
+**Реализация:** `SmartCon.Revit/Parameters/RevitDynamicSizeResolver.cs`
+
+```csharp
+public interface IDynamicSizeResolver
+{
+    IReadOnlyList<FamilySizeOption> GetAvailableSizes(Document doc, ElementId elementId);
+}
+```
+
+---
+
+## INetworkMover
+
+Перемещение подключённой сети элементов и вставка переходников.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/INetworkMover.cs`
+**Реализация:** `SmartCon.Revit/Network/NetworkMover.cs`
+
+```csharp
+public interface INetworkMover
+{
+    void MoveNetwork(Document doc, ICollection<ElementId> elementIds, Vec3 offset);
+    ElementId? InsertReducer(Document doc, ConnectorProxy staticConn, ConnectorProxy dynamicConn,
+        IReadOnlyList<FittingMappingRule>? directConnectRules = null);
+}
+```
+
+---
+
+## IUpdateService / IUpdateSettingsRepository
+
+GitHub-based auto-update система.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IUpdateService.cs`, `IUpdateSettingsRepository.cs`
+**Реализация:** `SmartCon.Revit/Updates/GitHubUpdateService.cs`, `SmartCon.Core/Services/Implementation/JsonUpdateSettingsRepository.cs`
+
+```csharp
+public interface IUpdateService
+{
+    string GetCurrentVersion();
+    Task<UpdateInfo?> CheckForUpdateAsync();
+    Task<string> DownloadUpdateAsync(UpdateInfo update, IProgress<double>? progress = null);
+    Task StageUpdateAsync(string zipPath);
+    Task<UpdateInfo?> GetPendingUpdateAsync();
+}
+
+public interface IUpdateSettingsRepository
+{
+    string SettingsFilePath { get; }
+    UpdateSettings Load();
+    void Save(UpdateSettings settings);
+}
+```

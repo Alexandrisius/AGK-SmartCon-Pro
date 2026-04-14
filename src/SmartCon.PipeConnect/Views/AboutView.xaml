@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:conv="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
-        Title="About SmartCon"
+        Title="{DynamicResource Title_About}"
         Width="520" Height="520" MinHeight="400"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -31,9 +31,9 @@
         <StackPanel Grid.Row="0" HorizontalAlignment="Center">
             <TextBlock Text="SmartCon" FontSize="22" FontWeight="Bold"
                        Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center"/>
-            <TextBlock Text="{Binding CurrentVersion, StringFormat='Version {0}'}"
-                       FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
-                       HorizontalAlignment="Center" Margin="0,2,0,0"/>
+            <TextBlock Text="{Binding VersionDisplay}"
+                        FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                        HorizontalAlignment="Center" Margin="0,2,0,0"/>
         </StackPanel>
 
         <!-- Row 1: Info + buttons -->
@@ -51,13 +51,13 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Author:" Style="{DynamicResource BodyText}" Margin="0,2"/>
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource About_Author}" Style="{DynamicResource BodyText}" Margin="0,2"/>
                 <TextBlock Grid.Row="0" Grid.Column="1" Text="AGK Engineering" Style="{DynamicResource BodyText}" Margin="8,2"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Plugin:" Style="{DynamicResource BodyText}" Margin="0,2"/>
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="MEP Pipe Connector for Revit 2025" Style="{DynamicResource BodyText}" Margin="8,2"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource About_Plugin}" Style="{DynamicResource BodyText}" Margin="0,2"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{DynamicResource About_PluginDesc}" Style="{DynamicResource BodyText}" Margin="8,2"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Repo:" Style="{DynamicResource BodyText}" Margin="0,2"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource About_Repo}" Style="{DynamicResource BodyText}" Margin="0,2"/>
                 <TextBlock Grid.Row="2" Grid.Column="1" Style="{DynamicResource BodyText}" Margin="8,2">
                     <Hyperlink NavigateUri="https://github.com/Alexandrisius/AGK-SmartCon-Pro"
                                RequestNavigate="OnLinkClick">GitHub</Hyperlink>
@@ -66,15 +66,15 @@
 
             <Border Background="{DynamicResource BorderAltBrush}" Height="1" Margin="0,12"/>
 
-            <TextBlock Text="Updates" FontWeight="SemiBold" FontSize="13"
+             <TextBlock Text="{DynamicResource Label_Updates}" FontWeight="SemiBold" FontSize="13"
                        Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                <Button Content="Check for updates" Width="150"
+                 <Button Content="{DynamicResource Btn_CheckUpdates}" Width="150"
                         Command="{Binding CheckForUpdateCommand}"
                         IsEnabled="{Binding IsChecking, Converter={StaticResource InvBool}}"
                         Style="{DynamicResource PrimaryButton}"/>
-                <Button Content="Download and install" Width="150" Margin="8,0,0,0"
+                 <Button Content="{DynamicResource Btn_DownloadInstall}" Width="150" Margin="8,0,0,0"
                         Command="{Binding DownloadAndStageCommand}"
                         Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVis}}"
                         Style="{DynamicResource AccentButton}"/>
@@ -103,10 +103,12 @@
                  FontSize="12" FontFamily="Segoe UI"
                  Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVis}}"/>
 
-        <!-- Row 4: Bottom bar -->
+         <!-- Row 4: Bottom bar -->
         <Grid Grid.Row="4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="10"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
@@ -114,11 +116,20 @@
                 <TextBlock Text="{Binding StatusMessage}"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            Style="{DynamicResource BodyText}" TextWrapping="Wrap"/>
-                <CheckBox Content="Check on startup" IsChecked="{Binding CheckOnStartup}"
-                          Margin="0,4,0,0" Style="{DynamicResource CompactCheckBox}"/>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <CheckBox Content="{DynamicResource Chk_CheckOnStartup}" IsChecked="{Binding CheckOnStartup}"
+                              Margin="0,0,12,0" Style="{DynamicResource CompactCheckBox}" VerticalAlignment="Center"/>
+                     <TextBlock Text="{DynamicResource About_Language}" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                    <ComboBox SelectedIndex="{Binding LanguageIndex}"
+                              Width="100" Height="22" FontSize="11" VerticalAlignment="Center">
+                        <ComboBoxItem Content="🇷🇺 Русский"/>
+                        <ComboBoxItem Content="🇬🇧 English"/>
+                    </ComboBox>
+                </StackPanel>
             </StackPanel>
 
-            <Button Grid.Column="1" Content="Close" Width="80"
+            <Button Grid.Column="1" Content="{DynamicResource Btn_Close}" Width="80"
                     Click="OnClose" Style="{DynamicResource SecondaryButton}"
                     VerticalAlignment="Bottom"/>
         </Grid>

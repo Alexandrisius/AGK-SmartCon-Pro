@@ -16,21 +16,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `FamilyParameterSnapshot` — safe pre-caching of FamilyManager parameters
 - Root `README.md` with project overview and architecture diagram
 - MIT License
+- `LocalizationService` — static localization service with RU/EN dictionaries and JSON persistence
+- `LanguageManager` — ResourceDictionary swap for XAML DynamicResource bindings
+- `DynamicSizeLoader` — dynamic family size loading and auto-selection
+- `ConnectorCycleService` — free connector cycling with alignment
+- `FittingCardBuilder` — builds fitting/reducer card items for UI
+- `ConnectExecutor` — validates and executes final ConnectTo operation
+- `ChainOperationHandler` — handles chain depth increment/decrement
+- `PositionCorrector` — post-connect position correction
+- `PipeConnectInitHandler`, `PipeConnectRotationHandler`, `PipeConnectSizeHandler` — decomposed handler services
+- XML documentation for all public types in PipeConnect
+- `.editorconfig` CA1863 suppression for localized format strings
 
 ### Changed
+- **Phase 0: Project skeleton** — Solution + Ribbon + DI + .editorconfig + MIT License
+- **Phase 1: Foundation** — 10 domain models, 11 interfaces, Vec3, VectorUtils, ConnectorWrapper
+- **Phase 2: Basic connect** — FreeConnectorFilter, ElementSelectionService, ConnectorAligner, ExternalEvent pattern
+- **Phase 3: Connector types** — MiniTypeSelector, MappingEditor, JSON persistence, EditFamily API
+- **Phase 4: Parameter resolution** — MiniFormulaSolver → FormulaSolver (AST), FamilyParameterAnalyzer, RevitLookupTableService
+- **Phase 5: Fitting system** — FittingMapper, IFittingInsertService, auto-insert by mapping, size filtering
+- **Phase 6: FormulaSolver** — Full AST parser with Evaluate, SolveFor (algebraic + bisection), ParseSizeLookup
+- **Phase 7: Chain operations** — ElementChainIterator (BFS), ConnectionGraph, NetworkMover, NetworkSnapshotStore
+- **Phase 8: PostProcessing UI** — PipeConnectEditor (modeless), rotation, connector cycling, fitting list, Assimilate/RollBack
+- **Phase 9: Refactoring** — ViewModel decomposition (631→384 lines, 5 partial files), 12 handler services extracted
+- **Phase 10: Open-source quality** — Localization (RU/EN), XML documentation, log rotation, code quality fixes
 - Unified `GuessCtcForFitting` and `GuessCtcForReducer` into single `GuessCtcForElement`
 - Unified `InsertFittingSilent` and `InsertFittingSilentNoDynamicAdjust` (single method with parameter)
 - `FamilySizeFormatter` now uses `Units.FeetToMm` instead of local constant
 - `RevitDynamicSizeResolver.TryGetLookupTableSizes` uses `EditFamilySession` (53→12 lines)
 - Both Revit services use `FamilyParameterSnapshot.Build()` instead of inline pre-cache
-
-### Changed
-- **Phase 2: ViewModel decomposition** — split 3,570-line `PipeConnectEditorViewModel.cs` into 5 partial files:
-  - `PipeConnectEditorViewModel.cs` (872 lines) — core fields, Init, rotation, size logic
-  - `PipeConnectEditorViewModel.Chain.cs` (735 lines) — Increment/Decrement ChainDepth, ConnectAllChain
-  - `PipeConnectEditorViewModel.Ctc.cs` (640 lines) — Virtual CTC helpers + Fitting CTC setup
-  - `PipeConnectEditorViewModel.Insert.cs` (319 lines) — InsertFitting, InsertReducer, Reassign CTC
-  - `PipeConnectEditorViewModel.Connect.cs` (586 lines) — Connect, ValidateAndFixBeforeConnect
 
 ### Code Quality
 - **Phase 5: Exception handling** — documented all 23 catch blocks:
@@ -40,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phase 8: Tests** — added 17 new tests:
   - `BestSizeMatcherTests` (9 tests) — weighted matching, tie-breaking, empty candidates
   - `ConstantsTests` (8 tests) — unit conversion round-trips, tolerance values
+
+### Metrics
+- ViewModel: 631 → 384 lines (39% reduction)
+- Tests: 545 → 577 (32 new, 0 regressions)
+- Handler services extracted: 12
+- Localization keys: ~120 (RU + EN)
 
 ### Removed
 - Duplicate size-matching code in ViewModel (3 copy-paste instances → 1 shared method)

@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
@@ -48,13 +49,12 @@ public sealed partial class MappingRuleItem : ObservableObject
     public string FamiliesSummary =>
         FittingFamilies.Count > 0
             ? string.Join(", ", FittingFamilies.Select(f => f.FamilyName))
-            : "(не выбраны)";
+            : LocalizationService.GetString("Mapping_NotSelected");
 
-    /// <summary>Суммарное отображение выбранных переходников сечения для DataGrid.</summary>
     public string ReducerFamiliesSummary =>
         ReducerFamilies.Count > 0
             ? string.Join(", ", ReducerFamilies.Select(f => f.FamilyName))
-            : "(не выбраны)";
+            : LocalizationService.GetString("Mapping_NotSelected");
 
     public MappingRuleItem(IDialogService dialogService, IReadOnlyList<string> availableFamilyNames)
     {

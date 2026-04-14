@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
 
@@ -49,7 +50,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private readonly HashSet<long> _warmedElementIds = [];
 
     private int _chainDepthField;
-    [ObservableProperty] private string _chainDepthHint = "нет цепочки";
+    [ObservableProperty] private string _chainDepthHint = LocalizationService.GetString("Lbl_NoChain");
     [ObservableProperty] private bool _hasChain;
 
     public int ChainDepth
@@ -59,7 +60,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     }
 
     [ObservableProperty] private bool _isBusy;
-    [ObservableProperty] private string _statusMessage = "Инициализация…";
+    [ObservableProperty] private string _statusMessage = LocalizationService.GetString("Status_Initializing");
     [ObservableProperty] private FittingCardItem? _selectedFitting;
     [ObservableProperty] private bool _isSessionActive;
 
@@ -158,7 +159,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     public void Init()
     {
         SmartConLogger.Info("[Init] START");
-        _groupSession = _txService.BeginGroupSession("PipeConnect");
+        _groupSession = _txService.BeginGroupSession(LocalizationService.GetString("Tx_PipeConnect"));
         IsSessionActive = true;
 
         try
@@ -173,7 +174,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             var defaultFitting = SelectedFitting;
             if (defaultFitting is not null && !defaultFitting.IsDirectConnect)
             {
-                StatusMessage = "Установка фитинга…";
+                StatusMessage = LocalizationService.GetString("Status_InsertingFitting");
                 InsertFittingSilent(defaultFitting);
             }
             else if (_ctx.ParamTargetRadius is { } directTargetRadius)
@@ -181,11 +182,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 _activeDynamic = _initHandler.RunDirectConnectSizing(
                     _doc, _ctx, _groupSession, directTargetRadius, AvailableDynamicSizes)
                     ?? _ctx.DynamicConnector;
-                StatusMessage = "Готово к соединению";
+                StatusMessage = LocalizationService.GetString("Status_ReadyToConnect");
             }
             else
             {
-                StatusMessage = "Готово к соединению";
+                StatusMessage = LocalizationService.GetString("Status_ReadyToConnect");
             }
 
             if (_currentFittingId is null && _activeDynamic is not null)
@@ -202,7 +203,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                     {
                         SelectedReducer = AvailableReducers[0];
                         IsReducerVisible = true;
-                        StatusMessage = "Вставка переходника…";
+                        StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
                         InsertReducerSilent();
                     }
                 }
@@ -214,7 +215,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         catch (Exception ex)
         {
             SmartConLogger.Error($"[Init] Failed: {ex.Message}\n{ex.StackTrace}");
-            StatusMessage = $"Ошибка инициализации: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_Init"), ex.Message);
             _groupSession.RollBack();
             _groupSession = null;
             IsSessionActive = false;
@@ -237,12 +238,12 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 _doc, _groupSession!, _ctx, _activeDynamic,
                 _currentFittingId, _primaryReducerId, _chainGraph,
                 _snapshotStore, ChainDepth, angleDeg);
-            StatusMessage = $"Повёрнуто на {angleDeg:+#;-#;0}°";
+            StatusMessage = string.Format(LocalizationService.GetString("Status_Rotated"), angleDeg);
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"[Rotate] Failed: {ex.Message}");
-            StatusMessage = $"Ошибка поворота: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_Rotate"), ex.Message);
         }
         finally
         {
@@ -259,7 +260,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         if (target is null) return;
 
         IsBusy = true;
-        StatusMessage = "Переключение коннектора…";
+        StatusMessage = LocalizationService.GetString("Status_SwitchingConnector");
 
         try
         {
@@ -267,13 +268,13 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             _activeDynamic = _cycleService.CycleAndAlign(
                 _doc, _groupSession!, target, alignTarget, _activeDynamic);
 
-            StatusMessage = "Коннектор изменён";
+            StatusMessage = LocalizationService.GetString("Status_ConnectorChanged");
             CycleConnectorCommand.NotifyCanExecuteChanged();
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"[CycleConnector] Failed: {ex.Message}");
-            StatusMessage = $"Error: {ex.Message}";
+             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
         {
@@ -289,7 +290,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         if (SelectedDynamicSize is null || SelectedDynamicSize.IsAutoSelect) return;
 
         IsBusy = true;
-        StatusMessage = $"Изменение размера на {SelectedDynamicSize.DisplayName}…";
+        StatusMessage = string.Format(LocalizationService.GetString("Status_ChangingSizeTo"), SelectedDynamicSize.DisplayName);
         SmartConLogger.Info($"[ChangeDynamicSize] Attempting size change to {SelectedDynamicSize.DisplayName} " +
             $"(radius={SelectedDynamicSize.Radius * FeetToMm:F2} mm, source={SelectedDynamicSize.Source}, " +
             $"allRadii={SelectedDynamicSize.AllConnectorRadii.Count} коннекторов)");
@@ -305,12 +306,12 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
             var sizeInfo = result.SizeChangeInfo;
             StatusMessage = string.IsNullOrEmpty(sizeInfo)
-                ? $"Размер изменён на {SelectedDynamicSize.DisplayName}"
-                : $"Размер изменён. {sizeInfo}";
+                ? string.Format(LocalizationService.GetString("Status_SizeChangedTo"), SelectedDynamicSize.DisplayName)
+                : string.Format(LocalizationService.GetString("Status_SizeChangedWithInfo"), sizeInfo);
 
             if (_currentFittingId is not null)
             {
-                StatusMessage = "Обновление фитинга…";
+                StatusMessage = LocalizationService.GetString("Status_UpdatingFitting");
                 var currentFitting = SelectedFitting;
                 if (currentFitting is not null && !currentFitting.IsDirectConnect)
                 {
@@ -325,7 +326,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 var newReducerConn2 = SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false);
                 if (newReducerConn2 is not null && _activeDynamic is not null)
                 {
-                    _groupSession!.RunInTransaction("PipeConnect — Позиция dynamic после reducer resize", doc =>
+                    _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_PositionAfterReducer"), doc =>
                     {
                         var dynProxy = _connSvc.RefreshConnector(
                             doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
@@ -346,7 +347,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 {
                     SelectedReducer = AvailableReducers[0];
                     IsReducerVisible = true;
-                    StatusMessage = "Вставка переходника…";
+                    StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
                     InsertReducerSilent();
                 }
             }
@@ -354,7 +355,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         catch (Exception ex)
         {
             SmartConLogger.Error($"[ChangeDynamicSize] Error: {ex.Message}");
-            StatusMessage = $"Ошибка смены размера: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_ChangeSize"), ex.Message);
         }
         finally
         {

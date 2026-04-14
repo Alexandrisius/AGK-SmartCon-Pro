@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core;
 
@@ -28,7 +29,7 @@ public sealed partial class PipeConnectEditorViewModel
         if (nextLevel >= _chainGraph.Levels.Count) return;
 
         IsBusy = true;
-        StatusMessage = $"Присоединение уровня {nextLevel}…";
+        StatusMessage = string.Format(LocalizationService.GetString("Status_AttachingLevel"), nextLevel);
 
         try
         {
@@ -37,12 +38,12 @@ public sealed partial class PipeConnectEditorViewModel
 
             ChainDepth = nextLevel;
             UpdateChainUI();
-            StatusMessage = $"Уровень {nextLevel} присоединён";
+            StatusMessage = string.Format(LocalizationService.GetString("Status_LevelAttached"), nextLevel);
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"[Chain+] Error: {ex.Message}\n{ex.StackTrace}");
-            StatusMessage = $"Ошибка цепочки: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_Chain"), ex.Message);
         }
         finally
         {
@@ -62,7 +63,7 @@ public sealed partial class PipeConnectEditorViewModel
         if (_chainGraph is null || ChainDepth <= 0) return;
 
         IsBusy = true;
-        StatusMessage = $"Откат уровня {ChainDepth}…";
+        StatusMessage = string.Format(LocalizationService.GetString("Status_RollbackLevel"), ChainDepth);
 
         try
         {
@@ -71,12 +72,12 @@ public sealed partial class PipeConnectEditorViewModel
 
             ChainDepth--;
             UpdateChainUI();
-            StatusMessage = $"Уровень {ChainDepth + 1} отсоединён";
+            StatusMessage = string.Format(LocalizationService.GetString("Status_LevelDetached"), ChainDepth + 1);
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"[Chain−] Error: {ex.Message}");
-            StatusMessage = $"Ошибка отката: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_Rollback"), ex.Message);
         }
         finally
         {
@@ -93,7 +94,7 @@ public sealed partial class PipeConnectEditorViewModel
         if (_chainGraph is null) return;
 
         IsBusy = true;
-        StatusMessage = "Подключение всей сети…";
+        StatusMessage = LocalizationService.GetString("Status_ConnectingNetwork");
 
         try
         {
@@ -106,12 +107,12 @@ public sealed partial class PipeConnectEditorViewModel
                 processed++;
             }
 
-            StatusMessage = $"Подключено {processed} уровней";
+            StatusMessage = string.Format(LocalizationService.GetString("Status_LevelsConnected"), processed);
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"[ConnectAll] Error: {ex.Message}");
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
         {

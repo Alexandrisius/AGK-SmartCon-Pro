@@ -3,12 +3,16 @@ using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// Handles initialization for PipeConnect sessions: disconnect, alignment, and sizing adjustments.
+/// </summary>
 public sealed class PipeConnectInitHandler(
     IConnectorService connSvc,
     ITransformService transformSvc,
@@ -36,7 +40,7 @@ public sealed class PipeConnectInitHandler(
         var dynId = ctx.DynamicConnector.OwnerElementId;
         var dynIdx = ctx.DynamicConnector.ConnectorIndex;
 
-        groupSession.RunInTransaction("PipeConnect — Подгонка размера", d =>
+        groupSession.RunInTransaction(LocalizationService.GetString("Tx_AdjustSize"), d =>
         {
             var bestMatch = PipeConnectSizeHandler.FindBestOptionForRadius(
                 connSvc, d, ctx, availableSizes, targetRadius, dynIdx);
@@ -79,7 +83,7 @@ public sealed class PipeConnectInitHandler(
         ITransactionGroupSession groupSession,
         PipeConnectSessionContext ctx)
     {
-        groupSession.RunInTransaction("PipeConnect — Отсоединение", doc =>
+        groupSession.RunInTransaction(LocalizationService.GetString("Tx_Disconnect"), doc =>
         {
             var dynId = ctx.DynamicConnector.OwnerElementId;
             var allConns = connSvc.GetAllConnectors(doc, dynId);
@@ -97,7 +101,7 @@ public sealed class PipeConnectInitHandler(
         PipeConnectSessionContext ctx)
     {
         var alignResult = ctx.AlignResult;
-        groupSession.RunInTransaction("PipeConnect — Выравнивание", doc =>
+        groupSession.RunInTransaction(LocalizationService.GetString("Tx_Align"), doc =>
         {
             var dynId = ctx.DynamicConnector.OwnerElementId;
 

@@ -1,15 +1,11 @@
 using System;
 using System.IO;
+using System.Linq;
 
 namespace SmartCon.Core.Logging;
 
-/// <summary>
-/// File logger for SmartCon.
-/// Writes to %APPDATA%\AGK\SmartCon\smartcon.log (general) and
-/// %APPDATA%\AGK\SmartCon\lookup-diagnostic.log (LookupTable/ParameterResolver only).
-/// Thread-safe via lock. Silently ignores write errors.
-/// Accessible from all assemblies (SmartCon.Core, SmartCon.Revit, SmartCon.PipeConnect, SmartCon.App).
-/// </summary>
+public enum LogLevel { Debug, Info, Warn, Error }
+
 public static class SmartConLogger
 {
     private static readonly string LogDir = Path.Combine(
@@ -22,19 +18,29 @@ public static class SmartConLogger
 
     private static readonly object _lock = new();
 
+    private const long MaxLogSizeBytes = 5 * 1024 * 1024;
+    private const int MaxBakFiles = 3;
+
+    public static LogLevel MinLevel { get; set; } = LogLevel.Debug;
+
     static SmartConLogger()
     {
         try { Directory.CreateDirectory(LogDir); }
-        catch { /* if folder creation fails — just don't write */ }
+        catch { }
     }
 
-    // ── Main log ──────────────────────────────────────────────────────
-
     public static void Info(string message) => Write(LogPath, "INF", message);
-    public static void Debug(string message) => Write(LogPath, "DBG", message);
-    public static void DebugSection(string title) => Write(LogPath, "DBG", $"── {title} ──");
+    public static void Debug(string message)
+    {
+        if (MinLevel <= LogLevel.Debug) Write(LogPath, "DBG", message);
+    }
+    public static void DebugSection(string title)
+    {
+        if (MinLevel <= LogLevel.Debug) Write(LogPath, "DBG", $"── {title} ──");
+    }
     public static void DebugLines(string header, string[] lines, int maxLines = 20)
     {
+        if (MinLevel > LogLevel.Debug) return;
         Write(LogPath, "DBG", $"{header} ({lines.Length} lines):");
         int count = System.Math.Min(lines.Length, maxLines);
         for (int i = 0; i < count; i++)
@@ -45,9 +51,11 @@ public static class SmartConLogger
     public static void Warn(string message) => Write(LogPath, "WRN", message);
     public static void Error(string message) => Write(LogPath, "ERR", message);
 
-    /// <summary>Session separator at command start — writes to all log files.</summary>
     public static void LogSessionStart(string commandName)
     {
+        RotateLogIfNeeded();
+        CleanupOldBakFiles();
+
         var header = $"{'=',70}";
         var line = $"SESSION START: {commandName}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]";
         Write(LogPath, "INF", header);
@@ -61,25 +69,17 @@ public static class SmartConLogger
         Write(FormulaLogPath, "INF", header);
     }
 
-    // ── LookupTable / ParameterResolver diagnostics ───────────────────────
-
-    /// <summary>
-    /// Writes ONLY to lookup-diagnostic.log (not to smartcon.log).
-    /// Used in RevitLookupTableService, RevitParameterResolver, FamilyParameterAnalyzer.
-    /// </summary>
     public static void Lookup(string message)
     {
         Write(LookupLogPath, "LKP", message);
     }
 
-    /// <summary>Section separator within LookupTable diagnostics.</summary>
     public static void LookupSection(string title)
     {
         var line = $"── {title} ──";
         Write(LookupLogPath, "LKP", line);
     }
 
-    /// <summary>Write an array of strings (e.g. CSV rows) to lookup-diagnostic.log.</summary>
     public static void LookupLines(string header, string[] lines, int maxLines = 20)
     {
         Write(LookupLogPath, "LKP", $"{header} ({lines.Length} lines):");
@@ -90,32 +90,54 @@ public static class SmartConLogger
             Write(LookupLogPath, "CSV", $"  ... ({lines.Length - maxLines} more lines hidden)");
     }
 
-    // ── Formula diagnostics ───────────────────────────────────────────────
-
-    /// <summary>
-    /// Writes ONLY to formula-diagnostic.log.
-    /// Used by FormulaSolver to track all formula operations:
-    /// which succeeded, which failed, with what parameters.
-    /// Builds a knowledge base of all encountered formulas for future edits.
-    /// </summary>
     public static void Formula(string message)
     {
         Write(FormulaLogPath, "FRM", message);
     }
 
-    /// <summary>Log a successful formula operation.</summary>
     public static void FormulaOk(string operation, string formula, string detail)
     {
         Write(FormulaLogPath, " OK", $"[{operation}] '{formula}' → {detail}");
     }
 
-    /// <summary>Log a failed formula operation.</summary>
     public static void FormulaFail(string operation, string formula, string reason)
     {
         Write(FormulaLogPath, "FAIL", $"[{operation}] '{formula}' → {reason}");
     }
 
-    // ── Internal write ─────────────────────────────────────────────────
+    private static void RotateLogIfNeeded()
+    {
+        try
+        {
+            if (!File.Exists(LogPath)) return;
+            var fi = new FileInfo(LogPath);
+            if (fi.Length < MaxLogSizeBytes) return;
+
+            var bakPath = Path.Combine(LogDir, "smartcon.log.bak");
+            File.Delete(bakPath);
+            File.Move(LogPath, bakPath);
+        }
+        catch { }
+    }
+
+    private static void CleanupOldBakFiles()
+    {
+        try
+        {
+            var bakFiles = Directory.GetFiles(LogDir, "*.bak")
+                .Select(f => new FileInfo(f))
+                .OrderByDescending(f => f.LastWriteTime)
+                .Skip(MaxBakFiles)
+                .ToList();
+
+            foreach (var f in bakFiles)
+            {
+                try { f.Delete(); }
+                catch { }
+            }
+        }
+        catch { }
+    }
 
     private static void Write(string path, string level, string message)
     {
@@ -127,6 +149,6 @@ public static class SmartConLogger
                     $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}{Environment.NewLine}");
             }
         }
-        catch { /* log write must not break main logic */ }
+        catch { }
     }
 }

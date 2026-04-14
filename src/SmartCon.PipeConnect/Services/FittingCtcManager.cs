@@ -4,6 +4,7 @@ using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 using static SmartCon.Core.Units;
@@ -246,7 +247,7 @@ public sealed class FittingCtcManager(
                 symbol.Family.Name, symbol.Name, items, types))
         {
             dialogSvc.ShowWarning("SmartCon",
-                "Типы коннекторов не назначены. Фитинг не будет вставлен.");
+                LocalizationService.GetString("Msg_CtcNotAssigned"));
             return false;
         }
 
@@ -281,7 +282,7 @@ public sealed class FittingCtcManager(
                 symbol.Family.Name, symbol.Name, items, types))
         {
             dialogSvc.ShowWarning("SmartCon",
-                "Типы коннекторов не назначены. Переходник не будет вставлен.");
+                LocalizationService.GetString("Msg_ReducerCtcNotAssigned"));
             return false;
         }
 
@@ -622,7 +623,7 @@ public sealed class FittingCtcManager(
             }
             else if (elem is MEPCurve or FlexPipe)
             {
-                groupSession?.RunInTransaction("PipeConnect — SetConnectorType", d =>
+                groupSession?.RunInTransaction(LocalizationService.GetString("Tx_SetCtc"), d =>
                 {
                     foreach (var w in group)
                         familyConnSvc.SetConnectorTypeCode(d, w.ElementId, w.ConnectorIndex, w.TypeDef);
@@ -665,7 +666,8 @@ public sealed class FittingCtcManager(
                         return fp.Definition?.Name ?? string.Empty;
                 }
             }
-            catch { }
+            catch { // Intentional: AssociatedParameters COM access may fail for inaccessible family parameters
+            }
         }
 
         return string.Empty;
@@ -689,7 +691,8 @@ public sealed class FittingCtcManager(
                     }
                 }
             }
-            catch { }
+            catch { // Intentional: AssociatedParameters COM access may fail for inaccessible family parameters
+            }
             if (drivingFp is not null) break;
         }
 

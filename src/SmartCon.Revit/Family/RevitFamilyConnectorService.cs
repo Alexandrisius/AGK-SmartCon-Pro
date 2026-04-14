@@ -1,6 +1,7 @@
 using System;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
+using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
@@ -125,9 +126,9 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             {
                 var distLocal = ce.Origin.DistanceTo(targetOriginLocal);
                 double score;
-                if (distLocal < 0.001) // точное совпадение (~0.3 мм)
+                if (distLocal < Tolerance.ConnectorPositionMatch)
                 {
-                    score = 2.0;
+                    score = ConnectorMatchScore.ExactPosition;
                 }
                 else if (targetDir is not null && ce.Origin.GetLength() > 1e-6)
                 {
@@ -144,9 +145,9 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             SmartConLogger.Info($"[SmartCon] Best match: Id={target?.Id.Value}, bestScore={bestScore:F4}");
 
             // Валидно если: точное совпадение (score=2.0) или направление совпадает (score≥0.99).
-            if (target is null || bestScore < 0.99)
+            if (target is null || bestScore < ConnectorMatchScore.DirectionThreshold)
             {
-                SmartConLogger.Info($"[SmartCon] No valid match (bestScore={bestScore:F4} < 0.99)");
+                SmartConLogger.Info($"[SmartCon] No valid match (bestScore={bestScore:F4} < {ConnectorMatchScore.DirectionThreshold})");
                 return false;
             }
 

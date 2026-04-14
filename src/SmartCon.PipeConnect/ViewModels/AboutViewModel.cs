@@ -1,7 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.PipeConnect.Services;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
@@ -12,6 +14,9 @@ public sealed partial class AboutViewModel : ObservableObject
 
     [ObservableProperty]
     private string _currentVersion = string.Empty;
+
+    public string VersionDisplay =>
+        string.Format(LocalizationService.GetString("About_Version"), CurrentVersion);
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -40,6 +45,9 @@ public sealed partial class AboutViewModel : ObservableObject
     [ObservableProperty]
     private bool _checkOnStartup = true;
 
+    [ObservableProperty]
+    private int _languageIndex;
+
     private UpdateInfo? _foundUpdate;
 
     public AboutViewModel(
@@ -54,6 +62,10 @@ public sealed partial class AboutViewModel : ObservableObject
         var settings = _settingsRepo.Load();
         CheckOnStartup = settings.CheckOnStartup;
 
+        LanguageIndex = LocalizationService.CurrentLanguage == Language.EN ? 1 : 0;
+
+        LocalizationService.LanguageChanged += () => OnPropertyChanged(nameof(VersionDisplay));
+
         RefreshPendingState();
     }
 
@@ -61,7 +73,7 @@ public sealed partial class AboutViewModel : ObservableObject
     private async Task CheckForUpdate()
     {
         IsChecking = true;
-        StatusMessage = "Checking for updates...";
+        StatusMessage = LocalizationService.GetString("About_CheckingUpdates");
         UpdateAvailable = false;
         LatestVersionInfo = string.Empty;
         ReleaseNotes = string.Empty;
@@ -72,24 +84,24 @@ public sealed partial class AboutViewModel : ObservableObject
 
             if (_foundUpdate is null)
             {
-                StatusMessage = $"v{CurrentVersion} is up to date.";
-                LatestVersionInfo = $"Current: v{CurrentVersion} (latest)";
+                StatusMessage = string.Format(LocalizationService.GetString("About_UpToDate"), CurrentVersion);
+                LatestVersionInfo = string.Format(LocalizationService.GetString("About_CurrentLatest"), CurrentVersion);
             }
             else
             {
                 UpdateAvailable = true;
-                LatestVersionInfo = $"Available: v{_foundUpdate.Version} (current: v{CurrentVersion})";
+                LatestVersionInfo = string.Format(LocalizationService.GetString("About_AvailableVersion"), _foundUpdate.Version, CurrentVersion);
                 ReleaseNotes = _foundUpdate.ReleaseNotes ?? string.Empty;
-                StatusMessage = $"v{_foundUpdate.Version} available. Click Download.";
+                StatusMessage = string.Format(LocalizationService.GetString("About_VersionAvailable"), _foundUpdate.Version);
             }
         }
         catch (InvalidOperationException ex)
         {
-            StatusMessage = ex.Message;
+            StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
         {
@@ -104,7 +116,7 @@ public sealed partial class AboutViewModel : ObservableObject
 
         IsDownloading = true;
         DownloadProgress = 0;
-        StatusMessage = "Downloading...";
+        StatusMessage = LocalizationService.GetString("About_Downloading");
 
         var progress = new Progress<double>(p => DownloadProgress = p * 100);
 
@@ -115,12 +127,12 @@ public sealed partial class AboutViewModel : ObservableObject
 
             UpdatePending = true;
             UpdateAvailable = false;
-            StatusMessage = $"v{_foundUpdate.Version} will be installed when Revit closes.";
+            StatusMessage = string.Format(LocalizationService.GetString("About_WillInstallOnClose"), _foundUpdate.Version);
             _foundUpdate = null;
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Download error: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("About_DownloadError"), ex.Message);
         }
         finally
         {
@@ -134,6 +146,12 @@ public sealed partial class AboutViewModel : ObservableObject
         _settingsRepo.Save(settings with { CheckOnStartup = value });
     }
 
+    partial void OnLanguageIndexChanged(int value)
+    {
+        var lang = value == 1 ? Language.EN : Language.RU;
+        LanguageManager.SwitchLanguage(lang);
+    }
+
     private void RefreshPendingState()
     {
         try
@@ -141,7 +159,7 @@ public sealed partial class AboutViewModel : ObservableObject
             var pending = _updateService.GetPendingUpdateAsync().GetAwaiter().GetResult();
             UpdatePending = pending is not null;
             if (UpdatePending)
-                StatusMessage = "Pending update will be installed when Revit closes.";
+                StatusMessage = LocalizationService.GetString("About_PendingUpdate");
         }
         catch
         {

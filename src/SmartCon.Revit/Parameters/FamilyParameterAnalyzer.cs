@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
+using SmartCon.Core;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Revit.Extensions;
 using RevitTransform = Autodesk.Revit.DB.Transform;
@@ -78,9 +79,9 @@ internal static class FamilyParameterAnalyzer
             var globalOrigin = instanceTransform.OfPoint(ce.Origin);
             var distLocal = (ce.Origin - targetOriginLocal).GetLength();
             double score;
-            if (distLocal < 0.001)
+            if (distLocal < Tolerance.ConnectorPositionMatch)
             {
-                score = 2.0;
+                score = ConnectorMatchScore.ExactPosition;
             }
             else if (targetDir is not null && ce.Origin.GetLength() > 1e-6)
             {
@@ -94,11 +95,11 @@ internal static class FamilyParameterAnalyzer
             if (score > bestScore) { bestScore = score; targetConnElem = ce; }
         }
 
-        SmartConLogger.Debug($"  Best ConnectorElement: id={targetConnElem?.Id.Value}, bestScore={bestScore:F4} (min 0.99)");
+        SmartConLogger.Debug($"  Best ConnectorElement: id={targetConnElem?.Id.Value}, bestScore={bestScore:F4} (min {ConnectorMatchScore.DirectionThreshold})");
 
-        if (targetConnElem is null || bestScore < 0.99)
+        if (targetConnElem is null || bestScore < ConnectorMatchScore.DirectionThreshold)
         {
-            SmartConLogger.Debug($"  WARNING: connector not found or score too low ({bestScore:F4} < 0.99) → return default");
+            SmartConLogger.Debug($"  WARNING: connector not found or score too low ({bestScore:F4} < {ConnectorMatchScore.DirectionThreshold}) → return default");
             SmartConLogger.Warn($"[FPA] Target connector not found or score too low ({bestScore:F4})");
             return default;
         }

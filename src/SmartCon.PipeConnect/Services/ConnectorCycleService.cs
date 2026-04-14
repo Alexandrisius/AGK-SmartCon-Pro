@@ -2,10 +2,14 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// Tracks visited connectors and provides sequential cycling through free connectors on an element.
+/// </summary>
 public sealed class ConnectorCycleState
 {
     private List<ConnectorProxy> _allConnectors = [];
@@ -51,6 +55,9 @@ public sealed class ConnectorCycleState
     public void MarkVisited(int connectorIndex) => _visited.Add(connectorIndex);
 }
 
+/// <summary>
+/// Handles cycling through free connectors on an element and re-aligning after each switch.
+/// </summary>
 public sealed class ConnectorCycleService(
     IConnectorService connSvc,
     ITransformService transformSvc,
@@ -70,7 +77,7 @@ public sealed class ConnectorCycleService(
 
         ConnectorProxy? result = currentActive;
 
-        session.RunInTransaction("PipeConnect — Смена коннектора", d =>
+        session.RunInTransaction(LocalizationService.GetString("Tx_SwitchConnector"), d =>
         {
             var freshTarget = connSvc.RefreshConnector(
                 d, target.OwnerElementId, target.ConnectorIndex) ?? target;

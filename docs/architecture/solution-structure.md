@@ -28,36 +28,61 @@ SmartCon.Core/
 │   ├── ConnectorProxy.cs              <- иммутабельный снапшот коннектора
 │   ├── ConnectionTypeCode.cs          <- строго типизированный код типа соединения
 │   ├── PipeConnectionSession.cs       <- мутабельный контекст сессии
+│   ├── PipeConnectSessionContext.cs   <- immutable context для builder
 │   ├── PipeConnectState.cs            <- enum состояний state machine
 │   ├── ConnectionGraph.cs             <- граф соединённых элементов
 │   ├── ConnectionEdge.cs              <- ребро графа
 │   ├── FittingMapping.cs              <- правило маппинга фитинга
 │   ├── FittingMappingRule.cs          <- расширенное правило (FromType, ToType, семейства)
-│   ├── ConnectorTypeDefinition.cs     <- определение типа коннектора (code, name, description)
-│   └── ParameterDependency.cs         <- зависимость параметра коннектора
+│   ├── ConnectorTypeDefinition.cs     <- определение типа коннектора
+│   ├── ParameterDependency.cs         <- зависимость параметра коннектора
+│   ├── FamilyInfo.cs                  <- семейство фитинга (после фильтрации)
+│   ├── FamilySizeOption.cs            <- типоразмер для dynamic size
+│   ├── FittingCtcSetupItem.cs         <- элемент UI для CTC setup
+│   ├── VirtualCtcStore.cs             <- виртуальное хранилище CTC overrides
+│   ├── NetworkSnapshot.cs             <- снапшот сети для chain rollback
+│   ├── NetworkSnapshotStore.cs        <- хранилище снапшотов
+│   ├── CtcGuesser.cs                  <- логика угадывания CTC
+│   ├── LookupColumnConstraint.cs      <- ограничение колонки LookupTable
+│   ├── UpdateInfo.cs                  <- информация об обновлении
+│   └── UpdateSettings.cs              <- настройки обновлений
 ├── Services/
-│   ├── ServiceHost.cs                   <- статический резолвер DI (для IExternalCommand)
+│   ├── ServiceHost.cs                   <- статический резолвер DI
+│   ├── LocalizationService.cs           <- RU/EN локализация строк
 │   ├── Interfaces/
 │   │   ├── IRevitContext.cs
-│   │   ├── IRevitContextWriter.cs       <- ISP: обновление UIApplication
+│   │   ├── IRevitContextWriter.cs
 │   │   ├── ITransactionService.cs
+│   │   ├── ITransactionGroupSession.cs  <- TransactionGroup session
 │   │   ├── IElementSelectionService.cs
+│   │   ├── IConnectorService.cs
+│   │   ├── ITransformService.cs
 │   │   ├── IFittingMapper.cs
 │   │   ├── IFittingMappingRepository.cs
+│   │   ├── IFittingInsertService.cs     <- вставка фитинга
+│   │   ├── IFittingFamilyRepository.cs
+│   │   ├── IDynamicSizeResolver.cs      <- dynamic size resolution
+│   │   ├── INetworkMover.cs             <- перемещение сети
 │   │   ├── IFormulaSolver.cs
 │   │   ├── IParameterResolver.cs
 │   │   ├── ILookupTableService.cs
 │   │   ├── IElementChainIterator.cs
-│   │   └── IDialogService.cs
+│   │   ├── IDialogService.cs
+│   │   ├── IFamilyConnectorService.cs
+│   │   ├── IUpdateService.cs
+│   │   └── IUpdateSettingsRepository.cs
 │   └── Implementation/
-│       ├── PathfinderService.cs       <- алгоритм Дейкстры для цепочки фитингов
-│       ├── FormulaSolver.cs           <- AST-парсер формул Revit
-│       ├── FittingMapper.cs           <- подбор фитингов по маппингу
-│       ├── JsonFittingMappingRepository.cs <- CRUD маппинга в JSON
-│       └── ConnectionSessionManager.cs
-└── Math/
-    ├── ConnectorAligner.cs            <- вычисление матриц поворота и перемещения
-    └── VectorUtils.cs                 <- базовые векторные операции
+│       ├── FormulaSolver.cs             <- AST-парсер формул Revit
+│       ├── FittingMapper.cs             <- подбор фитингов по маппингу
+│       └── JsonFittingMappingRepository.cs
+├── Math/
+│   ├── Vec3.cs                        <- 3D-вектор (ADR-009)
+│   ├── VectorUtils.cs                 <- базовые векторные операции
+│   ├── ConnectorAligner.cs            <- вычисление матриц поворота и перемещения
+│   └── FormulaEngine/                 <- AST-парсер формул
+├── Logging/
+│   └── SmartConLogger.cs              <- файловый логгер
+└── Constants.cs                       <- Units, Tolerance
 ```
 
 ---
@@ -140,22 +165,57 @@ SmartCon.App/
 
 ## SmartCon.PipeConnect
 
-Модуль PipeConnect: команды, ViewModel-ы, окна.
+Модуль PipeConnect: команды, ViewModel-ы, окна, сервисы.
 
 ```
 SmartCon.PipeConnect/
 ├── Commands/
-│   └── PipeConnectCommand.cs          <- IExternalCommand (точка входа с Ribbon)
+│   ├── PipeConnectCommand.cs          <- IExternalCommand (точка входа)
+│   └── AboutCommand.cs                <- IExternalCommand (About)
 ├── ViewModels/
-│   ├── PipeConnectEditorViewModel.cs  <- ViewModel финального окна (S6)
-│   ├── MiniTypeSelectorViewModel.cs   <- ViewModel мини-окна выбора типа
-│   └── MappingEditorViewModel.cs      <- ViewModel окна маппинга
+│   ├── PipeConnectEditorViewModel.cs       <- core: Init, rotation, size, fields
+│   ├── PipeConnectEditorViewModel.Connect.cs <- Connect, Cancel, Validate
+│   ├── PipeConnectEditorViewModel.Insert.cs  <- InsertFitting, InsertReducer, CTC
+│   ├── PipeConnectEditorViewModel.Chain.cs   <- ChainDepth, ConnectAllChain
+│   ├── PipeConnectEditorViewModel.Ctc.cs     <- Virtual CTC helpers
+│   ├── AboutViewModel.cs                   <- About window VM
+│   ├── MappingEditorViewModel.cs           <- Settings window VM
+│   ├── MiniTypeSelectorViewModel.cs        <- Type selector VM
+│   ├── FamilySelectorViewModel.cs          <- Family picker VM
+│   ├── FittingCtcSetupViewModel.cs         <- CTC setup VM
+│   ├── FittingCardBuilder.cs               <- Builds FittingCardItem lists
+│   ├── FittingCardItem.cs                  <- Fitting/reducer card for UI
+│   ├── ConnectorItem.cs                    <- Connector display item
+│   ├── ConnectorTypeItem.cs                <- Type display item
+│   └── MappingRuleItem.cs                  <- Rule display item
 ├── Views/
-│   ├── PipeConnectEditorView.xaml     <- финальное окно PostProcessing
-│   ├── MiniTypeSelectorView.xaml      <- мини-окно выбора типа коннектора
-│   └── MappingEditorView.xaml         <- окно управления маппингом
-└── Services/
-    └── PipeConnectDialogService.cs    <- IDialogService (открытие окон)
+│   ├── PipeConnectEditorView.xaml       <- PostProcessing editor
+│   ├── MappingEditorView.xaml           <- Settings (tabs: types + rules)
+│   ├── MiniTypeSelectorView.xaml        <- Type selector
+│   ├── FamilySelectorView.xaml          <- Family picker
+│   ├── FittingCtcSetupView.xaml         <- CTC assignment
+│   └── AboutView.xaml                   <- About + updates
+├── Services/
+│   ├── PipeConnectSessionBuilder.cs     <- S1-S6 session construction
+│   ├── PipeConnectDialogService.cs      <- IDialogService implementation
+│   ├── PipeConnectDiagnostics.cs        <- Connector state logging
+│   ├── ConnectExecutor.cs               <- Validate + ConnectTo execution
+│   ├── ChainOperationHandler.cs         <- Chain increment/decrement
+│   ├── ConnectorCycleService.cs         <- Connector cycling + alignment
+│   ├── DynamicSizeLoader.cs             <- Dynamic size loading
+│   ├── FittingCtcManager.cs             <- Virtual CTC management
+│   ├── PipeConnectInitHandler.cs         <- Init: disconnect, align, sizing
+│   ├── PipeConnectRotationHandler.cs     <- Rotation execution
+│   ├── PipeConnectSizeHandler.cs         <- Size change execution
+│   ├── PositionCorrector.cs              <- Post-connect position correction
+│   └── LanguageManager.cs                <- ResourceDictionary swap
+├── Resources/
+│   ├── Strings.ru.xaml                  <- Russian localization
+│   └── Strings.en.xaml                  <- English localization
+├── Converters/
+│   └── BoolToVisibilityConverter.cs
+└── Events/
+    └── PipeConnectExternalEvent.cs     <- IExternalEventHandler
 ```
 
 ---

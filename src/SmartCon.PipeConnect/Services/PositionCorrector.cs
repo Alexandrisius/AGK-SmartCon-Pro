@@ -5,6 +5,9 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// Corrects element positions after connect operations by applying offsets and snapping connectors to targets.
+/// </summary>
 public static class PositionCorrector
 {
     public static void SnapToTarget(

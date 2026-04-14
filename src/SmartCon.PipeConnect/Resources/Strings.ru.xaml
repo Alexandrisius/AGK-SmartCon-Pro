@@ -1,0 +1,91 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:s="clr-namespace:System;assembly=System.Runtime">
+
+    <s:String x:Key="Btn_Cancel">Отмена</s:String>
+    <s:String x:Key="Btn_Connect">Соединить</s:String>
+    <s:String x:Key="Btn_Insert">Вставить</s:String>
+    <s:String x:Key="Btn_Change">Изменить</s:String>
+    <s:String x:Key="Btn_Save">Сохранить</s:String>
+    <s:String x:Key="Btn_Saved">✓ Сохранено</s:String>
+    <s:String x:Key="Btn_Delete">Удалить</s:String>
+    <s:String x:Key="Btn_Add">+ Добавить</s:String>
+    <s:String x:Key="Btn_Confirm">Подтвердить</s:String>
+    <s:String x:Key="Btn_Close">Закрыть</s:String>
+    <s:String x:Key="Btn_OK">OK</s:String>
+
+    <s:String x:Key="Title_EditorSetup">Настройка соединения элементов</s:String>
+    <s:String x:Key="Heading_EditorSetup">Настройка соединения элементов</s:String>
+    <s:String x:Key="Title_Settings">Настройки SmartCon</s:String>
+    <s:String x:Key="Title_FamilySelector">Выбор семейств фитингов</s:String>
+    <s:String x:Key="Title_ConnType">Тип соединения</s:String>
+    <s:String x:Key="Title_CtcSetup">Назначение типов коннекторов</s:String>
+    <s:String x:Key="Title_About">О SmartCon</s:String>
+    <s:String x:Key="Tip_RotateCCW">Повернуть против часовой стрелки</s:String>
+    <s:String x:Key="Tip_RotationAngle">Угол поворота в градусах</s:String>
+    <s:String x:Key="Tip_RotateCW">Повернуть по часовой стрелке</s:String>
+    <s:String x:Key="Tip_AvailableSizes">Доступные типоразмеры динамического семейства</s:String>
+    <s:String x:Key="Tip_ChangeSize">Изменить размер динамического семейства</s:String>
+    <s:String x:Key="Tip_FittingCtc">Изменить типы коннекторов фитинга</s:String>
+    <s:String x:Key="Tip_SelectFitting">Выберите фитинг для соединения</s:String>
+    <s:String x:Key="Tip_InsertFitting">Вставить выбранный фитинг (примерка)</s:String>
+    <s:String x:Key="Tip_ReducerCtc">Изменить типы коннекторов переходника</s:String>
+    <s:String x:Key="Tip_SelectReducer">Выберите переходник</s:String>
+    <s:String x:Key="Tip_InsertReducer">Вставить выбранный переходник</s:String>
+    <s:String x:Key="Tip_ChainDecrement">Отсоединить последний уровень</s:String>
+    <s:String x:Key="Tip_ChainIncrement">Присоединить следующий уровень</s:String>
+    <s:String x:Key="Tip_ConnectAll">Подключить все элементы сети сразу</s:String>
+    <s:String x:Key="Tip_SelectFittingFamilies">Нажмите для выбора семейств фитингов (недоступно при «Прямое» — используйте переходы сечения)</s:String>
+    <s:String x:Key="Tip_SelectReducerFamilies">Нажмите для выбора семейств переходников (недоступно при непрямом — используйте фитинги)</s:String>
+    <s:String x:Key="Tip_ChangeConnection">Переключить на другой свободный коннектор</s:String>
+    <s:String x:Key="Tip_Connect">Выполнить соединение элементов</s:String>
+
+    <s:String x:Key="Label_Size">Размер:</s:String>
+    <s:String x:Key="Label_Network">Сеть:</s:String>
+    <s:String x:Key="Label_Updates">Обновления</s:String>
+    <s:String x:Key="Label_AvailableFamilies">Доступные семейства:</s:String>
+    <s:String x:Key="Label_FamilyFilter">(OST_PipeFitting, MultiPort, 2 коннектора)</s:String>
+    <s:String x:Key="Label_SelectedFamilies">Выбранные (порядок = приоритет):</s:String>
+    <s:String x:Key="Label_Family">Семейство: </s:String>
+    <s:String x:Key="Label_Symbol">Типоразмер: </s:String>
+    <s:String x:Key="Label_Connector">Коннектор </s:String>
+
+    <s:String x:Key="Btn_ChangeConnection">Изменить соединение</s:String>
+    <s:String x:Key="Btn_ConnectAll">Подключить всё</s:String>
+    <s:String x:Key="Btn_AddFamily">▶▶ Добавить</s:String>
+    <s:String x:Key="Btn_RemoveFamily">◀◀ Убрать</s:String>
+    <s:String x:Key="Btn_Up">▲ Вверх</s:String>
+    <s:String x:Key="Btn_Down">▼ Вниз</s:String>
+    <s:String x:Key="Btn_CheckUpdates">Проверить обновления</s:String>
+    <s:String x:Key="Btn_DownloadInstall">Скачать и установить</s:String>
+    <s:String x:Key="Chk_CheckOnStartup">Проверять при запуске</s:String>
+
+    <s:String x:Key="Tab_ConnectorTypes">Типы коннекторов</s:String>
+    <s:String x:Key="Tab_MappingRules">Правила маппинга</s:String>
+
+    <s:String x:Key="Col_Code">Код</s:String>
+    <s:String x:Key="Col_Name">Название</s:String>
+    <s:String x:Key="Col_Description">Описание</s:String>
+    <s:String x:Key="Col_ConnType1">Тип соединения 1</s:String>
+    <s:String x:Key="Col_ConnType2">Тип соединения 2</s:String>
+    <s:String x:Key="Col_Direct">Прямое</s:String>
+    <s:String x:Key="Col_Fittings">Фитинги</s:String>
+    <s:String x:Key="Col_Transitions">Переходы сечения</s:String>
+
+    <s:String x:Key="Status_Active">Активно</s:String>
+    <s:String x:Key="Status_Processing">Обработка…</s:String>
+    <s:String x:Key="Status_SessionEnded">Сессия завершена</s:String>
+    <s:String x:Key="Msg_AssignCtc">У фитинга не заданы типы коннекторов. Назначьте тип каждому коннектору:</s:String>
+
+    <s:String x:Key="About_Author">Автор:</s:String>
+    <s:String x:Key="About_Plugin">Плагин:</s:String>
+    <s:String x:Key="About_PluginDesc">MEP коннектор труб для Revit 2025</s:String>
+    <s:String x:Key="About_Repo">Репозиторий:</s:String>
+    <s:String x:Key="About_Language">Язык:</s:String>
+
+    <s:String x:Key="Mapping_NewType">Новый тип</s:String>
+    <s:String x:Key="Mapping_NotSelected">(не выбраны)</s:String>
+    <s:String x:Key="Fitting_DirectConnect">Без фитинга (прямое соединение)</s:String>
+    <s:String x:Key="Fitting_TypeArrow">Тип {0} → {1}</s:String>
+
+</ResourceDictionary>

@@ -60,3 +60,5 @@ dotnet_naming_symbols.private_fields.applicable_accessibilities = private
 
 dotnet_naming_style.camel_case_underscore.capitalization = camel_case
 dotnet_naming_style.camel_case_underscore.required_prefix = _
+
+dotnet_diagnostic.CA1863.severity = suggestion

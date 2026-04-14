@@ -44,14 +44,14 @@ public sealed class PipeConnectSessionBuilder(
     {
         // ── S1: Dynamic element ──────────────────────────────────────────────
         var dynamicPick = selectionSvc.PickElementWithFreeConnector(
-            "PipeConnect: выберите ПЕРВЫЙ элемент (будет присоединён)");
+            LocalizationService.GetString("Pick_FirstElement"));
         if (dynamicPick is null) return null;
 
         var dynamicProxy = connectorSvc.GetNearestFreeConnector(
             doc, dynamicPick.Value.ElementId, dynamicPick.Value.ClickPoint);
         if (dynamicProxy is null)
         {
-            dialogSvc.ShowWarning("SmartCon", "Нет свободных коннекторов у первого элемента.");
+            dialogSvc.ShowWarning("SmartCon", LocalizationService.GetString("Msg_NoConnectorsFirst"));
             return null;
         }
 
@@ -69,7 +69,7 @@ public sealed class PipeConnectSessionBuilder(
 
         // ── S2: Static element ───────────────────────────────────────────────
         var staticPick = selectionSvc.PickElementWithFreeConnector(
-            "PipeConnect: выберите ВТОРОЙ элемент (неподвижный ориентир)",
+            LocalizationService.GetString("Pick_SecondElement"),
             excludeElementId: dynamicPick.Value.ElementId);
         if (staticPick is null) return null;
 
@@ -77,7 +77,7 @@ public sealed class PipeConnectSessionBuilder(
             doc, staticPick.Value.ElementId, staticPick.Value.ClickPoint);
         if (staticProxy is null)
         {
-            dialogSvc.ShowWarning("SmartCon", "Нет свободных коннекторов у второго элемента.");
+            dialogSvc.ShowWarning("SmartCon", LocalizationService.GetString("Msg_NoConnectorsSecond"));
             return null;
         }
 
@@ -151,7 +151,7 @@ public sealed class PipeConnectSessionBuilder(
         var types = mappingRepo.GetConnectorTypes();
         if (types.Count == 0)
         {
-            dialogSvc.ShowWarning("SmartCon", "Сначала настройте типы коннекторов в Настройках.");
+            dialogSvc.ShowWarning("SmartCon", LocalizationService.GetString("Msg_ConfigureTypes"));
             return null;
         }
 

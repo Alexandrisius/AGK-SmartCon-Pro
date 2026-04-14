@@ -2,6 +2,7 @@ using Autodesk.Revit.DB;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.PipeConnect.Services;
 
 namespace SmartCon.PipeConnect.ViewModels;
@@ -21,7 +22,7 @@ public sealed partial class PipeConnectEditorViewModel
     {
         SmartConLogger.Info("[Connect] START");
         IsBusy = true;
-        StatusMessage = "Проверка и финальная подгонка…";
+        StatusMessage = LocalizationService.GetString("Status_Validating");
 
         try
         {
@@ -38,8 +39,8 @@ public sealed partial class PipeConnectEditorViewModel
                     _activeFittingRule = _ctx.ProposedFittings
                         .FirstOrDefault(r => r.ReducerFamilies.Count > 0);
 
-                StatusMessage = "Вставка переходника…";
-                _groupSession!.RunInTransaction("PipeConnect — Вставка перехода", doc =>
+                StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
+                _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertTransition"), doc =>
                 {
                     var dyn = _activeDynamic ?? _ctx.DynamicConnector;
                     var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
@@ -67,7 +68,7 @@ public sealed partial class PipeConnectEditorViewModel
 
                 if (_primaryReducerId is not null)
                 {
-                    StatusMessage = "Подбор размера переходника…";
+                    StatusMessage = LocalizationService.GetString("Status_SizingReducer");
                     SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false);
                 }
             }
@@ -76,7 +77,7 @@ public sealed partial class PipeConnectEditorViewModel
 
             if (_virtualCtcStore.HasPendingWrites)
             {
-                StatusMessage = "Запись типов коннекторов…";
+                StatusMessage = LocalizationService.GetString("Status_WritingCtc");
                 FlushVirtualCtcToFamilies();
             }
 
@@ -86,12 +87,12 @@ public sealed partial class PipeConnectEditorViewModel
             SmartConLogger.Info("[Connect] All operations done, calling Assimilate");
             _groupSession!.Assimilate();
             _groupSession = null;
-            StatusMessage = "Соединение выполнено";
+            StatusMessage = LocalizationService.GetString("Status_Connected");
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"[Connect] Failed: {ex.Message}\n{ex.StackTrace}");
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
         {

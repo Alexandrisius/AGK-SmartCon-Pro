@@ -39,8 +39,8 @@ public sealed class RevitLookupTableService : ILookupTableService
         SmartConLogger.Debug($"  targetMm={targetMm:F3} (isRadius={ctx.IsRadius}), column values: {distinct.Count}");
         SmartConLogger.Debug($"  Table values (mm): [{string.Join(", ", distinct.Select(v => $"{v:F2}"))}]");
 
-        bool found = distinct.Any(v => System.Math.Abs(v - targetMm) < 0.02);
-        SmartConLogger.Debug($"  → ExistsInTable={found} (tolerance 0.02 mm)");
+        bool found = distinct.Any(v => System.Math.Abs(v - targetMm) < Tolerance.LookupRadiusMatchMm);
+        SmartConLogger.Debug($"  → ExistsInTable={found} (tolerance {Tolerance.LookupRadiusMatchMm} mm)");
         return found;
     }
 

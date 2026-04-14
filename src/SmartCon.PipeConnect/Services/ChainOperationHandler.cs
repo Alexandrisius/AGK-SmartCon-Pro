@@ -4,12 +4,16 @@ using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// Handles chain increment and decrement operations for multi-level PipeConnect networks.
+/// </summary>
 public sealed class ChainOperationHandler(
     IConnectorService connSvc,
     ITransformService transformSvc,
@@ -17,6 +21,9 @@ public sealed class ChainOperationHandler(
     IFittingInsertService fittingInsertSvc,
     INetworkMover networkMover)
 {
+    /// <summary>
+    /// Describes the edge between a child element and its parent in the connection graph.
+    /// </summary>
     public record struct ParentEdge(ElementId ParentId, int ParentConnIdx, int ElemConnIdx);
 
     public void IncrementLevel(
@@ -45,7 +52,7 @@ public sealed class ChainOperationHandler(
 
         var comparer = ElementIdEqualityComparer.Instance;
 
-        groupSession.RunInTransaction($"Цепочка: уровень {nextLevel}", doc =>
+        groupSession.RunInTransaction(string.Format(LocalizationService.GetString("Tx_ChainLevel"), nextLevel), doc =>
         {
             int elemIndex = 0;
             foreach (var elemId in levelElements)
@@ -318,7 +325,7 @@ public sealed class ChainOperationHandler(
 
         SmartConLogger.Info($"[Chain−] ═══ ROLLBACK LEVEL {currentDepth} ═══ ({levelElements.Count} elements)");
 
-        groupSession.RunInTransaction($"Цепочка: откат уровня {currentDepth}", doc =>
+        groupSession.RunInTransaction(string.Format(LocalizationService.GetString("Tx_ChainRollback"), currentDepth), doc =>
         {
             foreach (var elemId in levelElements)
             {

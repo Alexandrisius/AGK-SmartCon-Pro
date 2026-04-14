@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
@@ -27,7 +28,7 @@ public sealed partial class PipeConnectEditorViewModel
         ElementId? insertedId = null;
         ConnectorProxy? fitConn2 = null;
 
-        _groupSession!.RunInTransaction("PipeConnect — Вставка reducer", doc =>
+        _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertReducer"), doc =>
         {
             if (_primaryReducerId is not null)
             {
@@ -76,7 +77,7 @@ public sealed partial class PipeConnectEditorViewModel
             _primaryReducerId = insertedId;
             InsertReducerCommand.NotifyCanExecuteChanged();
             ReassignReducerCtcCommand.NotifyCanExecuteChanged();
-            StatusMessage = $"Переходник: {reducer.DisplayName}";
+            StatusMessage = string.Format(LocalizationService.GetString("Status_ReducerSet"), reducer.DisplayName);
             SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
             SmartConLogger.Info($"[InsertReducer] DONE reducerId={_primaryReducerId.Value}");
             return true;
@@ -96,19 +97,19 @@ public sealed partial class PipeConnectEditorViewModel
     {
         if (SelectedReducer is null) return;
         IsBusy = true;
-        StatusMessage = "Вставка переходника…";
+        StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
         try
         {
             var reducer = SelectedReducer;
             var primary = reducer.PrimaryFitting;
-            if (primary is null) { StatusMessage = "Нет данных о семействе переходника"; return; }
+            if (primary is null) { StatusMessage = LocalizationService.GetString("Status_NoReducerData"); return; }
 
             if (!InsertReducerCore(reducer, moveDynamic: false))
             {
-                StatusMessage = $"Семейство '{primary.FamilyName}' не найдено";
+                StatusMessage = string.Format(LocalizationService.GetString("Status_FamilyNotFound"), primary.FamilyName);
             }
         }
-        catch (Exception ex) { SmartConLogger.Error($"[InsertReducer] Failed: {ex.Message}"); StatusMessage = $"Ошибка: {ex.Message}"; }
+        catch (Exception ex) { SmartConLogger.Error($"[InsertReducer] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
@@ -140,8 +141,8 @@ public sealed partial class PipeConnectEditorViewModel
         ConnectorProxy? reorientedConn2 = null;
 
         var txName = isReducer
-            ? "PipeConnect — Переориентация reducer"
-            : "PipeConnect — Переориентация фитинга";
+            ? LocalizationService.GetString("Tx_ReorientReducer")
+            : LocalizationService.GetString("Tx_ReorientFitting");
 
         _groupSession!.RunInTransaction(txName, doc =>
         {
@@ -173,7 +174,7 @@ public sealed partial class PipeConnectEditorViewModel
                 var sizedConn2 = SizeFittingConnectors(_doc, elemId, reorientedConn2, adjustDynamicToFit: false);
                 if (sizedConn2 is not null && _activeDynamic is not null)
                 {
-                    _groupSession!.RunInTransaction("PipeConnect — Позиция dynamic после reducer re-size", doc =>
+                    _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_PositionAfterReducerReSize"), doc =>
                     {
                         var dynProxy = _connSvc.RefreshConnector(
                             doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
@@ -192,8 +193,8 @@ public sealed partial class PipeConnectEditorViewModel
         }
 
         StatusMessage = isReducer
-            ? "CTC переходника обновлён — переориентирован"
-            : "CTC фитинга обновлён — переориентирован";
+            ? LocalizationService.GetString("Status_CtcReducerUpdated")
+            : LocalizationService.GetString("Status_CtcFittingUpdated");
     }
 
     [RelayCommand(CanExecute = nameof(CanReassignFittingCtc))]
@@ -205,7 +206,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             ReassignElementCtc(_currentFittingId, isReducer: false);
         }
-        catch (Exception ex) { SmartConLogger.Error($"[ReassignFittingCtc] Failed: {ex.Message}"); StatusMessage = $"Ошибка: {ex.Message}"; }
+        catch (Exception ex) { SmartConLogger.Error($"[ReassignFittingCtc] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
@@ -218,7 +219,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             ReassignElementCtc(_primaryReducerId, isReducer: true);
         }
-        catch (Exception ex) { SmartConLogger.Error($"[ReassignReducerCtc] Failed: {ex.Message}"); StatusMessage = $"Ошибка: {ex.Message}"; }
+        catch (Exception ex) { SmartConLogger.Error($"[ReassignReducerCtc] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
@@ -228,7 +229,7 @@ public sealed partial class PipeConnectEditorViewModel
         if (SelectedFitting is null) return;
 
         IsBusy = true;
-        StatusMessage = "Вставка фитинга…";
+        StatusMessage = LocalizationService.GetString("Status_InsertingFittingAction");
 
         try
         {
@@ -237,7 +238,7 @@ public sealed partial class PipeConnectEditorViewModel
         catch (Exception ex)
         {
             SmartConLogger.Error($"[InsertFitting] Failed: {ex.Message}");
-            StatusMessage = $"Ошибка вставки: {ex.Message}";
+            StatusMessage = string.Format(LocalizationService.GetString("Error_Insert"), ex.Message);
         }
         finally
         {
@@ -253,18 +254,18 @@ public sealed partial class PipeConnectEditorViewModel
         {
             SmartConLogger.Info("[InsertFitting] Direct connect branch — skip fitting");
             _activeFittingRule = null;
-            _groupSession!.RunInTransaction("PipeConnect — Прямое соединение", doc =>
+            _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_DirectConnect"), doc =>
             {
                 doc.Regenerate();
             });
-            StatusMessage = "Прямое соединение";
+            StatusMessage = LocalizationService.GetString("Status_DirectConnect");
             return;
         }
 
         var primary = fitting.PrimaryFitting;
         if (primary is null)
         {
-            StatusMessage = "Нет данных о семействе фитинга";
+            StatusMessage = LocalizationService.GetString("Status_NoFittingData");
             return;
         }
 
@@ -275,7 +276,7 @@ public sealed partial class PipeConnectEditorViewModel
         ConnectorProxy? fitConn2 = null;
         IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null;
 
-        _groupSession!.RunInTransaction("PipeConnect — Вставка фитинга", doc =>
+        _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertFitting"), doc =>
         {
             if (_currentFittingId is not null)
             {
@@ -318,13 +319,13 @@ public sealed partial class PipeConnectEditorViewModel
         if (insertedId is null)
         {
             SmartConLogger.Warn("[InsertFitting] InsertFitting returned null — family not found");
-            StatusMessage = $"Семейство '{primary.FamilyName}' не найдено в проекте";
+            StatusMessage = string.Format(LocalizationService.GetString("Status_FamilyNotFoundInProject"), primary.FamilyName);
             return;
         }
 
         _currentFittingId = insertedId;
         _activeFittingConn2 = fitConn2;
-        StatusMessage = $"Вставлен: {fitting.DisplayName}";
+        StatusMessage = string.Format(LocalizationService.GetString("Status_Inserted"), fitting.DisplayName);
 
         var newFitConn2 = SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: adjustDynamicToFit);
         if (newFitConn2 is not null)

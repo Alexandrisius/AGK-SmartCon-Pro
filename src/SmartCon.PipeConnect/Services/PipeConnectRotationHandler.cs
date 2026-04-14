@@ -3,10 +3,14 @@ using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// Handles rotation of fitting and chain elements during PipeConnect sessions.
+/// </summary>
 public sealed class PipeConnectRotationHandler(
     ITransformService transformSvc)
 {
@@ -25,7 +29,7 @@ public sealed class PipeConnectRotationHandler(
         var dynId = ctx.DynamicConnector.OwnerElementId;
         SmartConLogger.Info($"[Rotate] START angle={angleDeg}°, dynId={dynId.Value}, fitting={fittingId?.Value}, reducer={reducerId?.Value}");
 
-        groupSession.RunInTransaction("PipeConnect — Поворот", d =>
+        groupSession.RunInTransaction(LocalizationService.GetString("Tx_Rotate"), d =>
         {
             var axisOrigin = ctx.StaticConnector.OriginVec3;
             var axisDir = ctx.StaticConnector.BasisZVec3;

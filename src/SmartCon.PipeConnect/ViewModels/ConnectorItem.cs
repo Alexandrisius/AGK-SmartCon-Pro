@@ -1,6 +1,7 @@
 using SmartCon.Core.Models;
 using SmartCon.Core;
-
+using SmartCon.Core.Services;
+
 using static SmartCon.Core.Units;
 namespace SmartCon.PipeConnect.ViewModels;
 
@@ -21,6 +22,6 @@ public sealed class ConnectorItem
         var typeLabel = proxy.ConnectionTypeCode.IsDefined
             ? $" [{proxy.ConnectionTypeCode.Value}]"
             : "";
-        DisplayName = $"Коннектор {displayIndex}{typeLabel}  DN{dnMm}";
+        DisplayName = $"{LocalizationService.GetString("Label_Connector")}{displayIndex}{typeLabel}  DN{dnMm}";
     }
 }
