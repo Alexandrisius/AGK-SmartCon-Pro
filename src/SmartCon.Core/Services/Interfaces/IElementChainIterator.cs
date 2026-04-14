@@ -4,20 +4,20 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Обход цепочек соединённых MEP-элементов (BFS через AllRefs).
-/// Реализация: SmartCon.Revit/Selection/ElementChainIterator.cs
+/// Traversal of connected MEP element chains (BFS via AllRefs).
+/// Implementation: SmartCon.Revit/Selection/ElementChainIterator.cs
 /// </summary>
 public interface IElementChainIterator
 {
     /// <summary>
-    /// Строит ConnectionGraph начиная с элемента.
-    /// stopAtElements — элементы, на которых BFS останавливается (не включаются в граф).
+    /// Build a ConnectionGraph starting from an element.
+    /// stopAtElements — elements where BFS stops (not included in the graph).
     /// </summary>
     ConnectionGraph BuildGraph(Document doc, ElementId startElementId,
         IReadOnlySet<ElementId>? stopAtElements = null);
 
     /// <summary>
-    /// Свободные коннекторы на границах цепочки (IsFree == true).
+    /// Free connectors at chain boundaries (IsFree == true).
     /// </summary>
     IReadOnlyList<ConnectorProxy> GetChainEndConnectors(
         Document doc, ConnectionGraph graph);

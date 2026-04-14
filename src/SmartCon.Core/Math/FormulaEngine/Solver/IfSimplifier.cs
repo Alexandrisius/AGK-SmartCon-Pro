@@ -3,17 +3,17 @@ using SmartCon.Core.Math.FormulaEngine.Ast;
 namespace SmartCon.Core.Math.FormulaEngine.Solver;
 
 /// <summary>
-/// Упрощение AST-дерева подстановкой известных переменных.
-/// Для IfNode: если condition целиком вычислим — выбирает ветку.
-/// Если condition содержит неизвестную переменную — оставляет IfNode как есть.
+/// AST tree simplification by substituting known variables.
+/// For IfNode: if condition is fully evaluable — selects the branch.
+/// If condition contains an unknown variable — leaves IfNode as is.
 /// </summary>
 internal static class IfSimplifier
 {
     private const double Epsilon = 1e-9;
 
     /// <summary>
-    /// Упростить AST, подставив известные переменные и свернув вычислимые IF-ветки.
-    /// unknownVar — переменная, для которой решаем (не подставляем).
+    /// Simplify AST by substituting known variables and collapsing evaluable IF branches.
+    /// unknownVar — the variable being solved for (not substituted).
     /// </summary>
     internal static AstNode Simplify(AstNode node, IReadOnlyDictionary<string, double> knownVars, string unknownVar)
     {
@@ -29,7 +29,7 @@ internal static class IfSimplifier
 
             case VariableNode v:
                 if (string.Equals(v.Name, unknown, StringComparison.OrdinalIgnoreCase))
-                    return node; // не подставляем неизвестную
+                    return node; // do not substitute the unknown
                 if (TryResolve(v.Name, known, out double val))
                     return new NumberNode(val);
                 return node;
@@ -56,7 +56,7 @@ internal static class IfSimplifier
 
             case IfNode ifn:
                 var cond = SimplifyNode(ifn.Condition, known, unknown);
-                // Если condition свёрнута до числа → выбрать ветку
+                // If condition collapsed to a number -> select branch
                 if (cond is NumberNode cn)
                 {
                     var branch = System.Math.Abs(cn.Value) > Epsilon
@@ -64,7 +64,7 @@ internal static class IfSimplifier
                         : ifn.FalseExpr;
                     return SimplifyNode(branch, known, unknown);
                 }
-                // Condition содержит неизвестную → оставить IF, но упростить ветки
+                // Condition contains unknown -> leave IF, but simplify branches
                 var trueSimp = SimplifyNode(ifn.TrueExpr, known, unknown);
                 var falseSimp = SimplifyNode(ifn.FalseExpr, known, unknown);
                 return new IfNode(cond, trueSimp, falseSimp);
@@ -76,7 +76,7 @@ internal static class IfSimplifier
                 return new FunctionCallNode(f.Name, args);
 
             case SizeLookupNode:
-                return node; // size_lookup не упрощается
+                return node; // size_lookup cannot be simplified
 
             default:
                 return node;

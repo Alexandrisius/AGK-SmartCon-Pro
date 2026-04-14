@@ -4,7 +4,7 @@ using Xunit;
 
 namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
-public class SolverTests
+public sealed class SolverTests
 {
     private static readonly FormulaSolver Solver = new();
 

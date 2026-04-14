@@ -4,41 +4,41 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Работа с таблицами поиска семейств (FamilySizeTableManager).
-/// Реализация: SmartCon.Revit/Parameters/RevitLookupTableService.cs
-/// Вызывать ВНЕ транзакции (EditFamily требует doc.IsModifiable == false).
+/// Works with family lookup tables (FamilySizeTableManager).
+/// Implementation: SmartCon.Revit/Parameters/RevitLookupTableService.cs
+/// Call OUTSIDE transaction (EditFamily requires doc.IsModifiable == false).
 /// </summary>
 public interface ILookupTableService
 {
     /// <summary>
-    /// Существует ли в таблице поиска строка с данным радиусом коннектора?
-    /// Возвращает false если у элемента нет size_lookup таблицы.
-    /// constraints — ограничения по другим DN-столбцам (для multi-query фитингов).
+    /// Does the lookup table have a row with the given connector radius?
+    /// Returns false if the element has no size_lookup table.
+    /// constraints — restrictions by other DN columns (for multi-query fittings).
     /// </summary>
     bool ConnectorRadiusExistsInTable(Document doc, ElementId elementId,
         int connectorIndex, double radiusInternalUnits,
         IReadOnlyList<LookupColumnConstraint>? constraints = null);
 
     /// <summary>
-    /// Ближайший доступный радиус в таблице поиска.
-    /// Возвращает targetRadiusInternalUnits если таблицы нет (fallback).
-    /// constraints — ограничения по другим DN-столбцам (для multi-query фитингов).
+    /// Nearest available radius in the lookup table.
+    /// Returns targetRadiusInternalUnits if no table exists (fallback).
+    /// constraints — restrictions by other DN columns (for multi-query fittings).
     /// </summary>
     double GetNearestAvailableRadius(Document doc, ElementId elementId,
         int connectorIndex, double targetRadiusInternalUnits,
         IReadOnlyList<LookupColumnConstraint>? constraints = null);
 
     /// <summary>
-    /// Есть ли у элемента size_lookup таблица, управляющая радиусом коннектора?
+    /// Does the element have a size_lookup table controlling the connector radius?
     /// </summary>
     bool HasLookupTable(Document doc, ElementId elementId, int connectorIndex);
 
     /// <summary>
-    /// Получить ВСЕ строки таблицы поиска как полные конфигурации.
-    /// Каждая строка содержит радиусы ВСЕХ коннекторов (по маппингу столбец→коннектор).
-    /// Если constraints заданы — фильтрует строки как GetAvailableSizes.
-    /// Если constraints = null — возвращает все строки без фильтрации.
-    /// Вызывать ВНЕ транзакции.
+    /// Get ALL rows of the lookup table as full configurations.
+    /// Each row contains radii of ALL connectors (by column-to-connector mapping).
+    /// If constraints are specified — filters rows like GetAvailableSizes.
+    /// If constraints = null — returns all rows without filtering.
+    /// Call OUTSIDE transaction.
     /// </summary>
     IReadOnlyList<SizeTableRow> GetAllSizeRows(Document doc, ElementId elementId,
         int targetConnectorIndex,

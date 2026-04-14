@@ -3,27 +3,40 @@ using Autodesk.Revit.DB;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Все изменения модели — только через этот интерфейс.
-/// Создание new Transaction(doc) напрямую запрещено (I-03).
+/// All model changes must go through this interface.
+/// Creating new Transaction(doc) directly is forbidden (I-03).
 /// </summary>
 public interface ITransactionService
 {
     /// <summary>
-    /// Запускает Transaction, выполняет action, делает Commit.
-    /// При исключении — Rollback. Возвращает false при неудаче.
+    /// Starts a Transaction, executes action, commits.
+    /// On exception — rolls back. Returns false on failure.
     /// </summary>
     bool RunInTransaction(string name, Action<Document> action);
 
     /// <summary>
-    /// Запускает TransactionGroup. Используется для одноразовых операций (одна запись Undo).
+    /// Starts a TransactionGroup. Used for one-shot operations (single Undo record).
     /// </summary>
     bool RunInTransactionGroup(string name, Action<Document> action);
 
     /// <summary>
-    /// Открывает долгоживущую TransactionGroup и возвращает сессию.
-    /// Сессия остаётся открытой пока не будет вызван Assimilate() или RollBack().
-    /// Используется для Phase 8: PipeConnectEditor (модальное окно + серия операций).
-    /// Вызывать только из ExternalEventHandler.Execute() (I-01).
+    /// Opens a long-lived TransactionGroup and returns a session.
+    /// The session stays open until Assimilate() or RollBack() is called.
+    /// Used for Phase 8: PipeConnectEditor (modal window + series of operations).
+    /// Call only from ExternalEventHandler.Execute() (I-01).
     /// </summary>
     ITransactionGroupSession BeginGroupSession(string name);
+
+    /// <summary>
+    /// Starts a Transaction, executes action, and always rolls back.
+    /// Used for read-only trial operations (e.g., iterating FamilySymbols to read radii).
+    /// Returns the result of the action. Returns <c>default</c> on failure.
+    /// </summary>
+    T? RunAndRollback<T>(string name, Func<Document, T> action) where T : struct;
+
+    /// <summary>
+    /// Starts a Transaction, executes action, and always rolls back.
+    /// Void overload for side-effect-free trial operations.
+    /// </summary>
+    bool RunAndRollback(string name, Action<Document> action);
 }

@@ -1,20 +1,20 @@
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Доступный размер для динамического семейства.
+/// Available size for a dynamic family.
 /// </summary>
 public sealed record SizeOption
 {
-    /// <summary>Отображаемое имя в ComboBox (напр. "DN 25", "АВТОПОДБОР (текущий)").</summary>
+    /// <summary>Display name in ComboBox (e.g. "DN 25", "AUTO-SELECT (current)").</summary>
     public required string DisplayName { get; init; }
 
-    /// <summary>Радиус во внутренних единицах Revit (футы).</summary>
+    /// <summary>Radius in Revit internal units (feet).</summary>
     public required double Radius { get; init; }
 
-    /// <summary>Источник данных: "LookupTable", "FamilySymbol", "PipeType" или пустой для автоподбора.</summary>
+    /// <summary>Data source: "LookupTable", "FamilySymbol", "PipeType" or empty for auto-select.</summary>
     public string Source { get; init; } = "FamilySymbol";
 
-    /// <summary>Флаг "АВТОПОДБОР" — использовать текущую логику подбора.</summary>
+    /// <summary>"AUTO-SELECT" flag — use current auto-selection logic.</summary>
     public bool IsAutoSelect { get; init; }
 
     public override string ToString() => DisplayName;

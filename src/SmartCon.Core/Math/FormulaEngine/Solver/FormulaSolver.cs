@@ -5,12 +5,12 @@ using SmartCon.Core.Services.Interfaces;
 namespace SmartCon.Core.Math.FormulaEngine.Solver;
 
 /// <summary>
-/// Production-ready AST-парсер и решатель формул Revit.
-/// Реализует IFormulaSolver (ADR-005).
-/// Pipeline: UnitStripper → Tokenizer → Parser → Evaluator/Solver.
+/// Production-ready AST parser and solver for Revit formulas.
+/// Implements IFormulaSolver (ADR-005).
+/// Pipeline: UnitStripper -> Tokenizer -> Parser -> Evaluator/Solver.
 /// 
-/// Также предоставляет статические методы (ExtractVariables, ParseSizeLookupRaw)
-/// для использования из Revit-слоя без DI (совместимость с MiniFormulaSolver API).
+/// Also provides static methods (ExtractVariables, ParseSizeLookupRaw)
+/// for use from the Revit layer without DI (compatibility with MiniFormulaSolver API).
 /// </summary>
 public sealed class FormulaSolver : IFormulaSolver
 {
@@ -35,25 +35,25 @@ public sealed class FormulaSolver : IFormulaSolver
         var (normFormula, normVar, normOthers) = NormalizeForSolveFor(formula, variableName, otherValues);
         var ast = ParseToAst(normFormula);
 
-        // Проверить: переменная присутствует в формуле?
+        // Check: is the variable present in the formula?
         var vars = VariableExtractor.Extract(ast);
         if (!vars.Contains(normVar))
             throw new FormulaParseException(
                 $"Variable '{variableName}' not found in formula '{formula}'");
 
-        // 1. IF-Simplifier: подставить known → свернуть IF-ветки
+        // 1. IF-Simplifier: substitute known -> collapse IF branches
         var simplified = IfSimplifier.Simplify(ast, normOthers, normVar);
 
-        // Если после упрощения содержит SizeLookupNode — не решается
+        // If after simplification contains SizeLookupNode — cannot solve
         if (SizeLookupParser.FindFirst(simplified) is not null)
             throw new FormulaParseException("Cannot solve formula containing size_lookup");
 
-        // 2. Алгебраическая инверсия (линейные формулы)
+        // 2. Algebraic inversion (linear formulas)
         var algebraic = AlgebraicInverter.TrySolveLinear(simplified, normVar, targetValue, normOthers);
         if (algebraic.HasValue)
             return algebraic.Value;
 
-        // 3. Бисекция (fallback для нелинейных)
+        // 3. Bisection (fallback for non-linear)
         var bisection = BisectionSolver.Solve(
             x =>
             {
@@ -86,10 +86,10 @@ public sealed class FormulaSolver : IFormulaSolver
         return (slNode.TableName, slNode.QueryParameters);
     }
 
-    // ── Статические методы (совместимость с MiniFormulaSolver API) ────────
+    // ── Static methods (compatibility with MiniFormulaSolver API) ────────
 
     /// <summary>
-    /// Прямое вычисление (статический метод для Revit-слоя).
+    /// Direct evaluation (static method for Revit layer).
     /// </summary>
     internal static double EvaluateStatic(string formula, IReadOnlyDictionary<string, double> variables)
     {
@@ -111,8 +111,8 @@ public sealed class FormulaSolver : IFormulaSolver
     }
 
     /// <summary>
-    /// Обратное решение (статический метод, возвращает null вместо exception).
-    /// Совместимо с MiniFormulaSolver.SolveFor API.
+    /// Inverse solving (static method, returns null instead of exception).
+    /// Compatible with MiniFormulaSolver.SolveFor API.
     /// </summary>
     internal static double? SolveForStatic(string formula, string variableName, double targetValue,
         IReadOnlyDictionary<string, double>? otherValues = null)
@@ -181,8 +181,8 @@ public sealed class FormulaSolver : IFormulaSolver
     }
 
     /// <summary>
-    /// Парсинг size_lookup (статический, возвращает null вместо exception).
-    /// Совместимо с MiniFormulaSolver.ParseSizeLookup API.
+    /// Parse size_lookup (static, returns null instead of exception).
+    /// Compatible with MiniFormulaSolver.ParseSizeLookup API.
     /// </summary>
     internal static (string TableName, string TargetParameter, IReadOnlyList<string> QueryParameters)?
         ParseSizeLookupStatic(string formula)
@@ -213,8 +213,8 @@ public sealed class FormulaSolver : IFormulaSolver
     }
 
     /// <summary>
-    /// Извлечение переменных (статический метод).
-    /// Совместимо с MiniFormulaSolver.ExtractVariables API.
+    /// Extract variables (static method).
+    /// Compatible with MiniFormulaSolver.ExtractVariables API.
     /// </summary>
     internal static IReadOnlyList<string> ExtractVariablesStatic(string formula)
     {
@@ -237,12 +237,12 @@ public sealed class FormulaSolver : IFormulaSolver
         }
     }
 
-    // ── Нормализация имён с пробелами ──────────────────────────────────
+    // ── Space-containing name normalization ──────────────────────────────────
 
     /// <summary>
-    /// Заменяет имена переменных с пробелами на псевдонимы __p0__, __p1__
-    /// чтобы токенизатор не разбивал их на отдельные токены.
-    /// Длинные имена заменяются первыми, чтобы избежать частичных совпадений.
+    /// Replaces variable names with spaces with aliases __p0__, __p1__
+    /// so the tokenizer does not split them into separate tokens.
+    /// Longer names are replaced first to avoid partial matches.
     /// </summary>
     private static (string normFormula, Dictionary<string, double> normVars)
         NormalizeForEvaluate(string formula, IReadOnlyDictionary<string, double> variables)

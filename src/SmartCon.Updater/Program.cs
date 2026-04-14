@@ -11,7 +11,7 @@ void Log(string msg)
 {
     var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
     Console.WriteLine(line);
-    try { File.AppendAllText(logPath, line + Environment.NewLine); } catch { }
+    try { File.AppendAllText(logPath, line + Environment.NewLine); } catch { /* Intentional: log write failure — nowhere to report */ }
 }
 
 Log("=== SmartCon.Updater started ===");

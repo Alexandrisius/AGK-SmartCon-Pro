@@ -3,20 +3,20 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Поиск подходящих фитингов по типам коннекторов.
-/// Реализация: SmartCon.Core/Services/Implementation/FittingMapper.cs
+/// Search for suitable fittings by connector types.
+/// Implementation: SmartCon.Core/Services/Implementation/FittingMapper.cs
 /// </summary>
 public interface IFittingMapper
 {
     /// <summary>
-    /// Упорядоченный по Priority список подходящих маппингов.
+    /// Priority-ordered list of matching mapping rules.
     /// </summary>
     IReadOnlyList<FittingMappingRule> GetMappings(
         ConnectionTypeCode from, ConnectionTypeCode to);
 
     /// <summary>
-    /// Минимальная цепочка фитингов через промежуточные типы (алгоритм Дейкстры).
-    /// Пустой список = соединение невозможно.
+    /// Minimum chain of fittings through intermediate types (Dijkstra algorithm).
+    /// Empty list = connection not possible.
     /// </summary>
     IReadOnlyList<FittingMappingRule> FindShortestFittingPath(
         ConnectionTypeCode from, ConnectionTypeCode to);

@@ -2,6 +2,9 @@ using SmartCon.Core.Models;
 
 namespace SmartCon.Core.Services.Interfaces;
 
+/// <summary>
+/// Service for checking, downloading, and staging plugin updates from GitHub Releases.
+/// </summary>
 public interface IUpdateService
 {
     Task<UpdateInfo?> CheckForUpdateAsync();

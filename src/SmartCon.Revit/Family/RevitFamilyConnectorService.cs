@@ -1,6 +1,7 @@
 using System;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
@@ -70,7 +71,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
         }
 
         var targetOriginGlobal = conn.CoordinateSystem.Origin;
-        var transform          = instance.GetTransform();
+        var transform = instance.GetTransform();
 
         SmartConLogger.Info($"[SmartCon] conn.CoordinateSystem.Origin (world) = ({targetOriginGlobal.X:F6}, {targetOriginGlobal.Y:F6}, {targetOriginGlobal.Z:F6})");
         SmartConLogger.Info($"[SmartCon] GetTransform: Origin=({transform.Origin.X:F6},{transform.Origin.Y:F6},{transform.Origin.Z:F6})");
@@ -153,7 +154,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             SmartConLogger.Info($"[SmartCon] All parameters on target ConnectorElement (Id={target.Id.Value}):");
             foreach (Parameter p in target.Parameters)
             {
-                var name     = p.Definition?.Name ?? "N/A";
+                var name = p.Definition?.Name ?? "N/A";
                 var isShared = p.IsShared ? "Shared" : "Built-in";
                 SmartConLogger.Info($"[SmartCon]   Param: {name}, Type={isShared}, ReadOnly={p.IsReadOnly}, Value={p.AsValueString()}");
             }
@@ -318,7 +319,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
         {
             var name = p.Definition?.Name ?? "";
             if (string.Equals(name, "System Classification", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(name, "Классификация систем",  StringComparison.OrdinalIgnoreCase))
+                string.Equals(name, "Классификация систем", StringComparison.OrdinalIgnoreCase))
             {
                 sysParam = p;
                 break;
@@ -338,7 +339,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
         }
 
         int originalSysClass = sysParam.AsInteger();
-        int globalValue      = (int)PipeSystemType.Global;
+        int globalValue = (int)PipeSystemType.Global;
         SmartConLogger.Info($"[SmartCon] TrySetViaSystemClassificationChange: sysClass {originalSysClass} → {globalValue} (Global)");
 
         try
@@ -369,7 +370,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
         catch (Exception ex)
         {
             SmartConLogger.Info($"[SmartCon] TrySetViaSystemClassificationChange failed: {ex.Message}");
-            try { sysParam.Set(originalSysClass); } catch { }
+            try { sysParam.Set(originalSysClass); } catch (Exception restoreEx) { SmartConLogger.Debug($"[Restore SystemClassification] {restoreEx.GetType().Name}: {restoreEx.Message}"); }
             return false;
         }
     }

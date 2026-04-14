@@ -4,7 +4,7 @@ using Xunit;
 
 namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
-public class ParserTests
+public sealed class ParserTests
 {
     private static AstNode Parse(string formula)
     {

@@ -3,9 +3,9 @@ using Autodesk.Revit.DB;
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Хранилище виртуальных CTC-назначений (ADR-002).
-/// CTC хранятся в памяти; запись в семейство (LoadFamily) откладывается до Connect().
-/// Ключ: (ElementId.Value, ConnectorIndex).
+/// Virtual CTC assignment store (ADR-002).
+/// CTC values are held in memory; writing to family (LoadFamily) is deferred until Connect().
+/// Key: (ElementId.Value, ConnectorIndex).
 /// </summary>
 public sealed class VirtualCtcStore
 {
@@ -13,9 +13,9 @@ public sealed class VirtualCtcStore
     private readonly Dictionary<(long ElemId, int ConnIdx), ConnectorTypeDefinition> _pendingWrites = new();
 
     /// <summary>
-    /// Установить виртуальный CTC для коннектора.
-    /// <paramref name="typeDef"/> — полный ConnectorTypeDefinition для отложенной записи в семейство.
-    /// Если typeDef == null, override создаётся без pending write (уже записано или MEPCurve).
+    /// Set a virtual CTC for a connector.
+    /// <paramref name="typeDef"/> — full ConnectorTypeDefinition for deferred write to family.
+    /// If typeDef == null, override is created without pending write (already written or MEPCurve).
     /// </summary>
     public void Set(ElementId elemId, int connIdx, ConnectionTypeCode ctc, ConnectorTypeDefinition? typeDef = null)
     {
@@ -25,15 +25,15 @@ public sealed class VirtualCtcStore
             _pendingWrites[key] = typeDef;
     }
 
-    /// <summary>Получить виртуальный CTC или null если не задан.</summary>
+    /// <summary>Get virtual CTC or null if not set.</summary>
     public ConnectionTypeCode? Get(ElementId elemId, int connIdx)
     {
         return _overrides.TryGetValue((elemId.Value, connIdx), out var ctc) ? ctc : null;
     }
 
     /// <summary>
-    /// Все виртуальные CTC для элемента, индексированные по ConnectorIndex.
-    /// Для передачи в AlignFittingToStatic как ctcOverrides.
+    /// All virtual CTCs for an element, indexed by ConnectorIndex.
+    /// For passing to AlignFittingToStatic as ctcOverrides.
     /// </summary>
     public IReadOnlyDictionary<int, ConnectionTypeCode> GetOverridesForElement(ElementId elemId)
     {
@@ -48,7 +48,7 @@ public sealed class VirtualCtcStore
     }
 
     /// <summary>
-    /// Все отложенные записи CTC (для FlushVirtualCtcToFamilies в Connect()).
+    /// All pending CTC writes (for FlushVirtualCtcToFamilies in Connect()).
     /// </summary>
     public IReadOnlyList<(ElementId ElementId, int ConnectorIndex, ConnectorTypeDefinition TypeDef)> GetPendingWrites()
     {
@@ -57,10 +57,10 @@ public sealed class VirtualCtcStore
             .ToList();
     }
 
-    /// <summary>Есть ли хотя бы одна отложенная запись.</summary>
+    /// <summary>Whether there is at least one pending write.</summary>
     public bool HasPendingWrites => _pendingWrites.Count > 0;
 
-    /// <summary>Очистить все overrides и pending writes.</summary>
+    /// <summary>Clear all overrides and pending writes.</summary>
     public void Clear()
     {
         _overrides.Clear();
@@ -68,8 +68,8 @@ public sealed class VirtualCtcStore
     }
 
     /// <summary>
-    /// Удалить все overrides и pending writes для указанного ElementId.
-    /// Вызывать при удалении фитинга (delete + insert = новый ElementId).
+    /// Remove all overrides and pending writes for the specified ElementId.
+    /// Call when deleting a fitting (delete + insert = new ElementId).
     /// </summary>
     public void RemoveForElement(ElementId elemId)
     {
@@ -81,8 +81,8 @@ public sealed class VirtualCtcStore
     }
 
     /// <summary>
-    /// Удалить все pending writes (оставляя overrides для GetEffectiveConnectorCtc).
-    /// Вызывать после успешного FlushVirtualCtcToFamilies.
+    /// Remove all pending writes (leaving overrides for GetEffectiveConnectorCtc).
+    /// Call after successful FlushVirtualCtcToFamilies.
     /// </summary>
     public void ClearPendingWrites()
     {
@@ -90,9 +90,9 @@ public sealed class VirtualCtcStore
     }
 
     /// <summary>
-    /// Перенести все overrides и pending writes со старого ElementId на новый.
-    /// Используется при перевставке фитинга (delete + insert = новый ElementId).
-    /// Старые записи удаляются.
+    /// Transfer all overrides and pending writes from old ElementId to new ElementId.
+    /// Used when re-inserting a fitting (delete + insert = new ElementId).
+    /// Old records are deleted.
     /// </summary>
     public void TransferOverrides(ElementId oldElemId, ElementId newElemId)
     {
@@ -116,7 +116,7 @@ public sealed class VirtualCtcStore
         }
     }
 
-    // ── Internal long-overloads для unit-тестов (без RevitAPI) ──────────────────
+    // ── Internal long-overloads for unit tests (without RevitAPI) ──────────────────
 
     internal void Set(long elemIdValue, int connIdx, ConnectionTypeCode ctc, ConnectorTypeDefinition? typeDef = null)
     {

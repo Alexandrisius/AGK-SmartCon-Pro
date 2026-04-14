@@ -18,7 +18,7 @@ public sealed class ConnectorAlignerTests
     public void BasisZRotation_AlreadyAntiParallel_ReturnsNull()
     {
         // dynamic.Z уже антипараллелен static.Z (т.е. dynamic.Z = -static.Z)
-        var staticZ  = Vec3.BasisZ;
+        var staticZ = Vec3.BasisZ;
         var dynamicZ = -Vec3.BasisZ;
 
         var result = ConnectorAligner.ComputeBasisZRotation(dynamicZ, staticZ);
@@ -30,7 +30,7 @@ public sealed class ConnectorAlignerTests
     public void BasisZRotation_CodirectionalVectors_Returns180DegreeRotation()
     {
         // dynamic.Z сонаправлен static.Z → нужен разворот 180°
-        var staticZ  = Vec3.BasisZ;
+        var staticZ = Vec3.BasisZ;
         var dynamicZ = Vec3.BasisZ;   // сонаправлены → targetZ = -Z, angle(Z, -Z) = PI
 
         var result = ConnectorAligner.ComputeBasisZRotation(dynamicZ, staticZ);
@@ -48,7 +48,7 @@ public sealed class ConnectorAlignerTests
         // dynamic.Z смотрит вдоль +X, static.Z смотрит вдоль +Z
         // targetZ = -static.Z = -Z
         // Цель: повернуть +X → -Z
-        var staticZ  = Vec3.BasisZ;
+        var staticZ = Vec3.BasisZ;
         var dynamicZ = Vec3.BasisX;
 
         var result = ConnectorAligner.ComputeBasisZRotation(dynamicZ, staticZ);
@@ -65,7 +65,7 @@ public sealed class ConnectorAlignerTests
     public void BasisZRotation_OppositeVectors_ReturnsNullOrZeroAngle()
     {
         // dynamic.Z = -static.Z → уже антипараллельны → null
-        var staticZ  = new Vec3(0, 1, 0);
+        var staticZ = new Vec3(0, 1, 0);
         var dynamicZ = new Vec3(0, -1, 0);
 
         var result = ConnectorAligner.ComputeBasisZRotation(dynamicZ, staticZ);
@@ -154,7 +154,7 @@ public sealed class ConnectorAlignerTests
     {
         var origin = new Vec3(1, 2, 3);
         var result = ConnectorAligner.ComputeAlignment(
-            staticOrigin:  origin, staticBasisZ:  Vec3.BasisZ, staticBasisX:  Vec3.BasisX,
+            staticOrigin: origin, staticBasisZ: Vec3.BasisZ, staticBasisX: Vec3.BasisX,
             dynamicOrigin: origin, dynamicBasisZ: -Vec3.BasisZ, dynamicBasisX: Vec3.BasisX);
 
         Assert.True(VectorUtils.IsZero(result.InitialOffset), "Origins совпадают → offset = 0");
@@ -166,7 +166,7 @@ public sealed class ConnectorAlignerTests
     {
         // Static коннектор в (5,0,0), dynamic в (0,0,0)
         // BasisZ уже антипараллельны
-        var staticOrigin  = new Vec3(5, 0, 0);
+        var staticOrigin = new Vec3(5, 0, 0);
         var dynamicOrigin = Vec3.Zero;
 
         var result = ConnectorAligner.ComputeAlignment(
@@ -206,7 +206,7 @@ public sealed class ConnectorAlignerTests
     {
         // Dynamic BasisZ смотрит вдоль +Y, Static BasisZ смотрит вдоль +Z
         // После поворота dynamic.BasisZ должен стать -Z
-        var staticBasisZ  = Vec3.BasisZ;
+        var staticBasisZ = Vec3.BasisZ;
         var dynamicBasisZ = Vec3.BasisY;
 
         var result = ConnectorAligner.ComputeAlignment(

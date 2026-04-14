@@ -1,9 +1,9 @@
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Мутабельный контекст одной сессии соединения PipeConnect.
-/// Живёт на уровне ViewModel, сбрасывается при отмене.
-/// Не хранить Element/Connector — только ElementId через ConnectorProxy (I-05).
+/// Mutable context of a single PipeConnect session.
+/// Lives at the ViewModel level, reset on cancel.
+/// Do not store Element/Connector — only ElementId via ConnectorProxy (I-05).
 /// </summary>
 public sealed class PipeConnectionSession
 {
@@ -12,14 +12,14 @@ public sealed class PipeConnectionSession
     public ConnectionGraph? DynamicChain { get; set; }
     public List<FittingMappingRule> ProposedFittings { get; set; } = [];
     public double RotationAngleDeg { get; set; }
-    /// <summary>Phase 4: нужен переходник (размер подобран приближённо или S4 провалился).</summary>
+    /// <summary>Phase 4: a reducer is needed (size matched approximately or S4 failed).</summary>
     public bool NeedsAdapter { get; set; }
     public double OriginalDynamicRadius { get; set; }
     public double ActualDynamicRadius { get; set; }
     public PipeConnectState State { get; set; } = PipeConnectState.AwaitingStaticSelection;
 
     /// <summary>
-    /// Сбрасывает сессию в начальное состояние.
+    /// Resets the session to its initial state.
     /// </summary>
     public void Reset()
     {

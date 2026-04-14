@@ -6,7 +6,7 @@ internal enum TokenType
     Identifier,
     String,
 
-    // Арифметика
+    // Arithmetic
     Plus,
     Minus,
     Star,
@@ -14,12 +14,12 @@ internal enum TokenType
     Caret,
     Percent,
 
-    // Скобки / запятая
+    // Brackets / comma
     LParen,
     RParen,
     Comma,
 
-    // Сравнения
+    // Comparisons
     Less,
     Greater,
     LessEqual,

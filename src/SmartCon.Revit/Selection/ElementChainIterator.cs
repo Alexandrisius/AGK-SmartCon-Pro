@@ -50,7 +50,7 @@ public sealed class ElementChainIterator : IElementChainIterator
         SmartConLogger.Info($"[Chain] BuildGraph: start={startElementId.Value}, excludedConnIdx={excludedConnIdx}");
 
         // 2. BFS по уровням
-        var currentLevelIds = new List<ElementId> { startElementId };
+        List<ElementId> currentLevelIds = [startElementId];
         int bfsLevel = 0;
 
         while (currentLevelIds.Count > 0)
@@ -125,7 +125,7 @@ public sealed class ElementChainIterator : IElementChainIterator
         => elem switch
         {
             FamilyInstance fi => fi.MEPModel?.ConnectorManager,
-            MEPCurve mc       => mc.ConnectorManager,
-            _                 => null
+            MEPCurve mc => mc.ConnectorManager,
+            _ => null
         };
 }

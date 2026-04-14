@@ -3,13 +3,13 @@ using SmartCon.Core.Math.FormulaEngine.Ast;
 namespace SmartCon.Core.Math.FormulaEngine;
 
 /// <summary>
-/// Recursive descent парсер формул Revit.
-/// Грамматика (приоритеты снизу вверх):
+/// Recursive descent parser for Revit formulas.
+/// Grammar (precedence from bottom to top):
 ///   expression     = comparison ((AND | OR) comparison)*
 ///   comparison     = additive (('&lt;' | '&gt;' | '&lt;=' | '&gt;=' | '=' | '&lt;&gt;') additive)?
 ///   additive       = multiplicative (('+' | '-') multiplicative)*
 ///   multiplicative = power (('*' | '/' | '%') power)*
-///   power          = unary ('^' power)?          // правоассоциативный
+///   power          = unary ('^' power)?          // right-associative
 ///   unary          = '-' unary | primary
 ///   primary        = NUMBER | STRING | '(' expr ')' | IF(...) | size_lookup(...) | FUNC(...) | IDENT
 /// </summary>
@@ -65,7 +65,7 @@ internal sealed class Parser
     {
         var left = ParseComparison();
 
-        // AND / OR как инфиксные логические операторы (помимо функций AND(...), OR(...))
+        // AND / OR as infix logical operators (in addition to AND(...), OR(...) functions)
         while (Current.Type == TokenType.Identifier)
         {
             var name = Current.Text.ToUpperInvariant();
@@ -159,7 +159,7 @@ internal sealed class Parser
         if (Current.Type == TokenType.Caret)
         {
             Advance();
-            var right = ParsePower(); // правоассоциативный: рекурсия в себя
+            var right = ParsePower(); // right-associative: recurse into itself
             return new BinaryOpNode(BinaryOp.Pow, left, right);
         }
 
@@ -168,7 +168,7 @@ internal sealed class Parser
 
     private AstNode ParseUnary()
     {
-        // Унарный минус
+        // Unary minus
         if (Current.Type == TokenType.Minus)
         {
             Advance();
@@ -183,21 +183,21 @@ internal sealed class Parser
     {
         var cur = Current;
 
-        // Число
+        // Number
         if (cur.Type == TokenType.Number)
         {
             Advance();
             return new NumberNode(cur.NumValue);
         }
 
-        // Строковый литерал
+        // String literal
         if (cur.Type == TokenType.String)
         {
             Advance();
-            return new NumberNode(0.0); // строковые результаты не поддерживаются — возвращаем 0
+            return new NumberNode(0.0); // string results not supported — return 0
         }
 
-        // Скобки
+        // Parentheses
         if (cur.Type == TokenType.LParen)
         {
             Advance();
@@ -206,7 +206,7 @@ internal sealed class Parser
             return expr;
         }
 
-        // Идентификатор: функция, if, size_lookup, константа, переменная
+        // Identifier: function, if, size_lookup, constant, variable
         if (cur.Type == TokenType.Identifier)
         {
             var name = cur.Text;
@@ -230,14 +230,14 @@ internal sealed class Parser
                 return new UnaryOpNode(UnaryOp.Not, operand);
             }
 
-            // Константы без скобок
+            // Constants without parentheses
             if (nameLower == "e" && !PeekIsLParen())
             {
                 Advance();
                 return new NumberNode(System.Math.E);
             }
 
-            // pi или pi()
+            // pi or pi()
             if (nameLower == "pi")
             {
                 Advance();
@@ -249,11 +249,11 @@ internal sealed class Parser
                 return new NumberNode(System.Math.PI);
             }
 
-            // Функция: name(args...)
+            // Function: name(args...)
             if (PeekIsLParen())
                 return ParseFunctionCall();
 
-            // Переменная
+            // Variable
             Advance();
             return new VariableNode(name);
         }
@@ -262,7 +262,7 @@ internal sealed class Parser
             $"Unexpected token '{cur.Text}' ({cur.Type}) at position {_pos}");
     }
 
-    // ── Специальные конструкции ──────────────────────────────────────────
+    // ── Special constructs ──────────────────────────────────────────
 
     private bool PeekIsLParen()
     {
@@ -288,18 +288,18 @@ internal sealed class Parser
         Advance(); // skip "size_lookup"
         Expect(TokenType.LParen);
 
-        // Аргумент 1: имя таблицы (идентификатор или строка)
+        // Argument 1: table name (identifier or string)
         string tableName = ReadSizeLookupStringArg();
         Expect(TokenType.Comma);
 
-        // Аргумент 2: целевой параметр
+        // Argument 2: target parameter
         string targetParam = ReadSizeLookupStringArg();
         Expect(TokenType.Comma);
 
-        // Аргумент 3: значение по умолчанию (строка или идентификатор)
+        // Argument 3: default value (string or identifier)
         string defaultValue = ReadSizeLookupStringArg();
 
-        // Оставшиеся аргументы: query-параметры
+        // Remaining arguments: query parameters
         var queryParams = new List<string>();
         while (Current.Type == TokenType.Comma)
         {
@@ -312,21 +312,21 @@ internal sealed class Parser
     }
 
     /// <summary>
-    /// Читает аргумент size_lookup: строковый литерал, число или один/несколько
-    /// последовательных идентификаторов (для имён с пробелами, например
-    /// "ADSK_Диаметр условный" → токены [ADSK_Диаметр] [условный]).
-    /// Числовой default value: size_lookup(T, "p", 22 мм, DN) → после UnitStripper
-    /// "22" становится Number-токеном.
+    /// Reads a size_lookup argument: string literal, number, or one or more
+    /// consecutive identifiers (for names with spaces, e.g.
+    /// "ADSK_Diameter nominal" -> tokens [ADSK_Diameter] [nominal]).
+    /// Numeric default value: size_lookup(T, "p", 22 mm, DN) -> after UnitStripper
+    /// "22" becomes a Number token.
     /// </summary>
     private string ReadSizeLookupStringArg()
     {
-        // Строковый литерал — возвращаем как есть
+        // String literal — return as is
         if (Current.Type == TokenType.String)
             return Advance().Text;
 
-        // Собираем токены до разделителя (Comma/RParen) на глубине 0.
-        // Обрабатывает: простые идентификаторы (D1), числа (22),
-        // выражения (D2 + 4, 1.2 * D3), имена с пробелами (ADSK_Диаметр условный).
+        // Collect tokens until delimiter (Comma/RParen) at depth 0.
+        // Handles: simple identifiers (D1), numbers (22),
+        // expressions (D2 + 4, 1.2 * D3), names with spaces (ADSK_Diameter nominal).
         var parts = new List<string>();
         int parenDepth = 0;
         while (Current.Type != TokenType.EOF)

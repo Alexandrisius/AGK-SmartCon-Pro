@@ -3,8 +3,8 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// CRUD для правил маппинга фитингов. Хранение в JSON (AppData).
-/// Реализация: SmartCon.Core/Services/Implementation/JsonFittingMappingRepository.cs
+/// CRUD for fitting mapping rules. Storage in JSON (AppData).
+/// Implementation: SmartCon.Core/Services/Implementation/JsonFittingMappingRepository.cs
 /// </summary>
 public interface IFittingMappingRepository
 {

@@ -3,18 +3,18 @@ using SmartCon.Core.Math.FormulaEngine.Ast;
 namespace SmartCon.Core.Math.FormulaEngine.Solver;
 
 /// <summary>
-/// Алгебраическая инверсия линейных формул.
-/// Проверяет линейность пробой f(0), f(1), f(2):
-///   f(x) = a*x + b → a = f(1)-f(0), b = f(0), проверка: |f(2) - (2a+b)| &lt; ε
-/// Если линейно → x = (target - b) / a
+/// Algebraic inversion of linear formulas.
+/// Checks linearity via probes f(0), f(1), f(2):
+///   f(x) = a*x + b -> a = f(1)-f(0), b = f(0), check: |f(2) - (2a+b)| &lt; epsilon
+/// If linear -> x = (target - b) / a
 /// </summary>
 internal static class AlgebraicInverter
 {
     private const double Epsilon = 1e-9;
 
     /// <summary>
-    /// Попытаться решить формулу алгебраически (для линейных формул).
-    /// Возвращает null если формула нелинейна или a ≈ 0.
+    /// Try to solve a formula algebraically (for linear formulas).
+    /// Returns null if the formula is non-linear or a is approximately 0.
     /// </summary>
     internal static double? TrySolveLinear(
         AstNode ast,
@@ -22,24 +22,24 @@ internal static class AlgebraicInverter
         double targetValue,
         IReadOnlyDictionary<string, double> otherValues)
     {
-        // Вычислить f(0), f(1), f(2) подставляя значения переменной
+        // Compute f(0), f(1), f(2) by substituting variable values
         double f0 = EvalAt(ast, variableName, 0.0, otherValues);
         double f1 = EvalAt(ast, variableName, 1.0, otherValues);
         double f2 = EvalAt(ast, variableName, 2.0, otherValues);
 
-        // Проверить на NaN/Infinity
+        // Check for NaN/Infinity
         if (!IsFinite(f0) || !IsFinite(f1) || !IsFinite(f2))
             return null;
 
         double a = f1 - f0;
         double b = f0;
 
-        // Проверка линейности: f(2) должно быть ≈ 2a + b
+        // Linearity check: f(2) should be approximately 2a + b
         double expected = 2.0 * a + b;
         if (System.Math.Abs(f2 - expected) > Epsilon)
-            return null; // нелинейна
+            return null; // non-linear
 
-        // a ≈ 0 → формула не зависит от переменной (или константна)
+        // a approximately 0 -> formula does not depend on the variable (or is constant)
         if (System.Math.Abs(a) < Epsilon)
             return null;
 
@@ -47,9 +47,9 @@ internal static class AlgebraicInverter
         if (!IsFinite(result))
             return null;
 
-        // Верификация: f(result) должно быть ≈ target.
-        // Необходимо для кусочных формул (IF), где линейность на [0,1,2]
-        // не гарантирует корректность на всём диапазоне.
+        // Verification: f(result) should be approximately target.
+        // Necessary for piecewise formulas (IF) where linearity on [0,1,2]
+        // does not guarantee correctness over the entire range.
         double fResult = EvalAt(ast, variableName, result, otherValues);
         if (!IsFinite(fResult) || System.Math.Abs(fResult - targetValue) > 1e-6)
             return null;

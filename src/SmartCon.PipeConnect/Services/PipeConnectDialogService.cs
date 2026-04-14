@@ -6,12 +6,16 @@ using SmartCon.PipeConnect.Views;
 
 namespace SmartCon.PipeConnect.Services;
 
+/// <summary>
+/// WPF implementation of <see cref="IDialogService"/> for PipeConnect module.
+/// Shows modal dialogs for connector type assignment, family selection, and warnings.
+/// </summary>
 public sealed class PipeConnectDialogService : IDialogService
 {
     public ConnectorTypeDefinition? ShowMiniTypeSelector(
         IReadOnlyList<ConnectorTypeDefinition> availableTypes)
     {
-        var vm   = new MiniTypeSelectorViewModel(availableTypes);
+        var vm = new MiniTypeSelectorViewModel(availableTypes);
         var view = new MiniTypeSelectorView(vm);
         view.ShowDialog();
         return vm.SelectedType;
@@ -26,7 +30,7 @@ public sealed class PipeConnectDialogService : IDialogService
         IReadOnlyList<string> availableFamilies,
         IReadOnlyList<FittingMapping> currentSelection)
     {
-        var vm   = new FamilySelectorViewModel(availableFamilies, currentSelection);
+        var vm = new FamilySelectorViewModel(availableFamilies, currentSelection);
         var view = new FamilySelectorView(vm);
         view.ShowDialog();
         return vm.GetResult();
@@ -38,7 +42,7 @@ public sealed class PipeConnectDialogService : IDialogService
         List<FittingCtcSetupItem> connectors,
         IReadOnlyList<ConnectorTypeDefinition> availableTypes)
     {
-        var vm   = new FittingCtcSetupViewModel(familyName, symbolName, connectors, availableTypes);
+        var vm = new FittingCtcSetupViewModel(familyName, symbolName, connectors, availableTypes);
         var view = new FittingCtcSetupView(vm);
         view.ShowDialog();
         return vm.IsValid;

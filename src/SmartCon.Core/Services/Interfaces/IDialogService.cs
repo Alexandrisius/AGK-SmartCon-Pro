@@ -2,6 +2,10 @@ using SmartCon.Core.Models;
 
 namespace SmartCon.Core.Services.Interfaces;
 
+/// <summary>
+/// Abstraction for showing modal dialogs from ViewModels.
+/// Implementations live in the UI layer (SmartCon.PipeConnect).
+/// </summary>
 public interface IDialogService
 {
     ConnectorTypeDefinition? ShowMiniTypeSelector(

@@ -3,9 +3,9 @@ using System.Globalization;
 namespace SmartCon.Core.Math.FormulaEngine;
 
 /// <summary>
-/// Лексический анализатор формул Revit.
-/// Поддерживает: числа (целые, дробные, научная нотация), идентификаторы (ASCII, кириллица, _),
-/// идентификаторы в [квадратных скобках], строковые литералы, операторы, сравнения.
+/// Lexer for Revit formulas.
+/// Supports: numbers (integer, fractional, scientific notation), identifiers (ASCII, Cyrillic, _),
+/// identifiers in [square brackets], string literals, operators, comparisons.
 /// </summary>
 internal static class Tokenizer
 {
@@ -19,38 +19,38 @@ internal static class Tokenizer
         {
             char c = input[i];
 
-            // Пропуск пробелов
+            // Skip whitespace
             if (char.IsWhiteSpace(c)) { i++; continue; }
 
-            // Числа: 42, 3.14, 1.5e-3
+            // Numbers: 42, 3.14, 1.5e-3
             if (char.IsDigit(c) || (c == '.' && i + 1 < len && char.IsDigit(input[i + 1])))
             {
                 tokens.Add(ReadNumber(input, ref i));
                 continue;
             }
 
-            // Строковые литералы: "..."
+            // String literals: "..."
             if (c == '"')
             {
                 tokens.Add(ReadString(input, ref i));
                 continue;
             }
 
-            // Идентификаторы в [квадратных скобках]: [Length-A], [Параметр 1]
+            // Identifiers in [square brackets]: [Length-A], [Parameter 1]
             if (c == '[')
             {
                 tokens.Add(ReadBracketedIdentifier(input, ref i));
                 continue;
             }
 
-            // Идентификаторы: буквы, _, кириллица
+            // Identifiers: letters, _, Cyrillic
             if (IsIdentStart(c))
             {
                 tokens.Add(ReadIdentifier(input, ref i));
                 continue;
             }
 
-            // Двухсимвольные операторы
+            // Two-character operators
             if (i + 1 < len)
             {
                 string two = input.Substring(i, 2);
@@ -62,7 +62,7 @@ internal static class Tokenizer
                 }
             }
 
-            // Односимвольные операторы
+            // Single-character operators
             switch (c)
             {
                 case '+': tokens.Add(new Token(TokenType.Plus, "+")); i++; continue;
@@ -97,7 +97,7 @@ internal static class Tokenizer
             while (i < input.Length && char.IsDigit(input[i])) i++;
         }
 
-        // Научная нотация: e+3, e-3, E3
+        // Scientific notation: e+3, e-3, E3
         if (i < input.Length && (input[i] == 'e' || input[i] == 'E'))
         {
             i++;

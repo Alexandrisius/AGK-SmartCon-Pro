@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 
 namespace SmartCon.Revit.Wrappers;
@@ -56,7 +57,7 @@ public static class ConnectorWrapper
             // BuiltInParameter.ALL_MODEL_DESCRIPTION — языконезависимый системный параметр «Описание».
             return elemType?.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION)?.AsString();
         }
-        catch { return null; }
+        catch (Exception ex) { SmartConLogger.Warn($"[ConnectorWrapper] GetTypeDescriptionSafe: {ex.GetType().Name}: {ex.Message}"); return null; }
     }
 
     private static string? GetConnectorDescriptionSafe(Connector connector)

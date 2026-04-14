@@ -3,9 +3,9 @@ using Autodesk.Revit.DB;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Доступ к актуальному Document. Не кешировать — запрашивать при каждой операции (I-05).
-/// UIDocument не экспонируется в Core (I-09: запрет Autodesk.Revit.UI).
-/// Для selection используй IElementSelectionService.
+/// Access to the current Document. Do not cache — request on every operation (I-05).
+/// UIDocument is not exposed in Core (I-09: Autodesk.Revit.UI prohibition).
+/// Use IElementSelectionService for selection.
 /// </summary>
 public interface IRevitContext
 {

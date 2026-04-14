@@ -5,7 +5,7 @@ using Xunit;
 
 namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
-public class IfSimplifierTests
+public sealed class IfSimplifierTests
 {
     // ── Базовое упрощение ────────────────────────────────────────────────
 

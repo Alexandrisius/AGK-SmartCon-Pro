@@ -1,7 +1,9 @@
+using System;
 using SmartCon.Core.Models;
 using Xunit;
-using System;
-
+using SmartCon.Core;
+
+using static SmartCon.Core.Units;
 namespace SmartCon.Tests.Core.Models;
 
 /// <summary>
@@ -73,7 +75,7 @@ public sealed class SizeOptionTests
     public void RadiusConversion_DN32_ToFeet()
     {
         double dn32Mm = 32.0;
-        double radiusInFeet = (dn32Mm / 2.0) / 304.8;
+        double radiusInFeet = (dn32Mm / 2.0) * MmToFeet;
 
         var option = new SizeOption
         {
@@ -83,7 +85,7 @@ public sealed class SizeOptionTests
             IsAutoSelect = false,
         };
 
-        var recoveredDn = (int)System.Math.Round(option.Radius * 2.0 * 304.8);
+        var recoveredDn = (int)System.Math.Round(option.Radius * 2.0 * FeetToMm);
         Assert.Equal(32, recoveredDn);
     }
 
@@ -91,7 +93,7 @@ public sealed class SizeOptionTests
     public void RadiusConversion_DN25_ToFeet()
     {
         double dn25Mm = 25.0;
-        double radiusInFeet = (dn25Mm / 2.0) / 304.8;
+        double radiusInFeet = (dn25Mm / 2.0) * MmToFeet;
 
         var option = new SizeOption
         {
@@ -101,7 +103,7 @@ public sealed class SizeOptionTests
             IsAutoSelect = false,
         };
 
-        var recoveredDn = (int)System.Math.Round(option.Radius * 2.0 * 304.8);
+        var recoveredDn = (int)System.Math.Round(option.Radius * 2.0 * FeetToMm);
         Assert.Equal(25, recoveredDn);
     }
 }

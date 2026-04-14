@@ -13,29 +13,29 @@ namespace SmartCon.Revit.Network;
 public sealed class NetworkMover : INetworkMover
 {
     private readonly IFittingInsertService _fittingInsertSvc;
-    private readonly IFittingMapper        _fittingMapper;
-    private readonly IConnectorService     _connSvc;
-    private readonly ITransformService     _transformSvc;
-    private readonly IParameterResolver    _paramResolver;
+    private readonly IFittingMapper _fittingMapper;
+    private readonly IConnectorService _connSvc;
+    private readonly ITransformService _transformSvc;
+    private readonly IParameterResolver _paramResolver;
 
     public NetworkMover(
         IFittingInsertService fittingInsertSvc,
-        IFittingMapper        fittingMapper,
-        IConnectorService     connSvc,
-        ITransformService     transformSvc,
-        IParameterResolver    paramResolver)
+        IFittingMapper fittingMapper,
+        IConnectorService connSvc,
+        ITransformService transformSvc,
+        IParameterResolver paramResolver)
     {
         _fittingInsertSvc = fittingInsertSvc;
-        _fittingMapper    = fittingMapper;
-        _connSvc          = connSvc;
-        _transformSvc     = transformSvc;
-        _paramResolver    = paramResolver;
+        _fittingMapper = fittingMapper;
+        _connSvc = connSvc;
+        _transformSvc = transformSvc;
+        _paramResolver = paramResolver;
     }
 
     /// <inheritdoc />
     /// <remarks>
     /// Reducer используется только при IsDirectConnect=true (физически совместимые типы,
-    /// например ВР↔НР) когда DN не совпадает. Ищем правило в таблице маппинга по паре
+    /// например ВР↔НР) когда DN не совпадает. Ищем rule в таблице маппинга по паре
     /// parent→child и берём ReducerFamilies[0]. Никакого сравнения CTC — только запрос к таблице.
     /// </remarks>
     public ElementId? InsertReducer(Document doc,
@@ -44,7 +44,7 @@ public sealed class NetworkMover : INetworkMover
         IReadOnlyList<FittingMappingRule>? directConnectRules = null)
     {
         var parentCtc = parentConn.ConnectionTypeCode;
-        var childCtc  = childConn.ConnectionTypeCode;
+        var childCtc = childConn.ConnectionTypeCode;
 
         // 1. Запрос к таблице маппинга — только ReducerFamilies из подходящего правила
         var rules = _fittingMapper.GetMappings(parentCtc, childCtc);
@@ -55,14 +55,14 @@ public sealed class NetworkMover : INetworkMover
             if (rule.ReducerFamilies.Count > 0)
             {
                 reducerFamily = rule.ReducerFamilies[0];
-                SmartConLogger.Info($"[NetworkMover] InsertReducer: правило {parentCtc.Value}↔{childCtc.Value} → {reducerFamily.FamilyName}/{reducerFamily.SymbolName}");
+                SmartConLogger.Info($"[NetworkMover] InsertReducer: rule {parentCtc.Value}↔{childCtc.Value} → {reducerFamily.FamilyName}/{reducerFamily.SymbolName}");
                 break;
             }
         }
 
         if (reducerFamily is null)
         {
-            SmartConLogger.Warn($"[NetworkMover] Reducer не найден в правиле {parentCtc.Value}↔{childCtc.Value}");
+            SmartConLogger.Warn($"[NetworkMover] Reducer not found in rule {parentCtc.Value}↔{childCtc.Value}");
             return null;
         }
 
@@ -72,7 +72,7 @@ public sealed class NetworkMover : INetworkMover
 
         if (reducerId is null)
         {
-            SmartConLogger.Warn($"[NetworkMover] InsertFitting вернул null для '{reducerFamily.FamilyName}'");
+            SmartConLogger.Warn($"[NetworkMover] InsertFitting returned null for '{reducerFamily.FamilyName}'");
             return null;
         }
 
@@ -85,7 +85,7 @@ public sealed class NetworkMover : INetworkMover
 
         doc.Regenerate();
 
-        SmartConLogger.Info($"[NetworkMover] Reducer вставлен: id={reducerId.Value}");
+        SmartConLogger.Info($"[NetworkMover] Reducer inserted: id={reducerId.Value}");
         return reducerId;
     }
 }

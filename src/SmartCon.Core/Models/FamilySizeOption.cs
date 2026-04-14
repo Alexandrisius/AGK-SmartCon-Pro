@@ -1,5 +1,10 @@
 namespace SmartCon.Core.Models;
 
+/// <summary>
+/// Represents a single available size configuration for a dynamic MEP element.
+/// Contains connector radii, lookup table query parameters, and display information.
+/// Used by the PipeConnect size dropdown and auto-selection algorithm.
+/// </summary>
 public sealed record FamilySizeOption
 {
     public required string DisplayName { get; init; }

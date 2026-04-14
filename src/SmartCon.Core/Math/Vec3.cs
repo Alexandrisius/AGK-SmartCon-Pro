@@ -1,10 +1,10 @@
 namespace SmartCon.Core.Math;
 
 /// <summary>
-/// Лёгкий иммутабельный 3D-вектор для чистой математики в Core.
-/// Используется вместо Revit XYZ в алгоритмах (VectorUtils, ConnectorAligner),
-/// чтобы Core оставался полностью тестируемым без Revit runtime.
-/// Конвертация XYZ ↔ Vec3 — в SmartCon.Revit/Extensions/XYZExtensions.cs.
+/// Lightweight immutable 3D vector for pure math in Core.
+/// Used instead of Revit XYZ in algorithms (VectorUtils, ConnectorAligner),
+/// so Core remains fully testable without Revit runtime.
+/// XYZ <-> Vec3 conversion is in SmartCon.Revit/Extensions/XYZExtensions.cs.
 /// </summary>
 public readonly record struct Vec3(double X, double Y, double Z)
 {

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
-public class TokenizerTests
+public sealed class TokenizerTests
 {
     [Fact]
     public void Tokenize_Integer()

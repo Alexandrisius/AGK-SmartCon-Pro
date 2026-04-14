@@ -12,8 +12,8 @@ using SmartCon.Revit.Fittings;
 using SmartCon.Revit.Network;
 using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
-using SmartCon.Revit.Transform;
 using SmartCon.Revit.Transactions;
+using SmartCon.Revit.Transform;
 using SmartCon.Revit.Updates;
 
 namespace SmartCon.App.DI;
@@ -51,6 +51,7 @@ public static class ServiceRegistrar
         // --- Parameter Resolution (Phase 4) ---
         services.AddSingleton<IParameterResolver, RevitParameterResolver>();
         services.AddSingleton<ILookupTableService, RevitLookupTableService>();
+        services.AddSingleton<FamilySymbolSizeExtractor>();
         services.AddSingleton<IDynamicSizeResolver, RevitDynamicSizeResolver>();
 
         // --- Formula Solver (Phase 6) ---
@@ -72,7 +73,7 @@ public static class ServiceRegistrar
 
         // --- External Events (Phase 8: PipeConnect modeless editor) ---
         var pipeConnectHandler = new PipeConnectExternalEvent(revitContext);
-        var pipeConnectEvent   = ExternalEvent.Create(pipeConnectHandler);
+        var pipeConnectEvent = ExternalEvent.Create(pipeConnectHandler);
         pipeConnectHandler.Initialize(pipeConnectEvent);
         services.AddSingleton(pipeConnectHandler);
 

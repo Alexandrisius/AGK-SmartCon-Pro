@@ -1,8 +1,8 @@
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Состояния state machine модуля PipeConnect.
-/// Переходы описаны в docs/pipeconnect/state-machine.md.
+/// PipeConnect module state machine states.
+/// Transitions are described in docs/pipeconnect/state-machine.md.
 /// </summary>
 public enum PipeConnectState
 {

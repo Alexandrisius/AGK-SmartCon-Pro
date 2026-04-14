@@ -1,7 +1,9 @@
 using SmartCon.Core.Math;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using Xunit;
-
+using SmartCon.Core;
+
+using static SmartCon.Core.Units;
 namespace SmartCon.Tests.Core.Services;
 
 /// <summary>
@@ -20,7 +22,7 @@ public sealed class ParameterResolutionFlowTests
     [Fact]
     public void ResolutionFlow_SameRadius_ShouldSkip()
     {
-        double staticRadius  = 0.0821;
+        double staticRadius = 0.0821;
         double dynamicRadius = 0.0821;
 
         bool shouldSkip = System.Math.Abs(staticRadius - dynamicRadius) < Eps;
@@ -31,7 +33,7 @@ public sealed class ParameterResolutionFlowTests
     [Fact]
     public void ResolutionFlow_DifferentRadius_ShouldNotSkip()
     {
-        double staticRadius  = 0.0821;
+        double staticRadius = 0.0821;
         double dynamicRadius = 0.0656;
 
         bool shouldSkip = System.Math.Abs(staticRadius - dynamicRadius) < Eps;
@@ -64,7 +66,7 @@ public sealed class ParameterResolutionFlowTests
     [Fact]
     public void NearestRadius_FromList_ReturnsClosest()
     {
-        double target  = 0.0821;
+        double target = 0.0821;
         double[] table = [0.0328, 0.0492, 0.0656, 0.0820, 0.1148];
 
         double nearest = table.MinBy(r => System.Math.Abs(r - target));
@@ -75,7 +77,7 @@ public sealed class ParameterResolutionFlowTests
     [Fact]
     public void NearestRadius_ExactMatch_ReturnsSame()
     {
-        double target  = 0.0656;
+        double target = 0.0656;
         double[] table = [0.0328, 0.0492, 0.0656, 0.0820];
 
         double nearest = table.MinBy(r => System.Math.Abs(r - target));
@@ -86,9 +88,9 @@ public sealed class ParameterResolutionFlowTests
     [Fact]
     public void NearestRadius_DeltaExceedsEps_ExpectAdapter()
     {
-        double target   = 0.0821;
-        double nearest  = 0.0820;
-        double delta    = System.Math.Abs(target - nearest);
+        double target = 0.0821;
+        double nearest = 0.0820;
+        double delta = System.Math.Abs(target - nearest);
 
         Assert.True(delta > Eps);
     }
@@ -101,7 +103,7 @@ public sealed class ParameterResolutionFlowTests
     [InlineData(0.1312, 80.0)]   // ~DN80: radius 40mm ≈ 0.1312ft → diameter 80mm
     public void FeetToMm_DiameterConversion(double radiusFt, double expectedDiamMm)
     {
-        double diamMm = System.Math.Round(radiusFt * 2.0 * 304.8);
+        double diamMm = System.Math.Round(radiusFt * 2.0 * FeetToMm);
         Assert.Equal(expectedDiamMm, diamMm, 1.0);
     }
 
@@ -171,7 +173,7 @@ public sealed class ParameterResolutionFlowTests
             "size_lookup(\"DN_Table\", radius, \"default\", nomDiam)");
         Assert.NotNull(r);
         Assert.Equal("DN_Table", r!.Value.TableName);
-        Assert.Equal("radius",   r.Value.TargetParameter);
-        Assert.Equal("nomDiam",  r.Value.QueryParameters[0]);
+        Assert.Equal("radius", r.Value.TargetParameter);
+        Assert.Equal("nomDiam", r.Value.QueryParameters[0]);
     }
 }

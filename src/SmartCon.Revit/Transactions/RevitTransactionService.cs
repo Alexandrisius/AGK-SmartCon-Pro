@@ -73,4 +73,38 @@ public sealed class RevitTransactionService : ITransactionService
         var doc = _revitContext.GetDocument();
         return new RevitTransactionGroupSession(doc, name);
     }
+
+    public T? RunAndRollback<T>(string name, Func<Document, T> action) where T : struct
+    {
+        var doc = _revitContext.GetDocument();
+
+        using var transaction = new Transaction(doc, name);
+        var options = transaction.GetFailureHandlingOptions();
+        options.SetFailuresPreprocessor(new SmartConFailurePreprocessor());
+        transaction.SetFailureHandlingOptions(options);
+
+        try
+        {
+            transaction.Start();
+            var result = action(doc);
+            transaction.RollBack();
+            return result;
+        }
+        catch
+        {
+            if (transaction.HasStarted())
+                transaction.RollBack();
+            return default;
+        }
+    }
+
+    public bool RunAndRollback(string name, Action<Document> action)
+    {
+        var result = RunAndRollback<bool>(name, doc =>
+        {
+            action(doc);
+            return true;
+        });
+        return result.HasValue && result.Value;
+    }
 }

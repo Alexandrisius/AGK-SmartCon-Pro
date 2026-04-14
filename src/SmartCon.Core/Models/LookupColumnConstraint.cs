@@ -1,11 +1,11 @@
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Ограничение на значение столбца lookup-таблицы от другого коннектора фитинга.
-/// Используется при поиске доступных DN для multi-query size_lookup:
+/// Constraint on a lookup table column value from another fitting connector.
+/// Used when searching for available DN for multi-query size_lookup:
 ///   size_lookup(Table, target, default, DN1, DN2)
-/// Для коннектора DN1 constraints = [ LookupColumnConstraint(connIdx2, "DN2", 20.0) ]
-/// → показывать только строки где DN2 ≈ 20 мм.
+/// For DN1 connector constraints = [ LookupColumnConstraint(connIdx2, "DN2", 20.0) ]
+/// -> show only rows where DN2 is approximately 20 mm.
 /// </summary>
 public sealed record LookupColumnConstraint(
     int ConnectorIndex,

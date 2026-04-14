@@ -1,5 +1,7 @@
 using SmartCon.Core.Models;
-
+using SmartCon.Core;
+
+using static SmartCon.Core.Units;
 namespace SmartCon.PipeConnect.ViewModels;
 
 /// <summary>
@@ -15,7 +17,7 @@ public sealed class ConnectorItem
     public ConnectorItem(ConnectorProxy proxy, int displayIndex)
     {
         Proxy = proxy;
-        var dnMm = (int)System.Math.Round(proxy.Radius * 2.0 * 304.8);
+        var dnMm = (int)System.Math.Round(proxy.Radius * 2.0 * FeetToMm);
         var typeLabel = proxy.ConnectionTypeCode.IsDefined
             ? $" [{proxy.ConnectionTypeCode.Value}]"
             : "";

@@ -1,5 +1,9 @@
 namespace SmartCon.Core.Models;
 
+/// <summary>
+/// One row from a Revit FamilySizeTable (lookup table) or FamilySymbol enumeration.
+/// Contains connector radii, query parameters, and non-size parameter values for a single size configuration.
+/// </summary>
 public sealed record SizeTableRow
 {
     public required int TargetColumnIndex { get; init; }

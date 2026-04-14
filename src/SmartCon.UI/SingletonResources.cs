@@ -2,7 +2,7 @@ using System.Windows;
 
 namespace SmartCon.UI;
 
-public class SingletonResources : ResourceDictionary
+public sealed class SingletonResources : ResourceDictionary
 {
     private static ResourceDictionary? _instance;
 

@@ -6,7 +6,10 @@ using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
 using SmartCon.Revit.Wrappers;
 using RevitFamily = Autodesk.Revit.DB.Family;
+using SmartCon.Core;
 
+
+using static SmartCon.Core.Units;
 namespace SmartCon.Revit.Fittings;
 
 /// <summary>
@@ -66,7 +69,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                 ? ovr
                 : ConnectionTypeCode.Parse(GetConnectorDescriptionSafe(c));
             connCtcMap.Add((c, ctc));
-            SmartConLogger.Info($"[FitAlign] conn[{c.Id}] CTC={ctc.Value} R={c.Radius * 304.8:F1}mm (static CTC={staticProxy.ConnectionTypeCode.Value}, dyn CTC={dynamicTypeCode.Value})");
+            SmartConLogger.Info($"[FitAlign] conn[{c.Id}] CTC={ctc.Value} R={c.Radius * FeetToMm:F1}mm (static CTC={staticProxy.ConnectionTypeCode.Value}, dyn CTC={dynamicTypeCode.Value})");
         }
 
         if (staticProxy.ConnectionTypeCode.IsDefined)
@@ -102,10 +105,10 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                     var best = validPairs.OrderBy(p => p.Score).First();
                     fitConn1 = best.Fc1;
                     fitConn2 = best.Fc2;
-                    SmartConLogger.Info($"[FitAlign] Стратегия 0 (direct-connect rules): " +
-                        $"fc1=conn[{fitConn1.Id}] R={fitConn1.Radius * 304.8:F1}mm (→static R={staticProxy.Radius * 304.8:F1}mm), " +
-                        $"fc2=conn[{fitConn2.Id}] R={fitConn2.Radius * 304.8:F1}mm, " +
-                        $"score={best.Score * 304.8:F2}mm ({validPairs.Count} pairs)");
+                    SmartConLogger.Info($"[FitAlign] Strategy 0 (direct-connect rules): " +
+                        $"fc1=conn[{fitConn1.Id}] R={fitConn1.Radius * FeetToMm:F1}mm (→static R={staticProxy.Radius * FeetToMm:F1}mm), " +
+                        $"fc2=conn[{fitConn2.Id}] R={fitConn2.Radius * FeetToMm:F1}mm, " +
+                        $"score={best.Score * FeetToMm:F2}mm ({validPairs.Count} pairs)");
                 }
             }
 
@@ -127,7 +130,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                 {
                     fitConn1 = dynMatch.Conn;
                     fitConn2 = staticMatch.Conn;
-                    SmartConLogger.Info($"[FitAlign] Стратегия 0 (Cross-connect): staticCTC≠dynCTC " +
+                    SmartConLogger.Info($"[FitAlign] Strategy 0 (Cross-connect): staticCTC≠dynCTC " +
                         $"({staticProxy.ConnectionTypeCode.Value}≠{dynamicTypeCode.Value}) → " +
                         $"fc1=conn[{fitConn1.Id}] (CTC={dynMatch.Ctc.Value}→static), " +
                         $"fc2=conn[{fitConn2.Id}] (CTC={staticMatch.Ctc.Value}→dynamic)");
@@ -144,7 +147,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                 {
                     fitConn1 = directMatch.Conn;
                     fitConn2 = fittingConns.FirstOrDefault(c => c.Id != fitConn1.Id);
-                    SmartConLogger.Info($"[FitAlign] Стратегия 1 (CTC match): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2?.Id}]");
+                    SmartConLogger.Info($"[FitAlign] Strategy 1 (CTC match): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2?.Id}]");
                 }
             }
 
@@ -157,7 +160,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                 {
                     fitConn2 = dynMatch.Conn;
                     fitConn1 = fittingConns.FirstOrDefault(c => c.Id != fitConn2.Id);
-                    SmartConLogger.Info($"[FitAlign] Стратегия 2 (dynamicTypeCode match): fc2=conn[{fitConn2.Id}] (CTC={dynMatch.Ctc.Value}), fc1=conn[{fitConn1?.Id}]");
+                    SmartConLogger.Info($"[FitAlign] Strategy 2 (dynamicTypeCode match): fc2=conn[{fitConn2.Id}] (CTC={dynMatch.Ctc.Value}), fc1=conn[{fitConn1?.Id}]");
                 }
             }
 
@@ -171,7 +174,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                 {
                     fitConn2 = definedOther[0].Conn;
                     fitConn1 = fittingConns.FirstOrDefault(c => c.Id != fitConn2.Id);
-                    SmartConLogger.Info($"[FitAlign] Стратегия 3 (исключение): fc2=conn[{fitConn2.Id}] (CTC={definedOther[0].Ctc.Value}≠static), fc1=conn[{fitConn1?.Id}]");
+                    SmartConLogger.Info($"[FitAlign] Strategy 3 (exclusion): fc2=conn[{fitConn2.Id}] (CTC={definedOther[0].Ctc.Value}≠static), fc1=conn[{fitConn1?.Id}]");
                 }
             }
         }
@@ -183,17 +186,17 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                 .ThenBy(c => c.Id).ToList();
             fitConn1 = ordered[0];
             fitConn2 = ordered[1];
-            SmartConLogger.Info($"[FitAlign] Стратегия 4 (distance fallback): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2.Id}]");
+            SmartConLogger.Info($"[FitAlign] Strategy 4 (distance fallback): fc1=conn[{fitConn1.Id}], fc2=conn[{fitConn2.Id}]");
         }
 
         var fitConn1Proxy = fitConn1!.ToProxy();
         if (fitConn1Proxy is null) return null;
 
-        SmartConLogger.Info($"[FitAlign] BEFORE: fc1=conn[{fitConn1.Id}] origin={fitConn1Proxy.OriginVec3} R={fitConn1.Radius * 304.8:F1}mm BZ={fitConn1Proxy.BasisZVec3}");
+        SmartConLogger.Info($"[FitAlign] BEFORE: fc1=conn[{fitConn1.Id}] origin={fitConn1Proxy.OriginVec3} R={fitConn1.Radius * FeetToMm:F1}mm BZ={fitConn1Proxy.BasisZVec3}");
         if (fitConn2 is not null)
         {
             var fc2p = fitConn2.ToProxy();
-            SmartConLogger.Info($"[FitAlign] BEFORE: fc2=conn[{fitConn2.Id}] origin={fc2p?.OriginVec3} R={fitConn2.Radius * 304.8:F1}mm BZ={fc2p?.BasisZVec3}");
+            SmartConLogger.Info($"[FitAlign] BEFORE: fc2=conn[{fitConn2.Id}] origin={fc2p?.OriginVec3} R={fitConn2.Radius * FeetToMm:F1}mm BZ={fc2p?.BasisZVec3}");
         }
 
         // Вычислить выравнивание фитинга к static коннектору
@@ -232,11 +235,11 @@ public sealed class RevitFittingInsertService : IFittingInsertService
 
         // Лог AFTER: позиции коннекторов после полного выравнивания
         var afterFc1 = connSvc.RefreshConnector(doc, fittingId, fitConn1Proxy.ConnectorIndex);
-        SmartConLogger.Info($"[FitAlign] AFTER: fc1=conn[{fitConn1.Id}] origin={afterFc1?.OriginVec3} R={afterFc1?.Radius * 304.8:F1}mm distToStatic={VectorUtils.DistanceTo(afterFc1?.OriginVec3 ?? Vec3.Zero, staticProxy.OriginVec3) * 304.8:F2}mm");
+        SmartConLogger.Info($"[FitAlign] AFTER: fc1=conn[{fitConn1.Id}] origin={afterFc1?.OriginVec3} R={afterFc1?.Radius * FeetToMm:F1}mm distToStatic={VectorUtils.DistanceTo(afterFc1?.OriginVec3 ?? Vec3.Zero, staticProxy.OriginVec3) * FeetToMm:F2}mm");
         if (fitConn2 is not null)
         {
             var afterFc2 = connSvc.RefreshConnector(doc, fittingId, fitConn2.ToProxy()?.ConnectorIndex ?? -1);
-            SmartConLogger.Info($"[FitAlign] AFTER: fc2=conn[{fitConn2.Id}] origin={afterFc2?.OriginVec3} R={afterFc2?.Radius * 304.8:F1}mm distToStatic={VectorUtils.DistanceTo(afterFc2?.OriginVec3 ?? Vec3.Zero, staticProxy.OriginVec3) * 304.8:F2}mm");
+            SmartConLogger.Info($"[FitAlign] AFTER: fc2=conn[{fitConn2.Id}] origin={afterFc2?.OriginVec3} R={afterFc2?.Radius * FeetToMm:F1}mm distToStatic={VectorUtils.DistanceTo(afterFc2?.OriginVec3 ?? Vec3.Zero, staticProxy.OriginVec3) * FeetToMm:F2}mm");
         }
 
         // Возвращаем ConnectorProxy второго коннектора фитинга после выравнивания

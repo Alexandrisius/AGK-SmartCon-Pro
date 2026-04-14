@@ -4,45 +4,45 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Работа с коннекторами элементов: получение proxy, поиск ближайшего, ConnectTo.
-/// Реализация: SmartCon.Revit/Selection/ConnectorService.cs
+/// Operations on element connectors: getting proxy, finding nearest, ConnectTo.
+/// Implementation: SmartCon.Revit/Selection/ConnectorService.cs
 /// </summary>
 public interface IConnectorService
 {
     /// <summary>
-    /// Получить ConnectorProxy ближайшего свободного коннектора к точке клика.
-    /// Возвращает null если нет свободных коннекторов.
+    /// Get ConnectorProxy of the nearest free connector to the click point.
+    /// Returns null if no free connectors.
     /// </summary>
     ConnectorProxy? GetNearestFreeConnector(Document doc, ElementId elementId, XYZ clickPoint);
 
     /// <summary>
-    /// Перечитать актуальное состояние коннектора (после трансформации).
+    /// Re-read the current connector state (after transformation).
     /// </summary>
     ConnectorProxy? RefreshConnector(Document doc, ElementId elementId, int connectorIndex);
 
     /// <summary>
-    /// Соединить два коннектора через Connector.ConnectTo().
-    /// Возвращает true при успехе.
+    /// Connect two connectors via Connector.ConnectTo().
+    /// Returns true on success.
     /// </summary>
     bool ConnectTo(Document doc,
         ElementId elementId1, int connectorIndex1,
         ElementId elementId2, int connectorIndex2);
 
     /// <summary>
-    /// Отсоединить указанный коннектор от всех существующих соединений.
-    /// Используется для изоляции dynamic-элемента перед перемещением.
+    /// Disconnect the specified connector from all existing connections.
+    /// Used to isolate the dynamic element before moving.
     /// </summary>
     void DisconnectAllFromConnector(Document doc, ElementId elementId, int connectorIndex);
 
     /// <summary>
-    /// Получить все свободные коннекторы элемента (исключая ConnectorType.Curve).
-    /// Используется для ComboBox выбора коннектора в PipeConnectEditor (Phase 8).
+    /// Get all free connectors of an element (excluding ConnectorType.Curve).
+    /// Used for ComboBox connector selection in PipeConnectEditor (Phase 8).
     /// </summary>
     IReadOnlyList<ConnectorProxy> GetAllFreeConnectors(Document doc, ElementId elementId);
 
     /// <summary>
-    /// Получить ВСЕ коннекторы элемента (свободные И соединённые), исключая ConnectorType.Curve.
-    /// Используется для предварительного отсоединения dynamic-элемента.
+    /// Get ALL connectors of an element (free AND connected), excluding ConnectorType.Curve.
+    /// Used for pre-disconnecting the dynamic element.
     /// </summary>
     IReadOnlyList<ConnectorProxy> GetAllConnectors(Document doc, ElementId elementId);
 }

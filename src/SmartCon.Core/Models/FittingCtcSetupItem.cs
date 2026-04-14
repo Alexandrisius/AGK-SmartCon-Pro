@@ -3,6 +3,11 @@ using System.Runtime.CompilerServices;
 
 namespace SmartCon.Core.Models;
 
+/// <summary>
+/// UI model for the CTC (ConnectionTypeCode) assignment dialog.
+/// Each item represents one connector of a fitting family,
+/// allowing the user to assign a connector type.
+/// </summary>
 public sealed class FittingCtcSetupItem : INotifyPropertyChanged
 {
     public int ConnectorIndex { get; init; }

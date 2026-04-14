@@ -1,9 +1,9 @@
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Строго типизированная обёртка над кодом типа соединения
-/// из поля Connector.Description (ADR-002).
-/// Value = 0 означает "не определён".
+/// Strongly typed wrapper over the connection type code
+/// from the Connector.Description field (ADR-002).
+/// Value = 0 means "undefined".
 /// </summary>
 public readonly record struct ConnectionTypeCode(int Value)
 {
@@ -14,8 +14,8 @@ public readonly record struct ConnectionTypeCode(int Value)
     public override string ToString() => Value.ToString();
 
     /// <summary>
-    /// Разбирает строку вида "КОД" или "КОД.НАЗВАНИЕ.ОПИСАНИЕ".
-    /// Берёт только первый сегмент до точки.
+    /// Parses a string in the format "CODE" or "CODE.NAME.DESCRIPTION".
+    /// Takes only the first segment before the dot.
     /// </summary>
     public static ConnectionTypeCode Parse(string? raw)
     {

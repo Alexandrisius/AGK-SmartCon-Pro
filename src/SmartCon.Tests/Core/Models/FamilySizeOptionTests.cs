@@ -1,11 +1,13 @@
 using SmartCon.Core.Models;
 using Xunit;
-
+using SmartCon.Core;
+
+using static SmartCon.Core.Units;
 namespace SmartCon.Tests.Core.Models;
 
 public sealed class FamilySizeOptionTests
 {
-    private static double DnToRadius(int dn) => (dn / 2.0) / 304.8;
+    private static double DnToRadius(int dn) => (dn / 2.0) * MmToFeet;
 
     [Fact]
     public void RequiredProperties_SetCorrectly()

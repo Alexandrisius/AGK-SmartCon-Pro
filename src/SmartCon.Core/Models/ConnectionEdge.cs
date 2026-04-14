@@ -3,7 +3,7 @@ using Autodesk.Revit.DB;
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Ребро графа соединённых MEP-элементов — пара коннекторов между двумя элементами.
+/// Edge of the connected MEP elements graph — a pair of connectors between two elements.
 /// </summary>
 public sealed record ConnectionEdge(
     ElementId FromElementId,

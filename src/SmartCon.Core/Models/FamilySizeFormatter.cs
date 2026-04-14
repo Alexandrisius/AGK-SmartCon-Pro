@@ -1,8 +1,10 @@
+using SmartCon.Core;
+
+using static SmartCon.Core.Units;
 namespace SmartCon.Core.Models;
 
 public static class FamilySizeFormatter
 {
-    private const double FtToMm = 304.8;
 
     public static string BuildDisplayName(
         IReadOnlyList<double> queryParamRadiiFt,
@@ -77,11 +79,11 @@ public static class FamilySizeFormatter
 
     public static int ToDn(double radiusFt)
     {
-        return (int)System.Math.Round(radiusFt * 2.0 * FtToMm);
+        return (int)System.Math.Round(radiusFt * 2.0 * FeetToMm);
     }
 
     public static double DnToRadiusFt(int dn)
     {
-        return (dn / 2.0) / FtToMm;
+        return (dn / 2.0) * MmToFeet;
     }
 }

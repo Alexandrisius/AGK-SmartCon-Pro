@@ -4,9 +4,14 @@ using System.Reflection;
 using Autodesk.Revit.UI;
 using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
+using SmartCon.Core.Logging;
 
 namespace SmartCon.App;
 
+/// <summary>
+/// SmartCon Revit plugin entry point. Registers the Ribbon panel, DI container,
+/// and handles self-update on startup.
+/// </summary>
 public sealed class App : IExternalApplication
 {
     public Result OnStartup(UIControlledApplication application)
@@ -54,8 +59,9 @@ public sealed class App : IExternalApplication
 
             Directory.Delete(pendingDir, true);
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Debug($"[App.ApplyUpdaterSelfUpdate] {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -70,19 +76,20 @@ public sealed class App : IExternalApplication
             var stagingDir = Path.Combine(appData, "SmartCon", "staging", "extracted");
             if (Directory.Exists(stagingDir))
             {
-                try { Directory.Delete(stagingDir, true); } catch { }
+                try { Directory.Delete(stagingDir, true); } catch { /* Intentional: cleanup */ }
             }
 
             var stagingRoot = Path.Combine(appData, "SmartCon", "staging");
             if (Directory.Exists(stagingRoot))
             {
-                try { Directory.Delete(stagingRoot, true); } catch { }
+                try { Directory.Delete(stagingRoot, true); } catch { /* Intentional: cleanup */ }
             }
 
             File.Delete(markerPath);
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Debug($"[App.CleanupStalePendingUpdate] {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -109,8 +116,9 @@ public sealed class App : IExternalApplication
                 CreateNoWindow = false
             });
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Debug($"[App.TryLaunchUpdater] {ex.GetType().Name}: {ex.Message}");
         }
     }
 

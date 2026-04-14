@@ -1,7 +1,9 @@
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Models;
 using Xunit;
-
+using SmartCon.Core;
+
+using static SmartCon.Core.Units;
 namespace SmartCon.Tests.Core.Math;
 
 /// <summary>
@@ -226,11 +228,11 @@ public sealed class MultiColumnLookupTests
     [InlineData(50.0)]
     public void DnMm_ToRadius_AndBack_Roundtrips(double dnMm)
     {
-        // Radius (feet) = (dnMm / 2.0) / 304.8
-        double radiusFeet = (dnMm / 2.0) / 304.8;
+        // Radius (feet) = (dnMm / 2.0) * MmToFeet
+        double radiusFeet = (dnMm / 2.0) * MmToFeet;
 
-        // Обратно: DN = Round(radius * 2 * 304.8)
-        double recovered = System.Math.Round(radiusFeet * 2.0 * 304.8);
+        // Обратно: DN = Round(radius * 2 * FeetToMm)
+        double recovered = System.Math.Round(radiusFeet * 2.0 * FeetToMm);
 
         Assert.Equal(dnMm, recovered);
     }
@@ -241,10 +243,10 @@ public sealed class MultiColumnLookupTests
     [InlineData(25.0)]
     public void ConstraintValueMm_MatchesCsvDiameter(double dnMm)
     {
-        // ValueMm в constraint = Round(connectorRadius * 2 * 304.8)
+        // ValueMm в constraint = Round(connectorRadius * 2 * FeetToMm)
         // Это должно совпадать с числом в CSV (NominalDiameter в мм)
-        double radiusFeet = (dnMm / 2.0) / 304.8;
-        double valueMm = System.Math.Round(radiusFeet * 2.0 * 304.8);
+        double radiusFeet = (dnMm / 2.0) * MmToFeet;
+        double valueMm = System.Math.Round(radiusFeet * 2.0 * FeetToMm);
 
         Assert.Equal(dnMm, valueMm);
     }

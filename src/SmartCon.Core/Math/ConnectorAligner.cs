@@ -1,50 +1,49 @@
 namespace SmartCon.Core.Math;
 
 /// <summary>
-/// Алгоритм выравнивания двух коннекторов (чистая математика на Vec3).
-/// Вычисляет набор трансформаций (offset + rotations), которые Revit-слой
-/// применяет через ElementTransformUtils.MoveElement / RotateElement.
+/// Alignment algorithm for two connectors (pure math on Vec3).
+/// Computes a set of transforms (offset + rotations) that the Revit layer
+/// applies via ElementTransformUtils.MoveElement / RotateElement.
 /// 
-/// Шаги алгоритма (docs/pipeconnect/algorithms.md):
-/// 1. Перемещение: совместить Origin-ы
-/// 2. Поворот BasisZ: сделать антипараллельными (коннекторы смотрят друг на друга)
-/// 3. Снэп BasisX: округлить угол до ближайшего кратного 15° ("красивый" угол)
-/// 4. Коррекция позиции: после поворотов Origin мог сместиться → пересчёт в Revit-слое
+/// Algorithm steps (docs/pipeconnect/algorithms.md):
+/// 1. Move: align Origins
+/// 2. Rotate BasisZ: make anti-parallel (connectors face each other)
+/// 3. Snap BasisX: round angle to nearest multiple of 15 degrees ("nice" angle)
+/// 4. Position correction: after rotations Origin may have shifted -> recalculate in Revit layer
 /// </summary>
 public static class ConnectorAligner
 {
     /// <summary>
-    /// Шаг снэпа BasisX в градусах. Покрывает 0, 15, 30, 45, 60, 75, 90...
+    /// BasisX snap step in degrees. Covers 0, 15, 30, 45, 60, 75, 90...
     /// </summary>
     public const double BasisXSnapStepDegrees = 15.0;
 
     /// <summary>
-    /// Вычислить набор трансформаций для выравнивания динамического коннектора
-    /// к статическому коннектору.
+    /// Compute a set of transforms to align the dynamic connector to the static connector.
     /// </summary>
-    /// <param name="staticOrigin">Origin статического коннектора</param>
-    /// <param name="staticBasisZ">BasisZ статического коннектора (направление)</param>
-    /// <param name="staticBasisX">BasisX статического коннектора (ориентация)</param>
-    /// <param name="dynamicBasisZ">BasisZ динамического коннектора</param>
-    /// <param name="dynamicBasisX">BasisX динамического коннектора</param>
-    /// <param name="dynamicOrigin">Origin динамического коннектора</param>
+    /// <param name="staticOrigin">Static connector origin</param>
+    /// <param name="staticBasisZ">Static connector BasisZ (direction)</param>
+    /// <param name="staticBasisX">Static connector BasisX (orientation)</param>
+    /// <param name="dynamicBasisZ">Dynamic connector BasisZ</param>
+    /// <param name="dynamicBasisX">Dynamic connector BasisX</param>
+    /// <param name="dynamicOrigin">Dynamic connector origin</param>
     public static AlignmentResult ComputeAlignment(
         Vec3 staticOrigin, Vec3 staticBasisZ, Vec3 staticBasisX,
         Vec3 dynamicOrigin, Vec3 dynamicBasisZ, Vec3 dynamicBasisX)
     {
-        // Шаг 1: вектор перемещения
+        // Step 1: move vector
         var initialOffset = staticOrigin - dynamicOrigin;
 
-        // Шаг 2: поворот BasisZ для антипараллельности
+        // Step 2: rotate BasisZ for anti-parallelism
         var basisZRotation = ComputeBasisZRotation(dynamicBasisZ, staticBasisZ);
 
-        // Если был поворот BasisZ, нужно повернуть и dynamicBasisX
+        // If BasisZ was rotated, dynamicBasisX must also be rotated
         var rotatedDynamicBasisX = basisZRotation is not null
             ? RotateVector(dynamicBasisX, basisZRotation.Axis, basisZRotation.AngleRadians)
             : dynamicBasisX;
 
-        // Шаг 3: снэп BasisX к "красивому" углу
-        // planeNormal = -staticBasisZ (антипараллельное направление — нормаль плоскости коннектора)
+        // Step 3: snap BasisX to a "nice" angle
+        // planeNormal = -staticBasisZ (anti-parallel direction — connector plane normal)
         var basisXSnap = ComputeBasisXSnap(rotatedDynamicBasisX, staticBasisX, staticBasisZ);
 
         return new AlignmentResult
@@ -57,15 +56,15 @@ public static class ConnectorAligner
     }
 
     /// <summary>
-    /// Шаг 2: вычисление поворота для антипараллельности BasisZ.
-    /// Целевой вектор: targetZ = -static.BasisZ.
+    /// Step 2: compute rotation for BasisZ anti-parallelism.
+    /// Target vector: targetZ = -static.BasisZ.
     /// </summary>
     internal static RotationStep? ComputeBasisZRotation(Vec3 dynamicBasisZ, Vec3 staticBasisZ)
     {
         var targetZ = -staticBasisZ;
         var angle = VectorUtils.AngleBetween(dynamicBasisZ, targetZ);
 
-        // Уже антипараллельны
+        // Already anti-parallel
         if (angle < VectorUtils.Tolerance)
         {
             return null;
@@ -73,14 +72,14 @@ public static class ConnectorAligner
 
         Vec3 axis;
 
-        // Сонаправлены (angle ≈ PI между dynamic и target, т.е. dynamic ≈ static)
+        // Co-directional (angle approx PI between dynamic and target, i.e. dynamic approx static)
         if (System.Math.Abs(angle - System.Math.PI) < VectorUtils.Tolerance)
         {
             axis = VectorUtils.FindPerpendicularAxis(dynamicBasisZ);
             return new RotationStep(axis, System.Math.PI);
         }
 
-        // Общий случай: ось = cross(dynamic, target), нормализованная
+        // General case: axis = cross(dynamic, target), normalized
         var cross = VectorUtils.CrossProduct(dynamicBasisZ, targetZ);
         axis = VectorUtils.Normalize(cross);
 
@@ -88,15 +87,15 @@ public static class ConnectorAligner
     }
 
     /// <summary>
-    /// Шаг 3: снэп BasisX к ближайшему "красивому" углу.
-    /// Пропускается если staticBasisZ параллелен глобальной оси Y — в этом случае
-    /// поворот вокруг Y наклоняет элемент из горизонтальной плоскости (визуальный артефакт).
+    /// Step 3: snap BasisX to the nearest "nice" angle.
+    /// Skipped if staticBasisZ is parallel to global Y axis — in that case
+    /// rotation around Y tilts the element out of the horizontal plane (visual artifact).
     /// </summary>
     internal static RotationStep? ComputeBasisXSnap(
         Vec3 dynamicBasisX, Vec3 staticBasisX, Vec3 staticBasisZ)
     {
-        // Если ось вращения (staticBasisZ) параллельна глобальному Y — пропуск.
-        // Вращение вокруг Y наклоняет фитинги (отводы, тройники) из их естественной плоскости.
+        // If rotation axis (staticBasisZ) is parallel to global Y — skip.
+        // Rotation around Y tilts fittings (elbows, tees) out of their natural plane.
         var bzNorm = VectorUtils.Normalize(staticBasisZ);
         var dotWithY = System.Math.Abs(VectorUtils.DotProduct(bzNorm, Vec3.BasisY));
         if (dotWithY > 0.9999)
@@ -111,13 +110,13 @@ public static class ConnectorAligner
             return null;
         }
 
-        // Ось поворота = staticBasisZ (нормаль плоскости коннектора)
+        // Rotation axis = staticBasisZ (connector plane normal)
         return new RotationStep(VectorUtils.Normalize(staticBasisZ), deltaAngle);
     }
 
     /// <summary>
-    /// Поворот вектора вокруг произвольной оси на заданный угол (формула Родрига).
-    /// Используется для предсказания положения dynamicBasisX после поворота BasisZ.
+    /// Rotate a vector around an arbitrary axis by a given angle (Rodrigues' formula).
+    /// Used to predict dynamicBasisX position after BasisZ rotation.
     /// </summary>
     internal static Vec3 RotateVector(Vec3 v, Vec3 axis, double angleRadians)
     {
@@ -133,20 +132,20 @@ public static class ConnectorAligner
     }
 
     /// <summary>
-    /// Вычисляет поворот вокруг оси Z-коннектора (connectorBasisZ), чтобы BasisY
-    /// элемента совпало (или было максимально близко) с глобальной осью Y (0,1,0)
-    /// с квантованием по шагу 15°.
+    /// Computes rotation around the connector Z-axis (connectorBasisZ) so that BasisY
+    /// of the element coincides with (or is closest to) global Y axis (0,1,0)
+    /// with quantization by 15-degree steps.
     ///
-    /// Алгоритм:
-    /// 1. Проецируем текущий elementBasisY в плоскость, перпендикулярную connectorBasisZ.
-    /// 2. Проецируем глобальный Y в ту же плоскость.
-    /// 3. Вычисляем угол от текущей проекции до ближайшего кратного 15° относительно проекции globalY.
+    /// Algorithm:
+    /// 1. Project current elementBasisY onto the plane perpendicular to connectorBasisZ.
+    /// 2. Project global Y onto the same plane.
+    /// 3. Compute angle from current projection to nearest 15-degree multiple relative to globalY projection.
     ///
-    /// Если конфигурация вырождена (BasisZ параллелен глобальному Y), возвращает null.
+    /// Returns null if the configuration is degenerate (BasisZ parallel to global Y).
     /// </summary>
-    /// <param name="connectorBasisZ">Ось Z коннектора (ось вращения)</param>
-    /// <param name="elementBasisY">Текущий BasisY элемента в мировых координатах</param>
-    /// <param name="rotationCenter">Центр вращения (обычно origin static-коннектора)</param>
+    /// <param name="connectorBasisZ">Connector Z-axis (rotation axis)</param>
+    /// <param name="elementBasisY">Current element BasisY in world coordinates</param>
+    /// <param name="rotationCenter">Rotation center (usually static connector origin)</param>
     public static RotationStep? ComputeGlobalYAlignmentSnap(
         Vec3 connectorBasisZ,
         Vec3 elementBasisY,
@@ -154,25 +153,25 @@ public static class ConnectorAligner
     {
         var globalY = Vec3.BasisY; // (0, 1, 0)
 
-        // Проектируем BasisY элемента в плоскость перпендикулярную connectorBasisZ
+        // Project element BasisY onto the plane perpendicular to connectorBasisZ
         var projCurrent = ProjectOntoPlane(elementBasisY, connectorBasisZ);
-        var projTargetY  = ProjectOntoPlane(globalY,      connectorBasisZ);
+        var projTargetY = ProjectOntoPlane(globalY, connectorBasisZ);
 
-        // Если проекция глобального Y вырождается (BasisZ параллелен Y) — нет смысла выравнивать
+        // If global Y projection degenerates (BasisZ parallel to Y) — no alignment possible
         if (VectorUtils.Length(projTargetY) < 1e-6)
             return null;
 
-        // Если текущая проекция вырождается — нет опорного вектора
+        // If current projection degenerates — no reference vector
         if (VectorUtils.Length(projCurrent) < 1e-6)
             return null;
 
         var fromNorm = VectorUtils.Normalize(projCurrent);
-        var toNorm   = VectorUtils.Normalize(projTargetY);
+        var toNorm = VectorUtils.Normalize(projTargetY);
 
-        // Угол от текущего BasisY до globalY в плоскости (−PI, PI]
+        // Angle from current BasisY to globalY in the plane (-PI, PI]
         var currentAngle = VectorUtils.AngleBetweenInPlane(fromNorm, toNorm, connectorBasisZ);
 
-        // Округляем до ближайшего кратного 15°
+        // Round to nearest 15-degree multiple
         var snappedAngle = VectorUtils.RoundToNearestAngle(currentAngle, BasisXSnapStepDegrees);
         var delta = snappedAngle - currentAngle;
 
@@ -183,7 +182,7 @@ public static class ConnectorAligner
     }
 
     /// <summary>
-    /// Проекция вектора v на плоскость с нормалью n (v без компоненты вдоль n).
+    /// Project vector v onto a plane with normal n (v minus its component along n).
     /// </summary>
     private static Vec3 ProjectOntoPlane(Vec3 v, Vec3 n)
     {

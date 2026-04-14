@@ -3,10 +3,10 @@ using Autodesk.Revit.DB;
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Хранилище snapshot-ов элементов цепочки.
-/// Живёт в ViewModel как мутабельное поле (не в immutable контексте).
-/// Snapshot сохраняется ДО операции +, используется при − для отката.
-/// Также отслеживает reducer-ы, вставленные при +, для удаления при −.
+/// Storage of element snapshots for the chain.
+/// Lives in ViewModel as a mutable field (not in immutable context).
+/// Snapshot is saved BEFORE the plus operation, used on minus for rollback.
+/// Also tracks reducers inserted on plus for deletion on minus.
 /// </summary>
 public sealed class NetworkSnapshotStore
 {
@@ -20,8 +20,8 @@ public sealed class NetworkSnapshotStore
         => _snapshots.TryGetValue(elementId.Value, out var s) ? s : null;
 
     /// <summary>
-    /// Запомнить reducer, вставленный при + для элемента.
-    /// Reducer удаляется при − (DecrementChainDepth).
+    /// Track a reducer inserted on plus for an element.
+    /// Reducer is deleted on minus (DecrementChainDepth).
     /// </summary>
     public void TrackReducer(ElementId elementId, ElementId reducerId)
     {

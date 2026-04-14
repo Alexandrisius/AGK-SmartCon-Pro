@@ -5,7 +5,7 @@ using Xunit;
 
 namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
-public class EvaluatorTests
+public sealed class EvaluatorTests
 {
     private static double Eval(string formula, Dictionary<string, double>? vars = null)
     {

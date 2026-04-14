@@ -3,9 +3,9 @@ using SmartCon.Core.Math.FormulaEngine.Ast;
 namespace SmartCon.Core.Math.FormulaEngine;
 
 /// <summary>
-/// Рекурсивный вычислитель AST-дерева формулы Revit.
-/// Все значения — double (Internal Units). Неизвестные переменные → 0.0.
-/// Сравнения → 1.0 (true) / 0.0 (false). IF — ленивое вычисление.
+/// Recursive evaluator of Revit formula AST tree.
+/// All values are double (Internal Units). Unknown variables resolve to 0.0.
+/// Comparisons yield 1.0 (true) / 0.0 (false). IF uses lazy evaluation.
 /// </summary>
 internal static class Evaluator
 {
@@ -34,7 +34,7 @@ internal static class Evaluator
 
             FunctionCallNode f => EvaluateFunction(f, variables),
 
-            // size_lookup → 0.0 в чистом парсере (lookup выполняется на уровне Revit)
+            // size_lookup -> 0.0 in pure parser (lookup is performed at Revit level)
             SizeLookupNode => 0.0,
 
             _ => throw new FormulaParseException($"Unknown AST node type: {node.GetType().Name}")
@@ -72,9 +72,9 @@ internal static class Evaluator
 
     private static double EvaluateFunction(FunctionCallNode f, IReadOnlyDictionary<string, double> vars)
     {
-        var name = f.Name; // уже lowercase из Parser
+        var name = f.Name; // already lowercase from Parser
 
-        // Логические
+        // Logical
         if (name == "and")
         {
             foreach (var arg in f.Args)
@@ -93,30 +93,30 @@ internal static class Evaluator
             return System.Math.Abs(Evaluate(f.Args[0], vars)) < Epsilon ? 1.0 : 0.0;
         }
 
-        // Одноаргументные
+        // Single-argument
         if (f.Args.Count >= 1)
         {
             double a = Evaluate(f.Args[0], vars);
 
             switch (name)
             {
-                case "sin":       return System.Math.Sin(a);
-                case "cos":       return System.Math.Cos(a);
-                case "tan":       return System.Math.Tan(a);
-                case "asin":      return System.Math.Asin(a);
-                case "acos":      return System.Math.Acos(a);
-                case "atan":      return System.Math.Atan(a);
-                case "abs":       return System.Math.Abs(a);
-                case "sqrt":      return System.Math.Sqrt(a);
-                case "round":     return System.Math.Round(a, MidpointRounding.AwayFromZero);
-                case "roundup":   return System.Math.Ceiling(a);
+                case "sin": return System.Math.Sin(a);
+                case "cos": return System.Math.Cos(a);
+                case "tan": return System.Math.Tan(a);
+                case "asin": return System.Math.Asin(a);
+                case "acos": return System.Math.Acos(a);
+                case "atan": return System.Math.Atan(a);
+                case "abs": return System.Math.Abs(a);
+                case "sqrt": return System.Math.Sqrt(a);
+                case "round": return System.Math.Round(a, MidpointRounding.AwayFromZero);
+                case "roundup": return System.Math.Ceiling(a);
                 case "rounddown": return System.Math.Floor(a);
-                case "log":       return System.Math.Log10(a);
-                case "ln":        return System.Math.Log(a);
-                case "exp":       return System.Math.Exp(a);
+                case "log": return System.Math.Log10(a);
+                case "ln": return System.Math.Log(a);
+                case "exp": return System.Math.Exp(a);
             }
 
-            // Двуаргументные
+            // Two-argument
             if (f.Args.Count >= 2)
             {
                 double b = Evaluate(f.Args[1], vars);
@@ -128,7 +128,7 @@ internal static class Evaluator
             }
         }
 
-        // Неизвестная функция → 0
+        // Unknown function -> 0
         return 0.0;
     }
 
@@ -136,16 +136,16 @@ internal static class Evaluator
 
     private static double ResolveVariable(string name, IReadOnlyDictionary<string, double> variables)
     {
-        // Точное совпадение
+        // Exact match
         if (variables.TryGetValue(name, out double val))
             return val;
 
-        // Case-insensitive поиск
+        // Case-insensitive search
         foreach (var kv in variables)
             if (string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase))
                 return kv.Value;
 
-        // Неизвестная переменная → 0.0 (совместимость с MiniFormulaSolver)
+        // Unknown variable -> 0.0 (compatibility with MiniFormulaSolver)
         return 0.0;
     }
 }

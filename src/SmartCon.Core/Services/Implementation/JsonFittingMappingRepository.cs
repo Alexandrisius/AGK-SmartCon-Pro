@@ -6,8 +6,8 @@ using SmartCon.Core.Services.Interfaces;
 namespace SmartCon.Core.Services.Implementation;
 
 /// <summary>
-/// Хранение типов коннекторов и правил маппинга в JSON-файле AppData.
-/// Путь: %APPDATA%\AGK\SmartCon\connector-mapping.json
+/// Stores connector types and mapping rules in a JSON file in AppData.
+/// Path: %APPDATA%\AGK\SmartCon\connector-mapping.json
 /// </summary>
 public sealed class JsonFittingMappingRepository : IFittingMappingRepository
 {
@@ -58,7 +58,7 @@ public sealed class JsonFittingMappingRepository : IFittingMappingRepository
         root.ConnectorTypes = types
             .Select(t => new ConnectorTypeDto { Code = t.Code, Name = t.Name, Description = t.Description })
             .ToList();
-        // Сохраняем и правила тоже — не перетираем их
+        // Save rules too — do not overwrite them
         if (root.MappingRules == null || root.MappingRules.Count == 0)
             root.MappingRules = [];
         WriteFile(root);
@@ -145,7 +145,7 @@ public sealed class JsonFittingMappingRepository : IFittingMappingRepository
         File.WriteAllText(_filePath, json);
     }
 
-    // ── DTO-классы для сериализации ────────────────────────────────────────
+    // ── DTO classes for serialization ────────────────────────────────────────
 
     private sealed class MappingFileRoot
     {

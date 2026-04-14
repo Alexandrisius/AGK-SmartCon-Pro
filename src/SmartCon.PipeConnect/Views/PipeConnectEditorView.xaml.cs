@@ -34,7 +34,7 @@ public partial class PipeConnectEditorView : Window
 
         const double winW = 520;
         const double winH = 420;
-        const double gap  = 40;
+        const double gap = 40;
 
         var wa = SystemParameters.WorkArea;
 
@@ -44,11 +44,11 @@ public partial class PipeConnectEditorView : Window
 
         double top = pt.Y - winH / 3.0;
 
-        left = Math.Max(wa.Left, Math.Min(left, wa.Right  - winW));
-        top  = Math.Max(wa.Top,  Math.Min(top,  wa.Bottom - winH));
+        left = Math.Max(wa.Left, Math.Min(left, wa.Right - winW));
+        top = Math.Max(wa.Top, Math.Min(top, wa.Bottom - winH));
 
         WindowStartupLocation = WindowStartupLocation.Manual;
         Left = left;
-        Top  = top;
+        Top = top;
     }
 }

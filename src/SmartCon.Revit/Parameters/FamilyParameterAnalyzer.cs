@@ -37,7 +37,7 @@ internal static class FamilyParameterAnalyzer
     {
         // 1. Найти ConnectorElement по ближайшему origin (аналогично RevitFamilyConnectorService)
         SmartConLogger.LookupSection("FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam");
-        SmartConLogger.Lookup($"  targetOriginGlobal=({targetOriginGlobal.X:F4}, {targetOriginGlobal.Y:F4}, {targetOriginGlobal.Z:F4})");
+        SmartConLogger.Debug($"  targetOriginGlobal=({targetOriginGlobal.X:F4}, {targetOriginGlobal.Y:F4}, {targetOriginGlobal.Z:F4})");
 
         var connElems = new FilteredElementCollector(familyDoc)
             .OfCategory(BuiltInCategory.OST_ConnectorElem)
@@ -45,11 +45,11 @@ internal static class FamilyParameterAnalyzer
             .Cast<ConnectorElement>()
             .ToList();
 
-        SmartConLogger.Lookup($"  ConnectorElement в семействе: {connElems.Count}");
+        SmartConLogger.Debug($"  ConnectorElement in family: {connElems.Count}");
 
         if (connElems.Count == 0)
         {
-            SmartConLogger.Lookup("  Нет ConnectorElement → return default");
+            SmartConLogger.Debug("  No ConnectorElement → return default");
             return default;
         }
 
@@ -66,7 +66,7 @@ internal static class FamilyParameterAnalyzer
         if (facingFlipped)
             targetOriginLocal = new XYZ(targetOriginLocal.X, -targetOriginLocal.Y, targetOriginLocal.Z);
         if (handFlipped || facingFlipped)
-            SmartConLogger.Lookup($"  flip-corrected targetOriginLocal=({targetOriginLocal.X:F4}, {targetOriginLocal.Y:F4}, {targetOriginLocal.Z:F4})");
+            SmartConLogger.Debug($"  flip-corrected targetOriginLocal=({targetOriginLocal.X:F4}, {targetOriginLocal.Y:F4}, {targetOriginLocal.Z:F4})");
         var targetLen = targetOriginLocal.GetLength();
         var targetDir = targetLen > 1e-6 ? targetOriginLocal.Divide(targetLen) : null;
 
@@ -76,7 +76,7 @@ internal static class FamilyParameterAnalyzer
         foreach (var ce in connElems)
         {
             var globalOrigin = instanceTransform.OfPoint(ce.Origin);
-            var distLocal    = (ce.Origin - targetOriginLocal).GetLength();
+            var distLocal = (ce.Origin - targetOriginLocal).GetLength();
             double score;
             if (distLocal < 0.001)
             {
@@ -90,15 +90,15 @@ internal static class FamilyParameterAnalyzer
             {
                 score = -distLocal;
             }
-            SmartConLogger.Lookup($"  ConnElem id={ce.Id.Value}: localOrigin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}), globalOrigin=({globalOrigin.X:F4},{globalOrigin.Y:F4},{globalOrigin.Z:F4}), distLocal={distLocal:F4} score={score:F4}");
+            SmartConLogger.Debug($"  ConnElem id={ce.Id.Value}: localOrigin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}), globalOrigin=({globalOrigin.X:F4},{globalOrigin.Y:F4},{globalOrigin.Z:F4}), distLocal={distLocal:F4} score={score:F4}");
             if (score > bestScore) { bestScore = score; targetConnElem = ce; }
         }
 
-        SmartConLogger.Lookup($"  Лучший ConnectorElement: id={targetConnElem?.Id.Value}, bestScore={bestScore:F4} (мин. 0.99)");
+        SmartConLogger.Debug($"  Best ConnectorElement: id={targetConnElem?.Id.Value}, bestScore={bestScore:F4} (min 0.99)");
 
         if (targetConnElem is null || bestScore < 0.99)
         {
-            SmartConLogger.Lookup($"  ВНИМАНИЕ: коннектор не найден или score слишком мал ({bestScore:F4} < 0.99) → return default");
+            SmartConLogger.Debug($"  WARNING: connector not found or score too low ({bestScore:F4} < 0.99) → return default");
             SmartConLogger.Warn($"[FPA] Target connector not found or score too low ({bestScore:F4})");
             return default;
         }
@@ -107,22 +107,22 @@ internal static class FamilyParameterAnalyzer
         var radiusParam = targetConnElem.get_Parameter(BuiltInParameter.CONNECTOR_RADIUS);
         if (radiusParam is null)
         {
-            SmartConLogger.Lookup($"  ВНИМАНИЕ: CONNECTOR_RADIUS param не найден на ConnectorElement id={targetConnElem.Id.Value} → return default");
+            SmartConLogger.Debug($"  WARNING: CONNECTOR_RADIUS param not found on ConnectorElement id={targetConnElem.Id.Value} → return default");
             return default;
         }
 
-        SmartConLogger.Lookup($"  CONNECTOR_RADIUS: Id={radiusParam.Id.Value}, Value={radiusParam.AsDouble():F6} ft");
+        SmartConLogger.Debug($"  CONNECTOR_RADIUS: Id={radiusParam.Id.Value}, Value={radiusParam.AsDouble():F6} ft");
 
         // Также принимаем CONNECTOR_DIAMETER — FamilyParameter 'DN' обычно управляет диаметром
         var diamParam = targetConnElem.get_Parameter(BuiltInParameter.CONNECTOR_DIAMETER);
-        SmartConLogger.Lookup($"  CONNECTOR_DIAMETER: Id={diamParam?.Id.Value.ToString() ?? "null"}, Value={diamParam?.AsDouble():F6} ft");
+        SmartConLogger.Debug($"  CONNECTOR_DIAMETER: Id={diamParam?.Id.Value.ToString() ?? "null"}, Value={diamParam?.AsDouble():F6} ft");
 
         // 3. Найти FamilyParameter чьи AssociatedParameters включают radiusParam/diamParam на targetConnElem
         var fm = familyDoc.FamilyManager;
-        FamilyParameter? directFp   = null;
+        FamilyParameter? directFp = null;
         bool foundViaDiameter = false;
 
-        SmartConLogger.Lookup($"  Перебор FamilyParameter (кол-во: {fm.Parameters.Size}) для поиска AssociatedParameters:");
+        SmartConLogger.Debug($"  Iterating FamilyParameter (count: {fm.Parameters.Size}) to find AssociatedParameters:");
 
         foreach (FamilyParameter fp in fm.Parameters)
         {
@@ -131,33 +131,33 @@ internal static class FamilyParameterAnalyzer
                 // AssociatedParameters возвращает параметры elements в семействе,
                 // ассоциированные с этим FamilyParameter
                 var assocParams = fp.AssociatedParameters;
-                int assocCount  = 0;
-                try { assocCount = assocParams.Size; } catch { }
+                int assocCount = 0;
+                try { assocCount = assocParams.Size; } catch { /* Intentional: COM ParameterSet may be corrupted */ }
 
                 if (assocCount > 0)
-                    SmartConLogger.Lookup($"    FP '{fp.Definition?.Name}': formula='{fp.Formula}', isInstance={fp.IsInstance}, associatedCount={assocCount}");
+                    SmartConLogger.Debug($"    FP '{fp.Definition?.Name}': formula='{fp.Formula}', isInstance={fp.IsInstance}, associatedCount={assocCount}");
 
                 foreach (Parameter assoc in assocParams)
                 {
-                    bool idMatch   = assoc.Id == radiusParam.Id
+                    bool idMatch = assoc.Id == radiusParam.Id
                                    || (diamParam is not null && assoc.Id == diamParam.Id);
                     bool elemMatch = assoc.Element?.Id == targetConnElem.Id;
 
                     if (assocCount > 0)
-                        SmartConLogger.Lookup($"      assoc.Id={assoc.Id.Value}, radiusParam.Id={radiusParam.Id.Value}, diamParam.Id={diamParam?.Id.Value.ToString() ?? "null"}, idMatch={idMatch} | assoc.Element.Id={assoc.Element?.Id.Value}, targetConn.Id={targetConnElem.Id.Value}, elemMatch={elemMatch}");
+                        SmartConLogger.Debug($"      assoc.Id={assoc.Id.Value}, radiusParam.Id={radiusParam.Id.Value}, diamParam.Id={diamParam?.Id.Value.ToString() ?? "null"}, idMatch={idMatch} | assoc.Element.Id={assoc.Element?.Id.Value}, targetConn.Id={targetConnElem.Id.Value}, elemMatch={elemMatch}");
 
                     if (idMatch && elemMatch)
                     {
-                        directFp         = fp;
+                        directFp = fp;
                         foundViaDiameter = (diamParam is not null && assoc.Id == diamParam.Id);
-                        SmartConLogger.Lookup($"      ✓ НАЙДЕНО! directFp='{fp.Definition?.Name}', foundViaDiameter={foundViaDiameter}");
+                        SmartConLogger.Debug($"      ✓ FOUND! directFp='{fp.Definition?.Name}', foundViaDiameter={foundViaDiameter}");
                         break;
                     }
                 }
             }
             catch (Exception ex)
             {
-                SmartConLogger.Lookup($"    FP '{fp.Definition?.Name}': AssociatedParameters ИСКЛЮЧЕНИЕ: {ex.GetType().Name}: {ex.Message}");
+                SmartConLogger.Debug($"    FP '{fp.Definition?.Name}': AssociatedParameters EXCEPTION: {ex.GetType().Name}: {ex.Message}");
                 SmartConLogger.Warn($"[FPA] AssociatedParameters error for '{fp.Definition?.Name}': {ex.Message}");
             }
 
@@ -166,27 +166,27 @@ internal static class FamilyParameterAnalyzer
 
         if (directFp is null)
         {
-            SmartConLogger.Lookup("  ВНИМАНИЕ: FamilyParameter для CONNECTOR_RADIUS/DIAMETER не найден в AssociatedParameters → return default");
+            SmartConLogger.Debug("  WARNING: FamilyParameter for CONNECTOR_RADIUS/DIAMETER not found in AssociatedParameters → return default");
             SmartConLogger.Warn("[FPA] No FamilyParameter found for CONNECTOR_RADIUS/DIAMETER");
             return default;
         }
 
-        var directName   = directFp.Definition?.Name ?? string.Empty;
+        var directName = directFp.Definition?.Name ?? string.Empty;
         var directIsInst = directFp.IsInstance;
-        var formula      = directFp.Formula;
+        var formula = directFp.Formula;
 
         if (string.IsNullOrEmpty(directName))
         {
-            SmartConLogger.Lookup("  directName пустой → return default");
+            SmartConLogger.Debug("  directName is empty → return default");
             return default;
         }
 
-        SmartConLogger.Lookup($"  directParam='{directName}', isInstance={directIsInst}, formula='{formula}'");
+        SmartConLogger.Debug($"  directParam='{directName}', isInstance={directIsInst}, formula='{formula}'");
 
         // 4. Нет формулы → прямой параметр
         if (string.IsNullOrWhiteSpace(formula))
         {
-            SmartConLogger.Lookup($"  → Нет формулы → return ('{directName}', null, null, {directIsInst}, isDiameter={foundViaDiameter})");
+            SmartConLogger.Debug($"  → No formula → return ('{directName}', null, null, {directIsInst}, isDiameter={foundViaDiameter})");
             return (directName, null, null, directIsInst, foundViaDiameter);
         }
 
@@ -196,7 +196,7 @@ internal static class FamilyParameterAnalyzer
         //     Без этого generic search ниже выбирает BP_LookupTable (имя таблицы, longest-first)
         //     вместо реального query-параметра (DN_test_2, BP_NominalDiameter и т.д.).
         string? rootParamName = null;
-        bool    rootIsInst    = directIsInst;
+        bool rootIsInst = directIsInst;
 
         try
         {
@@ -204,16 +204,16 @@ internal static class FamilyParameterAnalyzer
             if (sizeLookup is not null && sizeLookup.Value.QueryParameters.Count > 0)
             {
                 var queryName = sizeLookup.Value.QueryParameters[0];
-                var queryFp   = FindFamilyParameter(fm, queryName);
+                var queryFp = FindFamilyParameter(fm, queryName);
                 if (queryFp is not null)
                 {
                     rootParamName = queryName;
-                    rootIsInst    = queryFp.IsInstance;
-                    SmartConLogger.Lookup($"    → rootParam из size_lookup query[0]: '{rootParamName}', isInstance={rootIsInst}");
+                    rootIsInst = queryFp.IsInstance;
+                    SmartConLogger.Debug($"    → rootParam from size_lookup query[0]: '{rootParamName}', isInstance={rootIsInst}");
                 }
                 else
                 {
-                    SmartConLogger.Lookup($"    → size_lookup query[0]='{queryName}' но FamilyParameter не найден, fallback на generic search");
+                    SmartConLogger.Debug($"    → size_lookup query[0]='{queryName}' but FamilyParameter not found, fallback to generic search");
                 }
             }
         }
@@ -228,33 +228,33 @@ internal static class FamilyParameterAnalyzer
         if (rootParamName is null)
         {
 
-        var candidates = new List<(string Name, FamilyParameter Fp)>();
-        foreach (FamilyParameter candidate in fm.Parameters)
-        {
-            var candidateName = candidate.Definition?.Name;
-            if (!string.IsNullOrEmpty(candidateName) &&
-                !string.Equals(candidateName, directName, StringComparison.OrdinalIgnoreCase))
-                candidates.Add((candidateName, candidate));
-        }
-        candidates.Sort((a, b) => b.Name.Length.CompareTo(a.Name.Length));
+            var candidates = new List<(string Name, FamilyParameter Fp)>();
+            foreach (FamilyParameter candidate in fm.Parameters)
+            {
+                var candidateName = candidate.Definition?.Name;
+                if (!string.IsNullOrEmpty(candidateName) &&
+                    !string.Equals(candidateName, directName, StringComparison.OrdinalIgnoreCase))
+                    candidates.Add((candidateName, candidate));
+            }
+            candidates.Sort((a, b) => b.Name.Length.CompareTo(a.Name.Length));
 
-        SmartConLogger.Lookup($"  Поиск rootParam в формуле '{formula}' (кандидатов: {candidates.Count}):");
+            SmartConLogger.Debug($"  Searching rootParam in formula '{formula}' (candidates: {candidates.Count}):");
 
-        foreach (var (name, candidateFp) in candidates)
-        {
-            if (!ContainsParamReference(formula, name)) continue;
-            rootParamName = name;
-            rootIsInst    = candidateFp.IsInstance;
-            SmartConLogger.Lookup($"    → rootParam='{rootParamName}', isInstance={rootIsInst}");
-            break;
-        }
+            foreach (var (name, candidateFp) in candidates)
+            {
+                if (!ContainsParamReference(formula, name)) continue;
+                rootParamName = name;
+                rootIsInst = candidateFp.IsInstance;
+                SmartConLogger.Debug($"    → rootParam='{rootParamName}', isInstance={rootIsInst}");
+                break;
+            }
 
-        if (rootParamName is null)
-            SmartConLogger.Lookup("    → rootParam не найден");
+            if (rootParamName is null)
+                SmartConLogger.Debug("    → rootParam not found");
 
         } // end if (rootParamName is null) — generic fallback block
 
-        SmartConLogger.Lookup($"  → return ('{directName}', '{rootParamName}', '{formula}', {rootIsInst}, isDiameter={foundViaDiameter})");
+        SmartConLogger.Debug($"  → return ('{directName}', '{rootParamName}', '{formula}', {rootIsInst}, isDiameter={foundViaDiameter})");
         return (directName, rootParamName, formula, rootIsInst, foundViaDiameter);
     }
 
@@ -269,7 +269,7 @@ internal static class FamilyParameterAnalyzer
         int idx = 0;
         while ((idx = formula.IndexOf(paramName, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
         {
-            bool leftOk  = idx == 0 || !IsIdentChar(formula[idx - 1]);
+            bool leftOk = idx == 0 || !IsIdentChar(formula[idx - 1]);
             bool rightOk = idx + paramName.Length >= formula.Length
                         || !IsIdentChar(formula[idx + paramName.Length]);
             if (leftOk && rightOk) return true;

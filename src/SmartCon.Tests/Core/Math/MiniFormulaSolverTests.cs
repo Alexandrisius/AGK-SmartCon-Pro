@@ -228,8 +228,8 @@ public sealed class MiniFormulaSolverTests
         var r = FormulaSolver.ParseSizeLookupStatic(
             "size_lookup(\"Table1\", radius, \"DN50\", diameter)");
         Assert.NotNull(r);
-        Assert.Equal("Table1",   r!.Value.TableName);
-        Assert.Equal("radius",   r.Value.TargetParameter);
+        Assert.Equal("Table1", r!.Value.TableName);
+        Assert.Equal("radius", r.Value.TargetParameter);
         Assert.Single(r.Value.QueryParameters);
         Assert.Equal("diameter", r.Value.QueryParameters[0]);
     }
@@ -243,8 +243,8 @@ public sealed class MiniFormulaSolverTests
         Assert.Equal("MyTable", r!.Value.TableName);
         Assert.Equal("outParam", r.Value.TargetParameter);
         Assert.Equal(3, r.Value.QueryParameters.Count);
-        Assert.Equal("DN",   r.Value.QueryParameters[0]);
-        Assert.Equal("PN",   r.Value.QueryParameters[1]);
+        Assert.Equal("DN", r.Value.QueryParameters[0]);
+        Assert.Equal("PN", r.Value.QueryParameters[1]);
         Assert.Equal("Type", r.Value.QueryParameters[2]);
     }
 
@@ -270,9 +270,9 @@ public sealed class MiniFormulaSolverTests
     public void ParseSizeLookup_CaseInsensitive()
     {
         var r = FormulaSolver.ParseSizeLookupStatic(
-            "SIZE_LOOKUP(\"T1\", R, \"def\", param1)"  );
+            "SIZE_LOOKUP(\"T1\", R, \"def\", param1)");
         Assert.NotNull(r);
-        Assert.Equal("T1",     r!.Value.TableName);
+        Assert.Equal("T1", r!.Value.TableName);
         Assert.Equal("param1", r.Value.QueryParameters[0]);
     }
 

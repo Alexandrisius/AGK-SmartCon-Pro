@@ -5,7 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
     <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+    <!-- All CA code-analysis warnings remain warnings (not errors) during refactoring. -->
+    <NoWarn>$(NoWarn);CA1001;CA1010;CA1305;CA1310;CA1707;CA1711;CA1716;CA1805;CA1822;CA1851;CA1852;CA1854;CA1859;CA1860;CA1861;CA1862;CA1866;CA1869</NoWarn>
     <Company>AGK</Company>
     <Product>SmartCon</Product>
     <Copyright>Copyright © AGK 2026</Copyright>

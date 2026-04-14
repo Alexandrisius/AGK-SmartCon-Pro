@@ -1,8 +1,8 @@
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Расширенное правило маппинга: пара типов коннекторов -> список семейств фитингов.
-/// Хранится в JSON (AppData). Загружается через IFittingMappingRepository.
+/// Extended mapping rule: pair of connector types -> list of fitting families.
+/// Stored in JSON (AppData). Loaded via IFittingMappingRepository.
 /// </summary>
 public sealed record FittingMappingRule
 {
@@ -12,9 +12,9 @@ public sealed record FittingMappingRule
     public List<FittingMapping> FittingFamilies { get; init; } = [];
 
     /// <summary>
-    /// Семейства фитингов-переходников сечения для случая когда FromType == ToType,
-    /// но радиусы коннекторов различаются. Если пуст — система попытается использовать
-    /// фитинги из FittingFamilies как переходники.
+    /// Reducer fitting families for the case when FromType == ToType,
+    /// but connector radii differ. If empty, the system will try to use
+    /// families from FittingFamilies as reducers.
     /// </summary>
     public List<FittingMapping> ReducerFamilies { get; init; } = [];
 }

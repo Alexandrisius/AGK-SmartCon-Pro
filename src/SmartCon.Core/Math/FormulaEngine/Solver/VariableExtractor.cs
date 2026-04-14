@@ -3,8 +3,8 @@ using SmartCon.Core.Math.FormulaEngine.Ast;
 namespace SmartCon.Core.Math.FormulaEngine.Solver;
 
 /// <summary>
-/// Извлечение всех переменных из AST-дерева формулы.
-/// Отличает переменные от функций (функции = FunctionCallNode/IfNode/SizeLookupNode).
+/// Extracts all variables from a formula AST tree.
+/// Distinguishes variables from functions (functions = FunctionCallNode/IfNode/SizeLookupNode).
 /// </summary>
 internal static class VariableExtractor
 {
@@ -43,13 +43,13 @@ internal static class VariableExtractor
                     Collect(arg, vars);
                 break;
 
-            // SizeLookupNode query-параметры — это тоже переменные
+            // SizeLookupNode query parameters are variables too
             case SizeLookupNode sl:
                 foreach (var qp in sl.QueryParameters)
                     vars.Add(qp);
                 break;
 
-            // NumberNode — ничего
+                // NumberNode — nothing
         }
     }
 }

@@ -1,11 +1,11 @@
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Обновление контекста Revit.
-/// Вызывается из IExternalCommand.Execute() и IExternalEventHandler.Execute()
-/// перед любой работой с IRevitContext.
-/// Отделён от IRevitContext по ISP (Interface Segregation Principle).
-/// Параметр object — чтобы Core не зависел от RevitAPIUI (I-09). Передавать UIApplication.
+/// Revit context update.
+/// Called from IExternalCommand.Execute() and IExternalEventHandler.Execute()
+/// before any work with IRevitContext.
+/// Separated from IRevitContext per ISP (Interface Segregation Principle).
+/// Parameter is object so Core does not depend on RevitAPIUI (I-09). Pass UIApplication.
 /// </summary>
 public interface IRevitContextWriter
 {

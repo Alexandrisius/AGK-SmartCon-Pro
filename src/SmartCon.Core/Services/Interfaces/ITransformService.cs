@@ -4,30 +4,30 @@ using SmartCon.Core.Math;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Трансформация элементов: перемещение и поворот.
-/// Работает с Vec3 на границе Core→Revit (конвертация Vec3↔XYZ внутри реализации).
-/// Реализация: SmartCon.Revit/Transform/RevitTransformService.cs
+/// Element transformation: move and rotate.
+/// Works with Vec3 at the Core-Revit boundary (Vec3-to-XYZ conversion inside implementation).
+/// Implementation: SmartCon.Revit/Transform/RevitTransformService.cs
 /// </summary>
 public interface ITransformService
 {
     /// <summary>
-    /// Переместить элемент на вектор offset.
+    /// Move element by offset vector.
     /// </summary>
     void MoveElement(Document doc, ElementId elementId, Vec3 offset);
 
     /// <summary>
-    /// Повернуть элемент вокруг оси (определяемой точкой и направлением) на угол в радианах.
+    /// Rotate element around an axis (defined by point and direction) by angle in radians.
     /// </summary>
     void RotateElement(Document doc, ElementId elementId,
         Vec3 axisOrigin, Vec3 axisDirection, double angleRadians);
 
     /// <summary>
-    /// Переместить набор элементов на вектор offset.
+    /// Move a set of elements by offset vector.
     /// </summary>
     void MoveElements(Document doc, ICollection<ElementId> elementIds, Vec3 offset);
 
     /// <summary>
-    /// Повернуть набор элементов вокруг оси на угол.
+    /// Rotate a set of elements around an axis by an angle.
     /// </summary>
     void RotateElements(Document doc, ICollection<ElementId> elementIds,
         Vec3 axisOrigin, Vec3 axisDirection, double angleRadians);

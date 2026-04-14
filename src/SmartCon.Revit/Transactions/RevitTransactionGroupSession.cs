@@ -19,11 +19,11 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
 
     internal RevitTransactionGroupSession(Document doc, string name)
     {
-        _doc   = doc;
-        _name  = name;
+        _doc = doc;
+        _name = name;
         _group = new TransactionGroup(doc, name);
         _group.Start();
-        SmartConLogger.Info($"[TxGroup] Начата группа '{name}'");
+        SmartConLogger.Info($"[TxGroup] Group started '{name}'");
     }
 
     public bool IsActive => !_disposed && _group.HasStarted();
@@ -33,7 +33,7 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
         if (!IsActive)
             throw new InvalidOperationException("TransactionGroup сессия уже завершена.");
 
-        SmartConLogger.Info($"[TxGroup] Транзакция '{name}' внутри '{_name}'");
+        SmartConLogger.Info($"[TxGroup] Transaction '{name}' inside '{_name}'");
         using var tx = new Transaction(_doc, name);
         var options = tx.GetFailureHandlingOptions();
         options.SetFailuresPreprocessor(new SmartConFailurePreprocessor());
@@ -44,12 +44,12 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
             tx.Start();
             action(_doc);
             tx.Commit();
-            SmartConLogger.Info($"[TxGroup] Транзакция '{name}' закоммичена");
+            SmartConLogger.Info($"[TxGroup] Transaction '{name}' committed");
         }
         catch
         {
             if (tx.HasStarted()) tx.RollBack();
-            SmartConLogger.Info($"[TxGroup] Транзакция '{name}' откачена");
+            SmartConLogger.Info($"[TxGroup] Transaction '{name}' rolled back");
             throw;
         }
     }
@@ -59,7 +59,7 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
         if (!IsActive) return;
         _group.Assimilate();
         _disposed = true;
-        SmartConLogger.Info($"[TxGroup] Группа '{_name}' ассимилирована (одна undo-запись)");
+        SmartConLogger.Info($"[TxGroup] Group '{_name}' assimilated (single undo record)");
     }
 
     public void RollBack()
@@ -67,7 +67,7 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
         if (!IsActive) return;
         _group.RollBack();
         _disposed = true;
-        SmartConLogger.Info($"[TxGroup] Группа '{_name}' откачена (полный откат)");
+        SmartConLogger.Info($"[TxGroup] Group '{_name}' rolled back (full rollback)");
     }
 
     public void Dispose()
@@ -76,7 +76,7 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
         if (_group.HasStarted())
         {
             _group.RollBack();
-            SmartConLogger.Info($"[TxGroup] Группа '{_name}' откачена в Dispose (безопасный откат)");
+            SmartConLogger.Info($"[TxGroup] Group '{_name}' rolled back in Dispose (safe rollback)");
         }
         _group.Dispose();
         _disposed = true;

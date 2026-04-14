@@ -4,7 +4,7 @@ using Xunit;
 
 namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
-public class SizeLookupParserTests
+public sealed class SizeLookupParserTests
 {
     private static readonly FormulaSolver Solver = new();
 

@@ -3,22 +3,22 @@ using SmartCon.Core.Math.FormulaEngine.Ast;
 namespace SmartCon.Core.Math.FormulaEngine;
 
 /// <summary>
-/// Извлечение метаданных size_lookup из AST-дерева.
-/// Рекурсивно ищет SizeLookupNode во всех ветках (включая внутри IF).
+/// Extracts size_lookup metadata from the AST tree.
+/// Recursively finds SizeLookupNode in all branches (including inside IF).
 /// 
-/// TODO [Фаза 6B — Multi-Column LookupTable]:
-/// Текущий метод FindFirst находит ОДИН SizeLookupNode.
-/// Для мультиколоночного подбора нужен FindAll — собрать ВСЕ SizeLookupNode
-/// из ВСЕХ формул семейства, чтобы построить полный маппинг:
-///   столбец CSV → параметр семейства → коннектор элемента.
-/// Это позволит фильтровать строки CSV по комбинациям DN нескольких коннекторов.
-/// См. эскиз: ILookupTableService.GetAllRows / FilterRows / GetNearestValidCombination.
+/// TODO [Phase 6B — Multi-Column LookupTable]:
+/// Current FindFirst method finds ONE SizeLookupNode.
+/// For multi-column selection, FindAll is needed — collect ALL SizeLookupNode
+/// from ALL family formulas to build a complete mapping:
+///   CSV column -> family parameter -> element connector.
+/// This enables filtering CSV rows by combinations of DN across multiple connectors.
+/// See sketch: ILookupTableService.GetAllRows / FilterRows / GetNearestValidCombination.
 /// </summary>
 internal static class SizeLookupParser
 {
     /// <summary>
-    /// Найти первый SizeLookupNode в AST (включая внутри IF-веток).
-    /// Возвращает null если size_lookup не найден.
+    /// Find the first SizeLookupNode in AST (including inside IF branches).
+    /// Returns null if no size_lookup found.
     /// </summary>
     internal static SizeLookupNode? FindFirst(AstNode node)
     {
@@ -34,10 +34,10 @@ internal static class SizeLookupParser
     }
 
     /// <summary>
-    /// Найти ВСЕ SizeLookupNode в AST (для будущего мультиколоночного парсинга).
+    /// Find ALL SizeLookupNode in AST (for future multi-column parsing).
     /// 
-    /// TODO [Фаза 6B]: Использовать в связке с анализом всех FamilyParameter.Formula
-    /// для построения полной карты: {tableName → [{columnIndex, parameterName, connectorIndex}]}.
+    /// TODO [Phase 6B]: Use together with analysis of all FamilyParameter.Formula
+    /// to build a complete map: {tableName -> [{columnIndex, parameterName, connectorIndex}]}.
     /// </summary>
     internal static List<SizeLookupNode> FindAll(AstNode node)
     {

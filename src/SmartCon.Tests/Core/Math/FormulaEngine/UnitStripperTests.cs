@@ -3,7 +3,7 @@ using Xunit;
 
 namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
-public class UnitStripperTests
+public sealed class UnitStripperTests
 {
     [Theory]
     [InlineData("DN < 50 mm", "DN < 50")]

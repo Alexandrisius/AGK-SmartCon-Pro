@@ -1,13 +1,13 @@
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Алгоритмы автоугадывания CTC для фитингов и reducer-ов.
-/// Чистая логика без Revit API — тестируется unit-тестами.
+/// Auto-guessing algorithms for CTC (ConnectionTypeCode) of fittings and reducers.
+/// Pure logic without Revit API — tested via unit tests.
 /// </summary>
 public static class CtcGuesser
 {
     /// <summary>
-    /// Проверить, могут ли два CTC соединяться напрямую по IsDirectConnect rules.
+    /// Check whether two CTCs can connect directly via IsDirectConnect rules.
     /// </summary>
     public static bool CanDirectConnect(
         ConnectionTypeCode left, ConnectionTypeCode right,
@@ -26,8 +26,8 @@ public static class CtcGuesser
     }
 
     /// <summary>
-    /// Найти CTC, который имеет прямой коннект (IsDirectConnect=true) с заданным CTC.
-    /// Если найдено несколько — возвращает первый. Если не найдено — Undefined.
+    /// Find the CTC that has a direct connection (IsDirectConnect=true) with the given CTC.
+    /// If multiple found — returns the first. If none found — Undefined.
     /// </summary>
     public static ConnectionTypeCode FindDirectConnectCounterpart(
         ConnectionTypeCode ctc, IReadOnlyList<FittingMappingRule> rules)
@@ -44,21 +44,21 @@ public static class CtcGuesser
     }
 
     /// <summary>
-    /// Автоугадывание пары CTC для адаптера/фитинга.
-    /// Возвращает (counterpartForStatic, counterpartForDynamic).
+    /// Auto-guess a CTC pair for an adapter/fitting.
+    /// Returns (counterpartForStatic, counterpartForDynamic).
     /// </summary>
     public static (ConnectionTypeCode ForStatic, ConnectionTypeCode ForDynamic) GuessAdapterCtc(
         ConnectionTypeCode staticCTC, ConnectionTypeCode dynamicCTC,
         IReadOnlyList<FittingMappingRule> rules)
     {
-        // Ищем counterpart для каждой стороны через IsDirectConnect rules.
-        // ВР↔ВР → counterpart(ВР)=НР → фитинг: НР-НР (ниппель)
-        // Сварка↔Сварка → counterpart(Сварка)=Сварка → фитинг: Сварка-Сварка
-        // ВР↔Сварка → counterpart(ВР)=НР, counterpart(Сварка)=Сварка → фитинг: НР-Сварка
+        // Find counterpart for each side via IsDirectConnect rules.
+        // Thread↔Thread -> counterpart(Thread)=NP -> fitting: NP-NP (nipple)
+        // Weld↔Weld -> counterpart(Weld)=Weld -> fitting: Weld-Weld
+        // Thread↔Weld -> counterpart(Thread)=NP, counterpart(Weld)=Weld -> fitting: NP-Weld
         var forStatic = FindDirectConnectCounterpart(staticCTC, rules);
         var forDynamic = FindDirectConnectCounterpart(dynamicCTC, rules);
 
-        // Fallback: если counterpart не найден — сам CTC
+        // Fallback: if counterpart not found — use the CTC itself
         if (!forStatic.IsDefined) forStatic = staticCTC;
         if (!forDynamic.IsDefined) forDynamic = dynamicCTC;
 
@@ -66,9 +66,9 @@ public static class CtcGuesser
     }
 
     /// <summary>
-    /// Автоугадывание пары CTC для reducer-а.
-    /// Same-type → оба = тот же CTC.
-    /// Cross-type → реверс (conn к static = dynamicCTC, conn к dynamic = staticCTC).
+    /// Auto-guess a CTC pair for a reducer.
+    /// Same-type -> both = same CTC.
+    /// Cross-type -> reverse (conn to static = dynamicCTC, conn to dynamic = staticCTC).
     /// </summary>
     public static (ConnectionTypeCode ForStaticSide, ConnectionTypeCode ForDynamicSide) GuessReducerCtc(
         ConnectionTypeCode staticCTC, ConnectionTypeCode dynamicCTC,

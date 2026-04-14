@@ -1,16 +1,16 @@
 namespace SmartCon.Core.Services;
 
 /// <summary>
-/// Глобальная точка доступа к DI-контейнеру.
-/// Инициализируется в SmartCon.App при OnStartup.
-/// Используется командами (IExternalCommand) для получения сервисов.
+/// Global access point to the DI container.
+/// Initialized in SmartCon.App at OnStartup.
+/// Used by commands (IExternalCommand) to obtain services.
 /// </summary>
 public static class ServiceHost
 {
     private static Func<Type, object>? _resolver;
 
     /// <summary>
-    /// Инициализация резолвера. Вызывается один раз из App.OnStartup().
+    /// Initialize the resolver. Called once from App.OnStartup().
     /// </summary>
     public static void Initialize(Func<Type, object> resolver)
     {
@@ -18,14 +18,14 @@ public static class ServiceHost
     }
 
     /// <summary>
-    /// Разрешить сервис по типу.
+    /// Resolve a service by type.
     /// </summary>
     public static T GetService<T>() where T : notnull
     {
         if (_resolver is null)
         {
             throw new InvalidOperationException(
-                "ServiceHost не инициализирован. Вызовите Initialize() из App.OnStartup().");
+                "ServiceHost not initialized. Call Initialize() from App.OnStartup().");
         }
 
         return (T)_resolver(typeof(T));

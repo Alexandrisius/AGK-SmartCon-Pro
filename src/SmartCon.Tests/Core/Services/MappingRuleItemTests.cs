@@ -21,7 +21,7 @@ public sealed class MappingRuleItemTests
         var rule = new FittingMappingRule
         {
             FromType = new ConnectionTypeCode(1),
-            ToType   = new ConnectionTypeCode(2),
+            ToType = new ConnectionTypeCode(2),
         };
         var item = MappingRuleItem.From(rule, new Mock<IDialogService>().Object, []);
         Assert.Equal(1, item.FromTypeCode);
@@ -35,7 +35,7 @@ public sealed class MappingRuleItemTests
             new FittingMappingRule
             {
                 FromType = new ConnectionTypeCode(1),
-                ToType   = new ConnectionTypeCode(1),
+                ToType = new ConnectionTypeCode(1),
                 IsDirectConnect = true,
             },
             new Mock<IDialogService>().Object, []);
@@ -49,7 +49,7 @@ public sealed class MappingRuleItemTests
             new FittingMappingRule
             {
                 FromType = new ConnectionTypeCode(1),
-                ToType   = new ConnectionTypeCode(2),
+                ToType = new ConnectionTypeCode(2),
                 FittingFamilies = [new FittingMapping { FamilyName = "Переходник", Priority = 1 }],
             },
             new Mock<IDialogService>().Object, []);
@@ -64,7 +64,7 @@ public sealed class MappingRuleItemTests
             new FittingMappingRule
             {
                 FromType = new ConnectionTypeCode(1),
-                ToType   = new ConnectionTypeCode(2),
+                ToType = new ConnectionTypeCode(2),
                 FittingFamilies =
                 [
                     new FittingMapping { FamilyName = "Б", Priority = 2 },
@@ -84,7 +84,7 @@ public sealed class MappingRuleItemTests
             new FittingMappingRule
             {
                 FromType = new ConnectionTypeCode(1),
-                ToType   = new ConnectionTypeCode(2),
+                ToType = new ConnectionTypeCode(2),
             },
             new Mock<IDialogService>().Object, []);
         Assert.Empty(item.FittingFamilies);
@@ -97,7 +97,7 @@ public sealed class MappingRuleItemTests
     {
         var item = MakeItem();
         item.FromTypeCode = 3;
-        item.ToTypeCode   = 5;
+        item.ToTypeCode = 5;
         var rule = item.ToRule();
         Assert.Equal(3, rule.FromType.Value);
         Assert.Equal(5, rule.ToType.Value);

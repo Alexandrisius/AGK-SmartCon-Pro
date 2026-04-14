@@ -1,20 +1,20 @@
 namespace SmartCon.Core.Math;
 
 /// <summary>
-/// Базовые векторные операции для алгоритмов выравнивания (ConnectorAligner).
-/// Все вычисления в Internal Units (decimal feet, I-02).
-/// Работает с Vec3 (чистая математика, тестируема без Revit runtime).
-/// Конвертация XYZ ↔ Vec3 — в SmartCon.Revit/Extensions/Vec3Extensions.cs.
+/// Basic vector operations for alignment algorithms (ConnectorAligner).
+/// All calculations in Internal Units (decimal feet, I-02).
+/// Works with Vec3 (pure math, testable without Revit runtime).
+/// XYZ <-> Vec3 conversion is in SmartCon.Revit/Extensions/Vec3Extensions.cs.
 /// </summary>
 public static class VectorUtils
 {
     /// <summary>
-    /// Допуск для сравнения double (≈ 1e-9, стандарт Revit).
+    /// Double comparison tolerance (approx 1e-9, Revit standard).
     /// </summary>
     public const double Tolerance = 1e-9;
 
     /// <summary>
-    /// Векторное произведение a × b.
+    /// Cross product a x b.
     /// </summary>
     public static Vec3 CrossProduct(Vec3 a, Vec3 b)
     {
@@ -25,7 +25,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Скалярное произведение a · b.
+    /// Dot product a . b.
     /// </summary>
     public static double DotProduct(Vec3 a, Vec3 b)
     {
@@ -33,7 +33,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Длина вектора.
+    /// Vector length.
     /// </summary>
     public static double Length(Vec3 v)
     {
@@ -41,8 +41,8 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Нормализация вектора. Возвращает единичный вектор того же направления.
-    /// Бросает ArgumentException если длина ≈ 0.
+    /// Normalize a vector. Returns a unit vector of the same direction.
+    /// Throws ArgumentException if length is approximately 0.
     /// </summary>
     public static Vec3 Normalize(Vec3 v)
     {
@@ -57,7 +57,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Угол между двумя векторами в радианах [0, PI].
+    /// Angle between two vectors in radians [0, PI].
     /// </summary>
     public static double AngleBetween(Vec3 a, Vec3 b)
     {
@@ -72,16 +72,16 @@ public static class VectorUtils
 
         var cosAngle = dot / (lenA * lenB);
 
-        // Clamp для защиты от ошибок округления
+        // Clamp to protect against rounding errors
         cosAngle = System.Math.Clamp(cosAngle, -1.0, 1.0);
 
         return System.Math.Acos(cosAngle);
     }
 
     /// <summary>
-    /// Угол между двумя векторами в плоскости с заданной нормалью.
-    /// Возвращает знаковый угол [-PI, PI].
-    /// Используется для вычисления угла поворота BasisX (шаг 3 ConnectorAligner).
+    /// Angle between two vectors in a plane with the given normal.
+    /// Returns signed angle [-PI, PI].
+    /// Used to compute BasisX rotation angle (step 3 of ConnectorAligner).
     /// </summary>
     public static double AngleBetweenInPlane(Vec3 from, Vec3 to, Vec3 planeNormal)
     {
@@ -93,7 +93,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Проверка параллельности: векторы сонаправлены или антипараллельны.
+    /// Parallel check: vectors are co-directional or anti-parallel.
     /// </summary>
     public static bool IsParallel(Vec3 a, Vec3 b)
     {
@@ -102,7 +102,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Проверка антипараллельности: векторы направлены строго противоположно.
+    /// Anti-parallel check: vectors point in strictly opposite directions.
     /// </summary>
     public static bool IsAntiParallel(Vec3 a, Vec3 b)
     {
@@ -115,7 +115,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Проверка сонаправленности: векторы направлены в одну сторону.
+    /// Co-directional check: vectors point in the same direction.
     /// </summary>
     public static bool IsCodirectional(Vec3 a, Vec3 b)
     {
@@ -128,14 +128,14 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Находит вектор, перпендикулярный данному.
-    /// Используется для разворота на 180° когда BasisZ сонаправлены (шаг 2 ConnectorAligner).
+    /// Finds a vector perpendicular to the given one.
+    /// Used for 180-degree rotation when BasisZ is co-directional (step 2 of ConnectorAligner).
     /// </summary>
     public static Vec3 FindPerpendicularAxis(Vec3 v)
     {
         var normalized = Normalize(v);
 
-        // Выбираем вектор, наименее коллинеарный с v
+        // Choose the vector least collinear with v
         var candidate = System.Math.Abs(normalized.X) < 0.9
             ? Vec3.BasisX
             : Vec3.BasisY;
@@ -145,9 +145,9 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Округление угла до ближайшего кратного stepDegrees.
-    /// Вход/выход в радианах. stepDegrees в градусах (15, 30, 45...).
-    /// Используется для снэпа BasisX к «красивому» углу (шаг 3 ConnectorAligner).
+    /// Round angle to nearest multiple of stepDegrees.
+    /// Input/output in radians. stepDegrees in degrees (15, 30, 45...).
+    /// Used for BasisX snap to a "nice" angle (step 3 of ConnectorAligner).
     /// </summary>
     public static double RoundToNearestAngle(double angleRadians, double stepDegrees)
     {
@@ -163,7 +163,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Расстояние между двумя точками.
+    /// Distance between two points.
     /// </summary>
     public static double DistanceTo(Vec3 a, Vec3 b)
     {
@@ -174,7 +174,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Проверка равенства двух точек/векторов с допуском.
+    /// Check equality of two points/vectors with tolerance.
     /// </summary>
     public static bool IsAlmostEqual(Vec3 a, Vec3 b, double tolerance = Tolerance)
     {
@@ -182,7 +182,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Проверка, является ли вектор нулевым (длина &lt; Tolerance).
+    /// Check whether a vector is zero (length &lt; Tolerance).
     /// </summary>
     public static bool IsZero(Vec3 v)
     {
@@ -190,7 +190,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Вычитание двух векторов: a - b.
+    /// Subtract two vectors: a - b.
     /// </summary>
     public static Vec3 Subtract(Vec3 a, Vec3 b)
     {
@@ -198,7 +198,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Сложение двух векторов: a + b.
+    /// Add two vectors: a + b.
     /// </summary>
     public static Vec3 Add(Vec3 a, Vec3 b)
     {
@@ -206,7 +206,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Умножение вектора на скаляр.
+    /// Multiply a vector by a scalar.
     /// </summary>
     public static Vec3 Multiply(Vec3 v, double scalar)
     {
@@ -214,7 +214,7 @@ public static class VectorUtils
     }
 
     /// <summary>
-    /// Отрицание вектора: -v.
+    /// Negate a vector: -v.
     /// </summary>
     public static Vec3 Negate(Vec3 v)
     {

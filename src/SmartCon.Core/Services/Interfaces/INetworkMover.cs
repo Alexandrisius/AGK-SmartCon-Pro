@@ -4,14 +4,14 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Вставка reducer-а между двумя коннекторами с разным DN.
-/// Используется при IncrementChainDepth когда AdjustSize не смог подогнать элемент.
+/// Inserts a reducer between two connectors with different DN.
+/// Used in IncrementChainDepth when AdjustSize failed to fit the element.
 /// </summary>
 public interface INetworkMover
 {
     /// <summary>
-    /// Вставить reducer между parentConn и childConn.
-    /// Reducer выравнивается к parentConn. Возвращает ElementId вставленного reducer или null.
+    /// Insert a reducer between parentConn and childConn.
+    /// Reducer is aligned to parentConn. Returns ElementId of the inserted reducer or null.
     /// </summary>
     ElementId? InsertReducer(Document doc,
         ConnectorProxy parentConn, ConnectorProxy childConn,

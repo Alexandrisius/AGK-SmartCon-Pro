@@ -21,20 +21,20 @@ public sealed class SettingsCommand : IExternalCommand
     {
         try
         {
-            var contextWriter    = ServiceHost.GetService<IRevitContextWriter>();
+            var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
             contextWriter.SetContext(commandData.Application);
 
-            var revitContext     = ServiceHost.GetService<IRevitContext>();
-            var mappingRepo      = ServiceHost.GetService<IFittingMappingRepository>();
-            var familyRepo       = ServiceHost.GetService<IFittingFamilyRepository>();
-            var dialogService    = ServiceHost.GetService<IDialogService>();
+            var revitContext = ServiceHost.GetService<IRevitContext>();
+            var mappingRepo = ServiceHost.GetService<IFittingMappingRepository>();
+            var familyRepo = ServiceHost.GetService<IFittingFamilyRepository>();
+            var dialogService = ServiceHost.GetService<IDialogService>();
 
             var doc = revitContext.GetDocument();
 
             var eligibleFamilies = familyRepo.GetEligibleFittingFamilies(doc);
-            var familyNames      = eligibleFamilies.Select(f => f.FamilyName).ToList();
+            var familyNames = eligibleFamilies.Select(f => f.FamilyName).ToList();
 
-            var vm   = new MappingEditorViewModel(mappingRepo, familyNames, dialogService);
+            var vm = new MappingEditorViewModel(mappingRepo, familyNames, dialogService);
             var view = new MappingEditorView(vm);
             view.Show();
 

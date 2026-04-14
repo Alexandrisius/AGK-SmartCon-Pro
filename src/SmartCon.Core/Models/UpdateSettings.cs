@@ -1,5 +1,6 @@
 namespace SmartCon.Core.Models;
 
+/// <summary>User-configurable settings for the GitHub-based auto-update system.</summary>
 public sealed record UpdateSettings(
     bool CheckOnStartup,
     string? GitHubToken,

@@ -4,7 +4,7 @@ using Xunit;
 
 namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
-public class VariableExtractorTests
+public sealed class VariableExtractorTests
 {
     private static IReadOnlyList<string> Extract(string formula)
         => FormulaSolver.ExtractVariablesStatic(formula);

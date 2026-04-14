@@ -4,15 +4,15 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Получение семейств фитингов, подходящих для маппинга PipeConnect.
-/// Критерии: OST_PipeFitting + PartType=MultiPort + ровно 2 ConnectorElement.
-/// Реализация: SmartCon.Revit/Family/FittingFamilyRepository.cs
+/// Retrieval of fitting families eligible for PipeConnect mapping.
+/// Criteria: OST_PipeFitting + PartType=MultiPort + exactly 2 ConnectorElements.
+/// Implementation: SmartCon.Revit/Family/FittingFamilyRepository.cs
 /// </summary>
 public interface IFittingFamilyRepository
 {
     /// <summary>
-    /// Возвращает семейства "Соединительные детали трубопроводов" с PartType=MultiPort
-    /// и ровно 2 коннекторами. Вызывать ВНЕ транзакции (EditFamily требует IsModifiable=false).
+    /// Returns "Pipe Fitting" families with PartType=MultiPort
+    /// and exactly 2 connectors. Call OUTSIDE transaction (EditFamily requires IsModifiable=false).
     /// </summary>
     IReadOnlyList<FamilyInfo> GetEligibleFittingFamilies(Document doc);
 }

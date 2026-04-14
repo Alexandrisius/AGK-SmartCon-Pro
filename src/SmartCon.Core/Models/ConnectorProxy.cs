@@ -4,9 +4,9 @@ using SmartCon.Core.Math;
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Иммутабельный снапшот состояния коннектора на момент выбора.
-/// Не хранить между транзакциями — пересоздавать из актуального Connector (I-05).
-/// Все размеры в Internal Units (decimal feet, I-02).
+/// Immutable snapshot of connector state at the time of selection.
+/// Do not store between transactions — recreate from actual Connector (I-05).
+/// All dimensions in Internal Units (decimal feet, I-02).
 /// </summary>
 public sealed record ConnectorProxy
 {
@@ -21,14 +21,14 @@ public sealed record ConnectorProxy
     public required bool IsFree { get; init; }
 
     /// <summary>
-    /// Origin как Vec3 для алгоритмов Core (ConnectorAligner, VectorUtils).
-    /// Конвертация без Revit runtime: доступ к .X/.Y/.Z — compile-time (I-09).
+    /// Origin as Vec3 for Core algorithms (ConnectorAligner, VectorUtils).
+    /// Conversion without Revit runtime: access to .X/.Y/.Z is compile-time (I-09).
     /// </summary>
     public Vec3 OriginVec3 => new(Origin.X, Origin.Y, Origin.Z);
 
-    /// <summary>BasisZ как Vec3.</summary>
+    /// <summary>BasisZ as Vec3.</summary>
     public Vec3 BasisZVec3 => new(BasisZ.X, BasisZ.Y, BasisZ.Z);
 
-    /// <summary>BasisX как Vec3.</summary>
+    /// <summary>BasisX as Vec3.</summary>
     public Vec3 BasisXVec3 => new(BasisX.X, BasisX.Y, BasisX.Z);
 }

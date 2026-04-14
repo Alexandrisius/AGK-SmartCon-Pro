@@ -3,9 +3,9 @@ using Autodesk.Revit.DB;
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Направленный граф соединённых MEP-элементов.
-/// Строится перед трансформацией через IElementChainIterator.BuildGraph().
-/// Неизменяем после создания (builder заполняет через internal-методы).
+/// Directed graph of connected MEP elements.
+/// Built before transformation via IElementChainIterator.BuildGraph().
+/// Immutable after creation (builder fills via internal methods).
 /// </summary>
 public sealed class ConnectionGraph
 {
@@ -30,7 +30,7 @@ public sealed class ConnectionGraph
     public int MaxLevel => _levels.Count - 1;
 
     /// <summary>
-    /// Добавить узел в граф. Вызывается из BuildGraph (BFS).
+    /// Add a node to the graph. Called from BuildGraph (BFS).
     /// </summary>
     internal void AddNode(ElementId elementId)
     {
@@ -38,7 +38,7 @@ public sealed class ConnectionGraph
     }
 
     /// <summary>
-    /// Добавить ребро в граф. Вызывается из BuildGraph (BFS).
+    /// Add an edge to the graph. Called from BuildGraph (BFS).
     /// </summary>
     internal void AddEdge(ConnectionEdge edge)
     {
@@ -46,7 +46,7 @@ public sealed class ConnectionGraph
     }
 
     /// <summary>
-    /// Добавить элемент на указанный BFS-уровень.
+    /// Add an element at the specified BFS level.
     /// </summary>
     internal void AddElementAtLevel(int level, ElementId elementId)
     {
@@ -55,7 +55,7 @@ public sealed class ConnectionGraph
     }
 
     /// <summary>
-    /// Сохранить запись об исходном соединении элемента (до disconnect).
+    /// Save a record of the original element connection (before disconnect).
     /// </summary>
     internal void SaveConnection(ElementId elementId, ConnectionRecord record)
     {
@@ -71,13 +71,13 @@ public sealed class ConnectionGraph
     }
 
     /// <summary>
-    /// Получить исходные соединения элемента, сохранённые при BuildGraph.
+    /// Get original connections of an element saved during BuildGraph.
     /// </summary>
     public IReadOnlyList<ConnectionRecord> GetOriginalConnections(ElementId elementId)
         => _originalConnections.TryGetValue(elementId.Value, out var list) ? list : [];
 
     /// <summary>
-    /// Все ElementId, достижимые из startId (включая сам startId).
+    /// All ElementIds reachable from startId (including startId itself).
     /// </summary>
     public IEnumerable<ElementId> GetChainFrom(ElementId startId)
     {
@@ -109,8 +109,8 @@ public sealed class ConnectionGraph
 }
 
 /// <summary>
-/// EqualityComparer для ElementId — сравнивает по Value (IntegerValue).
-/// Revit ElementId не реализует IEquatable корректно для HashSet.
+/// EqualityComparer for ElementId — compares by Value (IntegerValue).
+/// Revit ElementId does not implement IEquatable correctly for HashSet.
 /// </summary>
 public sealed class ElementIdEqualityComparer : IEqualityComparer<ElementId>
 {

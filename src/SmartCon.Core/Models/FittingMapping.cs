@@ -1,8 +1,8 @@
 namespace SmartCon.Core.Models;
 
 /// <summary>
-/// Модель одного семейства фитинга в правиле маппинга.
-/// Хранится в JSON (AppData). Используется для подбора фитингов в S5.
+/// Model of a single fitting family in a mapping rule.
+/// Stored in JSON (AppData). Used for fitting selection in S5.
 /// </summary>
 public sealed record FittingMapping
 {

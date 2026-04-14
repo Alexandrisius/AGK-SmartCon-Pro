@@ -1,9 +1,9 @@
 namespace SmartCon.Core.Math.FormulaEngine.Solver;
 
 /// <summary>
-/// Численный решатель методом бисекции.
-/// Fallback для нелинейных формул (тригонометрия, x^2, etc.).
-/// Адаптивный поиск интервала + стандартная бисекция.
+/// Numerical solver using the bisection method.
+/// Fallback for non-linear formulas (trigonometry, x^2, etc.).
+/// Adaptive interval search + standard bisection.
 /// </summary>
 internal static class BisectionSolver
 {
@@ -11,8 +11,8 @@ internal static class BisectionSolver
     private const double DefaultEpsilon = 1e-9;
 
     /// <summary>
-    /// Найти x такой что f(x) ≈ target.
-    /// Возвращает null если не удалось найти корень.
+    /// Find x such that f(x) is approximately target.
+    /// Returns null if no root found.
     /// </summary>
     internal static double? Solve(
         Func<double, double> f,
@@ -21,19 +21,19 @@ internal static class BisectionSolver
         double initialHi = 1e6,
         double eps = DefaultEpsilon)
     {
-        // g(x) = f(x) - target, ищем g(x) = 0
+        // g(x) = f(x) - target, find g(x) = 0
         double g(double x)
         {
             var val = f(x) - target;
             return double.IsNaN(val) || double.IsInfinity(val) ? double.NaN : val;
         }
 
-        // Попробовать найти интервал с переменой знака
+        // Try to find an interval with a sign change
         var (lo, hi, found) = FindBracket(g, initialLo, initialHi);
         if (!found)
             return null;
 
-        // Стандартная бисекция
+        // Standard bisection
         for (int iter = 0; iter < MaxIterations; iter++)
         {
             double mid = (lo + hi) / 2.0;
@@ -58,18 +58,18 @@ internal static class BisectionSolver
                 hi = mid;
         }
 
-        // Вернуть лучшее приближение
+        // Return best approximation
         double finalMid = (lo + hi) / 2.0;
         return System.Math.Abs(g(finalMid)) < 0.01 ? finalMid : null;
     }
 
     /// <summary>
-    /// Адаптивный поиск интервала [lo, hi] где g(lo) и g(hi) имеют разные знаки.
+    /// Adaptive search for an interval [lo, hi] where g(lo) and g(hi) have opposite signs.
     /// </summary>
     private static (double Lo, double Hi, bool Found) FindBracket(
         Func<double, double> g, double lo, double hi)
     {
-        // Сначала пробуем стандартные интервалы
+        // Try standard intervals first
         double[][] intervals =
         [
             [0, 1], [0, 10], [0, 100], [0, 1000], [0, 1e4], [0, 1e6],
@@ -92,7 +92,7 @@ internal static class BisectionSolver
                 return (interval[0], interval[1], true);
         }
 
-        // Экспоненциальное расширение
+        // Exponential expansion
         double a = 0.001, b = 1;
         for (int i = 0; i < 60; i++)
         {

@@ -4,9 +4,9 @@ using SmartCon.Core.Services.Interfaces;
 namespace SmartCon.Core.Services.Implementation;
 
 /// <summary>
-/// Реализация IFittingMapper. Загружает маппинг из IFittingMappingRepository,
-/// возвращает упорядоченные по Priority правила для пары типов коннекторов.
-/// Поиск кратчайшего пути (Дейкстра) — Phase 9, здесь stub.
+/// IFittingMapper implementation. Loads mapping from IFittingMappingRepository,
+/// returns Priority-ordered rules for a pair of connector types.
+/// Shortest path search (Dijkstra) — Phase 9, stub here.
 /// </summary>
 public sealed class FittingMapper : IFittingMapper
 {
@@ -25,8 +25,8 @@ public sealed class FittingMapper : IFittingMapper
         var result = rules
             .Where(r =>
                 (r.FromType.Value == from.Value && r.ToType.Value == to.Value) ||
-                (r.FromType.Value == to.Value   && r.ToType.Value == from.Value
-                 && from.Value != to.Value))  // зеркальное правило, без дублей когда from==to
+                (r.FromType.Value == to.Value && r.ToType.Value == from.Value
+                 && from.Value != to.Value))  // mirror rule, no duplicates when from==to
             .OrderBy(r => r.FittingFamilies.Count == 0 ? int.MaxValue
                          : r.FittingFamilies.Min(f => f.Priority))
             .ToList();
@@ -46,8 +46,8 @@ public sealed class FittingMapper : IFittingMapper
             .Distinct()
             .ToList();
 
-        var dist  = new Dictionary<int, int>();
-        var prev  = new Dictionary<int, (int code, FittingMappingRule rule)>();
+        var dist = new Dictionary<int, int>();
+        var prev = new Dictionary<int, (int code, FittingMappingRule rule)>();
         var queue = new PriorityQueue<int, int>();
 
         foreach (var c in allCodes) dist[c] = int.MaxValue;

@@ -20,9 +20,9 @@ public sealed class ConnectorTypeItemTests
     [Fact]
     public void ToDefinition_RoundTrip()
     {
-        var def   = new ConnectorTypeDefinition { Code = 3, Name = "Раструб", Description = "Раструбное" };
-        var item  = ConnectorTypeItem.From(def);
-        var back  = item.ToDefinition();
+        var def = new ConnectorTypeDefinition { Code = 3, Name = "Раструб", Description = "Раструбное" };
+        var item = ConnectorTypeItem.From(def);
+        var back = item.ToDefinition();
 
         Assert.Equal(def.Code, back.Code);
         Assert.Equal(def.Name, back.Name);

@@ -3,31 +3,31 @@ using Autodesk.Revit.DB;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Сессия долгоживущей TransactionGroup для модальных операций (Phase 8: PipeConnectEditor).
-/// Группа остаётся открытой пока пользователь работает в окне редактора.
-/// «Соединить» → Assimilate() — одна запись Undo. «Отмена» → RollBack() — полный откат (I-04).
-/// Создаётся через ITransactionService.BeginGroupSession().
-/// Вызывать только из ExternalEventHandler.Execute() (I-01).
+/// Long-lived TransactionGroup session for modal operations (Phase 8: PipeConnectEditor).
+/// The group stays open while the user works in the editor window.
+/// "Connect" -> Assimilate() — single Undo record. "Cancel" -> RollBack() — full rollback (I-04).
+/// Created via ITransactionService.BeginGroupSession().
+/// Call only from ExternalEventHandler.Execute() (I-01).
 /// </summary>
 public interface ITransactionGroupSession : IDisposable
 {
     /// <summary>
-    /// True — TransactionGroup открыта и активна.
+    /// True — TransactionGroup is open and active.
     /// </summary>
     bool IsActive { get; }
 
     /// <summary>
-    /// Выполнить Transaction внутри открытой группы.
+    /// Execute a Transaction inside the open group.
     /// </summary>
     void RunInTransaction(string name, Action<Document> action);
 
     /// <summary>
-    /// Слить все вложенные транзакции в одну Undo-запись и закрыть группу.
+    /// Merge all nested transactions into a single Undo record and close the group.
     /// </summary>
     void Assimilate();
 
     /// <summary>
-    /// Откатить все изменения группы и закрыть её.
+    /// Roll back all group changes and close it.
     /// </summary>
     void RollBack();
 }

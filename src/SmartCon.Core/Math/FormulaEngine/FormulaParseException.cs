@@ -1,7 +1,7 @@
 namespace SmartCon.Core.Math.FormulaEngine;
 
 /// <summary>
-/// Исключение при ошибке парсинга формулы Revit.
+/// Exception thrown when Revit formula parsing fails.
 /// </summary>
 public sealed class FormulaParseException : Exception
 {

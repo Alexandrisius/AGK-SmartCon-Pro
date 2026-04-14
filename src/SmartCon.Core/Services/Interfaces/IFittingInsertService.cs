@@ -5,24 +5,24 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Вставка и позиционирование фитингов через Revit API (Phase 5 + 8).
-/// Реализация: SmartCon.Revit/Fittings/RevitFittingInsertService.cs
-/// Вызывать только внутри Transaction (I-03).
+/// Insertion and positioning of fittings via Revit API (Phase 5 + 8).
+/// Implementation: SmartCon.Revit/Fittings/RevitFittingInsertService.cs
+/// Call only inside Transaction (I-03).
 /// </summary>
 public interface IFittingInsertService
 {
     /// <summary>
-    /// Вставить FamilyInstance фитинга в указанную точку.
-    /// Возвращает ElementId вставленного экземпляра или null если семейство/типоразмер не найден.
+    /// Insert a fitting FamilyInstance at the specified point.
+    /// Returns ElementId of the inserted instance or null if family/type not found.
     /// </summary>
     ElementId? InsertFitting(Document doc, string familyName, string symbolName, XYZ position);
 
     /// <summary>
-    /// Выровнять фитинг так, чтобы коннектор, соответствующий staticProxy по типу (CTC),
-    /// совпал по позиции и ориентации со staticProxy.
-    /// <paramref name="dynamicTypeCode"/> — тип коннектора dynamic-стороны (из FittingMappingRule).
-    /// Используется для определения ориентации: коннектор фитинга с CTC == dynamicTypeCode → к трубе.
-    /// Возвращает ConnectorProxy второго коннектора фитинга после выравнивания (null при ошибке).
+    /// Align the fitting so that the connector matching staticProxy by type (CTC)
+    /// coincides with staticProxy in position and orientation.
+    /// <paramref name="dynamicTypeCode"/> — connector type of the dynamic side (from FittingMappingRule).
+    /// Used to determine orientation: fitting connector with CTC == dynamicTypeCode faces the pipe.
+    /// Returns ConnectorProxy of the second fitting connector after alignment (null on error).
     /// </summary>
     ConnectorProxy? AlignFittingToStatic(
         Document doc,
@@ -35,7 +35,7 @@ public interface IFittingInsertService
         IReadOnlyList<FittingMappingRule>? directConnectRules = null);
 
     /// <summary>
-    /// Удалить элемент из документа.
+    /// Delete an element from the document.
     /// </summary>
     void DeleteElement(Document doc, ElementId elementId);
 }

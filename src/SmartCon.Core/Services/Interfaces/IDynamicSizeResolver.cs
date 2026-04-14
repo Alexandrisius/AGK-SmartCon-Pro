@@ -4,28 +4,28 @@ using SmartCon.Core.Models;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Получение списка доступных размеров DN для динамического семейства.
-/// Реализация: SmartCon.Revit/Parameters/RevitDynamicSizeResolver.cs
-/// Вызывать ВНЕ транзакции (EditFamily требует doc.IsModifiable == false).
+/// Provides available DN sizes for a dynamic family.
+/// Implementation: SmartCon.Revit/Parameters/RevitDynamicSizeResolver.cs
+/// Call OUTSIDE transaction (EditFamily requires doc.IsModifiable == false).
 /// </summary>
 public interface IDynamicSizeResolver
 {
     /// <summary>
-    /// Возвращает все доступные радиусы для указанного коннектора элемента.
-    /// Сначала пробует LookupTable, если нет — перебирает все FamilySymbol.
-    /// constraints — ограничения по другим DN-столбцам (для multi-query фитингов).
-    /// Если constraints не null, dropdown показывает только строки таблицы,
-    /// где значения других столбцов соответствуют ограничениям.
+    /// Returns all available radii for the specified connector of an element.
+    /// Tries LookupTable first; if none, iterates all FamilySymbol.
+    /// constraints — restrictions by other DN columns (for multi-query fittings).
+    /// If constraints is not null, dropdown shows only table rows
+    /// where other column values match the restrictions.
     /// </summary>
     IReadOnlyList<SizeOption> GetAvailableSizes(Document doc, ElementId elementId,
         int connectorIndex,
         IReadOnlyList<LookupColumnConstraint>? constraints = null);
 
     /// <summary>
-    /// Возвращает все доступные типоразмеры FamilyInstance с радиусами ВСЕХ коннекторов.
-    /// Каждый элемент списка — полная конфигурация семейства (напр. DN 65×50×65).
-    /// DisplayName формируется как "DN {target} × DN {other1} [× ...]".
-    /// Вызывать ВНЕ транзакции (EditFamily).
+    /// Returns all available type sizes of a FamilyInstance with radii of ALL connectors.
+    /// Each list item is a full family configuration (e.g. DN 65x50x65).
+    /// DisplayName is formatted as "DN {target} x DN {other1} [x ...]".
+    /// Call OUTSIDE transaction (EditFamily).
     /// </summary>
     IReadOnlyList<FamilySizeOption> GetAvailableFamilySizes(Document doc, ElementId elementId,
         int targetConnectorIndex);
