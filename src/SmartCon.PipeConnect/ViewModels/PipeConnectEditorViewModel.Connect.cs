@@ -186,20 +186,6 @@ public sealed partial class PipeConnectEditorViewModel
         }
     }
 
-    private void InitConnectorCycle(List<ConnectorProxy> connectors)
-    {
-        _allDynamicConnectors = connectors;
-        _visitedConnectorIndices.Clear();
-        _connectorCyclePos = 0;
-
-        var active = _activeDynamic ?? _ctx.DynamicConnector;
-        _visitedConnectorIndices.Add(active.ConnectorIndex);
-        int idx = connectors.FindIndex(c => c.ConnectorIndex == active.ConnectorIndex);
-        _connectorCyclePos = (System.Math.Max(idx, 0) + 1) % System.Math.Max(1, connectors.Count);
-
-        CycleConnectorCommand.NotifyCanExecuteChanged();
-    }
-
     private void LogConnectorState(string label)
     {
         var dyn = _activeDynamic ?? _ctx.DynamicConnector;

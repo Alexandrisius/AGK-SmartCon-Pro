@@ -1,18 +1,14 @@
 using System.Collections.ObjectModel;
-using System.Windows;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Plumbing;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
-using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
-using SmartCon.Core;
 using SmartCon.PipeConnect.Services;
 
-
 using static SmartCon.Core.Units;
+
 namespace SmartCon.PipeConnect.ViewModels;
 
 public sealed partial class PipeConnectEditorViewModel : ObservableObject
@@ -33,6 +29,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private readonly PipeConnectInitHandler _initHandler;
     private readonly PipeConnectRotationHandler _rotationHandler;
     private readonly PipeConnectSizeHandler _sizeHandler;
+    private readonly DynamicSizeLoader _sizeLoader;
+    private readonly ConnectorCycleService _cycleService;
     private readonly PipeConnectSessionContext _ctx;
     private readonly VirtualCtcStore _virtualCtcStore;
 
@@ -45,10 +43,6 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private bool _needsPrimaryReducer;
     private ElementId? _primaryReducerId;
     private bool _userManuallyChangedSize;
-
-    private List<ConnectorProxy> _allDynamicConnectors = [];
-    private readonly HashSet<int> _visitedConnectorIndices = [];
-    private int _connectorCyclePos = 0;
 
     private ConnectionGraph? _chainGraph;
     private readonly NetworkSnapshotStore _snapshotStore = new();
@@ -118,39 +112,18 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _initHandler = new PipeConnectInitHandler(connSvc, transformSvc, paramResolver, _ctcManager);
         _rotationHandler = new PipeConnectRotationHandler(transformSvc);
         _sizeHandler = new PipeConnectSizeHandler(connSvc, transformSvc, paramResolver, _ctcManager);
+        _sizeLoader = new DynamicSizeLoader(connSvc, sizeResolver);
+        _cycleService = new ConnectorCycleService(connSvc, transformSvc, paramResolver, _ctcManager);
         _activeDynamic = ctx.DynamicConnector;
         _chainGraph = ctx.ChainGraph;
 
-        bool hasMandatoryFittings = ctx.ProposedFittings.Count > 0 &&
-            ctx.ProposedFittings.Any(r => !r.IsDirectConnect && r.FittingFamilies.Count > 0);
+        var (fittings, reducers) = FittingCardBuilder.Build(
+            ctx.ProposedFittings,
+            ctx.StaticConnector.ConnectionTypeCode,
+            ctx.DynamicConnector.ConnectionTypeCode);
 
-        if (!hasMandatoryFittings)
-            AvailableFittings.Add(new FittingCardItem(new FittingMappingRule
-            {
-                FromType = ctx.StaticConnector.ConnectionTypeCode,
-                ToType = ctx.DynamicConnector.ConnectionTypeCode,
-                IsDirectConnect = true
-            }));
-
-        foreach (var rule in ctx.ProposedFittings)
-        {
-            if (!rule.IsDirectConnect && rule.FittingFamilies.Count > 0)
-            {
-                foreach (var family in rule.FittingFamilies.OrderBy(f => f.Priority))
-                {
-                    AvailableFittings.Add(new FittingCardItem(rule, family));
-                }
-            }
-
-            if (rule.ReducerFamilies.Count > 0)
-            {
-                foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
-                {
-                    AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
-                }
-            }
-        }
-
+        foreach (var f in fittings) AvailableFittings.Add(f);
+        foreach (var r in reducers) AvailableReducers.Add(r);
         SelectedFitting = AvailableFittings.Count > 0 ? AvailableFittings[0] : null;
 
         LoadDynamicSizes();
@@ -159,191 +132,28 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     private void LoadDynamicSizes()
     {
-        SmartConLogger.DebugSection("PipeConnectEditorViewModel.LoadDynamicSizes");
-
-        try
-        {
-            var dynId = _ctx.DynamicConnector.OwnerElementId;
-            var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
-            SmartConLogger.Debug($"  elementId={dynId.Value}, connIdx={dynIdx}");
-
-            var sizes = _sizeResolver.GetAvailableFamilySizes(_doc, dynId, dynIdx);
-            SmartConLogger.Debug($"  GetAvailableFamilySizes returned {sizes.Count} configs");
-
-            var currentRadius = _ctx.DynamicConnector.Radius;
-            var currentDn = (int)Math.Round(currentRadius * 2.0 * FeetToMm);
-            SmartConLogger.Debug($"  Current size: DN {currentDn} (radius={currentRadius * FeetToMm:F2} mm)");
-
-            var currentConns = _connSvc.GetAllConnectors(_doc, dynId);
-            var currentRadii = new Dictionary<int, double>();
-            foreach (var c in currentConns)
-                currentRadii[c.ConnectorIndex] = c.Radius;
-
-            var queryParamGroups = sizes.Count > 0 ? sizes[0].QueryParamConnectorGroups : [];
-            var targetColIdx = sizes.Count > 0 ? sizes[0].TargetColumnIndex : 1;
-            var uniqueParamCount = sizes.Count > 0 ? sizes[0].UniqueParameterCount : 1;
-
-            IReadOnlyList<double> autoQueryParamRadii;
-            FamilySizeOption? closestOption = sizes.Count > 0
-                ? BestSizeMatcher.FindClosestWeighted(sizes, currentRadius, dynIdx, currentRadii)
-                : null;
-
-            if (closestOption is not null)
-            {
-                if (closestOption.QueryParameterRadiiFt.Count > 0)
-                {
-                    autoQueryParamRadii = closestOption.QueryParameterRadiiFt;
-                    targetColIdx = closestOption.TargetColumnIndex;
-                    queryParamGroups = closestOption.QueryParamConnectorGroups;
-                }
-                else
-                {
-                    autoQueryParamRadii = [closestOption.Radius];
-                    targetColIdx = 1;
-                    queryParamGroups = [[closestOption.TargetConnectorIndex]];
-                }
-            }
-            else if (queryParamGroups.Count > 0)
-            {
-                autoQueryParamRadii = BuildCurrentQueryParamRadii(currentRadii, queryParamGroups);
-            }
-            else
-            {
-                autoQueryParamRadii = [currentRadii.GetValueOrDefault(dynIdx, 0)];
-                targetColIdx = 1;
-            }
-
-            var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(autoQueryParamRadii, targetColIdx);
-
-            AvailableDynamicSizes.Add(new FamilySizeOption
-            {
-                DisplayName = autoDisplayName,
-                Radius = currentRadius,
-                TargetConnectorIndex = dynIdx,
-                AllConnectorRadii = currentRadii,
-                QueryParameterRadiiFt = autoQueryParamRadii,
-                UniqueParameterCount = uniqueParamCount,
-                TargetColumnIndex = targetColIdx,
-                QueryParamConnectorGroups = queryParamGroups,
-                Source = "",
-                IsAutoSelect = true
-            });
-
-            foreach (var size in sizes)
-            {
-                if (!AvailableDynamicSizes.Any(s => s.DisplayName == size.DisplayName))
-                {
-                    AvailableDynamicSizes.Add(size with { IsAutoSelect = false });
-                    SmartConLogger.Debug($"  Added: {size.DisplayName}");
-                }
-            }
-
-            SelectedDynamicSize = AvailableDynamicSizes.Count > 0 ? AvailableDynamicSizes[0] : null;
-            HasSizeOptions = AvailableDynamicSizes.Count > 1;
-            SmartConLogger.Debug($"  Total: {AvailableDynamicSizes.Count} options, HasSizeOptions={HasSizeOptions}");
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"[LoadDynamicSizes] Error: {ex.Message}");
-            HasSizeOptions = false;
-        }
-    }
-
-    private static IReadOnlyList<double> BuildCurrentQueryParamRadii(
-        IReadOnlyDictionary<int, double> currentRadii,
-        IReadOnlyList<IReadOnlyList<int>> queryParamGroups)
-    {
-        var result = new List<double>(queryParamGroups.Count);
-        foreach (var group in queryParamGroups)
-        {
-            double radius = 0;
-            foreach (var ci in group)
-            {
-                if (currentRadii.TryGetValue(ci, out var r))
-                {
-                    radius = r;
-                    break;
-                }
-            }
-            result.Add(radius);
-        }
-        return result.AsReadOnly();
+        var result = _sizeLoader.LoadInitialSizes(_doc, _ctx.DynamicConnector);
+        AvailableDynamicSizes.Clear();
+        foreach (var s in result.Sizes) AvailableDynamicSizes.Add(s);
+        SelectedDynamicSize = result.DefaultSelection;
+        HasSizeOptions = result.HasSizeOptions;
     }
 
     private void RefreshAutoSelectSize()
     {
-        if (_activeDynamic is null) return;
+        var newAuto = _sizeLoader.RefreshAutoSelect(
+            _doc, _ctx.DynamicConnector, _activeDynamic!, AvailableDynamicSizes);
 
-        var dynId = _ctx.DynamicConnector.OwnerElementId;
-        var currentConns = _connSvc.GetAllConnectors(_doc, dynId);
-        var currentRadii = new Dictionary<int, double>();
-        foreach (var c in currentConns)
-            currentRadii[c.ConnectorIndex] = c.Radius;
-
-        var autoOption = AvailableDynamicSizes.FirstOrDefault(s => s.IsAutoSelect);
-        var queryParamGroups = autoOption?.QueryParamConnectorGroups ?? [];
-        var targetColIdx = autoOption?.TargetColumnIndex ?? 1;
-
-        IReadOnlyList<double> autoQueryParamRadii;
-        var nonAutoSizes = AvailableDynamicSizes.Where(s => !s.IsAutoSelect).ToList();
-        if (nonAutoSizes.Count > 0)
+        if (newAuto is not null && AvailableDynamicSizes.Count > 0)
         {
-            var dynIdx = _ctx.DynamicConnector.ConnectorIndex;
-            var targetRadius = currentRadii.GetValueOrDefault(dynIdx, 0);
-            var best = BestSizeMatcher.FindClosestWeighted(nonAutoSizes, targetRadius, dynIdx, currentRadii);
-            if (best is not null)
-            {
-                if (best.QueryParameterRadiiFt.Count > 0)
-                {
-                    autoQueryParamRadii = best.QueryParameterRadiiFt;
-                    queryParamGroups = best.QueryParamConnectorGroups;
-                    targetColIdx = best.TargetColumnIndex;
-                }
-                else
-                {
-                    autoQueryParamRadii = [best.Radius];
-                    targetColIdx = 1;
-                    queryParamGroups = [[best.TargetConnectorIndex]];
-                }
-            }
-            else if (queryParamGroups.Count > 0)
-                autoQueryParamRadii = BuildCurrentQueryParamRadii(currentRadii, queryParamGroups);
-            else
-                autoQueryParamRadii = [currentRadii.GetValueOrDefault(dynIdx, 0)];
-        }
-        else if (queryParamGroups.Count > 0)
-            autoQueryParamRadii = BuildCurrentQueryParamRadii(currentRadii, queryParamGroups);
-        else
-            autoQueryParamRadii = [currentRadii.GetValueOrDefault(_ctx.DynamicConnector.ConnectorIndex, 0)];
-
-        var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(autoQueryParamRadii, targetColIdx);
-
-        if (AvailableDynamicSizes.Count > 0)
-        {
-            var newAutoOption = new FamilySizeOption
-            {
-                DisplayName = autoDisplayName,
-                Radius = _activeDynamic.Radius,
-                TargetConnectorIndex = _ctx.DynamicConnector.ConnectorIndex,
-                AllConnectorRadii = currentRadii,
-                QueryParameterRadiiFt = autoQueryParamRadii,
-                UniqueParameterCount = autoOption?.UniqueParameterCount ?? 1,
-                TargetColumnIndex = targetColIdx,
-                QueryParamConnectorGroups = queryParamGroups,
-                Source = "",
-                IsAutoSelect = true
-            };
-            AvailableDynamicSizes[0] = newAutoOption;
-            SmartConLogger.Debug($"[RefreshAutoSelectSize] Updated: {autoDisplayName}");
+            AvailableDynamicSizes[0] = newAuto;
         }
 
-        if (SelectedDynamicSize?.IsAutoSelect == true)
+        if (SelectedDynamicSize?.IsAutoSelect == true && AvailableDynamicSizes.Count > 0)
         {
             SelectedDynamicSize = AvailableDynamicSizes[0];
         }
     }
-
-    // ── Init ─────────────────────────────────────────────────────────────────
 
     public void Init()
     {
@@ -357,7 +167,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 ?? _ctx.DynamicConnector;
 
             var conns = GetFreeConnectorsSnapshot();
-            InitConnectorCycle(conns);
+            _cycleService.State.Initialize(conns, _activeDynamic ?? _ctx.DynamicConnector);
+            CycleConnectorCommand.NotifyCanExecuteChanged();
 
             var defaultFitting = SelectedFitting;
             if (defaultFitting is not null && !defaultFitting.IsDirectConnect)
@@ -411,8 +222,6 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         }
     }
 
-    // ── Rotation ────────────────────────────────────────────────────────────
-
     [RelayCommand(CanExecute = nameof(CanOperate))]
     private void RotateLeft() => ExecuteRotate(+RotationAngleDeg);
 
@@ -441,14 +250,12 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         }
     }
 
-    // ── Cycle connector ─────────────────────────────────────────────────────
-
     [RelayCommand(CanExecute = nameof(CanCycleConnector))]
     private void CycleConnector()
     {
-        if (_allDynamicConnectors.Count <= 1) return;
+        if (_cycleService.State.Count <= 1) return;
 
-        var target = FindNextUnvisitedConnector();
+        var target = _cycleService.State.FindNext();
         if (target is null) return;
 
         IsBusy = true;
@@ -456,40 +263,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
         try
         {
-            _paramResolver.GetConnectorRadiusDependencies(_doc, target.OwnerElementId, target.ConnectorIndex);
-
             var alignTarget = _activeFittingConn2 ?? _ctx.StaticConnector;
+            _activeDynamic = _cycleService.CycleAndAlign(
+                _doc, _groupSession!, target, alignTarget, _activeDynamic);
 
-            _groupSession!.RunInTransaction("PipeConnect — Смена коннектора", doc =>
-            {
-                var freshTarget = _connSvc.RefreshConnector(
-                    doc, target.OwnerElementId, target.ConnectorIndex) ?? target;
-
-                var reAlign = ConnectorAligner.ComputeAlignment(
-                    alignTarget.OriginVec3, alignTarget.BasisZVec3, alignTarget.BasisXVec3,
-                    freshTarget.OriginVec3, freshTarget.BasisZVec3, freshTarget.BasisXVec3);
-
-                var dynId = target.OwnerElementId;
-                if (!VectorUtils.IsZero(reAlign.InitialOffset))
-                    _transformSvc.MoveElement(doc, dynId, reAlign.InitialOffset);
-                if (reAlign.BasisZRotation is { } bz)
-                    _transformSvc.RotateElement(doc, dynId, reAlign.RotationCenter, bz.Axis, bz.AngleRadians);
-                if (reAlign.BasisXSnap is { } bx)
-                    _transformSvc.RotateElement(doc, dynId, reAlign.RotationCenter, bx.Axis, bx.AngleRadians);
-
-                doc.Regenerate();
-                var r = _connSvc.RefreshConnector(doc, dynId, target.ConnectorIndex);
-                if (r is not null)
-                {
-                    var corr = alignTarget.OriginVec3 - r.OriginVec3;
-                    if (!VectorUtils.IsZero(corr))
-                        _transformSvc.MoveElement(doc, dynId, corr);
-                }
-                doc.Regenerate();
-                _activeDynamic = RefreshWithCtcOverride(doc, dynId, target.ConnectorIndex);
-            });
-
-            _visitedConnectorIndices.Add(target.ConnectorIndex);
             StatusMessage = "Коннектор изменён";
             CycleConnectorCommand.NotifyCanExecuteChanged();
         }
@@ -504,31 +281,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         }
     }
 
-    private bool CanCycleConnector() => IsSessionActive && !IsBusy && _allDynamicConnectors.Count > 1;
-
-    private ConnectorProxy? FindNextUnvisitedConnector()
-    {
-        int count = _allDynamicConnectors.Count;
-        if (count == 0) return null;
-
-        for (int i = 0; i < count; i++)
-        {
-            int idx = (_connectorCyclePos + i) % count;
-            var conn = _allDynamicConnectors[idx];
-            if (!_visitedConnectorIndices.Contains(conn.ConnectorIndex))
-            {
-                _connectorCyclePos = (idx + 1) % count;
-                return conn;
-            }
-        }
-
-        _visitedConnectorIndices.Clear();
-        var first = _allDynamicConnectors[_connectorCyclePos % count];
-        _connectorCyclePos = (_connectorCyclePos + 1) % count;
-        return first;
-    }
-
-    // ── Change dynamic size ─────────────────────────────────────────────────
+    private bool CanCycleConnector() => IsSessionActive && !IsBusy && _cycleService.State.Count > 1;
 
     [RelayCommand(CanExecute = nameof(CanChangeDynamicSize))]
     private void ChangeDynamicSize()
@@ -578,7 +331,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                             doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
                             ?? _activeDynamic;
                         var offset = newReducerConn2.OriginVec3 - dynProxy.OriginVec3;
-                        if (!VectorUtils.IsZero(offset))
+                        if (!SmartCon.Core.Math.VectorUtils.IsZero(offset))
                             _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
                         doc.Regenerate();
                     });
