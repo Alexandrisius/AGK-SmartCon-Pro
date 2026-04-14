@@ -22,9 +22,11 @@ public sealed class PipeConnectRotationHandler(
         int chainDepth,
         int angleDeg)
     {
+        var dynId = ctx.DynamicConnector.OwnerElementId;
+        SmartConLogger.Info($"[Rotate] START angle={angleDeg}°, dynId={dynId.Value}, fitting={fittingId?.Value}, reducer={reducerId?.Value}");
+
         groupSession.RunInTransaction("PipeConnect — Поворот", d =>
         {
-            var dynId = ctx.DynamicConnector.OwnerElementId;
             var axisOrigin = ctx.StaticConnector.OriginVec3;
             var axisDir = ctx.StaticConnector.BasisZVec3;
             var radians = angleDeg * System.Math.PI / 180.0;
@@ -73,6 +75,7 @@ public sealed class PipeConnectRotationHandler(
                 }
             }
 
+            SmartConLogger.Debug($"[Rotate] Rotating {idsToRotate.Count} elements");
             transformSvc.RotateElements(d, idsToRotate, axisOrigin, axisDir, radians);
             d.Regenerate();
 
@@ -86,12 +89,19 @@ public sealed class PipeConnectRotationHandler(
                     staticBZ, elemBasisY, axisOrigin);
                 if (globalYSnap is not null)
                 {
+                    SmartConLogger.Debug("[Rotate] GlobalYSnap applied");
                     transformSvc.RotateElement(d, dynId,
                         axisOrigin, globalYSnap.Axis, globalYSnap.AngleRadians);
+                }
+                else
+                {
+                    SmartConLogger.Debug("[Rotate] GlobalYSnap skipped (null)");
                 }
             }
 
             d.Regenerate();
         });
+
+        SmartConLogger.Info($"[Rotate] DONE angle={angleDeg}°");
     }
 }

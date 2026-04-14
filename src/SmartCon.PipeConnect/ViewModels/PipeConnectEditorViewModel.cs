@@ -347,6 +347,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     public void Init()
     {
+        SmartConLogger.Info("[Init] START");
         _groupSession = _txService.BeginGroupSession("PipeConnect");
         IsSessionActive = true;
 
@@ -397,9 +398,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             }
 
             RefreshAutoSelectSize();
+            SmartConLogger.Info("[Init] DONE");
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"[Init] Failed: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = $"Ошибка инициализации: {ex.Message}";
             _groupSession.RollBack();
             _groupSession = null;
@@ -429,6 +432,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"[Rotate] Failed: {ex.Message}");
             StatusMessage = $"Ошибка поворота: {ex.Message}";
         }
         finally
@@ -491,6 +495,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"[CycleConnector] Failed: {ex.Message}");
             StatusMessage = $"Error: {ex.Message}";
         }
         finally

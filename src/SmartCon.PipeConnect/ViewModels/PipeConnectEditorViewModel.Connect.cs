@@ -19,6 +19,7 @@ public sealed partial class PipeConnectEditorViewModel
     [RelayCommand(CanExecute = nameof(CanOperate))]
     private void Connect()
     {
+        SmartConLogger.Info("[Connect] START");
         IsBusy = true;
         StatusMessage = "Проверка и финальная подгонка…";
 
@@ -82,12 +83,14 @@ public sealed partial class PipeConnectEditorViewModel
             _connectExecutor.ExecuteConnectTo(
                 ctx, _activeDynamic, _currentFittingId, _primaryReducerId, _activeFittingRule);
 
+            SmartConLogger.Info("[Connect] All operations done, calling Assimilate");
             _groupSession!.Assimilate();
             _groupSession = null;
             StatusMessage = "Соединение выполнено";
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"[Connect] Failed: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = $"Error: {ex.Message}";
         }
         finally
@@ -114,7 +117,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             _groupSession?.RollBack();
         }
-        catch (Exception ex) { SmartConLogger.Info($"[Cancel] RollBack error (ignored): {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"[Cancel] RollBack error (ignored): {ex.Message}"); }
         finally
         {
             _groupSession = null;

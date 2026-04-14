@@ -17,6 +17,7 @@ public sealed partial class PipeConnectEditorViewModel
 
     private bool InsertReducerCore(FittingCardItem reducer, bool moveDynamic)
     {
+        SmartConLogger.Info($"[InsertReducer] START reducer={reducer.DisplayName}");
         var primary = reducer.PrimaryFitting;
         if (primary is null) return false;
 
@@ -30,6 +31,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             if (_primaryReducerId is not null)
             {
+                SmartConLogger.Info($"[InsertReducer] Deleted old reducer id={_primaryReducerId.Value}");
                 _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
                 _virtualCtcStore.RemoveForElement(_primaryReducerId);
                 _primaryReducerId = null;
@@ -37,7 +39,13 @@ public sealed partial class PipeConnectEditorViewModel
 
             insertedId = _fittingInsertSvc.InsertFitting(
                 doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
-            if (insertedId is null) return;
+            if (insertedId is null)
+            {
+                SmartConLogger.Warn("[InsertReducer] InsertFitting returned null");
+                return;
+            }
+
+            SmartConLogger.Info($"[InsertReducer] Inserted id={insertedId.Value}");
 
             doc.Regenerate();
 
@@ -70,6 +78,7 @@ public sealed partial class PipeConnectEditorViewModel
             ReassignReducerCtcCommand.NotifyCanExecuteChanged();
             StatusMessage = $"Переходник: {reducer.DisplayName}";
             SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
+            SmartConLogger.Info($"[InsertReducer] DONE reducerId={_primaryReducerId.Value}");
             return true;
         }
 
@@ -99,7 +108,7 @@ public sealed partial class PipeConnectEditorViewModel
                 StatusMessage = $"Семейство '{primary.FamilyName}' не найдено";
             }
         }
-        catch (Exception ex) { StatusMessage = $"Ошибка: {ex.Message}"; }
+        catch (Exception ex) { SmartConLogger.Error($"[InsertReducer] Failed: {ex.Message}"); StatusMessage = $"Ошибка: {ex.Message}"; }
         finally { IsBusy = false; }
     }
 
@@ -196,7 +205,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             ReassignElementCtc(_currentFittingId, isReducer: false);
         }
-        catch (Exception ex) { StatusMessage = $"Ошибка: {ex.Message}"; }
+        catch (Exception ex) { SmartConLogger.Error($"[ReassignFittingCtc] Failed: {ex.Message}"); StatusMessage = $"Ошибка: {ex.Message}"; }
         finally { IsBusy = false; }
     }
 
@@ -209,7 +218,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             ReassignElementCtc(_primaryReducerId, isReducer: true);
         }
-        catch (Exception ex) { StatusMessage = $"Ошибка: {ex.Message}"; }
+        catch (Exception ex) { SmartConLogger.Error($"[ReassignReducerCtc] Failed: {ex.Message}"); StatusMessage = $"Ошибка: {ex.Message}"; }
         finally { IsBusy = false; }
     }
 
@@ -227,6 +236,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"[InsertFitting] Failed: {ex.Message}");
             StatusMessage = $"Ошибка вставки: {ex.Message}";
         }
         finally
@@ -237,8 +247,11 @@ public sealed partial class PipeConnectEditorViewModel
 
     private void InsertFittingSilent(FittingCardItem fitting, bool adjustDynamicToFit = true)
     {
+        SmartConLogger.Info($"[InsertFitting] START fitting={fitting.DisplayName}, adjustDynamic={adjustDynamicToFit}");
+
         if (fitting.IsDirectConnect)
         {
+            SmartConLogger.Info("[InsertFitting] Direct connect branch — skip fitting");
             _activeFittingRule = null;
             _groupSession!.RunInTransaction("PipeConnect — Прямое соединение", doc =>
             {
@@ -277,6 +290,7 @@ public sealed partial class PipeConnectEditorViewModel
 
             if (insertedId is null) return;
 
+            SmartConLogger.Info($"[InsertFitting] Inserted id={insertedId.Value}");
             doc.Regenerate();
 
             ctcOverrides = GuessCtcForFitting(insertedId, fitting.Rule);
@@ -303,6 +317,7 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (insertedId is null)
         {
+            SmartConLogger.Warn("[InsertFitting] InsertFitting returned null — family not found");
             StatusMessage = $"Семейство '{primary.FamilyName}' не найдено в проекте";
             return;
         }
@@ -314,5 +329,7 @@ public sealed partial class PipeConnectEditorViewModel
         var newFitConn2 = SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: adjustDynamicToFit);
         if (newFitConn2 is not null)
             _activeFittingConn2 = newFitConn2;
+
+        SmartConLogger.Info($"[InsertFitting] DONE fittingId={_currentFittingId?.Value}");
     }
 }

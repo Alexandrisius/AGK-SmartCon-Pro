@@ -275,7 +275,7 @@ public sealed class ConnectExecutor
             currentDynamic = updatedDynamic;
             result = realignFitConn2;
         }
-        catch (Exception ex) { SmartConLogger.Info($"[SizeFitting] Best-effort error (ignored): {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"[SizeFitting] Best-effort error (ignored): {ex.Message}"); }
 
         return new SizeFittingResult(result, currentDynamic);
     }
@@ -323,7 +323,7 @@ public sealed class ConnectExecutor
                 txDoc.Regenerate();
             });
         }
-        catch (Exception ex) { SmartConLogger.Info($"[RealignAfterSizing] Best-effort error (ignored): {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"[RealignAfterSizing] Best-effort error (ignored): {ex.Message}"); }
 
         return (newFitConn2, currentDynamic);
     }
