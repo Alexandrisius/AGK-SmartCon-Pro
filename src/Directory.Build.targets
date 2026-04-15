@@ -1,0 +1,61 @@
+<Project>
+  <!-- ============================================================ -->
+  <!-- Символы условной компиляции                                   -->
+  <!-- ============================================================ -->
+
+  <!-- net8.0-windows: NET8_0 + полная цепочка OR_GREATER (Revit 2025 поддерживает всё API 2021-2024) -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <DefineConstants>$(DefineConstants);NET8_0;REVIT2021_OR_GREATER;REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER;REVIT2025_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <!-- net48 + конкретная версия Revit -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2024'">
+    <DefineConstants>$(DefineConstants);REVIT2021_OR_GREATER;REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2023'">
+    <DefineConstants>$(DefineConstants);REVIT2021_OR_GREATER;REVIT2022_OR_GREATER;REVIT2023_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2022'">
+    <DefineConstants>$(DefineConstants);REVIT2021_OR_GREATER;REVIT2022_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2021'">
+    <DefineConstants>$(DefineConstants);REVIT2021_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <!-- ============================================================ -->
+  <!-- Wildcard VersionOverride для RevitAPI NuGet                   -->
+  <!-- ============================================================ -->
+
+  <!-- net48: версия задаётся через RevitVersion (2021–2024) -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' != ''">
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
+                      VersionOverride="$(RevitVersion).*" />
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+                      VersionOverride="$(RevitVersion).*" />
+  </ItemGroup>
+
+  <!-- Fallback: RevitVersion не указан → restore не падает, ValidateRevitVersion выдаёт понятную ошибку -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == ''">
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
+                      VersionOverride="2021.*" />
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+                      VersionOverride="2021.*" />
+  </ItemGroup>
+
+  <!-- net8.0-windows: всегда RevitAPI 2025, независимо от RevitVersion -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
+                      VersionOverride="2025.*" />
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+                      VersionOverride="2025.*" />
+  </ItemGroup>
+
+  <!-- Валидация: RevitVersion обязателен для net48 + проверка поддерживаемых значений -->
+  <Target Name="ValidateRevitVersion" BeforeTargets="PrepareForBuild"
+          Condition="'$(TargetFramework)' == 'net48'">
+    <Error Condition="'$(RevitVersion)' == ''"
+           Text="RevitVersion не указан. Используйте конфигурацию Debug.R21/.../Debug.R25 или передайте -p:RevitVersion=2021 (2022, 2023, 2024)." />
+    <Error Condition="'$(RevitVersion)' != '2021' And '$(RevitVersion)' != '2022' And '$(RevitVersion)' != '2023' And '$(RevitVersion)' != '2024'"
+           Text="Неизвестная версия RevitVersion=$(RevitVersion). Поддерживаемые значения для net48: 2021, 2022, 2023, 2024." />
+  </Target>
+</Project>

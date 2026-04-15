@@ -17,7 +17,7 @@ internal static class LookupColumnResolver
         foreach (var (fpName, fpFormula) in paramSnapshot)
         {
             if (string.IsNullOrEmpty(fpFormula)) continue;
-            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula);
+            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula!);
             if (parsed is null) continue;
             var resolved = ResolveTableAlias(formulaByName, parsed.Value.TableName);
             if (string.Equals(resolved, tableName, StringComparison.OrdinalIgnoreCase))
@@ -41,7 +41,7 @@ internal static class LookupColumnResolver
         {
             if (string.IsNullOrEmpty(fpFormula)) continue;
 
-            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula);
+            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula!);
             if (parsed is null) continue;
 
             var resolvedTableName = ResolveTableAlias(formulaByName, parsed.Value.TableName);
@@ -102,7 +102,11 @@ internal static class LookupColumnResolver
         if (vars.Count > 0)
             return vars.Any(v => string.Equals(v, target, StringComparison.OrdinalIgnoreCase));
 
+#if NETFRAMEWORK
+        return formula.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0;
+#else
         return formula.Contains(target, StringComparison.OrdinalIgnoreCase);
+#endif
     }
 
     public static string? ExtractTrailingDigits(string name)

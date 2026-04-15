@@ -17,7 +17,11 @@ public static class ConnectorWrapper
     /// </summary>
     public static ConnectorProxy ToProxy(Connector connector)
     {
+#if NETFRAMEWORK
+        if (connector is null) throw new ArgumentNullException(nameof(connector));
+#else
         ArgumentNullException.ThrowIfNull(connector);
+#endif
 
         var cs = connector.CoordinateSystem;
 

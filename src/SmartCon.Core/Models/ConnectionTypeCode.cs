@@ -20,7 +20,7 @@ public readonly record struct ConnectionTypeCode(int Value)
     public static ConnectionTypeCode Parse(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return Undefined;
-        var segment = raw.Split('.')[0].Trim();
+        var segment = raw!.Split('.')[0].Trim();
         return int.TryParse(segment, out var v) && v != 0 ? new(v) : Undefined;
     }
 }

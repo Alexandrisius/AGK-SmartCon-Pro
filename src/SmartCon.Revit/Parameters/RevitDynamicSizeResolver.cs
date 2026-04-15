@@ -11,6 +11,7 @@ using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
 using SmartCon.Core;
+using SmartCon.Core.Compatibility;
 
 
 using static SmartCon.Core.Units;
@@ -32,7 +33,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
         SmartConLogger.DebugSection("RevitDynamicSizeResolver.GetAvailableSizes");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, connIdx={connectorIndex}, constraints={constraints?.Count ?? 0}");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, constraints={constraints?.Count ?? 0}");
 
         var element = doc.GetElement(elementId);
         if (element is null)
@@ -372,7 +373,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         int targetConnectorIndex)
     {
         SmartConLogger.DebugSection("RevitDynamicSizeResolver.GetAvailableFamilySizes");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, targetConnIdx={targetConnectorIndex}");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, targetConnIdx={targetConnectorIndex}");
 
         var element = doc.GetElement(elementId);
         if (element is null)
@@ -441,7 +442,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         if (family is null) return [];
 
         var currentSymbolId = instance.Symbol?.Id;
-        SmartConLogger.Debug($"  FamilySymbol configs: '{family.Name}', current={currentSymbolId?.Value}");
+        SmartConLogger.Debug($"  FamilySymbol configs: '{family.Name}', current={currentSymbolId?.GetValue()}");
 
         var symbolData = _sizeExtractor.GetSymbolConnectorRadii(doc, instance.Id, targetConnectorIndex);
         var sharedParamGroups = FamilySymbolSizeExtractor.AnalyzeSharedParameterGroups(symbolData);

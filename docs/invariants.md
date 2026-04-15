@@ -138,3 +138,11 @@ public partial class SomeView : Window
 - Команды — через `[RelayCommand]` source generator или `RelayCommand` из CommunityToolkit
 - Все биндинги — через `{Binding}` в XAML
 - Открытие окон — через `IDialogService`, не `new Window().ShowDialog()`
+
+---
+
+## I-11: ElementIdCompat — единственный RevitAPI-зависимый класс в Core
+
+`ElementIdCompat` в `SmartCon.Core/Compatibility/` — единственный допустимый класс в Core, зависящий от RevitAPI (carrier-тип `ElementId`). Новые классы с RevitAPI-зависимостью в Core — запрещены без явного ревью архитектора.
+
+**Мотивация:** Multi-version support (Revit 2021-2025) требует абстракции над различиями 32/64-bit ElementId. `ElementIdCompat` решает это через `#if REVIT2024_OR_GREATER`.

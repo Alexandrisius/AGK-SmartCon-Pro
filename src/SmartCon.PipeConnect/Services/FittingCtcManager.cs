@@ -6,6 +6,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 
 using static SmartCon.Core.Units;
 
@@ -60,7 +61,7 @@ public sealed class FittingCtcManager(
         {
             foreach (var c in conns)
                 virtualCtcStore.Set(elementId, c.ConnectorIndex, c.ConnectionTypeCode);
-            SmartConLogger.Info($"[VirtualCTC] {label} {elementId.Value}: CTC already defined → " +
+            SmartConLogger.Info($"[VirtualCTC] {label} {elementId.GetValue()}: CTC already defined → " +
                 string.Join(", ", conns.Select(c => $"conn[{c.ConnectorIndex}]={c.ConnectionTypeCode.Value}")));
             return virtualCtcStore.GetOverridesForElement(elementId);
         }
@@ -84,7 +85,7 @@ public sealed class FittingCtcManager(
 
             virtualCtcStore.Set(elementId, connForStatic.ConnectorIndex, ctcForStaticSide);
             virtualCtcStore.Set(elementId, connForDynamic.ConnectorIndex, ctcForDynamicSide);
-            SmartConLogger.Info($"[VirtualCTC] {label} {elementId.Value} (guessed): " +
+            SmartConLogger.Info($"[VirtualCTC] {label} {elementId.GetValue()} (guessed): " +
                 $"conn[{connForStatic.ConnectorIndex}]={ctcForStaticSide.Value}→static(R={connForStatic.Radius * FeetToMm:F1}mm), " +
                 $"conn[{connForDynamic.ConnectorIndex}]={ctcForDynamicSide.Value}→dynamic(R={connForDynamic.Radius * FeetToMm:F1}mm)");
         }
@@ -156,16 +157,16 @@ public sealed class FittingCtcManager(
             }
             if (allMatch) return;
 
-            SmartConLogger.Info($"[CTC] Virtual CTC differs from family CTC for {elementId.Value} — overwrite");
+            SmartConLogger.Info($"[CTC] Virtual CTC differs from family CTC for {elementId.GetValue()} — overwrite");
         }
 
-        foreach (var (connIdx, ctc) in overrides)
+        foreach (var kvp in overrides)
         {
-            var typeDef = FindTypeDef(ctc);
+            var typeDef = FindTypeDef(kvp.Value);
             if (typeDef is not null)
             {
-                virtualCtcStore.Set(elementId, connIdx, ctc, typeDef);
-                SmartConLogger.Info($"[CTC] Promoted guessed CTC {ctc.Value} → pending write for {elementId.Value}:{connIdx}");
+                virtualCtcStore.Set(elementId, kvp.Key, kvp.Value, typeDef);
+                SmartConLogger.Info($"[CTC] Promoted guessed CTC {kvp.Value.Value} → pending write for {elementId.GetValue()}:{kvp.Key}");
             }
         }
     }
@@ -451,7 +452,7 @@ public sealed class FittingCtcManager(
                     if (projectElementId is not null)
                     {
                         var projectConns = connSvc.GetAllConnectors(doc, projectElementId);
-                        var sortedConnElems = connElems.OrderBy(ce => ce.Id.Value).ToList();
+                        var sortedConnElems = connElems.OrderBy(ce => ce.Id.GetValue()).ToList();
                         var sortedProjectConns = projectConns.OrderBy(pc => pc.ConnectorIndex).ToList();
 
                         orderMap = new Dictionary<int, FittingCtcSetupItem>();
@@ -462,7 +463,7 @@ public sealed class FittingCtcManager(
                             if (itemByConnIdx.TryGetValue(pConnIdx, out var item))
                             {
                                 orderMap[origIdx] = item;
-                                SmartConLogger.Info($"[CTC] Order match: connElem[{origIdx}](id={sortedConnElems[i].Id.Value}) ↔ project conn[{pConnIdx}]");
+                                SmartConLogger.Info($"[CTC] Order match: connElem[{origIdx}](id={sortedConnElems[i].Id.GetValue()}) ↔ project conn[{pConnIdx}]");
                             }
                         }
 
@@ -579,7 +580,7 @@ public sealed class FittingCtcManager(
                 && usedItems.Add(nearest.ConnectorIndex))
             {
                 result[i] = item;
-                SmartConLogger.Info($"[CTC] Spatial match: connElem[{i}](id={ce.Id.Value}) ↔ project conn[{nearest.ConnectorIndex}] (dist={minDist * FeetToMm:F2}mm)");
+                SmartConLogger.Info($"[CTC] Spatial match: connElem[{i}](id={ce.Id.GetValue()}) ↔ project conn[{nearest.ConnectorIndex}] (dist={minDist * FeetToMm:F2}mm)");
             }
         }
 
@@ -599,7 +600,7 @@ public sealed class FittingCtcManager(
         if (pendingWrites.Count == 0) return;
 
         var byElement = pendingWrites
-            .GroupBy(w => w.ElementId.Value)
+            .GroupBy(w => w.ElementId.GetValue())
             .ToList();
 
         foreach (var group in byElement)

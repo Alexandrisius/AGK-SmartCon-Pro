@@ -1,0 +1,30 @@
+name: Build All Versions
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Build Revit 2021-2023 (net48, 32-bit)
+        run: dotnet build src/SmartCon.App/SmartCon.App.csproj -f net48 -c Release.R21
+
+      - name: Build Revit 2024 (net48, 64-bit)
+        run: dotnet build src/SmartCon.App/SmartCon.App.csproj -f net48 -c Release.R24
+
+      - name: Build Revit 2025 (net8.0-windows)
+        run: dotnet build src/SmartCon.App/SmartCon.App.csproj -f net8.0-windows -c Release.R25
+
+      - name: Run Tests
+        run: dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -f net8.0-windows -c Release --no-build

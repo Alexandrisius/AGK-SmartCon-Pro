@@ -1,3 +1,4 @@
+using System.IO;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Implementation;
 using Xunit;

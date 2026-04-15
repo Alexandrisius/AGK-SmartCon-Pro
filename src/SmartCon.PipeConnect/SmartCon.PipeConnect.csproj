@@ -4,21 +4,21 @@
     <RootNamespace>SmartCon.PipeConnect</RootNamespace>
     <AssemblyName>SmartCon.PipeConnect</AssemblyName>
     <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
 
+  <!-- RevitAPI + RevitAPIUI: ExcludeAssets=runtime — DLL не копируется в output -->
   <ItemGroup>
-    <Reference Include="RevitAPI">
-      <HintPath>$(RevitApiPath)\RevitAPI.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="RevitAPIUI">
-      <HintPath>$(RevitApiPath)\RevitAPIUI.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

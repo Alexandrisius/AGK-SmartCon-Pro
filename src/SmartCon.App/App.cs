@@ -15,8 +15,17 @@ namespace SmartCon.App;
 /// </summary>
 public sealed class App : IExternalApplication
 {
+    private static readonly string s_smartConDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "SmartCon");
+
     public Result OnStartup(UIControlledApplication application)
     {
+#if NETFRAMEWORK
+        System.Net.ServicePointManager.SecurityProtocol |=
+            System.Net.SecurityProtocolType.Tls12 |
+            System.Net.SecurityProtocolType.Tls13;
+#endif
         AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
         try
         {
@@ -46,16 +55,12 @@ public sealed class App : IExternalApplication
     {
         try
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var pendingDir = Path.Combine(appData, "SmartCon", "updater-pending");
+            var pendingDir = Path.Combine(s_smartConDir, "updater-pending");
             if (!Directory.Exists(pendingDir)) return;
-
-            var appDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            if (appDir is null) return;
 
             foreach (var file in Directory.GetFiles(pendingDir))
             {
-                var dest = Path.Combine(appDir, Path.GetFileName(file));
+                var dest = Path.Combine(s_smartConDir, Path.GetFileName(file));
                 File.Copy(file, dest, overwrite: true);
             }
 
@@ -71,17 +76,16 @@ public sealed class App : IExternalApplication
     {
         try
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var markerPath = Path.Combine(appData, "SmartCon", "update-pending.json");
+            var markerPath = Path.Combine(s_smartConDir, "update-pending.json");
             if (!File.Exists(markerPath)) return;
 
-            var stagingDir = Path.Combine(appData, "SmartCon", "staging", "extracted");
+            var stagingDir = Path.Combine(s_smartConDir, "staging", "extracted");
             if (Directory.Exists(stagingDir))
             {
                 try { Directory.Delete(stagingDir, true); } catch { /* Intentional: cleanup */ }
             }
 
-            var stagingRoot = Path.Combine(appData, "SmartCon", "staging");
+            var stagingRoot = Path.Combine(s_smartConDir, "staging");
             if (Directory.Exists(stagingRoot))
             {
                 try { Directory.Delete(stagingRoot, true); } catch { /* Intentional: cleanup */ }
@@ -99,17 +103,22 @@ public sealed class App : IExternalApplication
     {
         try
         {
-            var appDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            if (appDir is null) return;
-
-            var markerPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "SmartCon", "update-pending.json");
-
+            var markerPath = Path.Combine(s_smartConDir, "update-pending.json");
             if (!File.Exists(markerPath)) return;
 
-            var updaterPath = Path.Combine(appDir, "SmartCon.Updater.exe");
-            if (!File.Exists(updaterPath)) return;
+            var updaterPath = Path.Combine(s_smartConDir, "SmartCon.Updater.exe");
+            if (!File.Exists(updaterPath))
+            {
+                var appDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                if (appDir is not null)
+                {
+                    var fallbackPath = Path.Combine(appDir, "SmartCon.Updater.exe");
+                    if (File.Exists(fallbackPath))
+                        updaterPath = fallbackPath;
+                    else return;
+                }
+                else return;
+            }
 
             Process.Start(new ProcessStartInfo
             {

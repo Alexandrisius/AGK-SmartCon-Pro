@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using SmartCon.Core;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Revit.Extensions;
 using RevitTransform = Autodesk.Revit.DB.Transform;
@@ -91,11 +92,11 @@ internal static class FamilyParameterAnalyzer
             {
                 score = -distLocal;
             }
-            SmartConLogger.Debug($"  ConnElem id={ce.Id.Value}: localOrigin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}), globalOrigin=({globalOrigin.X:F4},{globalOrigin.Y:F4},{globalOrigin.Z:F4}), distLocal={distLocal:F4} score={score:F4}");
+            SmartConLogger.Debug($"  ConnElem id={ce.Id.GetValue()}: localOrigin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}), globalOrigin=({globalOrigin.X:F4},{globalOrigin.Y:F4},{globalOrigin.Z:F4}), distLocal={distLocal:F4} score={score:F4}");
             if (score > bestScore) { bestScore = score; targetConnElem = ce; }
         }
 
-        SmartConLogger.Debug($"  Best ConnectorElement: id={targetConnElem?.Id.Value}, bestScore={bestScore:F4} (min {ConnectorMatchScore.DirectionThreshold})");
+        SmartConLogger.Debug($"  Best ConnectorElement: id={targetConnElem?.Id.GetValue()}, bestScore={bestScore:F4} (min {ConnectorMatchScore.DirectionThreshold})");
 
         if (targetConnElem is null || bestScore < ConnectorMatchScore.DirectionThreshold)
         {
@@ -108,15 +109,15 @@ internal static class FamilyParameterAnalyzer
         var radiusParam = targetConnElem.get_Parameter(BuiltInParameter.CONNECTOR_RADIUS);
         if (radiusParam is null)
         {
-            SmartConLogger.Debug($"  WARNING: CONNECTOR_RADIUS param not found on ConnectorElement id={targetConnElem.Id.Value} → return default");
+            SmartConLogger.Debug($"  WARNING: CONNECTOR_RADIUS param not found on ConnectorElement id={targetConnElem.Id.GetValue()} → return default");
             return default;
         }
 
-        SmartConLogger.Debug($"  CONNECTOR_RADIUS: Id={radiusParam.Id.Value}, Value={radiusParam.AsDouble():F6} ft");
+        SmartConLogger.Debug($"  CONNECTOR_RADIUS: Id={radiusParam.Id.GetValue()}, Value={radiusParam.AsDouble():F6} ft");
 
         // Также принимаем CONNECTOR_DIAMETER — FamilyParameter 'DN' обычно управляет диаметром
         var diamParam = targetConnElem.get_Parameter(BuiltInParameter.CONNECTOR_DIAMETER);
-        SmartConLogger.Debug($"  CONNECTOR_DIAMETER: Id={diamParam?.Id.Value.ToString() ?? "null"}, Value={diamParam?.AsDouble():F6} ft");
+        SmartConLogger.Debug($"  CONNECTOR_DIAMETER: Id={diamParam?.Id.GetValue().ToString() ?? "null"}, Value={diamParam?.AsDouble():F6} ft");
 
         // 3. Найти FamilyParameter чьи AssociatedParameters включают radiusParam/diamParam на targetConnElem
         var fm = familyDoc.FamilyManager;
@@ -145,7 +146,7 @@ internal static class FamilyParameterAnalyzer
                     bool elemMatch = assoc.Element?.Id == targetConnElem.Id;
 
                     if (assocCount > 0)
-                        SmartConLogger.Debug($"      assoc.Id={assoc.Id.Value}, radiusParam.Id={radiusParam.Id.Value}, diamParam.Id={diamParam?.Id.Value.ToString() ?? "null"}, idMatch={idMatch} | assoc.Element.Id={assoc.Element?.Id.Value}, targetConn.Id={targetConnElem.Id.Value}, elemMatch={elemMatch}");
+                        SmartConLogger.Debug($"      assoc.Id={assoc.Id.GetValue()}, radiusParam.Id={radiusParam.Id.GetValue()}, diamParam.Id={diamParam?.Id.GetValue().ToString() ?? "null"}, idMatch={idMatch} | assoc.Element.Id={assoc.Element?.Id.GetValue()}, targetConn.Id={targetConnElem.Id.GetValue()}, elemMatch={elemMatch}");
 
                     if (idMatch && elemMatch)
                     {
@@ -235,7 +236,7 @@ internal static class FamilyParameterAnalyzer
                 var candidateName = candidate.Definition?.Name;
                 if (!string.IsNullOrEmpty(candidateName) &&
                     !string.Equals(candidateName, directName, StringComparison.OrdinalIgnoreCase))
-                    candidates.Add((candidateName, candidate));
+                    candidates.Add((candidateName!, candidate));
             }
             candidates.Sort((a, b) => b.Name.Length.CompareTo(a.Name.Length));
 

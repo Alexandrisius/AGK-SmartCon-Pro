@@ -73,7 +73,7 @@ public static class VectorUtils
         var cosAngle = dot / (lenA * lenB);
 
         // Clamp to protect against rounding errors
-        cosAngle = System.Math.Clamp(cosAngle, -1.0, 1.0);
+        cosAngle = System.Math.Max(-1.0, System.Math.Min(1.0, cosAngle));
 
         return System.Math.Acos(cosAngle);
     }

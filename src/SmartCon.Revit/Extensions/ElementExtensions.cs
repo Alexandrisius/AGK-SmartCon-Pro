@@ -15,7 +15,11 @@ public static class ElementExtensions
     /// </summary>
     public static ConnectorManager? GetConnectorManager(this Element element)
     {
+#if NETFRAMEWORK
+        if (element is null) throw new ArgumentNullException(nameof(element));
+#else
         ArgumentNullException.ThrowIfNull(element);
+#endif
 
         if (element is FamilyInstance familyInstance)
         {

@@ -82,6 +82,10 @@ SmartCon.Core/
 │   └── FormulaEngine/                 <- AST-парсер формул
 ├── Logging/
 │   └── SmartConLogger.cs              <- файловый логгер
+├── Compatibility/
+│   ├── ElementIdCompat.cs             <- абстракция над 32/64-bit ElementId (multi-version)
+│   ├── NetFrameworkCompat.cs          <- polyfills для .NET Framework 4.8
+│   └── SimplePriorityQueue.cs         <- lightweight priority queue (no BCL dependency)
 └── Constants.cs                       <- Units, Tolerance
 ```
 

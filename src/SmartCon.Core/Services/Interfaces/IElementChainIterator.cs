@@ -14,7 +14,7 @@ public interface IElementChainIterator
     /// stopAtElements — elements where BFS stops (not included in the graph).
     /// </summary>
     ConnectionGraph BuildGraph(Document doc, ElementId startElementId,
-        IReadOnlySet<ElementId>? stopAtElements = null);
+        HashSet<ElementId>? stopAtElements = null);
 
     /// <summary>
     /// Free connectors at chain boundaries (IsFree == true).

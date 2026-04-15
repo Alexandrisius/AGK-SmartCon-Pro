@@ -9,6 +9,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
@@ -32,7 +33,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             if (_primaryReducerId is not null)
             {
-                SmartConLogger.Info($"[InsertReducer] Deleted old reducer id={_primaryReducerId.Value}");
+                SmartConLogger.Info($"[InsertReducer] Deleted old reducer id={_primaryReducerId.GetValue()}");
                 _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
                 _virtualCtcStore.RemoveForElement(_primaryReducerId);
                 _primaryReducerId = null;
@@ -46,7 +47,7 @@ public sealed partial class PipeConnectEditorViewModel
                 return;
             }
 
-            SmartConLogger.Info($"[InsertReducer] Inserted id={insertedId.Value}");
+            SmartConLogger.Info($"[InsertReducer] Inserted id={insertedId.GetValue()}");
 
             doc.Regenerate();
 
@@ -79,7 +80,7 @@ public sealed partial class PipeConnectEditorViewModel
             ReassignReducerCtcCommand.NotifyCanExecuteChanged();
             StatusMessage = string.Format(LocalizationService.GetString("Status_ReducerSet"), reducer.DisplayName);
             SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
-            SmartConLogger.Info($"[InsertReducer] DONE reducerId={_primaryReducerId.Value}");
+            SmartConLogger.Info($"[InsertReducer] DONE reducerId={_primaryReducerId.GetValue()}");
             return true;
         }
 
@@ -291,7 +292,7 @@ public sealed partial class PipeConnectEditorViewModel
 
             if (insertedId is null) return;
 
-            SmartConLogger.Info($"[InsertFitting] Inserted id={insertedId.Value}");
+            SmartConLogger.Info($"[InsertFitting] Inserted id={insertedId.GetValue()}");
             doc.Regenerate();
 
             ctcOverrides = GuessCtcForFitting(insertedId, fitting.Rule);
@@ -331,6 +332,6 @@ public sealed partial class PipeConnectEditorViewModel
         if (newFitConn2 is not null)
             _activeFittingConn2 = newFitConn2;
 
-        SmartConLogger.Info($"[InsertFitting] DONE fittingId={_currentFittingId?.Value}");
+        SmartConLogger.Info($"[InsertFitting] DONE fittingId={_currentFittingId?.GetValue()}");
     }
 }

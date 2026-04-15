@@ -5,6 +5,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 
 namespace SmartCon.PipeConnect.Services;
 
@@ -27,7 +28,7 @@ public sealed class PipeConnectRotationHandler(
         int angleDeg)
     {
         var dynId = ctx.DynamicConnector.OwnerElementId;
-        SmartConLogger.Info($"[Rotate] START angle={angleDeg}°, dynId={dynId.Value}, fitting={fittingId?.Value}, reducer={reducerId?.Value}");
+        SmartConLogger.Info($"[Rotate] START angle={angleDeg}°, dynId={dynId.GetValue()}, fitting={fittingId?.GetValue()}, reducer={reducerId?.GetValue()}");
 
         groupSession.RunInTransaction(LocalizationService.GetString("Tx_Rotate"), d =>
         {

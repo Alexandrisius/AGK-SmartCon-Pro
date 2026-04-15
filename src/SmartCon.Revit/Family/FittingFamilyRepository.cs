@@ -6,6 +6,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 using RevitFamily = Autodesk.Revit.DB.Family;
 
 namespace SmartCon.Revit.Family;
@@ -38,7 +39,7 @@ public sealed class FittingFamilyRepository : IFittingFamilyRepository
         var allPipeFitting = new FilteredElementCollector(doc)
             .OfClass(typeof(RevitFamily))
             .Cast<RevitFamily>()
-            .Where(f => f.FamilyCategory?.Id.Value == (long)BuiltInCategory.OST_PipeFitting)
+            .Where(f => f.FamilyCategory?.Id.GetValue() == (long)BuiltInCategory.OST_PipeFitting)
             .ToList();
 
         SmartConLogger.Info($"Фаза 1: найдено {allPipeFitting.Count} семейств OST_PipeFitting");

@@ -3,6 +3,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 
 using static SmartCon.Core.Units;
 
@@ -39,7 +40,7 @@ public sealed class DynamicSizeLoader(
         {
             var dynId = dynamicConn.OwnerElementId;
             var dynIdx = dynamicConn.ConnectorIndex;
-            SmartConLogger.Debug($"  elementId={dynId.Value}, connIdx={dynIdx}");
+            SmartConLogger.Debug($"  elementId={dynId.GetValue()}, connIdx={dynIdx}");
 
             var availableConfigs = sizeResolver.GetAvailableFamilySizes(doc, dynId, dynIdx);
             SmartConLogger.Debug($"  GetAvailableFamilySizes returned {availableConfigs.Count} configs");

@@ -1,0 +1,39 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MVVM Toolkit — работает на обоих TFM (netstandard2.0) -->
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+
+    <!-- DI — НЕ ОБНОВЛЯТЬ выше 8.x! Версии 9.0+ дропнули net48.
+         При апгрейде убедиться что новая версия поддерживает net48 -->
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+
+    <!-- C# polyfill для net48 (атрибуты: record, init, required и т.д.) -->
+    <PackageVersion Include="PolySharp" Version="1.15.0" />
+
+    <!-- Тестирование -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageVersion Include="Moq" Version="4.20.72" />
+
+    <!-- JSON для net48 -->
+    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
+
+    <!-- HttpClient для net48 (встроен в .NET 8 BCL) -->
+    <PackageVersion Include="System.Net.Http" Version="4.3.4" />
+
+    <!--
+      ВНИМАНИЕ: RevitAPI NuGet НЕ указываем в PackageVersion!
+      Версия RevitAPI динамическая — задаётся через wildcard $(RevitVersion).*
+      прямо в PackageReference (VersionOverride) в Directory.Build.targets.
+      
+      CPM требует либо PackageVersion, либо VersionOverride для каждого
+      PackageReference. RevitAPI использует VersionOverride с wildcard,
+      поэтому PackageVersion не нужен.
+    -->
+  </ItemGroup>
+</Project>

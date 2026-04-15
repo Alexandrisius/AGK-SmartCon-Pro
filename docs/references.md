@@ -48,3 +48,12 @@
 | Тема | Ссылка |
 |---|---|
 | IExternalEventHandler deadlock | [discourse.mcneel.com](https://discourse.mcneel.com/t/rhino-inside-revit-limitation-iexternaleventhandler-deadlock-in-gh/152008) |
+
+## Multi-version Support
+
+| Тема | Ссылка |
+|---|---|
+| Nice3point.Revit.Api (NuGet) | [nuget.org/packages/Nice3point.Revit.Api](https://www.nuget.org/packages/Nice3point.Revit.Api) |
+| Nice3point.Revit.Api.UI (NuGet) | [nuget.org/packages/Nice3point.Revit.Api.UI](https://www.nuget.org/packages/Nice3point.Revit.Api.UI) |
+| PolySharp (NuGet) | [nuget.org/packages/PolySharp](https://www.nuget.org/packages/PolySharp) |
+| ElementId 64-bit migration (Revit 2024) | [thebuildingcoder.typepad.com](https://thebuildingcoder.typepad.com/blog/2023/04/revit-2024-element-id-changes.html) |

@@ -10,13 +10,17 @@
     <InternalsVisibleTo Include="SmartCon.Revit" />
   </ItemGroup>
 
+  <!-- RevitAPI: compile-time only (I-09: carrier types — ElementId, XYZ).
+       ExcludeAssets=runtime: DLL не копируется в output, загружается из Revit. -->
   <ItemGroup>
-    <!-- Только RevitAPI.dll (value-типы как carriers: ElementId, XYZ, Domain).
-         RevitAPIUI запрещён в Core (I-09). -->
-    <Reference Include="RevitAPI">
-      <HintPath>$(RevitApiPath)\RevitAPI.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- System.Text.Json: встроен в .NET 8 BCL. Для net48 — NuGet. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
 </Project>

@@ -253,7 +253,11 @@ public sealed class FormulaSolver : IFormulaSolver
             .ToList();
 
         if (spaced.Count == 0)
-            return (formula, new Dictionary<string, double>(variables, StringComparer.OrdinalIgnoreCase));
+        {
+            var result = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in variables) result[kvp.Key] = kvp.Value;
+            return (formula, result);
+        }
 
         var normFormula = formula;
         var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -287,8 +291,11 @@ public sealed class FormulaSolver : IFormulaSolver
         spaced = spaced.OrderByDescending(s => s.Length).ToList();
 
         if (spaced.Count == 0)
-            return (formula, variableName,
-                new Dictionary<string, double>(others, StringComparer.OrdinalIgnoreCase));
+        {
+            var result = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in others) result[kvp.Key] = kvp.Value;
+            return (formula, variableName, result);
+        }
 
         var normFormula = formula;
         var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

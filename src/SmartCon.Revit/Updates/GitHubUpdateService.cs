@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
@@ -17,15 +18,14 @@ public sealed class GitHubUpdateService : IUpdateService
         PropertyNameCaseInsensitive = true
     };
 
-    private static readonly string s_stagingDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "SmartCon", "staging");
-
-    private static readonly string s_pendingMarkerPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "SmartCon", "update-pending.json");
+    private static readonly string s_appDataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    private static readonly string s_smartConDir = Path.Combine(s_appDataDir, "SmartCon");
+    private static readonly string s_stagingDir = Path.Combine(s_smartConDir, "staging");
+    private static readonly string s_pendingMarkerPath = Path.Combine(s_smartConDir, "update-pending.json");
 
     private string? _cachedVersion;
+
+    private static readonly int[] s_supportedRevitVersions = [2021, 2022, 2023, 2024, 2025];
 
     public GitHubUpdateService(IUpdateSettingsRepository settingsRepo)
     {
@@ -97,19 +97,21 @@ public sealed class GitHubUpdateService : IUpdateService
             return null;
 
         var assets = root.GetProperty("assets");
-        var zipAsset = FindZipAsset(assets);
+        var allAssets = ParseAllAssets(assets);
 
-        if (zipAsset is null)
+        if (allAssets.Count == 0)
             return null;
+
+        var primaryAsset = allAssets.Values.First();
 
         return new UpdateInfo(
             Version: version,
             TagName: tagName,
             ReleaseNotes: root.TryGetProperty("body", out var body) ? body.GetString() : null,
             PublishedAt: root.GetProperty("published_at").GetDateTime(),
-            DownloadUrl: zipAsset.Value.browser_download_url,
-            FileSize: zipAsset.Value.size,
-            AssetName: zipAsset.Value.name
+            DownloadUrl: primaryAsset.DownloadUrl,
+            FileSize: primaryAsset.Size,
+            AssetName: primaryAsset.Name
         );
     }
 
@@ -122,46 +124,110 @@ public sealed class GitHubUpdateService : IUpdateService
             _httpClient.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", settings.GitHubToken);
 
-        var zipPath = Path.Combine(s_stagingDir, info.AssetName);
-        using var response = await _httpClient.GetAsync(info.DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
+        var neededTags = GetNeededArtifactTags();
 
-        var totalBytes = response.Content.Headers.ContentLength ?? info.FileSize;
-        var buffer = new byte[81920];
-        long bytesRead = 0;
-
-        await using var contentStream = await response.Content.ReadAsStreamAsync();
-        await using var fileStream = File.Create(zipPath);
-
-        int read;
-        while ((read = await contentStream.ReadAsync(buffer)) > 0)
+        var allAssets = await FetchAllAssetsFromLatestRelease(settings);
+        var totalSize = 0L;
+        var toDownload = new List<(string Tag, AssetInfo Asset)>();
+        foreach (var tag in neededTags)
         {
-            await fileStream.WriteAsync(buffer.AsMemory(0, read));
-            bytesRead += read;
-            progress?.Report((double)bytesRead / totalBytes);
+            if (allAssets.TryGetValue(tag, out var asset))
+            {
+                toDownload.Add((tag, asset));
+                totalSize += asset.Size;
+            }
         }
 
-        return zipPath;
+        if (toDownload.Count == 0)
+            throw new InvalidOperationException("No suitable update assets found on GitHub Release.");
+
+        var lastZipPath = "";
+        long totalBytesRead = 0;
+
+        foreach (var (tag, asset) in toDownload)
+        {
+            var zipPath = Path.Combine(s_stagingDir, asset.Name);
+            using var response = await _httpClient.GetAsync(asset.DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            var bufferSize = 81920;
+            var buffer = new byte[bufferSize];
+
+#if NETFRAMEWORK
+            using var contentStream = await response.Content.ReadAsStreamAsync();
+            using var fileStream = File.Create(zipPath);
+
+            int read;
+            while ((read = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+            {
+                await fileStream.WriteAsync(buffer, 0, read);
+#else
+            await using var contentStream = await response.Content.ReadAsStreamAsync();
+            await using var fileStream = File.Create(zipPath);
+
+            int read;
+            while ((read = await contentStream.ReadAsync(buffer)) > 0)
+            {
+                await fileStream.WriteAsync(buffer.AsMemory(0, read));
+#endif
+                totalBytesRead += read;
+                progress?.Report((double)totalBytesRead / totalSize);
+            }
+
+            lastZipPath = zipPath;
+        }
+
+        return lastZipPath;
     }
 
     public async Task StageUpdateAsync(string zipPath)
     {
-        var extractDir = Path.Combine(s_stagingDir, "extracted");
-        if (Directory.Exists(extractDir))
-            Directory.Delete(extractDir, true);
+        var neededTags = GetNeededArtifactTags();
+        var allAssets = await FetchAllAssetsFromLatestRelease(_settingsRepo.Load());
 
-        ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
+        var artifacts = new List<StagedArtifact>();
 
-        var installPath = GetInstallPath();
-        var pending = new PendingUpdate(
+        foreach (var tag in neededTags)
+        {
+            if (!allAssets.TryGetValue(tag, out var asset))
+                continue;
+
+            var zipFileName = asset.Name;
+            var fullZipPath = Path.Combine(s_stagingDir, zipFileName);
+            if (!File.Exists(fullZipPath))
+                continue;
+
+            var extractDir = Path.Combine(s_stagingDir, $"extracted-{tag}");
+            if (Directory.Exists(extractDir))
+                Directory.Delete(extractDir, true);
+
+            ZipFile.ExtractToDirectory(fullZipPath, extractDir
+#if !NETFRAMEWORK
+                , overwriteFiles: true
+#endif
+            );
+
+            var targetDir = GetTargetInstallPath(tag);
+
+            artifacts.Add(new StagedArtifact(
+                StagingPath: extractDir,
+                TargetInstallPath: targetDir,
+                ArtifactTag: tag
+            ));
+        }
+
+        var pending = new MultiVersionPendingUpdate(
             Version: "staged",
-            StagingPath: extractDir,
             StagedAt: DateTime.Now,
-            TargetInstallPath: installPath
+            Artifacts: artifacts
         );
 
         var json = JsonSerializer.Serialize(pending, s_jsonOptions);
+#if NETFRAMEWORK
+        File.WriteAllText(s_pendingMarkerPath, json);
+#else
         await File.WriteAllTextAsync(s_pendingMarkerPath, json);
+#endif
     }
 
     public async Task<PendingUpdate?> GetPendingUpdateAsync()
@@ -169,12 +235,61 @@ public sealed class GitHubUpdateService : IUpdateService
         if (!File.Exists(s_pendingMarkerPath))
             return null;
 
+#if NETFRAMEWORK
+        var json = File.ReadAllText(s_pendingMarkerPath);
+#else
         var json = await File.ReadAllTextAsync(s_pendingMarkerPath);
+#endif
         return JsonSerializer.Deserialize<PendingUpdate>(json, s_jsonOptions);
+    }
+
+    public async Task<MultiVersionPendingUpdate?> GetMultiVersionPendingUpdateAsync()
+    {
+        if (!File.Exists(s_pendingMarkerPath))
+            return null;
+
+#if NETFRAMEWORK
+        var json = File.ReadAllText(s_pendingMarkerPath);
+#else
+        var json = await File.ReadAllTextAsync(s_pendingMarkerPath);
+#endif
+        return JsonSerializer.Deserialize<MultiVersionPendingUpdate>(json, s_jsonOptions);
     }
 
     public async Task ApplyPendingUpdateAsync()
     {
+        var multi = await GetMultiVersionPendingUpdateAsync();
+        if (multi is not null)
+        {
+            foreach (var artifact in multi.Artifacts)
+            {
+                if (!Directory.Exists(artifact.StagingPath)) continue;
+
+                Directory.CreateDirectory(artifact.TargetInstallPath);
+
+                foreach (var file in Directory.GetFiles(artifact.StagingPath))
+                {
+                    var ext = Path.GetExtension(file).ToLowerInvariant();
+                    if (ext is not (".dll" or ".exe")) continue;
+                    var dest = Path.Combine(artifact.TargetInstallPath, Path.GetFileName(file));
+                    File.Copy(file, dest, overwrite: true);
+                }
+            }
+
+            foreach (var artifact in multi.Artifacts)
+            {
+                try
+                {
+                    if (Directory.Exists(artifact.StagingPath))
+                        Directory.Delete(artifact.StagingPath, true);
+                }
+                catch { /* Intentional: staging cleanup */ }
+            }
+
+            File.Delete(s_pendingMarkerPath);
+            return;
+        }
+
         var pending = await GetPendingUpdateAsync();
         if (pending is null) return;
 
@@ -207,9 +322,59 @@ public sealed class GitHubUpdateService : IUpdateService
     {
         var assemblyLocation = Assembly.GetExecutingAssembly().Location;
         var dir = Path.GetDirectoryName(assemblyLocation);
-        return dir ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Autodesk", "Revit", "Addins", "2025", "SmartCon");
+        return dir ?? Path.Combine(s_appDataDir, "SmartCon", "2025");
+    }
+
+    internal static string GetTargetInstallPath(string artifactTag)
+    {
+        return artifactTag switch
+        {
+            "R21" => Path.Combine(s_smartConDir, "2021-2023"),
+            "R24" => Path.Combine(s_smartConDir, "2024"),
+            "R25" => Path.Combine(s_smartConDir, "2025"),
+            _ => Path.Combine(s_smartConDir, artifactTag)
+        };
+    }
+
+    internal static HashSet<string> GetNeededArtifactTags()
+    {
+        var installed = DetectInstalledRevitVersions();
+        var tags = new HashSet<string>();
+
+        if (installed.Contains(2021) || installed.Contains(2022) || installed.Contains(2023))
+            tags.Add("R21");
+        if (installed.Contains(2024))
+            tags.Add("R24");
+        if (installed.Contains(2025))
+            tags.Add("R25");
+
+        if (tags.Count == 0)
+            tags = ["R21", "R24", "R25"];
+
+        return tags;
+    }
+
+    internal static HashSet<int> DetectInstalledRevitVersions()
+    {
+        var result = new HashSet<int>();
+
+        foreach (var version in s_supportedRevitVersions)
+        {
+            try
+            {
+                var key = $@"SOFTWARE\Autodesk\Revit\Autodesk Revit {version}";
+                using var regKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key);
+                if (regKey?.GetValue("InstallLocation") is string installPath
+                    && !string.IsNullOrWhiteSpace(installPath)
+                    && Directory.Exists(installPath))
+                {
+                    result.Add(version);
+                }
+            }
+            catch { /* Registry access may fail */ }
+        }
+
+        return result;
     }
 
     private static bool IsNewer(string remote, string current)
@@ -231,20 +396,64 @@ public sealed class GitHubUpdateService : IUpdateService
         return Version.TryParse(normalized, out version!);
     }
 
-    private static (string browser_download_url, long size, string name)? FindZipAsset(JsonElement assets)
+    private async Task<Dictionary<string, AssetInfo>> FetchAllAssetsFromLatestRelease(
+        Core.Models.UpdateSettings settings)
     {
+        var url = $"https://api.github.com/repos/{settings.GitHubOwner}/{settings.GitHubRepo}/releases/latest";
+
+        if (!string.IsNullOrEmpty(settings.GitHubToken))
+            _httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", settings.GitHubToken);
+
+        var response = await _httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        return ParseAllAssets(doc.RootElement.GetProperty("assets"));
+    }
+
+    private static Dictionary<string, AssetInfo> ParseAllAssets(JsonElement assets)
+    {
+        var result = new Dictionary<string, AssetInfo>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var asset in assets.EnumerateArray())
         {
             var name = asset.GetProperty("name").GetString() ?? "";
-            if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var tag = ExtractArtifactTag(name);
+            if (tag is null) continue;
+
+            if (!result.ContainsKey(tag))
             {
-                return (
-                    asset.GetProperty("browser_download_url").GetString()!,
-                    asset.GetProperty("size").GetInt64(),
-                    name
+                result[tag] = new AssetInfo(
+                    Name: name,
+                    DownloadUrl: asset.GetProperty("browser_download_url").GetString()!,
+                    Size: asset.GetProperty("size").GetInt64()
                 );
+            }
+        }
+
+        return result;
+    }
+
+    private static string? ExtractArtifactTag(string assetName)
+    {
+        var patterns = new[] { "-R21.", "-R22.", "-R23.", "-R24.", "-R25." };
+        foreach (var pattern in patterns)
+        {
+            if (assetName.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                var tag = pattern.TrimStart('-').TrimEnd('.');
+                if (tag is "R22" or "R23")
+                    return "R21";
+                return tag;
             }
         }
         return null;
     }
+
+    private record AssetInfo(string Name, string DownloadUrl, long Size);
 }

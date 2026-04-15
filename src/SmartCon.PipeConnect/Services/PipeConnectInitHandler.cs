@@ -5,6 +5,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 
 using static SmartCon.Core.Units;
 
@@ -105,7 +106,7 @@ public sealed class PipeConnectInitHandler(
         {
             var dynId = ctx.DynamicConnector.OwnerElementId;
 
-            SmartConLogger.Info($"[Align] START dynId={dynId.Value} " +
+            SmartConLogger.Info($"[Align] START dynId={dynId.GetValue()} " +
                 $"origin=({ctx.DynamicConnector.Origin.X:F4},{ctx.DynamicConnector.Origin.Y:F4},{ctx.DynamicConnector.Origin.Z:F4}) " +
                 $"BZ=({ctx.DynamicConnector.BasisZ.X:F3},{ctx.DynamicConnector.BasisZ.Y:F3},{ctx.DynamicConnector.BasisZ.Z:F3})");
 

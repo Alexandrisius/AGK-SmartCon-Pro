@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
 
 namespace SmartCon.Core.Models;
 
@@ -19,7 +20,7 @@ public sealed class VirtualCtcStore
     /// </summary>
     public void Set(ElementId elemId, int connIdx, ConnectionTypeCode ctc, ConnectorTypeDefinition? typeDef = null)
     {
-        var key = (elemId.Value, connIdx);
+        var key = (elemId.GetValue(), connIdx);
         _overrides[key] = ctc;
         if (typeDef is not null)
             _pendingWrites[key] = typeDef;
@@ -28,7 +29,7 @@ public sealed class VirtualCtcStore
     /// <summary>Get virtual CTC or null if not set.</summary>
     public ConnectionTypeCode? Get(ElementId elemId, int connIdx)
     {
-        return _overrides.TryGetValue((elemId.Value, connIdx), out var ctc) ? ctc : null;
+        return _overrides.TryGetValue((elemId.GetValue(), connIdx), out var ctc) ? ctc : null;
     }
 
     /// <summary>
@@ -38,7 +39,7 @@ public sealed class VirtualCtcStore
     public IReadOnlyDictionary<int, ConnectionTypeCode> GetOverridesForElement(ElementId elemId)
     {
         var result = new Dictionary<int, ConnectionTypeCode>();
-        var idVal = elemId.Value;
+        var idVal = elemId.GetValue();
         foreach (var kvp in _overrides)
         {
             if (kvp.Key.ElemId == idVal)
@@ -53,7 +54,7 @@ public sealed class VirtualCtcStore
     public IReadOnlyList<(ElementId ElementId, int ConnectorIndex, ConnectorTypeDefinition TypeDef)> GetPendingWrites()
     {
         return _pendingWrites
-            .Select(kvp => (new ElementId(kvp.Key.ElemId), kvp.Key.ConnIdx, kvp.Value))
+            .Select(kvp => (ElementIdCompat.Create(kvp.Key.ElemId), kvp.Key.ConnIdx, kvp.Value))
             .ToList();
     }
 
@@ -73,7 +74,7 @@ public sealed class VirtualCtcStore
     /// </summary>
     public void RemoveForElement(ElementId elemId)
     {
-        long val = elemId.Value;
+        long val = elemId.GetValue();
         _overrides.Keys.Where(k => k.ElemId == val).ToList()
             .ForEach(k => _overrides.Remove(k));
         _pendingWrites.Keys.Where(k => k.ElemId == val).ToList()
@@ -96,8 +97,8 @@ public sealed class VirtualCtcStore
     /// </summary>
     public void TransferOverrides(ElementId oldElemId, ElementId newElemId)
     {
-        long oldVal = oldElemId.Value;
-        long newVal = newElemId.Value;
+        long oldVal = oldElemId.GetValue();
+        long newVal = newElemId.GetValue();
 
         var keysToMove = _overrides.Keys.Where(k => k.ElemId == oldVal).ToList();
         foreach (var key in keysToMove)

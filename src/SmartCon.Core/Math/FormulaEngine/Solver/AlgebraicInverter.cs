@@ -63,10 +63,9 @@ internal static class AlgebraicInverter
         double value,
         IReadOnlyDictionary<string, double> otherValues)
     {
-        var vars = new Dictionary<string, double>(otherValues, StringComparer.OrdinalIgnoreCase)
-        {
-            [variableName] = value
-        };
+        var vars = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in otherValues) vars[kvp.Key] = kvp.Value;
+        vars[variableName] = value;
         return Evaluator.Evaluate(ast, vars);
     }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
@@ -56,7 +57,7 @@ public sealed class FamilySymbolSizeExtractor
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Debug($"  EXCEPTION symbolId={symbolId.Value}: {ex.Message}");
+                    SmartConLogger.Debug($"  EXCEPTION symbolId={symbolId.GetValue()}: {ex.Message}");
                 }
             }
         });
@@ -110,7 +111,7 @@ public sealed class FamilySymbolSizeExtractor
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Debug($"  error symbolId={symbolId.Value}: {ex.Message}");
+                    SmartConLogger.Debug($"  error symbolId={symbolId.GetValue()}: {ex.Message}");
                 }
             }
         });

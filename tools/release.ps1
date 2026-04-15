@@ -78,57 +78,81 @@ Write-Step "Updating Version.txt => $newVersion"
 Set-Content -Path $VersionFile -Value $newVersion -NoNewline
 Write-Ok "Version.txt updated"
 
-# --- 2. Build Release ---
-Write-Step "Building Release configuration"
-dotnet build $SrcDir\SmartCon.sln -c Release --nologo -v q
-if ($LASTEXITCODE -ne 0) { Write-Err "Build failed!"; throw "Build failed!" }
-Write-Ok "Build succeeded"
+# --- 2. Build All Versions ---
+$buildConfigs = @(
+    @{ Config = "Release.R21"; Tfm = "net48";           Label = "Revit 2021-2023" }
+    @{ Config = "Release.R24"; Tfm = "net48";           Label = "Revit 2024" }
+    @{ Config = "Release.R25"; Tfm = "net8.0-windows";  Label = "Revit 2025" }
+)
+
+foreach ($bc in $buildConfigs) {
+    Write-Step "Building [$($bc.Label)] $($bc.Config) / $($bc.Tfm)"
+    dotnet build $SrcDir\SmartCon.App\SmartCon.App.csproj -c $bc.Config -f $bc.Tfm --nologo -v q
+    if ($LASTEXITCODE -ne 0) { Write-Err "Build $($bc.Config) failed!"; throw "Build $($bc.Config) failed!" }
+    Write-Ok "$($bc.Config) build succeeded"
+}
 
 # --- 3. Run tests ---
 if (-not $SkipTests) {
     Write-Step "Running tests"
-    dotnet test $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release --nologo -v q --no-build
+    dotnet test $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release --nologo -v q
     if ($LASTEXITCODE -ne 0) { Write-Err "Tests failed!"; throw "Tests failed!" }
     Write-Ok "All tests passed"
 }
 
-# --- 4. Publish ---
-Write-Step "Publishing SmartCon.App"
-$publishDir = Join-Path $ArtifactsDir "publish\SmartCon"
-if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
-
-dotnet publish $SrcDir\SmartCon.App\SmartCon.App.csproj -c Release --nologo -v q --no-build -o $publishDir
-if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon.App failed!" }
-
-Write-Step "Publishing SmartCon.Updater"
+# --- 4. Publish SmartCon.Updater (once, net8.0) ---
+Write-Step "Publishing SmartCon.Updater (net8.0)"
+$updaterProject = Join-Path $SrcDir "SmartCon.Updater\SmartCon.Updater.csproj"
 $updaterPublishDir = Join-Path $ArtifactsDir "publish\SmartCon.Updater"
 if (Test-Path $updaterPublishDir) { Remove-Item $updaterPublishDir -Recurse -Force }
 
-$updaterProject = Join-Path $SrcDir "SmartCon.Updater\SmartCon.Updater.csproj"
-if (Test-Path $updaterProject) {
-    dotnet publish $updaterProject -c Release --nologo -v q -o $updaterPublishDir
-    if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon.Updater failed!" }
+dotnet publish $updaterProject -c Release --nologo -v q -o $updaterPublishDir
+if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon.Updater failed!" }
+Write-Ok "SmartCon.Updater published"
 
+# --- 5. Publish All SmartCon Versions ---
+$zipPaths = @()
+
+foreach ($bc in $buildConfigs) {
+    $tag = $bc.Config.Split('.')[1]
+    Write-Step "Publishing SmartCon [$tag] ($($bc.Label))"
+
+    $publishDir = Join-Path $ArtifactsDir "publish\SmartCon-$tag"
+    if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
+
+    dotnet publish $SrcDir\SmartCon.App\SmartCon.App.csproj `
+        -c $bc.Config -f $bc.Tfm --nologo -v q -o $publishDir
+    if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon [$tag] failed!" }
+
+    # Copy Updater into each ZIP artifact (for backwards compat and standalone ZIP usage)
     Copy-Item "$updaterPublishDir\SmartCon.Updater.exe" "$publishDir\" -Force
     Copy-Item "$updaterPublishDir\SmartCon.Updater.dll" "$publishDir\" -Force
     $depsJson = "$updaterPublishDir\SmartCon.Updater.deps.json"
     $runtimeJson = "$updaterPublishDir\SmartCon.Updater.runtimeconfig.json"
     if (Test-Path $depsJson) { Copy-Item $depsJson "$publishDir\" -Force }
     if (Test-Path $runtimeJson) { Copy-Item $runtimeJson "$publishDir\" -Force }
-    Write-Ok "SmartCon.Updater published"
+
+    # Remove RevitAPI/AdWindows from output (ExcludeAssets=runtime should handle this, but verify)
+    Remove-Item "$publishDir\RevitAPI*.dll" -ErrorAction SilentlyContinue
+    Remove-Item "$publishDir\AdWindows*.dll" -ErrorAction SilentlyContinue
+    Remove-Item "$publishDir\UIAutomation*.dll" -ErrorAction SilentlyContinue
+
+    Write-Ok "SmartCon [$tag] published to $publishDir"
+
+    $zipName = "SmartCon-$newVersion-$tag.zip"
+    $zipPath = Join-Path $ArtifactsDir $zipName
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+
+    Compress-Archive -Path "$publishDir\*" -DestinationPath $zipPath -Force
+    $sizeMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
+    Write-Ok "Created $zipName ($sizeMB MB)"
+    $zipPaths += $zipPath
 }
 
-Write-Ok "All published to $publishDir"
-
-# --- 5. Create ZIP ---
-Write-Step "Creating ZIP archive"
-$zipName = "SmartCon-$newVersion.zip"
-$zipPath = Join-Path $ArtifactsDir $zipName
-if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-
-Compress-Archive -Path "$publishDir\*" -DestinationPath $zipPath -Force
-$sizeMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
-Write-Ok "Created $zipName ($sizeMB MB)"
+Write-Step "All ZIP archives created"
+foreach ($zp in $zipPaths) {
+    Write-Ok "  $(Split-Path $zp -Leaf)"
+}
 
 # --- 6. Build Inno Setup installer ---
 $installerBuilt = $false
@@ -187,11 +211,11 @@ if (-not [string]::IsNullOrWhiteSpace($Changelog)) {
 
 $installerName = "SmartCon-$newVersion-setup.exe"
 $installerPath = Join-Path $ArtifactsDir $installerName
+$releaseAssets = @() + $zipPaths
 if ($installerBuilt -and (Test-Path $installerPath)) {
-    $releaseArgs = @("release", "create", "v$newVersion", $zipPath, $installerPath, "--title", "SmartCon v$newVersion") + $notesFlag
-} else {
-    $releaseArgs = @("release", "create", "v$newVersion", $zipPath, "--title", "SmartCon v$newVersion") + $notesFlag
+    $releaseAssets += $installerPath
 }
+$releaseArgs = @("release", "create", "v$newVersion") + $releaseAssets + @("--title", "SmartCon v$newVersion") + $notesFlag
 
 & gh @releaseArgs
 $ghExit = $LASTEXITCODE
@@ -202,7 +226,9 @@ Write-Ok "GitHub Release v$newVersion created"
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  Release v$newVersion published!" -ForegroundColor Green
-Write-Host "  ZIP: $zipName" -ForegroundColor White
+foreach ($zp in $zipPaths) {
+    Write-Host "  ZIP: $(Split-Path $zp -Leaf)" -ForegroundColor White
+}
 if ($installerBuilt) { Write-Host "  EXE: $installerName" -ForegroundColor White }
 Write-Host "  URL: https://github.com/$GitHubOwner/$GitHubRepo/releases/tag/v$newVersion" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Green

@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
 
 namespace SmartCon.Core.Models;
 
@@ -14,10 +15,10 @@ public sealed class NetworkSnapshotStore
     private readonly Dictionary<long, List<ElementId>> _reducers = new();
 
     public void Save(ElementSnapshot snapshot)
-        => _snapshots[snapshot.ElementId.Value] = snapshot;
+        => _snapshots[snapshot.ElementId.GetValue()] = snapshot;
 
     public ElementSnapshot? Get(ElementId elementId)
-        => _snapshots.TryGetValue(elementId.Value, out var s) ? s : null;
+        => _snapshots.TryGetValue(elementId.GetValue(), out var s) ? s : null;
 
     /// <summary>
     /// Track a reducer inserted on plus for an element.
@@ -25,7 +26,7 @@ public sealed class NetworkSnapshotStore
     /// </summary>
     public void TrackReducer(ElementId elementId, ElementId reducerId)
     {
-        var key = elementId.Value;
+        var key = elementId.GetValue();
         if (!_reducers.TryGetValue(key, out var list))
         {
             list = [];
@@ -35,5 +36,5 @@ public sealed class NetworkSnapshotStore
     }
 
     public IReadOnlyList<ElementId> GetReducers(ElementId elementId)
-        => _reducers.TryGetValue(elementId.Value, out var list) ? list : [];
+        => _reducers.TryGetValue(elementId.GetValue(), out var list) ? list : [];
 }

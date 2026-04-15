@@ -4,6 +4,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.PipeConnect.Services;
+using SmartCon.Core.Compatibility;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
@@ -52,7 +53,7 @@ public sealed partial class PipeConnectEditorViewModel
                     if (_primaryReducerId is not null)
                     {
                         var overrides = GuessCtcForReducer(_primaryReducerId);
-                        SmartConLogger.Info($"[Connect] Reducer inserted: id={_primaryReducerId.Value}");
+                        SmartConLogger.Info($"[Connect] Reducer inserted: id={_primaryReducerId.GetValue()}");
 
                         var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
                         _fittingInsertSvc.AlignFittingToStatic(

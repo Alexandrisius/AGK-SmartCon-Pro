@@ -5,6 +5,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 
 using static SmartCon.Core.Units;
 
@@ -177,7 +178,7 @@ public sealed class PipeConnectSizeHandler(
 
             if (param.IsReadOnly)
             {
-                SmartConLogger.Info($"[ApplyQueryParams] SKIP '{paramName}': ReadOnly (elem={element.Id.Value})");
+                SmartConLogger.Info($"[ApplyQueryParams] SKIP '{paramName}': ReadOnly (elem={element.Id.GetValue()})");
                 continue;
             }
 

@@ -7,6 +7,7 @@ using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
 using SmartCon.Core;
+using SmartCon.Core.Compatibility;
 
 
 using static SmartCon.Core.Units;
@@ -22,7 +23,7 @@ public sealed class RevitParameterResolver : IParameterResolver
         Document doc, ElementId elementId, int connectorIndex)
     {
         SmartConLogger.DebugSection("GetConnectorRadiusDependencies");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, connIdx={connectorIndex}");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}");
 
         var element = doc.GetElement(elementId);
         if (element is null)
@@ -75,21 +76,21 @@ public sealed class RevitParameterResolver : IParameterResolver
         var radiusParamId = mepInfo.GetAssociateFamilyParameterId(new ElementId(BuiltInParameter.CONNECTOR_RADIUS));
         var diamParamId = mepInfo.GetAssociateFamilyParameterId(new ElementId(BuiltInParameter.CONNECTOR_DIAMETER));
 
-        SmartConLogger.Debug($"  GetAssociateFamilyParameterId: CONNECTOR_RADIUS → id={radiusParamId.Value}, CONNECTOR_DIAMETER → id={diamParamId.Value}");
+        SmartConLogger.Debug($"  GetAssociateFamilyParameterId: CONNECTOR_RADIUS → id={radiusParamId.GetValue()}, CONNECTOR_DIAMETER → id={diamParamId.GetValue()}");
 
-        bool useRadius = radiusParamId.Value > 0;
-        bool useDiameter = !useRadius && diamParamId.Value > 0;
+        bool useRadius = radiusParamId.GetValue() > 0;
+        bool useDiameter = !useRadius && diamParamId.GetValue() > 0;
 
         if (!useRadius && !useDiameter)
         {
             SmartConLogger.Debug("  WARNING: no bound parameter to CONNECTOR_RADIUS/DIAMETER → return []");
-            SmartConLogger.Warn($"[Resolver] elementId={elementId.Value}: no CONNECTOR_RADIUS or CONNECTOR_DIAMETER binding");
+            SmartConLogger.Warn($"[Resolver] elementId={elementId.GetValue()}: no CONNECTOR_RADIUS or CONNECTOR_DIAMETER binding");
             return [];
         }
 
         var activeParamId = useRadius ? radiusParamId : diamParamId;
         bool isDiameter = useDiameter;
-        SmartConLogger.Debug($"  Using: {(useRadius ? "CONNECTOR_RADIUS" : "CONNECTOR_DIAMETER")}, activeParamId={activeParamId.Value}, isDiameter={isDiameter}");
+        SmartConLogger.Debug($"  Using: {(useRadius ? "CONNECTOR_RADIUS" : "CONNECTOR_DIAMETER")}, activeParamId={activeParamId.GetValue()}, isDiameter={isDiameter}");
 
         var familyParamElem = doc.GetElement(activeParamId);
         var paramName = familyParamElem?.Name;
@@ -98,7 +99,7 @@ public sealed class RevitParameterResolver : IParameterResolver
         if (string.IsNullOrEmpty(paramName))
         {
             SmartConLogger.Debug("  WARNING: failed to get parameter name from ParameterElement → return []");
-            SmartConLogger.Warn($"[Resolver] elementId={elementId.Value}: parameter name is empty");
+            SmartConLogger.Warn($"[Resolver] elementId={elementId.GetValue()}: parameter name is empty");
             return [];
         }
 
@@ -180,7 +181,7 @@ public sealed class RevitParameterResolver : IParameterResolver
         int connectorIndex, double targetRadiusInternalUnits)
     {
         SmartConLogger.DebugSection("TrySetConnectorRadius");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, connIdx={connectorIndex}, targetRadius={targetRadiusInternalUnits:F6} ft ({targetRadiusInternalUnits * FeetToMm:F2} mm)");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, targetRadius={targetRadiusInternalUnits:F6} ft ({targetRadiusInternalUnits * FeetToMm:F2} mm)");
 
         var element = doc.GetElement(elementId);
         if (element is null)
@@ -210,7 +211,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             return false;
         }
 
-        _cache.TryGetValue((elementId.Value, connectorIndex), out var dep);
+        _cache.TryGetValue((elementId.GetValue(), connectorIndex), out var dep);
         SmartConLogger.Debug($"  Cached dep: {(dep is null ? "null (no cache)" : $"IsInstance={dep.IsInstance}, Formula='{dep.Formula}', DirectParamName='{dep.DirectParamName}', RootParamName='{dep.RootParamName}', IsDiameter={dep.IsDiameter}")}");
 
         if (dep is not null)
@@ -273,7 +274,7 @@ public sealed class RevitParameterResolver : IParameterResolver
         int connectorIndex, double targetRadius)
     {
         SmartConLogger.DebugSection("TryChangeTypeTo");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, connIdx={connectorIndex}, targetRadius={targetRadius:F6} ft ({targetRadius * FeetToMm:F2} mm)");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, targetRadius={targetRadius:F6} ft ({targetRadius * FeetToMm:F2} mm)");
 
         var element = doc.GetElement(elementId) as FamilyInstance;
         if (element is null)
@@ -305,7 +306,7 @@ public sealed class RevitParameterResolver : IParameterResolver
                 if (inst is null) continue;
 
                 var symbolElem = doc.GetElement(symbolId) as FamilySymbol;
-                SmartConLogger.Debug($"  Trying symbolId={symbolId.Value} ('{symbolElem?.Name}')...");
+                SmartConLogger.Debug($"  Trying symbolId={symbolId.GetValue()} ('{symbolElem?.Name}')...");
 
                 inst.ChangeTypeId(symbolId);
                 doc.Regenerate();
@@ -325,7 +326,7 @@ public sealed class RevitParameterResolver : IParameterResolver
 
                 if (delta < Epsilon)
                 {
-                    SmartConLogger.Debug($"    → EXACT match! symbolId={symbolId.Value} ('{symbolElem?.Name}') → return true");
+                    SmartConLogger.Debug($"    → EXACT match! symbolId={symbolId.GetValue()} ('{symbolElem?.Name}') → return true");
                     return true;
                 }
 
@@ -338,14 +339,14 @@ public sealed class RevitParameterResolver : IParameterResolver
             }
             catch (Exception ex)
             {
-                SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.Value}: {ex.GetType().Name}: {ex.Message}");
-                SmartConLogger.Warn($"[Resolver] ChangeTypeId symbolId={symbolId.Value} failed: {ex.Message}");
+                SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.GetValue()}: {ex.GetType().Name}: {ex.Message}");
+                SmartConLogger.Warn($"[Resolver] ChangeTypeId symbolId={symbolId.GetValue()} failed: {ex.Message}");
             }
         }
 
         if (bestSymbolId is not null)
         {
-            SmartConLogger.Debug($"  → Nearest: symbolId={bestSymbolId.Value} ('{bestSymbolName}'), delta={bestDelta:F6} ft ({bestDelta * FeetToMm:F2} mm)");
+            SmartConLogger.Debug($"  → Nearest: symbolId={bestSymbolId.GetValue()} ('{bestSymbolName}'), delta={bestDelta:F6} ft ({bestDelta * FeetToMm:F2} mm)");
 
             if (bestSymbolId == originalSymbolId)
             {
@@ -401,7 +402,7 @@ public sealed class RevitParameterResolver : IParameterResolver
         int dynConnIdx, double dynRadius)
     {
         SmartConLogger.DebugSection("TrySetFittingTypeForPair");
-        SmartConLogger.Debug($"  fittingId={fittingId.Value}, staticConn={staticConnIdx} R={staticRadius:F6} ft ({staticRadius * FeetToMm:F2}mm), dynConn={dynConnIdx} R={dynRadius:F6} ft ({dynRadius * FeetToMm:F2}mm)");
+        SmartConLogger.Debug($"  fittingId={fittingId.GetValue()}, staticConn={staticConnIdx} R={staticRadius:F6} ft ({staticRadius * FeetToMm:F2}mm), dynConn={dynConnIdx} R={dynRadius:F6} ft ({dynRadius * FeetToMm:F2}mm)");
 
         var element = doc.GetElement(fittingId) as FamilyInstance;
         if (element is null)
@@ -436,7 +437,7 @@ public sealed class RevitParameterResolver : IParameterResolver
                 if (inst is null) continue;
 
                 var sym = doc.GetElement(symbolId) as FamilySymbol;
-                SmartConLogger.Debug($"  Trying symbolId={symbolId.Value} ('{sym?.Name}')...");
+                SmartConLogger.Debug($"  Trying symbolId={symbolId.GetValue()} ('{sym?.Name}')...");
 
                 inst.ChangeTypeId(symbolId);
                 doc.Regenerate();
@@ -476,8 +477,8 @@ public sealed class RevitParameterResolver : IParameterResolver
             }
             catch (Exception ex)
             {
-                SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.Value}: {ex.Message}");
-                SmartConLogger.Warn($"[TrySetFittingTypeForPair] symbolId={symbolId.Value}: {ex.Message}");
+                SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.GetValue()}: {ex.Message}");
+                SmartConLogger.Warn($"[TrySetFittingTypeForPair] symbolId={symbolId.GetValue()}: {ex.Message}");
             }
         }
 
@@ -485,7 +486,7 @@ public sealed class RevitParameterResolver : IParameterResolver
         ElementId? winnerId = bestExactId ?? bestFallbackId;
         double achievedDynR = staticExact ? bestExactDynRadius : bestFallbackDynRadius;
 
-        SmartConLogger.Debug($"  Winner: staticExact={staticExact}, symbolId={winnerId?.Value}, achievedDynR={achievedDynR:F6} ft ({achievedDynR * FeetToMm:F2}mm)");
+        SmartConLogger.Debug($"  Winner: staticExact={staticExact}, symbolId={winnerId?.GetValue()}, achievedDynR={achievedDynR:F6} ft ({achievedDynR * FeetToMm:F2}mm)");
 
         if (winnerId is not null)
         {
@@ -495,7 +496,7 @@ public sealed class RevitParameterResolver : IParameterResolver
                 if (inst is not null)
                 {
                     inst.ChangeTypeId(winnerId);
-                    SmartConLogger.Debug($"  → ChangeTypeId({winnerId.Value}) applied");
+                    SmartConLogger.Debug($"  → ChangeTypeId({winnerId.GetValue()}) applied");
                 }
             }
             catch (Exception ex)
@@ -513,5 +514,5 @@ public sealed class RevitParameterResolver : IParameterResolver
     }
 
     private void Cache(ElementId elementId, int connectorIndex, ParameterDependency dep)
-        => _cache[(elementId.Value, connectorIndex)] = dep;
+        => _cache[(elementId.GetValue(), connectorIndex)] = dep;
 }

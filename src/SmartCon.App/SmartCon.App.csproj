@@ -3,24 +3,23 @@
   <PropertyGroup>
     <RootNamespace>SmartCon.App</RootNamespace>
     <AssemblyName>SmartCon.App</AssemblyName>
-    <UseWPF>true</UseWPF>
-    <!-- Копировать NuGet-зависимости в output для деплоя в Revit -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="RevitAPI">
-      <HintPath>$(RevitApiPath)\RevitAPI.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="RevitAPIUI">
-      <HintPath>$(RevitApiPath)\RevitAPIUI.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
+  <!-- RevitAPI + RevitAPIUI: ExcludeAssets=runtime — DLL не копируется в output -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -37,18 +36,24 @@
     <EmbeddedResource Include="Resources\Icons\*.png" />
   </ItemGroup>
 
-  <!-- Post-build: копирование DLL и .addin в папку аддинов Revit для отладки -->
-  <Target Name="DeployToRevit" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+  <!-- DeployToRevit target — см. Фазу 4.2 -->
+  <Target Name="DeployToRevit" AfterTargets="Build"
+          Condition="$(Configuration.StartsWith('Debug'))">
+    <PropertyGroup>
+      <_RevitVersion Condition="'$(RevitVersion)' != ''">$(RevitVersion)</_RevitVersion>
+      <_RevitVersion Condition="'$(RevitVersion)' == '' And '$(TargetFramework)' == 'net8.0-windows'">2025</_RevitVersion>
+      <_AddinPath>$(AppData)\Autodesk\Revit\Addins\$(_RevitVersion)</_AddinPath>
+    </PropertyGroup>
     <ItemGroup>
-      <SmartConDlls Include="$(TargetDir)SmartCon.*.dll" />
-      <SmartConDeps Include="$(TargetDir)CommunityToolkit.*.dll;$(TargetDir)Microsoft.Extensions.*.dll" />
+      <SmartConDlls Include="$(TargetDir)*.dll"
+                    Exclude="$(TargetDir)RevitAPI*.dll;$(TargetDir)AdWindows*.dll;$(TargetDir)UIAutomation*.dll" />
     </ItemGroup>
-    <Copy SourceFiles="@(SmartConDlls);@(SmartConDeps)"
-            DestinationFolder="$(RevitAddinsPath)\SmartCon"
-            SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ProjectDir)Resources\SmartCon.addin"
-            DestinationFolder="$(RevitAddinsPath)"
-            SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(SmartConDlls)"
+          DestinationFolder="$(_AddinPath)\SmartCon"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)Resources\SmartCon-$(_RevitVersion).addin"
+          DestinationFiles="$(_AddinPath)\SmartCon.addin"
+          SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

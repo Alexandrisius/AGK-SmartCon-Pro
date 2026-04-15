@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
@@ -85,7 +86,7 @@ public sealed class NetworkMover : INetworkMover
 
         doc.Regenerate();
 
-        SmartConLogger.Info($"[NetworkMover] Reducer inserted: id={reducerId.Value}");
+        SmartConLogger.Info($"[NetworkMover] Reducer inserted: id={reducerId!.GetValue()}");
         return reducerId;
     }
 }

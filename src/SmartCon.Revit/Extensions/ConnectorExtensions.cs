@@ -15,7 +15,11 @@ public static class ConnectorExtensions
     /// </summary>
     public static IReadOnlyList<Connector> GetPipeConnectors(this ConnectorManager connectorManager)
     {
+#if NETFRAMEWORK
+        if (connectorManager is null) throw new ArgumentNullException(nameof(connectorManager));
+#else
         ArgumentNullException.ThrowIfNull(connectorManager);
+#endif
 
         var result = new List<Connector>();
 
@@ -37,7 +41,11 @@ public static class ConnectorExtensions
     /// </summary>
     public static IReadOnlyList<Connector> GetFreeConnectors(this ConnectorManager connectorManager)
     {
+#if NETFRAMEWORK
+        if (connectorManager is null) throw new ArgumentNullException(nameof(connectorManager));
+#else
         ArgumentNullException.ThrowIfNull(connectorManager);
+#endif
 
         var result = new List<Connector>();
 
@@ -71,7 +79,11 @@ public static class ConnectorExtensions
     /// </summary>
     public static Connector? FindByIndex(this ConnectorManager connectorManager, int index)
     {
+#if NETFRAMEWORK
+        if (connectorManager is null) throw new ArgumentNullException(nameof(connectorManager));
+#else
         ArgumentNullException.ThrowIfNull(connectorManager);
+#endif
 
         foreach (Connector connector in connectorManager.Connectors)
         {
@@ -92,8 +104,13 @@ public static class ConnectorExtensions
     public static Connector? FindNearestFreeConnector(
         this ConnectorManager connectorManager, XYZ point)
     {
+#if NETFRAMEWORK
+        if (connectorManager is null) throw new ArgumentNullException(nameof(connectorManager));
+        if (point is null) throw new ArgumentNullException(nameof(point));
+#else
         ArgumentNullException.ThrowIfNull(connectorManager);
         ArgumentNullException.ThrowIfNull(point);
+#endif
 
         Connector? nearest = null;
         var minDistance = double.MaxValue;

@@ -6,6 +6,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 
 using static SmartCon.Core.Units;
 
@@ -172,7 +173,7 @@ public sealed class PipeConnectSessionBuilder(
         {
             var ctc = new ConnectionTypeCode(selected.Code);
             virtualCtcStore.Set(proxy.OwnerElementId, proxy.ConnectorIndex, ctc, selected);
-            SmartConLogger.Info($"[CTC] Virtual CTC for {proxy.OwnerElementId.Value}:{proxy.ConnectorIndex} = {selected.Code}.{selected.Name}");
+            SmartConLogger.Info($"[CTC] Virtual CTC for {proxy.OwnerElementId.GetValue()}:{proxy.ConnectorIndex} = {selected.Code}.{selected.Name}");
         }
 
         return selected;
@@ -186,7 +187,7 @@ public sealed class PipeConnectSessionBuilder(
         const double eps = 1e-6;
 
         SmartConLogger.DebugSection("BuildResolutionPlan (S4)");
-        SmartConLogger.Debug($"  dynamic: elementId={dynamicProxy.OwnerElementId.Value}, connIdx={dynamicProxy.ConnectorIndex}, radius={dynamicProxy.Radius:F6} ft ({dynamicProxy.Radius * FeetToMm:F2} mm)");
+        SmartConLogger.Debug($"  dynamic: elementId={dynamicProxy.OwnerElementId.GetValue()}, connIdx={dynamicProxy.ConnectorIndex}, radius={dynamicProxy.Radius:F6} ft ({dynamicProxy.Radius * FeetToMm:F2} mm)");
         SmartConLogger.Debug($"  staticRadius={staticRadius:F6} ft ({staticRadius * FeetToMm:F2} mm)");
         SmartConLogger.Debug($"  delta={System.Math.Abs(staticRadius - dynamicProxy.Radius):F6} ft");
 
@@ -338,8 +339,8 @@ public sealed class PipeConnectSessionBuilder(
         }
 
         var allConns = connectorSvc.GetAllConnectors(doc, elementId);
-        SmartConLogger.Debug($"  [MultiCol] BuildMultiColumnConstraints: elementId={elementId.Value}, currentConn={currentConnectorIndex}, allConns={allConns.Count}");
-        SmartConLogger.Info($"[S4] [MultiCol] allConns={allConns.Count} for elementId={elementId.Value}, currentConn={currentConnectorIndex}");
+        SmartConLogger.Debug($"  [MultiCol] BuildMultiColumnConstraints: elementId={elementId.GetValue()}, currentConn={currentConnectorIndex}, allConns={allConns.Count}");
+        SmartConLogger.Info($"[S4] [MultiCol] allConns={allConns.Count} for elementId={elementId.GetValue()}, currentConn={currentConnectorIndex}");
 
         if (allConns.Count <= 1)
         {

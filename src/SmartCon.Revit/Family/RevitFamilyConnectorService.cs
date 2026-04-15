@@ -2,6 +2,7 @@ using System;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
@@ -138,11 +139,11 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
                 {
                     score = -distLocal; // fallback: ближайшая по расстоянию
                 }
-                SmartConLogger.Info($"[SmartCon]   CE Id={ce.Id.Value}: origin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}) distLocal={distLocal:F4} score={score:F4}");
+                SmartConLogger.Info($"[SmartCon]   CE Id={ce.Id.GetValue()}: origin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}) distLocal={distLocal:F4} score={score:F4}");
                 if (score > bestScore) { bestScore = score; target = ce; }
             }
 
-            SmartConLogger.Info($"[SmartCon] Best match: Id={target?.Id.Value}, bestScore={bestScore:F4}");
+            SmartConLogger.Info($"[SmartCon] Best match: Id={target?.Id.GetValue()}, bestScore={bestScore:F4}");
 
             // Валидно если: точное совпадение (score=2.0) или направление совпадает (score≥0.99).
             if (target is null || bestScore < ConnectorMatchScore.DirectionThreshold)
@@ -152,7 +153,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             }
 
             // Логируем все параметры ConnectorElement для диагностики
-            SmartConLogger.Info($"[SmartCon] All parameters on target ConnectorElement (Id={target.Id.Value}):");
+            SmartConLogger.Info($"[SmartCon] All parameters on target ConnectorElement (Id={target.Id.GetValue()}):");
             foreach (Parameter p in target.Parameters)
             {
                 var name = p.Definition?.Name ?? "N/A";

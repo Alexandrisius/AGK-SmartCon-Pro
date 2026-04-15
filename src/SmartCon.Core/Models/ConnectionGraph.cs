@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
 
 namespace SmartCon.Core.Models;
 
@@ -59,14 +60,14 @@ public sealed class ConnectionGraph
     /// </summary>
     internal void SaveConnection(ElementId elementId, ConnectionRecord record)
     {
-        var key = elementId.Value;
+        var key = elementId.GetValue();
         if (!_originalConnections.TryGetValue(key, out var list))
         {
             list = [];
             _originalConnections[key] = list;
         }
         if (!list.Any(r => r.ThisConnectorIndex == record.ThisConnectorIndex
-                        && r.NeighborElementId.Value == record.NeighborElementId.Value))
+                        && r.NeighborElementId.GetValue() == record.NeighborElementId.GetValue()))
             list.Add(record);
     }
 
@@ -74,7 +75,7 @@ public sealed class ConnectionGraph
     /// Get original connections of an element saved during BuildGraph.
     /// </summary>
     public IReadOnlyList<ConnectionRecord> GetOriginalConnections(ElementId elementId)
-        => _originalConnections.TryGetValue(elementId.Value, out var list) ? list : [];
+        => _originalConnections.TryGetValue(elementId.GetValue(), out var list) ? list : [];
 
     /// <summary>
     /// All ElementIds reachable from startId (including startId itself).
@@ -120,8 +121,8 @@ public sealed class ElementIdEqualityComparer : IEqualityComparer<ElementId>
     {
         if (x is null && y is null) return true;
         if (x is null || y is null) return false;
-        return x.Value == y.Value;
+        return x.GetValue() == y.GetValue();
     }
 
-    public int GetHashCode(ElementId obj) => obj.Value.GetHashCode();
+    public int GetHashCode(ElementId obj) => obj.GetStableHashCode();
 }

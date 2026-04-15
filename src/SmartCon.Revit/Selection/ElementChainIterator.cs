@@ -4,6 +4,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
+using SmartCon.Core.Compatibility;
 
 namespace SmartCon.Revit.Selection;
 
@@ -16,7 +17,7 @@ public sealed class ElementChainIterator : IElementChainIterator
 {
     /// <inheritdoc />
     public ConnectionGraph BuildGraph(Document doc, ElementId startElementId,
-        IReadOnlySet<ElementId>? stopAtElements = null)
+        HashSet<ElementId>? stopAtElements = null)
     {
         var comparer = ElementIdEqualityComparer.Instance;
         var graph = new ConnectionGraph(startElementId);
@@ -47,7 +48,7 @@ public sealed class ElementChainIterator : IElementChainIterator
             }
         }
 
-        SmartConLogger.Info($"[Chain] BuildGraph: start={startElementId.Value}, excludedConnIdx={excludedConnIdx}");
+        SmartConLogger.Info($"[Chain] BuildGraph: start={startElementId.GetValue()}, excludedConnIdx={excludedConnIdx}");
 
         // 2. BFS по уровням
         List<ElementId> currentLevelIds = [startElementId];

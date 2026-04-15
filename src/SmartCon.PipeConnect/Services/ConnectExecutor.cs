@@ -5,6 +5,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 
 using static SmartCon.Core.Units;
 
@@ -151,14 +152,14 @@ public sealed class ConnectExecutor
 
                 if (rConn1 is not null)
                 {
-                    SmartConLogger.Info($"[Connect] static({staticConn.OwnerElementId.Value}:{staticConn.ConnectorIndex}) ↔ reducer({primaryReducerId.Value}:{rConn1.ConnectorIndex})");
+                    SmartConLogger.Info($"[Connect] static({staticConn.OwnerElementId.GetValue()}:{staticConn.ConnectorIndex}) ↔ reducer({primaryReducerId.GetValue()}:{rConn1.ConnectorIndex})");
                     _connSvc.ConnectTo(doc,
                         staticConn.OwnerElementId, staticConn.ConnectorIndex,
                         primaryReducerId, rConn1.ConnectorIndex);
                 }
                 if (rConn2 is not null)
                 {
-                    SmartConLogger.Info($"[Connect] reducer({primaryReducerId.Value}:{rConn2.ConnectorIndex}) ↔ dynamic({dynR.OwnerElementId.Value}:{dynR.ConnectorIndex})");
+                    SmartConLogger.Info($"[Connect] reducer({primaryReducerId.GetValue()}:{rConn2.ConnectorIndex}) ↔ dynamic({dynR.OwnerElementId.GetValue()}:{dynR.ConnectorIndex})");
                     _connSvc.ConnectTo(doc,
                         primaryReducerId, rConn2.ConnectorIndex,
                         dynR.OwnerElementId, dynR.ConnectorIndex);

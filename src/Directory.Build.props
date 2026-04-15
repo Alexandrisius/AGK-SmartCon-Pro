@@ -1,34 +1,74 @@
 <Project>
+  <!-- ============================================================ -->
+  <!-- ШАГ 1: Парсим RevitVersion из имени конфигурации (.R21 → 2021) -->
+  <!-- ДОЛЖНО идти ПЕРЕД TargetFrameworks, иначе $(RevitVersion) пуст -->
+  <!-- ============================================================ -->
+  <PropertyGroup Condition="$(Configuration.EndsWith('.R21'))">
+    <RevitVersion>2021</RevitVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.EndsWith('.R22'))">
+    <RevitVersion>2022</RevitVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.EndsWith('.R23'))">
+    <RevitVersion>2023</RevitVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.EndsWith('.R24'))">
+    <RevitVersion>2024</RevitVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.EndsWith('.R25'))">
+    <RevitVersion>2025</RevitVersion>
+  </PropertyGroup>
+
+  <!-- ============================================================ -->
+  <!-- ШАГ 2: Теперь RevitVersion задан — можно использовать в условии -->
+  <!-- ============================================================ -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <LangVersion>12</LangVersion>
+    <TargetFrameworks Condition="'$(RevitVersion)' == '2025'">net8.0-windows</TargetFrameworks>
+    <TargetFrameworks Condition="'$(RevitVersion)' != '2025'">net48;net8.0-windows</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
-    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
-    <!-- All CA code-analysis warnings remain warnings (not errors) during refactoring. -->
+    <!-- Временно подавить MSB3277 для первой net48-сборки, затем изучить и убрать -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
     <NoWarn>$(NoWarn);CA1001;CA1010;CA1305;CA1310;CA1707;CA1711;CA1716;CA1805;CA1822;CA1851;CA1852;CA1854;CA1859;CA1860;CA1861;CA1862;CA1866;CA1869</NoWarn>
+
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+
+    <!-- Именованные Build Configurations (паттерн Nice3point) -->
+    <Configurations>Debug;Release</Configurations>
+    <Configurations>$(Configurations);Debug.R21;Debug.R22;Debug.R23;Debug.R24;Debug.R25</Configurations>
+    <Configurations>$(Configurations);Release.R21;Release.R22;Release.R23;Release.R24;Release.R25</Configurations>
+
     <Company>AGK</Company>
     <Product>SmartCon</Product>
     <Copyright>Copyright © AGK 2026</Copyright>
-    <RevitApiPath>C:\Program Files\Autodesk\Revit 2025</RevitApiPath>
-    <RevitAddinsPath>$(AppData)\Autodesk\Revit\Addins\2025</RevitAddinsPath>
     <SmartConVersionFile>$(MSBuildThisFileDirectory)..\Version.txt</SmartConVersionFile>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
-  <Target Name="SetSmartConVersion" BeforeTargets="PrepareForBuild">
-    <ReadLinesFromFile File="$(SmartConVersionFile)">
-      <Output TaskParameter="Lines" PropertyName="SmartConVersion" />
-    </ReadLinesFromFile>
-    <PropertyGroup>
-      <Version>$(SmartConVersion)</Version>
-      <AssemblyVersion>$(SmartConVersion).0</AssemblyVersion>
-      <FileVersion>$(SmartConVersion).0</FileVersion>
-      <InformationalVersion>$(SmartConVersion)</InformationalVersion>
-    </PropertyGroup>
+  <!-- C# polyfill: позволяет record, init, required на net48 -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="PolySharp">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- Версия: ReadAllText + Trim надёжнее ReadLinesFromFile -->
+  <PropertyGroup>
+    <SmartConVersion>$([System.IO.File]::ReadAllText('$(SmartConVersionFile)').Trim())</SmartConVersion>
+    <Version>$(SmartConVersion)</Version>
+    <AssemblyVersion>$(SmartConVersion).0</AssemblyVersion>
+    <FileVersion>$(SmartConVersion).0</FileVersion>
+    <InformationalVersion>$(SmartConVersion)</InformationalVersion>
+  </PropertyGroup>
+  <Target Name="PrintSmartConVersion" BeforeTargets="PrepareForBuild">
     <Message Importance="High" Text="SmartCon version: $(SmartConVersion)" />
   </Target>
 </Project>

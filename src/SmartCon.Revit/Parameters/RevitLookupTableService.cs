@@ -11,6 +11,7 @@ using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Extensions;
 using RevitTransform = Autodesk.Revit.DB.Transform;
 using SmartCon.Core;
+using SmartCon.Core.Compatibility;
 
 
 using static SmartCon.Core.Units;
@@ -23,7 +24,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
         SmartConLogger.DebugSection("ConnectorRadiusExistsInTable");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, connIdx={connectorIndex}, radiusInternal={radiusInternalUnits:F6} ft ({radiusInternalUnits * FeetToMm:F2} mm)");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, radiusInternal={radiusInternalUnits:F6} ft ({radiusInternalUnits * FeetToMm:F2} mm)");
 
         var ctx = BuildLookupContext(doc, elementId, connectorIndex);
         if (ctx is null)
@@ -49,7 +50,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
         SmartConLogger.DebugSection("GetNearestAvailableRadius");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, connIdx={connectorIndex}, targetInternal={targetRadiusInternalUnits:F6} ft");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, targetInternal={targetRadiusInternalUnits:F6} ft");
 
         var ctx = BuildLookupContext(doc, elementId, connectorIndex);
         if (ctx is null)
@@ -91,7 +92,7 @@ public sealed class RevitLookupTableService : ILookupTableService
     public bool HasLookupTable(Document doc, ElementId elementId, int connectorIndex)
     {
         SmartConLogger.DebugSection("HasLookupTable");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, connIdx={connectorIndex}");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}");
         bool has = BuildLookupContext(doc, elementId, connectorIndex) is not null;
         SmartConLogger.Debug($"  → HasLookupTable={has}");
         return has;
@@ -102,7 +103,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
         SmartConLogger.DebugSection("GetAllSizeRows");
-        SmartConLogger.Debug($"  elementId={elementId.Value}, targetConnIdx={targetConnectorIndex}, constraints={constraints?.Count ?? 0}");
+        SmartConLogger.Debug($"  elementId={elementId.GetValue()}, targetConnIdx={targetConnectorIndex}, constraints={constraints?.Count ?? 0}");
 
         var element = doc.GetElement(elementId);
         if (element is null or MEPCurve or FlexPipe)
@@ -550,7 +551,7 @@ public sealed class RevitLookupTableService : ILookupTableService
             return null;
         }
 
-        SmartConLogger.Debug($"  element={element.Name} ({element.GetType().Name}), id={elementId.Value}");
+        SmartConLogger.Debug($"  element={element.Name} ({element.GetType().Name}), id={elementId.GetValue()}");
 
         if (element is MEPCurve or FlexPipe)
         {
@@ -697,7 +698,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         {
             if (string.IsNullOrEmpty(fpFormula)) continue;
 
-            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula);
+            var parsed = FormulaSolver.ParseSizeLookupStatic(fpFormula!);
             if (parsed is null) continue;
 
             var resolvedTableName = LookupColumnResolver.ResolveTableAlias(formulaByName, parsed.Value.TableName);

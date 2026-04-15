@@ -4,10 +4,11 @@
     <RootNamespace>SmartCon.UI</RootNamespace>
     <AssemblyName>SmartCon.UI</AssemblyName>
     <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
 
   <ItemGroup>

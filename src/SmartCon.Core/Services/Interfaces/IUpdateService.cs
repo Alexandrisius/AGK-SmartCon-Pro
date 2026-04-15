@@ -13,4 +13,5 @@ public interface IUpdateService
     Task<PendingUpdate?> GetPendingUpdateAsync();
     Task ApplyPendingUpdateAsync();
     string GetCurrentVersion();
+    Task<MultiVersionPendingUpdate?> GetMultiVersionPendingUpdateAsync();
 }

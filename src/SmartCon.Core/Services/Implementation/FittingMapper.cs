@@ -48,7 +48,11 @@ public sealed class FittingMapper : IFittingMapper
 
         var dist = new Dictionary<int, int>();
         var prev = new Dictionary<int, (int code, FittingMappingRule rule)>();
-        var queue = new PriorityQueue<int, int>();
+#if NET8_0
+        var queue = new System.Collections.Generic.PriorityQueue<int, int>();
+#else
+        var queue = new Compatibility.SimplePriorityQueue<int, int>();
+#endif
 
         foreach (var c in allCodes) dist[c] = int.MaxValue;
         dist[from.Value] = 0;
