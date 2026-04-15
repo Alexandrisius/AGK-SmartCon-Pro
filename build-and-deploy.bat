@@ -1,17 +1,17 @@
 @echo off
 chcp 65001 >nul
 echo ==========================================
-echo SmartCon - Build and Deploy
+echo SmartCon - Build and Deploy (Debug)
 echo ==========================================
 
 set "SLN_PATH=src\SmartCon.sln"
-set "CONFIG=Debug"
+set "CONFIG=Debug.R25"
 set "FRAMEWORK=net8.0-windows"
 set "REVIT_VERSION=2025"
 
 echo.
-echo [1/4] Building solution...
-dotnet build "%SLN_PATH%" -c %CONFIG% --verbosity minimal
+echo [1/4] Building solution (%CONFIG%, %FRAMEWORK%)...
+dotnet build "%SLN_PATH%" -c %CONFIG% -f %FRAMEWORK% --verbosity minimal
 if errorlevel 1 (
     echo.
     echo [ERROR] Build failed!
@@ -37,13 +37,13 @@ copy /Y "src\SmartCon.App\Resources\SmartCon.addin" "%ADDIN_FOLDER%\"
 echo.
 echo [4/4] Deploying updater...
 set "UPDATER_FRAMEWORK=net8.0"
-copy /Y "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.exe" "%SMARTCON_FOLDER%\" 2>nul
-copy /Y "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.dll" "%SMARTCON_FOLDER%\" 2>nul
-if exist "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.deps.json" (
-    copy /Y "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.deps.json" "%SMARTCON_FOLDER%\" 2>nul
+copy /Y "src\SmartCon.Updater\bin\Debug\%UPDATER_FRAMEWORK%\SmartCon.Updater.exe" "%SMARTCON_FOLDER%\" 2>nul
+copy /Y "src\SmartCon.Updater\bin\Debug\%UPDATER_FRAMEWORK%\SmartCon.Updater.dll" "%SMARTCON_FOLDER%\" 2>nul
+if exist "src\SmartCon.Updater\bin\Debug\%UPDATER_FRAMEWORK%\SmartCon.Updater.deps.json" (
+    copy /Y "src\SmartCon.Updater\bin\Debug\%UPDATER_FRAMEWORK%\SmartCon.Updater.deps.json" "%SMARTCON_FOLDER%\" 2>nul
 )
-if exist "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.runtimeconfig.json" (
-    copy /Y "src\SmartCon.Updater\bin\%CONFIG%\%UPDATER_FRAMEWORK%\SmartCon.Updater.runtimeconfig.json" "%SMARTCON_FOLDER%\" 2>nul
+if exist "src\SmartCon.Updater\bin\Debug\%UPDATER_FRAMEWORK%\SmartCon.Updater.runtimeconfig.json" (
+    copy /Y "src\SmartCon.Updater\bin\Debug\%UPDATER_FRAMEWORK%\SmartCon.Updater.runtimeconfig.json" "%SMARTCON_FOLDER%\" 2>nul
 )
 
 echo.

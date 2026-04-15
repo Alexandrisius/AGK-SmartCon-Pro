@@ -3,7 +3,7 @@
 #define AppURL "https://github.com/AGK-Engineering/AGK-SmartCon-Pro"
 
 #ifndef AppVersion
-  #define AppVersion = Trim(FileRead(FileOpen("..\..\Version.txt"), 0)));
+  #define AppVersion Trim(FileRead(FileOpen("..\..\Version.txt"), 0));
 #endif
 
 [Setup]
@@ -32,65 +32,30 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-russian.RevitVersionsTitle=Select Revit Versions
-russian.RevitVersionsSubtitle=Select which Revit versions to install SmartCon for
-russian.NoRevitFound=No supported Revit versions found.%n%nThe installer can still proceed, but you will need to manually configure the plugin later.
-russian.InstallFor=Install for Revit %1
-russian.NotInstalled=(not installed)
-english.RevitVersionsTitle=Select Revit Versions
-english.RevitVersionsSubtitle=Select which Revit versions to install SmartCon for
-english.NoRevitFound=No supported Revit versions were found on your system.%n%nThe installer can still proceed, but you will need to manually configure the plugin later.
-english.InstallFor=Install for Revit %1
-english.NotInstalled=(not installed)
-
-[Types]
-Name: "custom"; Description: "Custom installation"; Flags: iscustom
-
-[Components]
-Name: "core"; Description: "SmartCon Plugin Files"; Types: custom; Flags: fixed
-Name: "revit2021"; Description: "Revit 2021-2023"; Types: custom; Flags: checkablealone
-Name: "revit2024"; Description: "Revit 2024"; Types: custom; Flags: checkablealone
-Name: "revit2025"; Description: "Revit 2025"; Types: custom; Flags: checkablealone
+russian.NoRevitFound=На этой системе не найдены поддерживаемые версии Revit (2021-2025).%n%nУстановка будет продолжена, но плагин не будет зарегистрирован в Revit автоматически.
+english.NoRevitFound=No supported Revit versions (2021-2025) were found on this system.%n%nInstallation will proceed, but the plugin will not be automatically registered in Revit.
 
 [Files]
 ; --- DLL set 1: Revit 2021-2023 (net48, RevitAPI 2021) ---
-Source: "..\..\artifacts\publish\SmartCon-R21\SmartCon.App.dll"; DestDir: "{app}\2021-2023"; Components: revit2021; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R21\SmartCon.Core.dll"; DestDir: "{app}\2021-2023"; Components: revit2021; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R21\SmartCon.Revit.dll"; DestDir: "{app}\2021-2023"; Components: revit2021; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R21\SmartCon.UI.dll"; DestDir: "{app}\2021-2023"; Components: revit2021; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R21\SmartCon.PipeConnect.dll"; DestDir: "{app}\2021-2023"; Components: revit2021; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R21\CommunityToolkit.*.dll"; DestDir: "{app}\2021-2023"; Components: revit2021; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R21\Microsoft.Extensions.*.dll"; DestDir: "{app}\2021-2023"; Components: revit2021; Flags: ignoreversion
+; Copy all published files except RevitAPI/AdWindows (provided by Revit itself)
+Source: "..\..\artifacts\publish\SmartCon-R21\*"; DestDir: "{app}\2021-2023"; Check: NeedR21; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
 ; --- DLL set 2: Revit 2024 (net48, RevitAPI 2024) ---
-Source: "..\..\artifacts\publish\SmartCon-R24\SmartCon.App.dll"; DestDir: "{app}\2024"; Components: revit2024; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R24\SmartCon.Core.dll"; DestDir: "{app}\2024"; Components: revit2024; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R24\SmartCon.Revit.dll"; DestDir: "{app}\2024"; Components: revit2024; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R24\SmartCon.UI.dll"; DestDir: "{app}\2024"; Components: revit2024; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R24\SmartCon.PipeConnect.dll"; DestDir: "{app}\2024"; Components: revit2024; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R24\CommunityToolkit.*.dll"; DestDir: "{app}\2024"; Components: revit2024; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R24\Microsoft.Extensions.*.dll"; DestDir: "{app}\2024"; Components: revit2024; Flags: ignoreversion
+Source: "..\..\artifacts\publish\SmartCon-R24\*"; DestDir: "{app}\2024"; Check: NeedR24; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
 ; --- DLL set 3: Revit 2025 (net8.0-windows, RevitAPI 2025) ---
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.App.dll"; DestDir: "{app}\2025"; Components: revit2025; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Core.dll"; DestDir: "{app}\2025"; Components: revit2025; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Revit.dll"; DestDir: "{app}\2025"; Components: revit2025; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.UI.dll"; DestDir: "{app}\2025"; Components: revit2025; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.PipeConnect.dll"; DestDir: "{app}\2025"; Components: revit2025; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R25\CommunityToolkit.*.dll"; DestDir: "{app}\2025"; Components: revit2025; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R25\Microsoft.Extensions.*.dll"; DestDir: "{app}\2025"; Components: revit2025; Flags: ignoreversion
+Source: "..\..\artifacts\publish\SmartCon-R25\*"; DestDir: "{app}\2025"; Check: NeedR25; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
 ; --- Updater (shared, net8.0) — always installed ---
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.exe"; DestDir: "{app}"; Components: core; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.dll"; DestDir: "{app}"; Components: core; Flags: ignoreversion
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.deps.json"; DestDir: "{app}"; Components: core; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.runtimeconfig.json"; DestDir: "{app}"; Components: core; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.deps.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.runtimeconfig.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Registry]
-; Revit 2021-2023 share one DLL set, create .addin for each
-Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2021-2023"; ValueData: "{app}\2021-2023"; Components: revit2021; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2024"; ValueData: "{app}\2024"; Components: revit2024; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2025"; ValueData: "{app}\2025"; Components: revit2025; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2021-2023"; ValueData: "{app}\2021-2023"; Check: NeedR21; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2024"; ValueData: "{app}\2024"; Check: NeedR24; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2025"; ValueData: "{app}\2025"; Check: NeedR25; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon"; ValueType: string; ValueName: "Version"; ValueData: "{#AppVersion}"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletevalue
 
@@ -106,8 +71,32 @@ function IsRevitInstalled(Version: Integer): Boolean;
 var
   Key, InstallPath: String;
 begin
-  Key := 'SOFTWARE\Autodesk\Revit\Autodesk Revit ' + IntToStr(Version);
-  Result := RegQueryStringValue(HKLM, Key, 'InstallLocation', InstallPath) and (InstallPath <> '') and DirExists(InstallPath);
+  { Primary: REVIT-05:0419\InstallationLocation (real path on this system) }
+  Key := 'SOFTWARE\Autodesk\Revit\' + IntToStr(Version) + '\REVIT-05:0419';
+  if RegQueryStringValue(HKLM64, Key, 'InstallationLocation', InstallPath) then
+  begin
+    if (InstallPath <> '') and DirExists(InstallPath) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+  if RegQueryStringValue(HKLM32, Key, 'InstallationLocation', InstallPath) then
+  begin
+    if (InstallPath <> '') and DirExists(InstallPath) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+  { Fallback: standard installation path }
+  InstallPath := 'C:\Program Files\Autodesk\Revit ' + IntToStr(Version) + '\';
+  if DirExists(InstallPath) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  Result := False;
 end;
 
 procedure DetectRevitVersions;
@@ -119,59 +108,75 @@ begin
   Revit2025Installed := IsRevitInstalled(2025);
 end;
 
-function ShouldInstallRevit2021: Boolean;
+function NeedR21: Boolean;
 begin
   Result := Revit2021Installed or Revit2022Installed or Revit2023Installed;
+end;
+
+function NeedR24: Boolean;
+begin
+  Result := Revit2024Installed;
+end;
+
+function NeedR25: Boolean;
+begin
+  Result := Revit2025Installed;
 end;
 
 function InitializeSetup: Boolean;
 begin
   DetectRevitVersions;
+  if not NeedR21 and not NeedR24 and not NeedR25 then
+    MsgBox(CustomMessage('NoRevitFound'), mbInformation, MB_OK);
   Result := True;
 end;
 
-procedure InitializeWizard;
+procedure WriteAddinFile(const RevitVersion, DllSubDir: String);
+var
+  AddinContent, AddinPath, AppDataDir: String;
 begin
-  if not ShouldInstallRevit2021 and not Revit2024Installed and not Revit2025Installed then
-    MsgBox(CustomMessage('NoRevitFound'), mbInformation, MB_OK);
+  AppDataDir := ExpandConstant('{userappdata}');
+  AddinPath := AppDataDir + '\Autodesk\Revit\Addins\' + RevitVersion + '\SmartCon.addin';
+  ForceDirectories(ExtractFilePath(AddinPath));
+  AddinContent :=
+    '<?xml version="1.0" encoding="utf-8"?>' + #13#10 +
+    '<RevitAddIns>' + #13#10 +
+    '  <AddIn Type="Application">' + #13#10 +
+    '    <Name>SmartCon</Name>' + #13#10 +
+    '    <Assembly>' + AppDataDir + '\SmartCon\' + DllSubDir + '\SmartCon.App.dll</Assembly>' + #13#10 +
+    '    <AddInId>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</AddInId>' + #13#10 +
+    '    <FullClassName>SmartCon.App.App</FullClassName>' + #13#10 +
+    '    <VendorId>AGK</VendorId>' + #13#10 +
+    '    <VendorDescription>AGK Engineering</VendorDescription>' + #13#10 +
+    '  </AddIn>' + #13#10 +
+    '</RevitAddIns>';
+  SaveStringToFile(AddinPath, AddinContent, False);
+end;
+
+procedure RemoveAddinAndDlls(const RevitVersion, DllSubDir: String);
+var
+  AppDataDir: String;
+begin
+  AppDataDir := ExpandConstant('{userappdata}');
+  DeleteFile(AppDataDir + '\Autodesk\Revit\Addins\' + RevitVersion + '\SmartCon.addin');
+  DelTree(AppDataDir + '\SmartCon\' + DllSubDir, True, True, True);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-  procedure WriteAddinFile(const RevitVersion, DllSubDir: String);
-  var
-    AddinContent, AddinPath, AppDataDir: String;
-  begin
-    AppDataDir := ExpandConstant('{userappdata}');
-    AddinPath := AppDataDir + '\Autodesk\Revit\Addins\' + RevitVersion + '\SmartCon.addin';
-    ForceDirectories(ExtractFilePath(AddinPath));
-    AddinContent :=
-      '<?xml version="1.0" encoding="utf-8"?>' + #13#10 +
-      '<RevitAddIns>' + #13#10 +
-      '  <AddIn Type="Application">' + #13#10 +
-      '    <Name>SmartCon</Name>' + #13#10 +
-      '    <Assembly>' + AppDataDir + '\SmartCon\' + DllSubDir + '\SmartCon.App.dll</Assembly>' + #13#10 +
-      '    <AddInId>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</AddInId>' + #13#10 +
-      '    <FullClassName>SmartCon.App.App</FullClassName>' + #13#10 +
-      '    <VendorId>AGK</VendorId>' + #13#10 +
-      '    <VendorDescription>AGK Engineering</VendorDescription>' + #13#10 +
-      '  </AddIn>' + #13#10 +
-      '</RevitAddIns>';
-    SaveStringToFile(AddinPath, AddinContent, False);
-  end;
 begin
   if CurStep = ssPostInstall then
   begin
-    if WizardIsComponentSelected('revit2021') then
+    if NeedR21 then
     begin
       if Revit2021Installed then WriteAddinFile('2021', '2021-2023');
       if Revit2022Installed then WriteAddinFile('2022', '2021-2023');
       if Revit2023Installed then WriteAddinFile('2023', '2021-2023');
     end;
-    if WizardIsComponentSelected('revit2024') then
+    if NeedR24 then
     begin
       if Revit2024Installed then WriteAddinFile('2024', '2024');
     end;
-    if WizardIsComponentSelected('revit2025') then
+    if NeedR25 then
     begin
       if Revit2025Installed then WriteAddinFile('2025', '2025');
     end;
@@ -179,14 +184,6 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-  procedure RemoveAddinAndDlls(const RevitVersion, DllSubDir: String);
-  var
-    AppDataDir: String;
-  begin
-    AppDataDir := ExpandConstant('{userappdata}');
-    DeleteFile(AppDataDir + '\Autodesk\Revit\Addins\' + RevitVersion + '\SmartCon.addin');
-    DelTree(AppDataDir + '\SmartCon\' + DllSubDir, True, True, True);
-  end;
 begin
   if CurUninstallStep = usPostUninstall then
   begin

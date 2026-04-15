@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
 
 namespace SmartCon.PipeConnect.Views;
@@ -16,6 +17,7 @@ public partial class PipeConnectEditorView : Window
     public PipeConnectEditorView(PipeConnectEditorViewModel viewModel)
     {
         InitializeComponent();
+        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         viewModel.RequestClose += Close;
         // Init() вызывается из PipeConnectCommand.Execute() ДО ShowDialog(),

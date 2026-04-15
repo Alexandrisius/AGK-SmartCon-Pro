@@ -15,4 +15,9 @@
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
   </ItemGroup>
 
+  <!-- Generic.xaml must be embedded as raw XAML for XamlReader.Load (works on net48 when loaded via Assembly.LoadFrom) -->
+  <ItemGroup>
+    <EmbeddedResource Include="Generic.xaml" />
+  </ItemGroup>
+
 </Project>

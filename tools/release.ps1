@@ -106,7 +106,7 @@ $updaterProject = Join-Path $SrcDir "SmartCon.Updater\SmartCon.Updater.csproj"
 $updaterPublishDir = Join-Path $ArtifactsDir "publish\SmartCon.Updater"
 if (Test-Path $updaterPublishDir) { Remove-Item $updaterPublishDir -Recurse -Force }
 
-dotnet publish $updaterProject -c Release --nologo -v q -o $updaterPublishDir
+dotnet publish $updaterProject -c Release -f net8.0 --nologo -v q -o $updaterPublishDir
 if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon.Updater failed!" }
 Write-Ok "SmartCon.Updater published"
 

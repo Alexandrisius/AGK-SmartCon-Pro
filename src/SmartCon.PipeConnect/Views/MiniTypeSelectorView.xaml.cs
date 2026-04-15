@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
 
 namespace SmartCon.PipeConnect.Views;
@@ -16,6 +17,7 @@ public partial class MiniTypeSelectorView : Window
     public MiniTypeSelectorView(MiniTypeSelectorViewModel viewModel)
     {
         InitializeComponent();
+        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         viewModel.RequestClose += Close;
         if (GetCursorPos(out var pt)) { Left = pt.X + 10; Top = pt.Y + 10; }
