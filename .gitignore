@@ -2,6 +2,7 @@
 bin/
 obj/
 out/
+artifacts/
 
 ## Visual Studio / VS Code
 .vs/
