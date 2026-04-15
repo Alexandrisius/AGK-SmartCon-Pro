@@ -33,13 +33,26 @@ internal sealed class FamilyParameterSnapshot
         var paramList = new List<(string? Name, string? Formula)>();
         var formulaDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        var currentType = fm.CurrentType;
+
         foreach (FamilyParameter fp in fm.Parameters)
         {
             var name = fp.Definition?.Name;
             var formula = fp.Formula;
             paramList.Add((name, formula));
-            if (name is not null && !string.IsNullOrEmpty(formula))
-                formulaDict.TryAdd(name, formula);
+            if (name is not null)
+            {
+                if (!string.IsNullOrEmpty(formula))
+                {
+                    formulaDict.TryAdd(name, formula);
+                }
+                else if (fp.StorageType == StorageType.String && currentType is not null)
+                {
+                    var strValue = currentType.AsString(fp);
+                    if (!string.IsNullOrEmpty(strValue))
+                        formulaDict.TryAdd(name, "\"" + strValue + "\"");
+                }
+            }
         }
 
         return new FamilyParameterSnapshot(paramList, formulaDict);

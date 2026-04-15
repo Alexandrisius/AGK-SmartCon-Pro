@@ -88,8 +88,15 @@ internal static class LookupColumnResolver
         {
             var f = formula.Trim();
             if (f.StartsWith("\"") && f.EndsWith("\""))
-                return f.Trim('"');
+            {
+                var resolved = f.Trim('"');
+                SmartConLogger.Debug($"      ResolveTableAlias: '{token}' → formula='{f}' → resolved='{resolved}'");
+                return resolved;
+            }
+            SmartConLogger.Debug($"      ResolveTableAlias: '{token}' → formula(unquoted)='{f}'");
+            return f;
         }
+        SmartConLogger.Debug($"      ResolveTableAlias: '{token}' → not found in formulaByName");
         return token;
     }
 
@@ -97,6 +104,10 @@ internal static class LookupColumnResolver
     {
         if (string.Equals(paramName, target, StringComparison.OrdinalIgnoreCase)) return true;
         if (!formulaByName.TryGetValue(paramName, out var formula)) return false;
+
+        var f = formula.Trim();
+        if (f.StartsWith("\"") && f.EndsWith("\""))
+            return false;
 
         var vars = FormulaSolver.ExtractVariablesStatic(formula);
         if (vars.Count > 0)
