@@ -93,7 +93,8 @@ public sealed class ConnectExecutor
             else if (currentFittingId is not null)
             {
                 ValidateFittingBranch(doc, staticConn, currentFittingId, ref dynFresh, ref updatedDynamic,
-                    dyn, positionEpsFt, radiusEps, angleEpsDeg);
+                    dyn, positionEpsFt, radiusEps, angleEpsDeg, userManuallyChangedSize,
+                    ref needsPrimaryReducer);
             }
             else if (primaryReducerId is not null)
             {
@@ -487,7 +488,9 @@ public sealed class ConnectExecutor
         ConnectorProxy originalDyn,
         double positionEpsFt,
         double radiusEps,
-        double angleEpsDeg)
+        double angleEpsDeg,
+        bool userManuallyChangedSize,
+        ref bool needsPrimaryReducer)
     {
         var fConns = _connSvc.GetAllFreeConnectors(doc, fittingId).ToList();
         var dynTypeCode = dynFresh.ConnectionTypeCode.IsDefined
@@ -523,19 +526,28 @@ public sealed class ConnectExecutor
             SmartConLogger.Debug($"  fc2 R={fc2.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={r2Err * FeetToMm:F2}mm");
             if (r2Err > radiusEps)
             {
-                SmartConLogger.Warn($"[Validate] Mismatch fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — trying to adjust dynamic");
-                bool fixed1 = _paramResolver.TrySetConnectorRadius(
-                    doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, fc2.Radius);
-                doc.Regenerate();
-                if (fixed1)
+                if (userManuallyChangedSize)
                 {
-                    dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
-                    updatedDynamic = dynFresh;
-                    SmartConLogger.Debug($"  → dynamic adjusted to {dynFresh.Radius * FeetToMm:F2}mm");
+                    SmartConLogger.Warn($"[Validate] User changed size manually, fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — reducer needed");
+                    needsPrimaryReducer = true;
                 }
                 else
                 {
-                    SmartConLogger.Warn($"[Validate] Dynamic adjustment failed — size mismatch persists in model");
+                    SmartConLogger.Warn($"[Validate] Mismatch fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — trying to adjust dynamic");
+                    bool fixed1 = _paramResolver.TrySetConnectorRadius(
+                        doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, fc2.Radius);
+                    doc.Regenerate();
+                    if (fixed1)
+                    {
+                        dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
+                        updatedDynamic = dynFresh;
+                        SmartConLogger.Debug($"  → dynamic adjusted to {dynFresh.Radius * FeetToMm:F2}mm");
+                    }
+                    else
+                    {
+                        SmartConLogger.Warn($"[Validate] Dynamic adjustment failed — reducer needed");
+                        needsPrimaryReducer = true;
+                    }
                 }
             }
 

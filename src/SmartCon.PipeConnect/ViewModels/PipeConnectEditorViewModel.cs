@@ -380,12 +380,20 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             {
                 _needsPrimaryReducer = true;
 
+                if (_currentFittingId is not null && _activeFittingConn2 is not null && _activeDynamic is not null)
+                    EnsureReducersForFittingPair(_activeFittingConn2, _activeDynamic);
+
                 if (AvailableReducers.Count > 0)
                 {
                     SelectedReducer = AvailableReducers[0];
                     IsReducerVisible = true;
                     StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
                     InsertReducerSilent();
+                }
+                else
+                {
+                    IsReducerVisible = true;
+                    SmartConLogger.Warn("[ChangeDynamicSize] Reducer needed but no reducer families found");
                 }
             }
         }
@@ -418,5 +426,39 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         var info = PipeConnectSizeHandler.BuildSizeChangeInfo(value);
         SizeChangeInfo = info;
         HasSizeChangeInfo = !string.IsNullOrEmpty(info);
+    }
+
+    private void EnsureReducersForFittingPair(ConnectorProxy fitConn2, ConnectorProxy dynamicConn)
+    {
+        if (AvailableReducers.Count > 0) return;
+
+        var fitCtc = fitConn2.ConnectionTypeCode.IsDefined
+            ? fitConn2.ConnectionTypeCode
+            : new ConnectionTypeCode(0);
+        var dynCtc = dynamicConn.ConnectionTypeCode.IsDefined
+            ? dynamicConn.ConnectionTypeCode
+            : new ConnectionTypeCode(0);
+
+        if (!fitCtc.IsDefined || !dynCtc.IsDefined) return;
+
+        var rules = _mappingRepo.GetMappingRules();
+
+        foreach (var rule in rules)
+        {
+            if (rule.ReducerFamilies.Count == 0) continue;
+
+            bool match = (rule.FromType.Value == fitCtc.Value && rule.ToType.Value == dynCtc.Value) ||
+                         (rule.FromType.Value == dynCtc.Value && rule.ToType.Value == fitCtc.Value);
+
+            if (match)
+            {
+                SmartConLogger.Info($"[EnsureReducers] Found reducer rule: From={rule.FromType.Value} To={rule.ToType.Value} ({rule.ReducerFamilies.Count} families)");
+                foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
+                    AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
+                return;
+            }
+        }
+
+        SmartConLogger.Info($"[EnsureReducers] No reducer rule found for pair CTC {fitCtc.Value} ↔ {dynCtc.Value}");
     }
 }

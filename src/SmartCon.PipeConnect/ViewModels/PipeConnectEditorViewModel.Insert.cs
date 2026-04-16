@@ -330,13 +330,25 @@ public sealed partial class PipeConnectEditorViewModel
             bool needsReducer = PipeConnectSizeHandler.DetectReducerNeededAfterFitting(
                 _activeDynamic, fitConn2ForCheck);
 
-            if (needsReducer && _primaryReducerId is null && AvailableReducers.Count > 0)
+            if (needsReducer && _primaryReducerId is null)
             {
-                _needsPrimaryReducer = true;
-                SelectedReducer = AvailableReducers[0];
-                IsReducerVisible = true;
-                StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
-                InsertReducerSilent();
+                EnsureReducersForFittingPair(fitConn2ForCheck, _activeDynamic);
+
+                if (AvailableReducers.Count > 0)
+                {
+                    _needsPrimaryReducer = true;
+                    SelectedReducer = AvailableReducers[0];
+                    IsReducerVisible = true;
+                    StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
+                    InsertReducerSilent();
+                }
+                else
+                {
+                    SmartConLogger.Warn("[InsertFitting] Reducer needed but no reducer families found in mapping " +
+                        $"for pair fitConn2_CTC={fitConn2ForCheck.ConnectionTypeCode.Value} ↔ dyn_CTC={_activeDynamic.ConnectionTypeCode.Value}");
+                    _needsPrimaryReducer = true;
+                    IsReducerVisible = true;
+                }
             }
         }
 
