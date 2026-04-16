@@ -24,8 +24,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <DataGrid Grid.Row="0"
-                          ItemsSource="{Binding ConnectorTypes}"
+                <DataGrid x:Name="TypesGrid" Grid.Row="0"
                           SelectedItem="{Binding SelectedType, Mode=TwoWay}"
                           Style="{DynamicResource CompactDataGrid}"
                           RowStyle="{DynamicResource CompactDataGridRow}"
@@ -127,7 +126,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <DataGrid Grid.Row="0"
+                <DataGrid x:Name="RulesGrid" Grid.Row="0"
                           ItemsSource="{Binding MappingRules}"
                           SelectedItem="{Binding SelectedRule, Mode=TwoWay}"
                           Style="{DynamicResource CompactDataGrid}"
