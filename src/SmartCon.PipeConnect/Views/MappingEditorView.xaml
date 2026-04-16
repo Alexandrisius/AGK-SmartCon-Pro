@@ -30,7 +30,7 @@
                           RowStyle="{DynamicResource CompactDataGridRow}"
                           CellStyle="{DynamicResource CompactDataGridCell}">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="{DynamicResource Col_Code}" Binding="{Binding Code, UpdateSourceTrigger=PropertyChanged}" Width="80">
+                        <DataGridTextColumn x:Name="ColCode" Binding="{Binding Code, UpdateSourceTrigger=PropertyChanged}" Width="80">
                             <DataGridTextColumn.HeaderStyle>
                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
@@ -50,7 +50,7 @@
                                 </Style>
                             </DataGridTextColumn.EditingElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Header="{DynamicResource Col_Name}" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="250">
+                        <DataGridTextColumn x:Name="ColName" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="250">
                             <DataGridTextColumn.HeaderStyle>
                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
                                     <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -68,7 +68,7 @@
                                 </Style>
                             </DataGridTextColumn.EditingElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Header="{DynamicResource Col_Description}" Binding="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Width="*">
+                        <DataGridTextColumn x:Name="ColDescription" Binding="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Width="*">
                             <DataGridTextColumn.HeaderStyle>
                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
                                     <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -133,100 +133,100 @@
                           RowStyle="{DynamicResource CompactDataGridRow}"
                           CellStyle="{DynamicResource CompactDataGridCell}">
                     <DataGrid.Columns>
-                         <DataGridTemplateColumn Header="{DynamicResource Col_ConnType1}" Width="170">
-                            <DataGridTemplateColumn.HeaderStyle>
-                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
-                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTemplateColumn.HeaderStyle>
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
-                                                  RelativeSource={RelativeSource AncestorType=Window}}"
-                                              DisplayMemberPath="Name"
-                                              SelectedValuePath="Code"
-                                              SelectedValue="{Binding FromTypeCode, UpdateSourceTrigger=PropertyChanged}"
-                                              Style="{DynamicResource CompactComboBox}"
-                                              BorderThickness="0" Height="24"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                         <DataGridTemplateColumn x:Name="ColConnType1" Width="170">
+                             <DataGridTemplateColumn.HeaderStyle>
+                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                 </Style>
+                             </DataGridTemplateColumn.HeaderStyle>
+                             <DataGridTemplateColumn.CellTemplate>
+                                 <DataTemplate>
+                                     <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
+                                                   RelativeSource={RelativeSource AncestorType=Window}}"
+                                               DisplayMemberPath="Name"
+                                               SelectedValuePath="Code"
+                                               SelectedValue="{Binding FromTypeCode, UpdateSourceTrigger=PropertyChanged}"
+                                               Style="{DynamicResource CompactComboBox}"
+                                               BorderThickness="0" Height="24"/>
+                                 </DataTemplate>
+                             </DataGridTemplateColumn.CellTemplate>
+                         </DataGridTemplateColumn>
 
-                         <DataGridTemplateColumn Header="{DynamicResource Col_ConnType2}" Width="170">
-                            <DataGridTemplateColumn.HeaderStyle>
-                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
-                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTemplateColumn.HeaderStyle>
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
-                                                  RelativeSource={RelativeSource AncestorType=Window}}"
-                                              DisplayMemberPath="Name"
-                                              SelectedValuePath="Code"
-                                              SelectedValue="{Binding ToTypeCode, UpdateSourceTrigger=PropertyChanged}"
-                                              Style="{DynamicResource CompactComboBox}"
-                                              BorderThickness="0" Height="24"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                         <DataGridTemplateColumn x:Name="ColConnType2" Width="170">
+                             <DataGridTemplateColumn.HeaderStyle>
+                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                 </Style>
+                             </DataGridTemplateColumn.HeaderStyle>
+                             <DataGridTemplateColumn.CellTemplate>
+                                 <DataTemplate>
+                                     <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
+                                                   RelativeSource={RelativeSource AncestorType=Window}}"
+                                               DisplayMemberPath="Name"
+                                               SelectedValuePath="Code"
+                                               SelectedValue="{Binding ToTypeCode, UpdateSourceTrigger=PropertyChanged}"
+                                               Style="{DynamicResource CompactComboBox}"
+                                               BorderThickness="0" Height="24"/>
+                                 </DataTemplate>
+                             </DataGridTemplateColumn.CellTemplate>
+                         </DataGridTemplateColumn>
 
-                         <DataGridCheckBoxColumn Header="{DynamicResource Col_Direct}" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="65">
-                            <DataGridCheckBoxColumn.HeaderStyle>
-                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
-                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridCheckBoxColumn.HeaderStyle>
-                            <DataGridCheckBoxColumn.ElementStyle>
-                                <Style TargetType="CheckBox" BasedOn="{StaticResource CompactCheckBox}">
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridCheckBoxColumn.ElementStyle>
-                            <DataGridCheckBoxColumn.EditingElementStyle>
-                                <Style TargetType="CheckBox" BasedOn="{StaticResource CompactCheckBox}">
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridCheckBoxColumn.EditingElementStyle>
-                        </DataGridCheckBoxColumn>
+                         <DataGridCheckBoxColumn x:Name="ColDirect" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="65">
+                             <DataGridCheckBoxColumn.HeaderStyle>
+                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                 </Style>
+                             </DataGridCheckBoxColumn.HeaderStyle>
+                             <DataGridCheckBoxColumn.ElementStyle>
+                                 <Style TargetType="CheckBox" BasedOn="{StaticResource CompactCheckBox}">
+                                     <Setter Property="HorizontalAlignment" Value="Center"/>
+                                     <Setter Property="VerticalAlignment" Value="Center"/>
+                                 </Style>
+                             </DataGridCheckBoxColumn.ElementStyle>
+                             <DataGridCheckBoxColumn.EditingElementStyle>
+                                 <Style TargetType="CheckBox" BasedOn="{StaticResource CompactCheckBox}">
+                                     <Setter Property="HorizontalAlignment" Value="Center"/>
+                                     <Setter Property="VerticalAlignment" Value="Center"/>
+                                 </Style>
+                             </DataGridCheckBoxColumn.EditingElementStyle>
+                         </DataGridCheckBoxColumn>
 
-                         <DataGridTemplateColumn Header="{DynamicResource Col_Fittings}" Width="*">
-                            <DataGridTemplateColumn.HeaderStyle>
-                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
-                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTemplateColumn.HeaderStyle>
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <Button Content="{Binding FamiliesSummary}"
-                                            Style="{DynamicResource GhostButton}"
-                                            HorizontalContentAlignment="Left"
-                                            Command="{Binding OpenFamilySelectorCommand}"
-                                            IsEnabled="{Binding CanSelectFittingFamilies}"
-                                            ToolTip="{DynamicResource Tip_SelectFittingFamilies}"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                         <DataGridTemplateColumn x:Name="ColFittings" Width="*">
+                             <DataGridTemplateColumn.HeaderStyle>
+                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                 </Style>
+                             </DataGridTemplateColumn.HeaderStyle>
+                             <DataGridTemplateColumn.CellTemplate>
+                                 <DataTemplate>
+                                     <Button Content="{Binding FamiliesSummary}"
+                                             Style="{DynamicResource GhostButton}"
+                                             HorizontalContentAlignment="Left"
+                                             Command="{Binding OpenFamilySelectorCommand}"
+                                             IsEnabled="{Binding CanSelectFittingFamilies}"
+                                             ToolTip="{DynamicResource Tip_SelectFittingFamilies}"/>
+                                 </DataTemplate>
+                             </DataGridTemplateColumn.CellTemplate>
+                         </DataGridTemplateColumn>
 
-                         <DataGridTemplateColumn Header="{DynamicResource Col_Transitions}" Width="*">
-                            <DataGridTemplateColumn.HeaderStyle>
-                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
-                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTemplateColumn.HeaderStyle>
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <Button Content="{Binding ReducerFamiliesSummary}"
-                                            Style="{DynamicResource GhostButton}"
-                                            HorizontalContentAlignment="Left"
-                                            Command="{Binding OpenReducerFamilySelectorCommand}"
-                                            IsEnabled="{Binding CanSelectReducerFamilies}"
-                                            ToolTip="{DynamicResource Tip_SelectReducerFamilies}"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                    </DataGrid.Columns>
+                         <DataGridTemplateColumn x:Name="ColTransitions" Width="*">
+                             <DataGridTemplateColumn.HeaderStyle>
+                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                 </Style>
+                             </DataGridTemplateColumn.HeaderStyle>
+                             <DataGridTemplateColumn.CellTemplate>
+                                 <DataTemplate>
+                                     <Button Content="{Binding ReducerFamiliesSummary}"
+                                             Style="{DynamicResource GhostButton}"
+                                             HorizontalContentAlignment="Left"
+                                             Command="{Binding OpenReducerFamilySelectorCommand}"
+                                             IsEnabled="{Binding CanSelectReducerFamilies}"
+                                             ToolTip="{DynamicResource Tip_SelectReducerFamilies}"/>
+                                 </DataTemplate>
+                             </DataGridTemplateColumn.CellTemplate>
+                         </DataGridTemplateColumn>
+                     </DataGrid.Columns>
                 </DataGrid>
 
                 <Grid Grid.Row="1" Margin="0,6,0,0">

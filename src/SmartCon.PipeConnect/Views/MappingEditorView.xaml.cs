@@ -17,14 +17,14 @@ public partial class MappingEditorView : Window
 
     private void ApplyColumnHeaders()
     {
-        TypesGrid.Columns[0].Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
-        TypesGrid.Columns[1].Header = LanguageManager.GetString(StringLocalization.Keys.Col_Name);
-        TypesGrid.Columns[2].Header = LanguageManager.GetString(StringLocalization.Keys.Col_Description);
+        ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
+        ColName.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Name);
+        ColDescription.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Description);
 
-        RulesGrid.Columns[0].Header = LanguageManager.GetString(StringLocalization.Keys.Col_ConnType1);
-        RulesGrid.Columns[1].Header = LanguageManager.GetString(StringLocalization.Keys.Col_ConnType2);
-        RulesGrid.Columns[2].Header = LanguageManager.GetString(StringLocalization.Keys.Col_Direct);
-        RulesGrid.Columns[3].Header = LanguageManager.GetString(StringLocalization.Keys.Col_Fittings);
-        RulesGrid.Columns[4].Header = LanguageManager.GetString(StringLocalization.Keys.Col_Transitions);
+        ColConnType1.Header = LanguageManager.GetString(StringLocalization.Keys.Col_ConnType1);
+        ColConnType2.Header = LanguageManager.GetString(StringLocalization.Keys.Col_ConnType2);
+        ColDirect.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Direct);
+        ColFittings.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Fittings);
+        ColTransitions.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Transitions);
     }
 }
