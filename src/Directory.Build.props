@@ -3,6 +3,9 @@
   <!-- ШАГ 1: Парсим RevitVersion из имени конфигурации (.R21 → 2021) -->
   <!-- ДОЛЖНО идти ПЕРЕД TargetFrameworks, иначе $(RevitVersion) пуст -->
   <!-- ============================================================ -->
+  <PropertyGroup Condition="$(Configuration.EndsWith('.R19'))">
+    <RevitVersion>2019</RevitVersion>
+  </PropertyGroup>
   <PropertyGroup Condition="$(Configuration.EndsWith('.R21'))">
     <RevitVersion>2021</RevitVersion>
   </PropertyGroup>
@@ -39,8 +42,8 @@
 
     <!-- Именованные Build Configurations (паттерн Nice3point) -->
     <Configurations>Debug;Release</Configurations>
-    <Configurations>$(Configurations);Debug.R21;Debug.R22;Debug.R23;Debug.R24;Debug.R25</Configurations>
-    <Configurations>$(Configurations);Release.R21;Release.R22;Release.R23;Release.R24;Release.R25</Configurations>
+    <Configurations>$(Configurations);Debug.R19;Debug.R21;Debug.R22;Debug.R23;Debug.R24;Debug.R25</Configurations>
+    <Configurations>$(Configurations);Release.R19;Release.R21;Release.R22;Release.R23;Release.R24;Release.R25</Configurations>
 
     <Company>AGK</Company>
     <Product>SmartCon</Product>

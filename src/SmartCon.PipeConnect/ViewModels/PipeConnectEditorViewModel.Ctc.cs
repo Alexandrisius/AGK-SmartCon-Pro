@@ -31,10 +31,6 @@ public sealed partial class PipeConnectEditorViewModel
     private IReadOnlyDictionary<int, ConnectionTypeCode> GuessCtcForReducer(ElementId reducerId)
         => _ctcManager.GuessCtcForReducer(_doc, reducerId, _ctx.StaticConnector, _ctx.DynamicConnector, _activeDynamic);
 
-    private List<FittingCtcSetupItem> BuildCtcItemsFromVirtualStore(
-        ElementId elementId, IReadOnlyList<ConnectorTypeDefinition> types)
-        => _ctcManager.BuildCtcItemsFromVirtualStore(_doc, elementId, types);
-
     private void PromoteGuessedCtcToPendingWrites()
         => _ctcManager.PromoteGuessedCtcToPendingWrites(_doc, _currentFittingId, _primaryReducerId);
 

@@ -90,6 +90,28 @@ public sealed class VirtualCtcStore
         _pendingWrites.Clear();
     }
 
+    public bool SwapCtcForElement(ElementId elemId)
+    {
+        long val = elemId.GetValue();
+        var keys = _overrides.Keys.Where(k => k.ElemId == val).ToList();
+        if (keys.Count != 2) return false;
+
+        var ctc0 = _overrides[keys[0]];
+        var ctc1 = _overrides[keys[1]];
+
+        _overrides[keys[0]] = ctc1;
+        _overrides[keys[1]] = ctc0;
+
+        if (_pendingWrites.TryGetValue(keys[0], out var td0)
+            && _pendingWrites.TryGetValue(keys[1], out var td1))
+        {
+            _pendingWrites[keys[0]] = td1;
+            _pendingWrites[keys[1]] = td0;
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Transfer all overrides and pending writes from old ElementId to new ElementId.
     /// Used when re-inserting a fitting (delete + insert = new ElementId).

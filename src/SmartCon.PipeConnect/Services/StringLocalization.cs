@@ -39,10 +39,10 @@ public static class StringLocalization
         d[Keys.Tip_RotateCW] = "Повернуть по часовой стрелке";
         d[Keys.Tip_AvailableSizes] = "Доступные типоразмеры динамического семейства";
         d[Keys.Tip_ChangeSize] = "Изменить размер динамического семейства";
-        d[Keys.Tip_FittingCtc] = "Изменить типы коннекторов фитинга";
+        d[Keys.Tip_FittingCtc] = "Отразить типы коннекторов фитинга";
         d[Keys.Tip_SelectFitting] = "Выберите фитинг для соединения";
         d[Keys.Tip_InsertFitting] = "Вставить выбранный фитинг (примерка)";
-        d[Keys.Tip_ReducerCtc] = "Изменить типы коннекторов переходника";
+        d[Keys.Tip_ReducerCtc] = "Отразить типы коннекторов переходника";
         d[Keys.Tip_SelectReducer] = "Выберите переходник";
         d[Keys.Tip_InsertReducer] = "Вставить выбранный переходник";
         d[Keys.Tip_ChainDecrement] = "Отсоединить последний уровень";
@@ -133,10 +133,10 @@ public static class StringLocalization
         d[Keys.Tip_RotateCW] = "Rotate clockwise";
         d[Keys.Tip_AvailableSizes] = "Available dynamic family sizes";
         d[Keys.Tip_ChangeSize] = "Change dynamic family size";
-        d[Keys.Tip_FittingCtc] = "Change fitting connector types";
+        d[Keys.Tip_FittingCtc] = "Reflect fitting connector types";
         d[Keys.Tip_SelectFitting] = "Select fitting for connection";
         d[Keys.Tip_InsertFitting] = "Insert selected fitting (preview)";
-        d[Keys.Tip_ReducerCtc] = "Change reducer connector types";
+        d[Keys.Tip_ReducerCtc] = "Reflect reducer connector types";
         d[Keys.Tip_SelectReducer] = "Select reducer";
         d[Keys.Tip_InsertReducer] = "Insert selected reducer";
         d[Keys.Tip_ChainDecrement] = "Disconnect last level";

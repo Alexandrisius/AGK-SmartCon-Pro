@@ -32,12 +32,14 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-russian.NoRevitFound=На этой системе не найдены поддерживаемые версии Revit (2021-2025).%n%nУстановка будет продолжена, но плагин не будет зарегистрирован в Revit автоматически.
-english.NoRevitFound=No supported Revit versions (2021-2025) were found on this system.%n%nInstallation will proceed, but the plugin will not be automatically registered in Revit.
+russian.NoRevitFound=На этой системе не найдены поддерживаемые версии Revit (2019-2025).%n%nУстановка будет продолжена, но плагин не будет зарегистрирован в Revit автоматически.
+english.NoRevitFound=No supported Revit versions (2019-2025) were found on this system.%n%nInstallation will proceed, but the plugin will not be automatically registered in Revit.
 
 [Files]
+; --- DLL set 0: Revit 2019-2020 (net48, RevitAPI 2020) ---
+Source: "..\..\artifacts\publish\SmartCon-R19\*"; DestDir: "{app}\2019-2020"; Check: NeedR19; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
+
 ; --- DLL set 1: Revit 2021-2023 (net48, RevitAPI 2021) ---
-; Copy all published files except RevitAPI/AdWindows (provided by Revit itself)
 Source: "..\..\artifacts\publish\SmartCon-R21\*"; DestDir: "{app}\2021-2023"; Check: NeedR21; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
 ; --- DLL set 2: Revit 2024 (net48, RevitAPI 2024) ---
@@ -53,6 +55,7 @@ Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.deps.json"; DestD
 Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.runtimeconfig.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Registry]
+Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2019-2020"; ValueData: "{app}\2019-2020"; Check: NeedR19; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2021-2023"; ValueData: "{app}\2021-2023"; Check: NeedR21; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2024"; ValueData: "{app}\2024"; Check: NeedR24; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2025"; ValueData: "{app}\2025"; Check: NeedR25; Flags: uninsdeletevalue
@@ -61,6 +64,8 @@ Root: HKCU; Subkey: "Software\SmartCon"; ValueType: string; ValueName: "InstallP
 
 [Code]
 var
+  Revit2019Installed: Boolean;
+  Revit2020Installed: Boolean;
   Revit2021Installed: Boolean;
   Revit2022Installed: Boolean;
   Revit2023Installed: Boolean;
@@ -101,11 +106,18 @@ end;
 
 procedure DetectRevitVersions;
 begin
+  Revit2019Installed := IsRevitInstalled(2019);
+  Revit2020Installed := IsRevitInstalled(2020);
   Revit2021Installed := IsRevitInstalled(2021);
   Revit2022Installed := IsRevitInstalled(2022);
   Revit2023Installed := IsRevitInstalled(2023);
   Revit2024Installed := IsRevitInstalled(2024);
   Revit2025Installed := IsRevitInstalled(2025);
+end;
+
+function NeedR19: Boolean;
+begin
+  Result := Revit2019Installed or Revit2020Installed;
 end;
 
 function NeedR21: Boolean;
@@ -126,7 +138,7 @@ end;
 function InitializeSetup: Boolean;
 begin
   DetectRevitVersions;
-  if not NeedR21 and not NeedR24 and not NeedR25 then
+  if not NeedR19 and not NeedR21 and not NeedR24 and not NeedR25 then
     MsgBox(CustomMessage('NoRevitFound'), mbInformation, MB_OK);
   Result := True;
 end;
@@ -166,6 +178,11 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
+    if NeedR19 then
+    begin
+      if Revit2019Installed then WriteAddinFile('2019', '2019-2020');
+      if Revit2020Installed then WriteAddinFile('2020', '2019-2020');
+    end;
     if NeedR21 then
     begin
       if Revit2021Installed then WriteAddinFile('2021', '2021-2023');
@@ -187,6 +204,8 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
   begin
+    RemoveAddinAndDlls('2019', '2019-2020');
+    RemoveAddinAndDlls('2020', '2019-2020');
     RemoveAddinAndDlls('2021', '2021-2023');
     RemoveAddinAndDlls('2022', '2021-2023');
     RemoveAddinAndDlls('2023', '2021-2023');
@@ -201,6 +220,7 @@ begin
 end;
 
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}\2019-2020"
 Type: filesandordirs; Name: "{app}\2021-2023"
 Type: filesandordirs; Name: "{app}\2024"
 Type: filesandordirs; Name: "{app}\2025"

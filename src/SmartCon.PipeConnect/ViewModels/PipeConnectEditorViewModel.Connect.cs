@@ -134,8 +134,8 @@ public sealed partial class PipeConnectEditorViewModel
     private bool CanOperate() => IsSessionActive && !IsBusy;
     private bool CanInsertFitting() => IsSessionActive && !IsBusy && SelectedFitting is not null;
     private bool CanInsertReducer() => IsSessionActive && !IsBusy && SelectedReducer is not null && _primaryReducerId is null;
-    private bool CanReassignFittingCtc() => IsSessionActive && !IsBusy && _currentFittingId is not null;
-    private bool CanReassignReducerCtc() => IsSessionActive && !IsBusy && _primaryReducerId is not null;
+    private bool CanReflectFittingCtc() => IsSessionActive && !IsBusy && _currentFittingId is not null;
+    private bool CanReflectReducerCtc() => IsSessionActive && !IsBusy && _primaryReducerId is not null;
 
     partial void OnIsBusyChanged(bool value)
     {
@@ -144,8 +144,8 @@ public sealed partial class PipeConnectEditorViewModel
         CycleConnectorCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
         InsertReducerCommand.NotifyCanExecuteChanged();
-        ReassignFittingCtcCommand.NotifyCanExecuteChanged();
-        ReassignReducerCtcCommand.NotifyCanExecuteChanged();
+        ReflectFittingCtcCommand.NotifyCanExecuteChanged();
+        ReflectReducerCtcCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
         IncrementChainDepthCommand.NotifyCanExecuteChanged();
         DecrementChainDepthCommand.NotifyCanExecuteChanged();
@@ -158,8 +158,8 @@ public sealed partial class PipeConnectEditorViewModel
         CycleConnectorCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
         InsertReducerCommand.NotifyCanExecuteChanged();
-        ReassignFittingCtcCommand.NotifyCanExecuteChanged();
-        ReassignReducerCtcCommand.NotifyCanExecuteChanged();
+        ReflectFittingCtcCommand.NotifyCanExecuteChanged();
+        ReflectReducerCtcCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
         IncrementChainDepthCommand.NotifyCanExecuteChanged();
         DecrementChainDepthCommand.NotifyCanExecuteChanged();

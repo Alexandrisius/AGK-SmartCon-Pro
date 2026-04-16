@@ -9,6 +9,9 @@
   </PropertyGroup>
 
   <!-- net48 + конкретная версия Revit -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2019'">
+    <!-- Нет OR_GREATER символов — компилируем для самого старого API (Revit 2019) -->
+  </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2024'">
     <DefineConstants>$(DefineConstants);REVIT2021_OR_GREATER;REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER</DefineConstants>
   </PropertyGroup>
@@ -26,8 +29,16 @@
   <!-- Wildcard VersionOverride для RevitAPI NuGet                   -->
   <!-- ============================================================ -->
 
+  <!-- net48: R19 использует RevitAPI 2020 (пакет 2019 deprecated), покрывает Revit 2019+2020 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2019'">
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
+                      VersionOverride="2020.*" />
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+                      VersionOverride="2020.*" />
+  </ItemGroup>
+
   <!-- net48: версия задаётся через RevitVersion (2021–2024) -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' != ''">
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' != '' And '$(RevitVersion)' != '2019'">
     <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
                       VersionOverride="$(RevitVersion).*" />
     <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
@@ -54,8 +65,8 @@
   <Target Name="ValidateRevitVersion" BeforeTargets="PrepareForBuild"
           Condition="'$(TargetFramework)' == 'net48'">
     <Error Condition="'$(RevitVersion)' == ''"
-           Text="RevitVersion не указан. Используйте конфигурацию Debug.R21/.../Debug.R25 или передайте -p:RevitVersion=2021 (2022, 2023, 2024)." />
-    <Error Condition="'$(RevitVersion)' != '2021' And '$(RevitVersion)' != '2022' And '$(RevitVersion)' != '2023' And '$(RevitVersion)' != '2024'"
-           Text="Неизвестная версия RevitVersion=$(RevitVersion). Поддерживаемые значения для net48: 2021, 2022, 2023, 2024." />
+            Text="RevitVersion не указан. Используйте конфигурацию Debug.R19/.../Debug.R25 или передайте -p:RevitVersion=2019 (2021, 2022, 2023, 2024)." />
+    <Error Condition="'$(RevitVersion)' != '2019' And '$(RevitVersion)' != '2021' And '$(RevitVersion)' != '2022' And '$(RevitVersion)' != '2023' And '$(RevitVersion)' != '2024'"
+            Text="Неизвестная версия RevitVersion=$(RevitVersion). Поддерживаемые значения для net48: 2019, 2021, 2022, 2023, 2024." />
   </Target>
 </Project>

@@ -139,8 +139,8 @@
                     <ColumnDefinition Width="95"/>
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0" Content="&#x1F527;" Width="28" Height="28"
-                        Command="{Binding ReassignFittingCtcCommand}"
+                <Button Grid.Column="0" Content="&#x21C5;" Width="28" Height="28"
+                        Command="{Binding ReflectFittingCtcCommand}"
                         Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
                          ToolTip="{DynamicResource Tip_FittingCtc}"/>
 
@@ -170,8 +170,8 @@
                     <ColumnDefinition Width="95"/>
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0" Content="&#x1F527;" Width="28" Height="28"
-                        Command="{Binding ReassignReducerCtcCommand}"
+                <Button Grid.Column="0" Content="&#x21C5;" Width="28" Height="28"
+                        Command="{Binding ReflectReducerCtcCommand}"
                         Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
                         ToolTip="{DynamicResource Tip_ReducerCtc}"/>
 

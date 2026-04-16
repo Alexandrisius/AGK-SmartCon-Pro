@@ -91,7 +91,7 @@ public sealed partial class AboutViewModel : ObservableObject
             {
                 UpdateAvailable = true;
                 LatestVersionInfo = string.Format(LocalizationService.GetString("About_AvailableVersion"), _foundUpdate.Version, CurrentVersion);
-                ReleaseNotes = _foundUpdate.ReleaseNotes ?? string.Empty;
+                ReleaseNotes = _foundUpdate.Changelog ?? _foundUpdate.ReleaseNotes ?? string.Empty;
                 StatusMessage = string.Format(LocalizationService.GetString("About_VersionAvailable"), _foundUpdate.Version);
             }
         }

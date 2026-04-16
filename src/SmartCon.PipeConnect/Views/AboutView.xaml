@@ -101,7 +101,9 @@
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                  Padding="10,8" Margin="0,8,0,8" MinHeight="80"
                  FontSize="12" FontFamily="Segoe UI"
-                 Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVis}}"/>
+                 Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVis}}"
+                 BorderBrush="{DynamicResource BorderAltBrush}"
+                 Foreground="{DynamicResource TextPrimaryBrush}"/>
 
          <!-- Row 4: Bottom bar -->
         <Grid Grid.Row="4">

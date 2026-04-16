@@ -77,7 +77,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             _primaryReducerId = insertedId;
             InsertReducerCommand.NotifyCanExecuteChanged();
-            ReassignReducerCtcCommand.NotifyCanExecuteChanged();
+            ReflectReducerCtcCommand.NotifyCanExecuteChanged();
             StatusMessage = string.Format(LocalizationService.GetString("Status_ReducerSet"), reducer.DisplayName);
             SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
             SmartConLogger.Info($"[InsertReducer] DONE reducerId={_primaryReducerId.GetValue()}");
@@ -114,38 +114,16 @@ public sealed partial class PipeConnectEditorViewModel
         finally { IsBusy = false; }
     }
 
-    private void ReassignElementCtc(ElementId elemId, bool isReducer)
+    private void ReflectElementCtc(ElementId elemId, bool isReducer)
     {
-        var types = _mappingRepo.GetConnectorTypes();
-        if (types.Count == 0) return;
-
-        var elem = _doc.GetElement(elemId) as FamilyInstance;
-        if (elem is null) return;
-
-        var items = BuildCtcItemsFromVirtualStore(elemId, types);
-
-        if (!_dialogSvc.ShowFittingCtcSetup(elem.Symbol.Family.Name, elem.Symbol.Name, items, types))
-            return;
-
-        foreach (var item in items)
-        {
-            if (item.SelectedType is not null)
-            {
-                var ctc = new ConnectionTypeCode(item.SelectedType.Code);
-                _virtualCtcStore.Set(elemId, item.ConnectorIndex, ctc, item.SelectedType);
-            }
-        }
+        if (!_virtualCtcStore.SwapCtcForElement(elemId)) return;
 
         var overrides = _virtualCtcStore.GetOverridesForElement(elemId);
         var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
 
         ConnectorProxy? reorientedConn2 = null;
 
-        var txName = isReducer
-            ? LocalizationService.GetString("Tx_ReorientReducer")
-            : LocalizationService.GetString("Tx_ReorientFitting");
-
-        _groupSession!.RunInTransaction(txName, doc =>
+        _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_ReflectCtc"), doc =>
         {
             var fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
                 doc, elemId, _ctx.StaticConnector, _transformSvc, _connSvc,
@@ -193,34 +171,32 @@ public sealed partial class PipeConnectEditorViewModel
             }
         }
 
-        StatusMessage = isReducer
-            ? LocalizationService.GetString("Status_CtcReducerUpdated")
-            : LocalizationService.GetString("Status_CtcFittingUpdated");
+        StatusMessage = LocalizationService.GetString("Status_CtcReflected");
     }
 
-    [RelayCommand(CanExecute = nameof(CanReassignFittingCtc))]
-    private void ReassignFittingCtc()
+    [RelayCommand(CanExecute = nameof(CanReflectFittingCtc))]
+    private void ReflectFittingCtc()
     {
         if (_currentFittingId is null || _activeFittingRule is null) return;
         IsBusy = true;
         try
         {
-            ReassignElementCtc(_currentFittingId, isReducer: false);
+            ReflectElementCtc(_currentFittingId, isReducer: false);
         }
-        catch (Exception ex) { SmartConLogger.Error($"[ReassignFittingCtc] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
+        catch (Exception ex) { SmartConLogger.Error($"[ReflectFittingCtc] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
-    [RelayCommand(CanExecute = nameof(CanReassignReducerCtc))]
-    private void ReassignReducerCtc()
+    [RelayCommand(CanExecute = nameof(CanReflectReducerCtc))]
+    private void ReflectReducerCtc()
     {
         if (_primaryReducerId is null) return;
         IsBusy = true;
         try
         {
-            ReassignElementCtc(_primaryReducerId, isReducer: true);
+            ReflectElementCtc(_primaryReducerId, isReducer: true);
         }
-        catch (Exception ex) { SmartConLogger.Error($"[ReassignReducerCtc] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
+        catch (Exception ex) { SmartConLogger.Error($"[ReflectReducerCtc] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 

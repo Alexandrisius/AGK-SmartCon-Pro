@@ -25,7 +25,7 @@ public sealed class GitHubUpdateService : IUpdateService
 
     private string? _cachedVersion;
 
-    private static readonly int[] s_supportedRevitVersions = [2021, 2022, 2023, 2024, 2025];
+    private static readonly int[] s_supportedRevitVersions = [2019, 2020, 2021, 2022, 2023, 2024, 2025];
 
     public GitHubUpdateService(IUpdateSettingsRepository settingsRepo)
     {
@@ -59,7 +59,7 @@ public sealed class GitHubUpdateService : IUpdateService
     public async Task<UpdateInfo?> CheckForUpdateAsync()
     {
         var settings = _settingsRepo.Load();
-        var url = $"https://api.github.com/repos/{settings.GitHubOwner}/{settings.GitHubRepo}/releases/latest";
+        var url = $"https://api.github.com/repos/{settings.GitHubOwner}/{settings.GitHubRepo}/releases?per_page=20";
 
         if (!string.IsNullOrEmpty(settings.GitHubToken))
             _httpClient.DefaultRequestHeaders.Authorization =
@@ -88,31 +88,81 @@ public sealed class GitHubUpdateService : IUpdateService
 
         var json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
+        var releases = doc.RootElement;
 
-        var tagName = root.GetProperty("tag_name").GetString() ?? "";
-        var version = tagName.TrimStart('v');
+        var currentVersion = GetCurrentVersion();
 
-        if (!IsNewer(version, GetCurrentVersion()))
+        var newerReleases = new List<(string Version, string TagName, string? Body, DateTime PublishedAt, JsonElement Assets)>();
+
+        foreach (var release in releases.EnumerateArray())
+        {
+            var tagName = release.GetProperty("tag_name").GetString() ?? "";
+            var version = tagName.TrimStart('v');
+
+            if (!IsNewer(version, currentVersion)) continue;
+
+            if (release.TryGetProperty("draft", out var draft) && draft.GetBoolean()) continue;
+
+            var body = release.TryGetProperty("body", out var bodyEl) ? bodyEl.GetString() : null;
+            var publishedAt = release.GetProperty("published_at").GetDateTime();
+
+            newerReleases.Add((version, tagName, body, publishedAt, release.GetProperty("assets")));
+        }
+
+        if (newerReleases.Count == 0)
             return null;
 
-        var assets = root.GetProperty("assets");
-        var allAssets = ParseAllAssets(assets);
+        newerReleases.Sort((a, b) =>
+        {
+            if (!TryParseVersion(a.Version, out var va)) va = new Version(0, 0, 0);
+            if (!TryParseVersion(b.Version, out var vb)) vb = new Version(0, 0, 0);
+            return va.CompareTo(vb);
+        });
 
+        var latest = newerReleases[^1];
+
+        var allAssets = ParseAllAssets(latest.Assets);
         if (allAssets.Count == 0)
             return null;
 
         var primaryAsset = allAssets.Values.First();
 
+        var changelog = BuildChangelog(newerReleases);
+
         return new UpdateInfo(
-            Version: version,
-            TagName: tagName,
-            ReleaseNotes: root.TryGetProperty("body", out var body) ? body.GetString() : null,
-            PublishedAt: root.GetProperty("published_at").GetDateTime(),
+            Version: latest.Version,
+            TagName: latest.TagName,
+            ReleaseNotes: latest.Body,
+            PublishedAt: latest.PublishedAt,
             DownloadUrl: primaryAsset.DownloadUrl,
             FileSize: primaryAsset.Size,
-            AssetName: primaryAsset.Name
+            AssetName: primaryAsset.Name,
+            Changelog: changelog
         );
+    }
+
+    private static string BuildChangelog(
+        List<(string Version, string TagName, string? Body, DateTime PublishedAt, JsonElement Assets)> releases)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        for (var i = 0; i < releases.Count; i++)
+        {
+            var r = releases[i];
+
+            if (sb.Length > 0)
+                sb.AppendLine().AppendLine("─────────────────────────────────").AppendLine();
+
+            sb.AppendLine($"v{r.Version}");
+            sb.AppendLine();
+
+            if (!string.IsNullOrWhiteSpace(r.Body))
+                sb.AppendLine(r.Body!.Trim());
+            else
+                sb.AppendLine("(no release notes)");
+        }
+
+        return sb.ToString();
     }
 
     public async Task<string> DownloadUpdateAsync(UpdateInfo info, IProgress<double>? progress = null)
@@ -329,6 +379,7 @@ public sealed class GitHubUpdateService : IUpdateService
     {
         return artifactTag switch
         {
+            "R19" => Path.Combine(s_smartConDir, "2019-2020"),
             "R21" => Path.Combine(s_smartConDir, "2021-2023"),
             "R24" => Path.Combine(s_smartConDir, "2024"),
             "R25" => Path.Combine(s_smartConDir, "2025"),
@@ -341,6 +392,8 @@ public sealed class GitHubUpdateService : IUpdateService
         var installed = DetectInstalledRevitVersions();
         var tags = new HashSet<string>();
 
+        if (installed.Contains(2019) || installed.Contains(2020))
+            tags.Add("R19");
         if (installed.Contains(2021) || installed.Contains(2022) || installed.Contains(2023))
             tags.Add("R21");
         if (installed.Contains(2024))
@@ -349,7 +402,7 @@ public sealed class GitHubUpdateService : IUpdateService
             tags.Add("R25");
 
         if (tags.Count == 0)
-            tags = ["R21", "R24", "R25"];
+            tags = ["R19", "R21", "R24", "R25"];
 
         return tags;
     }
@@ -441,12 +494,14 @@ public sealed class GitHubUpdateService : IUpdateService
 
     private static string? ExtractArtifactTag(string assetName)
     {
-        var patterns = new[] { "-R21.", "-R22.", "-R23.", "-R24.", "-R25." };
+        var patterns = new[] { "-R19.", "-R20.", "-R21.", "-R22.", "-R23.", "-R24.", "-R25." };
         foreach (var pattern in patterns)
         {
             if (assetName.Contains(pattern, StringComparison.OrdinalIgnoreCase))
             {
                 var tag = pattern.TrimStart('-').TrimEnd('.');
+                if (tag is "R20")
+                    return "R19";
                 if (tag is "R22" or "R23")
                     return "R21";
                 return tag;

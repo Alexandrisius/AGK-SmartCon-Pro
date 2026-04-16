@@ -80,6 +80,7 @@ Write-Ok "Version.txt updated"
 
 # --- 2. Build All Versions ---
 $buildConfigs = @(
+    @{ Config = "Release.R19"; Tfm = "net48";           Label = "Revit 2019-2020" }
     @{ Config = "Release.R21"; Tfm = "net48";           Label = "Revit 2021-2023" }
     @{ Config = "Release.R24"; Tfm = "net48";           Label = "Revit 2024" }
     @{ Config = "Release.R25"; Tfm = "net8.0-windows";  Label = "Revit 2025" }

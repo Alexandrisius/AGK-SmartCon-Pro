@@ -8,5 +8,6 @@ public sealed record UpdateInfo(
     DateTime PublishedAt,
     string DownloadUrl,
     long FileSize,
-    string AssetName
+    string AssetName,
+    string? Changelog = null
 );
