@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using SmartCon.Core.Services;
 
 namespace SmartCon.PipeConnect.Services;
@@ -27,6 +28,11 @@ public static class LanguageManager
         return _currentDict;
     }
 
+    public static string? GetString(string key)
+    {
+        return GetCurrentStrings()?[key] as string;
+    }
+
     public static void EnsureWindowResources(Window window)
     {
         var dict = GetCurrentStrings();
@@ -38,6 +44,8 @@ public static class LanguageManager
             window.Resources.MergedDictionaries.Remove(existing);
 
         window.Resources.MergedDictionaries.Add(dict);
+
+        window.Loaded += (_, _) => ApplyDataGridHeaders(window);
 
         _registeredWindows.RemoveAll(wr => !wr.TryGetTarget(out _));
         _registeredWindows.Add(new WeakReference<Window>(window));
@@ -83,6 +91,41 @@ public static class LanguageManager
 
             if (_currentDict is not null)
                 window.Resources.MergedDictionaries.Add(_currentDict);
+
+            ApplyDataGridHeaders(window);
+        }
+    }
+
+    private static void ApplyDataGridHeaders(DependencyObject parent)
+    {
+        switch (parent)
+        {
+            case DataGrid dataGrid:
+                ApplyColumnHeaders(dataGrid);
+                break;
+            case TabControl tabControl:
+                foreach (var item in tabControl.Items)
+                {
+                    if (tabControl.ItemContainerGenerator.ContainerFromItem(item) is TabItem tabItem)
+                        ApplyDataGridHeaders(tabItem);
+                }
+                break;
+        }
+
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            ApplyDataGridHeaders(System.Windows.Media.VisualTreeHelper.GetChild(parent, i));
+    }
+
+    private static void ApplyColumnHeaders(DataGrid dataGrid)
+    {
+        foreach (var column in dataGrid.Columns)
+        {
+            if (column.Header is string headerKey)
+            {
+                var value = GetString(headerKey);
+                if (value is not null)
+                    column.Header = value;
+            }
         }
     }
 }
