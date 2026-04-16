@@ -212,11 +212,9 @@ SmartCon.PipeConnect/
 │   ├── PipeConnectRotationHandler.cs     <- Rotation execution
 │   ├── PipeConnectSizeHandler.cs         <- Size change execution
 │   ├── PositionCorrector.cs              <- Post-connect position correction
-│   └── LanguageManager.cs                <- ResourceDictionary swap
-├── Resources/
-│   ├── Strings.ru.xaml                  <- Russian localization
-│   └── Strings.en.xaml                  <- English localization
-├── Converters/
+│   ├── LanguageManager.cs                <- ResourceDictionary swap + WeakReference window tracking
+│   └── StringLocalization.cs             <- программные RU/EN ResourceDictionary
+├── Services/
 │   └── BoolToVisibilityConverter.cs
 └── Events/
     └── PipeConnectExternalEvent.cs     <- IExternalEventHandler

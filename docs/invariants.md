@@ -146,3 +146,25 @@ public partial class SomeView : Window
 `ElementIdCompat` в `SmartCon.Core/Compatibility/` — единственный допустимый класс в Core, зависящий от RevitAPI (carrier-тип `ElementId`). Новые классы с RevitAPI-зависимостью в Core — запрещены без явного ревью архитектора.
 
 **Мотивация:** Multi-version support (Revit 2021-2025) требует абстракции над различиями 32/64-bit ElementId. `ElementIdCompat` решает это через `#if REVIT2024_OR_GREATER`.
+
+---
+
+## I-12: DataGridColumn.Header — программная установка
+
+`DataGridColumn` не наследует от `FrameworkElement`, поэтому `{DynamicResource}` в `Header` не резолвится когда `Application.Current == null` (Revit не создаёт WPF Application).
+
+**Правильно:** задавать заголовки программно через `x:Name` в code-behind:
+
+```xml
+<!-- XAML -->
+<DataGridTextColumn x:Name="ColCode" Binding="{Binding Code}" Width="80">
+```
+
+```csharp
+// Code-behind
+ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
+```
+
+**Запрещено:** `Header="{DynamicResource Col_Code}"` — работает только на net8.0 (Revit 2025), молча пусто на net48 (Revit 2021-2024).
+
+Подробнее: [`multi-version-guide.md`](multi-version-guide.md), Правило 4.
