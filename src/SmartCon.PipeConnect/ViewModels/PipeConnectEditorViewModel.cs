@@ -37,6 +37,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     private ITransactionGroupSession? _groupSession;
     private ElementId? _currentFittingId;
+    // TODO [Future]: Для поддержки цепочки фитингов (fitting1+fitting2) заменить single _currentFittingId на:
+    // private List<ElementId> _fittingChain = []; // ordered: [fitting1, fitting2, ...]
+    // Каждый фитинг цепочки подключается к следующему. Reducer подключается к последнему фитингу.
+    // См. также TODO в ConnectExecutor.ExecuteConnectTo()
     private ConnectorProxy? _activeDynamic;
     private ConnectorProxy? _activeFittingConn2;
     private FittingMappingRule? _activeFittingRule;
@@ -189,15 +193,34 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 StatusMessage = LocalizationService.GetString("Status_ReadyToConnect");
             }
 
-            if (_currentFittingId is null && _activeDynamic is not null)
+            if (_primaryReducerId is null && _activeDynamic is not null)
             {
-                const double radiusEps = 1e-5;
-                var dynRadius = _activeDynamic.Radius;
-                var staticRadius = _ctx.StaticConnector.Radius;
-                if (Math.Abs(dynRadius - staticRadius) > radiusEps)
+                bool needsReducer;
+
+                if (_currentFittingId is not null && _activeFittingConn2 is not null)
+                {
+                    needsReducer = PipeConnectSizeHandler.DetectReducerNeededAfterFitting(
+                        _activeDynamic, _activeFittingConn2);
+                }
+                else if (_currentFittingId is null)
+                {
+                    const double radiusEps = 1e-5;
+                    var dynRadius = _activeDynamic.Radius;
+                    var staticRadius = _ctx.StaticConnector.Radius;
+                    needsReducer = Math.Abs(dynRadius - staticRadius) > radiusEps;
+
+                    if (needsReducer)
+                        SmartConLogger.Info($"[Init] Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, " +
+                            $"static={staticRadius * FeetToMm:F1}mm → reducer needed");
+                }
+                else
+                {
+                    needsReducer = false;
+                }
+
+                if (needsReducer)
                 {
                     _needsPrimaryReducer = true;
-                    SmartConLogger.Info($"[Init] Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, static={staticRadius * FeetToMm:F1}mm → reducer needed");
 
                     if (AvailableReducers.Count > 0)
                     {
@@ -303,6 +326,20 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
             _activeDynamic = result.ActiveDynamic;
             _userManuallyChangedSize = result.UserManuallyChangedSize;
+
+            if (_currentFittingId is not null && _activeFittingConn2 is not null && _activeDynamic is not null)
+            {
+                var fitConn2Fresh = _connSvc.RefreshConnector(
+                    _doc, _activeFittingConn2.OwnerElementId, _activeFittingConn2.ConnectorIndex)
+                    ?? _activeFittingConn2;
+                bool needsReducerAfterFitting = PipeConnectSizeHandler.DetectReducerNeededAfterFitting(
+                    _activeDynamic, fitConn2Fresh);
+
+                if (needsReducerAfterFitting && _primaryReducerId is null)
+                    result = result with { NeedsPrimaryReducer = true };
+                else if (!needsReducerAfterFitting && _primaryReducerId is null)
+                    result = result with { NeedsPrimaryReducer = false };
+            }
 
             var sizeInfo = result.SizeChangeInfo;
             StatusMessage = string.IsNullOrEmpty(sizeInfo)

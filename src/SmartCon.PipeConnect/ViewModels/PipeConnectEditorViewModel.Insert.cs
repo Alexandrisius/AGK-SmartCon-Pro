@@ -10,6 +10,7 @@ using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Compatibility;
+using SmartCon.PipeConnect.Services;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
@@ -29,6 +30,10 @@ public sealed partial class PipeConnectEditorViewModel
         ElementId? insertedId = null;
         ConnectorProxy? fitConn2 = null;
 
+        ConnectorProxy? alignTarget = _currentFittingId is not null && _activeFittingConn2 is not null
+            ? _activeFittingConn2
+            : _ctx.StaticConnector;
+
         _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertReducer"), doc =>
         {
             if (_primaryReducerId is not null)
@@ -40,7 +45,7 @@ public sealed partial class PipeConnectEditorViewModel
             }
 
             insertedId = _fittingInsertSvc.InsertFitting(
-                doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
+                doc, primary.FamilyName, primary.SymbolName, alignTarget.Origin);
             if (insertedId is null)
             {
                 SmartConLogger.Warn("[InsertReducer] InsertFitting returned null");
@@ -54,7 +59,7 @@ public sealed partial class PipeConnectEditorViewModel
             var overrides = GuessCtcForReducer(insertedId);
 
             fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                doc, insertedId, alignTarget, _transformSvc, _connSvc,
                 dynamicTypeCode: dynCtc,
                 ctcOverrides: overrides,
                 directConnectRules: _mappingRepo.GetMappingRules());
@@ -263,6 +268,15 @@ public sealed partial class PipeConnectEditorViewModel
                 _activeFittingConn2 = null;
             }
 
+            if (_primaryReducerId is not null)
+            {
+                SmartConLogger.Info($"[InsertFitting] Deleting old reducer id={_primaryReducerId.GetValue()} (fitting changed)");
+                _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
+                _virtualCtcStore.RemoveForElement(_primaryReducerId);
+                _primaryReducerId = null;
+                _needsPrimaryReducer = false;
+            }
+
             insertedId = _fittingInsertSvc.InsertFitting(
                 doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
 
@@ -307,6 +321,24 @@ public sealed partial class PipeConnectEditorViewModel
         var newFitConn2 = SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: adjustDynamicToFit);
         if (newFitConn2 is not null)
             _activeFittingConn2 = newFitConn2;
+
+        if (_activeFittingConn2 is not null && _activeDynamic is not null)
+        {
+            var fitConn2ForCheck = _connSvc.RefreshConnector(
+                _doc, _activeFittingConn2.OwnerElementId, _activeFittingConn2.ConnectorIndex)
+                ?? _activeFittingConn2;
+            bool needsReducer = PipeConnectSizeHandler.DetectReducerNeededAfterFitting(
+                _activeDynamic, fitConn2ForCheck);
+
+            if (needsReducer && _primaryReducerId is null && AvailableReducers.Count > 0)
+            {
+                _needsPrimaryReducer = true;
+                SelectedReducer = AvailableReducers[0];
+                IsReducerVisible = true;
+                StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
+                InsertReducerSilent();
+            }
+        }
 
         SmartConLogger.Info($"[InsertFitting] DONE fittingId={_currentFittingId?.GetValue()}");
     }

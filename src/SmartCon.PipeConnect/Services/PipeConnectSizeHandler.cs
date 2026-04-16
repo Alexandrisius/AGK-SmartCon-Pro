@@ -109,15 +109,39 @@ public sealed class PipeConnectSizeHandler(
         ElementId? reducerId)
     {
         if (activeDynamic is null) return false;
-        if (fittingId is not null || reducerId is not null) return false;
+        if (reducerId is not null) return false;
 
         const double radiusEps = 1e-5;
         var dynRadius = activeDynamic.Radius;
-        var staticRadius = ctx.StaticConnector.Radius;
-        if (Math.Abs(dynRadius - staticRadius) > radiusEps)
+
+        double referenceRadius = ctx.StaticConnector.Radius;
+
+        if (fittingId is not null)
+            return false;
+
+        if (Math.Abs(dynRadius - referenceRadius) > radiusEps)
         {
-            SmartConLogger.Info($"[ChangeDynamicSize] Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, " +
-                $"static={staticRadius * FeetToMm:F1}mm → reducer needed");
+            SmartConLogger.Info($"[DetectReducerNeeded] Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, " +
+                $"reference={referenceRadius * FeetToMm:F1}mm → reducer needed");
+            return true;
+        }
+        return false;
+    }
+
+    internal static bool DetectReducerNeededAfterFitting(
+        ConnectorProxy? activeDynamic,
+        ConnectorProxy? fittingConn2)
+    {
+        if (activeDynamic is null || fittingConn2 is null) return false;
+
+        const double radiusEps = 1e-5;
+        var dynRadius = activeDynamic.Radius;
+        var fitConn2Radius = fittingConn2.Radius;
+
+        if (Math.Abs(dynRadius - fitConn2Radius) > radiusEps)
+        {
+            SmartConLogger.Info($"[DetectReducerNeededAfterFitting] Radii mismatch: " +
+                $"dyn={dynRadius * FeetToMm:F1}mm, fittingConn2={fitConn2Radius * FeetToMm:F1}mm → reducer needed");
             return true;
         }
         return false;

@@ -34,43 +34,21 @@ public sealed partial class PipeConnectEditorViewModel
             _activeDynamic = validateResult.ActiveDynamic ?? _activeDynamic;
             _needsPrimaryReducer = validateResult.NeedsPrimaryReducer;
 
-            if (_needsPrimaryReducer && _currentFittingId is null && _primaryReducerId is null)
+            if (_needsPrimaryReducer && _primaryReducerId is null)
             {
                 if (_activeFittingRule is null)
                     _activeFittingRule = _ctx.ProposedFittings
                         .FirstOrDefault(r => r.ReducerFamilies.Count > 0);
 
                 StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
-                _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertTransition"), doc =>
+
+                if (_currentFittingId is not null && _activeFittingConn2 is not null)
                 {
-                    var dyn = _activeDynamic ?? _ctx.DynamicConnector;
-                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
-
-                    _primaryReducerId = _networkMover.InsertReducer(
-                        doc, _ctx.StaticConnector, dynR,
-                        directConnectRules: _mappingRepo.GetMappingRules());
-
-                    if (_primaryReducerId is not null)
-                    {
-                        var overrides = GuessCtcForReducer(_primaryReducerId);
-                        SmartConLogger.Info($"[Connect] Reducer inserted: id={_primaryReducerId.GetValue()}");
-
-                        var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
-                        _fittingInsertSvc.AlignFittingToStatic(
-                            doc, _primaryReducerId, _ctx.StaticConnector, _transformSvc, _connSvc,
-                            dynamicTypeCode: dynCtc,
-                            ctcOverrides: overrides,
-                            directConnectRules: _mappingRepo.GetMappingRules());
-                        doc.Regenerate();
-                    }
-                    else
-                        SmartConLogger.Warn("[Connect] Reducer not found in mapping — connecting directly");
-                });
-
-                if (_primaryReducerId is not null)
+                    InsertReducerBetweenFittingAndDynamic();
+                }
+                else
                 {
-                    StatusMessage = LocalizationService.GetString("Status_SizingReducer");
-                    SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false);
+                    InsertReducerBetweenStaticAndDynamic();
                 }
             }
 
@@ -193,5 +171,100 @@ public sealed partial class PipeConnectEditorViewModel
         var dyn = _activeDynamic ?? _ctx.DynamicConnector;
         PipeConnectDiagnostics.LogConnectorState(
             _doc, _ctx.StaticConnector, dyn, _currentFittingId, _connSvc, label);
+    }
+
+    private void InsertReducerBetweenStaticAndDynamic()
+    {
+        _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertTransition"), doc =>
+        {
+            var dyn = _activeDynamic ?? _ctx.DynamicConnector;
+            var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+
+            _primaryReducerId = _networkMover.InsertReducer(
+                doc, _ctx.StaticConnector, dynR,
+                directConnectRules: _mappingRepo.GetMappingRules());
+
+            if (_primaryReducerId is not null)
+            {
+                var overrides = GuessCtcForReducer(_primaryReducerId);
+                SmartConLogger.Info($"[Connect] Reducer inserted: id={_primaryReducerId.GetValue()}");
+
+                var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+                _fittingInsertSvc.AlignFittingToStatic(
+                    doc, _primaryReducerId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                    dynamicTypeCode: dynCtc,
+                    ctcOverrides: overrides,
+                    directConnectRules: _mappingRepo.GetMappingRules());
+                doc.Regenerate();
+            }
+            else
+                SmartConLogger.Warn("[Connect] Reducer not found in mapping — connecting directly");
+        });
+
+        if (_primaryReducerId is not null)
+        {
+            StatusMessage = LocalizationService.GetString("Status_SizingReducer");
+            SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false);
+        }
+    }
+
+    private void InsertReducerBetweenFittingAndDynamic()
+    {
+        var fitConn2 = _activeFittingConn2;
+        if (fitConn2 is null)
+        {
+            SmartConLogger.Warn("[Connect] fittingConn2 is null — cannot insert reducer after fitting");
+            return;
+        }
+
+        _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertTransition"), doc =>
+        {
+            var dyn = _activeDynamic ?? _ctx.DynamicConnector;
+            var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+            var fitConn2Fresh = _connSvc.RefreshConnector(doc, fitConn2.OwnerElementId, fitConn2.ConnectorIndex)
+                ?? fitConn2;
+
+            _primaryReducerId = _networkMover.InsertReducer(
+                doc, fitConn2Fresh, dynR,
+                directConnectRules: _mappingRepo.GetMappingRules());
+
+            if (_primaryReducerId is not null)
+            {
+                var overrides = GuessCtcForReducer(_primaryReducerId);
+                SmartConLogger.Info($"[Connect] Reducer (fitting→dynamic) inserted: id={_primaryReducerId.GetValue()}");
+
+                var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+                _fittingInsertSvc.AlignFittingToStatic(
+                    doc, _primaryReducerId, fitConn2Fresh, _transformSvc, _connSvc,
+                    dynamicTypeCode: dynCtc,
+                    ctcOverrides: overrides,
+                    directConnectRules: _mappingRepo.GetMappingRules());
+
+                if (_activeDynamic is not null)
+                {
+                    var rConns = _connSvc.GetAllFreeConnectors(doc, _primaryReducerId).ToList();
+                    var (_, rConn2) = ResolveConnectorSidesForElement(_primaryReducerId, rConns, dynCtc);
+                    if (rConn2 is not null)
+                    {
+                        var activeProxy = _connSvc.RefreshConnector(
+                            doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                            ?? _activeDynamic;
+                        var offset = rConn2.OriginVec3 - activeProxy.OriginVec3;
+                        if (!SmartCon.Core.Math.VectorUtils.IsZero(offset))
+                            _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                    }
+                }
+
+                doc.Regenerate();
+            }
+            else
+                SmartConLogger.Warn("[Connect] Reducer not found in mapping — connecting without reducer");
+        });
+
+        if (_primaryReducerId is not null)
+        {
+            StatusMessage = LocalizationService.GetString("Status_SizingReducer");
+            SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false);
+        }
     }
 }
