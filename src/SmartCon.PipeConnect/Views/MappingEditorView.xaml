@@ -25,6 +25,7 @@
                 </Grid.RowDefinitions>
 
                 <DataGrid x:Name="TypesGrid" Grid.Row="0"
+                          ItemsSource="{Binding ConnectorTypes}"
                           SelectedItem="{Binding SelectedType, Mode=TwoWay}"
                           Style="{DynamicResource CompactDataGrid}"
                           RowStyle="{DynamicResource CompactDataGridRow}"
