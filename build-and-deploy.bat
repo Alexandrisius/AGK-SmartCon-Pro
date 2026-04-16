@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 >nul
+setlocal enabledelayedexpansion
 echo ==========================================
 echo SmartCon - Build and Deploy (Debug)
 echo ==========================================
@@ -7,7 +8,7 @@ echo ==========================================
 set "SLN_PATH=src\SmartCon.sln"
 
 echo.
-echo [1/6] Restoring NuGet packages...
+echo [1/7] Restoring NuGet packages...
 dotnet restore "%SLN_PATH%"
 if errorlevel 1 (
     echo.
@@ -18,7 +19,7 @@ if errorlevel 1 (
 echo [OK] Restore successful
 
 echo.
-echo [2/6] Building Revit 2025 (net8.0)...
+echo [2/7] Building Revit 2025 (net8.0)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug -f net8.0-windows --no-restore --verbosity minimal
 if errorlevel 1 (
     echo.
@@ -29,7 +30,7 @@ if errorlevel 1 (
 echo [OK] R25 build successful
 
 echo.
-echo [3/6] Building Revit 2023 (net48)...
+echo [3/7] Building Revit 2023 (net48)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug -f net48 --no-restore --verbosity minimal -p:RevitVersion=2023
 if errorlevel 1 (
     echo.
@@ -57,7 +58,8 @@ set "SMARTCON_R25=%APPDATA%\SmartCon\2025"
 if not exist "%SMARTCON_R25%" mkdir "%SMARTCON_R25%"
 copy /Y "src\SmartCon.App\bin\Debug\net8.0-windows\*.dll" "%SMARTCON_R25%\" >nul
 copy /Y "src\SmartCon.App\bin\Debug\net8.0-windows\SmartCon.App.deps.json" "%SMARTCON_R25%\" >nul 2>nul
-copy /Y "src\SmartCon.App\Resources\SmartCon-2025.addin" "%ADDIN_R25%\" >nul
+if exist "%ADDIN_R25%\SmartCon.addin" del /q "%ADDIN_R25%\SmartCon.addin"
+call :WriteAddin "%ADDIN_R25%\SmartCon.addin" "%SMARTCON_R25%\SmartCon.App.dll"
 echo [OK] Revit 2025 -^> %SMARTCON_R25%
 
 echo.
@@ -66,7 +68,10 @@ set "ADDIN_R23=%APPDATA%\Autodesk\Revit\Addins\2023"
 set "SMARTCON_R23=%APPDATA%\SmartCon\2021-2023"
 if not exist "%SMARTCON_R23%" mkdir "%SMARTCON_R23%"
 copy /Y "src\SmartCon.App\bin\Debug\net48\*.dll" "%SMARTCON_R23%\" >nul
-copy /Y "src\SmartCon.App\Resources\SmartCon-2023.addin" "%ADDIN_R23%\" >nul
+if exist "%ADDIN_R23%\SmartCon.addin" del /q "%ADDIN_R23%\SmartCon.addin"
+if exist "%ADDIN_R23%\SmartCon-2023.addin" del /q "%ADDIN_R23%\SmartCon-2023.addin"
+if exist "%ADDIN_R23%\SmartCon-2025.addin" del /q "%ADDIN_R23%\SmartCon-2025.addin"
+call :WriteAddin "%ADDIN_R23%\SmartCon.addin" "%SMARTCON_R23%\SmartCon.App.dll"
 echo [OK] Revit 2023 -^> %SMARTCON_R23%
 
 echo.
@@ -85,3 +90,18 @@ echo [SUCCESS] Deployed to Revit 2023 + 2025
 echo ==========================================
 echo.
 pause
+exit /b 0
+
+:WriteAddin
+echo ^<?xml version="1.0" encoding="utf-8"?^> > "%~1"
+echo ^<RevitAddIns^> >> "%~1"
+echo   ^<AddIn Type="Application"^> >> "%~1"
+echo     ^<Name^>SmartCon^</Name^> >> "%~1"
+echo     ^<Assembly^>%~2^</Assembly^> >> "%~1"
+echo     ^<AddInId^>A1B2C3D4-E5F6-7890-ABCD-EF1234567890^</AddInId^> >> "%~1"
+echo     ^<FullClassName^>SmartCon.App.App^</FullClassName^> >> "%~1"
+echo     ^<VendorId^>AGK^</VendorId^> >> "%~1"
+echo     ^<VendorDescription^>AGK Engineering^</VendorDescription^> >> "%~1"
+echo   ^</AddIn^> >> "%~1"
+echo ^</RevitAddIns^> >> "%~1"
+goto :eof
