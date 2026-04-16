@@ -85,21 +85,44 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
     {
         var result = new List<SizeOption>();
 
-        var pipeType = element.Document.GetElement(element.GetTypeId()) as ElementType;
-        if (pipeType is null) return [];
+        var pipeType = doc.GetElement(element.GetTypeId()) as PipeType;
+        if (pipeType is null)
+        {
+            SmartConLogger.Debug("  GetPipeSizes: PipeType=null → return []");
+            return [];
+        }
 
-        var collector = new FilteredElementCollector(doc)
-            .OfClass(typeof(PipeType))
-            .Cast<PipeType>();
+        var rpm = pipeType.RoutingPreferenceManager;
+        if (rpm is null)
+        {
+            SmartConLogger.Debug("  GetPipeSizes: RoutingPreferenceManager=null → return []");
+            return [];
+        }
 
         var diameters = new SortedSet<double>();
-        foreach (var pt in collector)
+
+        int ruleCount = rpm.GetNumberOfRules(RoutingPreferenceRuleGroupType.Segments);
+        SmartConLogger.Debug($"  GetPipeSizes: PipeType='{pipeType.Name}', {ruleCount} segment rules");
+
+        for (int i = 0; i < ruleCount; i++)
         {
-            var param = pt.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM);
-            if (param is not null && param.HasValue)
+            var rule = rpm.GetRule(RoutingPreferenceRuleGroupType.Segments, i);
+            var segmentId = rule.MEPPartId;
+            if (segmentId == ElementId.InvalidElementId) continue;
+
+            var segment = doc.GetElement(segmentId) as Segment;
+            if (segment is null) continue;
+
+            int sizeCount = 0;
+            foreach (MEPSize size in segment.GetSizes())
             {
-                diameters.Add(param.AsDouble());
+                if (size.UsedInSizeLists)
+                {
+                    diameters.Add(size.NominalDiameter);
+                    sizeCount++;
+                }
             }
+            SmartConLogger.Debug($"  Segment='{segment.Name}': {sizeCount} sizes (UsedInSizeLists)");
         }
 
         if (diameters.Count == 0)
@@ -111,10 +134,6 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                 SmartConLogger.Debug($"  GetPipeSizes: fallback to current diameter={currentParam.AsDouble() * FeetToMm:F2} mm");
             }
         }
-        else
-        {
-            SmartConLogger.Debug($"  GetPipeSizes: {diameters.Count} PipeType sizes");
-        }
 
         foreach (var diam in diameters)
         {
@@ -124,10 +143,11 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             {
                 DisplayName = $"DN {dn}",
                 Radius = radius,
-                Source = "PipeType"
+                Source = "Segment"
             });
         }
 
+        SmartConLogger.Debug($"  GetPipeSizes: {result.Count} sizes from Segment");
         return result;
     }
 
