@@ -39,11 +39,11 @@ public partial class PipeConnectEditorView : Window
     {
         if (_closeFromViewModel) return;
 
-        if (DataContext is PipeConnectEditorViewModel vm
-            && vm.IsSessionActive && !vm.IsBusy && !vm.IsClosing)
+        if (DataContext is PipeConnectEditorViewModel vm && vm.IsSessionActive)
         {
             e.Cancel = true;
-            Dispatcher.BeginInvoke(() => vm.Cancel());
+            if (!vm.IsBusy && !vm.IsClosing)
+                Dispatcher.BeginInvoke(() => vm.Cancel());
         }
     }
 
