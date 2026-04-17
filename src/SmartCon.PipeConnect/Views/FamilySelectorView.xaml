@@ -103,6 +103,7 @@
             <Button Content="{DynamicResource Btn_Cancel}"
                     Width="95" Margin="0,0,10,0"
                     Command="{Binding CancelCommand}"
+                    IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>
             <Button Content="{DynamicResource Btn_Confirm}"
                     Width="110"
