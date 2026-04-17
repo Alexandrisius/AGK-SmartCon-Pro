@@ -224,7 +224,7 @@ public static class LocalizationService
         ["Tip_ChainIncrement"] = "Connect next level",
         ["Tip_ConnectAll"] = "Connect all network elements at once",
         ["Tip_SelectFittingFamilies"] = "Click to select fitting families (unavailable for Direct — use cross-section transitions)",
-        ["Tip_SelectReducerFamilies"] = "Click to select reducer families (unavailable for non-Direct — use fittings)",
+        ["Tip_SelectReducerFamilies"] = "Click to select reducer families",
         ["Tip_ChangeConnection"] = "Switch to another free connector",
         ["Tip_Connect"] = "Execute element connection",
 

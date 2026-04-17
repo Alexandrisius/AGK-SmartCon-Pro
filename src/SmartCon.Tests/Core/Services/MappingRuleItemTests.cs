@@ -236,4 +236,60 @@ public sealed class MappingRuleItemTests
         Assert.Single(item.FittingFamilies);
         Assert.Equal("Угольник", item.FittingFamilies[0].FamilyName);
     }
+
+    // ── CanSelect / IsDirectConnect ──────────────────────────────────────
+
+    [Fact]
+    public void CanSelectFittingFamilies_False_WhenDirectConnect()
+    {
+        var item = MakeItem();
+        item.IsDirectConnect = true;
+        Assert.False(item.CanSelectFittingFamilies);
+    }
+
+    [Fact]
+    public void CanSelectFittingFamilies_True_WhenNotDirectConnect()
+    {
+        var item = MakeItem();
+        item.IsDirectConnect = false;
+        Assert.True(item.CanSelectFittingFamilies);
+    }
+
+    [Fact]
+    public void CanSelectReducerFamilies_True_WhenDirectConnect()
+    {
+        var item = MakeItem();
+        item.IsDirectConnect = true;
+        Assert.True(item.CanSelectReducerFamilies);
+    }
+
+    [Fact]
+    public void CanSelectReducerFamilies_True_WhenNotDirectConnect()
+    {
+        var item = MakeItem();
+        item.IsDirectConnect = false;
+        Assert.True(item.CanSelectReducerFamilies);
+    }
+
+    // ── OnIsDirectConnectChanged clearing ────────────────────────────────
+
+    [Fact]
+    public void SetDirect_ClearsFittingFamilies()
+    {
+        var item = MakeItem();
+        item.FittingFamilies.Add(new FittingMapping { FamilyName = "Муфта", Priority = 1 });
+        item.IsDirectConnect = true;
+        Assert.Empty(item.FittingFamilies);
+    }
+
+    [Fact]
+    public void UnsetDirect_PreservesReducerFamilies()
+    {
+        var item = MakeItem();
+        item.IsDirectConnect = true;
+        item.ReducerFamilies.Add(new FittingMapping { FamilyName = "Переход", Priority = 1 });
+        item.IsDirectConnect = false;
+        Assert.Single(item.ReducerFamilies);
+        Assert.Equal("Переход", item.ReducerFamilies[0].FamilyName);
+    }
 }

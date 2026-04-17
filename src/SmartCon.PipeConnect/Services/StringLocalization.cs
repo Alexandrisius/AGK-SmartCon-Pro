@@ -49,7 +49,7 @@ public static class StringLocalization
         d[Keys.Tip_ChainIncrement] = "Присоединить следующий уровень";
         d[Keys.Tip_ConnectAll] = "Подключить все элементы сети сразу";
         d[Keys.Tip_SelectFittingFamilies] = "Нажмите для выбора семейств фитингов (недоступно при «Прямое» — используйте переходы сечения)";
-        d[Keys.Tip_SelectReducerFamilies] = "Нажмите для выбора семейств переходников (недоступно при непрямом — используйте фитинги)";
+        d[Keys.Tip_SelectReducerFamilies] = "Нажмите для выбора семейств переходников";
         d[Keys.Tip_ChangeConnection] = "Переключить на другой свободный коннектор";
         d[Keys.Tip_Connect] = "Выполнить соединение элементов";
 
@@ -143,7 +143,7 @@ public static class StringLocalization
         d[Keys.Tip_ChainIncrement] = "Connect next level";
         d[Keys.Tip_ConnectAll] = "Connect all network elements at once";
         d[Keys.Tip_SelectFittingFamilies] = "Click to select fitting families (unavailable for Direct — use cross-section transitions)";
-        d[Keys.Tip_SelectReducerFamilies] = "Click to select reducer families (unavailable for non-Direct — use fittings)";
+        d[Keys.Tip_SelectReducerFamilies] = "Click to select reducer families";
         d[Keys.Tip_ChangeConnection] = "Switch to another free connector";
         d[Keys.Tip_Connect] = "Execute element connection";
 
