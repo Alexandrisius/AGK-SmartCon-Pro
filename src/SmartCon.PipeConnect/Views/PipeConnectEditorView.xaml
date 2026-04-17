@@ -123,10 +123,6 @@
                             Command="{Binding ChangeDynamicSizeCommand}"
                             ToolTip="{DynamicResource Tip_ChangeSize}"/>
                 </Grid>
-                <TextBlock Text="{Binding SizeChangeInfo}"
-                           FontSize="10" Foreground="#E65100" Margin="66,2,0,0"
-                           TextWrapping="Wrap"
-                           Visibility="{Binding HasSizeChangeInfo, Converter={StaticResource BoolToVisibility}}"/>
             </StackPanel>
 
             <!-- Фитинг -->

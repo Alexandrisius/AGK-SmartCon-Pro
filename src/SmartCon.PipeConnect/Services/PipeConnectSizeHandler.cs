@@ -17,7 +17,6 @@ namespace SmartCon.PipeConnect.Services;
 public sealed record SizeChangeResult(
     ConnectorProxy? ActiveDynamic,
     bool UserManuallyChangedSize,
-    string? SizeChangeInfo,
     bool NeedsPrimaryReducer);
 
 /// <summary>
@@ -46,6 +45,27 @@ public sealed class PipeConnectSizeHandler(
 
         groupSession.RunInTransaction(LocalizationService.GetString("Tx_ChangeSizeDynamic"), d =>
         {
+            if (selectedOption.SymbolName is not null
+                && selectedOption.CurrentSymbolName is not null
+                && selectedOption.SymbolName != selectedOption.CurrentSymbolName)
+            {
+                var inst = d.GetElement(dynId) as FamilyInstance;
+                var family = inst?.Symbol?.Family;
+                if (family is not null)
+                {
+                    foreach (var symId in family.GetFamilySymbolIds())
+                    {
+                        var sym = d.GetElement(symId) as FamilySymbol;
+                        if (sym?.Name == selectedOption.SymbolName)
+                        {
+                            inst!.Symbol = sym;
+                            d.Regenerate();
+                            break;
+                        }
+                    }
+                }
+            }
+
             bool appliedViaQueryParams = ApplyQueryParamsIfExists(d, dynId, selectedOption);
 
             if (!appliedViaQueryParams)
@@ -93,12 +113,9 @@ public sealed class PipeConnectSizeHandler(
 
         needsPrimaryReducer = DetectReducerNeeded(updatedDynamic, ctx, fittingId, reducerId);
 
-        var sizeChangeInfo = BuildSizeChangeInfo(selectedOption);
-
         return new SizeChangeResult(
             updatedDynamic,
             UserManuallyChangedSize: true,
-            sizeChangeInfo,
             needsPrimaryReducer);
     }
 
@@ -145,16 +162,6 @@ public sealed class PipeConnectSizeHandler(
             return true;
         }
         return false;
-    }
-
-    internal static string? BuildSizeChangeInfo(FamilySizeOption selected)
-    {
-        if (selected.SymbolName is not null && selected.CurrentSymbolName is not null
-            && selected.SymbolName != selected.CurrentSymbolName)
-        {
-            return $"Типоразмер: {selected.CurrentSymbolName} → {selected.SymbolName}";
-        }
-        return null;
     }
 
     public static FamilySizeOption? FindBestOptionForRadius(
