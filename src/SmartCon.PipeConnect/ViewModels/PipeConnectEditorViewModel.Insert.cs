@@ -84,7 +84,7 @@ public sealed partial class PipeConnectEditorViewModel
             InsertReducerCommand.NotifyCanExecuteChanged();
             ReflectReducerCtcCommand.NotifyCanExecuteChanged();
             StatusMessage = string.Format(LocalizationService.GetString("Status_ReducerSet"), reducer.DisplayName);
-            SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false);
+            SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false, alignTarget);
             SmartConLogger.Info($"[InsertReducer] DONE reducerId={_primaryReducerId.GetValue()}");
             return true;
         }
@@ -126,12 +126,16 @@ public sealed partial class PipeConnectEditorViewModel
         var overrides = _virtualCtcStore.GetOverridesForElement(elemId);
         var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
 
+        var upstreamTarget = (isReducer && _currentFittingId is not null && _activeFittingConn2 is not null)
+            ? _activeFittingConn2
+            : _ctx.StaticConnector;
+
         ConnectorProxy? reorientedConn2 = null;
 
         _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_ReflectCtc"), doc =>
         {
             var fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                doc, elemId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                doc, elemId, upstreamTarget, _transformSvc, _connSvc,
                 dynamicTypeCode: dynCtc,
                 ctcOverrides: overrides,
                 directConnectRules: _mappingRepo.GetMappingRules());
@@ -155,7 +159,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             if (isReducer)
             {
-                var sizedConn2 = SizeFittingConnectors(_doc, elemId, reorientedConn2, adjustDynamicToFit: false);
+                var sizedConn2 = SizeFittingConnectors(_doc, elemId, reorientedConn2, adjustDynamicToFit: false, upstreamTarget);
                 if (sizedConn2 is not null && _activeDynamic is not null)
                 {
                     _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_PositionAfterReducerReSize"), doc =>

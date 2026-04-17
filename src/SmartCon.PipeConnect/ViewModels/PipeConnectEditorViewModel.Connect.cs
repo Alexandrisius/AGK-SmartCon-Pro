@@ -143,11 +143,11 @@ public sealed partial class PipeConnectEditorViewModel
         DecrementChainDepthCommand.NotifyCanExecuteChanged();
     }
 
-    private ConnectorProxy? SizeFittingConnectors(Document doc, ElementId fittingId, ConnectorProxy? fitConn2, bool adjustDynamicToFit = true)
+    private ConnectorProxy? SizeFittingConnectors(Document doc, ElementId fittingId, ConnectorProxy? fitConn2, bool adjustDynamicToFit = true, ConnectorProxy? upstreamTarget = null)
     {
         var ctx = CreateOperationContext();
         var result = _connectExecutor.SizeFittingConnectors(
-            ctx, _activeDynamic, fittingId, fitConn2, _activeFittingRule, adjustDynamicToFit);
+            ctx, _activeDynamic, fittingId, fitConn2, _activeFittingRule, adjustDynamicToFit, upstreamTarget);
         if (result.ActiveDynamic is not null)
             _activeDynamic = result.ActiveDynamic;
         return result.FitConn2;
@@ -264,7 +264,8 @@ public sealed partial class PipeConnectEditorViewModel
         if (_primaryReducerId is not null)
         {
             StatusMessage = LocalizationService.GetString("Status_SizingReducer");
-            SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false);
+            SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false,
+                upstreamTarget: fitConn2);
         }
     }
 }

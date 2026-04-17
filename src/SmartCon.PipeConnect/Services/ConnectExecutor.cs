@@ -244,14 +244,15 @@ public sealed class ConnectExecutor
         ElementId fittingId,
         ConnectorProxy? fitConn2,
         FittingMappingRule? activeFittingRule,
-        bool adjustDynamicToFit = true)
+        bool adjustDynamicToFit = true,
+        ConnectorProxy? upstreamTarget = null)
     {
         ConnectorProxy? result = null;
         ConnectorProxy? currentDynamic = activeDynamic;
 
         try
         {
-            var staticConn = context.Session.StaticConnector;
+            var effectiveUpstream = upstreamTarget ?? context.Session.StaticConnector;
             var allConns = _connSvc.GetAllFreeConnectors(context.Doc, fittingId).ToList();
             if (allConns.Count == 0) return new SizeFittingResult(null, currentDynamic);
 
@@ -265,7 +266,7 @@ public sealed class ConnectExecutor
             else
             {
                 var ordered = allConns
-                    .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, staticConn.OriginVec3))
+                    .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, effectiveUpstream.OriginVec3))
                     .ToList();
                 resolvedConn1 = ordered.FirstOrDefault();
                 resolvedConn2 = ordered.Skip(1).FirstOrDefault();
@@ -291,7 +292,7 @@ public sealed class ConnectExecutor
                 {
                     var (_, dynR) = _paramResolver.TrySetFittingTypeForPair(
                         txDoc, fittingId,
-                        conn1Idx, staticConn.Radius,
+                        conn1Idx, effectiveUpstream.Radius,
                         conn2Idx, currentDynRadius);
                     achievedDynRadius = dynR;
                     txDoc.Regenerate();
@@ -334,7 +335,7 @@ public sealed class ConnectExecutor
                     {
                         double targetRadius = c.ConnectorIndex == conn2Idx
                             ? currentDynRadius
-                            : staticConn.Radius;
+                            : effectiveUpstream.Radius;
                         _paramResolver.TrySetConnectorRadius(txDoc, fittingId, c.ConnectorIndex, targetRadius);
                     }
                     txDoc.Regenerate();
@@ -342,7 +343,7 @@ public sealed class ConnectExecutor
             }
 
             var (realignFitConn2, updatedDynamic) = RealignAfterSizing(
-                context, currentDynamic, fittingId, activeFittingRule);
+                context, currentDynamic, fittingId, activeFittingRule, effectiveUpstream);
             currentDynamic = updatedDynamic;
             result = realignFitConn2;
         }
@@ -355,7 +356,8 @@ public sealed class ConnectExecutor
         ConnectOperationContext context,
         ConnectorProxy? activeDynamic,
         ElementId fittingId,
-        FittingMappingRule? activeFittingRule)
+        FittingMappingRule? activeFittingRule,
+        ConnectorProxy upstreamTarget)
     {
         ConnectorProxy? newFitConn2 = null;
         ConnectorProxy? currentDynamic = activeDynamic;
@@ -365,11 +367,10 @@ public sealed class ConnectExecutor
             context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_AlignAfterSize"), txDoc =>
             {
                 var ctcOvr = context.VirtualCtcStore.GetOverridesForElement(fittingId);
-                var staticConn = context.Session.StaticConnector;
-                var dynCtc = _ctcManager.ResolveDynamicTypeFromRule(activeFittingRule, staticConn.ConnectionTypeCode);
+                var dynCtc = _ctcManager.ResolveDynamicTypeFromRule(activeFittingRule, upstreamTarget.ConnectionTypeCode);
 
                 newFitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                    txDoc, fittingId, staticConn, _transformSvc, _connSvc,
+                    txDoc, fittingId, upstreamTarget, _transformSvc, _connSvc,
                     dynamicTypeCode: dynCtc,
                     ctcOverrides: ctcOvr.Count > 0 ? ctcOvr : null,
                     directConnectRules: _mappingRepo.GetMappingRules());

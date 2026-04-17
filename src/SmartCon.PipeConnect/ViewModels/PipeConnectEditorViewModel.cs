@@ -327,20 +327,6 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             _activeDynamic = result.ActiveDynamic;
             _userManuallyChangedSize = result.UserManuallyChangedSize;
 
-            if (_currentFittingId is not null && _activeFittingConn2 is not null && _activeDynamic is not null)
-            {
-                var fitConn2Fresh = _connSvc.RefreshConnector(
-                    _doc, _activeFittingConn2.OwnerElementId, _activeFittingConn2.ConnectorIndex)
-                    ?? _activeFittingConn2;
-                bool needsReducerAfterFitting = PipeConnectSizeHandler.DetectReducerNeededAfterFitting(
-                    _activeDynamic, fitConn2Fresh);
-
-                if (needsReducerAfterFitting && _primaryReducerId is null)
-                    result = result with { NeedsPrimaryReducer = true };
-                else if (!needsReducerAfterFitting && _primaryReducerId is null)
-                    result = result with { NeedsPrimaryReducer = false };
-            }
-
             var sizeInfo = result.SizeChangeInfo;
             StatusMessage = string.IsNullOrEmpty(sizeInfo)
                 ? string.Format(LocalizationService.GetString("Status_SizeChangedTo"), SelectedDynamicSize.DisplayName)
@@ -360,7 +346,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             if (_primaryReducerId is not null)
             {
                 SmartConLogger.Info($"[ChangeDynamicSize] Auto-update reducer (id={_primaryReducerId})");
-                var newReducerConn2 = SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false);
+                var reducerUpstream = (_currentFittingId is not null && _activeFittingConn2 is not null)
+                    ? _activeFittingConn2
+                    : _ctx.StaticConnector;
+                var newReducerConn2 = SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false, reducerUpstream);
                 if (newReducerConn2 is not null && _activeDynamic is not null)
                 {
                     _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_PositionAfterReducer"), doc =>
@@ -376,12 +365,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
                 }
             }
 
-            if (result.NeedsPrimaryReducer)
+            if (result.NeedsPrimaryReducer && _currentFittingId is null && _primaryReducerId is null)
             {
                 _needsPrimaryReducer = true;
-
-                if (_currentFittingId is not null && _activeFittingConn2 is not null && _activeDynamic is not null)
-                    EnsureReducersForFittingPair(_activeFittingConn2, _activeDynamic);
 
                 if (AvailableReducers.Count > 0)
                 {
