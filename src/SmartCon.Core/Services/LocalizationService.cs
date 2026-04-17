@@ -95,7 +95,7 @@ public static class LocalizationService
         ["Status_ConnectorChanged"] = "Коннектор изменён",
         ["Status_ChangingSizeTo"] = "Изменение размера на {0}…",
         ["Status_SizeChangedTo"] = "Размер изменён на {0}",
-        ["Status_SizeChangedWithInfo"] = "Размер изменён. {0}",
+
         ["Status_UpdatingFitting"] = "Обновление фитинга…",
         ["Status_Validating"] = "Проверка и финальная подгонка…",
         ["Status_SizingReducer"] = "Подбор размера переходника…",
@@ -272,7 +272,7 @@ public static class LocalizationService
         ["Status_ConnectorChanged"] = "Connector changed",
         ["Status_ChangingSizeTo"] = "Changing size to {0}…",
         ["Status_SizeChangedTo"] = "Size changed to {0}",
-        ["Status_SizeChangedWithInfo"] = "Size changed. {0}",
+
         ["Status_UpdatingFitting"] = "Updating fitting…",
         ["Status_Validating"] = "Validating and final fitting…",
         ["Status_SizingReducer"] = "Sizing reducer…",
