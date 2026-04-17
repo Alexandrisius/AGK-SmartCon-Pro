@@ -74,21 +74,7 @@ public static class SmartConLogger
         Write(LookupLogPath, "LKP", message);
     }
 
-    public static void LookupSection(string title)
-    {
-        var line = $"── {title} ──";
-        Write(LookupLogPath, "LKP", line);
-    }
 
-    public static void LookupLines(string header, string[] lines, int maxLines = 20)
-    {
-        Write(LookupLogPath, "LKP", $"{header} ({lines.Length} lines):");
-        int count = System.Math.Min(lines.Length, maxLines);
-        for (int i = 0; i < count; i++)
-            Write(LookupLogPath, "CSV", $"  [{i}] {lines[i]}");
-        if (lines.Length > maxLines)
-            Write(LookupLogPath, "CSV", $"  ... ({lines.Length - maxLines} more lines hidden)");
-    }
 
     public static void Formula(string message)
     {

@@ -38,7 +38,6 @@ internal static class FamilyParameterAnalyzer
                                     bool facingFlipped = false)
     {
         // 1. Найти ConnectorElement по ближайшему origin (аналогично RevitFamilyConnectorService)
-        SmartConLogger.LookupSection("FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam");
         SmartConLogger.Debug($"  targetOriginGlobal=({targetOriginGlobal.X:F4}, {targetOriginGlobal.Y:F4}, {targetOriginGlobal.Z:F4})");
 
         var connElems = new FilteredElementCollector(familyDoc)
