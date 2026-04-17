@@ -6,6 +6,8 @@ namespace SmartCon.PipeConnect.Views;
 
 public partial class FamilySelectorView : Window
 {
+    private bool _closeFromViewModel;
+
     public FamilySelectorView(FamilySelectorViewModel viewModel)
     {
         InitializeComponent();
@@ -14,8 +16,6 @@ public partial class FamilySelectorView : Window
         viewModel.RequestClose += OnRequestClose;
         Closing += OnClosing;
     }
-
-    private bool _closeFromViewModel;
 
     private void OnRequestClose()
     {
@@ -29,8 +29,8 @@ public partial class FamilySelectorView : Window
 
         if (DataContext is FamilySelectorViewModel vm)
         {
-            vm.CancelCommand.Execute(null);
             e.Cancel = true;
+            Dispatcher.BeginInvoke(() => vm.CancelCommand.Execute(null));
         }
     }
 }

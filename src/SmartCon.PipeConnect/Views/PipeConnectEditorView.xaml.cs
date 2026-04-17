@@ -14,17 +14,20 @@ public partial class PipeConnectEditorView : Window
     [StructLayout(LayoutKind.Sequential)]
     private struct CursorPoint { public int X; public int Y; }
 
+    private bool _closeFromViewModel;
+
     public PipeConnectEditorView(PipeConnectEditorViewModel viewModel)
     {
         InitializeComponent();
         LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
+
         viewModel.RequestClose += OnRequestClose;
+
         Closing += OnClosing;
+
         PositionNearCursor();
     }
-
-    private bool _closeFromViewModel;
 
     private void OnRequestClose()
     {
@@ -39,8 +42,8 @@ public partial class PipeConnectEditorView : Window
         if (DataContext is PipeConnectEditorViewModel vm
             && vm.IsSessionActive && !vm.IsBusy && !vm.IsClosing)
         {
-            vm.Cancel();
             e.Cancel = true;
+            Dispatcher.BeginInvoke(() => vm.Cancel());
         }
     }
 

@@ -14,6 +14,8 @@ public partial class MiniTypeSelectorView : Window
     [StructLayout(LayoutKind.Sequential)]
     private struct CursorPoint { public int X; public int Y; }
 
+    private bool _closeFromViewModel;
+
     public MiniTypeSelectorView(MiniTypeSelectorViewModel viewModel)
     {
         InitializeComponent();
@@ -23,8 +25,6 @@ public partial class MiniTypeSelectorView : Window
         Closing += OnClosing;
         if (GetCursorPos(out var pt)) { Left = pt.X + 10; Top = pt.Y + 10; }
     }
-
-    private bool _closeFromViewModel;
 
     private void OnRequestClose()
     {
@@ -38,8 +38,8 @@ public partial class MiniTypeSelectorView : Window
 
         if (DataContext is MiniTypeSelectorViewModel vm)
         {
-            vm.CancelCommand.Execute(null);
             e.Cancel = true;
+            Dispatcher.BeginInvoke(() => vm.CancelCommand.Execute(null));
         }
     }
 }
