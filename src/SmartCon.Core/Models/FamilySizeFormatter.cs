@@ -1,5 +1,7 @@
+using System.Linq;
 using SmartCon.Core;
-
+
+
 using static SmartCon.Core.Units;
 namespace SmartCon.Core.Models;
 
@@ -85,5 +87,19 @@ public static class FamilySizeFormatter
     public static double DnToRadiusFt(int dn)
     {
         return (dn / 2.0) * MmToFeet;
+    }
+
+    public static string AppendSymbolNameIfNeeded(
+        string baseDisplayName,
+        string? symbolName,
+        IReadOnlyList<FamilySizeOption> allOptions)
+    {
+        if (string.IsNullOrEmpty(symbolName)) return baseDisplayName;
+
+        bool hasDuplicate = allOptions.Any(o =>
+            o.DisplayName == baseDisplayName && o.SymbolName != symbolName);
+
+        if (!hasDuplicate) return baseDisplayName;
+        return $"{baseDisplayName} ({symbolName})";
     }
 }

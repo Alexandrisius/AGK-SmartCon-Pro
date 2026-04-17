@@ -80,8 +80,6 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     [ObservableProperty] private int _rotationAngleDeg = 15;
     [ObservableProperty] private FamilySizeOption? _selectedDynamicSize;
     [ObservableProperty] private bool _hasSizeOptions;
-    [ObservableProperty] private string? _sizeChangeInfo;
-    [ObservableProperty] private bool _hasSizeChangeInfo;
 
     public ObservableCollection<FamilySizeOption> AvailableDynamicSizes { get; } = [];
 
@@ -464,10 +462,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             _activeDynamic = result.ActiveDynamic;
             _userManuallyChangedSize = result.UserManuallyChangedSize;
 
-            var sizeInfo = result.SizeChangeInfo;
-            StatusMessage = string.IsNullOrEmpty(sizeInfo)
-                ? string.Format(LocalizationService.GetString("Status_SizeChangedTo"), SelectedDynamicSize.DisplayName)
-                : string.Format(LocalizationService.GetString("Status_SizeChangedWithInfo"), sizeInfo);
+            StatusMessage = string.Format(LocalizationService.GetString("Status_SizeChangedTo"), SelectedDynamicSize.DisplayName);
 
             if (_currentFittingId is not null)
             {
@@ -538,17 +533,6 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     partial void OnSelectedDynamicSizeChanged(FamilySizeOption? value)
     {
         ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
-
-        if (value is null || value.IsAutoSelect)
-        {
-            SizeChangeInfo = null;
-            HasSizeChangeInfo = false;
-            return;
-        }
-
-        var info = PipeConnectSizeHandler.BuildSizeChangeInfo(value);
-        SizeChangeInfo = info;
-        HasSizeChangeInfo = !string.IsNullOrEmpty(info);
     }
 
     private void EnsureReducersForFittingPair(ConnectorProxy fitConn2, ConnectorProxy dynamicConn)

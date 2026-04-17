@@ -21,11 +21,13 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 {
     private readonly ILookupTableService _lookupTableSvc;
     private readonly FamilySymbolSizeExtractor _sizeExtractor;
+    private readonly ITransactionService _transactionService;
 
-    public RevitDynamicSizeResolver(ILookupTableService lookupTableSvc, FamilySymbolSizeExtractor sizeExtractor)
+    public RevitDynamicSizeResolver(ILookupTableService lookupTableSvc, FamilySymbolSizeExtractor sizeExtractor, ITransactionService transactionService)
     {
         _lookupTableSvc = lookupTableSvc;
         _sizeExtractor = sizeExtractor;
+        _transactionService = transactionService;
     }
 
     public IReadOnlyList<SizeOption> GetAvailableSizes(Document doc, ElementId elementId,
@@ -422,10 +424,45 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         if (lookupRows.Count > 0)
         {
             SmartConLogger.Debug($"  LookupTable: {lookupRows.Count} configs");
-            foreach (var row in lookupRows)
+
+            var nonSizeTypeParams = EditFamilySession.Run<List<string>>(
+                doc, instance,
+                familyDoc =>
+                {
+                    var cm = instance.MEPModel?.ConnectorManager;
+                    var instanceTransform = instance.GetTransform();
+                    var connectorParamMap = new Dictionary<int, string>();
+                    if (cm is not null)
+                    {
+                        foreach (Connector c in cm.Connectors)
+                        {
+                            if (c.ConnectorType == ConnectorType.Curve) continue;
+                            var targetOriginGlobal = c.CoordinateSystem.Origin;
+                            var (directName, rootName, _, _, _) =
+                                FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
+                                    familyDoc, instanceTransform, targetOriginGlobal,
+                                    instance.HandFlipped, instance.FacingFlipped);
+                            var searchParam = rootName ?? directName;
+                            if (searchParam is not null)
+                                connectorParamMap[(int)c.Id] = searchParam;
+                        }
+                    }
+                    return FindNonSizeTypeParameters(familyDoc, lookupRows, connectorParamMap);
+                }) ?? [];
+
+            var rowToSymbol = nonSizeTypeParams.Count > 0
+                ? MapRowsToSymbols(doc, elementId, lookupRows, nonSizeTypeParams)
+                : new Dictionary<int, string>();
+
+            var currentSymbolName = instance.Symbol?.Name;
+
+            for (int i = 0; i < lookupRows.Count; i++)
             {
+                var row = lookupRows[i];
                 var displayName = FamilySizeFormatter.BuildDisplayName(
                     row.QueryParameterRadiiFt, row.TargetColumnIndex);
+                rowToSymbol.TryGetValue(i, out var symbolName);
+
                 options.Add(new FamilySizeOption
                 {
                     DisplayName = displayName,
@@ -438,9 +475,53 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                     QueryParamConnectorGroups = row.QueryParamConnectorGroups,
                     QueryParamNames = row.QueryParamNames,
                     QueryParamRawValuesMm = row.QueryParamRawValuesMm,
+                    NonSizeParameterValues = row.NonSizeParameterValues,
                     Source = "LookupTable",
-                    IsAutoSelect = false
+                    IsAutoSelect = false,
+                    SymbolName = symbolName,
+                    CurrentSymbolName = currentSymbolName
                 });
+            }
+
+            if (rowToSymbol.Count == 0 && options.Count > 0)
+            {
+                var radiiMapping = MapRowsToSymbolsByRadii(doc, elementId, options, targetConnectorIndex);
+                if (radiiMapping.Count > 0)
+                {
+                    for (int i = 0; i < options.Count; i++)
+                    {
+                        if (radiiMapping.TryGetValue(i, out var symName))
+                            options[i] = options[i] with { SymbolName = symName };
+                    }
+                }
+                else
+                {
+                    var family = instance.Symbol?.Family;
+                    var allSymbolNames = new List<string>();
+                    if (family is not null)
+                    {
+                        foreach (var symId in family.GetFamilySymbolIds())
+                        {
+                            var sym = doc.GetElement(symId) as FamilySymbol;
+                            if (sym is not null)
+                                allSymbolNames.Add(sym.Name);
+                        }
+                    }
+
+                    if (allSymbolNames.Count > 1)
+                    {
+                        SmartConLogger.Warn($"[GetAvailableFamilySizes] LookupTable fallback: no symbol mapping, duplicating {options.Count} rows × {allSymbolNames.Count} symbols. Non-size type params may not be detected for this family.");
+                        var expanded = new List<FamilySizeOption>();
+                        foreach (var opt in options)
+                        {
+                            foreach (var symName in allSymbolNames)
+                            {
+                                expanded.Add(opt with { SymbolName = symName });
+                            }
+                        }
+                        options = expanded;
+                    }
+                }
             }
         }
         else
@@ -452,6 +533,24 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         var deduped = DeduplicateFamilyOptions(options);
         var sorted = SortByTargetDn(deduped);
+
+        var duplicateBaseNames = sorted
+            .GroupBy(o => o.DisplayName)
+            .Where(g => g.Count() > 1
+                && g.Any(o => !string.IsNullOrEmpty(o.SymbolName)))
+            .Select(g => g.Key)
+            .ToHashSet();
+
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            var opt = sorted[i];
+            if (!string.IsNullOrEmpty(opt.SymbolName)
+                && duplicateBaseNames.Contains(opt.DisplayName))
+            {
+                sorted[i] = opt with { DisplayName = $"{opt.DisplayName} ({opt.SymbolName})" };
+            }
+        }
+
         SmartConLogger.Debug($"  → {sorted.Count} unique configs (sorted)");
         return sorted;
     }
@@ -499,11 +598,299 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         {
             var key = string.Join("|", opt.AllConnectorRadii
                 .OrderBy(kvp => kvp.Key)
-                .Select(kvp => $"{kvp.Key}:{kvp.Value:F8}"));
+                .Select(kvp => $"{kvp.Key}:{kvp.Value:F8}"))
+                + "|" + (opt.SymbolName ?? "")
+                + "|" + string.Join("|", opt.NonSizeParameterValues
+                    .OrderBy(kvp => kvp.Key)
+                    .Select(kvp => $"{kvp.Key}={kvp.Value}"));
             if (seen.Add(key))
                 result.Add(opt);
         }
         return result;
+    }
+
+    private static List<string> FindNonSizeTypeParameters(
+        Document familyDoc,
+        IReadOnlyList<SizeTableRow> lookupRows,
+        Dictionary<int, string> connectorParamMap)
+    {
+        if (lookupRows.Count == 0) return [];
+
+        var fm = familyDoc.FamilyManager;
+        var snapshot = FamilyParameterSnapshot.Build(fm);
+        var formulaByName = snapshot.FormulaByName;
+
+        var nonSizeParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var nspKey in lookupRows[0].NonSizeParameterValues.Keys)
+            nonSizeParamNames.Add(nspKey);
+
+        if (nonSizeParamNames.Count == 0)
+        {
+            var allQueryParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var qp in lookupRows[0].QueryParamNames)
+                allQueryParamNames.Add(qp);
+
+            var sizeParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var paramName in connectorParamMap.Values)
+                sizeParamNames.Add(paramName);
+
+            foreach (var qp in allQueryParamNames)
+            {
+                if (!sizeParamNames.Any(sp =>
+                    string.Equals(sp, qp, StringComparison.OrdinalIgnoreCase) ||
+                    LookupColumnResolver.DependsOn(formulaByName, sp, qp)))
+                {
+                    nonSizeParamNames.Add(qp);
+                }
+            }
+        }
+
+        if (nonSizeParamNames.Count == 0) return [];
+
+        var leafParams = new List<string>();
+        foreach (var nsp in nonSizeParamNames)
+        {
+            var leaf = FindLeafParameter(nsp, formulaByName);
+            if (leaf is null) continue;
+
+            FamilyParameter? fp = null;
+            foreach (FamilyParameter p in fm.Parameters)
+            {
+                if (p.Definition is not null &&
+                    string.Equals(p.Definition.Name, leaf, StringComparison.OrdinalIgnoreCase))
+                {
+                    fp = p;
+                    break;
+                }
+            }
+
+            if (fp is not null && !fp.IsInstance)
+                leafParams.Add(leaf);
+        }
+
+        if (leafParams.Count > 0)
+            SmartConLogger.Debug($"  FindNonSizeTypeParameters: leaf type params=[{string.Join(", ", leafParams)}]");
+
+        return leafParams;
+    }
+
+    private static string? FindLeafParameter(
+        string paramName,
+        IReadOnlyDictionary<string, string> formulaByName)
+    {
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var current = paramName;
+
+        while (true)
+        {
+            if (!visited.Add(current)) return null;
+
+            if (!formulaByName.TryGetValue(current, out var formula))
+                return current;
+
+            var trimmed = formula.Trim();
+            if (trimmed.StartsWith("\"") && trimmed.EndsWith("\""))
+                return null;
+
+            var vars = FormulaSolver.ExtractVariablesStatic(formula);
+            if (vars.Count == 0) return current;
+            if (vars.Count > 1) return null;
+
+            current = vars[0];
+        }
+    }
+
+    private Dictionary<int, string> MapRowsToSymbols(
+        Document doc,
+        ElementId instanceId,
+        IReadOnlyList<SizeTableRow> lookupRows,
+        IReadOnlyList<string> nonSizeTypeParams)
+    {
+        if (nonSizeTypeParams.Count == 0 || lookupRows.Count == 0) return [];
+
+        var instance = doc.GetElement(instanceId) as FamilyInstance;
+        if (instance is null) return [];
+
+        var family = instance.Symbol?.Family;
+        if (family is null) return [];
+
+        var symbolIds = family.GetFamilySymbolIds().ToList();
+        if (symbolIds.Count == 0) return [];
+
+        var symbolParamValues = new List<(string SymbolName, Dictionary<string, string> Values)>();
+
+        _transactionService.RunAndRollback("SmartCon_MapRows", txDoc =>
+        {
+            foreach (var symbolId in symbolIds)
+            {
+                try
+                {
+                    var inst = txDoc.GetElement(instanceId) as FamilyInstance;
+                    if (inst is null) continue;
+
+                    inst.ChangeTypeId(symbolId);
+                    txDoc.Regenerate();
+
+                    var sym = txDoc.GetElement(symbolId) as FamilySymbol;
+                    var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var paramName in nonSizeTypeParams)
+                    {
+                        var param = inst.LookupParameter(paramName)
+                                    ?? sym?.LookupParameter(paramName);
+                        if (param is null) continue;
+
+                        switch (param.StorageType)
+                        {
+                            case StorageType.Double:
+                                values[paramName] = param.AsDouble().ToString("F6");
+                                break;
+                            case StorageType.String:
+                                values[paramName] = param.AsString() ?? "";
+                                break;
+                            case StorageType.Integer:
+                                values[paramName] = param.AsInteger().ToString();
+                                break;
+                            case StorageType.ElementId:
+                                values[paramName] = param.AsElementId()?.GetValue().ToString() ?? "";
+                                break;
+                        }
+                    }
+
+                    symbolParamValues.Add((sym?.Name ?? "", values));
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug($"  MapRowsToSymbols: error for symbolId={symbolId.GetValue()}: {ex.Message}");
+                }
+            }
+        });
+
+        var mapping = new Dictionary<int, string>();
+        const double numericEps = 0.01;
+
+        for (int rowIdx = 0; rowIdx < lookupRows.Count; rowIdx++)
+        {
+            var row = lookupRows[rowIdx];
+            if (row.NonSizeParameterValues.Count == 0) continue;
+
+            foreach (var (symName, symValues) in symbolParamValues)
+            {
+                bool match = true;
+                foreach (var nsp in nonSizeTypeParams)
+                {
+                    if (!row.NonSizeParameterValues.TryGetValue(nsp, out var rowVal))
+                    {
+                        match = false;
+                        break;
+                    }
+
+                    if (!symValues.TryGetValue(nsp, out var symVal))
+                    {
+                        match = false;
+                        break;
+                    }
+
+                    if (double.TryParse(rowVal, out var rowNum) && double.TryParse(symVal, out var symNum))
+                    {
+                        if (Math.Abs(rowNum - symNum) > numericEps)
+                        {
+                            match = false;
+                            break;
+                        }
+                    }
+                    else if (!string.Equals(rowVal, symVal, StringComparison.OrdinalIgnoreCase))
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match)
+                {
+                    mapping[rowIdx] = symName;
+                    break;
+                }
+            }
+        }
+
+        if (mapping.Count > 0)
+            SmartConLogger.Debug($"  MapRowsToSymbols: mapped {mapping.Count}/{lookupRows.Count} rows to symbols");
+
+        return mapping;
+    }
+
+    private Dictionary<int, string> MapRowsToSymbolsByRadii(
+        Document doc,
+        ElementId instanceId,
+        IReadOnlyList<FamilySizeOption> options,
+        int targetConnectorIndex)
+    {
+        var instance = doc.GetElement(instanceId) as FamilyInstance;
+        if (instance is null) return [];
+
+        var family = instance.Symbol?.Family;
+        if (family is null) return [];
+
+        var symbolIds = family.GetFamilySymbolIds().ToList();
+        if (symbolIds.Count <= 1) return [];
+
+        var symbolData = _sizeExtractor.GetSymbolConnectorRadii(doc, instanceId, targetConnectorIndex);
+        if (symbolData.Count <= 1) return [];
+
+        var allConnIds = new HashSet<int>();
+        foreach (var (_, radii, _) in symbolData)
+            foreach (var connId in radii.Keys)
+                allConnIds.Add(connId);
+
+        var typeControlledConnectors = new HashSet<int>();
+        foreach (var connId in allConnIds)
+        {
+            var values = symbolData
+                .Select(sd => sd.ConnectorRadii.GetValueOrDefault(connId, -1.0))
+                .ToList();
+            if (values.Distinct().Count() > 1)
+                typeControlledConnectors.Add(connId);
+        }
+
+        if (typeControlledConnectors.Count == 0)
+        {
+            SmartConLogger.Debug($"  MapRowsToSymbolsByRadii: no type-controlled connectors found (all radii identical across {symbolData.Count} symbols)");
+            return [];
+        }
+
+        SmartConLogger.Debug($"  MapRowsToSymbolsByRadii: type-controlled connectors=[{string.Join(", ", typeControlledConnectors)}] across {symbolData.Count} symbols");
+
+        const double eps = 1e-6;
+        var mapping = new Dictionary<int, string>();
+
+        for (int rowIdx = 0; rowIdx < options.Count; rowIdx++)
+        {
+            var opt = options[rowIdx];
+            if (opt.AllConnectorRadii.Count == 0) continue;
+
+            foreach (var (_, symbolRadii, symbolName) in symbolData)
+            {
+                bool match = true;
+                foreach (var connId in typeControlledConnectors)
+                {
+                    if (!opt.AllConnectorRadii.TryGetValue(connId, out var rowRadius)) { match = false; break; }
+                    if (!symbolRadii.TryGetValue(connId, out var symRadius)) { match = false; break; }
+                    if (Math.Abs(rowRadius - symRadius) > eps) { match = false; break; }
+                }
+
+                if (match)
+                {
+                    mapping[rowIdx] = symbolName;
+                    break;
+                }
+            }
+        }
+
+        if (mapping.Count > 0)
+            SmartConLogger.Debug($"  MapRowsToSymbolsByRadii: mapped {mapping.Count}/{options.Count} rows via type-controlled connector radii");
+
+        return mapping;
     }
 
     private static List<FamilySizeOption> SortByTargetDn(List<FamilySizeOption> options)

@@ -437,6 +437,15 @@ public sealed class RevitLookupTableService : ILookupTableService
         int effectiveUniqueParamCount = sizeColumnIndices.Count;
         if (effectiveUniqueParamCount == 0) effectiveUniqueParamCount = 1;
 
+        var nonSizeColumnIndices = new List<int>();
+        for (int i = 0; i < columns.Count; i++)
+        {
+            if (!sizeColumnIndices.Contains(i) && columns[i].ConnectorIndices.Count == 0)
+                nonSizeColumnIndices.Add(i);
+        }
+        if (nonSizeColumnIndices.Count > 0)
+            SmartConLogger.Debug($"    nonSizeColumns=[{string.Join(",", nonSizeColumnIndices)}] ({string.Join(", ", nonSizeColumnIndices.Select(i => columns[i].ParameterName))})");
+
         SmartConLogger.Debug($"    sizeColumns={sizeColumnIndices.Count}/{columns.Count}, remappedTarget={remappedTargetColIndex}");
 
         var tempPath = Path.GetTempFileName();
@@ -495,6 +504,15 @@ public sealed class RevitLookupTableService : ILookupTableService
                     sizeQueryParamValuesMm.Add(qval);
                 }
 
+                var nonSizeValues = new Dictionary<string, string>();
+                foreach (var colIdx in nonSizeColumnIndices)
+                {
+                    var col = columns[colIdx];
+                    if (col.CsvColIndex >= cols.Length) continue;
+                    var cellValue = cols[col.CsvColIndex].Trim().Trim('"');
+                    nonSizeValues[col.ParameterName] = cellValue;
+                }
+
                 result.Add(new SizeTableRow
                 {
                     TargetColumnIndex = remappedTargetColIndex > 0 ? remappedTargetColIndex : 1,
@@ -504,7 +522,8 @@ public sealed class RevitLookupTableService : ILookupTableService
                     UniqueQueryParameterCount = effectiveUniqueParamCount,
                     QueryParamConnectorGroups = connectorGroups,
                     QueryParamNames = sizeQueryParamNames,
-                    QueryParamRawValuesMm = sizeQueryParamValuesMm
+                    QueryParamRawValuesMm = sizeQueryParamValuesMm,
+                    NonSizeParameterValues = nonSizeValues
                 });
             }
         }
@@ -528,7 +547,10 @@ public sealed class RevitLookupTableService : ILookupTableService
         {
             var key = string.Join("|", row.ConnectorRadiiFt
                 .OrderBy(kvp => kvp.Key)
-                .Select(kvp => $"{kvp.Key}:{kvp.Value:F8}"));
+                .Select(kvp => $"{kvp.Key}:{kvp.Value:F8}"))
+                + "|" + string.Join("|", row.NonSizeParameterValues
+                    .OrderBy(kvp => kvp.Key)
+                    .Select(kvp => $"{kvp.Key}={kvp.Value}"));
             if (seen.Add(key))
                 result.Add(row);
         }
