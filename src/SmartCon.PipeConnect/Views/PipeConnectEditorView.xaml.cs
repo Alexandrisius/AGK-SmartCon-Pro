@@ -19,15 +19,29 @@ public partial class PipeConnectEditorView : Window
         InitializeComponent();
         LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
-        viewModel.RequestClose += Close;
-        // Init() вызывается из PipeConnectCommand.Execute() ДО ShowDialog(),
-        // чтобы вся цепочка (выравнивание, фитинг, размеры) была готова до открытия окна.
-        Closing += (_, e) =>
-        {
-            if (viewModel.IsSessionActive && !viewModel.IsBusy && !viewModel.IsClosing)
-                viewModel.Cancel();
-        };
+        viewModel.RequestClose += OnRequestClose;
+        Closing += OnClosing;
         PositionNearCursor();
+    }
+
+    private bool _closeFromViewModel;
+
+    private void OnRequestClose()
+    {
+        _closeFromViewModel = true;
+        Close();
+    }
+
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_closeFromViewModel) return;
+
+        if (DataContext is PipeConnectEditorViewModel vm
+            && vm.IsSessionActive && !vm.IsBusy && !vm.IsClosing)
+        {
+            vm.Cancel();
+            e.Cancel = true;
+        }
     }
 
     private void PositionNearCursor()
