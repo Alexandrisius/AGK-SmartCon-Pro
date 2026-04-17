@@ -32,6 +32,27 @@
 - Архитектурные решения → создай ADR в `docs/adr/`
 - Смена статуса фазы → обнови `docs/roadmap.md` и `docs/README.md`
 
+## Мульти-версионная сборка (ОБЯЗАТЕЛЬНО)
+
+Проект поддерживает **6 версий Revit**: 2019, 2021, 2022, 2023, 2024 (net48) и 2025 (net8.0-windows).
+
+**Правило:** После каждого значимого изменения кода — собери **ВСЕ версии последовательно** (не параллельно — конфликт за obj/ файлы):
+
+```bash
+# Последовательная сборка всех версий (обязательно!)
+dotnet build src/SmartCon.sln -p:RevitVersion=2025 && dotnet build src/SmartCon.sln -p:RevitVersion=2024 && dotnet build src/SmartCon.sln -p:RevitVersion=2023 && dotnet build src/SmartCon.sln -p:RevitVersion=2022 && dotnet build src/SmartCon.sln -p:RevitVersion=2021 && dotnet build src/SmartCon.sln -p:RevitVersion=2019
+```
+
+**Также запусти тесты:**
+```bash
+dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -p:RevitVersion=2025
+```
+
+**Чеклист перед коммитом:**
+1. Сборка 6 версий Revit — 0 ошибок, 0 предупреждений
+2. Тесты — 0 падений
+3. Инварианты I-01..I-10 не нарушены
+
 ## Инструменты поиска документации
 
 В среде доступны три инструмента для поиска документации. Каждый покрывает свою область — не пытайся искать Revit API через REF, и наоборот.
