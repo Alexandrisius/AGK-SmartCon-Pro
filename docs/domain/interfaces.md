@@ -514,3 +514,28 @@ public interface IUpdateSettingsRepository
     void Save(UpdateSettings settings);
 }
 ```
+
+---
+
+## IFittingChainResolver
+
+Единая точка принятия решений о цепочке фитингов/редьюсеров. Заменяет разрозненную логику из 5+ файлов.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IFittingChainResolver.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/FittingChainResolver.cs`
+**DI:** `ServiceRegistrar.cs` → `IFittingChainResolver → FittingChainResolver` (Singleton)
+**ADR:** [010-fitting-chain-resolver.md](../adr/010-fitting-chain-resolver.md)
+
+```csharp
+public interface IFittingChainResolver
+{
+    FittingChainPlan Resolve(
+        ConnectionTypeCode staticCtc, ConnectionTypeCode dynamicCtc,
+        double staticRadius, double dynamicRadius);
+
+    IReadOnlyList<FittingChainPlan> ResolveAlternatives(
+        ConnectionTypeCode staticCtc, ConnectionTypeCode dynamicCtc,
+        double staticRadius, double dynamicRadius,
+        int maxAlternatives = 3);
+}
+```

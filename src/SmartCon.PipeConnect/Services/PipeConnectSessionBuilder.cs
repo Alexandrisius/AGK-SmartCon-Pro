@@ -27,7 +27,8 @@ public sealed class PipeConnectSessionBuilder(
     IParameterResolver paramResolver,
     ILookupTableService lookupSvc,
     IFittingMapper fittingMapper,
-    IElementChainIterator chainIterator)
+    IElementChainIterator chainIterator,
+    IFittingChainResolver chainResolver)
 {
     private sealed record ParameterResolutionPlan(
         bool Skip,
@@ -112,6 +113,12 @@ public sealed class PipeConnectSessionBuilder(
                 staticProxy.ConnectionTypeCode, dynamicProxy.ConnectionTypeCode);
         }
 
+        var chainPlan = chainResolver.Resolve(
+            staticProxy.ConnectionTypeCode, dynamicProxy.ConnectionTypeCode,
+            staticProxy.Radius, dynamicProxy.Radius);
+        SmartConLogger.Info($"[S5] ChainPlan: topology={chainPlan.Topology}, links={chainPlan.Links.Count}" +
+            $" (reducers={chainPlan.ReducerCount}, fittings={chainPlan.FittingCount})");
+
         // ── S6: chain graph ──────────────────────────────────────────────────
         var stopAt = new HashSet<ElementId>(new ElementIdEqualityComparer())
         {
@@ -129,6 +136,7 @@ public sealed class PipeConnectSessionBuilder(
             ParamTargetRadius = plan.Skip ? null : plan.TargetRadius,
             ParamExpectNeedsAdapter = plan.ExpectNeedsAdapter,
             ProposedFittings = proposed.ToList(),
+            ChainPlan = chainPlan,
             ChainGraph = chainGraph,
             LookupConstraints = plan.LookupConstraints,
             VirtualCtcStore = virtualCtcStore,

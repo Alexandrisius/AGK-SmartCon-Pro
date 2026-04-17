@@ -424,3 +424,83 @@ public sealed record LookupColumnConstraint(
     double ValueMm
 );
 ```
+
+---
+
+## ChainTopology
+
+Enum всех поддерживаемых топологий соединения.
+
+**Файл:** `SmartCon.Core/Models/ChainTopology.cs`
+
+```csharp
+public enum ChainTopology
+{
+    Direct,                // static ↔ dynamic
+    ReducerOnly,           // static ↔ reducer ↔ dynamic
+    FittingOnly,           // static ↔ fitting ↔ dynamic
+    ReducerFitting,        // static ↔ reducer ↔ fitting ↔ dynamic
+    FittingReducer,        // static ↔ fitting ↔ reducer ↔ dynamic
+    FittingChain,          // [Future] static ↔ fitting1 ↔ fitting2 ↔ ...
+    FittingChainReducer,   // [Future] multi-fitting + reducer
+    ReducerFittingChain,   // [Future] reducer + multi-fitting
+    ComplexChain           // [Future] reducer + multi-fitting + reducer
+}
+```
+
+---
+
+## FittingChainNodeType
+
+Тип звена в цепочке фитингов.
+
+**Файл:** `SmartCon.Core/Models/FittingChainNodeType.cs`
+
+```csharp
+public enum FittingChainNodeType { Fitting, Reducer }
+```
+
+---
+
+## FittingChainLink
+
+Одно звено в цепочке фитингов — фитинг или редьюсер с полными параметрами.
+
+**Файл:** `SmartCon.Core/Models/FittingChainLink.cs`
+
+```csharp
+public sealed record FittingChainLink
+{
+    public required FittingChainNodeType Type { get; init; }
+    public required FittingMappingRule Rule { get; init; }
+    public required FittingMapping Family { get; init; }
+    public required ConnectionTypeCode CtcIn { get; init; }
+    public required ConnectionTypeCode CtcOut { get; init; }
+    public required double RadiusIn { get; init; }
+    public required double RadiusOut { get; init; }
+}
+```
+
+---
+
+## FittingChainPlan
+
+Результат работы `IFittingChainResolver` — полный план цепочки соединения.
+
+**Файл:** `SmartCon.Core/Models/FittingChainPlan.cs`
+
+```csharp
+public sealed class FittingChainPlan
+{
+    public required ConnectionTypeCode StaticCtc { get; init; }
+    public required ConnectionTypeCode DynamicCtc { get; init; }
+    public required double StaticRadius { get; init; }
+    public required double DynamicRadius { get; init; }
+    public required ChainTopology Topology { get; init; }
+    public IReadOnlyList<FittingChainLink> Links { get; init; } = [];
+    public bool IsDirect => Topology == ChainTopology.Direct;
+    public bool HasReducer => Links.Any(l => l.Type == FittingChainNodeType.Reducer);
+    public int FittingCount => Links.Count(l => l.Type == FittingChainNodeType.Fitting);
+    public int ReducerCount => Links.Count(l => l.Type == FittingChainNodeType.Reducer);
+}
+```

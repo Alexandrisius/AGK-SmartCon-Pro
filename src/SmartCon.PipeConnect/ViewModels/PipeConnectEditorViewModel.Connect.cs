@@ -29,8 +29,11 @@ public sealed partial class PipeConnectEditorViewModel
         {
             var ctx = CreateOperationContext();
 
+            var topology = _activeChainPlan?.Topology ?? ChainTopology.Direct;
+
             var validateResult = _connectExecutor.ValidateAndFixBeforeConnect(
-                ctx, _activeDynamic, _currentFittingId, _primaryReducerId, _userManuallyChangedSize);
+                ctx, _activeDynamic, _currentFittingId, _primaryReducerId, _userManuallyChangedSize,
+                topology);
             _activeDynamic = validateResult.ActiveDynamic ?? _activeDynamic;
             _needsPrimaryReducer = validateResult.NeedsPrimaryReducer;
 
@@ -61,7 +64,8 @@ public sealed partial class PipeConnectEditorViewModel
             }
 
             _connectExecutor.ExecuteConnectTo(
-                ctx, _activeDynamic, _currentFittingId, _primaryReducerId, _activeFittingRule);
+                ctx, _activeDynamic, _currentFittingId, _primaryReducerId, _activeFittingRule,
+                topology);
 
             SmartConLogger.Info("[Connect] All operations done, calling Assimilate");
             _groupSession!.Assimilate();
@@ -151,6 +155,17 @@ public sealed partial class PipeConnectEditorViewModel
         if (result.ActiveDynamic is not null)
             _activeDynamic = result.ActiveDynamic;
         return result.FitConn2;
+    }
+
+    private ConnectorProxy? GetReducerConn2()
+    {
+        if (_primaryReducerId is null) return null;
+        try
+        {
+            var conns = _connSvc.GetAllFreeConnectors(_doc, _primaryReducerId).ToList();
+            return conns.Count >= 2 ? conns[1] : conns.FirstOrDefault();
+        }
+        catch { return null; }
     }
 
     private List<ConnectorProxy> GetFreeConnectorsSnapshot()

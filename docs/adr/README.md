@@ -20,3 +20,4 @@
 | [007](007-communitytoolkit-mvvm.md) | CommunityToolkit.Mvvm вместо ручной MVVM-инфраструктуры | accepted | 2026-03-25 |
 | [008](008-external-event-action-queue.md) | Action Queue паттерн для ExternalEvent dispatch | accepted | 2026-03-25 |
 | [009](009-vec3-for-core-math.md) | Vec3 вместо XYZ для чистой математики в Core | accepted | 2026-03-26 |
+| [010](010-fitting-chain-resolver.md) | FittingChainResolver — единая система подбора цепочек фитингов | accepted | 2026-04-17 |

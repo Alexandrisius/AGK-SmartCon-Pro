@@ -60,6 +60,7 @@ public static class ServiceRegistrar
         // --- Fitting System (Phase 5) ---
         services.AddSingleton<IFittingMapper, FittingMapper>();
         services.AddSingleton<IFittingInsertService, RevitFittingInsertService>();
+        services.AddSingleton<IFittingChainResolver, FittingChainResolver>();
 
         // --- Chain (Phase 7) ---
         services.AddSingleton<IElementChainIterator, ElementChainIterator>();

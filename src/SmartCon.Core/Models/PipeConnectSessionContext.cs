@@ -28,6 +28,12 @@ public sealed class PipeConnectSessionContext
     public IReadOnlyList<FittingMappingRule> ProposedFittings { get; init; } = [];
 
     /// <summary>
+    /// Resolved fitting chain plan (S5). null if resolver not invoked (legacy path).
+    /// Contains ordered links (reducer + fitting, fitting + reducer, etc.).
+    /// </summary>
+    public FittingChainPlan? ChainPlan { get; init; }
+
+    /// <summary>
     /// Chain graph of the dynamic element, built BEFORE disconnect. null = no chain.
     /// </summary>
     public ConnectionGraph? ChainGraph { get; init; }

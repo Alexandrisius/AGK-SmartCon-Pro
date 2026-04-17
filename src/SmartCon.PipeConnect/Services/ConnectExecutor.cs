@@ -68,7 +68,8 @@ public sealed class ConnectExecutor
         ConnectorProxy? activeDynamic,
         ElementId? currentFittingId,
         ElementId? primaryReducerId,
-        bool userManuallyChangedSize)
+        bool userManuallyChangedSize,
+        ChainTopology topology = ChainTopology.Direct)
     {
         const double radiusEps = Tolerance.RadiusFt;
         const double positionEpsFt = Tolerance.PositionRelaxedMm * MmToFeet;
@@ -87,8 +88,16 @@ public sealed class ConnectExecutor
 
             if (currentFittingId is not null && primaryReducerId is not null)
             {
-                ValidateFittingPlusReducerBranch(doc, staticConn, currentFittingId, primaryReducerId,
-                    ref dynFresh, ref updatedDynamic, positionEpsFt, radiusEps);
+                if (topology == ChainTopology.ReducerFitting)
+                {
+                    ValidateReducerFittingBranch(doc, staticConn, currentFittingId, primaryReducerId,
+                        ref dynFresh, ref updatedDynamic, positionEpsFt, radiusEps);
+                }
+                else
+                {
+                    ValidateFittingPlusReducerBranch(doc, staticConn, currentFittingId, primaryReducerId,
+                        ref dynFresh, ref updatedDynamic, positionEpsFt, radiusEps);
+                }
             }
             else if (currentFittingId is not null)
             {
@@ -119,7 +128,8 @@ public sealed class ConnectExecutor
         ConnectorProxy? activeDynamic,
         ElementId? currentFittingId,
         ElementId? primaryReducerId,
-        FittingMappingRule? activeFittingRule)
+        FittingMappingRule? activeFittingRule,
+        ChainTopology topology = ChainTopology.Direct)
     {
         var dyn = activeDynamic ?? context.Session.DynamicConnector;
         var staticConn = context.Session.StaticConnector;
@@ -133,52 +143,96 @@ public sealed class ConnectExecutor
 
             if (currentFittingId is not null && primaryReducerId is not null)
             {
-                // TODO [Future]: Поддержка цепочки фитингов (fitting1 + fitting2 + ... + reducer).
-                // Текущая топология: static ↔ fitting ↔ reducer ↔ dynamic
-                // Будущая топология: static ↔ fitting1 ↔ fitting2 ↔ ... ↔ reducer ↔ dynamic
-                // Для реализации потребуется:
-                // 1. List<ElementId> вместо одного currentFittingId
-                // 2. Цикл ConnectTo между каждой парой фитингов
-                // 3. FittingMapper.FindShortestFittingPath() уже возвращает цепочку правил
-                // 4. SessionBuilder должен создавать ProposedFittings как список из нескольких фитингов
-                // 5. UI должен показывать все фитинги в цепочке с возможностью замены каждого
-                SmartConLogger.Info($"[Connect] Fitting+Reducer branch: fitting={currentFittingId.GetValue()}, reducer={primaryReducerId.GetValue()}");
-
-                var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
-                var dynCtc = dynR.ConnectionTypeCode.IsDefined ? dynR.ConnectionTypeCode : dyn.ConnectionTypeCode;
-
-                var fConns = _connSvc.GetAllFreeConnectors(doc, currentFittingId).ToList();
-                var (fc1, fc2) = _ctcManager.ResolveConnectorSidesForElement(
-                    doc, currentFittingId, fConns, dynCtc, staticConn);
-
-                if (fc1 is not null)
+                // TODO [ChainV2]: Заменить ветви на обобщённый цикл по FittingChainPlan.Links.
+                // Текущая реализация поддерживает 2 топологии: FittingReducer и ReducerFitting.
+                // Будущая: обобщённый цикл для N звеньев (fitting1 ↔ fitting2 ↔ ... ↔ reducer).
+                if (topology == ChainTopology.ReducerFitting)
                 {
-                    SmartConLogger.Info($"[Connect] static({staticConn.OwnerElementId.GetValue()}:{staticConn.ConnectorIndex}) ↔ fitting({currentFittingId.GetValue()}:{fc1.ConnectorIndex})");
-                    _connSvc.ConnectTo(doc,
-                        staticConn.OwnerElementId, staticConn.ConnectorIndex,
-                        currentFittingId, fc1.ConnectorIndex);
-                }
+                    // ReducerFitting: static ↔ reducer ↔ fitting ↔ dynamic
+                    SmartConLogger.Info($"[Connect] ReducerFitting branch: reducer={primaryReducerId.GetValue()}, fitting={currentFittingId.GetValue()}");
 
-                if (fc2 is not null)
-                {
+                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+                    var dynCtc = dynR.ConnectionTypeCode.IsDefined ? dynR.ConnectionTypeCode : dyn.ConnectionTypeCode;
+
+                    // static ↔ reducer
                     var rConns = _connSvc.GetAllFreeConnectors(doc, primaryReducerId).ToList();
                     var (rConn1, rConn2) = _ctcManager.ResolveConnectorSidesForElement(
-                        doc, primaryReducerId, rConns, dynCtc, fc2);
+                        doc, primaryReducerId, rConns, dynCtc, staticConn);
 
                     if (rConn1 is not null)
                     {
-                        SmartConLogger.Info($"[Connect] fitting.conn2({fc2.OwnerElementId.GetValue()}:{fc2.ConnectorIndex}) ↔ reducer.conn1({primaryReducerId.GetValue()}:{rConn1.ConnectorIndex})");
+                        SmartConLogger.Info($"[Connect] static({staticConn.OwnerElementId.GetValue()}:{staticConn.ConnectorIndex}) ↔ reducer({primaryReducerId.GetValue()}:{rConn1.ConnectorIndex})");
                         _connSvc.ConnectTo(doc,
-                            currentFittingId, fc2.ConnectorIndex,
+                            staticConn.OwnerElementId, staticConn.ConnectorIndex,
                             primaryReducerId, rConn1.ConnectorIndex);
                     }
 
+                    // reducer ↔ fitting
                     if (rConn2 is not null)
                     {
-                        SmartConLogger.Info($"[Connect] reducer.conn2({primaryReducerId.GetValue()}:{rConn2.ConnectorIndex}) ↔ dynamic({dynR.OwnerElementId.GetValue()}:{dynR.ConnectorIndex})");
+                        var fConns = _connSvc.GetAllFreeConnectors(doc, currentFittingId).ToList();
+                        var (fc1, fc2) = _ctcManager.ResolveConnectorSidesForElement(
+                            doc, currentFittingId, fConns, dynCtc, rConn2);
+
+                        if (fc1 is not null)
+                        {
+                            SmartConLogger.Info($"[Connect] reducer.conn2({rConn2.OwnerElementId.GetValue()}:{rConn2.ConnectorIndex}) ↔ fitting({currentFittingId.GetValue()}:{fc1.ConnectorIndex})");
+                            _connSvc.ConnectTo(doc,
+                                primaryReducerId, rConn2.ConnectorIndex,
+                                currentFittingId, fc1.ConnectorIndex);
+                        }
+
+                        // fitting ↔ dynamic
+                        if (fc2 is not null)
+                        {
+                            SmartConLogger.Info($"[Connect] fitting.conn2({fc2.OwnerElementId.GetValue()}:{fc2.ConnectorIndex}) ↔ dynamic({dynR.OwnerElementId.GetValue()}:{dynR.ConnectorIndex})");
+                            _connSvc.ConnectTo(doc,
+                                currentFittingId, fc2.ConnectorIndex,
+                                dynR.OwnerElementId, dynR.ConnectorIndex);
+                        }
+                    }
+                }
+                else
+                {
+                    // FittingReducer: static ↔ fitting ↔ reducer ↔ dynamic
+                    SmartConLogger.Info($"[Connect] Fitting+Reducer branch: fitting={currentFittingId.GetValue()}, reducer={primaryReducerId.GetValue()}");
+
+                    var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+                    var dynCtc = dynR.ConnectionTypeCode.IsDefined ? dynR.ConnectionTypeCode : dyn.ConnectionTypeCode;
+
+                    var fConns = _connSvc.GetAllFreeConnectors(doc, currentFittingId).ToList();
+                    var (fc1, fc2) = _ctcManager.ResolveConnectorSidesForElement(
+                        doc, currentFittingId, fConns, dynCtc, staticConn);
+
+                    if (fc1 is not null)
+                    {
+                        SmartConLogger.Info($"[Connect] static({staticConn.OwnerElementId.GetValue()}:{staticConn.ConnectorIndex}) ↔ fitting({currentFittingId.GetValue()}:{fc1.ConnectorIndex})");
                         _connSvc.ConnectTo(doc,
-                            primaryReducerId, rConn2.ConnectorIndex,
-                            dynR.OwnerElementId, dynR.ConnectorIndex);
+                            staticConn.OwnerElementId, staticConn.ConnectorIndex,
+                            currentFittingId, fc1.ConnectorIndex);
+                    }
+
+                    if (fc2 is not null)
+                    {
+                        var rConns = _connSvc.GetAllFreeConnectors(doc, primaryReducerId).ToList();
+                        var (rConn1, rConn2) = _ctcManager.ResolveConnectorSidesForElement(
+                            doc, primaryReducerId, rConns, dynCtc, fc2);
+
+                        if (rConn1 is not null)
+                        {
+                            SmartConLogger.Info($"[Connect] fitting.conn2({fc2.OwnerElementId.GetValue()}:{fc2.ConnectorIndex}) ↔ reducer.conn1({primaryReducerId.GetValue()}:{rConn1.ConnectorIndex})");
+                            _connSvc.ConnectTo(doc,
+                                currentFittingId, fc2.ConnectorIndex,
+                                primaryReducerId, rConn1.ConnectorIndex);
+                        }
+
+                        if (rConn2 is not null)
+                        {
+                            SmartConLogger.Info($"[Connect] reducer.conn2({primaryReducerId.GetValue()}:{rConn2.ConnectorIndex}) ↔ dynamic({dynR.OwnerElementId.GetValue()}:{dynR.ConnectorIndex})");
+                            _connSvc.ConnectTo(doc,
+                                primaryReducerId, rConn2.ConnectorIndex,
+                                dynR.OwnerElementId, dynR.ConnectorIndex);
+                        }
                     }
                 }
             }
@@ -476,6 +530,91 @@ public sealed class ConnectExecutor
                 SmartConLogger.Debug($"  reducer.conn2 R={rConn2.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={r2Err * FeetToMm:F2}mm");
                 if (r2Err > radiusEps)
                     SmartConLogger.Warn($"[Validate] MISMATCH: reducer.conn2.Radius≠dynamic.Radius (Δ={r2Err * FeetToMm:F2}mm). Size mismatch may cause connection failure.");
+            }
+        }
+    }
+
+    private void ValidateReducerFittingBranch(
+        Document doc,
+        ConnectorProxy staticConn,
+        ElementId fittingId,
+        ElementId reducerId,
+        ref ConnectorProxy dynFresh,
+        ref ConnectorProxy? updatedDynamic,
+        double positionEpsFt,
+        double radiusEps)
+    {
+        SmartConLogger.Info("[Validate] ReducerFitting branch: static ↔ reducer ↔ fitting ↔ dynamic");
+
+        var dynTypeCode = dynFresh.ConnectionTypeCode.IsDefined
+            ? dynFresh.ConnectionTypeCode
+            : dynFresh.ConnectionTypeCode;
+
+        // Step 1: Validate reducer (connected to static)
+        var rConns = _connSvc.GetAllFreeConnectors(doc, reducerId).ToList();
+        var (rConn1, rConn2) = _ctcManager.ResolveConnectorSidesForElement(
+            doc, reducerId, rConns, dynTypeCode, staticConn);
+
+        if (rConn1 is not null)
+        {
+            var posErrR1 = VectorUtils.DistanceTo(rConn1.OriginVec3, staticConn.OriginVec3);
+            if (posErrR1 > positionEpsFt)
+            {
+                SmartConLogger.Warn($"[Validate] reducer.conn1 offset from static by {posErrR1 * FeetToMm:F2} mm — correcting");
+                var correction = staticConn.OriginVec3 - rConn1.OriginVec3;
+                _transformSvc.MoveElement(doc, reducerId, correction);
+                doc.Regenerate();
+                rConns = _connSvc.GetAllFreeConnectors(doc, reducerId).ToList();
+                (rConn1, rConn2) = _ctcManager.ResolveConnectorSidesForElement(
+                    doc, reducerId, rConns, dynTypeCode, staticConn);
+            }
+
+            if (rConn1 is not null)
+            {
+                double r1Err = System.Math.Abs(rConn1.Radius - staticConn.Radius);
+                SmartConLogger.Debug($"  reducer.conn1 R={rConn1.Radius * FeetToMm:F2}mm, static R={staticConn.Radius * FeetToMm:F2}mm, Δ={r1Err * FeetToMm:F2}mm");
+                if (r1Err > radiusEps)
+                    SmartConLogger.Warn($"[Validate] MISMATCH: reducer.conn1.Radius≠static.Radius (Δ={r1Err * FeetToMm:F2}mm)");
+            }
+        }
+
+        // Step 2: Validate fitting (connected to reducer.conn2)
+        if (rConn2 is not null)
+        {
+            var fConns = _connSvc.GetAllFreeConnectors(doc, fittingId).ToList();
+            var (fc1, fc2) = _ctcManager.ResolveConnectorSidesForElement(
+                doc, fittingId, fConns, dynTypeCode, rConn2);
+
+            if (fc1 is not null)
+            {
+                var posErrF1 = VectorUtils.DistanceTo(fc1.OriginVec3, rConn2.OriginVec3);
+                if (posErrF1 > positionEpsFt)
+                {
+                    SmartConLogger.Warn($"[Validate] fitting.conn1 offset from reducer.conn2 by {posErrF1 * FeetToMm:F2} mm — correcting");
+                    var correction = rConn2.OriginVec3 - fc1.OriginVec3;
+                    _transformSvc.MoveElement(doc, fittingId, correction);
+                    doc.Regenerate();
+                    fConns = _connSvc.GetAllFreeConnectors(doc, fittingId).ToList();
+                    (fc1, fc2) = _ctcManager.ResolveConnectorSidesForElement(
+                        doc, fittingId, fConns, dynTypeCode, rConn2);
+                }
+            }
+
+            if (fc2 is not null)
+            {
+                var posErrDyn = VectorUtils.DistanceTo(dynFresh.OriginVec3, fc2.OriginVec3);
+                if (posErrDyn > positionEpsFt)
+                {
+                    SmartConLogger.Warn($"[Validate] dynamic offset from fitting.conn2 by {posErrDyn * FeetToMm:F2} mm — correcting");
+                    PositionCorrector.ApplyOffset(doc, _transformSvc, dynFresh.OwnerElementId, fc2.OriginVec3 - dynFresh.OriginVec3);
+                    dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
+                    updatedDynamic = dynFresh;
+                }
+
+                double f2Err = System.Math.Abs(fc2.Radius - dynFresh.Radius);
+                SmartConLogger.Debug($"  fitting.conn2 R={fc2.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={f2Err * FeetToMm:F2}mm");
+                if (f2Err > radiusEps)
+                    SmartConLogger.Warn($"[Validate] MISMATCH: fitting.conn2.Radius≠dynamic.Radius (Δ={f2Err * FeetToMm:F2}mm). Size mismatch may cause connection failure.");
             }
         }
     }

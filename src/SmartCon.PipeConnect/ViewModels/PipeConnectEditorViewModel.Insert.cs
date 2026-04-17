@@ -1,14 +1,9 @@
-using System.Collections.ObjectModel;
-using System.Windows;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Plumbing;
-using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
-using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Compatibility;
 using SmartCon.PipeConnect.Services;
 
@@ -262,6 +257,12 @@ public sealed partial class PipeConnectEditorViewModel
         ConnectorProxy? fitConn2 = null;
         IReadOnlyDictionary<int, ConnectionTypeCode>? ctcOverrides = null;
 
+        bool isReducerFittingTopology = _activeChainPlan?.Topology == ChainTopology.ReducerFitting;
+        ConnectorProxy? alignTarget = isReducerFittingTopology && _primaryReducerId is not null
+            ? GetReducerConn2()
+            : null;
+        ConnectorProxy? upstreamTarget = alignTarget ?? _ctx.StaticConnector;
+
         _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertFitting"), doc =>
         {
             if (_currentFittingId is not null)
@@ -272,7 +273,7 @@ public sealed partial class PipeConnectEditorViewModel
                 _activeFittingConn2 = null;
             }
 
-            if (_primaryReducerId is not null)
+            if (!isReducerFittingTopology && _primaryReducerId is not null)
             {
                 SmartConLogger.Info($"[InsertFitting] Deleting old reducer id={_primaryReducerId.GetValue()} (fitting changed)");
                 _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
@@ -282,7 +283,7 @@ public sealed partial class PipeConnectEditorViewModel
             }
 
             insertedId = _fittingInsertSvc.InsertFitting(
-                doc, primary.FamilyName, primary.SymbolName, _ctx.StaticConnector.Origin);
+                doc, primary.FamilyName, primary.SymbolName, upstreamTarget.Origin);
 
             if (insertedId is null) return;
 
@@ -292,7 +293,7 @@ public sealed partial class PipeConnectEditorViewModel
             ctcOverrides = GuessCtcForFitting(insertedId, fitting.Rule);
 
             fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                doc, insertedId, _ctx.StaticConnector, _transformSvc, _connSvc,
+                doc, insertedId, upstreamTarget, _transformSvc, _connSvc,
                 dynamicTypeCode: dynCtc,
                 ctcOverrides: ctcOverrides,
                 directConnectRules: _mappingRepo.GetMappingRules());

@@ -39,7 +39,8 @@ public sealed class PipeConnectCommand : IExternalCommand
                 ServiceHost.GetService<IParameterResolver>(),
                 ServiceHost.GetService<ILookupTableService>(),
                 ServiceHost.GetService<IFittingMapper>(),
-                ServiceHost.GetService<IElementChainIterator>());
+                ServiceHost.GetService<IElementChainIterator>(),
+                ServiceHost.GetService<IFittingChainResolver>());
 
             var sessionCtx = builder.BuildSession(doc);
             if (sessionCtx is null) return Result.Cancelled;
