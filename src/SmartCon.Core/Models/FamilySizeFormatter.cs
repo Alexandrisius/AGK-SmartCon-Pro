@@ -57,14 +57,24 @@ public static class FamilySizeFormatter
 
     public static string BuildAutoSelectDisplayName(
         IReadOnlyList<double> queryParamRadiiFt,
+        int targetColumnIndex,
+        string? symbolName = null)
+    {
+        string baseName = queryParamRadiiFt.Count == 0
+            ? "АВТОПОДБОР (DN 0)"
+            : queryParamRadiiFt.Count == 1
+                ? $"АВТОПОДБОР (DN {ToDn(queryParamRadiiFt[0])})"
+                : BuildAutoSelectMultiParam(queryParamRadiiFt, targetColumnIndex);
+
+        return string.IsNullOrEmpty(symbolName)
+            ? baseName
+            : $"{baseName} ({symbolName})";
+    }
+
+    private static string BuildAutoSelectMultiParam(
+        IReadOnlyList<double> queryParamRadiiFt,
         int targetColumnIndex)
     {
-        if (queryParamRadiiFt.Count == 0)
-            return "АВТОПОДБОР (DN 0)";
-
-        if (queryParamRadiiFt.Count == 1)
-            return $"АВТОПОДБОР (DN {ToDn(queryParamRadiiFt[0])})";
-
         int targetIdx = targetColumnIndex - 1;
         if (targetIdx < 0 || targetIdx >= queryParamRadiiFt.Count)
             targetIdx = 0;

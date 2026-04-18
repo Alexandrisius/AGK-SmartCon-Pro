@@ -88,7 +88,10 @@ public sealed class DynamicSizeLoader(
                 targetColIdx = 1;
             }
 
-            var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(autoQueryParamRadii, targetColIdx);
+            var autoSymbolName = GetCurrentSymbolName(doc, dynId);
+
+            var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(
+                autoQueryParamRadii, targetColIdx, autoSymbolName);
 
             sizes.Add(new FamilySizeOption
             {
@@ -101,7 +104,8 @@ public sealed class DynamicSizeLoader(
                 TargetColumnIndex = targetColIdx,
                 QueryParamConnectorGroups = queryParamGroups,
                 Source = "",
-                IsAutoSelect = true
+                IsAutoSelect = true,
+                SymbolName = autoSymbolName
             });
 
             foreach (var size in availableConfigs)
@@ -150,6 +154,7 @@ public sealed class DynamicSizeLoader(
         var targetColIdx = autoOption?.TargetColumnIndex ?? 1;
 
         IReadOnlyList<double> autoQueryParamRadii;
+        var autoSymbolName = GetCurrentSymbolName(doc, dynId);
         var nonAutoSizes = currentOptions.Where(s => !s.IsAutoSelect).ToList();
         if (nonAutoSizes.Count > 0)
         {
@@ -181,7 +186,8 @@ public sealed class DynamicSizeLoader(
         else
             autoQueryParamRadii = [currentRadii.GetValueOrDefault(dynamicConn.ConnectorIndex, 0)];
 
-        var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(autoQueryParamRadii, targetColIdx);
+        var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(
+            autoQueryParamRadii, targetColIdx, autoSymbolName);
 
         var newAutoOption = new FamilySizeOption
         {
@@ -194,7 +200,8 @@ public sealed class DynamicSizeLoader(
             TargetColumnIndex = targetColIdx,
             QueryParamConnectorGroups = queryParamGroups,
             Source = "",
-            IsAutoSelect = true
+            IsAutoSelect = true,
+            SymbolName = autoSymbolName
         };
 
         SmartConLogger.Debug($"[RefreshAutoSelectSize] Updated: {autoDisplayName}");
@@ -220,5 +227,12 @@ public sealed class DynamicSizeLoader(
             result.Add(radius);
         }
         return result.AsReadOnly();
+    }
+
+    private static string? GetCurrentSymbolName(Document doc, ElementId elementId)
+    {
+        if (doc.GetElement(elementId) is FamilyInstance fi)
+            return fi.Symbol?.Name;
+        return null;
     }
 }

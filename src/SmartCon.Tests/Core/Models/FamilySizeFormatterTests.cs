@@ -300,6 +300,36 @@ public sealed class FamilySizeFormatterTests
     }
 
     [Fact]
+    public void BuildAutoSelectDisplayName_WithSymbolName()
+    {
+        var radii = new[] { Dn(50) };
+
+        var result = FamilySizeFormatter.BuildAutoSelectDisplayName(radii, 1, "Исполнение 2");
+
+        Assert.Equal("АВТОПОДБОР (DN 50) (Исполнение 2)", result);
+    }
+
+    [Fact]
+    public void BuildAutoSelectDisplayName_WithNullSymbolName_NoSuffix()
+    {
+        var radii = new[] { Dn(50) };
+
+        var result = FamilySizeFormatter.BuildAutoSelectDisplayName(radii, 1, null);
+
+        Assert.Equal("АВТОПОДБОР (DN 50)", result);
+    }
+
+    [Fact]
+    public void BuildAutoSelectDisplayName_WithEmptySymbolName_NoSuffix()
+    {
+        var radii = new[] { Dn(50) };
+
+        var result = FamilySizeFormatter.BuildAutoSelectDisplayName(radii, 1, "");
+
+        Assert.Equal("АВТОПОДБОР (DN 50)", result);
+    }
+
+    [Fact]
     public void ToDn_RoundTrip()
     {
         foreach (var dn in new[] { 15, 20, 25, 32, 40, 50, 65, 80, 100, 150, 200, 300 })
