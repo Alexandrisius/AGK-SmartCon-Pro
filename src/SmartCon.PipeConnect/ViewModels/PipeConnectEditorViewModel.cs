@@ -27,6 +27,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private readonly IFittingMappingRepository _mappingRepo;
     private readonly IDialogService _dialogSvc;
     private readonly IFamilyConnectorService _familyConnSvc;
+    private readonly IFittingMapper _fittingMapper;
     private readonly ChainOperationHandler _chainOpHandler;
     private readonly ConnectExecutor _connectExecutor;
     private readonly PipeConnectInitHandler _initHandler;
@@ -53,6 +54,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
     private bool _userManuallyChangedSize;
 
     private ConnectionGraph? _chainGraph;
+    private bool _chainDisabledByCycle;
     private readonly NetworkSnapshotStore _snapshotStore = new();
     private readonly HashSet<long> _warmedElementIds = [];
 
@@ -97,7 +99,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         INetworkMover networkMover,
         IFittingMappingRepository mappingRepo,
         IDialogService dialogSvc,
-        IFamilyConnectorService familyConnSvc)
+        IFamilyConnectorService familyConnSvc,
+        IFittingMapper fittingMapper)
     {
         _ctx = ctx;
         _doc = doc;
@@ -111,6 +114,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _mappingRepo = mappingRepo;
         _dialogSvc = dialogSvc;
         _familyConnSvc = familyConnSvc;
+        _fittingMapper = fittingMapper;
         _chainOpHandler = new ChainOperationHandler(connSvc, transformSvc, paramResolver, fittingInsertSvc, networkMover);
         _virtualCtcStore = ctx.VirtualCtcStore;
         _ctcManager = new FittingCtcManager(connSvc, mappingRepo, dialogSvc, familyConnSvc, _virtualCtcStore);
@@ -408,39 +412,6 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
             IsBusy = false;
         }
     }
-
-    [RelayCommand(CanExecute = nameof(CanCycleConnector))]
-    private void CycleConnector()
-    {
-        if (_cycleService.State.Count <= 1) return;
-
-        var target = _cycleService.State.FindNext();
-        if (target is null) return;
-
-        IsBusy = true;
-        StatusMessage = LocalizationService.GetString("Status_SwitchingConnector");
-
-        try
-        {
-            var alignTarget = _activeFittingConn2 ?? _ctx.StaticConnector;
-            _activeDynamic = _cycleService.CycleAndAlign(
-                _doc, _groupSession!, target, alignTarget, _activeDynamic);
-
-            StatusMessage = LocalizationService.GetString("Status_ConnectorChanged");
-            CycleConnectorCommand.NotifyCanExecuteChanged();
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"[CycleConnector] Failed: {ex.Message}");
-             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
-
-    private bool CanCycleConnector() => IsSessionActive && !IsBusy && _cycleService.State.Count > 1;
 
     [RelayCommand(CanExecute = nameof(CanChangeDynamicSize))]
     private void ChangeDynamicSize()

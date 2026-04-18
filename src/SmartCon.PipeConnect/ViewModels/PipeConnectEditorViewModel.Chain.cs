@@ -54,6 +54,7 @@ public sealed partial class PipeConnectEditorViewModel
     private bool CanIncrementChain()
         => IsSessionActive && !IsBusy
         && _chainGraph is not null
+        && !_chainDisabledByCycle
         && ChainDepth < _chainGraph.MaxLevel
         && ChainDepth < MaxChainLevel;
 
@@ -123,12 +124,13 @@ public sealed partial class PipeConnectEditorViewModel
     private bool CanConnectAllChain()
         => IsSessionActive && !IsBusy
         && _chainGraph is not null
+        && !_chainDisabledByCycle
         && ChainDepth < _chainGraph.MaxLevel
         && ChainDepth < MaxChainLevel;
 
     private void UpdateChainUI()
     {
-        if (_chainGraph is null || _chainGraph.TotalChainElements == 0)
+        if (_chainGraph is null || _chainGraph.TotalChainElements == 0 || _chainDisabledByCycle)
         {
             HasChain = false;
         }

@@ -8,59 +8,63 @@ echo.
 
 set "SLN_PATH=src\SmartCon.sln"
 
-echo [1/9] Restoring NuGet packages...
-dotnet restore "%SLN_PATH%" --verbosity quiet
-if errorlevel 1 ( echo [ERROR] Restore failed! & pause & exit /b 1 )
-echo [OK] Restore successful
+REM Uses named configurations Debug.R25/.R23/.R19 (defined in Directory.Build.props).
+REM Each configuration places its output into a separate folder bin\Debug.R{NN}\,
+REM so builds do not overwrite each other's DLLs.
+REM
+REM Restore runs inside each `dotnet build` (no --no-restore) because
+REM Nice3point.Revit.Api.RevitAPI is pulled with VersionOverride depending on
+REM $(RevitVersion). A global `dotnet restore` without RevitVersion context
+REM activates the 2021.* fallback, which breaks net48 builds that use API 2022+
+REM (for example, Definition.GetDataType introduced in Revit 2022).
 
-echo.
-echo [2/9] Building Revit 2025 (net8.0)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug -f net8.0-windows --no-restore --verbosity quiet
+echo [1/8] Building Revit 2025 (Debug.R25, net8.0-windows)...
+dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R25 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R25 failed! & pause & exit /b 1 )
 echo [OK] R25 build successful
 
 echo.
-echo [3/9] Building Revit 2023 (net48, R21)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug -f net48 --no-restore --verbosity quiet -p:RevitVersion=2023
+echo [2/8] Building Revit 2021-2023 (Debug.R23, net48)...
+dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R23 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R23 failed! & pause & exit /b 1 )
 echo [OK] R23 build successful
 
 echo.
-echo [4/9] Building Revit 2019-2020 (net48, R19)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug -f net48 --no-restore --verbosity quiet -p:RevitVersion=2019
+echo [3/8] Building Revit 2019-2020 (Debug.R19, net48)...
+dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R19 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R19 failed! & pause & exit /b 1 )
 echo [OK] R19 build successful
 
 echo.
-echo [5/9] Building updater (net8.0)...
-dotnet build "src\SmartCon.Updater\SmartCon.Updater.csproj" -c Debug -f net8.0 --no-restore --verbosity quiet
+echo [4/8] Building updater (net8.0)...
+dotnet build "src\SmartCon.Updater\SmartCon.Updater.csproj" -c Debug -f net8.0 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Updater build failed! & pause & exit /b 1 )
 echo [OK] Updater build successful
 
 echo.
-echo [6/9] Deploying to Revit 2025...
+echo [5/8] Deploying to Revit 2025...
 set "ADDIN_R25=%APPDATA%\Autodesk\Revit\Addins\2025"
 set "DLL_R25=%APPDATA%\SmartCon\2025"
 if exist "%ADDIN_R25%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R25%\SmartCon" 2>nul )
 if not exist "%DLL_R25%" mkdir "%DLL_R25%"
-copy /Y "src\SmartCon.App\bin\Debug\net8.0-windows\*.dll" "%DLL_R25%\" >nul
-copy /Y "src\SmartCon.App\bin\Debug\net8.0-windows\SmartCon.App.deps.json" "%DLL_R25%\" >nul 2>nul
+copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\*.dll" "%DLL_R25%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\SmartCon.App.deps.json" "%DLL_R25%\" >nul 2>nul
 call :WriteAddin "%ADDIN_R25%\SmartCon.addin" "%DLL_R25%\SmartCon.App.dll"
 echo [OK] Revit 2025
 
 echo.
-echo [7/9] Deploying to Revit 2023...
+echo [6/8] Deploying to Revit 2023...
 set "ADDIN_R23=%APPDATA%\Autodesk\Revit\Addins\2023"
 set "DLL_R23=%APPDATA%\SmartCon\2021-2023"
 if exist "%ADDIN_R23%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R23%\SmartCon" 2>nul )
 if exist "%ADDIN_R23%\SmartCon-2023.addin" del /q "%ADDIN_R23%\SmartCon-2023.addin" 2>nul
 if not exist "%DLL_R23%" mkdir "%DLL_R23%"
-copy /Y "src\SmartCon.App\bin\Debug\net48\*.dll" "%DLL_R23%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R23\net48\*.dll" "%DLL_R23%\" >nul
 call :WriteAddin "%ADDIN_R23%\SmartCon.addin" "%DLL_R23%\SmartCon.App.dll"
 echo [OK] Revit 2023
 
 echo.
-echo [8/9] Deploying to Revit 2019-2020...
+echo [7/8] Deploying to Revit 2019-2020...
 set "DLL_R19=%APPDATA%\SmartCon\2019-2020"
 if not exist "%DLL_R19%" mkdir "%DLL_R19%"
 copy /Y "src\SmartCon.App\bin\Debug.R19\net48\*.dll" "%DLL_R19%\" >nul
@@ -82,7 +86,7 @@ if exist "%ADDIN_R20%" (
 )
 
 echo.
-echo [9/9] Deploying updater...
+echo [8/8] Deploying updater...
 set "UPDATER_SRC=src\SmartCon.Updater\bin\Debug\net8.0"
 copy /Y "%UPDATER_SRC%\SmartCon.Updater.exe" "%APPDATA%\SmartCon\" >nul 2>nul
 copy /Y "%UPDATER_SRC%\SmartCon.Updater.dll" "%APPDATA%\SmartCon\" >nul 2>nul

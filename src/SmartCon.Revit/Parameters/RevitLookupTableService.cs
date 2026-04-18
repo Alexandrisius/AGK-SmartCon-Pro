@@ -8,6 +8,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Compatibility;
 using SmartCon.Revit.Extensions;
 using RevitTransform = Autodesk.Revit.DB.Transform;
 using SmartCon.Core;
@@ -98,7 +99,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         return has;
     }
 
-    public IReadOnlyList<SizeTableRow> GetAllSizeRows(Document doc, ElementId elementId,
+    public AllSizeRowsResult GetAllSizeRows(Document doc, ElementId elementId,
         int targetConnectorIndex,
         IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
@@ -109,20 +110,20 @@ public sealed class RevitLookupTableService : ILookupTableService
         if (element is null or MEPCurve or FlexPipe)
         {
             SmartConLogger.Debug("  element=null or MEPCurve → return []");
-            return [];
+            return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
         }
 
         if (element is not FamilyInstance instance)
         {
             SmartConLogger.Debug($"  not FamilyInstance → return []");
-            return [];
+            return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
         }
 
         var cm = instance.MEPModel?.ConnectorManager;
         if (cm is null)
         {
             SmartConLogger.Debug("  ConnectorManager=null → return []");
-            return [];
+            return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
         }
 
         var instanceTransform = instance.GetTransform();
@@ -142,13 +143,13 @@ public sealed class RevitLookupTableService : ILookupTableService
         }
         SmartConLogger.Debug($"  allConnectorIndices: [{string.Join(", ", allConnectorIndices)}]");
 
-        return EditFamilySession.Run<List<SizeTableRow>>(doc, instance, familyDoc =>
+        return EditFamilySession.Run<AllSizeRowsResult>(doc, instance, familyDoc =>
         {
             var fstm = FamilySizeTableManager.GetFamilySizeTableManager(familyDoc, familyDoc.OwnerFamily.Id);
             if (fstm is null || fstm.NumberOfSizeTables == 0)
             {
                 SmartConLogger.Debug("  no size tables → return []");
-                return [];
+                return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
             }
 
             var snapshot = FamilyParameterSnapshot.Build(familyDoc.FamilyManager);
@@ -191,7 +192,18 @@ public sealed class RevitLookupTableService : ILookupTableService
                     perTableRows.Add(tableRows);
             }
 
+            var allNonSizeParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var tableRows in perTableRows)
+                foreach (var row in tableRows)
+                    foreach (var key in row.NonSizeParameterValues.Keys)
+                        allNonSizeParams.Add(key);
+
+            if (allNonSizeParams.Count > 0)
+                SmartConLogger.Debug($"  allNonSizeParams (union from {perTableRows.Count} tables): [{string.Join(", ", allNonSizeParams)}]");
+
             List<SizeTableRow> allRows;
+            var validDn = new HashSet<long>();
+
             if (perTableRows.Count <= 1)
             {
                 allRows = perTableRows.Count == 1 ? perTableRows[0] : [];
@@ -201,7 +213,7 @@ public sealed class RevitLookupTableService : ILookupTableService
                 var dnSets = perTableRows.Select(rows =>
                     new HashSet<long>(rows.Select(r => RoundDnToMicrons(r.TargetRadiusFt)))).ToList();
 
-                var validDn = new HashSet<long>(dnSets[0]);
+                validDn = new HashSet<long>(dnSets[0]);
                 for (int i = 1; i < dnSets.Count; i++)
                     validDn.IntersectWith(dnSets[i]);
 
@@ -223,8 +235,18 @@ public sealed class RevitLookupTableService : ILookupTableService
                 distinct = distinct.Where(r => r.ConnectorRadiiFt.Count == maxConnCount).ToList();
 
             SmartConLogger.Debug($"  → {distinct.Count} unique configs");
-            return distinct;
-        }) ?? [];
+
+            var readOnlyPerTableRows = perTableRows
+                .Select(t => (IReadOnlyList<SizeTableRow>)t.AsReadOnly())
+                .ToList()
+                .AsReadOnly();
+
+            return new AllSizeRowsResult(
+                distinct.AsReadOnly(),
+                allNonSizeParams,
+                readOnlyPerTableRows,
+                validDn);
+        }) ?? new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
     }
 
     private sealed record TableColumnInfo(
@@ -448,6 +470,19 @@ public sealed class RevitLookupTableService : ILookupTableService
 
         SmartConLogger.Debug($"    sizeColumns={sizeColumnIndices.Count}/{columns.Count}, remappedTarget={remappedTargetColIndex}");
 
+        // Получаем FamilySizeTable для доступа к unit-info колонок.
+        // Используется для нормализации non-size ячеек в canonical units (мм/градусы).
+        var columnUnitMap = BuildColumnUnitMap(fstm, tableName);
+        if (nonSizeColumnIndices.Count > 0 && columnUnitMap.Count > 0)
+        {
+            var unitSummary = string.Join(", ", nonSizeColumnIndices
+                .Select(i => columns[i].ParameterName)
+                .Where(name => columnUnitMap.ContainsKey(name))
+                .Select(name => $"{name}→{DescribeColumnUnit(columnUnitMap[name])}"));
+            if (unitSummary.Length > 0)
+                SmartConLogger.Debug($"    non-size units: [{unitSummary}]");
+        }
+
         var tempPath = Path.GetTempFileName();
         try
         {
@@ -509,8 +544,8 @@ public sealed class RevitLookupTableService : ILookupTableService
                 {
                     var col = columns[colIdx];
                     if (col.CsvColIndex >= cols.Length) continue;
-                    var cellValue = cols[col.CsvColIndex].Trim().Trim('"');
-                    nonSizeValues[col.ParameterName] = cellValue;
+                    var cellText = cols[col.CsvColIndex].Trim().Trim('"');
+                    nonSizeValues[col.ParameterName] = NormalizeCsvCellText(cellText, col.ParameterName, columnUnitMap);
                 }
 
                 result.Add(new SizeTableRow
@@ -555,6 +590,77 @@ public sealed class RevitLookupTableService : ILookupTableService
                 result.Add(row);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Собирает словарь <c>columnName → FamilySizeTableColumn</c> для доступа
+    /// к unit-info колонок при нормализации non-size CSV-ячеек.
+    /// </summary>
+    private static Dictionary<string, FamilySizeTableColumn> BuildColumnUnitMap(
+        FamilySizeTableManager fstm, string tableName)
+    {
+        var map = new Dictionary<string, FamilySizeTableColumn>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var sizeTable = fstm.GetSizeTable(tableName);
+            if (sizeTable is null) return map;
+
+            for (int i = 0; i < sizeTable.NumberOfColumns; i++)
+            {
+                try
+                {
+                    var col = sizeTable.GetColumnHeader(i);
+                    var name = col?.Name;
+                    if (!string.IsNullOrEmpty(name))
+                        map[name!] = col!;
+                }
+                catch
+                {
+                    // Некоторые колонки могут быть недоступны — пропускаем.
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"    BuildColumnUnitMap('{tableName}') failed: {ex.Message}");
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Нормализует текст CSV-ячейки: если ячейка — число И колонка имеет unit-info,
+    /// конвертирует value в canonical units (мм/градусы) через
+    /// <see cref="RevitUnitsCompat.NormalizeCellToCanonical"/>. Иначе возвращает raw text.
+    /// </summary>
+    private static string NormalizeCsvCellText(
+        string cellText,
+        string paramName,
+        IReadOnlyDictionary<string, FamilySizeTableColumn> columnUnitMap)
+    {
+        if (!LookupTableCsvParser.TryParseRevitValue(cellText, out double cellValue))
+            return cellText;
+
+        if (!columnUnitMap.TryGetValue(paramName, out var column))
+            return cellValue.ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
+
+        var canonical = RevitUnitsCompat.NormalizeCellToCanonical(cellValue, column);
+        return canonical.ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Краткое описание unit колонки для диагностического лога.</summary>
+    private static string DescribeColumnUnit(FamilySizeTableColumn column)
+    {
+#if REVIT2021_OR_GREATER
+        try
+        {
+            var unit = column.GetUnitTypeId();
+            return unit is null || unit.Empty() ? "-" : unit.TypeId;
+        }
+        catch { return "?"; }
+#else
+        try { return column.DisplayUnitType.ToString(); }
+        catch { return "?"; }
+#endif
     }
 
     private sealed record LookupContext(
@@ -816,7 +922,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         }
     }
 
-    private static long RoundDnToMicrons(double radiusFt)
+    internal static long RoundDnToMicrons(double radiusFt)
         => (long)System.Math.Round(radiusFt * FeetToMm * 2.0 * 1000.0);
 
     private static double ToMillimeters(double internalUnits, bool isRadius)

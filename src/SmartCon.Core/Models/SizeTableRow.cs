@@ -1,5 +1,11 @@
 namespace SmartCon.Core.Models;
 
+public sealed record AllSizeRowsResult(
+    IReadOnlyList<SizeTableRow> Rows,
+    IEnumerable<string> AllNonSizeParamNames,
+    IReadOnlyList<IReadOnlyList<SizeTableRow>> PerTableRows,
+    IEnumerable<long> ValidDnKeys);
+
 /// <summary>
 /// One row from a Revit FamilySizeTable (lookup table) or FamilySymbol enumeration.
 /// Contains connector radii, query parameters, and non-size parameter values for a single size configuration.

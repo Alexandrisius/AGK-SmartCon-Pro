@@ -36,20 +36,49 @@
 
 Проект поддерживает **6 версий Revit**: 2019, 2021, 2022, 2023, 2024 (net48) и 2025 (net8.0-windows).
 
-**Правило:** После каждого значимого изменения кода — собери **ВСЕ версии последовательно** (не параллельно — конфликт за obj/ файлы):
+### ЕДИНСТВЕННЫЙ правильный способ сборки — `build-and-deploy.bat`
+
+Используй именованные конфигурации `Debug.R25/.R23/.R19` (НЕ `-p:RevitVersion=...`):
 
 ```bash
-# Последовательная сборка всех версий (обязательно!)
-dotnet build src/SmartCon.sln -p:RevitVersion=2025 && dotnet build src/SmartCon.sln -p:RevitVersion=2024 && dotnet build src/SmartCon.sln -p:RevitVersion=2023 && dotnet build src/SmartCon.sln -p:RevitVersion=2022 && dotnet build src/SmartCon.sln -p:RevitVersion=2021 && dotnet build src/SmartCon.sln -p:RevitVersion=2019
+# Полный цикл: сборка + деплой всех версий
+build-and-deploy.bat
 ```
 
-**Также запусти тесты:**
+Скрипт собирает 3 конфигурации (R25/R23/R19) + updater и деплоит в Revit.
+
+### Почему НЕЛЬЗЯ использовать `-p:RevitVersion=...`
+
+Пакет `Nice3point.Revit.Api.RevitAPI` использует `VersionOverride` зависящий от `$(RevitVersion)`.
+При `dotnet build ... -p:RevitVersion=2025` restore НЕ видит `RevitVersion` из конфигурации
+→ fallback на RevitAPI `2021.*` для net48 → API 2022+ недоступно → ошибки компиляции.
+
+Именованные конфигурации (`Debug.R25`) парсят `RevitVersion` из имени в `Directory.Build.props`
+**до** restore → каждая сборка получает правильную версию RevitAPI.
+
+### Если нужно собрать только одну версию вручную
+
 ```bash
-dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -p:RevitVersion=2025
+# Только Revit 2025 (net8.0-windows)
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
+
+# Только Revit 2021-2023 (net48)
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R23
+
+# Только Revit 2019-2020 (net48)
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19
 ```
 
-**Чеклист перед коммитом:**
-1. Сборка 6 версий Revit — 0 ошибок, 0 предупреждений
+**Важно:** собирай `SmartCon.App.csproj`, а НЕ `SmartCon.sln` (solution может подтянуть лишние TFM).
+
+### Тесты
+
+```bash
+dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
+```
+
+### Чеклист перед коммитом:
+1. `build-and-deploy.bat` — 0 ошибок, 0 предупреждений на всех конфигурациях
 2. Тесты — 0 падений
 3. Инварианты I-01..I-10 не нарушены
 
