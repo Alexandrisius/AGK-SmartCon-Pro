@@ -40,7 +40,7 @@ public interface ILookupTableService
     /// If constraints = null — returns all rows without filtering.
     /// Call OUTSIDE transaction.
     /// </summary>
-    IReadOnlyList<SizeTableRow> GetAllSizeRows(Document doc, ElementId elementId,
+    AllSizeRowsResult GetAllSizeRows(Document doc, ElementId elementId,
         int targetConnectorIndex,
         IReadOnlyList<LookupColumnConstraint>? constraints = null);
 }

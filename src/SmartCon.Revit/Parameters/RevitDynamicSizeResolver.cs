@@ -9,6 +9,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Compatibility;
 using SmartCon.Revit.Extensions;
 using SmartCon.Core;
 using SmartCon.Core.Compatibility;
@@ -420,7 +421,8 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         var options = new List<FamilySizeOption>();
 
-        var lookupRows = _lookupTableSvc.GetAllSizeRows(doc, elementId, targetConnectorIndex);
+        var sizeResult = _lookupTableSvc.GetAllSizeRows(doc, elementId, targetConnectorIndex);
+        var lookupRows = sizeResult.Rows;
         if (lookupRows.Count > 0)
         {
             SmartConLogger.Debug($"  LookupTable: {lookupRows.Count} configs");
@@ -447,79 +449,102 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                                 connectorParamMap[(int)c.Id] = searchParam;
                         }
                     }
-                    return FindNonSizeTypeParameters(familyDoc, lookupRows, connectorParamMap);
+                    return FindNonSizeTypeParameters(familyDoc, sizeResult.AllNonSizeParamNames, connectorParamMap);
                 }) ?? [];
 
-            var rowToSymbol = nonSizeTypeParams.Count > 0
-                ? MapRowsToSymbols(doc, elementId, lookupRows, nonSizeTypeParams)
-                : new Dictionary<int, string>();
+            Dictionary<int, List<string>> rowToSymbols;
 
-            var currentSymbolName = instance.Symbol?.Name;
-
-            for (int i = 0; i < lookupRows.Count; i++)
+            if (nonSizeTypeParams.Count > 0)
             {
-                var row = lookupRows[i];
-                var displayName = FamilySizeFormatter.BuildDisplayName(
-                    row.QueryParameterRadiiFt, row.TargetColumnIndex);
-                rowToSymbol.TryGetValue(i, out var symbolName);
+                var typeParamRows = FindRowsWithTypeParams(
+                    sizeResult.PerTableRows, nonSizeTypeParams, sizeResult.ValidDnKeys);
 
-                options.Add(new FamilySizeOption
-                {
-                    DisplayName = displayName,
-                    Radius = row.TargetRadiusFt,
-                    TargetConnectorIndex = targetConnectorIndex,
-                    AllConnectorRadii = row.ConnectorRadiiFt,
-                    QueryParameterRadiiFt = row.QueryParameterRadiiFt,
-                    UniqueParameterCount = row.UniqueQueryParameterCount,
-                    TargetColumnIndex = row.TargetColumnIndex,
-                    QueryParamConnectorGroups = row.QueryParamConnectorGroups,
-                    QueryParamNames = row.QueryParamNames,
-                    QueryParamRawValuesMm = row.QueryParamRawValuesMm,
-                    NonSizeParameterValues = row.NonSizeParameterValues,
-                    Source = "LookupTable",
-                    IsAutoSelect = false,
-                    SymbolName = symbolName,
-                    CurrentSymbolName = currentSymbolName
-                });
+                rowToSymbols = typeParamRows.Count > 0
+                    ? MapRowsToSymbols(doc, elementId, typeParamRows, nonSizeTypeParams)
+                    : MapRowsToSymbols(doc, elementId, lookupRows, nonSizeTypeParams);
+            }
+            else
+            {
+                rowToSymbols = new Dictionary<int, List<string>>();
             }
 
-            if (rowToSymbol.Count == 0 && options.Count > 0)
+            if (nonSizeTypeParams.Count == 0 && lookupRows.Count > 0)
             {
-                var radiiMapping = MapRowsToSymbolsByRadii(doc, elementId, options, targetConnectorIndex);
-                if (radiiMapping.Count > 0)
+                var placeholderOptions = lookupRows.Select(row => new FamilySizeOption
                 {
-                    for (int i = 0; i < options.Count; i++)
+                    DisplayName = string.Empty,
+                    Radius = row.TargetRadiusFt,
+                    TargetConnectorIndex = targetConnectorIndex,
+                    AllConnectorRadii = row.ConnectorRadiiFt
+                }).ToList();
+
+                var radiiMapping = MapRowsToSymbolsByRadii(doc, elementId, placeholderOptions, targetConnectorIndex);
+                foreach (var kvp in radiiMapping)
+                    rowToSymbols[kvp.Key] = [kvp.Value];
+            }
+
+            if (nonSizeTypeParams.Count > 0 && rowToSymbols.Count > 0)
+            {
+                var dnToSymbolNames = BuildDnToSymbolNames(
+                    nonSizeTypeParams.Count > 0
+                        ? FindRowsWithTypeParams(sizeResult.PerTableRows, nonSizeTypeParams, sizeResult.ValidDnKeys)
+                        : lookupRows,
+                    rowToSymbols);
+
+                var currentSymbolName = instance.Symbol?.Name;
+                foreach (var row in lookupRows)
+                {
+                    var displayName = FamilySizeFormatter.BuildDisplayName(
+                        row.QueryParameterRadiiFt, row.TargetColumnIndex);
+                    var dnKey = RevitLookupTableService.RoundDnToMicrons(row.TargetRadiusFt);
+
+                    if (dnToSymbolNames.TryGetValue(dnKey, out var symNames))
                     {
-                        if (radiiMapping.TryGetValue(i, out var symName))
-                            options[i] = options[i] with { SymbolName = symName };
+                        foreach (var symName in symNames)
+                            options.Add(BuildOptionFromRow(row, displayName, targetConnectorIndex, symName, currentSymbolName));
                     }
+                    else
+                    {
+                        options.Add(BuildOptionFromRow(row, displayName, targetConnectorIndex, null, currentSymbolName));
+                    }
+                }
+            }
+            else
+            {
+                var mappingFailed = rowToSymbols.Count == 0 && nonSizeTypeParams.Count > 0;
+                if (mappingFailed && lookupRows.Count > 0)
+                {
+                    SmartConLogger.Warn(
+                        $"[GetAvailableFamilySizes] Non-size type params detected ([{string.Join(", ", nonSizeTypeParams)}]) " +
+                        $"but no CSV rows matched any FamilySymbol. Falling back to FamilySymbol enumeration " +
+                        $"to prevent invalid DN × Symbol combinations. " +
+                        $"Check family parameter units and types.");
+
+                    var symbolConfigs = GetFamilySymbolConfigurations(doc, instance, targetConnectorIndex);
+                    SmartConLogger.Debug($"  FamilySymbol safe fallback: {symbolConfigs.Count} configs");
+                    options.AddRange(symbolConfigs);
                 }
                 else
                 {
-                    var family = instance.Symbol?.Family;
-                    var allSymbolNames = new List<string>();
-                    if (family is not null)
-                    {
-                        foreach (var symId in family.GetFamilySymbolIds())
-                        {
-                            var sym = doc.GetElement(symId) as FamilySymbol;
-                            if (sym is not null)
-                                allSymbolNames.Add(sym.Name);
-                        }
-                    }
+                    var currentSymbolName = instance.Symbol?.Name;
 
-                    if (allSymbolNames.Count > 1)
+                    for (int i = 0; i < lookupRows.Count; i++)
                     {
-                        SmartConLogger.Warn($"[GetAvailableFamilySizes] LookupTable fallback: no symbol mapping, duplicating {options.Count} rows × {allSymbolNames.Count} symbols. Non-size type params may not be detected for this family.");
-                        var expanded = new List<FamilySizeOption>();
-                        foreach (var opt in options)
+                        var row = lookupRows[i];
+                        var displayName = FamilySizeFormatter.BuildDisplayName(
+                            row.QueryParameterRadiiFt, row.TargetColumnIndex);
+
+                        var matchedSymbols = rowToSymbols.GetValueOrDefault(i);
+
+                        if (matchedSymbols is { Count: > 0 })
                         {
-                            foreach (var symName in allSymbolNames)
-                            {
-                                expanded.Add(opt with { SymbolName = symName });
-                            }
+                            foreach (var symName in matchedSymbols)
+                                options.Add(BuildOptionFromRow(row, displayName, targetConnectorIndex, symName, currentSymbolName));
                         }
-                        options = expanded;
+                        else
+                        {
+                            options.Add(BuildOptionFromRow(row, displayName, targetConnectorIndex, null, currentSymbolName));
+                        }
                     }
                 }
             }
@@ -531,28 +556,39 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             options.AddRange(symbolConfigs);
         }
 
-        var deduped = DeduplicateFamilyOptions(options);
+        var deduped = FamilySizeFormatter.DeduplicateFamilyOptions(options);
         var sorted = SortByTargetDn(deduped);
-
-        var duplicateBaseNames = sorted
-            .GroupBy(o => o.DisplayName)
-            .Where(g => g.Count() > 1
-                && g.Any(o => !string.IsNullOrEmpty(o.SymbolName)))
-            .Select(g => g.Key)
-            .ToHashSet();
-
-        for (int i = 0; i < sorted.Count; i++)
-        {
-            var opt = sorted[i];
-            if (!string.IsNullOrEmpty(opt.SymbolName)
-                && duplicateBaseNames.Contains(opt.DisplayName))
-            {
-                sorted[i] = opt with { DisplayName = $"{opt.DisplayName} ({opt.SymbolName})" };
-            }
-        }
+        sorted = FamilySizeFormatter.AppendSymbolNameSuffix(sorted);
 
         SmartConLogger.Debug($"  → {sorted.Count} unique configs (sorted)");
         return sorted;
+    }
+
+    private static FamilySizeOption BuildOptionFromRow(
+        SizeTableRow row,
+        string displayName,
+        int targetConnectorIndex,
+        string? symbolName,
+        string? currentSymbolName)
+    {
+        return new FamilySizeOption
+        {
+            DisplayName = displayName,
+            Radius = row.TargetRadiusFt,
+            TargetConnectorIndex = targetConnectorIndex,
+            AllConnectorRadii = row.ConnectorRadiiFt,
+            QueryParameterRadiiFt = row.QueryParameterRadiiFt,
+            UniqueParameterCount = row.UniqueQueryParameterCount,
+            TargetColumnIndex = row.TargetColumnIndex,
+            QueryParamConnectorGroups = row.QueryParamConnectorGroups,
+            QueryParamNames = row.QueryParamNames,
+            QueryParamRawValuesMm = row.QueryParamRawValuesMm,
+            NonSizeParameterValues = row.NonSizeParameterValues,
+            Source = "LookupTable",
+            IsAutoSelect = false,
+            SymbolName = symbolName,
+            CurrentSymbolName = currentSymbolName
+        };
     }
 
     private List<FamilySizeOption> GetFamilySymbolConfigurations(Document doc, FamilyInstance instance, int targetConnectorIndex)
@@ -590,65 +626,21 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         return configs;
     }
 
-    private static List<FamilySizeOption> DeduplicateFamilyOptions(List<FamilySizeOption> options)
-    {
-        var seen = new HashSet<string>();
-        var result = new List<FamilySizeOption>();
-        foreach (var opt in options)
-        {
-            var key = string.Join("|", opt.AllConnectorRadii
-                .OrderBy(kvp => kvp.Key)
-                .Select(kvp => $"{kvp.Key}:{kvp.Value:F8}"))
-                + "|" + (opt.SymbolName ?? "")
-                + "|" + string.Join("|", opt.NonSizeParameterValues
-                    .OrderBy(kvp => kvp.Key)
-                    .Select(kvp => $"{kvp.Key}={kvp.Value}"));
-            if (seen.Add(key))
-                result.Add(opt);
-        }
-        return result;
-    }
-
     private static List<string> FindNonSizeTypeParameters(
         Document familyDoc,
-        IReadOnlyList<SizeTableRow> lookupRows,
+        IEnumerable<string> allNonSizeParamNames,
         Dictionary<int, string> connectorParamMap)
     {
-        if (lookupRows.Count == 0) return [];
+        var nonSizeParamNames = allNonSizeParamNames as HashSet<string>
+            ?? new HashSet<string>(allNonSizeParamNames, StringComparer.OrdinalIgnoreCase);
+        if (nonSizeParamNames.Count == 0) return [];
 
         var fm = familyDoc.FamilyManager;
         var snapshot = FamilyParameterSnapshot.Build(fm);
         var formulaByName = snapshot.FormulaByName;
 
-        var nonSizeParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var nspKey in lookupRows[0].NonSizeParameterValues.Keys)
-            nonSizeParamNames.Add(nspKey);
-
-        if (nonSizeParamNames.Count == 0)
-        {
-            var allQueryParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var qp in lookupRows[0].QueryParamNames)
-                allQueryParamNames.Add(qp);
-
-            var sizeParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var paramName in connectorParamMap.Values)
-                sizeParamNames.Add(paramName);
-
-            foreach (var qp in allQueryParamNames)
-            {
-                if (!sizeParamNames.Any(sp =>
-                    string.Equals(sp, qp, StringComparison.OrdinalIgnoreCase) ||
-                    LookupColumnResolver.DependsOn(formulaByName, sp, qp)))
-                {
-                    nonSizeParamNames.Add(qp);
-                }
-            }
-        }
-
-        if (nonSizeParamNames.Count == 0) return [];
-
         var leafParams = new List<string>();
-        foreach (var nsp in nonSizeParamNames)
+        foreach (var nsp in allNonSizeParamNames)
         {
             var leaf = FindLeafParameter(nsp, formulaByName);
             if (leaf is null) continue;
@@ -700,7 +692,86 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         }
     }
 
-    private Dictionary<int, string> MapRowsToSymbols(
+    private static List<SizeTableRow> FindRowsWithTypeParams(
+        IReadOnlyList<IReadOnlyList<SizeTableRow>> perTableRows,
+        IReadOnlyList<string> nonSizeTypeParams,
+        IEnumerable<long> validDnKeys)
+    {
+        var validDn = validDnKeys as HashSet<long> ?? new HashSet<long>(validDnKeys);
+        var typeParamSet = new HashSet<string>(nonSizeTypeParams, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var tableRows in perTableRows)
+        {
+            if (tableRows.Count == 0) continue;
+
+            var rowParams = tableRows[0].NonSizeParameterValues.Keys;
+            bool containsAll = true;
+            foreach (var tp in nonSizeTypeParams)
+            {
+                bool found = false;
+                foreach (var rp in rowParams)
+                {
+                    if (string.Equals(rp, tp, StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) { containsAll = false; break; }
+            }
+
+            if (!containsAll) continue;
+
+            SmartConLogger.Debug(
+                $"  FindRowsWithTypeParams: found table with {tableRows.Count} rows " +
+                $"containing type params [{string.Join(", ", nonSizeTypeParams)}]");
+
+            if (validDn.Count > 0)
+            {
+                var filtered = tableRows
+                    .Where(r => validDn.Contains(RevitLookupTableService.RoundDnToMicrons(r.TargetRadiusFt)))
+                    .ToList();
+                SmartConLogger.Debug($"  FindRowsWithTypeParams: filtered to {filtered.Count} rows by validDn");
+                return filtered;
+            }
+
+            return tableRows.ToList();
+        }
+
+        SmartConLogger.Debug(
+            $"  FindRowsWithTypeParams: no table found containing all type params [{string.Join(", ", nonSizeTypeParams)}]");
+        return [];
+    }
+
+    private static Dictionary<long, HashSet<string>> BuildDnToSymbolNames(
+        IReadOnlyList<SizeTableRow> typeParamRows,
+        Dictionary<int, List<string>> rowToSymbols)
+    {
+        var result = new Dictionary<long, HashSet<string>>();
+
+        for (int i = 0; i < typeParamRows.Count; i++)
+        {
+            var symbols = rowToSymbols.GetValueOrDefault(i);
+            if (symbols is null || symbols.Count == 0) continue;
+
+            var dnKey = RevitLookupTableService.RoundDnToMicrons(typeParamRows[i].TargetRadiusFt);
+            if (!result.TryGetValue(dnKey, out var set))
+            {
+                set = new HashSet<string>();
+                result[dnKey] = set;
+            }
+            foreach (var s in symbols)
+                set.Add(s);
+        }
+
+        SmartConLogger.Debug(
+            $"  BuildDnToSymbolNames: {result.Count} DN keys mapped, " +
+            $"total symbol associations: {result.Sum(kv => kv.Value.Count)}");
+
+        return result;
+    }
+
+    private Dictionary<int, List<string>> MapRowsToSymbols(
         Document doc,
         ElementId instanceId,
         IReadOnlyList<SizeTableRow> lookupRows,
@@ -717,7 +788,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         var symbolIds = family.GetFamilySymbolIds().ToList();
         if (symbolIds.Count == 0) return [];
 
-        var symbolParamValues = new List<(string SymbolName, Dictionary<string, string> Values)>();
+        var symbolParamValues = new List<(string SymbolName, IReadOnlyDictionary<string, string> Values)>();
 
         _transactionService.RunAndRollback("SmartCon_MapRows", txDoc =>
         {
@@ -740,24 +811,15 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                                     ?? sym?.LookupParameter(paramName);
                         if (param is null) continue;
 
-                        switch (param.StorageType)
-                        {
-                            case StorageType.Double:
-                                values[paramName] = param.AsDouble().ToString("F6");
-                                break;
-                            case StorageType.String:
-                                values[paramName] = param.AsString() ?? "";
-                                break;
-                            case StorageType.Integer:
-                                values[paramName] = param.AsInteger().ToString();
-                                break;
-                            case StorageType.ElementId:
-                                values[paramName] = param.AsElementId()?.GetValue().ToString() ?? "";
-                                break;
-                        }
+                        // Конверсия internal units → display units (мм/градусы),
+                        // совместимых с форматом CSV, экспортируемым Revit.
+                        values[paramName] = RevitUnitsCompat.ReadParamValueAsCsvCompatibleString(param);
                     }
 
-                    symbolParamValues.Add((sym?.Name ?? "", values));
+                    var symName = sym?.Name ?? string.Empty;
+                    symbolParamValues.Add((symName, values));
+                    SmartConLogger.Debug(
+                        $"  FamilyType '{symName}': [{string.Join(", ", values.Select(kv => $"{kv.Key}={kv.Value}"))}]");
                 }
                 catch (Exception ex)
                 {
@@ -766,56 +828,32 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             }
         });
 
-        var mapping = new Dictionary<int, string>();
-        const double numericEps = 0.01;
+        var mapping = SizeRowSymbolMatcher.MatchRowsToSymbols(lookupRows, symbolParamValues, nonSizeTypeParams);
 
-        for (int rowIdx = 0; rowIdx < lookupRows.Count; rowIdx++)
+        int totalRowsWithNonSize = lookupRows.Count(r => r.NonSizeParameterValues.Count > 0);
+        int mappedRows = mapping.Count;
+        int multiMappedRows = mapping.Count(kvp => kvp.Value.Count > 1);
+
+        if (mappedRows > 0)
         {
-            var row = lookupRows[rowIdx];
-            if (row.NonSizeParameterValues.Count == 0) continue;
-
-            foreach (var (symName, symValues) in symbolParamValues)
-            {
-                bool match = true;
-                foreach (var nsp in nonSizeTypeParams)
-                {
-                    if (!row.NonSizeParameterValues.TryGetValue(nsp, out var rowVal))
-                    {
-                        match = false;
-                        break;
-                    }
-
-                    if (!symValues.TryGetValue(nsp, out var symVal))
-                    {
-                        match = false;
-                        break;
-                    }
-
-                    if (double.TryParse(rowVal, out var rowNum) && double.TryParse(symVal, out var symNum))
-                    {
-                        if (Math.Abs(rowNum - symNum) > numericEps)
-                        {
-                            match = false;
-                            break;
-                        }
-                    }
-                    else if (!string.Equals(rowVal, symVal, StringComparison.OrdinalIgnoreCase))
-                    {
-                        match = false;
-                        break;
-                    }
-                }
-
-                if (match)
-                {
-                    mapping[rowIdx] = symName;
-                    break;
-                }
-            }
+            SmartConLogger.Debug(
+                $"  MapRowsToSymbols: mapped {mappedRows}/{totalRowsWithNonSize} rows to symbols " +
+                $"(multi-mapped: {multiMappedRows}, params=[{string.Join(", ", nonSizeTypeParams)}])");
+        }
+        else
+        {
+            SmartConLogger.Debug(
+                $"  MapRowsToSymbols: no matches! symbols={symbolParamValues.Count}, " +
+                $"rowsWithNonSize={totalRowsWithNonSize}, params=[{string.Join(", ", nonSizeTypeParams)}]");
         }
 
-        if (mapping.Count > 0)
-            SmartConLogger.Debug($"  MapRowsToSymbols: mapped {mapping.Count}/{lookupRows.Count} rows to symbols");
+        var orphans = SizeRowSymbolMatcher.FindOrphanSymbols(symbolParamValues, mapping);
+        if (orphans.Count > 0)
+        {
+            SmartConLogger.Warn(
+                $"[MapRowsToSymbols] Orphan symbols (no matching CSV row, excluded from dropdown): " +
+                $"[{string.Join(", ", orphans)}]");
+        }
 
         return mapping;
     }

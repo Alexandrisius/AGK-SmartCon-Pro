@@ -89,17 +89,45 @@ public static class FamilySizeFormatter
         return (dn / 2.0) * MmToFeet;
     }
 
-    public static string AppendSymbolNameIfNeeded(
-        string baseDisplayName,
-        string? symbolName,
-        IReadOnlyList<FamilySizeOption> allOptions)
+    public static List<FamilySizeOption> DeduplicateFamilyOptions(List<FamilySizeOption> options)
     {
-        if (string.IsNullOrEmpty(symbolName)) return baseDisplayName;
+        var seen = new HashSet<string>();
+        var result = new List<FamilySizeOption>();
+        foreach (var opt in options)
+        {
+            var key = string.Join("|", opt.AllConnectorRadii
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => $"{kvp.Key}:{kvp.Value:F8}"))
+                + "|" + (opt.SymbolName ?? "")
+                + "|" + string.Join("|", opt.NonSizeParameterValues
+                    .OrderBy(kvp => kvp.Key)
+                    .Select(kvp => $"{kvp.Key}={kvp.Value}"));
+            if (seen.Add(key))
+                result.Add(opt);
+        }
+        return result;
+    }
 
-        bool hasDuplicate = allOptions.Any(o =>
-            o.DisplayName == baseDisplayName && o.SymbolName != symbolName);
+    public static List<FamilySizeOption> AppendSymbolNameSuffix(List<FamilySizeOption> sorted)
+    {
+        var duplicateBaseNames = sorted
+            .GroupBy(o => o.DisplayName)
+            .Where(g => g.Count() > 1 && g.Any(o => !string.IsNullOrEmpty(o.SymbolName)))
+            .Select(g => g.Key)
+            .ToHashSet();
 
-        if (!hasDuplicate) return baseDisplayName;
-        return $"{baseDisplayName} ({symbolName})";
+        if (duplicateBaseNames.Count == 0)
+            return sorted;
+
+        var result = new List<FamilySizeOption>(sorted.Count);
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            var opt = sorted[i];
+            if (!string.IsNullOrEmpty(opt.SymbolName) && duplicateBaseNames.Contains(opt.DisplayName))
+                result.Add(opt with { DisplayName = $"{opt.DisplayName} ({opt.SymbolName})" });
+            else
+                result.Add(opt);
+        }
+        return result;
     }
 }
