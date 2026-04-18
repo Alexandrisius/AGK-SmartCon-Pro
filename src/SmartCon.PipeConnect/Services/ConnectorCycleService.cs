@@ -53,6 +53,7 @@ public sealed class ConnectorCycleState
     }
 
     public void MarkVisited(int connectorIndex) => _visited.Add(connectorIndex);
+    public void UnmarkVisited(int connectorIndex) => _visited.Remove(connectorIndex);
 }
 
 /// <summary>

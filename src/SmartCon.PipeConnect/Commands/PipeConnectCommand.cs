@@ -55,11 +55,12 @@ public sealed class PipeConnectCommand : IExternalCommand
             var mappingRepo = ServiceHost.GetService<IFittingMappingRepository>();
             var dialogSvc = ServiceHost.GetService<IDialogService>();
             var familyConnSvc = ServiceHost.GetService<IFamilyConnectorService>();
+            var fittingMapper = ServiceHost.GetService<IFittingMapper>();
 
             var vm = new PipeConnectEditorViewModel(
                 sessionCtx, doc, txService, connectorSvc, transformSvc,
                 fittingInsertSvc, paramResolver, sizeResolver, networkMover,
-                mappingRepo, dialogSvc, familyConnSvc);
+                mappingRepo, dialogSvc, familyConnSvc, fittingMapper);
 
             vm.Init();
 
