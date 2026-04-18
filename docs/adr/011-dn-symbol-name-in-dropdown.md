@@ -1,9 +1,31 @@
 # ADR-011: Отображение имени типоразмера в выпадающем списке DN
 
-> **Статус:** Implemented (v2.1 — canonical units normalization через `FamilySizeTableColumn.GetUnitTypeId()`)
-> **Дата:** 2026-04-17 (v1.0), 2026-04-18 (v2.0, v2.1)
+> **Статус:** Implemented (v2.2 — автоподбор показывает текущий типоразмер)
+> **Дата:** 2026-04-17 (v1.0), 2026-04-18 (v2.0, v2.1, v2.2)
 > **Затрагиваемые модули:** PipeConnect — DN dropdown
-> **Оценка:** ~150 строк нового кода, ~30 строк удалено, 6 файлов (v1.0) + ~200 строк (v2.0) + ~100 строк (v2.1)
+> **Оценка:** ~150 строк нового кода, ~30 строк удалено, 6 файлов (v1.0) + ~200 строк (v2.0) + ~100 строк (v2.1) + ~30 строк (v2.2)
+
+---
+
+## v2.2 — Автоподбор показывает текущий типоразмер
+
+### Проблема
+
+В строке АВТОПОДБОР типоразмер брался из `closestOption?.SymbolName` — ближайшей по радиусу опции из списка.
+Для элемента типа «Исполнение 2» (DN 50) ближайшей опцией по радиусу оказывалась «Отвод» (DN 50, Исполнение=1.0),
+поскольку `BestSizeMatcher.FindClosestWeighted` сортирует только по радиусам, не учитывая текущий типоразмер.
+
+### Решение
+
+`DynamicSizeLoader` теперь берёт типоразмер напрямую из `FamilyInstance.Symbol.Name` через helper `GetCurrentSymbolName(doc, elementId)`.
+`BuildAutoSelectDisplayName` получил optional-параметр `symbolName` — при наличии добавляется в скобках:
+`АВТОПОДБОР (DN 50) (Исполнение 2)`.
+
+| Файл | Изменение |
+|---|---|
+| `FamilySizeFormatter.cs` | `BuildAutoSelectDisplayName` — optional `symbolName` |
+| `DynamicSizeLoader.cs` | `GetCurrentSymbolName(doc, dynId)` вместо `closestOption?.SymbolName` |
+| `FamilySizeFormatterTests.cs` | 3 теста для symbolName в АВТОПОДБОР |
 
 ---
 
@@ -747,12 +769,16 @@ if (selectedOption.SymbolName is not null
 
 | Файл | Фаза | Изменение |
 |---|---|---|
-| `RevitLookupTableService.cs` | 1 | Извлечение non-size значений + дедупликация |
-| `RevitDynamicSizeResolver.cs` | 2 | Маппинг строк на символы, проброс SymbolName |
-| `FamilySizeFormatter.cs` | 3 | Метод `AppendSymbolNameIfNeeded()` |
+| `RevitLookupTableService.cs` | 1+v2.1 | Извлечение non-size значений + canonical units + AllSizeRowsResult |
+| `RevitDynamicSizeResolver.cs` | 2+v2.1 | Маппинг строк на символы, cross-table type param mapping |
+| `FamilySizeFormatter.cs` | 3+v2.2 | `DeduplicateFamilyOptions`, `AppendSymbolNameSuffix`, `BuildAutoSelectDisplayName` с symbolName |
+| `DynamicSizeLoader.cs` | v2.2 | `GetCurrentSymbolName` для автоподбора |
 | `PipeConnectSizeHandler.cs` | 4+5 | Переключение символа + удаление предупреждения |
-| `PipeConnectEditorView.xaml` | 5 | Удалить TextBlock SizeChangeInfo |
-| `PipeConnectEditorViewModel.cs` | 5 | Удалить свойства предупреждения |
+| `RevitUnitsCompat.cs` | v2.1 | Cross-version canonical units normalization |
+| `SizeRowSymbolMatcher.cs` | v2.0 | Pure-C# matching + orphan detection |
+| `SizeRowSymbolMatcherTests.cs` | v2.0 | 15 unit-тестов |
+| `FamilySizeOptionDedupAndSuffixTests.cs` | v2.1 | 20 тестов дедупликации и суффикса |
+| `FamilySizeFormatterTests.cs` | v2.2 | 3 теста автоподбора с symbolName |
 
 ## Инварианты (проверка)
 
