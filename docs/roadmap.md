@@ -25,7 +25,7 @@
 | **0** | Каркас проекта | — | Solution + Ribbon + DI | ✅ Готов |
 | **1** | Фундамент | 0 | Модели + интерфейсы + базовые сервисы | ✅ Готов |
 | **2** | Базовый коннект | 1 | Клик-клик -> выравнивание -> ConnectTo | ✅ Готов |
-| **3** | Типы коннекторов | 2 | MiniTypeSelector + окно маппинга + JSON | ✅ Готов |
+| **3** | Типы коннекторов | 2 | MiniTypeSelector + окно маппинга + ExtensibleStorage (ADR-012) | ✅ Готов |
 | **4** | Подбор параметров | 2 | Автоподбор размера / типоразмера | ✅ Готов |
 | **5** | Система фитингов | 3, 4 | Автовставка фитинга по маппингу | ✅ Готов |
 | **6** | FormulaSolver | 1 | Полноценный AST-парсер формул Revit | ✅ Готов |
@@ -96,21 +96,30 @@
 
 **3A — MiniTypeSelector:**
 - Чтение/запись Description через EditFamily
-- JSON-конфиг типов из AppData
+- Справочник типов из per-project ExtensibleStorage (ADR-012)
 - MiniTypeSelectorView (рядом с курсором)
 - Интеграция в state machine (S1.1)
 
 **3B — Окно маппинга:**
-- MappingEditorView (немодальное)
+- MappingEditorView (модальное, ShowDialog — ADR-012)
 - Вкладка «Типы» — CRUD
 - Вкладка «Правила» — FromType->ToType, семейства из проекта
+- Кнопки Импорт/Экспорт JSON (ручной перенос между проектами)
 - Кнопка Настройки на Ribbon
 
-**Приёмка:** Тип записывается в Description. Маппинг сохраняется в JSON. Типы синхронизированы.
+**Приёмка:** Тип записывается в Description. Маппинг сохраняется в `DataStorage` проекта. Типы синхронизированы между окнами.
 
-**Статус:** ✅ Готов (2026-04-XX). Сборка 0 ошибок, 120 тестов pass.
-Ключевые компоненты: IFamilyConnectorService + RevitFamilyConnectorService (EditFamily API, LookupParameter), JsonFittingMappingRepository (Core, System.Text.Json), PipeConnectDialogService (IDialogService), MiniTypeSelectorView/ViewModel (модальное, рядом с курсором), MappingEditorView/ViewModel (немодальное, TabControl), ConnectorTypeItem + MappingRuleItem (ObservableObject), SettingsCommand реализован.
-Тесты: JsonFittingMappingRepositoryTests (8), MiniTypeSelectorViewModelTests (8), MappingEditorViewModelTests (16), ConnectorTypeItemTests (5), MappingRuleItemTests (10).
+**Статус:** ✅ Готов (2026-04-XX). Сборка 0 ошибок, тесты pass.
+Ключевые компоненты: IFamilyConnectorService + RevitFamilyConnectorService (EditFamily API, LookupParameter), FittingMappingJsonSerializer (Core, System.Text.Json, pure-C#), RevitFittingMappingRepository (Revit/Storage, ExtensibleStorage), PipeConnectDialogService (IDialogService + Open/SaveFileDialog), MiniTypeSelectorView/ViewModel (модальное, рядом с курсором), MappingEditorView/ViewModel (модальное, TabControl + Import/Export), ConnectorTypeItem + MappingRuleItem (ObservableObject), SettingsCommand реализован.
+Тесты: FittingMappingJsonSerializerTests (15), MiniTypeSelectorViewModelTests, MappingEditorViewModelTests, ConnectorTypeItemTests, MappingRuleItemTests.
+
+**Миграция (ADR-012, 2026-04-19):**
+- Хранилище перенесено из `%APPDATA%\AGK\SmartCon\connector-mapping.json`
+  в `ExtensibleStorage.DataStorage` каждого `.rvt`.
+- Settings окно переведено на модальный `ShowDialog` с Owner = Revit main window.
+- Добавлены кнопки Импорт/Экспорт JSON; диалог Импорта по умолчанию открывается
+  в AppData-папке со старым `connector-mapping.json`, если файл существует.
+- Авто-миграция из AppData не делается — перенос только по явному действию пользователя.
 
 ---
 

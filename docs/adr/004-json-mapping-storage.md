@@ -1,7 +1,14 @@
 # ADR-004: JSON в AppData для хранения маппинга фитингов
 
-**Статус:** accepted
+**Статус:** superseded by [ADR-012](012-per-project-extensible-storage.md)
 **Дата:** 2026-03-25
+**Superseded:** 2026-04-19
+
+> **Актуальное решение — ADR-012.** Маппинг теперь хранится в
+> `ExtensibleStorage.DataStorage` каждого проекта. Глобальный JSON
+> `%APPDATA%\AGK\SmartCon\connector-mapping.json` больше не читается
+> автоматически; он используется только как источник для ручного
+> Импорта через окно Settings.
 
 ## Контекст
 

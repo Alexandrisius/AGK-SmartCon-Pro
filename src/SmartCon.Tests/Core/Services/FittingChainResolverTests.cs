@@ -1,27 +1,14 @@
-using System.IO;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Tests.TestDoubles;
 using Xunit;
 
 namespace SmartCon.Tests.Core.Services;
 
-public sealed class FittingChainResolverTests : IDisposable
+public sealed class FittingChainResolverTests
 {
-    private readonly string _tempFile;
-    private readonly JsonFittingMappingRepository _repository;
-
-    public FittingChainResolverTests()
-    {
-        _tempFile = Path.Combine(Path.GetTempPath(), $"smartcon-chain-{Guid.NewGuid()}.json");
-        _repository = new JsonFittingMappingRepository(_tempFile);
-    }
-
-    public void Dispose()
-    {
-        if (File.Exists(_tempFile))
-            File.Delete(_tempFile);
-    }
+    private readonly InMemoryFittingMappingRepository _repository = new();
 
     private (IFittingMapper mapper, IFittingChainResolver resolver) CreateServices(params FittingMappingRule[] rules)
     {

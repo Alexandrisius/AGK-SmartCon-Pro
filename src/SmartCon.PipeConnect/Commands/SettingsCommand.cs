@@ -1,3 +1,4 @@
+using System.Windows.Interop;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -10,8 +11,11 @@ namespace SmartCon.PipeConnect.Commands;
 
 /// <summary>
 /// Команда открытия окна настроек SmartCon (маппинг фитингов, типы коннекторов).
-/// Phase 3B/3C: открывает немодальное MappingEditorView.
-/// IExternalCommand — уже на Revit main thread, Show() допустим напрямую.
+/// ADR-012: окно открывается модально (<c>ShowDialog</c>) — все Save-операции
+/// выполняются через <c>ITransactionService</c> на Revit main thread без необходимости
+/// в <c>IExternalEventHandler</c>, потому что модальный цикл удерживает вызов
+/// внутри <c>Execute</c>.
+/// Owner = главное окно Revit, чтобы окно не терялось поверх Revit-проекта.
 /// TransactionMode.Manual — без активной транзакции, EditFamily разрешён.
 /// </summary>
 [Transaction(TransactionMode.Manual)]
@@ -36,7 +40,8 @@ public sealed class SettingsCommand : IExternalCommand
 
             var vm = new MappingEditorViewModel(mappingRepo, familyNames, dialogService);
             var view = new MappingEditorView(vm);
-            view.Show();
+            new WindowInteropHelper(view).Owner = commandData.Application.MainWindowHandle;
+            view.ShowDialog();
 
             return Result.Succeeded;
         }

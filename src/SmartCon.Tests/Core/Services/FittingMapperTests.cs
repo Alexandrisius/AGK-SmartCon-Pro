@@ -1,6 +1,6 @@
-using System.IO;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Implementation;
+using SmartCon.Tests.TestDoubles;
 using Xunit;
 
 namespace SmartCon.Tests.Core.Services;
@@ -8,22 +8,9 @@ namespace SmartCon.Tests.Core.Services;
 /// <summary>
 /// Тесты FittingMapper: поиск правил, зеркальные правила, кратчайший путь.
 /// </summary>
-public sealed class FittingMapperTests : IDisposable
+public sealed class FittingMapperTests
 {
-    private readonly string _tempFile;
-    private readonly JsonFittingMappingRepository _repository;
-
-    public FittingMapperTests()
-    {
-        _tempFile = Path.Combine(Path.GetTempPath(), $"smartcon-mapper-{Guid.NewGuid()}.json");
-        _repository = new JsonFittingMappingRepository(_tempFile);
-    }
-
-    public void Dispose()
-    {
-        if (File.Exists(_tempFile))
-            File.Delete(_tempFile);
-    }
+    private readonly InMemoryFittingMappingRepository _repository = new();
 
     private FittingMapper CreateMapper(params FittingMappingRule[] rules)
     {

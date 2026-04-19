@@ -99,6 +99,16 @@
                                 Command="{Binding DeleteTypeCommand}"
                                 Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="{DynamicResource Btn_Import}" Width="100" Margin="0,0,8,0"
+                                Command="{Binding ImportFromFileCommand}"
+                                ToolTip="{DynamicResource Tip_Import}"
+                                Style="{DynamicResource SecondaryButton}"/>
+                        <Button Content="{DynamicResource Btn_Export}" Width="100"
+                                Command="{Binding ExportToFileCommand}"
+                                ToolTip="{DynamicResource Tip_Export}"
+                                Style="{DynamicResource SecondaryButton}"/>
+                    </StackPanel>
                     <Button Width="110"
                             HorizontalAlignment="Right"
                             Command="{Binding SaveTypesCommand}">
@@ -237,6 +247,16 @@
                                 Style="{DynamicResource PrimaryButton}"/>
                         <Button Content="{DynamicResource Btn_Delete}" Width="80"
                                 Command="{Binding DeleteRuleCommand}"
+                                Style="{DynamicResource SecondaryButton}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="{DynamicResource Btn_Import}" Width="100" Margin="0,0,8,0"
+                                Command="{Binding ImportFromFileCommand}"
+                                ToolTip="{DynamicResource Tip_Import}"
+                                Style="{DynamicResource SecondaryButton}"/>
+                        <Button Content="{DynamicResource Btn_Export}" Width="100"
+                                Command="{Binding ExportToFileCommand}"
+                                ToolTip="{DynamicResource Tip_Export}"
                                 Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
                     <Button Width="110"

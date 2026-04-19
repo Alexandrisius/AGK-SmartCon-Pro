@@ -168,3 +168,33 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 **Запрещено:** `Header="{DynamicResource Col_Code}"` — работает только на net8.0 (Revit 2025), молча пусто на net48 (Revit 2021-2024).
 
 Подробнее: [`multi-version-guide.md`](multi-version-guide.md), Правило 4.
+
+---
+
+## I-13: Маппинг фитингов хранится только в ExtensibleStorage активного проекта
+
+Настройки `ConnectorTypes` и `FittingMappingRules` хранятся исключительно в
+`DataStorage` (`ExtensibleStorage.Schema` = `SmartConFittingMappingSchema`)
+текущего Revit `Document` — ADR-012.
+
+**Запрещено:**
+- Автоматически читать/мигрировать данные из `%APPDATA%\AGK\SmartCon\connector-mapping.json`.
+- Открывать второй файловый кэш параллельно с DataStorage (единый источник правды).
+- Обращаться к ExtensibleStorage напрямую из Core — только через
+  `IFittingMappingRepository` (реализация `RevitFittingMappingRepository`
+  в `SmartCon.Revit/Storage/`).
+
+**Разрешено:**
+- Ручной Import/Export JSON через окно Settings (`ShowOpenJsonDialog` /
+  `ShowSaveJsonDialog`). Диалог Импорта может по умолчанию открываться в
+  AppData-папке для удобства миграции.
+- Читать DataStorage напрямую для диагностики (AccessLevel = `Public`),
+  но не писать (WriteAccess = `Vendor`).
+
+**Мотивация:** Разные `.rvt` содержат разные семейства фитингов → правила
+должны быть привязаны к проекту и путешествовать вместе с моделью.
+Авто-миграция из AppData создаёт «невидимые» импорты, которые
+дезориентируют пользователя и могут загрузить устаревшие правила в новый
+проект.
+
+Подробнее: [`adr/012-per-project-extensible-storage.md`](adr/012-per-project-extensible-storage.md).

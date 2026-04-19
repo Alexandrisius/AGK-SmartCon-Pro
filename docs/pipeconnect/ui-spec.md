@@ -128,8 +128,10 @@ ViewModel обновляет UI
 ```
 
 ### Данные
-Список типов загружается из JSON (AppData) через `IFittingMappingRepository.GetConnectorTypes()`.
-Новые типы, добавленные в окне маппинга, сразу доступны здесь.
+Список типов загружается из `ExtensibleStorage.DataStorage` текущего проекта
+через `IFittingMappingRepository.GetConnectorTypes()` (см. [ADR-012](../adr/012-per-project-extensible-storage.md)).
+Новые типы, добавленные в окне маппинга, сразу доступны здесь — чтение идёт
+напрямую из DataStorage активного `Document`.
 
 ### Результат
 - OK: возвращает `ConnectorTypeDefinition`
