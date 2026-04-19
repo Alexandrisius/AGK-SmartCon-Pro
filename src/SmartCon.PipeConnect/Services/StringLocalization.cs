@@ -22,6 +22,10 @@ public static class StringLocalization
         d[Keys.Btn_Saved] = "✓ Сохранено";
         d[Keys.Btn_Delete] = "Удалить";
         d[Keys.Btn_Add] = "+ Добавить";
+        d[Keys.Btn_Import] = "Импорт…";
+        d[Keys.Btn_Export] = "Экспорт…";
+        d[Keys.Tip_Import] = "Загрузить настройки маппинга из JSON-файла (перезапишет текущие)";
+        d[Keys.Tip_Export] = "Сохранить настройки маппинга в JSON-файл";
         d[Keys.Btn_Confirm] = "Подтвердить";
         d[Keys.Btn_Close] = "Закрыть";
         d[Keys.Btn_OK] = "OK";
@@ -116,6 +120,10 @@ public static class StringLocalization
         d[Keys.Btn_Saved] = "✓ Saved";
         d[Keys.Btn_Delete] = "Delete";
         d[Keys.Btn_Add] = "+ Add";
+        d[Keys.Btn_Import] = "Import…";
+        d[Keys.Btn_Export] = "Export…";
+        d[Keys.Tip_Import] = "Load mapping settings from a JSON file (overwrites current)";
+        d[Keys.Tip_Export] = "Save mapping settings to a JSON file";
         d[Keys.Btn_Confirm] = "Confirm";
         d[Keys.Btn_Close] = "Close";
         d[Keys.Btn_OK] = "OK";
@@ -208,6 +216,10 @@ public static class StringLocalization
         public const string Btn_Saved = nameof(Btn_Saved);
         public const string Btn_Delete = nameof(Btn_Delete);
         public const string Btn_Add = nameof(Btn_Add);
+        public const string Btn_Import = nameof(Btn_Import);
+        public const string Btn_Export = nameof(Btn_Export);
+        public const string Tip_Import = nameof(Tip_Import);
+        public const string Tip_Export = nameof(Tip_Export);
         public const string Btn_Confirm = nameof(Btn_Confirm);
         public const string Btn_Close = nameof(Btn_Close);
         public const string Btn_OK = nameof(Btn_OK);

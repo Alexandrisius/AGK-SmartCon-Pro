@@ -22,4 +22,27 @@ public interface IDialogService
         string symbolName,
         List<FittingCtcSetupItem> connectors,
         IReadOnlyList<ConnectorTypeDefinition> availableTypes);
+
+    /// <summary>
+    /// Shows an Open File dialog filtered to JSON files and returns the selected path,
+    /// or <c>null</c> when the user cancels.
+    /// </summary>
+    /// <param name="title">Dialog window title.</param>
+    /// <param name="initialDirectory">
+    /// Optional initial directory. When the folder exists the dialog opens there; otherwise
+    /// the system default is used (typically <c>Documents</c>).
+    /// </param>
+    /// <param name="preselectFileName">
+    /// Optional file name to preselect in the dialog (only used together with a valid
+    /// <paramref name="initialDirectory"/>).
+    /// </param>
+    string? ShowOpenJsonDialog(string title, string? initialDirectory = null, string? preselectFileName = null);
+
+    /// <summary>
+    /// Shows a Save File dialog filtered to JSON files and returns the target path,
+    /// or <c>null</c> when the user cancels.
+    /// </summary>
+    /// <param name="title">Dialog window title.</param>
+    /// <param name="defaultFileName">Optional default file name suggested by the dialog.</param>
+    string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
 }

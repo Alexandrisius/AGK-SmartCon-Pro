@@ -55,7 +55,8 @@ public readonly record struct ConnectionTypeCode(int Value)
 
 ## ConnectorTypeDefinition
 
-Определение типа коннектора для пользовательского справочника. Хранится в JSON (AppData).
+Определение типа коннектора для пользовательского справочника. Хранится per-project
+в `ExtensibleStorage.DataStorage` активного `Document` ([ADR-012](../adr/012-per-project-extensible-storage.md)).
 
 **Файл:** `SmartCon.Core/Models/ConnectorTypeDefinition.cs`
 

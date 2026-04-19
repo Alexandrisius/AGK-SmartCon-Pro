@@ -107,10 +107,13 @@ public interface IFittingMapper
 
 ## IFittingMappingRepository
 
-CRUD для правил маппинга фитингов. Хранение в JSON (AppData).
+CRUD для правил маппинга фитингов. Хранение — per-project: `DataStorage` в
+`ExtensibleStorage` активного `Document` ([ADR-012](../adr/012-per-project-extensible-storage.md)).
+Импорт/Экспорт в JSON выполняется вручную через окно Settings.
 
 **Файл:** `SmartCon.Core/Services/Interfaces/IFittingMappingRepository.cs`
-**Реализация:** `SmartCon.Core/Services/Implementation/JsonFittingMappingRepository.cs`
+**Реализация:** `SmartCon.Revit/Storage/RevitFittingMappingRepository.cs`
+**Сериализация:** `SmartCon.Core/Services/Storage/FittingMappingJsonSerializer.cs` (pure C#, unit-tested)
 
 ```csharp
 public interface IFittingMappingRepository
@@ -121,9 +124,17 @@ public interface IFittingMappingRepository
     IReadOnlyList<FittingMappingRule> GetMappingRules();
     void SaveMappingRules(IReadOnlyList<FittingMappingRule> rules);
 
+    /// Возвращает диагностическое описание вида
+    /// "ExtensibleStorage:{docTitle}@SchemaV{n}" (не путь к файлу).
     string GetStoragePath();
 }
 ```
+
+**Lifecycle:**
+- Read — read-only, без транзакций. Нет Schema → возвращается
+  `MappingPayload.Empty` (проект открывается с пустыми коллекциями).
+- Write — через `ITransactionService.RunInTransaction("SmartCon: Save Mapping", ...)`.
+  Первый Save создаёт `DataStorage`; последующие обновляют `Entity`.
 
 ---
 

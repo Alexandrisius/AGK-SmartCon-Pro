@@ -12,6 +12,7 @@ using SmartCon.Revit.Fittings;
 using SmartCon.Revit.Network;
 using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
+using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
 using SmartCon.Revit.Transform;
 using SmartCon.Revit.Updates;
@@ -42,8 +43,8 @@ public static class ServiceRegistrar
         // --- Transform (Phase 2) ---
         services.AddSingleton<ITransformService, RevitTransformService>();
 
-        // --- Mapping & Family (Phase 3) ---
-        services.AddSingleton<IFittingMappingRepository, JsonFittingMappingRepository>();
+        // --- Mapping & Family (ADR-012: per-project ExtensibleStorage) ---
+        services.AddSingleton<IFittingMappingRepository, RevitFittingMappingRepository>();
         services.AddSingleton<IFamilyConnectorService, RevitFamilyConnectorService>();
         services.AddSingleton<IFittingFamilyRepository, FittingFamilyRepository>();
         services.AddSingleton<IDialogService, PipeConnectDialogService>();

@@ -71,10 +71,13 @@ SmartCon.Core/
 │   │   ├── IFamilyConnectorService.cs
 │   │   ├── IUpdateService.cs
 │   │   └── IUpdateSettingsRepository.cs
-│   └── Implementation/
-│       ├── FormulaSolver.cs             <- AST-парсер формул Revit
-│       ├── FittingMapper.cs             <- подбор фитингов по маппингу
-│       └── JsonFittingMappingRepository.cs
+│   ├── Implementation/
+│   │   ├── FormulaSolver.cs             <- AST-парсер формул Revit
+│   │   └── FittingMapper.cs             <- подбор фитингов по маппингу
+│   └── Storage/                         <- ADR-012: сериализация маппинга (pure C#)
+│       ├── FittingMappingJsonSerializer.cs
+│       ├── MappingPayload.cs
+│       └── Dto/                         <- MappingPayloadDto, ConnectorTypeDto, …
 ├── Math/
 │   ├── Vec3.cs                        <- 3D-вектор (ADR-009)
 │   ├── VectorUtils.cs                 <- базовые векторные операции
@@ -119,6 +122,9 @@ SmartCon.Revit/
 ├── Events/
 │   ├── ActionExternalEventHandler.cs  <- универсальный Action Queue handler (ADR-008)
 │   └── PipeConnectExternalEvent.cs    <- специализированный handler для PipeConnect workflow
+├── Storage/                            <- ADR-012: per-project ExtensibleStorage
+│   ├── FittingMappingSchema.cs        <- SchemaBuilder (GUID, VendorId, fields)
+│   └── RevitFittingMappingRepository.cs <- IFittingMappingRepository (DataStorage)
 └── Transform/
     └── RevitTransformService.cs       <- MoveElement + RotateElement через Revit API
 ```
