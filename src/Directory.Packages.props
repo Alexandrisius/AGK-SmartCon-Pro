@@ -9,7 +9,7 @@
 
     <!-- DI — НЕ ОБНОВЛЯТЬ выше 8.x! Версии 9.0+ дропнули net48.
          При апгрейде убедиться что новая версия поддерживает net48 -->
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.6" />
 
     <!-- C# polyfill для net48 (атрибуты: record, init, required и т.д.) -->
     <PackageVersion Include="PolySharp" Version="1.15.0" />
