@@ -55,6 +55,17 @@ elseif ($MajorIncrement) {
 
 Write-Host "New version: $newVersion" -ForegroundColor Yellow
 
+$dotnetVersionArgs = @()
+if ($DryRun) {
+    Write-Warn "DRY RUN - Version.txt, git tag/push and GitHub release will be skipped"
+    $dotnetVersionArgs = @(
+        "-p:Version=$newVersion",
+        "-p:AssemblyVersion=$newVersion.0",
+        "-p:FileVersion=$newVersion.0",
+        "-p:InformationalVersion=$newVersion"
+    )
+}
+
 if (-not $Changelog -and -not $DryRun) {
     Write-Host ""
     Write-Host "Enter changelog for v$newVersion (empty line to finish):" -ForegroundColor Cyan
@@ -67,16 +78,16 @@ if (-not $Changelog -and -not $DryRun) {
     $Changelog = $changelogLines -join "`r`n"
 }
 
-if ($DryRun) {
-    Write-Warn "DRY RUN - no changes will be made"
-    Write-Host "Changelog: $Changelog"
-    return
-}
-
 # --- 1. Update Version.txt ---
-Write-Step "Updating Version.txt => $newVersion"
-Set-Content -Path $VersionFile -Value $newVersion -NoNewline
-Write-Ok "Version.txt updated"
+if ($DryRun) {
+    Write-Step "Skipping Version.txt update (DryRun)"
+    Write-Ok "Version.txt preserved"
+}
+else {
+    Write-Step "Updating Version.txt => $newVersion"
+    Set-Content -Path $VersionFile -Value $newVersion -NoNewline
+    Write-Ok "Version.txt updated"
+}
 
 # --- 2. Build All Versions ---
 # Shipping artifacts:
@@ -94,7 +105,7 @@ $buildConfigs = @(
 
 foreach ($bc in $buildConfigs) {
     Write-Step "Building [$($bc.Label)] $($bc.Config) / $($bc.Tfm)"
-    dotnet build $SrcDir\SmartCon.App\SmartCon.App.csproj -c $bc.Config -f $bc.Tfm --nologo -v q
+    dotnet build $SrcDir\SmartCon.App\SmartCon.App.csproj -c $bc.Config -f $bc.Tfm @dotnetVersionArgs --nologo -v q
     if ($LASTEXITCODE -ne 0) { Write-Err "Build $($bc.Config) failed!"; throw "Build $($bc.Config) failed!" }
     Write-Ok "$($bc.Config) build succeeded"
 }
@@ -102,7 +113,7 @@ foreach ($bc in $buildConfigs) {
 # --- 3. Run tests ---
 if (-not $SkipTests) {
     Write-Step "Running tests"
-    dotnet test $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release.R25 --nologo -v q
+    dotnet test $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release.R25 @dotnetVersionArgs --nologo -v q
     if ($LASTEXITCODE -ne 0) { Write-Err "Tests failed!"; throw "Tests failed!" }
     Write-Ok "All tests passed"
 }
@@ -113,7 +124,7 @@ $updaterProject = Join-Path $SrcDir "SmartCon.Updater\SmartCon.Updater.csproj"
 $updaterPublishDir = Join-Path $ArtifactsDir "publish\SmartCon.Updater"
 if (Test-Path $updaterPublishDir) { Remove-Item $updaterPublishDir -Recurse -Force }
 
-dotnet publish $updaterProject -c Release -f net8.0 --nologo -v q -o $updaterPublishDir
+dotnet publish $updaterProject -c Release -f net8.0 @dotnetVersionArgs --nologo -v q -o $updaterPublishDir
 if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon.Updater failed!" }
 Write-Ok "SmartCon.Updater published"
 
@@ -128,7 +139,7 @@ foreach ($bc in $buildConfigs) {
     if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 
     dotnet publish $SrcDir\SmartCon.App\SmartCon.App.csproj `
-        -c $bc.Config -f $bc.Tfm --nologo -v q -o $publishDir
+        -c $bc.Config -f $bc.Tfm @dotnetVersionArgs --nologo -v q -o $publishDir
     if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon [$tag] failed!" }
 
     # Copy Updater into each ZIP artifact (for backwards compat and standalone ZIP usage)
@@ -162,6 +173,7 @@ foreach ($zp in $zipPaths) {
 }
 
 # --- 6. Build Inno Setup installer ---
+$installerName = "SmartCon-$newVersion-setup.exe"
 $installerBuilt = $false
 if (-not $SkipInstaller) {
     $issPath = Join-Path $PSScriptRoot "installer\SmartCon-Setup.iss"
@@ -190,53 +202,62 @@ if (-not $SkipInstaller) {
     }
 }
 
-# --- 7. Git commit + tag ---
-Write-Step "Git: commit + tag v$newVersion"
-git add $VersionFile
-git commit -m "release: v$newVersion"
-if ($LASTEXITCODE -ne 0) { Write-Warn "Nothing to commit?" }
-git tag "v$newVersion"
-Write-Ok "Tagged v$newVersion"
-
-# --- 8. Push ---
-Write-Step "Git: push to remote"
-$branch = git rev-parse --abbrev-ref HEAD
-git push origin $branch
-git push origin "v$newVersion"
-Write-Ok "Pushed $branch + tag v$newVersion"
-
-# --- 9. GitHub Release ---
-Write-Step "Creating GitHub Release"
-
-$notesFile = Join-Path $ArtifactsDir "release-notes-tmp.md"
-if (-not [string]::IsNullOrWhiteSpace($Changelog)) {
-    [System.IO.File]::WriteAllText($notesFile, $Changelog, [System.Text.UTF8Encoding]::new($false))
-    $notesFlag = @("--notes-file", $notesFile)
-} else {
-    $notesFlag = @("--generate-notes")
+if ($DryRun) {
+    Write-Step "Skipping git commit/tag, push and GitHub Release (DryRun)"
+    Write-Ok "Dry-run verification finished before VCS/network steps"
 }
+else {
+    Write-Step "Git: commit + tag v$newVersion"
+    git add $VersionFile
+    git commit -m "release: v$newVersion"
+    if ($LASTEXITCODE -ne 0) { Write-Warn "Nothing to commit?" }
+    git tag "v$newVersion"
+    Write-Ok "Tagged v$newVersion"
 
-$installerName = "SmartCon-$newVersion-setup.exe"
-$installerPath = Join-Path $ArtifactsDir $installerName
-$releaseAssets = @() + $zipPaths
-if ($installerBuilt -and (Test-Path $installerPath)) {
-    $releaseAssets += $installerPath
+    Write-Step "Git: push to remote"
+    $branch = git rev-parse --abbrev-ref HEAD
+    git push origin $branch
+    git push origin "v$newVersion"
+    Write-Ok "Pushed $branch + tag v$newVersion"
+
+    Write-Step "Creating GitHub Release"
+
+    $notesFile = Join-Path $ArtifactsDir "release-notes-tmp.md"
+    if (-not [string]::IsNullOrWhiteSpace($Changelog)) {
+        [System.IO.File]::WriteAllText($notesFile, $Changelog, [System.Text.UTF8Encoding]::new($false))
+        $notesFlag = @("--notes-file", $notesFile)
+    } else {
+        $notesFlag = @("--generate-notes")
+    }
+
+    $installerPath = Join-Path $ArtifactsDir $installerName
+    $releaseAssets = @() + $zipPaths
+    if ($installerBuilt -and (Test-Path $installerPath)) {
+        $releaseAssets += $installerPath
+    }
+    $releaseArgs = @("release", "create", "v$newVersion") + $releaseAssets + @("--title", "SmartCon v$newVersion") + $notesFlag
+
+    & gh @releaseArgs
+    $ghExit = $LASTEXITCODE
+    if (Test-Path $notesFile) { Remove-Item $notesFile -Force -ErrorAction SilentlyContinue }
+    if ($ghExit -ne 0) { Write-Err "GitHub release creation failed!"; throw "gh release create failed" }
+    Write-Ok "GitHub Release v$newVersion created"
 }
-$releaseArgs = @("release", "create", "v$newVersion") + $releaseAssets + @("--title", "SmartCon v$newVersion") + $notesFlag
-
-& gh @releaseArgs
-$ghExit = $LASTEXITCODE
-if (Test-Path $notesFile) { Remove-Item $notesFile -Force -ErrorAction SilentlyContinue }
-if ($ghExit -ne 0) { Write-Err "GitHub release creation failed!"; throw "gh release create failed" }
-Write-Ok "GitHub Release v$newVersion created"
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  Release v$newVersion published!" -ForegroundColor Green
+if ($DryRun) {
+    Write-Host "  Dry run for v$newVersion completed!" -ForegroundColor Green
+}
+else {
+    Write-Host "  Release v$newVersion published!" -ForegroundColor Green
+}
 foreach ($zp in $zipPaths) {
     Write-Host "  ZIP: $(Split-Path $zp -Leaf)" -ForegroundColor White
 }
 if ($installerBuilt) { Write-Host "  EXE: $installerName" -ForegroundColor White }
-Write-Host "  URL: https://github.com/$GitHubOwner/$GitHubRepo/releases/tag/v$newVersion" -ForegroundColor Cyan
+if (-not $DryRun) {
+    Write-Host "  URL: https://github.com/$GitHubOwner/$GitHubRepo/releases/tag/v$newVersion" -ForegroundColor Cyan
+}
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
