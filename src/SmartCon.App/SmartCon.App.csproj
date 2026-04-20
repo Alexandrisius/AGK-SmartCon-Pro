@@ -30,30 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Resources\SmartCon.addin">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <EmbeddedResource Include="Resources\Icons\*.png" />
   </ItemGroup>
-
-  <!-- DeployToRevit target — см. Фазу 4.2 -->
-  <Target Name="DeployToRevit" AfterTargets="Build"
-          Condition="$(Configuration.StartsWith('Debug'))">
-    <PropertyGroup>
-      <_RevitVersion Condition="'$(RevitVersion)' != ''">$(RevitVersion)</_RevitVersion>
-      <_RevitVersion Condition="'$(RevitVersion)' == '' And '$(TargetFramework)' == 'net8.0-windows'">2025</_RevitVersion>
-      <_AddinPath>$(AppData)\Autodesk\Revit\Addins\$(_RevitVersion)</_AddinPath>
-    </PropertyGroup>
-    <ItemGroup>
-      <SmartConDlls Include="$(TargetDir)*.dll"
-                    Exclude="$(TargetDir)RevitAPI*.dll;$(TargetDir)AdWindows*.dll;$(TargetDir)UIAutomation*.dll" />
-    </ItemGroup>
-    <Copy SourceFiles="@(SmartConDlls)"
-          DestinationFolder="$(_AddinPath)\SmartCon"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ProjectDir)Resources\SmartCon-$(_RevitVersion).addin"
-          DestinationFiles="$(_AddinPath)\SmartCon.addin"
-          SkipUnchangedFiles="true" />
-  </Target>
 
 </Project>

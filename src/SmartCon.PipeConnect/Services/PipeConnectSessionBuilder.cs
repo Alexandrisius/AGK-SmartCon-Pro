@@ -30,6 +30,10 @@ public sealed class PipeConnectSessionBuilder(
     IElementChainIterator chainIterator,
     IFittingChainResolver chainResolver)
 {
+    /// <summary>
+    /// Internal plan for S4 parameter resolution: whether to skip sizing,
+    /// target radius, adapter expectation, and lookup table constraints.
+    /// </summary>
     private sealed record ParameterResolutionPlan(
         bool Skip,
         double TargetRadius,
@@ -53,7 +57,7 @@ public sealed class PipeConnectSessionBuilder(
             doc, dynamicPick.Value.ElementId, dynamicPick.Value.ClickPoint);
         if (dynamicProxy is null)
         {
-            dialogSvc.ShowWarning("SmartCon", LocalizationService.GetString("Msg_NoConnectorsFirst"));
+            dialogSvc.ShowWarning(LocalizationService.GetString("App_Name"), LocalizationService.GetString("Msg_NoConnectorsFirst"));
             return null;
         }
 
@@ -79,7 +83,7 @@ public sealed class PipeConnectSessionBuilder(
             doc, staticPick.Value.ElementId, staticPick.Value.ClickPoint);
         if (staticProxy is null)
         {
-            dialogSvc.ShowWarning("SmartCon", LocalizationService.GetString("Msg_NoConnectorsSecond"));
+            dialogSvc.ShowWarning(LocalizationService.GetString("App_Name"), LocalizationService.GetString("Msg_NoConnectorsSecond"));
             return null;
         }
 
@@ -125,8 +129,8 @@ public sealed class PipeConnectSessionBuilder(
             staticPick.Value.ElementId
         };
         var chainGraph = chainIterator.BuildGraph(doc, dynamicPick.Value.ElementId, stopAt);
-        SmartConLogger.Info($"[Chain] Graph: {chainGraph.TotalChainElements} elements, " +
-            $"{chainGraph.MaxLevel} уровней");
+            SmartConLogger.Info($"[Chain] Graph: {chainGraph.TotalChainElements} elements, " +
+                $"{chainGraph.MaxLevel} {LocalizationService.GetString("Chain_Levels")}");
 
         return new PipeConnectSessionContext
         {
@@ -160,7 +164,7 @@ public sealed class PipeConnectSessionBuilder(
         var types = mappingRepo.GetConnectorTypes();
         if (types.Count == 0)
         {
-            dialogSvc.ShowWarning("SmartCon", LocalizationService.GetString("Msg_ConfigureTypes"));
+            dialogSvc.ShowWarning(LocalizationService.GetString("App_Name"), LocalizationService.GetString("Msg_ConfigureTypes"));
             return null;
         }
 
@@ -298,7 +302,7 @@ public sealed class PipeConnectSessionBuilder(
                         ExpectNeedsAdapter: !exactUnc,
                         WarningMessage: exactUnc
                             ? null
-                            : $"Размер DN{staticDn} не found exactly. Ближайший DN{nearestUncDn} (other connectors will change).",
+                            : string.Format(LocalizationService.GetString("Warn_SizeNotExactUnconstrained"), staticDn, nearestUncDn),
                         LookupConstraints: []);
                 }
             }
@@ -308,7 +312,7 @@ public sealed class PipeConnectSessionBuilder(
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: nearest,
                 ExpectNeedsAdapter: true,
-                WarningMessage: $"Размер DN{staticDn} отсутствует в таблице. Будет выбран DN{nearestDn}, нужен переходник.",
+                WarningMessage: string.Format(LocalizationService.GetString("Warn_SizeNotInTable"), staticDn, nearestDn),
                 LookupConstraints: lookupConstraints);
         }
 
@@ -319,7 +323,7 @@ public sealed class PipeConnectSessionBuilder(
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: true,
-                WarningMessage: "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.",
+                WarningMessage: LocalizationService.GetString("Warn_NoSizeParameter"),
                 LookupConstraints: lookupConstraints);
         }
 

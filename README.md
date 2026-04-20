@@ -4,7 +4,8 @@
 [![Revit 2019–2025](https://img.shields.io/badge/Revit-2019--2025-green)](https://www.autodesk.com/products/revit/)
 [![C# 12](https://img.shields.io/badge/C%23-12-purple)](https://learn.microsoft.com/en-us/dotnet/csharp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 577](https://img.shields.io/badge/Tests-577%20pass-brightgreen)]()
+[![Tests: 676](https://img.shields.io/badge/Tests-676%20pass-brightgreen)]()
+[![Build](https://github.com/Alexandrisius/AGK-SmartCon-Pro/actions/workflows/build.yml/badge.svg)](https://github.com/Alexandrisius/AGK-SmartCon-Pro/actions/workflows/build.yml)
 
 **SmartCon** — плагин для Autodesk Revit, автоматизирующий рутинные операции соединения MEP-трубопроводов. Флагманский модуль **PipeConnect** позволяет соединять элементы двумя кликами с автоматическим подбором фитингов, переходников и типов соединений.
 
@@ -51,13 +52,19 @@
 ```bash
 git clone https://github.com/Alexandrisius/AGK-SmartCon-Pro.git
 cd AGK-SmartCon-Pro
-dotnet build src/SmartCon.sln
-dotnet test src/SmartCon.sln
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
+dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
 build-and-deploy.bat
 ```
 
-**Требования:** .NET 8.0 SDK, Visual Studio 2022 или Rider.
+Для multi-version используются 4 shipping-артефакта:
 
+- `R19` → Revit 2019-2020
+- `R21` → Revit 2021-2023
+- `R24` → Revit 2024
+- `R25` → Revit 2025
+
+**Требования:** .NET 8.0 SDK, Visual Studio 2022 или Rider.
 </details>
 
 ---
@@ -118,7 +125,7 @@ build-and-deploy.bat
 1. Нажмите **Settings** на ленте SmartCon
 2. Вкладка **«Типы коннекторов»** — добавьте типы (например: 1 = Сварка, 2 = Резьба, 3 = Раструб)
 3. Вкладка **«Правила маппинга»** — задайте, какие фитинги использовать для каждой пары типов
-4. Нажмите **Сохранить** — настройки сохраняются в `%APPDATA%/SmartCon/`
+4. Нажмите **Сохранить** — настройки сохраняются в текущем проекте Revit (`.rvt`) через **ExtensibleStorage** (ADR-012). Для переноса между проектами используйте кнопки **Импорт** / **Экспорт** (JSON).
 
 > Подробная инструкция по настройке — в [USER-GUIDE.md → Первый запуск](USER-GUIDE.md#первый-запуск-настройка).
 
@@ -135,13 +142,32 @@ SmartCon поддерживает **русский** и **английский**
 <details>
 <summary>📐 Архитектура и стек</summary>
 
+```mermaid
+flowchart LR
+    App[SmartCon.App\nRibbon / DI / Entry Point]
+    UI[SmartCon.UI\nShared WPF controls]
+    PipeConnect[SmartCon.PipeConnect\nCommands / Views / ViewModels / Services]
+    Revit[SmartCon.Revit\nRevit API adapters]
+    Core[SmartCon.Core\nDomain / Interfaces / Algorithms]
+    Tests[SmartCon.Tests\nUnit tests]
+
+    App --> PipeConnect
+    App --> Revit
+    PipeConnect --> Core
+    PipeConnect --> Revit
+    PipeConnect --> UI
+    Revit --> Core
+    Tests --> Core
+    Tests --> PipeConnect
+```
+
 ```
 SmartCon.Core          — Чистый C#: модели, интерфейсы, алгоритмы (тестируется без Revit)
 SmartCon.Revit         — Реализации интерфейсов Core через Revit API
 SmartCon.UI            — Общие WPF-стили и контролы
 SmartCon.App           — Точка входа: IExternalApplication, Ribbon, DI-контейнер
 SmartCon.PipeConnect   — Модуль PipeConnect: Commands, ViewModels, Views
-SmartCon.Tests         — Unit-тесты (xUnit + Moq, 577 тестов)
+SmartCon.Tests         — Unit-тесты (xUnit + Moq, 676 тестов)
 ```
 
 | Компонент | Технология |
@@ -173,6 +199,27 @@ SmartCon.Tests         — Unit-тесты (xUnit + Moq, 577 тестов)
    - Строгий MVVM — code-behind содержит только `DataContext = viewModel`
 
 </details>
+
+## Community & OSS
+
+| Ресурс | Назначение |
+|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Правила сборки, тестов и оформления вкладов |
+| [SECURITY.md](SECURITY.md) | Политика сообщений об уязвимостях |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Правила поведения в сообществе |
+| [CHANGELOG.md](CHANGELOG.md) | История изменений по SemVer |
+| [Issue Templates](.github/ISSUE_TEMPLATE/) | Шаблоны bug report / feature request |
+
+Автоматизация проекта разделена по ролям:
+
+- `build.yml` — CI-проверка для `push` и `pull_request`
+- `release.yml` — GitHub-side релиз по тегу `v*`
+- `build-and-deploy.bat` — локальная debug-сборка и деплой в установленный Revit
+- `tools/release.ps1` — основной maintainer-скрипт релиза: version bump, build, tests, publish, ZIP, optional installer, tag, GitHub release
+
+## Visuals
+
+Скриншоты интерфейса и анимированные сценарии использования подробно вынесены в [USER-GUIDE.md](USER-GUIDE.md), чтобы основной `README` оставался компактным. При необходимости их можно продублировать в GitHub Releases и wiki.
 
 ---
 

@@ -1,32 +1,22 @@
-using System.Windows;
+using System.ComponentModel;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
+using SmartCon.UI.Controls;
 
 namespace SmartCon.PipeConnect.Views;
 
-public partial class FittingCtcSetupView : Window
+public partial class FittingCtcSetupView : DialogWindowBase
 {
-    private bool _closeFromViewModel;
-
     public FittingCtcSetupView(FittingCtcSetupViewModel viewModel)
     {
         InitializeComponent();
         LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
-        viewModel.RequestClose += OnRequestClose;
-        Closing += OnClosing;
+        BindCloseRequest(viewModel);
     }
 
-    private void OnRequestClose()
+    protected override void OnUserInitiatedClose(CancelEventArgs e)
     {
-        _closeFromViewModel = true;
-        Close();
-    }
-
-    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
-    {
-        if (_closeFromViewModel) return;
-
         if (DataContext is FittingCtcSetupViewModel vm)
         {
             e.Cancel = true;

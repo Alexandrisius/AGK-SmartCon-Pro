@@ -13,7 +13,8 @@ SmartCon.sln
 ├── SmartCon.App               <- Точка входа: IExternalApplication, Ribbon, DI-регистрация.
 ├── SmartCon.PipeConnect       <- Модуль PipeConnect: Commands, ViewModels, Views.
 ├── SmartCon.Tests             <- Unit + ViewModel тесты (xUnit + Moq).
-└── SmartCon.Installer         <- Инсталлятор: копирует DLL + .addin в папки Revit.
+└── SmartCon.Updater           <- Standalone .NET 8 updater: применяет pending
+                                  update при закрытии Revit (staging-based).
 ```
 
 ---
@@ -38,7 +39,7 @@ SmartCon.Core/
 │   ├── ParameterDependency.cs         <- зависимость параметра коннектора
 │   ├── FamilyInfo.cs                  <- семейство фитинга (после фильтрации)
 │   ├── FamilySizeOption.cs            <- типоразмер для dynamic size
-│   ├── FittingCtcSetupItem.cs         <- элемент UI для CTC setup
+│   ├── IFittingCtcSetupItem.cs        <- абстракция для CTC setup (реализация в PipeConnect.ViewModels)
 │   ├── VirtualCtcStore.cs             <- виртуальное хранилище CTC overrides
 │   ├── NetworkSnapshot.cs             <- снапшот сети для chain rollback
 │   ├── NetworkSnapshotStore.cs        <- хранилище снапшотов
@@ -113,8 +114,7 @@ SmartCon.Revit/
 │   ├── RevitParameterResolver.cs      <- IParameterResolver
 │   └── RevitLookupTableService.cs     <- ILookupTableService
 ├── Wrappers/
-│   ├── ConnectorWrapper.cs            <- создание ConnectorProxy из Connector
-│   └── ElementWrapper.cs
+│   └── ConnectorWrapper.cs            <- создание ConnectorProxy из Connector
 ├── Extensions/
 │   ├── ConnectorExtensions.cs
 │   ├── ElementExtensions.cs
@@ -207,24 +207,35 @@ SmartCon.PipeConnect/
 │   └── AboutView.xaml                   <- About + updates
 ├── Services/
 │   ├── PipeConnectSessionBuilder.cs     <- S1-S6 session construction
-│   ├── PipeConnectDialogService.cs      <- IDialogService implementation
+│   ├── PipeConnectDialogService.cs      <- IDialogService implementation (через IDialogPresenter)
 │   ├── PipeConnectDiagnostics.cs        <- Connector state logging
 │   ├── ConnectExecutor.cs               <- Validate + ConnectTo execution
 │   ├── ChainOperationHandler.cs         <- Chain increment/decrement
 │   ├── ConnectorCycleService.cs         <- Connector cycling + alignment
 │   ├── DynamicSizeLoader.cs             <- Dynamic size loading
-│   ├── FittingCtcManager.cs             <- Virtual CTC management
-│   ├── PipeConnectInitHandler.cs         <- Init: disconnect, align, sizing
-│   ├── PipeConnectRotationHandler.cs     <- Rotation execution
-│   ├── PipeConnectSizeHandler.cs         <- Size change execution
-│   ├── PositionCorrector.cs              <- Post-connect position correction
-│   ├── LanguageManager.cs                <- ResourceDictionary swap + WeakReference window tracking
-│   └── StringLocalization.cs             <- программные RU/EN ResourceDictionary
-├── Services/
-│   └── BoolToVisibilityConverter.cs
+│   ├── CtcResolutionService.cs          <- CTC resolution (extracted)
+│   ├── CtcGuessService.cs               <- CTC auto-guessing
+│   ├── CtcFamilyWriter.cs               <- Write CTC to family via EditFamily
+│   ├── FittingCtcManager.cs             <- Facade over CTC services
+│   ├── PipeConnectInitHandler.cs        <- Init: disconnect, align, sizing
+│   ├── PipeConnectRotationHandler.cs    <- Rotation execution
+│   ├── PipeConnectSizeHandler.cs        <- Size change execution
+│   ├── PositionCorrector.cs             <- Post-connect position correction
+│   ├── IPipeConnectViewModelFactory.cs  <- A-1: factory interface (eliminates Service Locator)
+│   ├── PipeConnectViewModelFactory.cs   <- default factory impl
+│   ├── IAboutViewModelFactory.cs
+│   ├── AboutViewModelFactory.cs
+│   ├── ISettingsViewModelFactory.cs
+│   ├── SettingsViewModelFactory.cs
+│   ├── LanguageManager.cs               <- ResourceDictionary swap + WeakReference window tracking
+│   └── StringLocalization.cs            <- программные RU/EN ResourceDictionary
 └── Events/
-    └── PipeConnectExternalEvent.cs     <- IExternalEventHandler
+    └── PipeConnectExternalEvent.cs      <- IExternalEventHandler
 ```
+
+> **Примечание:** `BoolToVisibilityConverter` раньше существовал в двух местах
+> (SmartCon.UI и SmartCon.PipeConnect). После B-6 локальный дубликат в
+> PipeConnect удалён — используется версия из `SmartCon.UI.Converters`.
 
 ---
 

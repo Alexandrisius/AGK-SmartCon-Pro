@@ -15,7 +15,7 @@
 | Тестирование | xUnit | 2.9.3 | Unit + ViewModel тесты |
 | Моки | Moq | 4.20.72 | Мокирование интерфейсов Revit |
 | Сериализация | System.Text.Json | встроен в .NET 8 / NuGet для net48 | JSON маппинга фитингов |
-| Хранилище маппинга | JSON-файл | — | Глобальный, в AppData |
+| Хранилище маппинга | ExtensibleStorage | Revit API | Per-project `DataStorage` в `.rvt` (ADR-012). JSON — только для Import/Export. |
 
 ## NuGet-пакеты
 
@@ -38,10 +38,19 @@
 - (зависит от SmartCon.UI → транзитивно CommunityToolkit.Mvvm)
 
 ### SmartCon.Tests
-- `xunit` 2.9.3 + `xunit.runner.visualstudio` 2.8.2
+- `xunit` 2.9.3 + `xunit.runner.visualstudio` 3.1.5
 - `Moq` 4.20.72
 - `Microsoft.NET.Test.Sdk` 17.12.0
 - `Autodesk.Revit.API` (Nice3point.Revit.Api) — для создания XYZ/ElementId в тестах
+
+## Shipping artifacts
+
+Публичная автоматизация сборки и релизов оперирует четырьмя grouped artifacts:
+
+- `R19` → Revit 2019-2020 (`net48`, RevitAPI 2020 baseline)
+- `R21` → Revit 2021-2023 (`net48`, единый бинарник для трёх версий)
+- `R24` → Revit 2024 (`net48`, отдельный бинарник из-за API / `ElementId` differences)
+- `R25` → Revit 2025 (`net8.0-windows`)
 
 ## Настройки сборки (Directory.Build.props)
 
@@ -57,14 +66,25 @@
 </Project>
 ```
 
-## Путь хранения конфигурации
+## Хранилище данных (ADR-012)
+
+**Per-project ExtensibleStorage.** Типы коннекторов и правила маппинга
+фитингов хранятся в `DataStorage` текущего `Document` (.rvt — единственный
+источник правды). См. [ADR-012](../adr/012-per-project-extensible-storage.md).
+
+`%APPDATA%/AGK/SmartCon/` содержит только:
 
 ```
-%APPDATA%/SmartCon/
-├── fitting-mapping.json       <- маппинг фитингов (глобальный)
-├── connector-types.json       <- типы коннекторов (глобальный)
-└── settings.json              <- настройки приложения (если нужны)
+%APPDATA%/AGK/SmartCon/
+├── smartcon.log              <- основной лог диагностики
+├── lookup-diagnostic.log     <- лог lookup-таблиц
+├── formula-diagnostic.log    <- лог FormulaEngine
+├── settings.json             <- UI-настройки (язык, CheckOnStartup)
+└── update-pending.json       <- staged обновление (если есть)
 ```
+
+Import/Export JSON маппинга выполняется вручную через кнопки
+**Экспорт / Импорт** в окне Settings (OpenFileDialog / SaveFileDialog).
 
 ## Подключение Revit API
 

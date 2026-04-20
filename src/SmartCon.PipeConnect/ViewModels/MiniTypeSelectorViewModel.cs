@@ -1,22 +1,17 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-/// <summary>
-/// ViewModel компактного модального окна выбора типа коннектора (S1.1).
-/// </summary>
-public sealed partial class MiniTypeSelectorViewModel : ObservableObject
+public sealed partial class MiniTypeSelectorViewModel : ObservableObject, IObservableRequestClose
 {
     [ObservableProperty]
     private ConnectorTypeDefinition? _selectedType;
 
     public IReadOnlyList<ConnectorTypeDefinition> AvailableTypes { get; }
 
-    /// <summary>
-    /// Поднимается View, чтобы закрыть окно (RequestClose += Close).
-    /// </summary>
     public event Action? RequestClose;
 
     public MiniTypeSelectorViewModel(IReadOnlyList<ConnectorTypeDefinition> availableTypes)

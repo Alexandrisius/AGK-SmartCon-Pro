@@ -6,15 +6,18 @@ namespace SmartCon.Core.Models;
 /// </summary>
 public sealed record FittingMappingRule
 {
+    /// <summary>Source connection type (from static side).</summary>
     public required ConnectionTypeCode FromType { get; init; }
-    public required ConnectionTypeCode ToType { get; init; }
-    public bool IsDirectConnect { get; init; }
-    public List<FittingMapping> FittingFamilies { get; init; } = [];
 
-    /// <summary>
-    /// Reducer fitting families for the case when FromType == ToType,
-    /// but connector radii differ. If empty, the system will try to use
-    /// families from FittingFamilies as reducers.
-    /// </summary>
-    public List<FittingMapping> ReducerFamilies { get; init; } = [];
+    /// <summary>Target connection type (to dynamic side).</summary>
+    public required ConnectionTypeCode ToType { get; init; }
+
+    /// <summary>When true, connectors of these two types can be linked directly without a fitting.</summary>
+    public bool IsDirectConnect { get; init; }
+
+    /// <summary>Fitting families for this type transition (ordered by priority).</summary>
+    public IReadOnlyList<FittingMapping> FittingFamilies { get; init; } = [];
+
+    /// <summary>Reducer families for DN transition within the same type pair.</summary>
+    public IReadOnlyList<FittingMapping> ReducerFamilies { get; init; } = [];
 }

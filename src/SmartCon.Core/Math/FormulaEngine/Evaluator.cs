@@ -9,7 +9,7 @@ namespace SmartCon.Core.Math.FormulaEngine;
 /// </summary>
 internal static class Evaluator
 {
-    private const double Epsilon = 1e-9;
+    private const double Epsilon = Core.Tolerance.Default;
 
     internal static double Evaluate(AstNode node, IReadOnlyDictionary<string, double> variables)
     {
@@ -53,7 +53,7 @@ internal static class Evaluator
             BinaryOp.Add => left + right,
             BinaryOp.Sub => left - right,
             BinaryOp.Mul => left * right,
-            BinaryOp.Div => right == 0.0 ? double.PositiveInfinity : left / right,
+            BinaryOp.Div => right == 0.0 ? throw new FormulaParseException($"Division by zero: {left} / 0") : left / right,
             BinaryOp.Pow => System.Math.Pow(left, right),
             BinaryOp.Mod => right == 0.0 ? 0.0 : left % right,
 

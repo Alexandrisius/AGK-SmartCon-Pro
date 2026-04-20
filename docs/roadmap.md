@@ -109,7 +109,7 @@
 
 **Приёмка:** Тип записывается в Description. Маппинг сохраняется в `DataStorage` проекта. Типы синхронизированы между окнами.
 
-**Статус:** ✅ Готов (2026-04-XX). Сборка 0 ошибок, тесты pass.
+**Статус:** ✅ Готов (2026-04-01). Сборка 0 ошибок, тесты pass.
 Ключевые компоненты: IFamilyConnectorService + RevitFamilyConnectorService (EditFamily API, LookupParameter), FittingMappingJsonSerializer (Core, System.Text.Json, pure-C#), RevitFittingMappingRepository (Revit/Storage, ExtensibleStorage), PipeConnectDialogService (IDialogService + Open/SaveFileDialog), MiniTypeSelectorView/ViewModel (модальное, рядом с курсором), MappingEditorView/ViewModel (модальное, TabControl + Import/Export), ConnectorTypeItem + MappingRuleItem (ObservableObject), SettingsCommand реализован.
 Тесты: FittingMappingJsonSerializerTests (15), MiniTypeSelectorViewModelTests, MappingEditorViewModelTests, ConnectorTypeItemTests, MappingRuleItemTests.
 
@@ -138,7 +138,7 @@
 
 **Приёмка:** Разные диаметры -> автоподбор. LookupTable парсится. Смена типоразмера работает.
 
-**Статус:** ✅ Готов (2026-04-XX). Сборка 0 ошибок, 201 тест pass (208 всего, 7 pre-existing RevitAPI не в output).
+**Статус:** ✅ Готов (2026-04-01). Сборка 0 ошибок, 201 тест pass (208 всего, 7 pre-existing RevitAPI не в output).
 Компоненты: MiniFormulaSolver (30+ тестов), FamilyParameterAnalyzer, RevitParameterResolver, RevitLookupTableService, интеграция S4 в PipeConnectCommand.
 Тесты: MiniFormulaSolverTests (30+), ParameterResolutionFlowTests (18+).
 
@@ -194,3 +194,32 @@
 - CHANGELOG.md обновлён
 
 **Статус:** ✅ Готов.
+
+
+---
+
+## Phase 5 — OSS Perfection (2026-04-19)
+
+**Цель:** Привести проект к состоянию образцового open-source-репозитория.
+
+**Фазы A-J** (см. `.opencode/plans/oss-perfection-plan.md`):
+
+- **A.** Устранение Service Locator — ViewModelFactory-интерфейсы + DI
+- **B.** Чистая архитектура слоёв (I-09 соответствие, dedup BoolToVisibilityConverter, ConnectionGraphBuilder)
+- **C.** MVVM discipline — DialogWindowBase, IDialogPresenter, XAML named colors, IFittingCtcSetupItem в Core
+- **D.** XML-documentation на публичном API + WPF-namings
+- **E.** Multi-version + CI matrix build.yml / release.yml (R19/R21/R24/R25)
+- **F.** Покрытие тестами 577 → 676 (формулы, state machine, PipeConnect-сервисы)
+- **G.** Dependabot-совместимые обновления NuGet
+- **H.** Актуализация всей документации — ExtensibleStorage, I-01..I-13, test count, solution structure
+- **I.** OSS-ready — CONTRIBUTING, CHANGELOG, .github templates, CODEOWNERS, future-work.md
+- **J.** Code polish — `dotnet format`, `sealed` classes audit, NoWarn review
+
+**Ключевые результаты:**
+- Сборка чистая на R25 / R24 / R21 / R19 (net8.0 + net48)
+- 676 тестов pass, 0 регрессий
+- Инварианты I-01..I-13 соблюдены
+- Документация SSOT синхронизирована с кодом
+- `build-and-deploy.bat` — единый способ сборки
+
+**Статус:** ✅ Готов (2026-04-19).

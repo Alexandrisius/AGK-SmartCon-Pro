@@ -14,8 +14,13 @@ namespace SmartCon.PipeConnect.Services;
 /// </summary>
 public sealed class DynamicSizeLoadResult
 {
+    /// <summary>All available size options including auto-select.</summary>
     public required List<FamilySizeOption> Sizes { get; init; }
+
+    /// <summary>Default selection (usually auto-select).</summary>
     public required FamilySizeOption? DefaultSelection { get; init; }
+
+    /// <summary>Whether more than one size option is available.</summary>
     public required bool HasSizeOptions { get; init; }
 }
 
@@ -26,6 +31,12 @@ public sealed class DynamicSizeLoader(
     IConnectorService connSvc,
     IDynamicSizeResolver sizeResolver)
 {
+    /// <summary>
+    /// Load all available sizes for a dynamic element, including the auto-select option.
+    /// </summary>
+    /// <param name="doc">Active Revit document.</param>
+    /// <param name="dynamicConn">Dynamic connector to load sizes for.</param>
+    /// <returns>Size load result with options, default selection, and availability flag.</returns>
     public DynamicSizeLoadResult LoadInitialSizes(
         Document doc,
         ConnectorProxy dynamicConn)
@@ -135,6 +146,14 @@ public sealed class DynamicSizeLoader(
         };
     }
 
+    /// <summary>
+    /// Rebuild the auto-select option after a size change to reflect the current element state.
+    /// </summary>
+    /// <param name="doc">Active Revit document.</param>
+    /// <param name="dynamicConn">Original dynamic connector reference.</param>
+    /// <param name="activeDynamic">Current active dynamic connector.</param>
+    /// <param name="currentOptions">Current list of size options.</param>
+    /// <returns>Updated auto-select option.</returns>
     public FamilySizeOption? RefreshAutoSelect(
         Document doc,
         ConnectorProxy dynamicConn,

@@ -1,7 +1,8 @@
-<Window x:Class="SmartCon.PipeConnect.Views.MiniTypeSelectorView"
+<controls:DialogWindowBase x:Class="SmartCon.PipeConnect.Views.MiniTypeSelectorView"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         Title="{DynamicResource Title_ConnType}"
         Width="340" Height="280"
         WindowStartupLocation="Manual"
@@ -11,9 +12,9 @@
         Topmost="True"
         Background="{DynamicResource BackgroundBrush}">
 
-    <Window.Resources>
+    <controls:DialogWindowBase.Resources>
         <ui:SingletonResources/>
-    </Window.Resources>
+    </controls:DialogWindowBase.Resources>
 
     <Grid Margin="10">
         <Grid.RowDefinitions>
@@ -47,4 +48,4 @@
                     Style="{DynamicResource AccentButton}"/>
         </StackPanel>
     </Grid>
-</Window>
+</controls:DialogWindowBase>

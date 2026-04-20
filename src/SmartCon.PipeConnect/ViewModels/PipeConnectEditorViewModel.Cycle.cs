@@ -174,7 +174,7 @@ public sealed partial class PipeConnectEditorViewModel
         var types = _mappingRepo.GetConnectorTypes();
         if (types.Count == 0)
         {
-            _dialogSvc.ShowWarning("SmartCon", LocalizationService.GetString("Msg_ConfigureTypes"));
+            _dialogSvc.ShowWarning(LocalizationService.GetString("App_Name"), LocalizationService.GetString("Msg_ConfigureTypes"));
             return false;
         }
 

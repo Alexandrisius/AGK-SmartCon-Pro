@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 
@@ -11,18 +12,17 @@ public sealed record CsvColumnMapping(int CsvColIndex, string ParameterName);
 
 public static class LookupTableCsvParser
 {
+    private static readonly Regex UnitSuffixRegex = new(
+        @"(\d)\s*(мм²|мм³|мм|мм|см|дм|mm|cm|ft|in|м|m)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     public static bool TryParseRevitValue(string cell, out double value)
     {
         value = 0;
         if (string.IsNullOrWhiteSpace(cell)) return false;
 
-        var clean = cell
-            .Replace("\"", "")
-            .Replace(" mm", "").Replace("mm", "")
-            .Replace(" m", "").Replace("m", "")
-            .Replace(" ft", "").Replace("ft", "")
-            .Replace(" in", "").Replace("in", "")
-            .Trim();
+        var clean = cell.Replace("\"", "").Trim();
+        clean = UnitSuffixRegex.Replace(clean, "$1");
 
         return double.TryParse(clean, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
@@ -105,7 +105,7 @@ public static class LookupTableCsvParser
                 var constraintCell = cols[colMap.CsvColIndex].Trim().Trim('"');
                 if (!TryParseRevitValue(constraintCell, out double constraintVal)) continue;
 
-                if (System.Math.Abs(constraintVal - constraint.ValueMm) > 0.02)
+                if (System.Math.Abs(constraintVal - constraint.ValueMm) > Lookup.ConstraintMatchMm)
                 {
                     if (filteredOut < 5)
                         SmartConLogger.Debug($"      row[{row}] FILTERED(name): col[{colMap.CsvColIndex}]='{constraintCell}'={constraintVal:F1}mm ≠ {constraint.ValueMm:F1}mm");
@@ -122,7 +122,7 @@ public static class LookupTableCsvParser
                     if (q.CsvColIndex >= cols.Length) continue;
                     var cv = cols[q.CsvColIndex].Trim().Trim('"');
                     if (!TryParseRevitValue(cv, out double cVal)) continue;
-                    if (System.Math.Abs(cVal - constraint.ValueMm) <= 0.5)
+                    if (System.Math.Abs(cVal - constraint.ValueMm) <= Lookup.ConstraintFallbackMm)
                     {
                         if (q.CsvColIndex == colIndex)
                             matchesTarget = true;

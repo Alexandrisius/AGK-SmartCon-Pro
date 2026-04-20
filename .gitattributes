@@ -1,0 +1,36 @@
+* text=auto
+
+*.cs text diff=csharp eol=crlf
+*.xaml text diff=xml eol=crlf
+*.xml text diff=xml eol=crlf
+*.csproj text diff=xml eol=crlf
+*.props text diff=xml eol=crlf
+*.targets text diff=xml eol=crlf
+*.config text diff=xml eol=crlf
+*.json text eol=crlf
+*.yml text eol=crlf
+*.yaml text eol=crlf
+*.md text diff=markdown eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sln text eol=crlf
+*.txt text eol=crlf
+*.addin text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.bmp binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.snk binary
+*.pfx binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.nupkg binary
+*.zip binary

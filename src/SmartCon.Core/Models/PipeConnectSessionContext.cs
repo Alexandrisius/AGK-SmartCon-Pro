@@ -9,7 +9,10 @@ namespace SmartCon.Core.Models;
 /// </summary>
 public sealed class PipeConnectSessionContext
 {
+    /// <summary>Selected static connector (second pick).</summary>
     public required ConnectorProxy StaticConnector { get; init; }
+
+    /// <summary>Selected dynamic connector (first pick).</summary>
     public required ConnectorProxy DynamicConnector { get; init; }
 
     /// <summary>Alignment calculation result (S3, pure math).</summary>

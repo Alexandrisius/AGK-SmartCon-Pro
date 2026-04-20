@@ -70,8 +70,7 @@ public sealed class RevitTransactionService : ITransactionService
 
     public ITransactionGroupSession BeginGroupSession(string name)
     {
-        var doc = _revitContext.GetDocument();
-        return new RevitTransactionGroupSession(doc, name);
+        return new RevitTransactionGroupSession(_revitContext, name);
     }
 
     public T? RunAndRollback<T>(string name, Func<Document, T> action) where T : struct

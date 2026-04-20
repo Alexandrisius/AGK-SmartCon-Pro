@@ -14,7 +14,7 @@ using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-public sealed partial class PipeConnectEditorViewModel : ObservableObject
+public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObservableRequestClose
 {
     private readonly ITransactionService _txService;
     private readonly Document _doc;
@@ -87,12 +87,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
 
     public event Action? RequestClose;
 
+    public bool IsClosing => _isClosing;
+
     public PipeConnectEditorViewModel(
         PipeConnectSessionContext ctx,
         Document doc,
         ITransactionService txService,
         IConnectorService connSvc,
         ITransformService transformSvc,
+        IAlignmentService alignmentSvc,
         IFittingInsertService fittingInsertSvc,
         IParameterResolver paramResolver,
         IDynamicSizeResolver sizeResolver,
@@ -100,7 +103,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         IFittingMappingRepository mappingRepo,
         IDialogService dialogSvc,
         IFamilyConnectorService familyConnSvc,
-        IFittingMapper fittingMapper)
+        IFittingMapper fittingMapper,
+        ChainOperationHandler chainOpHandler,
+        PipeConnectRotationHandler rotationHandler,
+        DynamicSizeLoader sizeLoader)
     {
         _ctx = ctx;
         _doc = doc;
@@ -115,15 +121,18 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject
         _dialogSvc = dialogSvc;
         _familyConnSvc = familyConnSvc;
         _fittingMapper = fittingMapper;
-        _chainOpHandler = new ChainOperationHandler(connSvc, transformSvc, paramResolver, fittingInsertSvc, networkMover);
+        _chainOpHandler = chainOpHandler;
         _virtualCtcStore = ctx.VirtualCtcStore;
-        _ctcManager = new FittingCtcManager(connSvc, mappingRepo, dialogSvc, familyConnSvc, _virtualCtcStore);
+        var resolutionSvc = new CtcResolutionService(connSvc, mappingRepo, _virtualCtcStore);
+        var guessSvc = new CtcGuessService(connSvc, mappingRepo, _virtualCtcStore);
+        var familyWriter = new CtcFamilyWriter(connSvc, familyConnSvc, _virtualCtcStore);
+        _ctcManager = new FittingCtcManager(resolutionSvc, guessSvc, familyWriter, mappingRepo, dialogSvc);
         _connectExecutor = new ConnectExecutor(connSvc, transformSvc, paramResolver, fittingInsertSvc, networkMover, mappingRepo, _ctcManager);
         _initHandler = new PipeConnectInitHandler(connSvc, transformSvc, paramResolver, _ctcManager);
-        _rotationHandler = new PipeConnectRotationHandler(transformSvc);
+        _rotationHandler = rotationHandler;
         _sizeHandler = new PipeConnectSizeHandler(connSvc, transformSvc, paramResolver, _ctcManager);
-        _sizeLoader = new DynamicSizeLoader(connSvc, sizeResolver);
-        _cycleService = new ConnectorCycleService(connSvc, transformSvc, paramResolver, _ctcManager);
+        _sizeLoader = sizeLoader;
+        _cycleService = new ConnectorCycleService(connSvc, alignmentSvc, paramResolver, _ctcManager);
         _activeDynamic = ctx.DynamicConnector;
         _chainGraph = ctx.ChainGraph;
 

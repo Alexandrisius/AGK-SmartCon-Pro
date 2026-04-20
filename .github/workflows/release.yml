@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - configuration: Release.R19
+            tfm: net48
+            artifact_tag: R19
+          - configuration: Release.R21
+            tfm: net48
+            artifact_tag: R21
+          - configuration: Release.R24
+            tfm: net48
+            artifact_tag: R24
+          - configuration: Release.R25
+            tfm: net8.0-windows
+            artifact_tag: R25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Publish SmartCon ${{ matrix.artifact_tag }}
+        run: dotnet publish src/SmartCon.App/SmartCon.App.csproj -c ${{ matrix.configuration }} -f ${{ matrix.tfm }} -o artifacts/publish/SmartCon-${{ matrix.artifact_tag }}
+
+      - name: Upload SmartCon ${{ matrix.artifact_tag }} artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartCon-${{ matrix.artifact_tag }}
+          path: artifacts/publish/SmartCon-${{ matrix.artifact_tag }}/**/*
+          if-no-files-found: warn
+
+  updater:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Publish SmartCon.Updater
+        run: dotnet publish src/SmartCon.Updater/SmartCon.Updater.csproj -c Release -f net8.0 -o artifacts/publish/SmartCon.Updater
+
+      - name: Upload Updater artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartCon-Updater
+          path: artifacts/publish/SmartCon.Updater/**/*
+          if-no-files-found: warn
+
+  tests:
+    runs-on: windows-latest
+    needs: publish
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Run tests
+        run: dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Release.R25
+
+  github-release:
+    runs-on: windows-latest
+    needs: [tests, updater]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Archive artifacts
+        shell: pwsh
+        run: |
+          Compress-Archive -Path release-artifacts\* -DestinationPath SmartCon-${{ github.ref_name }}.zip
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SmartCon-${{ github.ref_name }}.zip
+          generate_release_notes: true

@@ -207,9 +207,9 @@ ViewModel обновляет UI
 Критерии: `OST_PipeFitting` + `PartType=MultiPort` + ровно 2 `ConnectorElement`.
 
 ### Хранение
-JSON в `%APPDATA%/SmartCon/`:
-- `connector-types.json`
-- `fitting-mapping.json`
+**ExtensibleStorage per-project** (ADR-012): типы коннекторов и правила маппинга
+хранятся в `DataStorage` активного Revit-документа. JSON-файлы используются
+только для ручного Import/Export через одноимённые кнопки в Settings.
 
 ---
 

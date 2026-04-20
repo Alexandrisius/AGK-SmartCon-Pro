@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-19
+
+### Added — Phase 5: OSS Perfection (см. `.opencode/plans/oss-perfection-plan.md`)
+
+#### Phase A — Elimination of Service Locator
+- `IPipeConnectViewModelFactory`, `IAboutViewModelFactory`, `ISettingsViewModelFactory` + default implementations
+- `WpfDialogPresenter` as unified `IDialogPresenter` — hides Window construction from services
+
+#### Phase B — Clean Architecture
+- `ConnectionGraphBuilder` split from immutable `ConnectionGraph` (CQS-style)
+- `ElementIdEqualityComparer` extracted into its own file
+- `IAlignmentService` + `RevitAlignmentService` (moved heavy math from `ConnectorAligner`)
+- `Language` enum + `IObservableRequestClose` interface in Core
+
+#### Phase C — MVVM Discipline
+- `DialogWindowBase` — single WPF base class for the four modal windows
+- `IDialogPresenter` abstraction (registered in DI)
+- Named colour resources in XAML (no more magic hex literals in views)
+- `IFittingCtcSetupItem` abstraction in Core; WPF-bindable `FittingCtcSetupItem` moved to `PipeConnect.ViewModels`
+
+#### Phase D — XML Documentation
+- Full XML-docs coverage on public API of `SmartCon.Core` and `SmartCon.PipeConnect`
+
+#### Phase E — Multi-version CI
+- GitHub Actions workflows aligned to shipping artifacts R19 / R21 / R24 / R25
+
+#### Phase F — Test coverage
+- 577 → **676 tests**, 0 regressions
+- New suites: `FormulaEngineEdgeCaseTests`, `PipeConnectStateTests`
+
+#### Phase H — Documentation sync
+- Storage references updated to per-project ExtensibleStorage (ADR-012)
+- `docs/future-work.md` — tracking TODOs (`[ChainV2]`, `[Phase 6B]`)
+- ADR status headers standardised (`**Статус:** accepted`)
+- `docs/README.md` updated: version 1.3.0, Revit 2019-2025, 676 tests
+
+#### Phase I — OSS-ready
+- `CONTRIBUTING.md` — corrected build instructions (named configurations, no `-p:RevitVersion`)
+- `.github/ISSUE_TEMPLATE/bug_report.yml`, `feature_request.yml`
+- `.github/PULL_REQUEST_TEMPLATE.md`
+- `.github/CODEOWNERS`
+- `.github/dependabot.yml`
+
+### Changed
+- `ExtractArtifactTag` in `GitHubUpdateService` uses `string.Contains(s, StringComparison)` on net8, `IndexOf` on net48 (CA2249)
+- `FamilySelectorViewModel` now implements `IObservableRequestClose`
+- `PipeConnectEditorViewModel` — consolidated duplicate `IsClosing` property
+
+### Metrics
+- Tests: 577 → 676 (+99)
+- Revit shipping artifacts covered by automation: 4 (R19, R21, R24, R25)
+- Invariants covered: I-01..I-13
+
+
 ### Added
 - `.editorconfig` with C# 12 conventions and naming rules
 - Code analysis with `AnalysisLevel=latest-recommended`

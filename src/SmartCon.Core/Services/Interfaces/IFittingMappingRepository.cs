@@ -11,11 +11,18 @@ namespace SmartCon.Core.Services.Interfaces;
 /// </summary>
 public interface IFittingMappingRepository
 {
+    /// <summary>All configured connector type definitions.</summary>
     IReadOnlyList<ConnectorTypeDefinition> GetConnectorTypes();
+
+    /// <summary>Persist connector type definitions.</summary>
     void SaveConnectorTypes(IReadOnlyList<ConnectorTypeDefinition> types);
 
+    /// <summary>All fitting mapping rules.</summary>
     IReadOnlyList<FittingMappingRule> GetMappingRules();
+
+    /// <summary>Persist fitting mapping rules.</summary>
     void SaveMappingRules(IReadOnlyList<FittingMappingRule> rules);
 
+    /// <summary>File path of the JSON storage (for import/export).</summary>
     string GetStoragePath();
 }

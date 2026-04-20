@@ -2,13 +2,11 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Services;
-using SmartCon.Core.Services.Interfaces;
-using SmartCon.PipeConnect.ViewModels;
+using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.Views;
 
 namespace SmartCon.PipeConnect.Commands;
 
-/// <summary>Opens the About dialog showing version info and update controls.</summary>
 [Transaction(TransactionMode.Manual)]
 public sealed class AboutCommand : IExternalCommand
 {
@@ -16,10 +14,9 @@ public sealed class AboutCommand : IExternalCommand
     {
         try
         {
-            var updateService = ServiceHost.GetService<IUpdateService>();
-            var updateSettings = ServiceHost.GetService<IUpdateSettingsRepository>();
+            var factory = ServiceHost.GetService<IAboutViewModelFactory>();
 
-            var vm = new AboutViewModel(updateService, updateSettings);
+            var vm = factory.Create();
             var view = new AboutView(vm);
             view.Show();
 

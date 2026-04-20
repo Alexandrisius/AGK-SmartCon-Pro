@@ -12,7 +12,7 @@
 **Единый источник правды (SSOT)** находится в папке `docs/`. Начинай с:
 
 1. **`docs/README.md`** — индекс всех документов, карта навигации, текущий статус
-2. **`docs/invariants.md`** — жёсткие правила (I-01..I-10). **Загружай ВСЕГДА.**
+2. **`docs/invariants.md`** — жёсткие правила (I-01..I-13). **Загружай ВСЕГДА.**
 3. **`docs/architecture/dependency-rule.md`** — куда класть код. **Загружай ВСЕГДА.**
 
 Остальные документы загружай по контексту задачи (см. карту в `docs/README.md`).
@@ -80,7 +80,7 @@ dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
 ### Чеклист перед коммитом:
 1. `build-and-deploy.bat` — 0 ошибок, 0 предупреждений на всех конфигурациях
 2. Тесты — 0 падений
-3. Инварианты I-01..I-10 не нарушены
+3. Инварианты I-01..I-13 не нарушены
 
 ## Инструменты поиска документации
 
@@ -170,7 +170,7 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 ```
 docs/
 ├── README.md                          <- ТОЧКА ВХОДА (индекс)
-├── invariants.md                      <- Жёсткие правила I-01..I-10
+├── invariants.md                      <- Жёсткие правила I-01..I-13
 ├── roadmap.md                         <- Фазы разработки
 ├── references.md                      <- Внешние ссылки на Revit API docs
 ├── architecture/

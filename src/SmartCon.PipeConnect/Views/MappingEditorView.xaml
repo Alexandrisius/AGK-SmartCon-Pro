@@ -118,7 +118,7 @@
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsTypesSaved}" Value="True">
                                         <Setter Property="Content" Value="{DynamicResource Btn_Saved}"/>
-                                        <Setter Property="Background" Value="#27AE60"/>
+                                        <Setter Property="Background" Value="{DynamicResource SavedSuccessBrush}"/>
                                         <Setter Property="Foreground" Value="White"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -268,7 +268,7 @@
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsRulesSaved}" Value="True">
                                         <Setter Property="Content" Value="{DynamicResource Btn_Saved}"/>
-                                        <Setter Property="Background" Value="#27AE60"/>
+                                        <Setter Property="Background" Value="{DynamicResource SavedSuccessBrush}"/>
                                         <Setter Property="Foreground" Value="White"/>
                                     </DataTrigger>
                                 </Style.Triggers>

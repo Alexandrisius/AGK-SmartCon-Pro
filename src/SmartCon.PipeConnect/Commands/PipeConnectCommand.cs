@@ -4,18 +4,10 @@ using Autodesk.Revit.UI;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
-using SmartCon.PipeConnect.ViewModels;
 using SmartCon.PipeConnect.Views;
 
 namespace SmartCon.PipeConnect.Commands;
 
-/// <summary>
-/// Entry point for PipeConnect from Ribbon.
-/// Delegates S1–S6 analysis to <see cref="PipeConnectSessionBuilder"/>,
-/// then opens the modal editor window.
-/// All model changes execute inside a single TransactionGroup in the ViewModel.
-/// Cancel = full RollBack().
-/// </summary>
 [Transaction(TransactionMode.Manual)]
 public sealed class PipeConnectCommand : IExternalCommand
 {
@@ -26,41 +18,17 @@ public sealed class PipeConnectCommand : IExternalCommand
             var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
             contextWriter.SetContext(commandData.Application);
 
-            var revitContext = ServiceHost.GetService<IRevitContext>();
+            var revitContext = (IRevitContext)contextWriter;
             var doc = revitContext.GetDocument();
 
-            var builder = new PipeConnectSessionBuilder(
-                ServiceHost.GetService<IElementSelectionService>(),
-                ServiceHost.GetService<IConnectorService>(),
-                ServiceHost.GetService<IFittingMappingRepository>(),
-                ServiceHost.GetService<IFamilyConnectorService>(),
-                ServiceHost.GetService<ITransactionService>(),
-                ServiceHost.GetService<IDialogService>(),
-                ServiceHost.GetService<IParameterResolver>(),
-                ServiceHost.GetService<ILookupTableService>(),
-                ServiceHost.GetService<IFittingMapper>(),
-                ServiceHost.GetService<IElementChainIterator>(),
-                ServiceHost.GetService<IFittingChainResolver>());
+            var factory = ServiceHost.GetService<IPipeConnectViewModelFactory>();
+
+            var builder = factory.CreateSessionBuilder();
 
             var sessionCtx = builder.BuildSession(doc);
             if (sessionCtx is null) return Result.Cancelled;
 
-            var txService = ServiceHost.GetService<ITransactionService>();
-            var connectorSvc = ServiceHost.GetService<IConnectorService>();
-            var transformSvc = ServiceHost.GetService<ITransformService>();
-            var fittingInsertSvc = ServiceHost.GetService<IFittingInsertService>();
-            var paramResolver = ServiceHost.GetService<IParameterResolver>();
-            var sizeResolver = ServiceHost.GetService<IDynamicSizeResolver>();
-            var networkMover = ServiceHost.GetService<INetworkMover>();
-            var mappingRepo = ServiceHost.GetService<IFittingMappingRepository>();
-            var dialogSvc = ServiceHost.GetService<IDialogService>();
-            var familyConnSvc = ServiceHost.GetService<IFamilyConnectorService>();
-            var fittingMapper = ServiceHost.GetService<IFittingMapper>();
-
-            var vm = new PipeConnectEditorViewModel(
-                sessionCtx, doc, txService, connectorSvc, transformSvc,
-                fittingInsertSvc, paramResolver, sizeResolver, networkMover,
-                mappingRepo, dialogSvc, familyConnSvc, fittingMapper);
+            var vm = factory.CreateEditorViewModel(sessionCtx, doc);
 
             vm.Init();
 

@@ -8,7 +8,7 @@ param(
     [switch]$SkipInstaller,
     [switch]$DryRun,
     [string]$Changelog,
-    [string]$GitHubOwner = "AGK-Engineering",
+    [string]$GitHubOwner = "Alexandrisius",
     [string]$GitHubRepo = "AGK-SmartCon-Pro"
 )
 
@@ -79,6 +79,11 @@ Set-Content -Path $VersionFile -Value $newVersion -NoNewline
 Write-Ok "Version.txt updated"
 
 # --- 2. Build All Versions ---
+# Shipping artifacts:
+# R19  = Revit 2019-2020 (net48, RevitAPI 2020)
+# R21  = Revit 2021-2023 (net48, RevitAPI 2021 baseline, single shared binary)
+# R24  = Revit 2024      (net48, separate binary because of API / ElementId changes)
+# R25  = Revit 2025      (net8.0-windows)
 $buildConfigs = @(
     @{ Config = "Release.R19"; Tfm = "net48";           Label = "Revit 2019-2020" }
     @{ Config = "Release.R21"; Tfm = "net48";           Label = "Revit 2021-2023" }
@@ -96,7 +101,7 @@ foreach ($bc in $buildConfigs) {
 # --- 3. Run tests ---
 if (-not $SkipTests) {
     Write-Step "Running tests"
-    dotnet test $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release --nologo -v q
+    dotnet test $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release.R25 --nologo -v q
     if ($LASTEXITCODE -ne 0) { Write-Err "Tests failed!"; throw "Tests failed!" }
     Write-Ok "All tests passed"
 }

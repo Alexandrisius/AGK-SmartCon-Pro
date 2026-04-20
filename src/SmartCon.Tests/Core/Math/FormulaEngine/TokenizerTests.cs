@@ -5,44 +5,38 @@ namespace SmartCon.Tests.Core.Math.FormulaEngine;
 
 public sealed class TokenizerTests
 {
-    [Fact]
-    public void Tokenize_Integer()
+    [Theory]
+    [InlineData("42", 42.0)]
+    [InlineData("3.14", 3.14)]
+    [InlineData("1.5e-3", 0.0015)]
+    public void Tokenize_NumberValues(string input, double expectedValue)
     {
-        var tokens = Tokenizer.Tokenize("42");
+        var tokens = Tokenizer.Tokenize(input);
         Assert.Equal(TokenType.Number, tokens[0].Type);
-        Assert.Equal(42.0, tokens[0].NumValue);
+        Assert.Equal(expectedValue, tokens[0].NumValue, 5);
     }
 
-    [Fact]
-    public void Tokenize_Decimal()
+    [Theory]
+    [InlineData("DN", "DN")]
+    [InlineData("ADSK_Диаметр", "ADSK_Диаметр")]
+    public void Tokenize_Identifiers(string input, string expectedText)
     {
-        var tokens = Tokenizer.Tokenize("3.14");
-        Assert.Equal(TokenType.Number, tokens[0].Type);
-        Assert.Equal(3.14, tokens[0].NumValue, 10);
-    }
-
-    [Fact]
-    public void Tokenize_ScientificNotation()
-    {
-        var tokens = Tokenizer.Tokenize("1.5e-3");
-        Assert.Equal(TokenType.Number, tokens[0].Type);
-        Assert.Equal(0.0015, tokens[0].NumValue, 10);
-    }
-
-    [Fact]
-    public void Tokenize_Identifier()
-    {
-        var tokens = Tokenizer.Tokenize("DN");
+        var tokens = Tokenizer.Tokenize(input);
         Assert.Equal(TokenType.Identifier, tokens[0].Type);
-        Assert.Equal("DN", tokens[0].Text);
+        Assert.Equal(expectedText, tokens[0].Text);
     }
 
     [Fact]
-    public void Tokenize_CyrillicIdentifier()
+    public void Tokenize_Operators()
     {
-        var tokens = Tokenizer.Tokenize("ADSK_Диаметр");
-        Assert.Equal(TokenType.Identifier, tokens[0].Type);
-        Assert.Equal("ADSK_Диаметр", tokens[0].Text);
+        Assert.Equal(TokenType.LessEqual, Tokenizer.Tokenize("<=")[0].Type);
+        Assert.Equal(TokenType.GreaterEqual, Tokenizer.Tokenize(">=")[0].Type);
+        Assert.Equal(TokenType.NotEqual, Tokenizer.Tokenize("<>")[0].Type);
+        Assert.Equal(TokenType.Equal, Tokenizer.Tokenize("=")[0].Type);
+        Assert.Equal(TokenType.Less, Tokenizer.Tokenize("<")[0].Type);
+        Assert.Equal(TokenType.Greater, Tokenizer.Tokenize(">")[0].Type);
+        Assert.Equal(TokenType.Caret, Tokenizer.Tokenize("^")[0].Type);
+        Assert.Equal(TokenType.Percent, Tokenizer.Tokenize("%")[0].Type);
     }
 
     [Fact]
@@ -61,39 +55,24 @@ public sealed class TokenizerTests
         Assert.Equal("default", tokens[0].Text);
     }
 
-    [Fact] public void Tokenize_LessEqual() => Assert.Equal(TokenType.LessEqual, Tokenizer.Tokenize("<=")[0].Type);
-    [Fact] public void Tokenize_GreaterEqual() => Assert.Equal(TokenType.GreaterEqual, Tokenizer.Tokenize(">=")[0].Type);
-    [Fact] public void Tokenize_NotEqual() => Assert.Equal(TokenType.NotEqual, Tokenizer.Tokenize("<>")[0].Type);
-    [Fact] public void Tokenize_Equal() => Assert.Equal(TokenType.Equal, Tokenizer.Tokenize("=")[0].Type);
-    [Fact] public void Tokenize_Less() => Assert.Equal(TokenType.Less, Tokenizer.Tokenize("<")[0].Type);
-    [Fact] public void Tokenize_Greater() => Assert.Equal(TokenType.Greater, Tokenizer.Tokenize(">")[0].Type);
-    [Fact] public void Tokenize_Caret() => Assert.Equal(TokenType.Caret, Tokenizer.Tokenize("^")[0].Type);
-    [Fact] public void Tokenize_Percent() => Assert.Equal(TokenType.Percent, Tokenizer.Tokenize("%")[0].Type);
-
     [Fact]
     public void Tokenize_FullFormula()
     {
         var tokens = Tokenizer.Tokenize("if(DN < 50, DN / 2 - 1, DN / 2 - 2)");
         var types = tokens.Select(t => t.Type).ToList();
-        Assert.Contains(TokenType.Identifier, types); // if, DN
+        Assert.Contains(TokenType.Identifier, types);
         Assert.Contains(TokenType.Less, types);
         Assert.Contains(TokenType.Number, types);
         Assert.Contains(TokenType.Comma, types);
         Assert.Equal(TokenType.EOF, types.Last());
     }
 
-    [Fact]
-    public void Tokenize_Empty_ReturnsEOF()
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Tokenize_EmptyOrWhitespace_ReturnsEOF(string input)
     {
-        var tokens = Tokenizer.Tokenize("");
-        Assert.Single(tokens);
-        Assert.Equal(TokenType.EOF, tokens[0].Type);
-    }
-
-    [Fact]
-    public void Tokenize_OnlyWhitespace_ReturnsEOF()
-    {
-        var tokens = Tokenizer.Tokenize("   ");
+        var tokens = Tokenizer.Tokenize(input);
         Assert.Single(tokens);
         Assert.Equal(TokenType.EOF, tokens[0].Type);
     }

@@ -68,7 +68,7 @@ public sealed class GitHubUpdateService : IUpdateService
         HttpResponseMessage response;
         try
         {
-            response = await _httpClient.GetAsync(url);
+            response = await _httpClient.GetAsync(url).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
@@ -86,7 +86,7 @@ public sealed class GitHubUpdateService : IUpdateService
                 $"GitHub API returned {response.StatusCode} for {settings.GitHubOwner}/{settings.GitHubRepo}.");
         }
 
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         var releases = doc.RootElement;
 
@@ -176,7 +176,7 @@ public sealed class GitHubUpdateService : IUpdateService
 
         var neededTags = GetNeededArtifactTags();
 
-        var allAssets = await FetchAllAssetsFromLatestRelease(settings);
+        var allAssets = await FetchAllAssetsFromLatestRelease(settings).ConfigureAwait(false);
         var totalSize = 0L;
         var toDownload = new List<(string Tag, AssetInfo Asset)>();
         foreach (var tag in neededTags)
@@ -197,28 +197,28 @@ public sealed class GitHubUpdateService : IUpdateService
         foreach (var (tag, asset) in toDownload)
         {
             var zipPath = Path.Combine(s_stagingDir, asset.Name);
-            using var response = await _httpClient.GetAsync(asset.DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+            using var response = await _httpClient.GetAsync(asset.DownloadUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
             var bufferSize = 81920;
             var buffer = new byte[bufferSize];
 
 #if NETFRAMEWORK
-            using var contentStream = await response.Content.ReadAsStreamAsync();
+            using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
             using var fileStream = File.Create(zipPath);
 
             int read;
-            while ((read = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+            while ((read = await contentStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
             {
-                await fileStream.WriteAsync(buffer, 0, read);
+                await fileStream.WriteAsync(buffer, 0, read).ConfigureAwait(false);
 #else
-            await using var contentStream = await response.Content.ReadAsStreamAsync();
+            await using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
             await using var fileStream = File.Create(zipPath);
 
             int read;
-            while ((read = await contentStream.ReadAsync(buffer)) > 0)
+            while ((read = await contentStream.ReadAsync(buffer).ConfigureAwait(false)) > 0)
             {
-                await fileStream.WriteAsync(buffer.AsMemory(0, read));
+                await fileStream.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
 #endif
                 totalBytesRead += read;
                 progress?.Report((double)totalBytesRead / totalSize);
@@ -233,7 +233,7 @@ public sealed class GitHubUpdateService : IUpdateService
     public async Task StageUpdateAsync(string zipPath)
     {
         var neededTags = GetNeededArtifactTags();
-        var allAssets = await FetchAllAssetsFromLatestRelease(_settingsRepo.Load());
+        var allAssets = await FetchAllAssetsFromLatestRelease(_settingsRepo.Load()).ConfigureAwait(false);
 
         var artifacts = new List<StagedArtifact>();
 
@@ -276,7 +276,7 @@ public sealed class GitHubUpdateService : IUpdateService
 #if NETFRAMEWORK
         File.WriteAllText(s_pendingMarkerPath, json);
 #else
-        await File.WriteAllTextAsync(s_pendingMarkerPath, json);
+        await File.WriteAllTextAsync(s_pendingMarkerPath, json).ConfigureAwait(false);
 #endif
     }
 
@@ -288,7 +288,7 @@ public sealed class GitHubUpdateService : IUpdateService
 #if NETFRAMEWORK
         var json = File.ReadAllText(s_pendingMarkerPath);
 #else
-        var json = await File.ReadAllTextAsync(s_pendingMarkerPath);
+        var json = await File.ReadAllTextAsync(s_pendingMarkerPath).ConfigureAwait(false);
 #endif
         return JsonSerializer.Deserialize<PendingUpdate>(json, s_jsonOptions);
     }
@@ -301,14 +301,14 @@ public sealed class GitHubUpdateService : IUpdateService
 #if NETFRAMEWORK
         var json = File.ReadAllText(s_pendingMarkerPath);
 #else
-        var json = await File.ReadAllTextAsync(s_pendingMarkerPath);
+        var json = await File.ReadAllTextAsync(s_pendingMarkerPath).ConfigureAwait(false);
 #endif
         return JsonSerializer.Deserialize<MultiVersionPendingUpdate>(json, s_jsonOptions);
     }
 
     public async Task ApplyPendingUpdateAsync()
     {
-        var multi = await GetMultiVersionPendingUpdateAsync();
+        var multi = await GetMultiVersionPendingUpdateAsync().ConfigureAwait(false);
         if (multi is not null)
         {
             foreach (var artifact in multi.Artifacts)
@@ -340,7 +340,7 @@ public sealed class GitHubUpdateService : IUpdateService
             return;
         }
 
-        var pending = await GetPendingUpdateAsync();
+        var pending = await GetPendingUpdateAsync().ConfigureAwait(false);
         if (pending is null) return;
 
         if (!Directory.Exists(pending.StagingPath))
@@ -458,10 +458,10 @@ public sealed class GitHubUpdateService : IUpdateService
             _httpClient.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", settings.GitHubToken);
 
-        var response = await _httpClient.GetAsync(url);
+        var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         return ParseAllAssets(doc.RootElement.GetProperty("assets"));
     }
@@ -497,7 +497,13 @@ public sealed class GitHubUpdateService : IUpdateService
         var patterns = new[] { "-R19.", "-R20.", "-R21.", "-R22.", "-R23.", "-R24.", "-R25." };
         foreach (var pattern in patterns)
         {
+#if NET8_0
             if (assetName.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+#else
+#pragma warning disable CA2249 // net48: Contains(string, StringComparison) unavailable
+            if (assetName.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0)
+#pragma warning restore CA2249
+#endif
             {
                 var tag = pattern.TrimStart('-').TrimEnd('.');
                 if (tag is "R20")

@@ -2,8 +2,6 @@ using System.Text.Json;
 
 namespace SmartCon.Core.Services;
 
-public enum Language { RU, EN }
-
 public static class LocalizationService
 {
     private static readonly string SettingsPath = Path.Combine(
@@ -12,6 +10,7 @@ public static class LocalizationService
 
     private static readonly Dictionary<string, string> Ru = new()
     {
+        ["App_Name"] = "SmartCon",
         ["Btn_Cancel"] = "Отмена",
         ["Btn_Connect"] = "Соединить",
         ["Btn_Insert"] = "Вставить",
@@ -162,6 +161,7 @@ public static class LocalizationService
         ["Tx_AlignAfterSize"] = "PipeConnect — Выравнивание после размера",
         ["Tx_ChainLevel"] = "Цепочка: уровень {0}",
         ["Tx_ChainRollback"] = "Цепочка: откат уровня {0}",
+        ["Chain_Levels"] = "уровней",
 
         ["About_Version"] = "Версия {0}",
         ["About_Author"] = "Автор:",
@@ -190,10 +190,15 @@ public static class LocalizationService
         ["Fitting_DirectConnect"] = "Без фитинга (прямое соединение)",
         ["Fitting_ReducerSuffix"] = "🔧 {0} (переход)",
         ["Fitting_TypeArrow"] = "Тип {0} → {1}",
+
+        ["Warn_SizeNotExactUnconstrained"] = "Размер DN{0} не найден точно. Ближайший DN{1} (other connectors will change).",
+        ["Warn_SizeNotInTable"] = "Размер DN{0} отсутствует в таблице. Будет выбран DN{1}, нужен переходник.",
+        ["Warn_NoSizeParameter"] = "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.",
     };
 
     private static readonly Dictionary<string, string> En = new()
     {
+        ["App_Name"] = "SmartCon",
         ["Btn_Cancel"] = "Cancel",
         ["Btn_Connect"] = "Connect",
         ["Btn_Insert"] = "Insert",
@@ -344,6 +349,7 @@ public static class LocalizationService
         ["Tx_AlignAfterSize"] = "PipeConnect — Alignment after size",
         ["Tx_ChainLevel"] = "Chain: level {0}",
         ["Tx_ChainRollback"] = "Chain: rollback level {0}",
+        ["Chain_Levels"] = "levels",
 
         ["About_Version"] = "Version {0}",
         ["About_Author"] = "Author:",
@@ -372,6 +378,10 @@ public static class LocalizationService
         ["Fitting_DirectConnect"] = "No fitting (direct connect)",
         ["Fitting_ReducerSuffix"] = "🔧 {0} (transition)",
         ["Fitting_TypeArrow"] = "Type {0} → {1}",
+
+        ["Warn_SizeNotExactUnconstrained"] = "Size DN{0} not found exactly. Nearest DN{1} (other connectors will change).",
+        ["Warn_SizeNotInTable"] = "Size DN{0} not in table. Nearest DN{1} will be used, reducer needed.",
+        ["Warn_NoSizeParameter"] = "Could not determine size parameter. Reducer will be inserted if configured in mapping.",
     };
 
     private static Dictionary<string, string> _current = Ru;
@@ -404,8 +414,9 @@ public static class LocalizationService
             CurrentLanguage = lang;
             _current = lang == Language.EN ? En : Ru;
         }
-        catch
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"[SmartConLogger] {ex.Message}");
             CurrentLanguage = Language.RU;
             _current = Ru;
         }
@@ -420,7 +431,7 @@ public static class LocalizationService
             var json = "{\"language\":\"" + (CurrentLanguage == Language.EN ? "EN" : "RU") + "\"}";
             File.WriteAllText(SettingsPath, json);
         }
-        catch { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] {ex.Message}"); }
     }
 
     public static string Get(Language lang)

@@ -1,3 +1,5 @@
+using static SmartCon.Core.Tolerance;
+
 namespace SmartCon.Core.Math;
 
 /// <summary>
@@ -98,7 +100,7 @@ public static class ConnectorAligner
         // Rotation around Y tilts fittings (elbows, tees) out of their natural plane.
         var bzNorm = VectorUtils.Normalize(staticBasisZ);
         var dotWithY = System.Math.Abs(VectorUtils.DotProduct(bzNorm, Vec3.BasisY));
-        if (dotWithY > 0.9999)
+        if (dotWithY > Tolerance.AxisParallelDot)
             return null;
 
         var currentAngle = VectorUtils.AngleBetweenInPlane(dynamicBasisX, staticBasisX, staticBasisZ);
@@ -158,11 +160,10 @@ public static class ConnectorAligner
         var projTargetY = ProjectOntoPlane(globalY, connectorBasisZ);
 
         // If global Y projection degenerates (BasisZ parallel to Y) — no alignment possible
-        if (VectorUtils.Length(projTargetY) < 1e-6)
+        if (projTargetY.LengthSquared < RadiusComparison * RadiusComparison)
             return null;
 
-        // If current projection degenerates — no reference vector
-        if (VectorUtils.Length(projCurrent) < 1e-6)
+        if (projCurrent.LengthSquared < RadiusComparison * RadiusComparison)
             return null;
 
         var fromNorm = VectorUtils.Normalize(projCurrent);
@@ -186,8 +187,8 @@ public static class ConnectorAligner
     /// </summary>
     private static Vec3 ProjectOntoPlane(Vec3 v, Vec3 n)
     {
-        var nLen = VectorUtils.Length(n);
-        if (nLen < VectorUtils.Tolerance) return v;
+        var nLenSq = n.LengthSquared;
+        if (nLenSq < VectorUtils.Tolerance * VectorUtils.Tolerance) return v;
         var nUnit = VectorUtils.Normalize(n);
         var dot = VectorUtils.DotProduct(v, nUnit);
         return v - nUnit * dot;

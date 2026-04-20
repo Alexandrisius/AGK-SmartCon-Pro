@@ -8,7 +8,7 @@ namespace SmartCon.Core.Math.FormulaEngine.Solver;
 internal static class BisectionSolver
 {
     private const int MaxIterations = 200;
-    private const double DefaultEpsilon = 1e-9;
+    private const double DefaultEpsilon = Core.Tolerance.Default;
 
     /// <summary>
     /// Find x such that f(x) is approximately target.
@@ -60,7 +60,7 @@ internal static class BisectionSolver
 
         // Return best approximation
         double finalMid = (lo + hi) / 2.0;
-        return System.Math.Abs(g(finalMid)) < 0.01 ? finalMid : null;
+        return System.Math.Abs(g(finalMid)) < Core.Lookup.BisectionFallbackTolerance ? finalMid : null;
     }
 
     /// <summary>

@@ -17,6 +17,19 @@
     <Color x:Key="DisabledFgColor">#AAAAAA</Color>
     <Color x:Key="DangerColor">#E53935</Color>
     <Color x:Key="SuccessColor">#4CAF50</Color>
+    <Color x:Key="WarningColor">#FF9800</Color>
+    <Color x:Key="InactiveColor">#9E9E9E</Color>
+    <Color x:Key="SavedSuccessColor">#27AE60</Color>
+
+    <!-- Interaction state colours (hover/pressed/selected) -->
+    <Color x:Key="HoverSurfaceColor">#F0F0F0</Color>
+    <Color x:Key="PressedSurfaceColor">#E0E0E0</Color>
+    <Color x:Key="HoverAltSurfaceColor">#F5F5F5</Color>
+    <Color x:Key="SelectedSurfaceColor">#E3F2FD</Color>
+    <Color x:Key="SelectedPressedSurfaceColor">#BBDEFB</Color>
+    <Color x:Key="StatusBarSurfaceColor">#F8F8F8</Color>
+    <Color x:Key="AlternateRowSurfaceColor">#FAFAFA</Color>
+    <Color x:Key="GridLineColor">#F0F0F0</Color>
 
     <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
     <SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource AccentHoverColor}"/>
@@ -31,6 +44,18 @@
     <SolidColorBrush x:Key="DisabledFgBrush" Color="{StaticResource DisabledFgColor}"/>
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}"/>
     <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}"/>
+    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
+    <SolidColorBrush x:Key="InactiveBrush" Color="{StaticResource InactiveColor}"/>
+    <SolidColorBrush x:Key="SavedSuccessBrush" Color="{StaticResource SavedSuccessColor}"/>
+
+    <SolidColorBrush x:Key="HoverSurfaceBrush" Color="{StaticResource HoverSurfaceColor}"/>
+    <SolidColorBrush x:Key="PressedSurfaceBrush" Color="{StaticResource PressedSurfaceColor}"/>
+    <SolidColorBrush x:Key="HoverAltSurfaceBrush" Color="{StaticResource HoverAltSurfaceColor}"/>
+    <SolidColorBrush x:Key="SelectedSurfaceBrush" Color="{StaticResource SelectedSurfaceColor}"/>
+    <SolidColorBrush x:Key="SelectedPressedSurfaceBrush" Color="{StaticResource SelectedPressedSurfaceColor}"/>
+    <SolidColorBrush x:Key="StatusBarSurfaceBrush" Color="{StaticResource StatusBarSurfaceColor}"/>
+    <SolidColorBrush x:Key="AlternateRowSurfaceBrush" Color="{StaticResource AlternateRowSurfaceColor}"/>
+    <SolidColorBrush x:Key="GridLineBrush" Color="{StaticResource GridLineColor}"/>
 
     <!-- ══════════════════════════════════════════════════════════════════
          ТИПОГРАФИКА
@@ -134,10 +159,10 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#F0F0F0"/>
+                            <Setter Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Background" Value="#E0E0E0"/>
+                            <Setter Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
@@ -216,10 +241,10 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#E3F2FD"/>
+                            <Setter Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Background" Value="#BBDEFB"/>
+                            <Setter Property="Background" Value="{DynamicResource SelectedPressedSurfaceBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
@@ -308,10 +333,10 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="RowBackground" Value="White"/>
-        <Setter Property="AlternatingRowBackground" Value="#FAFAFA"/>
+        <Setter Property="AlternatingRowBackground" Value="{DynamicResource AlternateRowSurfaceBrush}"/>
         <Setter Property="GridLinesVisibility" Value="All"/>
-        <Setter Property="HorizontalGridLinesBrush" Value="#F0F0F0"/>
-        <Setter Property="VerticalGridLinesBrush" Value="#F0F0F0"/>
+        <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource GridLineBrush}"/>
+        <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource GridLineBrush}"/>
         <Setter Property="HeadersVisibility" Value="Column"/>
         <Setter Property="RowHeight" Value="26"/>
         <Setter Property="FontSize" Value="12"/>
@@ -322,7 +347,7 @@
     </Style>
 
     <Style x:Key="CompactDataGridColumnHeader" TargetType="DataGridColumnHeader">
-        <Setter Property="Background" Value="#F5F5F5"/>
+        <Setter Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="11"/>
@@ -336,10 +361,10 @@
         <Setter Property="Height" Value="26"/>
         <Style.Triggers>
             <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="#E3F2FD"/>
+                <Setter Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
             </Trigger>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="#F5F5F5"/>
+                <Setter Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -397,7 +422,7 @@
                             <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="TabBorder" Property="Background" Value="#F0F0F0"/>
+                            <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -433,14 +458,14 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="ItemBorder" Property="Background" Value="#E3F2FD"/>
+                            <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
                         </Trigger>
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
                                 <Condition Property="IsMouseOver" Value="True"/>
                                 <Condition Property="IsSelected" Value="False"/>
                             </MultiTrigger.Conditions>
-                            <Setter TargetName="ItemBorder" Property="Background" Value="#F5F5F5"/>
+                            <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
                         </MultiTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -476,7 +501,7 @@
     <Style x:Key="FlatProgressBar" TargetType="ProgressBar">
         <Setter Property="Height" Value="6"/>
         <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
-        <Setter Property="Background" Value="#E0E0E0"/>
+        <Setter Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -500,7 +525,7 @@
          STATUS BAR
          ══════════════════════════════════════════════════════════════════ -->
     <Style x:Key="StatusBarBorder" TargetType="Border">
-        <Setter Property="Background" Value="#F8F8F8"/>
+        <Setter Property="Background" Value="{DynamicResource StatusBarSurfaceBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="4"/>

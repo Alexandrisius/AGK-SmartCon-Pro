@@ -7,8 +7,6 @@ public sealed class VectorUtilsTests
 {
     private const double Eps = 1e-6;
 
-    // --- CrossProduct ---
-
     [Fact]
     public void CrossProduct_XcrossY_ReturnsZ()
     {
@@ -30,51 +28,24 @@ public sealed class VectorUtilsTests
         Assert.True(VectorUtils.IsZero(result));
     }
 
-    // --- DotProduct ---
-
-    [Fact]
-    public void DotProduct_PerpendicularVectors_ReturnsZero()
+    [Theory]
+    [InlineData(1, 0, 0, 0, 1, 0, 0)]
+    [InlineData(1, 0, 0, 3, 0, 0, 3)]
+    [InlineData(1, 0, 0, -2, 0, 0, -2)]
+    public void DotProduct_VariousCases(double ax, double ay, double az,
+        double bx, double by, double bz, double expected)
     {
-        var result = VectorUtils.DotProduct(new Vec3(1, 0, 0), new Vec3(0, 1, 0));
-        Assert.Equal(0, result, Eps);
+        Assert.Equal(expected, VectorUtils.DotProduct(new Vec3(ax, ay, az), new Vec3(bx, by, bz)), Eps);
     }
 
-    [Fact]
-    public void DotProduct_SameDirection_ReturnsPositive()
+    [Theory]
+    [InlineData(1, 0, 0, 1.0)]
+    [InlineData(3, 4, 0, 5.0)]
+    [InlineData(0, 0, 0, 0.0)]
+    public void Length_VariousCases(double x, double y, double z, double expected)
     {
-        var result = VectorUtils.DotProduct(new Vec3(1, 0, 0), new Vec3(3, 0, 0));
-        Assert.Equal(3, result, Eps);
+        Assert.Equal(expected, VectorUtils.Length(new Vec3(x, y, z)), Eps);
     }
-
-    [Fact]
-    public void DotProduct_OppositeDirection_ReturnsNegative()
-    {
-        var result = VectorUtils.DotProduct(new Vec3(1, 0, 0), new Vec3(-2, 0, 0));
-        Assert.Equal(-2, result, Eps);
-    }
-
-    // --- Length ---
-
-    [Fact]
-    public void Length_UnitVector_ReturnsOne()
-    {
-        Assert.Equal(1.0, VectorUtils.Length(new Vec3(1, 0, 0)), Eps);
-    }
-
-    [Fact]
-    public void Length_3D_ReturnsCorrect()
-    {
-        // sqrt(3^2 + 4^2) = 5
-        Assert.Equal(5.0, VectorUtils.Length(new Vec3(3, 4, 0)), Eps);
-    }
-
-    [Fact]
-    public void Length_ZeroVector_ReturnsZero()
-    {
-        Assert.Equal(0.0, VectorUtils.Length(new Vec3(0, 0, 0)), Eps);
-    }
-
-    // --- Normalize ---
 
     [Fact]
     public void Normalize_NonZero_ReturnsUnitLength()
@@ -89,37 +60,16 @@ public sealed class VectorUtilsTests
         Assert.Throws<ArgumentException>(() => VectorUtils.Normalize(new Vec3(0, 0, 0)));
     }
 
-    // --- AngleBetween ---
-
-    [Fact]
-    public void AngleBetween_SameDirection_ReturnsZero()
+    [Theory]
+    [InlineData(1, 0, 0, 2, 0, 0, 0)]
+    [InlineData(1, 0, 0, 0, 1, 0, 1.5707963267948966)]
+    [InlineData(1, 0, 0, -1, 0, 0, 3.1415926535897931)]
+    [InlineData(1, 0, 0, 1, 1, 0, 0.78539816339744828)]
+    public void AngleBetween_VariousCases(double ax, double ay, double az,
+        double bx, double by, double bz, double expected)
     {
-        var angle = VectorUtils.AngleBetween(new Vec3(1, 0, 0), new Vec3(2, 0, 0));
-        Assert.Equal(0, angle, Eps);
+        Assert.Equal(expected, VectorUtils.AngleBetween(new Vec3(ax, ay, az), new Vec3(bx, by, bz)), Eps);
     }
-
-    [Fact]
-    public void AngleBetween_Perpendicular_ReturnsPiOver2()
-    {
-        var angle = VectorUtils.AngleBetween(new Vec3(1, 0, 0), new Vec3(0, 1, 0));
-        Assert.Equal(System.Math.PI / 2, angle, Eps);
-    }
-
-    [Fact]
-    public void AngleBetween_Opposite_ReturnsPi()
-    {
-        var angle = VectorUtils.AngleBetween(new Vec3(1, 0, 0), new Vec3(-1, 0, 0));
-        Assert.Equal(System.Math.PI, angle, Eps);
-    }
-
-    [Fact]
-    public void AngleBetween_45Degrees()
-    {
-        var angle = VectorUtils.AngleBetween(new Vec3(1, 0, 0), new Vec3(1, 1, 0));
-        Assert.Equal(System.Math.PI / 4, angle, Eps);
-    }
-
-    // --- AngleBetweenInPlane ---
 
     [Fact]
     public void AngleBetweenInPlane_90DegCCW_ReturnsPositive()
@@ -137,85 +87,46 @@ public sealed class VectorUtilsTests
         Assert.Equal(-System.Math.PI / 2, angle, Eps);
     }
 
-    // --- IsParallel ---
-
-    [Fact]
-    public void IsParallel_SameDirection_ReturnsTrue()
+    [Theory]
+    [InlineData(1, 0, 0, 5, 0, 0, true)]
+    [InlineData(1, 0, 0, -3, 0, 0, true)]
+    [InlineData(1, 0, 0, 0, 1, 0, false)]
+    public void IsParallel_VariousCases(double ax, double ay, double az,
+        double bx, double by, double bz, bool expected)
     {
-        Assert.True(VectorUtils.IsParallel(new Vec3(1, 0, 0), new Vec3(5, 0, 0)));
+        Assert.Equal(expected, VectorUtils.IsParallel(new Vec3(ax, ay, az), new Vec3(bx, by, bz)));
     }
 
-    [Fact]
-    public void IsParallel_OppositeDirection_ReturnsTrue()
+    [Theory]
+    [InlineData(0, 0, 1, 0, 0, -1, true)]
+    [InlineData(1, 0, 0, 2, 0, 0, false)]
+    public void IsAntiParallel_VariousCases(double ax, double ay, double az,
+        double bx, double by, double bz, bool expected)
     {
-        Assert.True(VectorUtils.IsParallel(new Vec3(1, 0, 0), new Vec3(-3, 0, 0)));
+        Assert.Equal(expected, VectorUtils.IsAntiParallel(new Vec3(ax, ay, az), new Vec3(bx, by, bz)));
     }
 
-    [Fact]
-    public void IsParallel_Perpendicular_ReturnsFalse()
+    [Theory]
+    [InlineData(1, 0, 0, 5, 0, 0, true)]
+    [InlineData(1, 0, 0, -1, 0, 0, false)]
+    public void IsCodirectional_VariousCases(double ax, double ay, double az,
+        double bx, double by, double bz, bool expected)
     {
-        Assert.False(VectorUtils.IsParallel(new Vec3(1, 0, 0), new Vec3(0, 1, 0)));
+        Assert.Equal(expected, VectorUtils.IsCodirectional(new Vec3(ax, ay, az), new Vec3(bx, by, bz)));
     }
 
-    // --- IsAntiParallel ---
-
-    [Fact]
-    public void IsAntiParallel_OppositeDirection_ReturnsTrue()
+    [Theory]
+    [InlineData(1, 0, 0)]
+    [InlineData(0, 1, 0)]
+    [InlineData(1, 1, 1)]
+    public void FindPerpendicularAxis_ReturnsPerpendicularUnitVector(double x, double y, double z)
     {
-        Assert.True(VectorUtils.IsAntiParallel(new Vec3(0, 0, 1), new Vec3(0, 0, -1)));
-    }
-
-    [Fact]
-    public void IsAntiParallel_SameDirection_ReturnsFalse()
-    {
-        Assert.False(VectorUtils.IsAntiParallel(new Vec3(1, 0, 0), new Vec3(2, 0, 0)));
-    }
-
-    // --- IsCodirectional ---
-
-    [Fact]
-    public void IsCodirectional_SameDirection_ReturnsTrue()
-    {
-        Assert.True(VectorUtils.IsCodirectional(new Vec3(1, 0, 0), new Vec3(5, 0, 0)));
-    }
-
-    [Fact]
-    public void IsCodirectional_Opposite_ReturnsFalse()
-    {
-        Assert.False(VectorUtils.IsCodirectional(new Vec3(1, 0, 0), new Vec3(-1, 0, 0)));
-    }
-
-    // --- FindPerpendicularAxis ---
-
-    [Fact]
-    public void FindPerpendicularAxis_X_ReturnsPerpendicularUnitVector()
-    {
-        var perp = VectorUtils.FindPerpendicularAxis(new Vec3(1, 0, 0));
-
-        Assert.Equal(1.0, VectorUtils.Length(perp), Eps);
-        Assert.Equal(0, VectorUtils.DotProduct(new Vec3(1, 0, 0), perp), Eps);
-    }
-
-    [Fact]
-    public void FindPerpendicularAxis_Y_ReturnsPerpendicularUnitVector()
-    {
-        var perp = VectorUtils.FindPerpendicularAxis(new Vec3(0, 1, 0));
-
-        Assert.Equal(1.0, VectorUtils.Length(perp), Eps);
-        Assert.Equal(0, VectorUtils.DotProduct(new Vec3(0, 1, 0), perp), Eps);
-    }
-
-    [Fact]
-    public void FindPerpendicularAxis_Diagonal_ReturnsPerpendicularUnitVector()
-    {
-        var v = new Vec3(1, 1, 1);
+        var v = new Vec3(x, y, z);
         var perp = VectorUtils.FindPerpendicularAxis(v);
 
         Assert.Equal(1.0, VectorUtils.Length(perp), Eps);
         Assert.Equal(0, VectorUtils.DotProduct(VectorUtils.Normalize(v), perp), Eps);
     }
-
-    // --- RoundToNearestAngle ---
 
     [Fact]
     public void RoundToNearestAngle_ExactMultiple_ReturnsSame()
@@ -225,52 +136,32 @@ public sealed class VectorUtilsTests
         Assert.Equal(angle, result, Eps);
     }
 
-    [Fact]
-    public void RoundToNearestAngle_Between15And30_RoundsToNearest()
+    [Theory]
+    [InlineData(20.0, 15.0)]
+    [InlineData(-10.0, -15.0)]
+    public void RoundToNearestAngle_NearestStep(double inputDeg, double expectedDeg)
     {
-        // 20° -> snap to 15°
-        var angle = 20.0 * System.Math.PI / 180.0;
-        var expected = 15.0 * System.Math.PI / 180.0;
-        var result = VectorUtils.RoundToNearestAngle(angle, 15);
-        Assert.Equal(expected, result, Eps);
+        var angle = inputDeg * System.Math.PI / 180.0;
+        var expected = expectedDeg * System.Math.PI / 180.0;
+        Assert.Equal(expected, VectorUtils.RoundToNearestAngle(angle, 15), Eps);
     }
 
     [Fact]
     public void RoundToNearestAngle_Midpoint_RoundsUp()
     {
-        // 22.5° -> rounds to nearest step of 15 -> could be 15 or 30
-        // Math.Round uses banker's rounding: 22.5/15 = 1.5 -> rounds to 2 -> 30°
         var angle = 22.5 * System.Math.PI / 180.0;
         var expected = 30.0 * System.Math.PI / 180.0;
-        var result = VectorUtils.RoundToNearestAngle(angle, 15);
-        Assert.Equal(expected, result, Eps);
+        Assert.Equal(expected, VectorUtils.RoundToNearestAngle(angle, 15), Eps);
     }
 
-    [Fact]
-    public void RoundToNearestAngle_NegativeAngle_Works()
+    [Theory]
+    [InlineData(1, 2, 3, 1, 2, 3, 0)]
+    [InlineData(0, 0, 0, 3, 4, 0, 5)]
+    public void DistanceTo_VariousCases(double ax, double ay, double az,
+        double bx, double by, double bz, double expected)
     {
-        var angle = -10.0 * System.Math.PI / 180.0;
-        var expected = -15.0 * System.Math.PI / 180.0;
-        var result = VectorUtils.RoundToNearestAngle(angle, 15);
-        Assert.Equal(expected, result, Eps);
+        Assert.Equal(expected, VectorUtils.DistanceTo(new Vec3(ax, ay, az), new Vec3(bx, by, bz)), Eps);
     }
-
-    // --- DistanceTo ---
-
-    [Fact]
-    public void DistanceTo_SamePoint_ReturnsZero()
-    {
-        var p = new Vec3(1, 2, 3);
-        Assert.Equal(0, VectorUtils.DistanceTo(p, p), Eps);
-    }
-
-    [Fact]
-    public void DistanceTo_KnownDistance()
-    {
-        Assert.Equal(5.0, VectorUtils.DistanceTo(new Vec3(0, 0, 0), new Vec3(3, 4, 0)), Eps);
-    }
-
-    // --- IsAlmostEqual ---
 
     [Fact]
     public void IsAlmostEqual_SamePoint_ReturnsTrue()
@@ -285,37 +176,33 @@ public sealed class VectorUtilsTests
         Assert.False(VectorUtils.IsAlmostEqual(new Vec3(0, 0, 0), new Vec3(1, 0, 0)));
     }
 
-    // --- Arithmetic ---
-
     [Fact]
     public void Add_ReturnsSum()
     {
-        var result = VectorUtils.Add(new Vec3(1, 2, 3), new Vec3(4, 5, 6));
+        var result = new Vec3(1, 2, 3) + new Vec3(4, 5, 6);
         AssertVec3Equal(new Vec3(5, 7, 9), result);
     }
 
     [Fact]
     public void Subtract_ReturnsDifference()
     {
-        var result = VectorUtils.Subtract(new Vec3(5, 7, 9), new Vec3(4, 5, 6));
+        var result = new Vec3(5, 7, 9) - new Vec3(4, 5, 6);
         AssertVec3Equal(new Vec3(1, 2, 3), result);
     }
 
     [Fact]
     public void Multiply_ReturnsScaled()
     {
-        var result = VectorUtils.Multiply(new Vec3(1, 2, 3), 2);
+        var result = new Vec3(1, 2, 3) * 2;
         AssertVec3Equal(new Vec3(2, 4, 6), result);
     }
 
     [Fact]
     public void Negate_ReturnsOpposite()
     {
-        var result = VectorUtils.Negate(new Vec3(1, -2, 3));
+        var result = -new Vec3(1, -2, 3);
         AssertVec3Equal(new Vec3(-1, 2, -3), result);
     }
-
-    // --- Helpers ---
 
     private static void AssertVec3Equal(Vec3 expected, Vec3 actual)
     {

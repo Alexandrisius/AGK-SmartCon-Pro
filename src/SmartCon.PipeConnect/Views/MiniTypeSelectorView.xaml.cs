@@ -1,41 +1,25 @@
-using System.Runtime.InteropServices;
-using System.Windows;
+using System.ComponentModel;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
+using SmartCon.UI.Controls;
+using SmartCon.UI.Native;
 
 namespace SmartCon.PipeConnect.Views;
 
-public partial class MiniTypeSelectorView : Window
+public partial class MiniTypeSelectorView : DialogWindowBase
 {
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetCursorPos(out CursorPoint pt);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct CursorPoint { public int X; public int Y; }
-
-    private bool _closeFromViewModel;
-
     public MiniTypeSelectorView(MiniTypeSelectorViewModel viewModel)
     {
         InitializeComponent();
         LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
-        viewModel.RequestClose += OnRequestClose;
-        Closing += OnClosing;
-        if (GetCursorPos(out var pt)) { Left = pt.X + 10; Top = pt.Y + 10; }
+        BindCloseRequest(viewModel);
+        var pos = CursorHelper.GetCursorPosition();
+        if (pos != default) { Left = pos.X + 10; Top = pos.Y + 10; }
     }
 
-    private void OnRequestClose()
+    protected override void OnUserInitiatedClose(CancelEventArgs e)
     {
-        _closeFromViewModel = true;
-        Close();
-    }
-
-    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
-    {
-        if (_closeFromViewModel) return;
-
         if (DataContext is MiniTypeSelectorViewModel vm)
         {
             e.Cancel = true;

@@ -5,7 +5,7 @@ namespace SmartCon.Core.Services.Implementation;
 
 public sealed class FittingChainResolver : IFittingChainResolver
 {
-    private const double RadiusEpsilon = 1e-6;
+    private const double RadiusEpsilon = Tolerance.RadiusComparison;
 
     private readonly IFittingMapper _fittingMapper;
     private readonly IFittingMappingRepository _mappingRepo;
@@ -202,7 +202,9 @@ public sealed class FittingChainResolver : IFittingChainResolver
             bestRule = dijkstraPath.FirstOrDefault(r => r.FittingFamilies.Count > 0);
         }
 
-        var bestFamily = bestRule?.FittingFamilies.FirstOrDefault();
+        var bestFamily = bestRule is not null && bestRule.FittingFamilies.Count > 0
+            ? bestRule.FittingFamilies[0]
+            : null;
         if (bestRule is null || bestFamily is null)
             return null;
 

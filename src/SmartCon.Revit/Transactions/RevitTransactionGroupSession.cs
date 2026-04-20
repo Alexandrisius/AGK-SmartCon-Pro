@@ -4,23 +4,18 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.Transactions;
 
-/// <summary>
-/// Долгоживущая TransactionGroup для сессии PipeConnectEditor (Phase 8, ADR-003).
-/// Группа остаётся открытой между вызовами ExternalEventHandler.Execute(),
-/// позволяя пользователю интерактивно примерять фитинги и повороты.
-/// Вызывать только из Revit main thread (I-01).
-/// </summary>
 public sealed class RevitTransactionGroupSession : ITransactionGroupSession
 {
     private readonly TransactionGroup _group;
-    private readonly Document _doc;
+    private readonly IRevitContext _revitContext;
     private readonly string _name;
     private bool _disposed;
 
-    internal RevitTransactionGroupSession(Document doc, string name)
+    internal RevitTransactionGroupSession(IRevitContext revitContext, string name)
     {
-        _doc = doc;
+        _revitContext = revitContext;
         _name = name;
+        var doc = revitContext.GetDocument();
         _group = new TransactionGroup(doc, name);
         _group.Start();
         SmartConLogger.Info($"[TxGroup] Group started '{name}'");
@@ -34,7 +29,8 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
             throw new InvalidOperationException("TransactionGroup сессия уже завершена.");
 
         SmartConLogger.Info($"[TxGroup] Transaction '{name}' inside '{_name}'");
-        using var tx = new Transaction(_doc, name);
+        var doc = _revitContext.GetDocument();
+        using var tx = new Transaction(doc, name);
         var options = tx.GetFailureHandlingOptions();
         options.SetFailuresPreprocessor(new SmartConFailurePreprocessor());
         tx.SetFailureHandlingOptions(options);
@@ -42,7 +38,7 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
         try
         {
             tx.Start();
-            action(_doc);
+            action(doc);
             tx.Commit();
             SmartConLogger.Info($"[TxGroup] Transaction '{name}' committed");
         }
@@ -73,12 +69,18 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
     public void Dispose()
     {
         if (_disposed) return;
-        if (_group.HasStarted())
+        try
         {
-            _group.RollBack();
-            SmartConLogger.Info($"[TxGroup] Group '{_name}' rolled back in Dispose (safe rollback)");
+            if (_group.HasStarted())
+            {
+                _group.RollBack();
+                SmartConLogger.Info($"[TxGroup] Group '{_name}' rolled back in Dispose (safe rollback)");
+            }
         }
-        _group.Dispose();
-        _disposed = true;
+        finally
+        {
+            _group.Dispose();
+            _disposed = true;
+        }
     }
 }

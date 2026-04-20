@@ -35,9 +35,9 @@ public sealed class EvaluatorTests
     }
 
     [Fact]
-    public void Arithmetic_DivisionByZero_ReturnsInfinity()
+    public void Arithmetic_DivisionByZero_ThrowsFormulaParseException()
     {
-        Assert.Equal(double.PositiveInfinity, Eval("1 / 0"));
+        Assert.Throws<FormulaParseException>(() => Eval("1 / 0"));
     }
 
     // ── Переменные ──────────────────────────────────────────────────────

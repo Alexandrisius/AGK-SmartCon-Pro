@@ -2,10 +2,11 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-public sealed partial class FittingCtcSetupViewModel : ObservableObject
+public sealed partial class FittingCtcSetupViewModel : ObservableObject, IObservableRequestClose
 {
     public string FamilyName { get; }
     public string SymbolName { get; }

@@ -7,29 +7,63 @@ namespace SmartCon.Core.Compatibility;
 [SuppressMessage("CodeQuality", "IDE0079:Remove unnecessary suppression")]
 internal sealed class SimplePriorityQueue<TElement, TPriority> where TPriority : IComparable<TPriority>
 {
-    private readonly List<(TElement Element, TPriority Priority)> _items = [];
+    private readonly List<(TElement Element, TPriority Priority)> _heap = [];
 
-    public int Count => _items.Count;
+    public int Count => _heap.Count;
 
     public void Enqueue(TElement element, TPriority priority)
     {
-        _items.Add((element, priority));
+        _heap.Add((element, priority));
+        SiftUp(_heap.Count - 1);
     }
 
     public TElement Dequeue()
     {
-        if (_items.Count == 0) throw new InvalidOperationException("Queue is empty");
+        if (_heap.Count == 0) throw new InvalidOperationException("Queue is empty");
 
-        int minIdx = 0;
-        for (int i = 1; i < _items.Count; i++)
-        {
-            if (_items[i].Priority.CompareTo(_items[minIdx].Priority) < 0)
-                minIdx = i;
-        }
-
-        var result = _items[minIdx].Element;
-        _items.RemoveAt(minIdx);
+        var result = _heap[0].Element;
+        int lastIndex = _heap.Count - 1;
+        _heap[0] = _heap[lastIndex];
+        _heap.RemoveAt(lastIndex);
+        SiftDown(0);
         return result;
+    }
+
+    private void SiftUp(int index)
+    {
+        while (index > 0)
+        {
+            int parent = (index - 1) / 2;
+            if (_heap[index].Priority.CompareTo(_heap[parent].Priority) < 0)
+            {
+                (_heap[index], _heap[parent]) = (_heap[parent], _heap[index]);
+                index = parent;
+            }
+            else break;
+        }
+    }
+
+    private void SiftDown(int index)
+    {
+        int count = _heap.Count;
+        while (true)
+        {
+            int left = 2 * index + 1;
+            int right = 2 * index + 2;
+            int smallest = index;
+
+            if (left < count && _heap[left].Priority.CompareTo(_heap[smallest].Priority) < 0)
+                smallest = left;
+            if (right < count && _heap[right].Priority.CompareTo(_heap[smallest].Priority) < 0)
+                smallest = right;
+
+            if (smallest != index)
+            {
+                (_heap[index], _heap[smallest]) = (_heap[smallest], _heap[index]);
+                index = smallest;
+            }
+            else break;
+        }
     }
 }
 #endif

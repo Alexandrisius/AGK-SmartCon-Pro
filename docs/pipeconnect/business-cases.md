@@ -238,7 +238,7 @@
 
 ### 7.1 Где настраиваются reducer-ы
 
-Reducer-ы хранятся в `FittingMappingRule.ReducerFamilies` — JSON в AppData.
+Reducer-ы хранятся в `FittingMappingRule.ReducerFamilies` — ExtensibleStorage текущего Revit-проекта (ADR-012). JSON используется только для Import/Export.
 
 **Пример JSON:**
 ```json

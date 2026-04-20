@@ -1,24 +1,16 @@
-using System.Diagnostics;
-using System.Windows;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
+using SmartCon.UI.Controls;
 
 namespace SmartCon.PipeConnect.Views;
 
-public partial class AboutView : Window
+public partial class AboutView : DialogWindowBase
 {
     public AboutView(AboutViewModel viewModel)
     {
         InitializeComponent();
         LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
-    }
-
-    private void OnClose(object sender, RoutedEventArgs e) => Close();
-
-    private void OnLinkClick(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
-    {
-        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
-        e.Handled = true;
+        BindCloseRequest(viewModel);
     }
 }

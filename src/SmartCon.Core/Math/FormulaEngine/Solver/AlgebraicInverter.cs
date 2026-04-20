@@ -10,7 +10,7 @@ namespace SmartCon.Core.Math.FormulaEngine.Solver;
 /// </summary>
 internal static class AlgebraicInverter
 {
-    private const double Epsilon = 1e-9;
+    private const double Epsilon = Core.Tolerance.Default;
 
     /// <summary>
     /// Try to solve a formula algebraically (for linear formulas).
@@ -51,7 +51,7 @@ internal static class AlgebraicInverter
         // Necessary for piecewise formulas (IF) where linearity on [0,1,2]
         // does not guarantee correctness over the entire range.
         double fResult = EvalAt(ast, variableName, result, otherValues);
-        if (!IsFinite(fResult) || System.Math.Abs(fResult - targetValue) > 1e-6)
+        if (!IsFinite(fResult) || System.Math.Abs(fResult - targetValue) > Core.Lookup.SolverVerification)
             return null;
 
         return result;

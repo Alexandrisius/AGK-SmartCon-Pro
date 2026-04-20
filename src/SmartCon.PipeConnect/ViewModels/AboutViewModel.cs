@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
@@ -7,7 +8,7 @@ using SmartCon.PipeConnect.Services;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-public sealed partial class AboutViewModel : ObservableObject
+public sealed partial class AboutViewModel : ObservableObject, IObservableRequestClose
 {
     private readonly IUpdateService _updateService;
     private readonly IUpdateSettingsRepository _settingsRepo;
@@ -49,6 +50,8 @@ public sealed partial class AboutViewModel : ObservableObject
     private int _languageIndex;
 
     private UpdateInfo? _foundUpdate;
+
+    public event Action? RequestClose;
 
     public AboutViewModel(
         IUpdateService updateService,
@@ -166,4 +169,11 @@ public sealed partial class AboutViewModel : ObservableObject
             UpdatePending = false;
         }
     }
+
+    [RelayCommand]
+    private void Close() => RequestClose?.Invoke();
+
+    [RelayCommand]
+    private void OpenLink(string url) =>
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
 }

@@ -1,6 +1,6 @@
 #define AppName "SmartCon"
 #define AppPublisher "AGK Engineering"
-#define AppURL "https://github.com/AGK-Engineering/AGK-SmartCon-Pro"
+#define AppURL "https://github.com/Alexandrisius/AGK-SmartCon-Pro"
 
 #ifndef AppVersion
   #define AppVersion Trim(FileRead(FileOpen("..\..\Version.txt"), 0));

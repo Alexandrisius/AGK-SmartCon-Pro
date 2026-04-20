@@ -1,0 +1,83 @@
+name: Bug report
+description: Report a defect or regression in SmartCon
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за обратную связь! Перед отправкой, пожалуйста, проверьте
+        что проблема ещё не описана в [Issues](../issues) и в
+        [docs/future-work.md](../blob/main/docs/future-work.md).
+
+  - type: input
+    id: revit-version
+    attributes:
+      label: Revit version
+      placeholder: "2025 / 2024 / 2023 / 2022 / 2021 / 2020 / 2019"
+    validations:
+      required: true
+
+  - type: input
+    id: smartcon-version
+    attributes:
+      label: SmartCon version
+      description: См. About → Version, или `Version.txt`
+      placeholder: "1.3.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11
+        - Windows 10
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Чёткое описание бага
+      placeholder: При клике на "Соединить" Revit падает с ошибкой...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Пошаговые инструкции для воспроизведения
+      placeholder: |
+        1. Открыть проект X
+        2. Выбрать трубу A (DN 100) и трубу B (DN 65)
+        3. Нажать PipeConnect
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Содержимое `%APPDATA%\AGK\SmartCon\smartcon.log` (или
+        `lookup-diagnostic.log` / `formula-diagnostic.log` если релевантно).
+      render: text
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Если применимо — приложите скриншоты

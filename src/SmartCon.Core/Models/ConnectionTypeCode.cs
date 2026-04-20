@@ -7,8 +7,10 @@ namespace SmartCon.Core.Models;
 /// </summary>
 public readonly record struct ConnectionTypeCode(int Value)
 {
+    /// <summary>Sentinel for an undefined/missing connection type.</summary>
     public static readonly ConnectionTypeCode Undefined = new(0);
 
+    /// <summary>True when the code has been assigned a non-zero value.</summary>
     public bool IsDefined => Value != 0;
 
     public override string ToString() => Value.ToString();

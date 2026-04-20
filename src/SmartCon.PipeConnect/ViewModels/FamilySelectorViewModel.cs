@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
@@ -9,7 +10,7 @@ namespace SmartCon.PipeConnect.ViewModels;
 /// ViewModel модального окна выбора семейств фитингов для правила маппинга (3C).
 /// Два списка: доступные (отсортированы A→Z) и выбранные (порядок = приоритет).
 /// </summary>
-public sealed partial class FamilySelectorViewModel : ObservableObject
+public sealed partial class FamilySelectorViewModel : ObservableObject, IObservableRequestClose
 {
     public ObservableCollection<string> AvailableFamilies { get; }
     public ObservableCollection<string> SelectedFamilies { get; } = [];
@@ -26,7 +27,6 @@ public sealed partial class FamilySelectorViewModel : ObservableObject
 
     public bool Confirmed { get; private set; }
 
-    /// <summary>Поднимается ViewModel для закрытия окна (View подписывается: RequestClose += Close).</summary>
     public event Action? RequestClose;
 
     public FamilySelectorViewModel(

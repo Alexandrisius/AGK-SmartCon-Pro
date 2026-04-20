@@ -1,36 +1,25 @@
 namespace SmartCon.Core.Math;
 
 /// <summary>
-/// Result of ConnectorAligner alignment computation.
-/// Contains a set of operations to apply in Revit via ITransformService.
-/// All coordinates in Internal Units (decimal feet, I-02).
+/// Result of connector alignment computation (<see cref="ConnectorAligner.ComputeAlignment"/>).
+/// Describes the translation and rotation steps needed to align two connectors.
 /// </summary>
-public sealed class AlignmentResult
+public sealed record AlignmentResult
 {
-    /// <summary>
-    /// Step 1: initial offset vector (static.Origin - dynamic.Origin).
-    /// </summary>
+    /// <summary>Initial translation offset to bring connectors into the same plane.</summary>
     public required Vec3 InitialOffset { get; init; }
 
-    /// <summary>
-    /// Step 2: BasisZ rotation for anti-parallelism.
-    /// null if BasisZ is already anti-parallel.
-    /// </summary>
+    /// <summary>Rotation around BasisZ to align connector directions. Null if not needed.</summary>
     public RotationStep? BasisZRotation { get; init; }
 
-    /// <summary>
-    /// Step 3: BasisX snap to the nearest "nice" angle.
-    /// null if deltaAngle is approximately 0.
-    /// </summary>
+    /// <summary>Snap rotation around the perpendicular axis for anti-parallel alignment. Null if not needed.</summary>
     public RotationStep? BasisXSnap { get; init; }
 
-    /// <summary>
-    /// Point relative to which rotations are performed (static.Origin).
-    /// </summary>
+    /// <summary>Center point for rotation operations.</summary>
     public required Vec3 RotationCenter { get; init; }
 }
 
-/// <summary>
-/// A single rotation operation: axis + angle.
-/// </summary>
+/// <summary>A single rotation step defined by axis and angle.</summary>
+/// <param name="Axis">Rotation axis direction.</param>
+/// <param name="AngleRadians">Rotation angle in radians.</param>
 public sealed record RotationStep(Vec3 Axis, double AngleRadians);

@@ -39,6 +39,23 @@ public static class Tolerance
 
     /// <summary>Relaxed position tolerance for validation (0.1 mm).</summary>
     public const double PositionRelaxedMm = 0.1;
+
+    public const double RadiusComparison = 1e-6;
+
+    public const double AxisParallelDot = 0.9999;
+
+    public const double CollinearityThreshold = 0.9;
+}
+
+public static class Lookup
+{
+    public const double ConstraintMatchMm = 0.02;
+
+    public const double ConstraintFallbackMm = 0.5;
+
+    public const double SolverVerification = 1e-6;
+
+    public const double BisectionFallbackTolerance = 0.01;
 }
 
 /// <summary>

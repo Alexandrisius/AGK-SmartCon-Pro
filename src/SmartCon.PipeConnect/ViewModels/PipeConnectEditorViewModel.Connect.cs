@@ -111,8 +111,6 @@ public sealed partial class PipeConnectEditorViewModel
         }
     }
 
-    public bool IsClosing => _isClosing;
-
     private bool CanOperate() => IsSessionActive && !IsBusy;
     private bool CanInsertFitting() => IsSessionActive && !IsBusy && SelectedFitting is not null;
     private bool CanInsertReducer() => IsSessionActive && !IsBusy && SelectedReducer is not null && _primaryReducerId is null;

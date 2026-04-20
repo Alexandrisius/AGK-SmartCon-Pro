@@ -1,0 +1,37 @@
+name: Feature request
+description: Предложение новой функциональности
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Если это TODO / planned feature — возможно, оно уже отслеживается в
+        [docs/future-work.md](../blob/main/docs/future-work.md).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема / use case
+      description: Какую задачу пытаетесь решить? Для какого типа пользователя?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предложенное решение
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+      description: Какие ещё варианты рассматривались?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Дополнительный контекст
+      description: Скриншоты, ссылки на документацию, примеры похожего поведения в других плагинах

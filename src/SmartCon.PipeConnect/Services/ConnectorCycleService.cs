@@ -8,7 +8,8 @@ using SmartCon.Core.Services.Interfaces;
 namespace SmartCon.PipeConnect.Services;
 
 /// <summary>
-/// Tracks visited connectors and provides sequential cycling through free connectors on an element.
+/// Manages cyclic iteration through connectors of a multi-port element.
+/// Tracks visited connectors and wraps around when all have been visited.
 /// </summary>
 public sealed class ConnectorCycleState
 {
@@ -16,9 +17,15 @@ public sealed class ConnectorCycleState
     private readonly HashSet<int> _visited = [];
     private int _position;
 
+    /// <summary>All connectors in the cycle.</summary>
     public IReadOnlyList<ConnectorProxy> Connectors => _allConnectors;
+
+    /// <summary>Total connector count.</summary>
     public int Count => _allConnectors.Count;
 
+    /// <summary>Initialize the cycle with connectors and mark the active one as visited.</summary>
+    /// <param name="connectors">All connectors of the element.</param>
+    /// <param name="active">Currently active connector (starting point).</param>
     public void Initialize(List<ConnectorProxy> connectors, ConnectorProxy active)
     {
         _allConnectors = connectors;
@@ -30,6 +37,11 @@ public sealed class ConnectorCycleState
         _position = (Math.Max(idx, 0) + 1) % Math.Max(1, connectors.Count);
     }
 
+    /// <summary>
+    /// Find the next unvisited connector in the cycle. Wraps around and clears
+    /// the visited set when all connectors have been visited.
+    /// </summary>
+    /// <returns>Next connector, or null if no connectors exist.</returns>
     public ConnectorProxy? FindNext()
     {
         int count = _allConnectors.Count;
@@ -52,21 +64,35 @@ public sealed class ConnectorCycleState
         return first;
     }
 
+    /// <summary>Mark a connector as visited.</summary>
     public void MarkVisited(int connectorIndex) => _visited.Add(connectorIndex);
+
+    /// <summary>Remove a connector from the visited set.</summary>
     public void UnmarkVisited(int connectorIndex) => _visited.Remove(connectorIndex);
 }
 
 /// <summary>
-/// Handles cycling through free connectors on an element and re-aligning after each switch.
+/// Handles connector cycling on multi-port elements: re-aligns the element
+/// when the user switches to a different connector and refreshes CTC overrides.
 /// </summary>
 public sealed class ConnectorCycleService(
     IConnectorService connSvc,
-    ITransformService transformSvc,
+    IAlignmentService alignmentSvc,
     IParameterResolver paramResolver,
     FittingCtcManager ctcManager)
 {
+    /// <summary>Cycle state tracking visited connectors.</summary>
     public ConnectorCycleState State { get; } = new();
 
+    /// <summary>
+    /// Switch to the target connector, re-align the element, and refresh CTC overrides.
+    /// </summary>
+    /// <param name="doc">Active Revit document.</param>
+    /// <param name="session">Active transaction group session.</param>
+    /// <param name="target">Connector to switch to.</param>
+    /// <param name="alignTarget">Connector to align against.</param>
+    /// <param name="currentActive">Currently active connector (for reference).</param>
+    /// <returns>Refreshed connector proxy with updated CTC, or null on failure.</returns>
     public ConnectorProxy? CycleAndAlign(
         Document doc,
         ITransactionGroupSession session,
@@ -83,28 +109,9 @@ public sealed class ConnectorCycleService(
             var freshTarget = connSvc.RefreshConnector(
                 d, target.OwnerElementId, target.ConnectorIndex) ?? target;
 
-            var reAlign = ConnectorAligner.ComputeAlignment(
-                alignTarget.OriginVec3, alignTarget.BasisZVec3, alignTarget.BasisXVec3,
-                freshTarget.OriginVec3, freshTarget.BasisZVec3, freshTarget.BasisXVec3);
+            alignmentSvc.ApplyAlignment(d, target.OwnerElementId, alignTarget, freshTarget);
 
-            var dynId = target.OwnerElementId;
-            if (!VectorUtils.IsZero(reAlign.InitialOffset))
-                transformSvc.MoveElement(d, dynId, reAlign.InitialOffset);
-            if (reAlign.BasisZRotation is { } bz)
-                transformSvc.RotateElement(d, dynId, reAlign.RotationCenter, bz.Axis, bz.AngleRadians);
-            if (reAlign.BasisXSnap is { } bx)
-                transformSvc.RotateElement(d, dynId, reAlign.RotationCenter, bx.Axis, bx.AngleRadians);
-
-            d.Regenerate();
-            var r = connSvc.RefreshConnector(d, dynId, target.ConnectorIndex);
-            if (r is not null)
-            {
-                var corr = alignTarget.OriginVec3 - r.OriginVec3;
-                if (!VectorUtils.IsZero(corr))
-                    transformSvc.MoveElement(d, dynId, corr);
-            }
-            d.Regenerate();
-            result = ctcManager.RefreshWithCtcOverride(d, dynId, target.ConnectorIndex);
+            result = ctcManager.RefreshWithCtcOverride(d, target.OwnerElementId, target.ConnectorIndex);
         });
 
         State.MarkVisited(target.ConnectorIndex);

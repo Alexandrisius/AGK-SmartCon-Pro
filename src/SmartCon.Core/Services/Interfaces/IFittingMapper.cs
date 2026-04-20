@@ -21,5 +21,6 @@ public interface IFittingMapper
     IReadOnlyList<FittingMappingRule> FindShortestFittingPath(
         ConnectionTypeCode from, ConnectionTypeCode to);
 
+    /// <summary>Load mapping rules from a JSON file.</summary>
     void LoadFromFile(string jsonPath);
 }

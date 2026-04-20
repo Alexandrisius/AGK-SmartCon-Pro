@@ -9,6 +9,9 @@ namespace SmartCon.Core.Services.Interfaces;
 /// </summary>
 public interface IRevitContext
 {
+    /// <summary>Active Revit document. Do not cache between operations (I-05).</summary>
     Document GetDocument();
+
+    /// <summary>Revit version string (e.g. "2025").</summary>
     string GetRevitVersion();
 }

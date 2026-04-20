@@ -5,6 +5,8 @@ using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Events;
 using SmartCon.PipeConnect.Services;
+using SmartCon.PipeConnect.ViewModels;
+using SmartCon.PipeConnect.Views;
 using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
@@ -42,6 +44,7 @@ public static class ServiceRegistrar
 
         // --- Transform (Phase 2) ---
         services.AddSingleton<ITransformService, RevitTransformService>();
+        services.AddSingleton<IAlignmentService, RevitAlignmentService>();
 
         // --- Mapping & Family (ADR-012: per-project ExtensibleStorage) ---
         services.AddSingleton<IFittingMappingRepository, RevitFittingMappingRepository>();
@@ -67,6 +70,15 @@ public static class ServiceRegistrar
         services.AddSingleton<IElementChainIterator, ElementChainIterator>();
         services.AddSingleton<INetworkMover, NetworkMover>();
 
+        // --- PipeConnect Helper Services (A-2: DI instead of new in ViewModel) ---
+        services.AddSingleton<CtcResolutionService>();
+        services.AddSingleton<CtcGuessService>();
+        services.AddSingleton<CtcFamilyWriter>();
+        services.AddSingleton<FittingCtcManager>();
+        services.AddSingleton<ChainOperationHandler>();
+        services.AddSingleton<PipeConnectRotationHandler>();
+        services.AddSingleton<DynamicSizeLoader>();
+
         // --- External Events (ADR-008: generic) ---
         var genericHandler = new ActionExternalEventHandler(revitContext);
         var genericEvent = ExternalEvent.Create(genericHandler);
@@ -82,5 +94,24 @@ public static class ServiceRegistrar
         // --- Update Service ---
         services.AddSingleton<IUpdateSettingsRepository, JsonUpdateSettingsRepository>();
         services.AddSingleton<IUpdateService, GitHubUpdateService>();
+
+        // --- ViewModel Factories (A-1: eliminate Service Locator in Commands) ---
+        services.AddSingleton<IPipeConnectViewModelFactory, PipeConnectViewModelFactory>();
+        services.AddSingleton<IAboutViewModelFactory, AboutViewModelFactory>();
+        services.AddSingleton<ISettingsViewModelFactory, SettingsViewModelFactory>();
+
+        // --- Dialog Presenter (C-3: VM→View mapping, decoupling from concrete Views) ---
+        services.AddSingleton(_ =>
+        {
+            var presenter = new WpfDialogPresenter();
+            presenter.Register<MiniTypeSelectorViewModel>(vm => new MiniTypeSelectorView(vm));
+            presenter.Register<FamilySelectorViewModel>(vm => new FamilySelectorView(vm));
+            presenter.Register<FittingCtcSetupViewModel>(vm => new FittingCtcSetupView(vm));
+            presenter.Register<AboutViewModel>(vm => new AboutView(vm));
+            presenter.Register<MappingEditorViewModel>(vm => new MappingEditorView(vm));
+            presenter.Register<PipeConnectEditorViewModel>(vm => new PipeConnectEditorView(vm));
+            return presenter;
+        });
+        services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
     }
 }

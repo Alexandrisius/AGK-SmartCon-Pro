@@ -27,15 +27,16 @@ trim_trailing_whitespace = false
 # ── C# files ────────────────────────────────────────────────────────────────
 [*.cs]
 
-# Language conventions
-dotnet_style_qualification_for_field = false:suggestion
-dotnet_style_qualification_for_property = false:suggestion
-dotnet_style_qualification_for_method = false:suggestion
-dotnet_style_qualification_for_event = false:suggestion
+dotnet_separate_import_directive_groups = false
+
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
 
 # Use language keywords instead of framework type names
-dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
-dotnet_style_predefined_type_for_member_access = true:suggestion
+dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+dotnet_style_predefined_type_for_member_access = true:warning
 
 # Expression-level preferences
 dotnet_style_object_initializer = true:suggestion
@@ -189,6 +190,9 @@ dotnet_diagnostic.CA1716.severity = suggestion
 
 # CA1852: Seal internal types — enforce via suggestion, not error
 dotnet_diagnostic.CA1852.severity = suggestion
+
+# CA1863: Use CompositeFormat for complex formatting
+dotnet_diagnostic.CA1863.severity = suggestion
 
 # CA1869: Cache and reuse JsonSerializerOptions
 dotnet_diagnostic.CA1869.severity = suggestion

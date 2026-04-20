@@ -10,30 +10,45 @@ namespace SmartCon.Core.Models;
 /// </summary>
 public sealed record ElementSnapshot
 {
+    /// <summary>Element ID of the snapshot target.</summary>
     public required ElementId ElementId { get; init; }
+
+    /// <summary>True for MEPCurve (Pipe), false for FamilyInstance.</summary>
     public required bool IsMepCurve { get; init; }
 
-    // FamilyInstance: full Transform
+    /// <summary>FamilyInstance transform origin (null for MEPCurve).</summary>
     public XYZ? FiOrigin { get; init; }
+
+    /// <summary>FamilyInstance transform BasisX.</summary>
     public XYZ? FiBasisX { get; init; }
+
+    /// <summary>FamilyInstance transform BasisY.</summary>
     public XYZ? FiBasisY { get; init; }
+
+    /// <summary>FamilyInstance transform BasisZ.</summary>
     public XYZ? FiBasisZ { get; init; }
 
-    // MEPCurve: start/end of Location.Curve (only for Line-based: Pipe)
+    /// <summary>Start point of Location.Curve (MEPCurve only).</summary>
     public XYZ? CurveStart { get; init; }
+
+    /// <summary>End point of Location.Curve (MEPCurve only).</summary>
     public XYZ? CurveEnd { get; init; }
 
-    // Universal position: Origin of first connector (for FlexPipe and fallback)
+    /// <summary>Origin of the first connector (universal fallback for FlexPipe).</summary>
     public XYZ? FirstConnectorOrigin { get; init; }
+
+    /// <summary>Index of the first connector used for fallback positioning.</summary>
     public int FirstConnectorIndex { get; init; }
 
-    // Size
+    /// <summary>Primary connector radius at snapshot time (internal units).</summary>
     public double ConnectorRadius { get; init; }
+
+    /// <summary>FamilySymbol ElementId for type restoration.</summary>
     public ElementId? FamilySymbolId { get; init; }
 
-    // Per-connector radii (for multi-port elements with different DN)
+    /// <summary>Per-connector radii for multi-port elements.</summary>
     public IReadOnlyDictionary<int, double> ConnectorRadii { get; init; } = new Dictionary<int, double>();
 
-    // Connections (from graph)
+    /// <summary>Connection records for reconnect on rollback.</summary>
     public IReadOnlyList<ConnectionRecord> Connections { get; init; } = [];
 }

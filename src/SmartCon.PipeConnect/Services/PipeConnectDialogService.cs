@@ -1,25 +1,25 @@
 using System.IO;
+using System.Linq;
 using Autodesk.Revit.UI;
 using Microsoft.Win32;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.ViewModels;
-using SmartCon.PipeConnect.Views;
 
 namespace SmartCon.PipeConnect.Services;
 
 /// <summary>
-/// WPF implementation of <see cref="IDialogService"/> for PipeConnect module.
-/// Shows modal dialogs for connector type assignment, family selection, and warnings.
+/// WPF implementation of <see cref="IDialogService"/> for the PipeConnect module.
+/// Delegates View creation to an <see cref="IDialogPresenter"/> registered at the
+/// composition root, keeping this service decoupled from concrete View types.
 /// </summary>
-public sealed class PipeConnectDialogService : IDialogService
+public sealed class PipeConnectDialogService(IDialogPresenter presenter) : IDialogService
 {
     public ConnectorTypeDefinition? ShowMiniTypeSelector(
         IReadOnlyList<ConnectorTypeDefinition> availableTypes)
     {
         var vm = new MiniTypeSelectorViewModel(availableTypes);
-        var view = new MiniTypeSelectorView(vm);
-        view.ShowDialog();
+        presenter.ShowDialog(vm);
         return vm.SelectedType;
     }
 
@@ -33,20 +33,21 @@ public sealed class PipeConnectDialogService : IDialogService
         IReadOnlyList<FittingMapping> currentSelection)
     {
         var vm = new FamilySelectorViewModel(availableFamilies, currentSelection);
-        var view = new FamilySelectorView(vm);
-        view.ShowDialog();
+        presenter.ShowDialog(vm);
         return vm.GetResult();
     }
 
     public bool ShowFittingCtcSetup(
         string familyName,
         string symbolName,
-        List<FittingCtcSetupItem> connectors,
+        IReadOnlyList<IFittingCtcSetupItem> connectors,
         IReadOnlyList<ConnectorTypeDefinition> availableTypes)
     {
-        var vm = new FittingCtcSetupViewModel(familyName, symbolName, connectors, availableTypes);
-        var view = new FittingCtcSetupView(vm);
-        view.ShowDialog();
+        // ViewModel expects the WPF-bindable implementation; callers in the
+        // PipeConnect layer already pass concrete FittingCtcSetupItem instances.
+        var items = connectors.Cast<FittingCtcSetupItem>().ToList();
+        var vm = new FittingCtcSetupViewModel(familyName, symbolName, items, availableTypes);
+        presenter.ShowDialog(vm);
         return vm.IsValid;
     }
 

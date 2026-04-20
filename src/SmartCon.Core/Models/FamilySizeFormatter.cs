@@ -5,9 +5,15 @@ using SmartCon.Core;
 using static SmartCon.Core.Units;
 namespace SmartCon.Core.Models;
 
+/// <summary>
+/// Formatting utilities for family size display names (DN, multi-DN).
+/// </summary>
 public static class FamilySizeFormatter
 {
-
+    /// <summary>
+    /// Build a display name from query parameter radii (e.g. "DN 65 × DN 50").
+    /// Target connector DN comes first, then other connectors in order.
+    /// </summary>
     public static string BuildDisplayName(
         IReadOnlyList<double> queryParamRadiiFt,
         int targetColumnIndex)
@@ -32,6 +38,9 @@ public static class FamilySizeFormatter
         return string.Join(" × ", parts);
     }
 
+    /// <summary>
+    /// Build a display name from connector radii dictionary (legacy path without lookup tables).
+    /// </summary>
     public static string BuildDisplayNameLegacy(
         IReadOnlyDictionary<int, double> connectorRadiiFt,
         int targetConnectorIndex)
@@ -55,6 +64,9 @@ public static class FamilySizeFormatter
         return string.Join(" × ", allDn.Select(d => $"DN {d}"));
     }
 
+    /// <summary>
+    /// Build the "AUTO-SELECT" display name with current size parameters.
+    /// </summary>
     public static string BuildAutoSelectDisplayName(
         IReadOnlyList<double> queryParamRadiiFt,
         int targetColumnIndex,
@@ -89,16 +101,19 @@ public static class FamilySizeFormatter
         return $"АВТОПОДБОР ({string.Join(" × ", parts)})";
     }
 
+    /// <summary>Convert radius (feet) to nominal diameter (mm, rounded).</summary>
     public static int ToDn(double radiusFt)
     {
         return (int)System.Math.Round(radiusFt * 2.0 * FeetToMm);
     }
 
+    /// <summary>Convert nominal diameter (mm) to radius (feet).</summary>
     public static double DnToRadiusFt(int dn)
     {
         return (dn / 2.0) * MmToFeet;
     }
 
+    /// <summary>Remove duplicate size options that have identical connector radii and parameters.</summary>
     public static List<FamilySizeOption> DeduplicateFamilyOptions(List<FamilySizeOption> options)
     {
         var seen = new HashSet<string>();
@@ -118,6 +133,9 @@ public static class FamilySizeFormatter
         return result;
     }
 
+    /// <summary>
+    /// Append symbol name in parentheses when multiple options share the same display name.
+    /// </summary>
     public static List<FamilySizeOption> AppendSymbolNameSuffix(List<FamilySizeOption> sorted)
     {
         var duplicateBaseNames = sorted

@@ -9,7 +9,7 @@ namespace SmartCon.Core.Math.FormulaEngine.Solver;
 /// </summary>
 internal static class IfSimplifier
 {
-    private const double Epsilon = 1e-9;
+    private const double Epsilon = Core.Tolerance.Default;
 
     /// <summary>
     /// Simplify AST by substituting known variables and collapsing evaluable IF branches.

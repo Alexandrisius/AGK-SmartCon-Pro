@@ -166,50 +166,6 @@ public interface IFormulaSolver
 
 ---
 
-## IParameterResolver
-
-Определяет каким параметром управляется размер коннектора и меняет его значение.
-
-**Файл:** `SmartCon.Core/Services/Interfaces/IParameterResolver.cs`
-**Реализация:** `SmartCon.Revit/Parameters/RevitParameterResolver.cs`
-
-```csharp
-public interface IParameterResolver
-{
-    /// Параметр(ы), от которых зависит радиус коннектора.
-    IReadOnlyList<ParameterDependency> GetConnectorRadiusDependencies(
-        Document doc, ElementId elementId, int connectorIndex);
-
-    /// Установить нужный радиус, меняя зависимые параметры.
-    bool TrySetConnectorRadius(Document doc, ElementId elementId,
-        int connectorIndex, double targetRadiusInternalUnits);
-}
-```
-
----
-
-## ILookupTableService
-
-Работа с таблицами поиска семейств (FamilySizeTableManager).
-
-**Файл:** `SmartCon.Core/Services/Interfaces/ILookupTableService.cs`
-**Реализация:** `SmartCon.Revit/Parameters/RevitLookupTableService.cs`
-
-```csharp
-public interface ILookupTableService
-{
-    /// Существует ли в таблице поиска строка с данным радиусом?
-    bool ConnectorRadiusExistsInTable(Document doc, ElementId familySymbolId,
-        double radiusInternalUnits);
-
-    /// Ближайший существующий в таблице радиус.
-    double GetNearestAvailableRadius(Document doc, ElementId familySymbolId,
-        double targetRadiusInternalUnits);
-}
-```
-
----
-
 ## IElementChainIterator
 
 Обход цепочек соединённых MEP-элементов.

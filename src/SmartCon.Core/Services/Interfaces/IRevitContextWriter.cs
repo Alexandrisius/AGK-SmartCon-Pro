@@ -9,5 +9,9 @@ namespace SmartCon.Core.Services.Interfaces;
 /// </summary>
 public interface IRevitContextWriter
 {
+    /// <summary>
+    /// Update the context with the current Revit application state.
+    /// Pass <c>UIApplication</c> as <see cref="object"/> to avoid RevitAPIUI dependency in Core (I-09).
+    /// </summary>
     void SetContext(object revitUIApplication);
 }

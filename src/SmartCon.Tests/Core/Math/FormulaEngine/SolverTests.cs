@@ -197,4 +197,33 @@ public sealed class SolverTests
         // m=5, x * 6 = 30 → x = 5
         Assert.Equal(5.0, Solve(formula, "x", 30, new() { ["m"] = 5 }), 4);
     }
+
+    // ── Spaced variable names (from MiniFormulaSolverTests) ─────────────
+
+    [Fact]
+    public void SolveFor_SpacedVariableName_DivisionBy2_Returns50()
+    {
+        var result = FormulaSolver.SolveForStatic(
+            "ADSK_Диаметр условный / 2", "ADSK_Диаметр условный", 25.0);
+        Assert.NotNull(result);
+        Assert.Equal(50.0, result!.Value, 1e-6);
+    }
+
+    [Fact]
+    public void SolveFor_SpacedVariableName_ReturnsDoubleTarget()
+    {
+        var result = FormulaSolver.SolveForStatic(
+            "ADSK_Диаметр условный / 2", "ADSK_Диаметр условный", 7.5);
+        Assert.NotNull(result);
+        Assert.Equal(15.0, result!.Value, 1e-6);
+    }
+
+    [Fact]
+    public void Evaluate_SpacedVariableName_Correct()
+    {
+        var result = FormulaSolver.EvaluateStatic(
+            "ADSK_Диаметр условный / 2",
+            new Dictionary<string, double> { ["ADSK_Диаметр условный"] = 30.0 });
+        Assert.Equal(15.0, result, 1e-6);
+    }
 }

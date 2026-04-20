@@ -161,7 +161,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
                 SmartConLogger.Info($"[SmartCon]   Param: {name}, Type={isShared}, ReadOnly={p.IsReadOnly}, Value={p.AsValueString()}");
             }
 
-            // Транзакция на family doc (отдельный документ — new Transaction допустим, I-03 не нарушается).
+            // I-03b: family document — separate Transaction scope, not managed by ITransactionService.
             using var familyTx = new Transaction(familyDoc, "SetConnectorDescription");
             familyTx.Start();
 

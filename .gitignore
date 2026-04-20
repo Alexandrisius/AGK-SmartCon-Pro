@@ -44,3 +44,8 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+## AI tools
+.opencode/
+.agents/
+skills-lock.json

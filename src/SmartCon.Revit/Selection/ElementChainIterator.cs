@@ -20,7 +20,7 @@ public sealed class ElementChainIterator : IElementChainIterator
         HashSet<ElementId>? stopAtElements = null)
     {
         var comparer = ElementIdEqualityComparer.Instance;
-        var graph = new ConnectionGraph(startElementId);
+        var builder = new ConnectionGraphBuilder(startElementId);
         var visited = new HashSet<ElementId>(comparer) { startElementId };
 
         // 1. Определить "заблокированный" коннектор dynamic (ведёт к static)
@@ -80,15 +80,14 @@ public sealed class ElementChainIterator : IElementChainIterator
 
                         visited.Add(neighborId);
                         nextLevelIds.Add(neighborId);
-                        graph.AddNode(neighborId);
-                        graph.AddElementAtLevel(bfsLevel, neighborId);
-                        graph.AddEdge(new ConnectionEdge(
+                        builder.AddNode(neighborId);
+                        builder.AddElementAtLevel(bfsLevel, neighborId);
+                        builder.AddEdge(new ConnectionEdge(
                             elemId, conn.Id, neighborId, refConn.Id));
 
-                        // Сохранить соединения ОБЕИХ сторон
-                        graph.SaveConnection(elemId, new ConnectionRecord(
+                        builder.SaveConnection(elemId, new ConnectionRecord(
                             elemId, conn.Id, neighborId, refConn.Id));
-                        graph.SaveConnection(neighborId, new ConnectionRecord(
+                        builder.SaveConnection(neighborId, new ConnectionRecord(
                             neighborId, refConn.Id, elemId, conn.Id));
                     }
                 }
@@ -96,6 +95,8 @@ public sealed class ElementChainIterator : IElementChainIterator
 
             currentLevelIds = nextLevelIds;
         }
+
+        var graph = builder.Build();
 
         SmartConLogger.Info($"[Chain] BuildGraph done: {graph.TotalChainElements} elements, {graph.MaxLevel} levels");
         return graph;

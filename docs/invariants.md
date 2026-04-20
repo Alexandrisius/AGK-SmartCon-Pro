@@ -46,6 +46,20 @@ _transactionService.RunInTransaction("Name", doc => { ... });
 
 Каждый `Transaction` / `TransactionGroup` оборачивается в `using`-блок внутри сервиса.
 
+### I-03b: Исключение для Family Documents
+
+`new Transaction(familyDoc, ...)` **разрешён** при работе с family document,
+полученным через `doc.EditFamily(family)`. Family document — это отдельный
+`Document`, не управляемый `ITransactionService` (у него свой стек транзакций).
+
+**Где применяется:**
+- `FittingCtcManager.ApplyFittingCtcToFamily` — запись CTC описаний коннекторов в family.
+- `RevitFamilyConnectorService.SetConnectorTypeCode` — запись описания коннектора в family.
+
+**Правило:** `new Transaction` используется только для family doc. Проектный
+`Document` всегда через `ITransactionService`. После commit/load family doc
+закрывается (`familyDoc.Close(false)`).
+
 ---
 
 ## I-04: Assimilate для PipeConnect

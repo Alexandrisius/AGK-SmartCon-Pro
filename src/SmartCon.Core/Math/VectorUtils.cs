@@ -11,7 +11,7 @@ public static class VectorUtils
     /// <summary>
     /// Double comparison tolerance (approx 1e-9, Revit standard).
     /// </summary>
-    public const double Tolerance = 1e-9;
+    public const double Tolerance = Core.Tolerance.Default;
 
     /// <summary>
     /// Cross product a x b.
@@ -98,7 +98,7 @@ public static class VectorUtils
     public static bool IsParallel(Vec3 a, Vec3 b)
     {
         var cross = CrossProduct(a, b);
-        return Length(cross) < Tolerance;
+        return cross.LengthSquared < Tolerance * Tolerance;
     }
 
     /// <summary>
@@ -136,7 +136,7 @@ public static class VectorUtils
         var normalized = Normalize(v);
 
         // Choose the vector least collinear with v
-        var candidate = System.Math.Abs(normalized.X) < 0.9
+        var candidate = System.Math.Abs(normalized.X) < Core.Tolerance.CollinearityThreshold
             ? Vec3.BasisX
             : Vec3.BasisY;
 
@@ -186,38 +186,18 @@ public static class VectorUtils
     /// </summary>
     public static bool IsZero(Vec3 v)
     {
-        return Length(v) < Tolerance;
+        return v.LengthSquared < Tolerance * Tolerance;
     }
 
-    /// <summary>
-    /// Subtract two vectors: a - b.
-    /// </summary>
-    public static Vec3 Subtract(Vec3 a, Vec3 b)
-    {
-        return new Vec3(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
-    }
+    [Obsolete("Use Vec3 operators instead")]
+    public static Vec3 Subtract(Vec3 a, Vec3 b) => a - b;
 
-    /// <summary>
-    /// Add two vectors: a + b.
-    /// </summary>
-    public static Vec3 Add(Vec3 a, Vec3 b)
-    {
-        return new Vec3(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
-    }
+    [Obsolete("Use Vec3 operators instead")]
+    public static Vec3 Add(Vec3 a, Vec3 b) => a + b;
 
-    /// <summary>
-    /// Multiply a vector by a scalar.
-    /// </summary>
-    public static Vec3 Multiply(Vec3 v, double scalar)
-    {
-        return new Vec3(v.X * scalar, v.Y * scalar, v.Z * scalar);
-    }
+    [Obsolete("Use Vec3 operators instead")]
+    public static Vec3 Multiply(Vec3 v, double scalar) => v * scalar;
 
-    /// <summary>
-    /// Negate a vector: -v.
-    /// </summary>
-    public static Vec3 Negate(Vec3 v)
-    {
-        return new Vec3(-v.X, -v.Y, -v.Z);
-    }
+    [Obsolete("Use Vec3 operators instead")]
+    public static Vec3 Negate(Vec3 v) => -v;
 }
