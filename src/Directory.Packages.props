@@ -22,7 +22,7 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
 
     <!-- JSON для net48 -->
-    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
+    <PackageVersion Include="System.Text.Json" Version="10.0.6" />
 
     <!-- HttpClient для net48 (встроен в .NET 8 BCL) -->
     <PackageVersion Include="System.Net.Http" Version="4.3.4" />
