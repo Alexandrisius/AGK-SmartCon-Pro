@@ -16,37 +16,43 @@ REM $(RevitVersion). A global `dotnet restore` without RevitVersion context
 REM activates the 2021.* fallback, which breaks net48 builds that use API 2022+
 REM (for example, Definition.GetDataType introduced in Revit 2022).
 
-echo [1/9] Building Revit 2025 (Debug.R25, net8.0-windows)...
+echo [1/11] Building Revit 2025 (Debug.R25, net8.0-windows)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R25 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R25 failed! & pause & exit /b 1 )
 echo [OK] R25 build successful
 
 echo.
-echo [2/9] Building Revit 2024 (Debug.R24, net48)...
+echo [2/11] Building Revit 2026 (Debug.R26, net8.0-windows)...
+dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R26 --verbosity quiet
+if errorlevel 1 ( echo [ERROR] Build R26 failed! & pause & exit /b 1 )
+echo [OK] R26 build successful
+
+echo.
+echo [3/11] Building Revit 2024 (Debug.R24, net48)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R24 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R24 failed! & pause & exit /b 1 )
 echo [OK] R24 build successful
 
 echo.
-echo [3/9] Building Revit 2021-2023 (Debug.R21, net48)...
+echo [4/11] Building Revit 2021-2023 (Debug.R21, net48)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R21 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R21 failed! & pause & exit /b 1 )
 echo [OK] R21 build successful
 
 echo.
-echo [4/9] Building Revit 2019-2020 (Debug.R19, net48)...
+echo [5/11] Building Revit 2019-2020 (Debug.R19, net48)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R19 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R19 failed! & pause & exit /b 1 )
 echo [OK] R19 build successful
 
 echo.
-echo [5/9] Building updater (net8.0)...
+echo [6/11] Building updater (net8.0)...
 dotnet build "src\SmartCon.Updater\SmartCon.Updater.csproj" -c Debug -f net8.0 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Updater build failed! & pause & exit /b 1 )
 echo [OK] Updater build successful
 
 echo.
-echo [6/9] Deploying to Revit 2025...
+echo [7/11] Deploying to Revit 2025...
 set "ADDIN_R25=%APPDATA%\Autodesk\Revit\Addins\2025"
 set "DLL_R25=%APPDATA%\SmartCon\2025"
 if exist "%ADDIN_R25%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R25%\SmartCon" 2>nul )
@@ -57,7 +63,18 @@ call :WriteAddin "%ADDIN_R25%\SmartCon.addin" "%DLL_R25%\SmartCon.App.dll"
 echo [OK] Revit 2025
 
 echo.
-echo [7/9] Deploying to Revit 2021-2024...
+echo [8/11] Deploying to Revit 2026...
+set "ADDIN_R26=%APPDATA%\Autodesk\Revit\Addins\2026"
+set "DLL_R26=%APPDATA%\SmartCon\2026"
+if exist "%ADDIN_R26%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R26%\SmartCon" 2>nul )
+if not exist "%DLL_R26%" mkdir "%DLL_R26%"
+copy /Y "src\SmartCon.App\bin\Debug.R26\net8.0-windows\*.dll" "%DLL_R26%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R26\net8.0-windows\SmartCon.App.deps.json" "%DLL_R26%\" >nul 2>nul
+call :WriteAddin "%ADDIN_R26%\SmartCon.addin" "%DLL_R26%\SmartCon.App.dll"
+echo [OK] Revit 2026
+
+echo.
+echo [9/11] Deploying to Revit 2021-2024...
 set "DLL_R24=%APPDATA%\SmartCon\2024"
 if not exist "%DLL_R24%" mkdir "%DLL_R24%"
 copy /Y "src\SmartCon.App\bin\Debug.R24\net48\*.dll" "%DLL_R24%\" >nul
@@ -100,7 +117,7 @@ if exist "%ADDIN_R21%" (
 )
 
 echo.
-echo [8/9] Deploying to Revit 2019-2020...
+echo [10/11] Deploying to Revit 2019-2020...
 set "DLL_R19=%APPDATA%\SmartCon\2019-2020"
 if not exist "%DLL_R19%" mkdir "%DLL_R19%"
 copy /Y "src\SmartCon.App\bin\Debug.R19\net48\*.dll" "%DLL_R19%\" >nul
@@ -120,7 +137,7 @@ if exist "%ADDIN_R20%" (
 )
 
 echo.
-echo [9/9] Deploying updater...
+echo [11/11] Deploying updater...
 set "UPDATER_SRC=src\SmartCon.Updater\bin\Debug\net8.0"
 copy /Y "%UPDATER_SRC%\SmartCon.Updater.exe" "%APPDATA%\SmartCon\" >nul 2>nul
 copy /Y "%UPDATER_SRC%\SmartCon.Updater.dll" "%APPDATA%\SmartCon\" >nul 2>nul
@@ -137,6 +154,7 @@ echo  2019-2020: %DLL_R19%
 echo  2021-2023: %DLL_R21%
 echo  2024:      %DLL_R24%
 echo  2025:      %DLL_R25%
+echo  2026:      %DLL_R26%
 echo.
 pause
 exit /b 0

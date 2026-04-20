@@ -21,13 +21,16 @@
   <PropertyGroup Condition="$(Configuration.EndsWith('.R25'))">
     <RevitVersion>2025</RevitVersion>
   </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.EndsWith('.R26'))">
+    <RevitVersion>2026</RevitVersion>
+  </PropertyGroup>
 
   <!-- ============================================================ -->
   <!-- ШАГ 2: Теперь RevitVersion задан — можно использовать в условии -->
   <!-- ============================================================ -->
   <PropertyGroup>
-    <TargetFrameworks Condition="'$(RevitVersion)' == '2025'">net8.0-windows</TargetFrameworks>
-    <TargetFrameworks Condition="'$(RevitVersion)' != '' And '$(RevitVersion)' != '2025'">net48</TargetFrameworks>
+    <TargetFrameworks Condition="'$(RevitVersion)' == '2025' Or '$(RevitVersion)' == '2026'">net8.0-windows</TargetFrameworks>
+    <TargetFrameworks Condition="'$(RevitVersion)' != '' And '$(RevitVersion)' != '2025' And '$(RevitVersion)' != '2026'">net48</TargetFrameworks>
     <TargetFrameworks Condition="'$(RevitVersion)' == ''">net48;net8.0-windows</TargetFrameworks>
     <LangVersion>12</LangVersion>
     <Nullable>enable</Nullable>
@@ -43,8 +46,8 @@
 
     <!-- Именованные Build Configurations (паттерн Nice3point) -->
     <Configurations>Debug;Release</Configurations>
-    <Configurations>$(Configurations);Debug.R19;Debug.R21;Debug.R22;Debug.R23;Debug.R24;Debug.R25</Configurations>
-    <Configurations>$(Configurations);Release.R19;Release.R21;Release.R22;Release.R23;Release.R24;Release.R25</Configurations>
+    <Configurations>$(Configurations);Debug.R19;Debug.R21;Debug.R22;Debug.R23;Debug.R24;Debug.R25;Debug.R26</Configurations>
+    <Configurations>$(Configurations);Release.R19;Release.R21;Release.R22;Release.R23;Release.R24;Release.R25;Release.R26</Configurations>
 
     <Company>AGK</Company>
     <Product>SmartCon</Product>

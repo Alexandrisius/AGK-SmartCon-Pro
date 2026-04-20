@@ -89,6 +89,7 @@ $buildConfigs = @(
     @{ Config = "Release.R21"; Tfm = "net48";           Label = "Revit 2021-2023" }
     @{ Config = "Release.R24"; Tfm = "net48";           Label = "Revit 2024" }
     @{ Config = "Release.R25"; Tfm = "net8.0-windows";  Label = "Revit 2025" }
+    @{ Config = "Release.R26"; Tfm = "net8.0-windows";  Label = "Revit 2026" }
 )
 
 foreach ($bc in $buildConfigs) {

@@ -27,6 +27,9 @@ jobs:
           - configuration: Release.R25
             tfm: net8.0-windows
             artifact_tag: R25
+          - configuration: Release.R26
+            tfm: net8.0-windows
+            artifact_tag: R26
     steps:
       - uses: actions/checkout@v4
 

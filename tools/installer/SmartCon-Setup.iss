@@ -32,8 +32,8 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-russian.NoRevitFound=На этой системе не найдены поддерживаемые версии Revit (2019-2025).%n%nУстановка будет продолжена, но плагин не будет зарегистрирован в Revit автоматически.
-english.NoRevitFound=No supported Revit versions (2019-2025) were found on this system.%n%nInstallation will proceed, but the plugin will not be automatically registered in Revit.
+russian.NoRevitFound=На этой системе не найдены поддерживаемые версии Revit (2019-2026).%n%nУстановка будет продолжена, но плагин не будет зарегистрирован в Revit автоматически.
+english.NoRevitFound=No supported Revit versions (2019-2026) were found on this system.%n%nInstallation will proceed, but the plugin will not be automatically registered in Revit.
 
 [Files]
 ; --- DLL set 0: Revit 2019-2020 (net48, RevitAPI 2020) ---
@@ -48,6 +48,9 @@ Source: "..\..\artifacts\publish\SmartCon-R24\*"; DestDir: "{app}\2024"; Check: 
 ; --- DLL set 3: Revit 2025 (net8.0-windows, RevitAPI 2025) ---
 Source: "..\..\artifacts\publish\SmartCon-R25\*"; DestDir: "{app}\2025"; Check: NeedR25; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
+; --- DLL set 4: Revit 2026 (net8.0-windows, RevitAPI 2026) ---
+Source: "..\..\artifacts\publish\SmartCon-R26\*"; DestDir: "{app}\2026"; Check: NeedR26; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
+
 ; --- Updater (shared, net8.0) — always installed ---
 Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.dll"; DestDir: "{app}"; Flags: ignoreversion
@@ -59,6 +62,7 @@ Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueN
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2021-2023"; ValueData: "{app}\2021-2023"; Check: NeedR21; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2024"; ValueData: "{app}\2024"; Check: NeedR24; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2025"; ValueData: "{app}\2025"; Check: NeedR25; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2026"; ValueData: "{app}\2026"; Check: NeedR26; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon"; ValueType: string; ValueName: "Version"; ValueData: "{#AppVersion}"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletevalue
 
@@ -71,6 +75,7 @@ var
   Revit2023Installed: Boolean;
   Revit2024Installed: Boolean;
   Revit2025Installed: Boolean;
+  Revit2026Installed: Boolean;
 
 function IsRevitInstalled(Version: Integer): Boolean;
 var
@@ -113,6 +118,7 @@ begin
   Revit2023Installed := IsRevitInstalled(2023);
   Revit2024Installed := IsRevitInstalled(2024);
   Revit2025Installed := IsRevitInstalled(2025);
+  Revit2026Installed := IsRevitInstalled(2026);
 end;
 
 function NeedR19: Boolean;
@@ -135,10 +141,15 @@ begin
   Result := Revit2025Installed;
 end;
 
+function NeedR26: Boolean;
+begin
+  Result := Revit2026Installed;
+end;
+
 function InitializeSetup: Boolean;
 begin
   DetectRevitVersions;
-  if not NeedR19 and not NeedR21 and not NeedR24 and not NeedR25 then
+  if not NeedR19 and not NeedR21 and not NeedR24 and not NeedR25 and not NeedR26 then
     MsgBox(CustomMessage('NoRevitFound'), mbInformation, MB_OK);
   Result := True;
 end;
@@ -197,6 +208,10 @@ begin
     begin
       if Revit2025Installed then WriteAddinFile('2025', '2025');
     end;
+    if NeedR26 then
+    begin
+      if Revit2026Installed then WriteAddinFile('2026', '2026');
+    end;
   end;
 end;
 
@@ -211,6 +226,7 @@ begin
     RemoveAddinAndDlls('2023', '2021-2023');
     RemoveAddinAndDlls('2024', '2024');
     RemoveAddinAndDlls('2025', '2025');
+    RemoveAddinAndDlls('2026', '2026');
     DeleteFile(ExpandConstant('{app}') + '\SmartCon.Updater.exe');
     DeleteFile(ExpandConstant('{app}') + '\SmartCon.Updater.dll');
     DeleteFile(ExpandConstant('{app}') + '\SmartCon.Updater.deps.json');
@@ -224,6 +240,7 @@ Type: filesandordirs; Name: "{app}\2019-2020"
 Type: filesandordirs; Name: "{app}\2021-2023"
 Type: filesandordirs; Name: "{app}\2024"
 Type: filesandordirs; Name: "{app}\2025"
+Type: filesandordirs; Name: "{app}\2026"
 Type: files; Name: "{app}\SmartCon.Updater.exe"
 Type: files; Name: "{app}\SmartCon.Updater.dll"
 Type: filesandordirs; Name: "{app}"

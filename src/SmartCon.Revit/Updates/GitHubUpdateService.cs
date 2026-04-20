@@ -25,7 +25,7 @@ public sealed class GitHubUpdateService : IUpdateService
 
     private string? _cachedVersion;
 
-    private static readonly int[] s_supportedRevitVersions = [2019, 2020, 2021, 2022, 2023, 2024, 2025];
+    private static readonly int[] s_supportedRevitVersions = [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
 
     public GitHubUpdateService(IUpdateSettingsRepository settingsRepo)
     {
@@ -383,6 +383,7 @@ public sealed class GitHubUpdateService : IUpdateService
             "R21" => Path.Combine(s_smartConDir, "2021-2023"),
             "R24" => Path.Combine(s_smartConDir, "2024"),
             "R25" => Path.Combine(s_smartConDir, "2025"),
+            "R26" => Path.Combine(s_smartConDir, "2026"),
             _ => Path.Combine(s_smartConDir, artifactTag)
         };
     }
@@ -400,9 +401,11 @@ public sealed class GitHubUpdateService : IUpdateService
             tags.Add("R24");
         if (installed.Contains(2025))
             tags.Add("R25");
+        if (installed.Contains(2026))
+            tags.Add("R26");
 
         if (tags.Count == 0)
-            tags = ["R19", "R21", "R24", "R25"];
+            tags = ["R19", "R21", "R24", "R25", "R26"];
 
         return tags;
     }

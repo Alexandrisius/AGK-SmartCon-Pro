@@ -53,8 +53,14 @@
                       VersionOverride="2021.*" />
   </ItemGroup>
 
-  <!-- net8.0-windows: всегда RevitAPI 2025, независимо от RevitVersion -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(RevitVersion)' != ''">
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
+                      VersionOverride="$(RevitVersion).*" />
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+                      VersionOverride="$(RevitVersion).*" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(RevitVersion)' == ''">
     <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
                       VersionOverride="2025.*" />
     <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
