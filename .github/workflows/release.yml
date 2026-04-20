@@ -31,7 +31,7 @@ jobs:
             tfm: net8.0-windows
             artifact_tag: R26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -56,7 +56,7 @@ jobs:
   updater:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -82,7 +82,7 @@ jobs:
     runs-on: windows-latest
     needs: publish
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-dotnet@v4
         with:
