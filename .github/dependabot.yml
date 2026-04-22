@@ -17,6 +17,8 @@ updates:
         versions: [">= 18.0.0"]
       - dependency-name: "coverlet.collector"
         versions: [">= 7.0.0"]
+      - dependency-name: "PolySharp"
+        versions: [">= 2.0.0"]
 
   - package-ecosystem: github-actions
     directory: /
