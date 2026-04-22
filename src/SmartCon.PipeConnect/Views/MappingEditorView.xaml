@@ -14,7 +14,8 @@
         <ui:SingletonResources/>
     </Window.Resources>
 
-    <TabControl Margin="8" Style="{DynamicResource FlatTabControl}">
+    <TabControl Margin="8" Style="{DynamicResource FlatTabControl}"
+                SelectionChanged="TabControl_SelectionChanged">
 
         <!-- Вкладка: Типы коннекторов -->
         <TabItem Header="{DynamicResource Tab_ConnectorTypes}" Style="{DynamicResource FlatTabItem}">
@@ -144,43 +145,43 @@
                           RowStyle="{DynamicResource CompactDataGridRow}"
                           CellStyle="{DynamicResource CompactDataGridCell}">
                     <DataGrid.Columns>
-                         <DataGridTemplateColumn x:Name="ColConnType1" Width="170">
-                             <DataGridTemplateColumn.HeaderStyle>
-                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
-                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                 </Style>
-                             </DataGridTemplateColumn.HeaderStyle>
-                             <DataGridTemplateColumn.CellTemplate>
-                                 <DataTemplate>
-                                     <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
-                                                   RelativeSource={RelativeSource AncestorType=Window}}"
-                                               DisplayMemberPath="Name"
-                                               SelectedValuePath="Code"
-                                               SelectedValue="{Binding FromTypeCode, UpdateSourceTrigger=PropertyChanged}"
-                                               Style="{DynamicResource CompactComboBox}"
-                                               BorderThickness="0" Height="24"/>
-                                 </DataTemplate>
-                             </DataGridTemplateColumn.CellTemplate>
-                         </DataGridTemplateColumn>
+                              <DataGridTemplateColumn x:Name="ColConnType1" Width="170">
+                              <DataGridTemplateColumn.HeaderStyle>
+                                  <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                  </Style>
+                              </DataGridTemplateColumn.HeaderStyle>
+                              <DataGridTemplateColumn.CellTemplate>
+                                  <DataTemplate>
+                                      <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
+                                                    RelativeSource={RelativeSource AncestorType=Window}}"
+                                                DisplayMemberPath="Name"
+                                                SelectedValuePath="Code"
+                                                SelectedValue="{Binding FromTypeCode, UpdateSourceTrigger=PropertyChanged, Delay=1}"
+                                                Style="{DynamicResource CompactComboBox}"
+                                                BorderThickness="0" Height="24"/>
+                                  </DataTemplate>
+                              </DataGridTemplateColumn.CellTemplate>
+                          </DataGridTemplateColumn>
 
-                         <DataGridTemplateColumn x:Name="ColConnType2" Width="170">
-                             <DataGridTemplateColumn.HeaderStyle>
-                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
-                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                 </Style>
-                             </DataGridTemplateColumn.HeaderStyle>
-                             <DataGridTemplateColumn.CellTemplate>
-                                 <DataTemplate>
-                                     <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
-                                                   RelativeSource={RelativeSource AncestorType=Window}}"
-                                               DisplayMemberPath="Name"
-                                               SelectedValuePath="Code"
-                                               SelectedValue="{Binding ToTypeCode, UpdateSourceTrigger=PropertyChanged}"
-                                               Style="{DynamicResource CompactComboBox}"
-                                               BorderThickness="0" Height="24"/>
-                                 </DataTemplate>
-                             </DataGridTemplateColumn.CellTemplate>
-                         </DataGridTemplateColumn>
+                          <DataGridTemplateColumn x:Name="ColConnType2" Width="170">
+                              <DataGridTemplateColumn.HeaderStyle>
+                                  <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                  </Style>
+                              </DataGridTemplateColumn.HeaderStyle>
+                              <DataGridTemplateColumn.CellTemplate>
+                                  <DataTemplate>
+                                      <ComboBox ItemsSource="{Binding DataContext.ConnectorTypes,
+                                                    RelativeSource={RelativeSource AncestorType=Window}}"
+                                                DisplayMemberPath="Name"
+                                                SelectedValuePath="Code"
+                                                SelectedValue="{Binding ToTypeCode, UpdateSourceTrigger=PropertyChanged, Delay=1}"
+                                                Style="{DynamicResource CompactComboBox}"
+                                                BorderThickness="0" Height="24"/>
+                                  </DataTemplate>
+                              </DataGridTemplateColumn.CellTemplate>
+                          </DataGridTemplateColumn>
 
                          <DataGridCheckBoxColumn x:Name="ColDirect" Binding="{Binding IsDirectConnect, UpdateSourceTrigger=PropertyChanged}" Width="65">
                              <DataGridCheckBoxColumn.HeaderStyle>

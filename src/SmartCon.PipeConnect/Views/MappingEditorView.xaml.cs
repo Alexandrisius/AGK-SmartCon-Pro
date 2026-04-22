@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
 
@@ -13,6 +14,12 @@ public partial class MappingEditorView : Window
         DataContext = viewModel;
 
         ApplyColumnHeaders();
+    }
+
+    private void TabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ReferenceEquals(e.OriginalSource, sender))
+            TypesGrid.CommitEdit(DataGridEditingUnit.Row, true);
     }
 
     private void ApplyColumnHeaders()
