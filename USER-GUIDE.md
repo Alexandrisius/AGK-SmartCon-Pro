@@ -48,6 +48,18 @@ SmartCon — плагин для Autodesk Revit, который автомати
 
 ---
 
+<div align="center">
+
+### 🎬 Видеоурок
+
+[![SmartCon — Мечта всех MEP инженеров в Revit](https://img.youtube.com/vi/F55N9cCMIMk/maxresdefault.jpg)](https://www.youtube.com/watch?v=F55N9cCMIMk)
+
+**[Мечта всех MEP инженеров работающих в Revit. Бесплатный плагин SmartCon.](https://www.youtube.com/watch?v=F55N9cCMIMk)**
+
+</div>
+
+---
+
 ## Установка
 
 ### Вариант 1: Инсталлятор (рекомендуется)
