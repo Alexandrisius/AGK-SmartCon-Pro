@@ -165,6 +165,45 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 | .NET/WPF/DI паттерн | MCP REF → `ref_search_documentation` |
 | Создать новый Revit-проект | `saury-revit` skill |
 
+## CI/CD — GitHub Actions
+
+### Workflow-ы
+
+| Файл | Триггер | Что делает |
+|---|---|---|
+| `build.yml` | push в main, PR, tags | Билдит 5 конфигураций (R19/R21/R24/R25/R26) + тесты |
+| `release.yml` | push tag `v*` | publish всех версий → ZIP с Updater внутри → GitHub Release |
+| `codeql.yml` | push/PR в main, еженедельно | Security scanning (C#) |
+| `stale.yml` | ежедневно | Закрывает issues/PR без активности 30+ дней |
+
+### Branch Protection на main
+
+Ветка `main` защищена:
+- Обязательны 6 status checks: build (R19/R21/R24/R25/R26) + test
+- Нужен 1 approval от CODEOWNERS
+- Linear history (no merge commits)
+- Admin может пушить напрямую (bypass)
+
+### Dependabot — что ЗАПРЕЩЕНО обновлять
+
+`dependabot.yml` уже игнорирует опасные пакеты. **Если агент меняет `Directory.Packages.props` — проверить:**
+- `Microsoft.Extensions.DependencyInjection` — **ЗАМОРОЖЕН на 8.x** (9.0+ дропнул net48)
+- `System.Text.Json` — **ЗАМОРОЖЕН на 8.x** (9.0+ может сломать net48)
+- `Nice3point.Revit.Api.*` — версия определяется динамически из конфигурации
+
+### Если CI упал
+
+1. Прочитать лог: `gh run view <run_id> --log-failed`
+2. 99% причин: `EnforceCodeStyleInBuild=true` + какой-то анализатор стал error
+3. Решение: добавить severity override в `.editorconfig` (НЕ отключать `EnforceCodeStyleInBuild`)
+4. НЕ трогать `Directory.Build.props` без крайней необходимости
+
+### Release — как работает
+
+1. **Локально:** `tools\release.bat` → `release.ps1` (инкремент версии, билд, тест, publish, ZIP, Inno Setup, git tag, push)
+2. **CI:** `release.yml` срабатывает на tag → publish → ZIP → GitHub Release (без Inno Setup — его нет на runner)
+3. **Итого:** `release.ps1` — оркестратор, `release.yml` — потребитель тега
+
 ## Структура документации
 
 ```
