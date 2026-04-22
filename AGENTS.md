@@ -34,18 +34,41 @@
 
 ## Мульти-версионная сборка (ОБЯЗАТЕЛЬНО)
 
-Проект поддерживает **6 версий Revit**: 2019, 2021, 2022, 2023, 2024 (net48) и 2025 (net8.0-windows).
+Проект поддерживает **8 версий Revit**: 2019, 2020, 2021, 2022, 2023, 2024 (net48) и 2025, 2026 (net8.0-windows).
+
+### Паттерн группировки конфигураций (SSOT)
+
+Каждая shipping-конфигурация покрывает **диапазон** версий Revit. Бинарник компилируется против
+**минимальной API-версии** в диапазоне — это гарантирует обратную совместимость (Revit API additive-only).
+
+| Конфигурация | Покрывает Revit | TFM | RevitAPI NuGet | shipping ZIP |
+|---|---|---|---|---|
+| `Release.R19` | 2019–2020 | net48 | 2020.* | `SmartCon-X.X.X-R19.zip` |
+| `Release.R21` | 2021–2023 | net48 | 2021.* | `SmartCon-X.X.X-R21.zip` |
+| `Release.R24` | 2024 | net48 | 2024.* | `SmartCon-X.X.X-R24.zip` |
+| `Release.R25` | 2025–2026 | net8.0-windows | 2025.* | `SmartCon-X.X.X-R25.zip` |
+| `Release.R26` | 2026 | net8.0-windows | 2026.* | **CI-only** (валидация) |
+
+**Правило:** Если две соседние версии Revit не имеют `#if`-разделения в коде и компилируются
+с одинаковыми `DefineConstants` — они группируются в одну shipping-конфигурацию.
+Старшая версия остаётся как CI-only конфигурация для раннего обнаружения breaking changes в API.
+
+**Когда добавлять отдельный shipping-архив:**
+- Появился `#if REVIT20XX_OR_GREATER` или аналог, разделяющий две версии
+- Revit API внёс breaking change (изменение сигнатур, удаление методов)
+- Разные TFM (net48 vs net8.0-windows)
 
 ### ЕДИНСТВЕННЫЙ правильный способ сборки — `build-and-deploy.bat`
 
-Используй именованные конфигурации `Debug.R25/.R23/.R19` (НЕ `-p:RevitVersion=...`):
+Используй именованные конфигурации `Debug.R25/.R21/.R19` (НЕ `-p:RevitVersion=...`):
 
 ```bash
 # Полный цикл: сборка + деплой всех версий
 build-and-deploy.bat
 ```
 
-Скрипт собирает 3 конфигурации (R25/R23/R19) + updater и деплоит в Revit.
+Скрипт собирает 4 конфигурации (R25/R24/R21/R19) + updater и деплоит в Revit.
+R25-бинарник копируется в папки Revit 2025 и 2026 (один бинарник для обеих версий).
 
 ### Почему НЕЛЬЗЯ использовать `-p:RevitVersion=...`
 
@@ -171,8 +194,7 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 
 | Файл | Триггер | Что делает |
 |---|---|---|
-| `build.yml` | push в main, PR, tags | Билдит 5 конфигураций (R19/R21/R24/R25/R26) + тесты |
-| `release.yml` | push tag `v*` | publish всех версий → ZIP с Updater внутри → GitHub Release |
+| `build.yml` | push в main, PR, tags `v*` | Билдит 5 конфигураций (R19/R21/R24/R25/R26) + тесты |
 | `codeql.yml` | push/PR в main, еженедельно | Security scanning (C#) |
 | `stale.yml` | ежедневно | Закрывает issues/PR без активности 30+ дней |
 
@@ -200,9 +222,9 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 
 ### Release — как работает
 
-1. **Локально:** `tools\release.bat` → `release.ps1` (инкремент версии, билд, тест, publish, ZIP, Inno Setup, git tag, push)
-2. **CI:** `release.yml` срабатывает на tag → publish → ZIP → GitHub Release (без Inno Setup — его нет на runner)
-3. **Итого:** `release.ps1` — оркестратор, `release.yml` — потребитель тега
+1. **Локально:** `tools\release.bat` → `release.ps1` (инкремент версии, билд, тест, publish, ZIP, Inno Setup, git tag, push, GitHub Release)
+2. **CI:** `build.yml` срабатывает на tag `v*` → валидирует сборку + тесты (не создаёт релиз)
+3. **Единственный создатель релизов:** `release.ps1` — он же формирует changelog и загружает архивы
 
 ## Структура документации
 
