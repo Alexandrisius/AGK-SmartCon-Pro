@@ -58,7 +58,7 @@ jobs:
           Remove-Item "artifacts/publish/SmartCon-${{ matrix.artifact_tag }}/UIAutomation*.dll" -ErrorAction SilentlyContinue
 
       - name: Upload SmartCon ${{ matrix.artifact_tag }} artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SmartCon-${{ matrix.artifact_tag }}
           path: artifacts/publish/SmartCon-${{ matrix.artifact_tag }}/**/*
@@ -83,7 +83,7 @@ jobs:
         run: dotnet publish src/SmartCon.Updater/SmartCon.Updater.csproj -c Release -f net8.0 -o artifacts/publish/SmartCon.Updater
 
       - name: Upload Updater artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SmartCon-Updater
           path: artifacts/publish/SmartCon.Updater/**/*
