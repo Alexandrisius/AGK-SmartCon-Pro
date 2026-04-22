@@ -5,6 +5,7 @@ using SmartCon.UI.Controls;
 
 namespace SmartCon.PipeConnect.Views;
 
+[Obsolete("LEGACY: CTC now assigned automatically via Reflect button. Dialog no longer invoked.")]
 public partial class FittingCtcSetupView : DialogWindowBase
 {
     public FittingCtcSetupView(FittingCtcSetupViewModel viewModel)

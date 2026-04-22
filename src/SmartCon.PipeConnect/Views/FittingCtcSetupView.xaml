@@ -8,7 +8,6 @@
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        WindowStyle="ToolWindow"
         Topmost="True"
         Background="{DynamicResource BackgroundBrush}">
 

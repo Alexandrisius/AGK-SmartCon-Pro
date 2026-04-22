@@ -8,7 +8,7 @@ namespace SmartCon.App.Ribbon;
 public static class RibbonBuilder
 {
     private const string TabName = "SmartCon";
-    private const string PanelPipeConnect = "PipeConnect";
+    private const string PanelPipeConnect = "PipeSystems";
     private const string PanelInfo = "Info";
 
     public static void CreateRibbon(UIControlledApplication app)

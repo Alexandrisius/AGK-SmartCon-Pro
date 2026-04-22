@@ -8,15 +8,14 @@
         WindowStartupLocation="Manual"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        WindowStyle="ToolWindow"
         Topmost="True"
         Background="{DynamicResource BackgroundBrush}">
 
-    <controls:DialogWindowBase.Resources>
+    <Window.Resources>
         <ui:SingletonResources/>
-    </controls:DialogWindowBase.Resources>
+    </Window.Resources>
 
-    <Grid Margin="10">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />

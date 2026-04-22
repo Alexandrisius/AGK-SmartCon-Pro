@@ -37,6 +37,7 @@ public sealed class PipeConnectDialogService(IDialogPresenter presenter) : IDial
         return vm.GetResult();
     }
 
+    [Obsolete("LEGACY: CTC now assigned automatically via Reflect button. No callers.")]
     public bool ShowFittingCtcSetup(
         string familyName,
         string symbolName,

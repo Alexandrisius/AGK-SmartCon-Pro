@@ -6,6 +6,9 @@ namespace SmartCon.PipeConnect.ViewModels;
 /// <summary>
 /// WPF-bindable implementation of <see cref="IFittingCtcSetupItem"/>.
 /// Represents one connector of a fitting family in the CTC (ConnectionTypeCode) setup dialog.
+/// LEGACY: The setup dialog (FittingCtcSetupView) is dead code. CTC is now assigned
+/// automatically via the Reflect button. This class is kept because CtcGuessService and
+/// CtcFamilyWriter still use it internally for auto-CTC computation.
 /// </summary>
 public sealed partial class FittingCtcSetupItem : ObservableObject, IFittingCtcSetupItem
 {

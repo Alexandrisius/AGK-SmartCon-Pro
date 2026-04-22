@@ -87,6 +87,7 @@ public sealed class FittingCtcManager(
     /// Ensure a fitting has CTC assigned before insertion. Opens the setup dialog if needed.
     /// Returns false if the user cancels.
     /// </summary>
+    [Obsolete("LEGACY: CTC now assigned automatically. No callers — dead code.")]
     public bool EnsureFittingCtcForInsert(
         Document doc, FittingCardItem fitting, ConnectorProxy staticConnector)
     {
@@ -123,6 +124,7 @@ public sealed class FittingCtcManager(
     /// Ensure a reducer has CTC assigned before insertion. Opens the setup dialog if needed.
     /// Returns false if the user cancels.
     /// </summary>
+    [Obsolete("LEGACY: CTC now assigned automatically. No callers — dead code.")]
     public bool EnsureReducerCtcForInsert(
         Document doc, IReadOnlyList<FittingMappingRule> proposedFittings, ConnectorProxy staticConnector)
     {

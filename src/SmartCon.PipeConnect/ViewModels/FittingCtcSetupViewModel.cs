@@ -6,6 +6,7 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
+[Obsolete("LEGACY: CTC now assigned automatically via Reflect button. Dialog no longer invoked.")]
 public sealed partial class FittingCtcSetupViewModel : ObservableObject, IObservableRequestClose
 {
     public string FamilyName { get; }

@@ -106,7 +106,9 @@ public static class ServiceRegistrar
             var presenter = new WpfDialogPresenter();
             presenter.Register<MiniTypeSelectorViewModel>(vm => new MiniTypeSelectorView(vm));
             presenter.Register<FamilySelectorViewModel>(vm => new FamilySelectorView(vm));
+#pragma warning disable CS0618 // LEGACY: FittingCtcSetup — dead code, CTC now auto-assigned
             presenter.Register<FittingCtcSetupViewModel>(vm => new FittingCtcSetupView(vm));
+#pragma warning restore CS0618
             presenter.Register<AboutViewModel>(vm => new AboutView(vm));
             presenter.Register<MappingEditorViewModel>(vm => new MappingEditorView(vm));
             presenter.Register<PipeConnectEditorViewModel>(vm => new PipeConnectEditorView(vm));

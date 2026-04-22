@@ -30,6 +30,7 @@ public interface IDialogService
     /// Shows a dialog to assign connector types (CTC) to fitting connectors.
     /// Returns <c>true</c> if the user confirmed assignments.
     /// </summary>
+    [Obsolete("LEGACY: CTC now assigned automatically via Reflect button. No callers.")]
     bool ShowFittingCtcSetup(
         string familyName,
         string symbolName,

@@ -5,6 +5,9 @@ namespace SmartCon.Core.Models;
 /// to expose connector setup data to the UI layer without Core depending on a concrete
 /// WPF/INotifyPropertyChanged implementation. The UI layer supplies a binding-aware
 /// implementation (see <c>SmartCon.PipeConnect.ViewModels.FittingCtcSetupItem</c>).
+/// LEGACY: The setup dialog (FittingCtcSetupView) is dead code. CTC is now assigned
+/// automatically via the Reflect button. This interface is kept because CtcFamilyWriter
+/// and CtcGuessService use FittingCtcSetupItem internally for auto-CTC computation.
 /// </summary>
 public interface IFittingCtcSetupItem
 {
