@@ -100,9 +100,10 @@ public sealed class DynamicSizeLoader(
             }
 
             var autoSymbolName = GetCurrentSymbolName(doc, dynId);
+            var autoSymbolNameForDisplay = GetSymbolNameForDisplay(doc, dynId);
 
             var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(
-                autoQueryParamRadii, targetColIdx, autoSymbolName);
+                autoQueryParamRadii, targetColIdx, autoSymbolNameForDisplay);
 
             sizes.Add(new FamilySizeOption
             {
@@ -174,6 +175,7 @@ public sealed class DynamicSizeLoader(
 
         IReadOnlyList<double> autoQueryParamRadii;
         var autoSymbolName = GetCurrentSymbolName(doc, dynId);
+        var autoSymbolNameForDisplay = GetSymbolNameForDisplay(doc, dynId);
         var nonAutoSizes = currentOptions.Where(s => !s.IsAutoSelect).ToList();
         if (nonAutoSizes.Count > 0)
         {
@@ -206,7 +208,7 @@ public sealed class DynamicSizeLoader(
             autoQueryParamRadii = [currentRadii.GetValueOrDefault(dynamicConn.ConnectorIndex, 0)];
 
         var autoDisplayName = FamilySizeFormatter.BuildAutoSelectDisplayName(
-            autoQueryParamRadii, targetColIdx, autoSymbolName);
+            autoQueryParamRadii, targetColIdx, autoSymbolNameForDisplay);
 
         var newAutoOption = new FamilySizeOption
         {
@@ -253,5 +255,14 @@ public sealed class DynamicSizeLoader(
         if (doc.GetElement(elementId) is FamilyInstance fi)
             return fi.Symbol?.Name;
         return null;
+    }
+
+    private static string? GetSymbolNameForDisplay(Document doc, ElementId elementId)
+    {
+        if (doc.GetElement(elementId) is not FamilyInstance fi) return null;
+        var family = fi.Symbol?.Family;
+        if (family is null) return null;
+        if (family.GetFamilySymbolIds().Count <= 1) return null;
+        return fi.Symbol?.Name;
     }
 }

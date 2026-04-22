@@ -80,7 +80,7 @@ public static class FamilySizeFormatter
 
         return string.IsNullOrEmpty(symbolName)
             ? baseName
-            : $"{baseName} ({symbolName})";
+            : $"{baseName} — {symbolName}";
     }
 
     private static string BuildAutoSelectMultiParam(

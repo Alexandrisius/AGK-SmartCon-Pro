@@ -306,7 +306,7 @@ public sealed class FamilySizeFormatterTests
 
         var result = FamilySizeFormatter.BuildAutoSelectDisplayName(radii, 1, "Исполнение 2");
 
-        Assert.Equal("АВТОПОДБОР (DN 50) (Исполнение 2)", result);
+        Assert.Equal("АВТОПОДБОР (DN 50) — Исполнение 2", result);
     }
 
     [Fact]
