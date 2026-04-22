@@ -7,9 +7,16 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
-    # Revit API packages must be kept in sync with RevitVersion per-config.
     ignore:
       - dependency-name: "Nice3point.Revit.Api*"
+      - dependency-name: "Microsoft.Extensions.DependencyInjection"
+        versions: [">= 9.0.0"]
+      - dependency-name: "System.Text.Json"
+        versions: [">= 9.0.0"]
+      - dependency-name: "Microsoft.NET.Test.Sdk"
+        versions: [">= 18.0.0"]
+      - dependency-name: "coverlet.collector"
+        versions: [">= 7.0.0"]
 
   - package-ecosystem: github-actions
     directory: /

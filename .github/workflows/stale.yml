@@ -1,0 +1,30 @@
+name: Stale
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-stale: 30
+          days-before-close: 7
+          stale-issue-message: >
+            Этот issue не обновлялся 30 дней и помечен как неактивный.
+            Если есть новые данные — оставьте комментарий, иначе issue будет закрыт через 7 дней.
+          stale-pr-message: >
+            Этот PR не обновлялся 30 дней и помечен как неактивный.
+            Если работа продолжается — оставьте комментарий, иначе PR будет закрыт через 7 дней.
+          stale-issue-label: stale
+          stale-pr-label: stale
+          exempt-issue-labels: pinned,security
+          exempt-pr-labels: pinned
+          exempt-draft-pr: true
