@@ -14,6 +14,10 @@ using SmartCon.Revit.Fittings;
 using SmartCon.Revit.Network;
 using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
+using SmartCon.ProjectManagement.Services;
+using SmartCon.ProjectManagement.ViewModels;
+using SmartCon.ProjectManagement.Views;
+using SmartCon.Revit.Sharing;
 using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
 using SmartCon.Revit.Transform;
@@ -115,5 +119,12 @@ public static class ServiceRegistrar
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
+
+        // --- ProjectManagement (Phase 11) ---
+        services.AddSingleton<IShareProjectSettingsRepository, RevitShareProjectSettingsRepository>();
+        services.AddSingleton<IModelPurgeService, RevitModelPurgeService>();
+        services.AddSingleton<IFileNameParser, RevitFileNameParser>();
+        services.AddSingleton<IViewRepository, RevitViewRepository>();
+        services.AddSingleton<IShareSettingsViewModelFactory, ShareSettingsViewModelFactory>();
     }
 }

@@ -35,6 +35,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
     <ProjectReference Include="..\SmartCon.PipeConnect\SmartCon.PipeConnect.csproj" />
+    <ProjectReference Include="..\SmartCon.ProjectManagement\SmartCon.ProjectManagement.csproj" />
   </ItemGroup>
 
 </Project>

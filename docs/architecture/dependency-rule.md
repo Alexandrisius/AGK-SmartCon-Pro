@@ -7,23 +7,24 @@
 ```
                     SmartCon.Core
               (RevitAPI.dll compile-time only)
-                  /    |    |    \      \
-                 /     |    |     \      \
-           Revit    UI   App  PipeConnect  Tests
+                 /    |    |    \     \        \
+                /     |    |     \     \        \
+          Revit    UI   App  PipeConnect  ProjectManagement  Tests
 ```
 
 **Стрелка «зависит от» направлена вверх.** Все проекты зависят от Core. Core не знает ни о ком.
 
 ## Матрица зависимостей
 
-| Проект | Core | Revit | UI | App | PipeConnect |
-|---|---|---|---|---|---|
-| **Core** | — | — | — | — | — |
-| **Revit** | да | — | — | — | — |
-| **UI** | да | — | — | — | — |
-| **App** | да | да | да | — | да |
-| **PipeConnect** | да | — | да | — | — |
-| **Tests** | да | — | — | — | да |
+| Проект | Core | Revit | UI | App | PipeConnect | ProjectManagement |
+|---|---|---|---|---|---|---|
+| **Core** | — | — | — | — | — | — |
+| **Revit** | да | — | — | — | — | — |
+| **UI** | да | — | — | — | — | — |
+| **App** | да | да | да | — | да | да |
+| **PipeConnect** | да | — | да | — | — | — |
+| **ProjectManagement** | да | — | да | — | — | — |
+| **Tests** | да | — | — | — | да | да |
 
 ## Жёсткие запреты
 
@@ -31,6 +32,7 @@
 2. **Core -> UI:** `SmartCon.Core` НЕ ссылается на `SmartCon.UI`. Core не содержит `using System.Windows`.
 3. **PipeConnect -> Revit:** `SmartCon.PipeConnect` НЕ ссылается на `SmartCon.Revit` напрямую. Вся работа с Revit API — через интерфейсы Core, реализованные в Revit. PipeConnect ссылается на RevitAPI.dll / RevitAPIUI.dll (CopyLocal=false) для `IExternalCommand` и `[Transaction]`.
 4. **UI -> Revit:** `SmartCon.UI` НЕ ссылается на `SmartCon.Revit`.
+5. **ProjectManagement -> Revit:** `SmartCon.ProjectManagement` НЕ ссылается на `SmartCon.Revit` напрямую. Вся работа с Revit API — через интерфейсы Core. ProjectManagement ссылается на RevitAPI.dll / RevitAPIUI.dll (CopyLocal=false) для `IExternalCommand` и `[Transaction]`.
 
 ## Как это работает
 

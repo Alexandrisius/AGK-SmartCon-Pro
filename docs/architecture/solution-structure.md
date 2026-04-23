@@ -12,9 +12,10 @@ SmartCon.sln
 ├── SmartCon.UI                <- Общая WPF-библиотека: стили, контролы, RelayCommand, базовые VM.
 ├── SmartCon.App               <- Точка входа: IExternalApplication, Ribbon, DI-регистрация.
 ├── SmartCon.PipeConnect       <- Модуль PipeConnect: Commands, ViewModels, Views.
+├── SmartCon.ProjectManagement <- Модуль ProjectManagement: Share Project (ISO 19650).
 ├── SmartCon.Tests             <- Unit + ViewModel тесты (xUnit + Moq).
 └── SmartCon.Updater           <- Standalone .NET 8 updater: применяет pending
-                                  update при закрытии Revit (staging-based).
+                                   update при закрытии Revit (staging-based).
 ```
 
 ---
@@ -239,6 +240,37 @@ SmartCon.PipeConnect/
 
 ---
 
+## SmartCon.ProjectManagement
+
+Модуль ProjectManagement: автоматизация шаринга проектов по ISO 19650.
+Commands, ViewModels, Views для операции Share Project.
+
+```
+SmartCon.ProjectManagement/
+├── Commands/
+│   ├── ShareProjectCommand.cs          <- IExternalCommand (Share)
+│   └── ShareSettingsCommand.cs         <- IExternalCommand (Settings, модальное окно)
+├── ViewModels/
+│   ├── ShareSettingsViewModel.cs       <- VM для окна настроек (4 таба)
+│   ├── ShareProgressViewModel.cs       <- VM для прогресса шаринга
+│   ├── ViewSelectionItem.cs            <- элемент списка видов (Name + IsSelected)
+│   ├── FileNameBlockItem.cs            <- элемент блока имени (Index + Role + Label)
+│   └── StatusMappingItem.cs            <- элемент маппинга (WipValue + SharedValue)
+├── Views/
+│   ├── ShareSettingsView.xaml          <- окно настроек (TabControl, модальное)
+│   └── ShareProgressView.xaml          <- окно прогресса (TopMost, немодальное)
+└── Services/
+    ├── ProjectManagementDialogService.cs  <- IDialogService implementation
+    ├── IShareSettingsViewModelFactory.cs
+    └── ShareSettingsViewModelFactory.cs
+```
+
+> **Примечание:** Интерфейсы и модели — в SmartCon.Core.
+> Реализации Revit API — в SmartCon.Revit/Sharing/ и SmartCon.Revit/Storage/.
+> SmartCon.ProjectManagement зависит только от Core + UI (как PipeConnect).
+
+---
+
 ## SmartCon.Tests
 
 ```
@@ -254,7 +286,12 @@ SmartCon.Tests/
 │       ├── FormulaSolverTests.cs
 │       ├── FittingMapperTests.cs
 │       └── PathfinderServiceTests.cs
-└── PipeConnect/
-    └── ViewModels/
-        └── PipeConnectEditorViewModelTests.cs
+├── PipeConnect/
+│   └── ViewModels/
+│       └── PipeConnectEditorViewModelTests.cs
+└── ProjectManagement/
+    ├── FileNameParserTests.cs
+    ├── ShareSettingsJsonSerializerTests.cs
+    ├── PurgeOptionsTests.cs
+    └── ShareSettingsViewModelTests.cs
 ```

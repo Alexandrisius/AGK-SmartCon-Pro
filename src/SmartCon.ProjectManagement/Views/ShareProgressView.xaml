@@ -1,0 +1,30 @@
+<controls:DialogWindowBase x:Class="SmartCon.ProjectManagement.Views.ShareProgressView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        Title="{DynamicResource PM_Title_Progress}"
+        Width="450" Height="130" MinWidth="450" MinHeight="130"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="ToolWindow"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Window.Resources>
+        <ui:SingletonResources/>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="{Binding StatusText}" Margin="0,0,0,8"
+                   Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap"/>
+        <ProgressBar Grid.Row="1" Value="{Binding ProgressValue}" Maximum="{Binding ProgressMaximum}"
+                     Style="{DynamicResource FlatProgressBar}" Height="20"/>
+    </Grid>
+</controls:DialogWindowBase>

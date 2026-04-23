@@ -194,6 +194,26 @@ public static class LocalizationService
         ["Warn_SizeNotExactUnconstrained"] = "Размер DN{0} не найден точно. Ближайший DN{1} (other connectors will change).",
         ["Warn_SizeNotInTable"] = "Размер DN{0} отсутствует в таблице. Будет выбран DN{1}, нужен переходник.",
         ["Warn_NoSizeParameter"] = "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.",
+
+        ["PM_Col_Index"] = "№",
+        ["PM_Col_Role"] = "Роль",
+        ["PM_Col_Label"] = "Метка",
+        ["PM_Col_Wip"] = "WIP",
+        ["PM_Col_Shared"] = "Shared",
+        ["PM_Title_Settings"] = "Настройки шаринга",
+        ["PM_Title_Progress"] = "Шаринг проекта",
+        ["PM_Result_Success"] = "Проект успешно перемещён в зону Shared.",
+        ["PM_Result_Failed"] = "Ошибка шаринга: {0}",
+        ["PM_Result_NoSettings"] = "Сначала настройте параметры шаринга через кнопку Settings.",
+        ["PM_Result_InvalidName"] = "Имя файла не соответствует шаблону: {0}",
+        ["PM_Result_SyncFailed"] = "Синхронизация не удалась: {0}",
+        ["PM_Step_Validate"] = "Проверяем настройки...",
+        ["PM_Step_Sync"] = "Синхронизируем ваш проект...",
+        ["PM_Step_TempProject"] = "Создаём временный проект...",
+        ["PM_Step_Detach"] = "Открываем с отсоединением от ФХ...",
+        ["PM_Step_Purge"] = "Очищаем модель...",
+        ["PM_Step_Save"] = "Сохраняем в зону Shared...",
+        ["PM_Step_Finish"] = "Завершение...",
     };
 
     private static readonly Dictionary<string, string> En = new()
@@ -382,6 +402,26 @@ public static class LocalizationService
         ["Warn_SizeNotExactUnconstrained"] = "Size DN{0} not found exactly. Nearest DN{1} (other connectors will change).",
         ["Warn_SizeNotInTable"] = "Size DN{0} not in table. Nearest DN{1} will be used, reducer needed.",
         ["Warn_NoSizeParameter"] = "Could not determine size parameter. Reducer will be inserted if configured in mapping.",
+
+        ["PM_Col_Index"] = "#",
+        ["PM_Col_Role"] = "Role",
+        ["PM_Col_Label"] = "Label",
+        ["PM_Col_Wip"] = "WIP",
+        ["PM_Col_Shared"] = "Shared",
+        ["PM_Title_Settings"] = "Share Settings",
+        ["PM_Title_Progress"] = "Sharing Project",
+        ["PM_Result_Success"] = "Project shared successfully.",
+        ["PM_Result_Failed"] = "Share failed: {0}",
+        ["PM_Result_NoSettings"] = "Configure share settings first via the Settings button.",
+        ["PM_Result_InvalidName"] = "File name does not match template: {0}",
+        ["PM_Result_SyncFailed"] = "Synchronization failed: {0}",
+        ["PM_Step_Validate"] = "Validating settings...",
+        ["PM_Step_Sync"] = "Synchronizing your project...",
+        ["PM_Step_TempProject"] = "Creating temporary project...",
+        ["PM_Step_Detach"] = "Detaching from central...",
+        ["PM_Step_Purge"] = "Purging model...",
+        ["PM_Step_Save"] = "Saving to Shared folder...",
+        ["PM_Step_Finish"] = "Finalizing...",
     };
 
     private static Dictionary<string, string> _current = Ru;

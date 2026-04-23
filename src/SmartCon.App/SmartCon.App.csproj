@@ -27,6 +27,7 @@
     <ProjectReference Include="..\SmartCon.Revit\SmartCon.Revit.csproj" />
     <ProjectReference Include="..\SmartCon.UI\SmartCon.UI.csproj" />
     <ProjectReference Include="..\SmartCon.PipeConnect\SmartCon.PipeConnect.csproj" />
+    <ProjectReference Include="..\SmartCon.ProjectManagement\SmartCon.ProjectManagement.csproj" />
   </ItemGroup>
 
   <ItemGroup>

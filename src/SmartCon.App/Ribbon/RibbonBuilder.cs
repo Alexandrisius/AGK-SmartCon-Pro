@@ -8,7 +8,8 @@ namespace SmartCon.App.Ribbon;
 public static class RibbonBuilder
 {
     private const string TabName = "SmartCon";
-    private const string PanelPipeConnect = "PipeSystems";
+    private const string PanelPipeSystems = "Pipe Systems";
+    private const string PanelProjectManagement = "Project Management";
     private const string PanelInfo = "Info";
 
     public static void CreateRibbon(UIControlledApplication app)
@@ -18,12 +19,12 @@ public static class RibbonBuilder
         var appDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
         var pipeConnectAssembly = Path.Combine(appDir, "SmartCon.PipeConnect.dll");
 
-        // --- PipeConnect Panel ---
-        var pcPanel = app.CreateRibbonPanel(TabName, PanelPipeConnect);
+        // --- Pipe Systems Panel ---
+        var psPanel = app.CreateRibbonPanel(TabName, PanelPipeSystems);
 
         var pipeConnectButton = new PushButtonData(
             name: "PipeConnect",
-            text: "PipeConnect",
+            text: "Pipe\nConnect",
             assemblyName: pipeConnectAssembly,
             className: "SmartCon.PipeConnect.Commands.PipeConnectCommand")
         {
@@ -32,9 +33,9 @@ public static class RibbonBuilder
             Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.PipeCon_16x16.png")
         };
 
-        pcPanel.AddItem(pipeConnectButton);
+        psPanel.AddItem(pipeConnectButton);
 
-        pcPanel.AddSeparator();
+        psPanel.AddSeparator();
 
         var settingsButton = new PushButtonData(
             name: "SmartConSettings",
@@ -47,9 +48,41 @@ public static class RibbonBuilder
             Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.Settings_16x16.png")
         };
 
-        pcPanel.AddItem(settingsButton);
+        psPanel.AddItem(settingsButton);
 
-        // --- Info Panel (rightmost, technical) ---
+        // --- Project Management Panel ---
+        var pmPanel = app.CreateRibbonPanel(TabName, PanelProjectManagement);
+        var pmAssembly = Path.Combine(appDir, "SmartCon.ProjectManagement.dll");
+
+        var shareProjectButton = new PushButtonData(
+            name: "ShareProject",
+            text: "Share\nProject",
+            assemblyName: pmAssembly,
+            className: "SmartCon.ProjectManagement.Commands.ShareProjectCommand")
+        {
+            ToolTip = "Share Revit model to Shared zone (ISO 19650)",
+            LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.ShareProject_32x32.png"),
+            Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.ShareProject_16x16.png")
+        };
+
+        pmPanel.AddItem(shareProjectButton);
+
+        pmPanel.AddSeparator();
+
+        var shareSettingsButton = new PushButtonData(
+            name: "ShareSettings",
+            text: "Settings",
+            assemblyName: pmAssembly,
+            className: "SmartCon.ProjectManagement.Commands.ShareSettingsCommand")
+        {
+            ToolTip = "Configure ProjectManagement share settings",
+            LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.Settings_32x32.png"),
+            Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.Settings_16x16.png")
+        };
+
+        pmPanel.AddItem(shareSettingsButton);
+
+        // --- Info Panel (always rightmost) ---
         var infoPanel = app.CreateRibbonPanel(TabName, PanelInfo);
 
         var aboutButton = new PushButtonData(

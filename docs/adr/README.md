@@ -23,3 +23,4 @@
 | [010](010-fitting-chain-resolver.md) | FittingChainResolver — единая система подбора цепочек фитингов | accepted | 2026-04-17 |
 | [011](011-dn-symbol-name-in-dropdown.md) | Отображение имени типоразмера в выпадающем списке DN | implemented | 2026-04-17 |
 | [012](012-per-project-extensible-storage.md) | Per-project ExtensibleStorage для маппинга фитингов | accepted | 2026-04-19 |
+| [013](013-project-management-module.md) | Модуль ProjectManagement — Share Project (ISO 19650) | accepted | 2026-04-23 |

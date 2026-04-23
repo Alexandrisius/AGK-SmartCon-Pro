@@ -505,3 +505,133 @@ public sealed class FittingChainPlan
     public int ReducerCount => Links.Count(l => l.Type == FittingChainNodeType.Reducer);
 }
 ```
+
+---
+
+## ShareProjectSettings *(ProjectManagement)*
+
+Корневая модель настроек модуля ShareProject. Хранится per-project в ExtensibleStorage (ADR-013).
+
+**Файл:** `SmartCon.Core/Models/ShareProjectSettings.cs`
+
+```csharp
+public sealed record ShareProjectSettings
+{
+    public string ShareFolderPath { get; init; } = string.Empty;
+    public FileNameTemplate FileNameTemplate { get; init; } = new();
+    public PurgeOptions PurgeOptions { get; init; } = new();
+    public List<string> KeepViewNames { get; init; } = [];
+    public bool SyncBeforeShare { get; init; } = true;
+}
+```
+
+---
+
+## FileNameTemplate *(ProjectManagement)*
+
+Шаблон разбора имени файла: разделитель + блоки + маппинг статусов.
+
+**Файл:** `SmartCon.Core/Models/FileNameTemplate.cs`
+
+```csharp
+public sealed record FileNameTemplate
+{
+    public string Delimiter { get; init; } = "-";
+    public List<FileBlockDefinition> Blocks { get; init; } = [];
+    public List<StatusMapping> StatusMappings { get; init; } = [];
+}
+```
+
+---
+
+## FileBlockDefinition *(ProjectManagement)*
+
+Определение блока имени файла с ролью и меткой.
+
+**Файл:** `SmartCon.Core/Models/FileBlockDefinition.cs`
+
+```csharp
+public sealed record FileBlockDefinition
+{
+    public int Index { get; init; }
+    public string Role { get; init; } = "";     // "status", "discipline", "project", etc.
+    public string Label { get; init; } = "";    // отображаемое имя ("Статус", "Дисциплина")
+}
+```
+
+---
+
+## StatusMapping *(ProjectManagement)*
+
+Пара значений статуса: WIP → Shared.
+
+**Файл:** `SmartCon.Core/Models/StatusMapping.cs`
+
+```csharp
+public sealed record StatusMapping
+{
+    public string WipValue { get; init; } = "";     // "S0"
+    public string SharedValue { get; init; } = "";  // "S1"
+}
+```
+
+---
+
+## PurgeOptions *(ProjectManagement)*
+
+Настраиваемый список категорий очистки для Shared-файла.
+
+**Файл:** `SmartCon.Core/Models/PurgeOptions.cs`
+
+```csharp
+public sealed record PurgeOptions
+{
+    public bool PurgeRvtLinks { get; init; } = true;
+    public bool PurgeCadImports { get; init; } = true;
+    public bool PurgeImages { get; init; } = true;
+    public bool PurgePointClouds { get; init; } = true;
+    public bool PurgeGroups { get; init; } = true;
+    public bool PurgeAssemblies { get; init; } = true;
+    public bool PurgeSpaces { get; init; } = true;
+    public bool PurgeRebar { get; init; } = true;
+    public bool PurgeFabricReinforcement { get; init; } = true;
+    public bool PurgeUnused { get; init; } = true;
+}
+```
+
+---
+
+## ShareProjectResult *(ProjectManagement)*
+
+Результат операции ShareProject.
+
+**Файл:** `SmartCon.Core/Models/ShareProjectResult.cs`
+
+```csharp
+public sealed record ShareProjectResult
+{
+    public bool Success { get; init; }
+    public string? SharedFilePath { get; init; }
+    public double ElapsedSeconds { get; init; }
+    public string? ErrorMessage { get; init; }
+    public int ElementsDeleted { get; init; }
+    public int PurgedElementsCount { get; init; }
+}
+```
+
+---
+
+## ViewInfo *(ProjectManagement)*
+
+Информация о виде для отображения в UI настроек.
+
+**Файл:** `SmartCon.Core/Models/ViewInfo.cs`
+
+```csharp
+public sealed record ViewInfo
+{
+    public string Name { get; init; } = string.Empty;
+    public ElementId Id { get; init; }
+    public string ViewType { get; init; } = string.Empty;
+}
+```

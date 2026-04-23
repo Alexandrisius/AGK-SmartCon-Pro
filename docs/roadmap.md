@@ -33,6 +33,7 @@
 | **8** | Финальное окно | 5, 7 | PipeConnectEditor — PostProcessing UI | ✅ Готов |
 | **9** | Рефакторинг | 8 | ViewModel 631→384 строк, 12 handler-классов | ✅ Готов |
 | **10** | Open-source качество | 9 | Локализация, XML-docs, качество кода | ✅ Готов |
+| **11** | ProjectManagement | 0, 1 | Share Project (ISO 19650), ADR-013 | 📋 Планирование |
 
 ---
 
@@ -223,3 +224,68 @@
 - `build-and-deploy.bat` — единый способ сборки
 
 **Статус:** ✅ Готов (2026-04-19).
+
+---
+
+## Phase 11 — ProjectManagement (Share Project)
+
+**Цель:** Автоматизация перемещения Revit-модели из WIP в Shared по ISO 19650.
+
+**Зависит от:** Фаза 0 (каркас), Фаза 1 (интерфейсы/модели), ADR-012 (ExtensibleStorage паттерн)
+
+**Подфазы:**
+
+### 11A — Core: модели и интерфейсы
+
+- ShareProjectSettings, FileNameTemplate, FileBlockDefinition, StatusMapping, PurgeOptions
+- ShareProjectResult, ViewInfo
+- IShareProjectSettingsRepository, IShareProjectService, IModelPurgeService, IFileNameParser, IViewRepository
+- ShareSettingsJsonSerializer (pure C#, System.Text.Json)
+- Unit-тесты: FileNameParser, ShareSettingsJsonSerializer, PurgeOptions
+
+**Приёмка:** Core-модели компилируются. I-09 соблюдён. Unit-тесты pass.
+
+### 11B — Revit: ExtensibleStorage + реализации сервисов
+
+- ProjectManagementSchema (ExtensibleStorage schema descriptor)
+- RevitShareProjectSettingsRepository (CRUD в DataStorage)
+- RevitShareProjectService (8-шаговый алгоритм Share)
+- RevitModelPurgeService (категорийная очистка + PerformanceAdviser purge)
+- RevitFileNameParser (парсинг/трансформация имён)
+- RevitViewRepository (список видов из документа)
+
+**Приёмка:** Сервисы компилируются на R25 + R21. I-03, I-07 соблюдены.
+
+### 11C — UI: окно настроек (ShareSettingsView)
+
+- ShareSettingsViewModel (4 таба: Общие, Очистка, Виды, Нейминг)
+- ViewSelectionItem, FileNameBlockItem, StatusMappingItem
+- ShareSettingsView.xaml (TabControl, модальное)
+- ShareSettingsCommand (IExternalCommand)
+- Import/Export JSON через OpenFileDialog/SaveFileDialog
+
+**Приёмка:** Окно открывается модально. Настройки сохраняются в ExtensibleStorage. I-10 соблюдён.
+
+### 11D — UI: прогресс шаринга + интеграция
+
+- ShareProgressViewModel (прогресс-бар + статус)
+- ShareProgressView.xaml (TopMost, немодальное)
+- ShareProjectCommand (IExternalCommand)
+- ProjectManagementDialogService
+- RibbonBuilder: новая панель ProjectManagement + 2 кнопки
+- ServiceRegistrar: регистрация ~10 сервисов
+
+**Приёмка:** Полный цикл: Settings → Share → файл в зоне Shared. Имя трансформировано. Модель очищена.
+
+### 11E — Тесты и полировка
+
+- FileNameParserTests (unit, Core)
+- ShareSettingsJsonSerializerTests (unit, Core)
+- PurgeOptionsTests (unit, Core)
+- ShareSettingsViewModelTests (VM, моки)
+- Локализация RU/EN (DynamicResource)
+- build-and-deploy.bat — 0 ошибок на всех конфигурациях
+
+**Приёмка:** Все тесты pass. Multi-version сборка чистая. Документация обновлена.
+
+**Статус:** 📋 Планирование

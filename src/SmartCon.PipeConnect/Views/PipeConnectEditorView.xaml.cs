@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
+using SmartCon.UI;
 using SmartCon.UI.Controls;
 using SmartCon.UI.Native;
 

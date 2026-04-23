@@ -5,6 +5,7 @@ using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
+using SmartCon.UI;
 
 namespace SmartCon.PipeConnect.ViewModels;
 

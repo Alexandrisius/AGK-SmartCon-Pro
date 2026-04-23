@@ -1,7 +1,7 @@
 using System.Windows;
 using SmartCon.Core.Services;
 
-namespace SmartCon.PipeConnect.Services;
+namespace SmartCon.UI;
 
 public static class LanguageManager
 {
