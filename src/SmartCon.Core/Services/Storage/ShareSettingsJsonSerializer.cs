@@ -6,7 +6,7 @@ namespace SmartCon.Core.Services.Storage;
 
 public static class ShareSettingsJsonSerializer
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -30,8 +30,23 @@ public static class ShareSettingsJsonSerializer
     {
         if (string.IsNullOrWhiteSpace(json)) return ShareProjectSettings.Empty;
 
-        return JsonSerializer.Deserialize<ShareProjectSettings>(json!, Options)
+        var migrated = Migrate(json!);
+
+        return JsonSerializer.Deserialize<ShareProjectSettings>(migrated, Options)
                ?? ShareProjectSettings.Empty;
+    }
+
+    private static string Migrate(string json)
+    {
+        json = json.Replace("\"role\":", "\"field\":");
+
+        if (json.Contains("\"statusMappings\""))
+            json = json.Replace("\"statusMappings\"", "\"exportMappings\"");
+
+        if (json.Contains("\"status_mappings\""))
+            json = json.Replace("\"status_mappings\"", "\"exportMappings\"");
+
+        return json;
     }
 
     public static ShareProjectSettings? TryReadFromFile(string path)

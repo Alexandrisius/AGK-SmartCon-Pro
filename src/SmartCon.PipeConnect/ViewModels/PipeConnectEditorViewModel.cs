@@ -85,7 +85,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
     public ObservableCollection<FamilySizeOption> AvailableDynamicSizes { get; } = [];
 
-    public event Action? RequestClose;
+    public event Action<bool?>? RequestClose;
 
     public bool IsClosing => _isClosing;
 
@@ -210,7 +210,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
             _groupSession.RollBack();
             _groupSession = null;
             IsSessionActive = false;
-            RequestClose?.Invoke();
+            RequestClose?.Invoke(null);
         }
     }
 

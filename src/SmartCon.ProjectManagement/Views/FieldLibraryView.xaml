@@ -1,0 +1,75 @@
+<controls:DialogWindowBase x:Class="SmartCon.ProjectManagement.Views.FieldLibraryView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        Title="{DynamicResource PM_Title_FieldLibrary}"
+        Width="650" Height="420" MinWidth="550" MinHeight="350"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Window.Resources>
+        <ui:SingletonResources>
+            <Style x:Key="CenterCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+        </ui:SingletonResources>
+    </Window.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DataGrid Grid.Row="0" ItemsSource="{Binding Fields}" SelectedIndex="{Binding SelectedIndex}"
+                  AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                  Style="{DynamicResource CompactDataGrid}"
+                  RowStyle="{DynamicResource CompactDataGridRow}"
+                  CellStyle="{DynamicResource CompactDataGridCell}">
+            <DataGrid.Columns>
+                <DataGridTextColumn x:Name="ColFieldName" Binding="{Binding Name}" Width="100"
+                                    ElementStyle="{StaticResource CenterCell}"/>
+                <DataGridTextColumn x:Name="ColDisplayName" Binding="{Binding DisplayName}" Width="120"
+                                    ElementStyle="{StaticResource CenterCell}"/>
+                <DataGridTextColumn x:Name="ColDescription" Binding="{Binding Description}" Width="*"
+                                    ElementStyle="{StaticResource CenterCell}"/>
+                <DataGridTemplateColumn x:Name="ColValidation" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding ValidationModeDisplay}"
+                                    Command="{Binding DataContext.OpenAllowedValuesCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                    Style="{DynamicResource SecondaryButton}"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn x:Name="ColMinLen" Binding="{Binding MinLength}" Width="50" IsReadOnly="True"
+                                    ElementStyle="{StaticResource CenterCell}"/>
+                <DataGridTextColumn x:Name="ColMaxLen" Binding="{Binding MaxLength}" Width="50" IsReadOnly="True"
+                                    ElementStyle="{StaticResource CenterCell}"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4">
+            <Button Content="{DynamicResource PM_AddField}" Command="{Binding AddFieldCommand}"
+                    Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
+            <Button Content="{DynamicResource PM_RemoveField}" Command="{Binding RemoveFieldCommand}"
+                    Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
+            <Button Content="{DynamicResource PM_DuplicateField}" Command="{Binding DuplicateFieldCommand}"
+                    Style="{DynamicResource SecondaryButton}"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="{DynamicResource Btn_Save}" Command="{Binding SaveCommand}"
+                    Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
+            <Button Content="{DynamicResource Btn_Cancel}" Command="{Binding CancelCommand}"
+                    Style="{DynamicResource SecondaryButton}"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

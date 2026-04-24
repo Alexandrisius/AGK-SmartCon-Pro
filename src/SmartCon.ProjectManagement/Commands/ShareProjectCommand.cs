@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using Autodesk.Revit.UI.Events;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
@@ -24,7 +25,7 @@ public sealed class ShareProjectCommand : IExternalCommand
 
         try
         {
-            SmartConLogger.Info("[PM] ShareProjectCommand started.");
+            SmartConLogger.Info("[PM] ExportProjectCommand started.");
 
             var uiapp = commandData.Application;
             var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
@@ -33,55 +34,100 @@ public sealed class ShareProjectCommand : IExternalCommand
             var revitContext = (IRevitContext)contextWriter;
             var originalDoc = revitContext.GetDocument();
 
-            // Шаг 1.3: Проверить что файл сохранён
             if (string.IsNullOrWhiteSpace(originalDoc.PathName))
             {
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", "File must be saved first.");
+                Autodesk.Revit.UI.TaskDialog.Show("Export Project", "File must be saved first.");
                 return Result.Failed;
             }
 
-            // Шаг 1.1: Загрузить настройки
             var settingsRepo = ServiceHost.GetService<IShareProjectSettingsRepository>();
             var settings = settingsRepo.Load(originalDoc);
 
-            SmartConLogger.Info($"[PM] Settings loaded. ShareFolder='{settings.ShareFolderPath}', Blocks={settings.FileNameTemplate.Blocks.Count}, Mappings={settings.FileNameTemplate.StatusMappings.Count}");
+            SmartConLogger.Info($"[PM] Settings loaded. ShareFolder='{settings.ShareFolderPath}', Blocks={settings.FileNameTemplate.Blocks.Count}, ExportMappings={settings.FileNameTemplate.ExportMappings.Count}");
 
-            // Шаг 1.2: Если настройки пустые
             if (string.IsNullOrWhiteSpace(settings.ShareFolderPath) || settings.FileNameTemplate.Blocks.Count == 0)
             {
                 SmartConLogger.Warn("[PM] Settings incomplete — showing configure dialog.");
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project",
+                Autodesk.Revit.UI.TaskDialog.Show("Export Project",
                     LocalizationService.GetString("PM_Result_NoSettings"));
                 return Result.Failed;
             }
 
-            // Шаг 1.4: Парсинг имени файла
             var parser = ServiceHost.GetService<IFileNameParser>();
-            var (isValid, error) = parser.Validate(originalDoc.Title, settings.FileNameTemplate);
-            if (!isValid)
+            var validation = parser.ValidateDetailed(originalDoc.Title, settings.FileNameTemplate, settings.FieldLibrary);
+
+            string sharedFileName;
+
+            if (!validation.IsValid)
             {
-                SmartConLogger.Warn($"[PM] Validation failed for '{originalDoc.Title}': {error}");
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", error);
-                return Result.Failed;
+                SmartConLogger.Warn($"[PM] Validation failed for '{originalDoc.Title}': {validation.Summary}");
+
+                var existingOverride = settingsRepo.LoadExportNameOverride(originalDoc);
+                if (existingOverride is not null)
+                {
+                    SmartConLogger.Info("[PM] Using saved ExportNameOverride.");
+                    var values = existingOverride.FieldValues;
+                    var orderedValues = settings.FileNameTemplate.Blocks
+                        .OrderBy(b => b.Index)
+                        .Select(b => values.TryGetValue(b.Field, out var v) ? v : string.Empty);
+                    var ext = System.IO.Path.GetExtension(originalDoc.PathName);
+                    sharedFileName = string.Join("-", orderedValues);
+                    if (!string.IsNullOrEmpty(ext) && !System.IO.Path.HasExtension(sharedFileName))
+                        sharedFileName += ext;
+                }
+                else
+                {
+                    var details = string.Join("\n", validation.Blocks
+                        .Where(b => !b.IsValid)
+                        .Select(b => $"  \u2022 {b.Field}: '{b.Value}' \u2014 {b.Error}"));
+
+                    var dialogVm = new ViewModels.ExportNameDialogViewModel(
+                        originalDoc.Title,
+                        $"{LocalizationService.GetString("PM_Result_InvalidName")}\n\n{validation.Summary}\n{details}",
+                        settings.FileNameTemplate.Blocks,
+                        settings.FieldLibrary,
+                        settings.FileNameTemplate.ExportMappings);
+
+                    var dialogView = new Views.ExportNameDialog(dialogVm)
+                    {
+                        Owner = GetMainWindow(commandData.Application)
+                    };
+                    dialogView.ShowDialog();
+
+                    if (dialogView.CustomDialogResult != true)
+                    {
+                        SmartConLogger.Info("[PM] User cancelled ExportNameDialog.");
+                        return Result.Cancelled;
+                    }
+
+                    var fieldValues = dialogVm.GetFieldValues();
+                    settingsRepo.SaveExportNameOverride(originalDoc, new Core.Models.ExportNameOverride { FieldValues = fieldValues });
+
+                    var ext = System.IO.Path.GetExtension(originalDoc.PathName);
+                    sharedFileName = dialogVm.PreviewFileName;
+                    if (!string.IsNullOrEmpty(ext) && !System.IO.Path.HasExtension(sharedFileName))
+                        sharedFileName += ext;
+
+                    SmartConLogger.Info($"[PM] ExportNameOverride saved. Custom name: {sharedFileName}");
+                }
             }
-
-            SmartConLogger.Info($"[PM] Validation passed for '{originalDoc.Title}'.");
-
-            // Шаг 6: Вычисление пути Shared
-            var sharedFileName = parser.TransformStatus(originalDoc.Title, settings.FileNameTemplate);
-            var extension = System.IO.Path.GetExtension(originalDoc.PathName);
-            if (!string.IsNullOrEmpty(extension) && !System.IO.Path.HasExtension(sharedFileName))
-                sharedFileName += extension;
+            else
+            {
+                SmartConLogger.Info($"[PM] Validation passed for '{originalDoc.Title}'.");
+                sharedFileName = parser.TransformForExport(originalDoc.Title, settings.FileNameTemplate, settings.FieldLibrary) ?? string.Empty;
+                var extension = System.IO.Path.GetExtension(originalDoc.PathName);
+                if (!string.IsNullOrEmpty(extension) && !System.IO.Path.HasExtension(sharedFileName))
+                    sharedFileName += extension;
+            }
 
             if (string.IsNullOrWhiteSpace(sharedFileName))
             {
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", "Failed to transform file name.");
+                Autodesk.Revit.UI.TaskDialog.Show("Export Project", "Failed to transform file name.");
                 return Result.Failed;
             }
 
             var sharedFilePath = System.IO.Path.Combine(settings.ShareFolderPath, sharedFileName);
 
-            // Шаг 6.3: Создать папку если нет
             if (!System.IO.Directory.Exists(settings.ShareFolderPath))
                 System.IO.Directory.CreateDirectory(settings.ShareFolderPath);
 
@@ -89,6 +135,54 @@ public sealed class ShareProjectCommand : IExternalCommand
             var originalPathName = originalDoc.PathName;
 
             ShowProgress(commandData.Application.MainWindowHandle);
+
+            EventHandler<Autodesk.Revit.DB.Events.FailuresProcessingEventArgs>? failureHandler = null;
+            failureHandler = (sender, args) =>
+            {
+                var fa = args.GetFailuresAccessor();
+                var failures = fa.GetFailureMessages();
+                foreach (var f in failures)
+                {
+                    if (f.GetSeverity() == FailureSeverity.Warning)
+                        fa.DeleteWarning(f);
+                }
+            };
+            uiapp.Application.FailuresProcessing += failureHandler;
+
+            EventHandler<DialogBoxShowingEventArgs>? dialogHandler = null;
+            dialogHandler = (sender, args) =>
+            {
+                SmartConLogger.Info($"[PM] DialogBoxShowing: Id='{args.DialogId}'");
+
+                if (args is TaskDialogShowingEventArgs taskArgs)
+                {
+                    var msg = taskArgs.Message ?? string.Empty;
+                    var dlgId = taskArgs.DialogId ?? string.Empty;
+
+                    bool isMissingLinks =
+#if NETFRAMEWORK
+                        dlgId.ToLowerInvariant().Contains("missinglink")
+                        || dlgId.ToLowerInvariant().Contains("unresolved")
+                        || msg.ToLowerInvariant().Contains("could not find");
+#else
+                        dlgId.Contains("MissingLink", StringComparison.OrdinalIgnoreCase)
+                        || dlgId.Contains("Unresolved", StringComparison.OrdinalIgnoreCase)
+                        || msg.Contains("could not find", StringComparison.OrdinalIgnoreCase);
+#endif
+
+                    if (isMissingLinks)
+                    {
+                        SmartConLogger.Info("[PM] Suppressing missing links dialog → Ignore (1002)");
+                        taskArgs.OverrideResult(1002);
+                        return;
+                    }
+                }
+
+                SmartConLogger.Info("[PM] Suppressing unknown dialog → Cancel");
+                try { args.OverrideResult((int)Autodesk.Revit.UI.TaskDialogResult.Cancel); }
+                catch (Exception ex) { SmartConLogger.Warn($"[PM] OverrideResult failed: {ex.Message}"); }
+            };
+            uiapp.DialogBoxShowing += dialogHandler;
 
             Document? detachedDoc = null;
             Document? tempDoc = null;
@@ -98,7 +192,6 @@ public sealed class ShareProjectCommand : IExternalCommand
             {
                 if (isWorkshared)
                 {
-                    // Шаг 2: Синхронизация локального файла
                     ReportProgress(LocalizationService.GetString("PM_Step_Sync"), 5);
 
                     if (settings.SyncBeforeShare)
@@ -111,7 +204,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                         {
                             SmartConLogger.Warn($"[PM] Sync failed: {syncEx.Message}");
 
-                            using var td = new Autodesk.Revit.UI.TaskDialog("Share Project");
+                            using var td = new Autodesk.Revit.UI.TaskDialog("Export Project");
                             td.MainInstruction = $"Synchronization failed:\n{syncEx.Message}";
                             td.MainContent = "Continue without synchronization?";
                             td.CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No;
@@ -125,7 +218,6 @@ public sealed class ShareProjectCommand : IExternalCommand
                         }
                     }
 
-                    // Шаг 3: Создание временного проекта
                     ReportProgress(LocalizationService.GetString("PM_Step_TempProject"), 15);
 
                     tempDoc = uiapp.Application.NewProjectDocument(UnitSystem.Metric);
@@ -135,7 +227,6 @@ public sealed class ShareProjectCommand : IExternalCommand
                     tempDoc.SaveAs(tempPath, new SaveAsOptions { OverwriteExistingFile = true });
                     uiapp.OpenAndActivateDocument(tempPath);
 
-                    // Шаг 4: Detach from central
                     ReportProgress(LocalizationService.GetString("PM_Step_Detach"), 25);
 
                     var centralPath = originalDoc.GetWorksharingCentralModelPath();
@@ -155,7 +246,6 @@ public sealed class ShareProjectCommand : IExternalCommand
                 }
                 else
                 {
-                    // Не-workshared: упрощённый путь без detach
                     ReportProgress(LocalizationService.GetString("PM_Step_TempProject"), 15);
 
                     tempDoc = uiapp.Application.NewProjectDocument(UnitSystem.Metric);
@@ -176,14 +266,12 @@ public sealed class ShareProjectCommand : IExternalCommand
                     SmartConLogger.Info("[PM] Opened non-workshared file for processing.");
                 }
 
-                // Шаг 5: Очистка модели
                 ReportProgress(LocalizationService.GetString("PM_Step_Purge"), 40);
 
                 var purgeService = ServiceHost.GetService<IModelPurgeService>();
                 var deletedCount = purgeService.Purge(detachedDoc, settings.PurgeOptions, settings.KeepViewNames);
                 SmartConLogger.Info($"[PM] Purge completed. Deleted {deletedCount} elements.");
 
-                // Шаг 7: Сохранение в Shared
                 ReportProgress(LocalizationService.GetString("PM_Step_Save"), 65);
 
                 var modelPathOut = ModelPathUtils.ConvertUserVisiblePathToModelPath(sharedFilePath);
@@ -197,11 +285,8 @@ public sealed class ShareProjectCommand : IExternalCommand
                 detachedDoc.SaveAs(modelPathOut, saveOpts);
                 SmartConLogger.Info($"[PM] Saved to: {sharedFilePath}");
 
-                // Шаг 8: Завершение
                 ReportProgress(LocalizationService.GetString("PM_Step_Finish"), 80);
 
-                // 8.1: Сначала открыть локальный файл (переключить активный документ)
-                //      Нельзя закрывать активный документ — сначала переключаемся
                 if (isWorkshared)
                 {
                     var localModelPath = ModelPathUtils.ConvertUserVisiblePathToModelPath(originalPathName);
@@ -219,11 +304,9 @@ public sealed class ShareProjectCommand : IExternalCommand
 
                 SmartConLogger.Info("[PM] Reopened original local file.");
 
-                // 8.2: Теперь закрыть detach-копию (больше не активна)
                 detachedDoc.Close(false);
                 detachedDoc = null;
 
-                // 8.3: Закрыть временный проект из UI (не in-memory tempDoc!)
                 Document? tempDocFromDisk = null;
                 foreach (Document d in uiapp.Application.Documents)
                 {
@@ -237,7 +320,6 @@ public sealed class ShareProjectCommand : IExternalCommand
                 {
                     tempDocFromDisk.Close(false);
                 }
-                // Также закрыть in-memory tempDoc если ещё жив
                 try
                 {
                     if (tempDoc is not null && tempDoc.IsValidObject)
@@ -246,14 +328,12 @@ public sealed class ShareProjectCommand : IExternalCommand
                 catch { }
                 tempDoc = null;
 
-                // 8.4: Удалить временный файл
                 if (tempPath is not null && System.IO.File.Exists(tempPath))
                 {
                     try { System.IO.File.Delete(tempPath); } catch { }
                     tempPath = null;
                 }
 
-                // 8.5: SyncWithoutRelinquishing (локальный файл)
                 if (isWorkshared)
                 {
                     try
@@ -271,9 +351,11 @@ public sealed class ShareProjectCommand : IExternalCommand
                 ReportProgress("Done", 100);
                 CloseProgress();
 
+                uiapp.Application.FailuresProcessing -= failureHandler;
+                uiapp.DialogBoxShowing -= dialogHandler;
+
                 sw.Stop();
 
-                // 8.6: Показать TaskDialog с результатом
                 var successMsg =
                     $"Project shared successfully.\n\n" +
                     $"Path: {sharedFilePath}\n" +
@@ -281,14 +363,13 @@ public sealed class ShareProjectCommand : IExternalCommand
                     $"Time: {sw.Elapsed.TotalSeconds:F1}s";
 
                 SmartConLogger.Info($"[PM] Share succeeded: {sharedFilePath} ({sw.Elapsed.TotalSeconds:F1}s, {deletedCount} deleted)");
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", successMsg);
+                Autodesk.Revit.UI.TaskDialog.Show("Export Project", successMsg);
                 return Result.Succeeded;
             }
             catch (Exception ex)
             {
                 SmartConLogger.Error($"[PM] Share algorithm failed: {ex.Message}");
 
-                // Откат: закрыть всё что открыто
                 try
                 {
                     if (detachedDoc is not null && detachedDoc.IsValidObject)
@@ -308,7 +389,6 @@ public sealed class ShareProjectCommand : IExternalCommand
                     try { System.IO.File.Delete(tempPath); } catch { }
                 }
 
-                // Попытка переоткрыть оригинальный файл
                 try
                 {
                     if (System.IO.File.Exists(originalPathName))
@@ -333,7 +413,10 @@ public sealed class ShareProjectCommand : IExternalCommand
                 ReportProgress("Failed", 0);
                 CloseProgress();
 
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", $"Share failed:\n{ex.Message}");
+                uiapp.Application.FailuresProcessing -= failureHandler;
+                uiapp.DialogBoxShowing -= dialogHandler;
+
+                Autodesk.Revit.UI.TaskDialog.Show("Export Project", $"Export failed:\n{ex.Message}");
                 return Result.Failed;
             }
         }
@@ -345,10 +428,6 @@ public sealed class ShareProjectCommand : IExternalCommand
         }
     }
 
-    /// <summary>
-    /// SyncWithoutRelinquishing — как в документации share-algorithm.md.
-    /// ICentralLockedCallback.ShouldWaitForLockAvailability возвращает true.
-    /// </summary>
     private static void SyncWithoutRelinquishing(Document doc)
     {
         var transOpts = new TransactWithCentralOptions();
@@ -374,7 +453,7 @@ public sealed class ShareProjectCommand : IExternalCommand
     {
         if (_progressVm is null) return;
 
-        System.Windows.Application.Current?.Dispatcher.Invoke(DispatcherPriority.Background, new Action(() =>
+        _progressView?.Dispatcher.Invoke(DispatcherPriority.Background, new Action(() =>
         {
             _progressVm.StatusText = statusText;
             _progressVm.ProgressValue = progressValue;
@@ -385,7 +464,7 @@ public sealed class ShareProjectCommand : IExternalCommand
     {
         if (_progressView is null) return;
 
-        System.Windows.Application.Current?.Dispatcher.Invoke(DispatcherPriority.Background, new Action(() =>
+        _progressView.Dispatcher.Invoke(DispatcherPriority.Background, new Action(() =>
         {
             _progressView.Close();
             _progressView = null;
@@ -393,14 +472,18 @@ public sealed class ShareProjectCommand : IExternalCommand
         }));
     }
 
-    /// <summary>
-    /// Implementation of ICentralLockedCallback — returns true to wait for lock availability.
-    /// </summary>
     private sealed class CentralLockCallback : ICentralLockedCallback
     {
         public bool ShouldWaitForLockAvailability()
         {
             return true;
         }
+    }
+
+    private static System.Windows.Window? GetMainWindow(UIApplication uiapp)
+    {
+        var handle = uiapp.MainWindowHandle;
+        return System.Windows.Application.Current?.Windows.OfType<System.Windows.Window>()
+            .FirstOrDefault(w => new System.Windows.Interop.WindowInteropHelper(w).Handle == handle);
     }
 }

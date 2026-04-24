@@ -56,11 +56,11 @@ public static class RibbonBuilder
 
         var shareProjectButton = new PushButtonData(
             name: "ShareProject",
-            text: "Share\nProject",
+            text: "Export\nProject",
             assemblyName: pmAssembly,
             className: "SmartCon.ProjectManagement.Commands.ShareProjectCommand")
         {
-            ToolTip = "Share Revit model to Shared zone (ISO 19650)",
+            ToolTip = "Export Revit model to Shared zone (ISO 19650)",
             LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.ShareProject_32x32.png"),
             Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.ShareProject_16x16.png")
         };
@@ -75,7 +75,7 @@ public static class RibbonBuilder
             assemblyName: pmAssembly,
             className: "SmartCon.ProjectManagement.Commands.ShareSettingsCommand")
         {
-            ToolTip = "Configure ProjectManagement share settings",
+            ToolTip = "Configure export settings",
             LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.Settings_32x32.png"),
             Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.Settings_16x16.png")
         };

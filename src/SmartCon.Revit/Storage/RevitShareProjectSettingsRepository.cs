@@ -87,6 +87,74 @@ public sealed class RevitShareProjectSettingsRepository : IShareProjectSettingsR
         return ShareSettingsJsonSerializer.Deserialize(json);
     }
 
+    public ExportNameOverride? LoadExportNameOverride(Document doc)
+    {
+#if NETFRAMEWORK
+        if (doc is null) throw new ArgumentNullException(nameof(doc));
+#else
+        ArgumentNullException.ThrowIfNull(doc);
+#endif
+        try
+        {
+            var schema = ExportNameOverrideSchema.GetOrCreate();
+            var storage = FindDataStorage(doc, schema);
+            if (storage is null) return null;
+
+            using var entity = storage.GetEntity(schema);
+            if (!entity.IsValid()) return null;
+
+            var payloadJson = entity.Get<string>(ExportNameOverrideSchema.FieldPayload);
+            if (string.IsNullOrEmpty(payloadJson)) return null;
+
+            return System.Text.Json.JsonSerializer.Deserialize<ExportNameOverride>(payloadJson);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[PM] LoadExportNameOverride failed: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    public void SaveExportNameOverride(Document doc, ExportNameOverride overrideData)
+    {
+#if NETFRAMEWORK
+        if (doc is null) throw new ArgumentNullException(nameof(doc));
+        if (overrideData is null) throw new ArgumentNullException(nameof(overrideData));
+#else
+        ArgumentNullException.ThrowIfNull(doc);
+        ArgumentNullException.ThrowIfNull(overrideData);
+#endif
+        var json = System.Text.Json.JsonSerializer.Serialize(overrideData);
+
+        _transactionService.RunInTransaction("SmartCon: Save ExportNameOverride", txDoc =>
+        {
+            var schema = ExportNameOverrideSchema.GetOrCreate();
+            var schemaName = ExportNameOverrideSchema.SchemaName;
+            var storage = FindDataStorageByName(txDoc, schemaName) ?? CreateNamedDataStorage(txDoc, schemaName);
+
+            using var entity = new Entity(schema);
+            entity.Set(ExportNameOverrideSchema.FieldPayload, json);
+
+            storage.SetEntity(entity);
+        });
+    }
+
+    private static DataStorage? FindDataStorageByName(Document doc, string name)
+    {
+        using var collector = new FilteredElementCollector(doc);
+        return collector
+            .OfClass(typeof(DataStorage))
+            .Cast<DataStorage>()
+            .FirstOrDefault(ds => ds.Name == name);
+    }
+
+    private static DataStorage CreateNamedDataStorage(Document doc, string name)
+    {
+        var storage = DataStorage.Create(doc);
+        storage.Name = name;
+        return storage;
+    }
+
     private static DataStorage? FindDataStorage(Document doc, Schema schema)
     {
         using var collector = new FilteredElementCollector(doc);

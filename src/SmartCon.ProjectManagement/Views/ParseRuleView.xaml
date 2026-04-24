@@ -1,0 +1,115 @@
+<controls:DialogWindowBase x:Class="SmartCon.ProjectManagement.Views.ParseRuleView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        Title="{DynamicResource PM_Title_ParseRule}"
+        Width="450" Height="340" MinWidth="400" MinHeight="300"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Window.Resources>
+        <ui:SingletonResources>
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        </ui:SingletonResources>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="8"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <TextBlock Text="{DynamicResource PM_ParseMode}" Width="100"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <ComboBox ItemsSource="{Binding ParseModeOptions}" SelectedItem="{Binding SelectedParseModeOption}"
+                      DisplayMemberPath="Display" Width="210"
+                      Style="{DynamicResource CompactComboBox}"
+                      ToolTip="{Binding SelectedParseModeOption.Description}"/>
+            <TextBlock Text="ⓘ" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}"
+                       VerticalAlignment="Center" Margin="4,0,0,0"
+                       ToolTip="{Binding SelectedParseModeOption.Description}"
+                       Cursor="Help"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8"
+                     Visibility="{Binding IsDelimiterSegment, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{DynamicResource PM_Delimiter}" Width="100"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding Delimiter, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
+            <TextBlock Text="{DynamicResource PM_SegmentIndex}" Margin="16,0,0,0"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding SegmentIndex, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8"
+                     Visibility="{Binding IsFixedWidth, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{DynamicResource PM_CharCount}" Width="100"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding CharCount, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,8"
+                     Visibility="{Binding IsBetweenMarkers, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{DynamicResource PM_OpenMarker}" Width="100"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding OpenMarker, UpdateSourceTrigger=PropertyChanged}" Width="40"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
+            <TextBlock Text="{DynamicResource PM_CloseMarker}" Margin="16,0,0,0"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding CloseMarker, UpdateSourceTrigger=PropertyChanged}" Width="40"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,0"
+                     Visibility="{Binding IsAfterMarker, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{DynamicResource PM_Marker}" Width="100"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding Marker, UpdateSourceTrigger=PropertyChanged}" Width="60"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
+        </StackPanel>
+
+        <Border Grid.Row="5" Background="{DynamicResource BorderAltBrush}" Height="1"/>
+
+        <Grid Grid.Row="6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="{DynamicResource PM_Preview}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,6"/>
+
+            <TextBlock Grid.Row="1" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4">
+                <Run Text="{DynamicResource PM_FileName}"/>
+                <Run Text="{Binding PreviewFileName}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            </TextBlock>
+
+            <TextBlock Grid.Row="2" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4">
+                <Run Text="{DynamicResource PM_Result}"/>
+                <Run Text="{Binding PreviewValue}" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"/>
+            </TextBlock>
+
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="{DynamicResource Btn_Save}" Command="{Binding OkCommand}"
+                        Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
+                <Button Content="{DynamicResource Btn_Cancel}" Command="{Binding CancelCommand}"
+                        Style="{DynamicResource SecondaryButton}"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</controls:DialogWindowBase>

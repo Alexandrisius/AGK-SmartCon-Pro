@@ -27,7 +27,7 @@ public sealed partial class FamilySelectorViewModel : ObservableObject, IObserva
 
     public bool Confirmed { get; private set; }
 
-    public event Action? RequestClose;
+    public event Action<bool?>? RequestClose;
 
     public FamilySelectorViewModel(
         IReadOnlyList<string> availableFamilyNames,
@@ -118,14 +118,14 @@ public sealed partial class FamilySelectorViewModel : ObservableObject, IObserva
     private void Confirm()
     {
         Confirmed = true;
-        RequestClose?.Invoke();
+        RequestClose?.Invoke(null);
     }
 
     [RelayCommand]
     private void Cancel()
     {
         Confirmed = false;
-        RequestClose?.Invoke();
+        RequestClose?.Invoke(null);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

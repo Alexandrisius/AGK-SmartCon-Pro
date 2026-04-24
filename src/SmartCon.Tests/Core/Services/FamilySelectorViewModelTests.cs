@@ -221,7 +221,7 @@ public sealed class FamilySelectorViewModelTests
     {
         var vm = MakeVm();
         var raised = false;
-        vm.RequestClose += () => raised = true;
+        vm.RequestClose += _ => raised = true;
         vm.ConfirmCommand.Execute(null);
         Assert.True(raised);
     }
@@ -240,7 +240,7 @@ public sealed class FamilySelectorViewModelTests
     {
         var vm = MakeVm();
         var raised = false;
-        vm.RequestClose += () => raised = true;
+        vm.RequestClose += _ => raised = true;
         vm.CancelCommand.Execute(null);
         Assert.True(raised);
     }

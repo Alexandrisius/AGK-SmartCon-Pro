@@ -12,7 +12,7 @@ public sealed partial class MiniTypeSelectorViewModel : ObservableObject, IObser
 
     public IReadOnlyList<ConnectorTypeDefinition> AvailableTypes { get; }
 
-    public event Action? RequestClose;
+    public event Action<bool?>? RequestClose;
 
     public MiniTypeSelectorViewModel(IReadOnlyList<ConnectorTypeDefinition> availableTypes)
     {
@@ -22,13 +22,13 @@ public sealed partial class MiniTypeSelectorViewModel : ObservableObject, IObser
     [RelayCommand]
     private void Select()
     {
-        RequestClose?.Invoke();
+        RequestClose?.Invoke(null);
     }
 
     [RelayCommand]
     private void Cancel()
     {
         SelectedType = null;
-        RequestClose?.Invoke();
+        RequestClose?.Invoke(null);
     }
 }

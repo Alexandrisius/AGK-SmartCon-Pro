@@ -34,7 +34,7 @@ public sealed class MiniTypeSelectorViewModelTests
         vm.SelectedType = vm.AvailableTypes[0];
 
         var closed = false;
-        vm.RequestClose += () => closed = true;
+        vm.RequestClose += _ => closed = true;
 
         vm.SelectCommand.Execute(null);
 
@@ -69,7 +69,7 @@ public sealed class MiniTypeSelectorViewModelTests
     {
         var vm = new MiniTypeSelectorViewModel(MakeTypes());
         var closed = false;
-        vm.RequestClose += () => closed = true;
+        vm.RequestClose += _ => closed = true;
 
         vm.CancelCommand.Execute(null);
 

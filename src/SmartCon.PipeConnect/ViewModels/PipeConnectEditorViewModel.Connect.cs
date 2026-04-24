@@ -81,7 +81,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             IsBusy = false;
             IsSessionActive = false;
-            RequestClose?.Invoke();
+            RequestClose?.Invoke(null);
         }
     }
 
@@ -93,7 +93,7 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (!IsSessionActive)
         {
-            RequestClose?.Invoke();
+            RequestClose?.Invoke(null);
             return;
         }
 
@@ -107,7 +107,7 @@ public sealed partial class PipeConnectEditorViewModel
             _groupSession = null;
             IsSessionActive = false;
             IsBusy = false;
-            RequestClose?.Invoke();
+            RequestClose?.Invoke(null);
         }
     }
 

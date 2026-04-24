@@ -17,7 +17,7 @@ public sealed partial class FittingCtcSetupViewModel : ObservableObject, IObserv
     [ObservableProperty]
     private bool _isValid;
 
-    public event Action? RequestClose;
+    public event Action<bool?>? RequestClose;
 
     public FittingCtcSetupViewModel(
         string familyName,
@@ -48,13 +48,13 @@ public sealed partial class FittingCtcSetupViewModel : ObservableObject, IObserv
     private void Select()
     {
         if (!IsValid) return;
-        RequestClose?.Invoke();
+        RequestClose?.Invoke(null);
     }
 
     [RelayCommand]
     private void Cancel()
     {
         IsValid = false;
-        RequestClose?.Invoke();
+        RequestClose?.Invoke(null);
     }
 }

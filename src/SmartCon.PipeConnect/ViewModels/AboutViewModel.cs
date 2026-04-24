@@ -52,7 +52,7 @@ public sealed partial class AboutViewModel : ObservableObject, IObservableReques
 
     private UpdateInfo? _foundUpdate;
 
-    public event Action? RequestClose;
+    public event Action<bool?>? RequestClose;
 
     public AboutViewModel(
         IUpdateService updateService,
@@ -172,7 +172,7 @@ public sealed partial class AboutViewModel : ObservableObject, IObservableReques
     }
 
     [RelayCommand]
-    private void Close() => RequestClose?.Invoke();
+    private void Close() => RequestClose?.Invoke(null);
 
     [RelayCommand]
     private void OpenLink(string url) =>

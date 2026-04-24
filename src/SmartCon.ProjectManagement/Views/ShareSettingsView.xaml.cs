@@ -1,4 +1,3 @@
-using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.ProjectManagement.ViewModels;
 using SmartCon.UI;
@@ -15,13 +14,15 @@ public partial class ShareSettingsView : DialogWindowBase
         DataContext = viewModel;
 
         ColIndex.Header = LocalizationService.GetString("PM_Col_Index");
-        ColRole.Header = LocalizationService.GetString("PM_Col_Role");
-        ColLabel.Header = LocalizationService.GetString("PM_Col_Label");
-        ColWip.Header = LocalizationService.GetString("PM_Col_Wip");
-        ColShared.Header = LocalizationService.GetString("PM_Col_Shared");
+        ColField.Header = LocalizationService.GetString("PM_Col_Field");
+        ColParseRule.Header = LocalizationService.GetString("PM_Col_ParseRule");
+        ColValue.Header = LocalizationService.GetString("PM_Col_Value");
+        ColStatus.Header = LocalizationService.GetString("PM_Col_ValidationCheck");
+        ColMapField.Header = LocalizationService.GetString("PM_Col_Field");
+        ColSource.Header = LocalizationService.GetString("PM_Col_SourceValue");
+        ColTarget.Header = LocalizationService.GetString("PM_Col_TargetValue");
 
-        ColRole.ItemsSource = FileBlockDefinition.PredefinedRoles;
-
+        viewModel.SetOwnerWindow(this);
         BindCloseRequest(viewModel);
     }
 }

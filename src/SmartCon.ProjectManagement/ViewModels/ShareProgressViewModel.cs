@@ -14,5 +14,5 @@ public sealed partial class ShareProgressViewModel : ObservableObject, IObservab
     [ObservableProperty]
     private int _progressMaximum = 100;
 
-    public event Action? RequestClose;
+    public event Action<bool?>? RequestClose;
 }

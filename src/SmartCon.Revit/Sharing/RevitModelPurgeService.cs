@@ -46,21 +46,35 @@ public sealed class RevitModelPurgeService : IModelPurgeService
                 }
             }
 
-            var idsToDelete = new List<ElementId>();
+            var pass1Ids = new List<ElementId>();
 
             if (options.PurgeGroups)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass1Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfClass(typeof(GroupType))
                     .Select(g => g.Id));
             }
 
             if (options.PurgeSpaces)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass1Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfCategory(BuiltInCategory.OST_MEPSpaces)
                     .Select(s => s.Id));
             }
+
+            if (options.PurgeSheets)
+            {
+                pass1Ids.AddRange(new FilteredElementCollector(purgeDoc)
+                    .OfClass(typeof(Viewport))
+                    .Select(vp => vp.Id));
+                pass1Ids.AddRange(new FilteredElementCollector(purgeDoc)
+                    .OfClass(typeof(ViewSheet))
+                    .Select(s => s.Id));
+            }
+
+            totalDeleted += SafeDelete(purgeDoc, pass1Ids);
+
+            var pass2Ids = new List<ElementId>();
 
             var viewports = new FilteredElementCollector(purgeDoc)
                 .OfClass(typeof(Viewport))
@@ -76,75 +90,68 @@ public sealed class RevitModelPurgeService : IModelPurgeService
                 .Where(v => !viewports.Contains(v.Id))
                 .Select(v => v.Id)
                 .ToList();
-            idsToDelete.AddRange(viewsToDelete);
+            pass2Ids.AddRange(viewsToDelete);
 
             if (options.PurgeRvtLinks)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfClass(typeof(RevitLinkInstance))
                     .Select(r => r.Id));
             }
 
             if (options.PurgeCadImports)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfClass(typeof(ImportInstance))
                     .Select(i => i.Id));
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfClass(typeof(CADLinkType))
                     .Select(t => t.Id));
             }
 
             if (options.PurgePointClouds)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfClass(typeof(PointCloudInstance))
                     .Select(p => p.Id));
             }
 
             if (options.PurgeRebar)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfCategory(BuiltInCategory.OST_Rebar)
                     .Select(r => r.Id));
             }
 
             if (options.PurgeFabricReinforcement)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfCategory(BuiltInCategory.OST_FabricReinforcement)
                     .Select(f => f.Id));
             }
 
             if (options.PurgeImages)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfClass(typeof(ImageInstance))
                     .Select(i => i.Id));
             }
 
             if (options.PurgeRvtLinks)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfClass(typeof(RevitLinkType))
                     .Select(t => t.Id));
             }
 
-            if (options.PurgeSheets)
-            {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
-                    .OfClass(typeof(ViewSheet))
-                    .Select(s => s.Id));
-            }
-
             if (options.PurgeSchedules)
             {
-                idsToDelete.AddRange(new FilteredElementCollector(purgeDoc)
+                pass2Ids.AddRange(new FilteredElementCollector(purgeDoc)
                     .OfClass(typeof(ViewSchedule))
                     .Select(s => s.Id));
             }
 
-            totalDeleted += SafeDelete(purgeDoc, idsToDelete);
+            totalDeleted += SafeDelete(purgeDoc, pass2Ids);
 
             if (options.PurgeUnused)
             {

@@ -4,14 +4,19 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         Title="{DynamicResource PM_Title_Settings}"
-        Width="600" Height="600" MinWidth="550" MinHeight="500"
+        Width="750" Height="620" MinWidth="650" MinHeight="520"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="False"
         Background="{DynamicResource BackgroundBrush}">
 
     <Window.Resources>
-        <ui:SingletonResources/>
+        <ui:SingletonResources>
+            <Style x:Key="CenterCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+        </ui:SingletonResources>
     </Window.Resources>
 
     <Grid Margin="12">
@@ -154,54 +159,110 @@
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
                     <StackPanel>
-                        <TextBlock Text="{DynamicResource PM_NamingTemplate}" FontWeight="SemiBold" Margin="0,0,0,8"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="{DynamicResource PM_Delimiter}" VerticalAlignment="Center" Margin="0,0,4,0"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-                            <TextBox Text="{Binding Delimiter, UpdateSourceTrigger=PropertyChanged}" Width="40"
-                                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
-                        </StackPanel>
-
                         <TextBlock Text="{DynamicResource PM_Blocks}" FontWeight="SemiBold" Margin="0,0,0,4"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
-                        <Button Content="{DynamicResource PM_ParseFromName}" Command="{Binding ParseFromFileNameCommand}"
-                                Style="{DynamicResource AccentButton}" Margin="0,0,0,6" HorizontalAlignment="Left"/>
                         <DataGrid ItemsSource="{Binding Blocks}" SelectedIndex="{Binding SelectedBlockIndex}"
                                   AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                                   Style="{DynamicResource CompactDataGrid}"
                                   RowStyle="{DynamicResource CompactDataGridRow}"
                                   CellStyle="{DynamicResource CompactDataGridCell}">
                             <DataGrid.Columns>
-                                <DataGridTextColumn x:Name="ColIndex" Binding="{Binding Index}" Width="50" IsReadOnly="True"/>
-                                <DataGridComboBoxColumn x:Name="ColRole" SelectedItemBinding="{Binding Role}" Width="120"/>
-                                <DataGridTextColumn x:Name="ColLabel" Binding="{Binding Label}" Width="*"/>
+                                <DataGridTextColumn x:Name="ColIndex" Binding="{Binding Index}" Width="35" IsReadOnly="True"
+                                                    ElementStyle="{StaticResource CenterCell}"/>
+                                <DataGridTemplateColumn x:Name="ColField" Width="110">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Field}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                    <DataGridTemplateColumn.CellEditingTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{Binding DataContext.FieldLibrary, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                      SelectedValue="{Binding Field, UpdateSourceTrigger=PropertyChanged}"
+                                                      SelectedValuePath="Name" DisplayMemberPath="Name"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellEditingTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn x:Name="ColParseRule" Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="{Binding ParseRuleDisplay}"
+                                                    Command="{Binding DataContext.OpenParseRuleEditorCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    Style="{DynamicResource SecondaryButton}"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Center"
+                                                    Padding="6,2"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn x:Name="ColValue" Binding="{Binding CurrentFieldValue}" Width="*" IsReadOnly="True"
+                                                    ElementStyle="{StaticResource CenterCell}"/>
+                                <DataGridTemplateColumn x:Name="ColStatus" Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="{DynamicResource PM_ValidField}"/>
+                                                        <Setter Property="Foreground" Value="Green"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsValid}" Value="False">
+                                                                <Setter Property="Text" Value="{DynamicResource PM_InvalidField}"/>
+                                                                <Setter Property="Foreground" Value="Red"/>
+                                                                <Setter Property="ToolTip" Value="{Binding ValidationError}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                             </DataGrid.Columns>
                         </DataGrid>
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                             <Button Content="{DynamicResource PM_AddBlock}" Command="{Binding AddBlockCommand}"
                                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
                             <Button Content="{DynamicResource PM_RemoveBlock}" Command="{Binding RemoveBlockCommand}"
+                                    Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
+                            <Button Content="{DynamicResource PM_FieldLibrary}" Command="{Binding OpenFieldLibraryCommand}"
                                     Style="{DynamicResource SecondaryButton}"/>
                         </StackPanel>
 
-                        <TextBlock Text="{DynamicResource PM_StatusMappings}" FontWeight="SemiBold" Margin="0,12,0,4"
+                        <TextBlock Text="{DynamicResource PM_ExportMappings}" FontWeight="SemiBold" Margin="0,12,0,4"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
-                        <DataGrid ItemsSource="{Binding StatusMappings}" SelectedIndex="{Binding SelectedMappingIndex}"
+                        <DataGrid ItemsSource="{Binding ExportMappings}" SelectedIndex="{Binding SelectedMappingIndex}"
                                   AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                                   Style="{DynamicResource CompactDataGrid}"
                                   RowStyle="{DynamicResource CompactDataGridRow}"
                                   CellStyle="{DynamicResource CompactDataGridCell}">
                             <DataGrid.Columns>
-                                <DataGridTextColumn x:Name="ColWip" Binding="{Binding WipValue}" Width="*"/>
-                                <DataGridTextColumn x:Name="ColShared" Binding="{Binding SharedValue}" Width="*"/>
+                                <DataGridTemplateColumn x:Name="ColMapField" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Field}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                    <DataGridTemplateColumn.CellEditingTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{Binding DataContext.FieldLibrary, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                      SelectedValue="{Binding Field, UpdateSourceTrigger=PropertyChanged}"
+                                                      SelectedValuePath="Name" DisplayMemberPath="Name"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellEditingTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn x:Name="ColSource" Binding="{Binding SourceValue}" Width="*" IsReadOnly="True"
+                                                    ElementStyle="{StaticResource CenterCell}"/>
+                                <DataGridTextColumn x:Name="ColTarget" Binding="{Binding TargetValue}" Width="*"
+                                                    ElementStyle="{StaticResource CenterCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <Button Content="{DynamicResource PM_AddMapping}" Command="{Binding AddStatusMappingCommand}"
+                            <Button Content="{DynamicResource PM_AddMapping}" Command="{Binding AddExportMappingCommand}"
                                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-                            <Button Content="{DynamicResource PM_RemoveMapping}" Command="{Binding RemoveStatusMappingCommand}"
+                            <Button Content="{DynamicResource PM_RemoveMapping}" Command="{Binding RemoveExportMappingCommand}"
                                     Style="{DynamicResource SecondaryButton}"/>
                         </StackPanel>
 
