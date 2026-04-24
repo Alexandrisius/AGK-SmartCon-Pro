@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
@@ -10,8 +9,12 @@ using SmartCon.Core.Services.Storage;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-public sealed partial class MappingEditorViewModel : ObservableObject
+public sealed partial class MappingEditorViewModel : ObservableObject, IObservableRequestClose
 {
+    #pragma warning disable CS0067
+    public event Action<bool?>? RequestClose;
+    #pragma warning restore CS0067
+
     private readonly IFittingMappingRepository _repository;
     private readonly IDialogService _dialogService;
 
@@ -75,13 +78,13 @@ public sealed partial class MappingEditorViewModel : ObservableObject
             _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
             _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
             IsTypesSaved = true;
-            await Task.Delay(2000);
+            await Task.Delay(500);
             IsTypesSaved = false;
         }
         catch (Exception ex)
         {
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
-            MessageBox.Show(ex.ToString(), LocalizationService.GetString("Mapping_SaveError"));
+            _dialogService.ShowError(LocalizationService.GetString("Mapping_SaveError"), ex.ToString());
         }
     }
 
@@ -108,13 +111,13 @@ public sealed partial class MappingEditorViewModel : ObservableObject
             _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
             _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
             IsRulesSaved = true;
-            await Task.Delay(2000);
+            await Task.Delay(500);
             IsRulesSaved = false;
         }
         catch (Exception ex)
         {
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
-            MessageBox.Show(ex.ToString(), LocalizationService.GetString("Mapping_SaveError"));
+            _dialogService.ShowError(LocalizationService.GetString("Mapping_SaveError"), ex.ToString());
         }
     }
 
@@ -199,7 +202,7 @@ public sealed partial class MappingEditorViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
-            MessageBox.Show(ex.ToString(), LocalizationService.GetString("Mapping_SaveError"));
+            _dialogService.ShowError(LocalizationService.GetString("Mapping_SaveError"), ex.ToString());
         }
     }
 }

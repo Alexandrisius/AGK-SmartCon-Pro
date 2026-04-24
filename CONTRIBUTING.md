@@ -4,8 +4,8 @@ Thank you for your interest in contributing to SmartCon — a Revit plugin for a
 
 ## Build
 
-SmartCon supports **six Revit versions** (2019, 2020, 2021, 2022, 2023, 2024,
-2025) with two target frameworks (`net48` and `net8.0-windows`). The project
+SmartCon supports **eight Revit versions** (2019, 2020, 2021, 2022, 2023, 2024,
+2025, 2026) with two target frameworks (`net48` and `net8.0-windows`). The project
 uses **named build configurations** (`Debug.R25`, `Debug.R24`, `Debug.R21`, `Debug.R19`)
 to select the correct RevitAPI NuGet package **before** NuGet restore runs.
 
@@ -14,7 +14,7 @@ Shipping artifacts are grouped as follows:
 - `R19` → Revit 2019-2020
 - `R21` → Revit 2021-2023
 - `R24` → Revit 2024
-- `R25` → Revit 2025
+- `R25` → Revit 2025-2026
 
 > ⚠️ Do **not** use `-p:RevitVersion=...`. The
 > `Nice3point.Revit.Api.RevitAPI` package resolves its `VersionOverride`
@@ -62,7 +62,7 @@ Requirements:
 dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
 ```
 
-All 676 tests must pass before submitting a PR. Tests that require a live
+All 716 tests must pass before submitting a PR. Tests that require a live
 Revit runtime are automatically skipped in CI.
 
 ## Automation Overview
@@ -111,8 +111,9 @@ Refactor transaction service interface
 SmartCon follows a layered architecture with strict dependency rules:
 
 ```
-SmartCon.App → SmartCon.PipeConnect → SmartCon.Revit → SmartCon.Core
-                                     ↘ SmartCon.UI   ↘ SmartCon.Core
+SmartCon.App --> PipeConnect --> SmartCon.Revit --> SmartCon.Core
+                                      \-> SmartCon.UI   \-> SmartCon.Core
+App --> ProjectManagement
 ```
 
 - **SmartCon.Core** — Pure C#, no Revit API calls, no WPF. Domain models, interfaces, algorithms.

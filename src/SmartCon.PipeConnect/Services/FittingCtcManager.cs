@@ -17,9 +17,7 @@ namespace SmartCon.PipeConnect.Services;
 public sealed class FittingCtcManager(
     CtcResolutionService resolutionSvc,
     CtcGuessService guessSvc,
-    CtcFamilyWriter familyWriter,
-    IFittingMappingRepository mappingRepo,
-    IDialogService dialogSvc)
+    CtcFamilyWriter familyWriter)
 {
     /// <summary>Resolve the dynamic-side CTC from the fitting mapping rule.</summary>
     public ConnectionTypeCode ResolveDynamicTypeFromRule(
@@ -82,83 +80,6 @@ public sealed class FittingCtcManager(
         Document doc, FamilySymbol symbol, IReadOnlyList<ConnectorTypeDefinition> types,
         FittingMappingRule rule, ConnectionTypeCode staticCtc, bool crossConnect = false)
         => guessSvc.BuildConnectorItems(doc, symbol, types, rule, staticCtc, crossConnect);
-
-    /// <summary>
-    /// Ensure a fitting has CTC assigned before insertion. Opens the setup dialog if needed.
-    /// Returns false if the user cancels.
-    /// </summary>
-    [Obsolete("LEGACY: CTC now assigned automatically. No callers — dead code.")]
-    public bool EnsureFittingCtcForInsert(
-        Document doc, FittingCardItem fitting, ConnectorProxy staticConnector)
-    {
-        if (doc.IsModifiable) return true;
-
-        var primary = fitting.PrimaryFitting;
-        if (primary is null) return true;
-
-        var symbol = CtcFamilyWriter.FindFamilySymbol(doc, primary.FamilyName, primary.SymbolName);
-        if (symbol is null) return true;
-
-        if (familyWriter.IsFittingCtcDefined(doc, symbol)) return true;
-
-        var types = mappingRepo.GetConnectorTypes();
-        if (types.Count == 0) return true;
-
-        var items = BuildConnectorItems(doc, symbol, types, fitting.Rule, staticConnector.ConnectionTypeCode);
-
-        SmartConLogger.Info($"[CTC] Fitting '{symbol.Family.Name}' ({symbol.Name}): CTC not set → dialog");
-
-        if (!dialogSvc.ShowFittingCtcSetup(
-                symbol.Family.Name, symbol.Name, items, types))
-        {
-            dialogSvc.ShowWarning(LocalizationService.GetString("App_Name"),
-                LocalizationService.GetString("Msg_CtcNotAssigned"));
-            return false;
-        }
-
-        familyWriter.ApplyFittingCtcToFamily(doc, symbol, items);
-        return true;
-    }
-
-    /// <summary>
-    /// Ensure a reducer has CTC assigned before insertion. Opens the setup dialog if needed.
-    /// Returns false if the user cancels.
-    /// </summary>
-    [Obsolete("LEGACY: CTC now assigned automatically. No callers — dead code.")]
-    public bool EnsureReducerCtcForInsert(
-        Document doc, IReadOnlyList<FittingMappingRule> proposedFittings, ConnectorProxy staticConnector)
-    {
-        if (doc.IsModifiable) return true;
-
-        var reducerRule = proposedFittings
-            .FirstOrDefault(r => r.ReducerFamilies.Count > 0);
-        if (reducerRule is null) return true;
-
-        var reducerFam = reducerRule.ReducerFamilies[0];
-        var symbol = CtcFamilyWriter.FindFamilySymbol(doc, reducerFam.FamilyName, reducerFam.SymbolName);
-        if (symbol is null) return true;
-
-        if (familyWriter.IsFittingCtcDefined(doc, symbol)) return true;
-
-        var types = mappingRepo.GetConnectorTypes();
-        if (types.Count == 0) return true;
-
-        bool crossConnect = reducerRule.FromType.Value != reducerRule.ToType.Value;
-        var items = BuildConnectorItems(doc, symbol, types, reducerRule, staticConnector.ConnectionTypeCode, crossConnect);
-
-        SmartConLogger.Info($"[CTC] Reducer '{symbol.Family.Name}' ({symbol.Name}): CTC not set → dialog");
-
-        if (!dialogSvc.ShowFittingCtcSetup(
-                symbol.Family.Name, symbol.Name, items, types))
-        {
-            dialogSvc.ShowWarning(LocalizationService.GetString("App_Name"),
-                LocalizationService.GetString("Msg_ReducerCtcNotAssigned"));
-            return false;
-        }
-
-        familyWriter.ApplyFittingCtcToFamily(doc, symbol, items);
-        return true;
-    }
 
     /// <summary>Check if all connectors of a FamilySymbol have CTC defined.</summary>
     public bool IsFittingCtcDefined(Document doc, FamilySymbol symbol)

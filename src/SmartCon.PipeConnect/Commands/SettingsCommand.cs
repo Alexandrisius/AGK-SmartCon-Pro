@@ -3,7 +3,6 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Services;
-using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.Views;
 
@@ -16,11 +15,8 @@ public sealed class SettingsCommand : IExternalCommand
     {
         try
         {
-            var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
-            contextWriter.SetContext(commandData.Application);
-
-            var revitContext = (IRevitContext)contextWriter;
-            var doc = revitContext.GetDocument();
+            CommandHelper.InitializeContext(commandData.Application);
+            var doc = CommandHelper.GetDocument();
 
             var factory = ServiceHost.GetService<ISettingsViewModelFactory>();
 

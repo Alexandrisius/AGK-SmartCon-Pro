@@ -81,18 +81,29 @@ R25-бинарник копируется в папки Revit 2025 и 2026 (од
 
 ### Если нужно собрать только одну версию вручную
 
+**ВАЖНО:** Собирай каждую конфигурацию ОТДЕЛЬНО. НЕ собирай solution — он подтянет лишние TFM.
+Между конфигурациями разных TFM (net8 vs net48) может потребоваться `dotnet restore` —
+RevitAPI NuGet-пакет имеет разные версии для разных TFM, и быстрое переключение между
+конфигурациями без restore может дать ошибки компиляции.
+
 ```bash
-# Только Revit 2025 (net8.0-windows)
+# Revit 2025-2026 (net8.0-windows)
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 
-# Только Revit 2021-2023 (net48)
-dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R23
+# Revit 2024 (net48)
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 
-# Только Revit 2019-2020 (net48)
+# Revit 2021-2023 (net48)
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
+
+# Revit 2019-2020 (net48)
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19
 ```
 
-**Важно:** собирай `SmartCon.App.csproj`, а НЕ `SmartCon.sln` (solution может подтянуть лишние TFM).
+**Правила сборки:**
+1. Собирай `SmartCon.App.csproj`, а НЕ `SmartCon.sln`
+2. Каждую конфигурацию — отдельной командой
+3. Если после сборки одной конфигурации другая падает с ошибками NuGet/restore — запусти `dotnet restore src/SmartCon.App/SmartCon.App.csproj` и повтори сборку
 
 ### Тесты
 

@@ -17,6 +17,8 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
     private readonly IShareProjectSettingsRepository _repository;
     private readonly IViewRepository _viewRepository;
     private readonly IFileNameParser _fileNameParser;
+    private readonly IDialogService _dialogService;
+    private readonly IDialogPresenter _dialogPresenter;
     private readonly Autodesk.Revit.DB.Document _doc;
     private HashSet<string> _pendingKeepViewNames = [];
     private bool _viewsLoaded;
@@ -116,11 +118,15 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         IShareProjectSettingsRepository repository,
         IViewRepository viewRepository,
         IFileNameParser fileNameParser,
+        IDialogService dialogService,
+        IDialogPresenter dialogPresenter,
         Autodesk.Revit.DB.Document doc)
     {
         _repository = repository;
         _viewRepository = viewRepository;
         _fileNameParser = fileNameParser;
+        _dialogService = dialogService;
+        _dialogPresenter = dialogPresenter;
         _doc = doc;
 
         FilteredViews = CollectionViewSource.GetDefaultView(Views);
@@ -166,19 +172,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         ShareFolderPath = settings.ShareFolderPath;
         SyncBeforeShare = settings.SyncBeforeShare;
 
-        var po = settings.PurgeOptions;
-        PurgeRvtLinks = po.PurgeRvtLinks;
-        PurgeCadImports = po.PurgeCadImports;
-        PurgeImages = po.PurgeImages;
-        PurgePointClouds = po.PurgePointClouds;
-        PurgeGroups = po.PurgeGroups;
-        PurgeAssemblies = po.PurgeAssemblies;
-        PurgeSpaces = po.PurgeSpaces;
-        PurgeRebar = po.PurgeRebar;
-        PurgeFabricReinforcement = po.PurgeFabricReinforcement;
-        PurgeSheets = po.PurgeSheets;
-        PurgeSchedules = po.PurgeSchedules;
-        PurgeUnused = po.PurgeUnused;
+        ApplyPurgeOptions(settings.PurgeOptions);
 
         Blocks.CollectionChanged += (_, _) => RefreshPreview();
         ExportMappings.CollectionChanged += (_, _) => RefreshPreview();
@@ -188,31 +182,8 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             FieldLibrary.Add(fd);
         OnPropertyChanged(nameof(FieldNames));
 
-        Blocks.Clear();
-        foreach (var b in settings.FileNameTemplate.Blocks)
-        {
-            var item = new FileNameBlockItem
-            {
-                Index = b.Index,
-                Field = b.Field,
-                ParseRule = b.ParseRule
-            };
-            item.PropertyChanged += OnBlockItemChanged;
-            Blocks.Add(item);
-        }
-
-        ExportMappings.Clear();
-        foreach (var m in settings.FileNameTemplate.ExportMappings)
-        {
-            var item = new ExportMappingItem
-            {
-                Field = m.Field,
-                SourceValue = m.SourceValue,
-                TargetValue = m.TargetValue
-            };
-            item.PropertyChanged += OnMappingItemChanged;
-            ExportMappings.Add(item);
-        }
+        LoadBlocksFromSettings(settings.FileNameTemplate);
+        LoadExportMappingsFromSettings(settings.FileNameTemplate);
 
         _pendingKeepViewNames = settings.KeepViewNames.ToHashSet();
 
@@ -294,12 +265,11 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
     [RelayCommand]
     private void BrowseSharedFolder()
     {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog
-        {
-            SelectedPath = ShareFolderPath
-        };
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            ShareFolderPath = dialog.SelectedPath;
+        var path = _dialogService.ShowFolderBrowser(
+            LocalizationService.GetString("PM_BrowseShareFolder"),
+            ShareFolderPath);
+        if (path is not null)
+            ShareFolderPath = path;
     }
 
     [RelayCommand]
@@ -395,15 +365,15 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         {
             SmartConLogger.Info("[PM] OpenParseRuleEditor: creating ViewModel");
             var vm = new ParseRuleViewModel(block.ParseRule, CurrentFileName, precedingRules);
-            SmartConLogger.Info("[PM] OpenParseRuleEditor: ViewModel created, creating View");
-            var owner = GetOwnerWindow();
-            SmartConLogger.Info($"[PM] OpenParseRuleEditor: owner={(owner?.GetType().Name ?? "null")}");
-            var view = new Views.ParseRuleView(vm) { Owner = owner };
-            SmartConLogger.Info("[PM] OpenParseRuleEditor: calling ShowDialog");
-            view.ShowDialog();
+
+            bool? dialogResult = null;
+            vm.RequestClose += result => dialogResult = result;
+
+            SmartConLogger.Info("[PM] OpenParseRuleEditor: calling ShowDialog via presenter");
+            _dialogPresenter.ShowDialog(vm);
             SmartConLogger.Info("[PM] OpenParseRuleEditor: ShowDialog returned");
 
-            if (view.CustomDialogResult != true) return;
+            if (dialogResult != true) return;
 
             block.ParseRule = vm.BuildRule();
             block.RefreshParseRuleDisplay();
@@ -413,7 +383,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         catch (Exception ex)
         {
             SmartConLogger.Error($"[PM] OpenParseRuleEditor failed:\n{ex}");
-            System.Windows.MessageBox.Show($"OpenParseRuleEditor error:\n\n{ex.Message}\n\n{ex.StackTrace}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogService.ShowError("Error", $"OpenParseRuleEditor error:\n\n{ex.Message}\n\n{ex.StackTrace}");
         }
     }
 
@@ -439,19 +409,18 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         try
         {
             SmartConLogger.Info("[PM] OpenFieldLibrary: creating ViewModel");
-            var vm = new FieldLibraryViewModel();
+            var vm = new FieldLibraryViewModel(_dialogPresenter);
             foreach (var fd in FieldLibrary)
                 vm.Fields.Add(FieldDefinitionItem.FromModel(fd));
 
-            SmartConLogger.Info($"[PM] OpenFieldLibrary: {vm.Fields.Count} fields, creating View");
-            var owner = GetOwnerWindow();
-            SmartConLogger.Info($"[PM] OpenFieldLibrary: owner={(owner?.GetType().Name ?? "null")}");
-            var view = new Views.FieldLibraryView(vm) { Owner = owner };
-            SmartConLogger.Info("[PM] OpenFieldLibrary: calling ShowDialog");
-            view.ShowDialog();
+            bool? dialogResult = null;
+            vm.RequestClose += result => dialogResult = result;
+
+            SmartConLogger.Info($"[PM] OpenFieldLibrary: {vm.Fields.Count} fields, calling ShowDialog via presenter");
+            _dialogPresenter.ShowDialog(vm);
             SmartConLogger.Info("[PM] OpenFieldLibrary: ShowDialog returned");
 
-            if (view.CustomDialogResult != true) return;
+            if (dialogResult != true) return;
 
             FieldLibrary.Clear();
             foreach (var item in vm.Fields)
@@ -467,14 +436,8 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         catch (Exception ex)
         {
             SmartConLogger.Error($"[PM] OpenFieldLibrary failed:\n{ex}");
-            System.Windows.MessageBox.Show($"OpenFieldLibrary error:\n\n{ex.Message}\n\n{ex.StackTrace}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogService.ShowError("Error", $"OpenFieldLibrary error:\n\n{ex.Message}\n\n{ex.StackTrace}");
         }
-    }
-
-    private Window? GetOwnerWindow()
-    {
-        if (_ownerWindow is not null) return _ownerWindow;
-        return System.Windows.Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive);
     }
 
     [RelayCommand]
@@ -497,7 +460,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         catch (Exception ex)
         {
             SmartConLogger.Error($"[PM] Import failed: {ex.Message}");
-            System.Windows.MessageBox.Show($"Import failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogService.ShowError("Error", $"Import failed: {ex.Message}");
         }
     }
 
@@ -522,7 +485,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         catch (Exception ex)
         {
             SmartConLogger.Error($"[PM] Export failed: {ex.Message}");
-            System.Windows.MessageBox.Show($"Export failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogService.ShowError("Error", $"Export failed: {ex.Message}");
         }
     }
 
@@ -540,7 +503,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         catch (Exception ex)
         {
             SmartConLogger.Error($"[PM] Save failed: {ex.Message}");
-            System.Windows.MessageBox.Show($"Save failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogService.ShowError("Error", $"Save failed: {ex.Message}");
         }
     }
 
@@ -576,21 +539,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             ShareFolderPath = ShareFolderPath,
             SyncBeforeShare = SyncBeforeShare,
             FieldLibrary = FieldLibrary.ToList(),
-            PurgeOptions = new PurgeOptions
-            {
-                PurgeRvtLinks = PurgeRvtLinks,
-                PurgeCadImports = PurgeCadImports,
-                PurgeImages = PurgeImages,
-                PurgePointClouds = PurgePointClouds,
-                PurgeGroups = PurgeGroups,
-                PurgeAssemblies = PurgeAssemblies,
-                PurgeSpaces = PurgeSpaces,
-                PurgeRebar = PurgeRebar,
-                PurgeFabricReinforcement = PurgeFabricReinforcement,
-                PurgeSheets = PurgeSheets,
-                PurgeSchedules = PurgeSchedules,
-                PurgeUnused = PurgeUnused
-            },
+            PurgeOptions = BuildPurgeOptions(),
             KeepViewNames = Views.Where(v => v.IsSelected).Select(v => v.Name).ToList(),
             FileNameTemplate = BuildTemplate()
         };
@@ -601,50 +550,15 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         ShareFolderPath = settings.ShareFolderPath;
         SyncBeforeShare = settings.SyncBeforeShare;
 
-        var po = settings.PurgeOptions;
-        PurgeRvtLinks = po.PurgeRvtLinks;
-        PurgeCadImports = po.PurgeCadImports;
-        PurgeImages = po.PurgeImages;
-        PurgePointClouds = po.PurgePointClouds;
-        PurgeGroups = po.PurgeGroups;
-        PurgeAssemblies = po.PurgeAssemblies;
-        PurgeSpaces = po.PurgeSpaces;
-        PurgeRebar = po.PurgeRebar;
-        PurgeFabricReinforcement = po.PurgeFabricReinforcement;
-        PurgeSheets = po.PurgeSheets;
-        PurgeSchedules = po.PurgeSchedules;
-        PurgeUnused = po.PurgeUnused;
+        ApplyPurgeOptions(settings.PurgeOptions);
 
         FieldLibrary.Clear();
         foreach (var fd in settings.FieldLibrary)
             FieldLibrary.Add(fd);
         OnPropertyChanged(nameof(FieldNames));
 
-        Blocks.Clear();
-        foreach (var b in settings.FileNameTemplate.Blocks)
-        {
-            var item = new FileNameBlockItem
-            {
-                Index = b.Index,
-                Field = b.Field,
-                ParseRule = b.ParseRule
-            };
-            item.PropertyChanged += OnBlockItemChanged;
-            Blocks.Add(item);
-        }
-
-        ExportMappings.Clear();
-        foreach (var m in settings.FileNameTemplate.ExportMappings)
-        {
-            var item = new ExportMappingItem
-            {
-                Field = m.Field,
-                SourceValue = m.SourceValue,
-                TargetValue = m.TargetValue
-            };
-            item.PropertyChanged += OnMappingItemChanged;
-            ExportMappings.Add(item);
-        }
+        LoadBlocksFromSettings(settings.FileNameTemplate);
+        LoadExportMappingsFromSettings(settings.FileNameTemplate);
 
         _pendingKeepViewNames = settings.KeepViewNames.ToHashSet();
 
@@ -673,5 +587,72 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         var template = BuildTemplate();
         var shared = _fileNameParser.TransformForExport(CurrentFileName, template, FieldLibrary.ToList());
         PreviewShared = shared ?? "(invalid)";
+    }
+
+    private void ApplyPurgeOptions(PurgeOptions options)
+    {
+        PurgeRvtLinks = options.PurgeRvtLinks;
+        PurgeCadImports = options.PurgeCadImports;
+        PurgeImages = options.PurgeImages;
+        PurgePointClouds = options.PurgePointClouds;
+        PurgeGroups = options.PurgeGroups;
+        PurgeAssemblies = options.PurgeAssemblies;
+        PurgeSpaces = options.PurgeSpaces;
+        PurgeRebar = options.PurgeRebar;
+        PurgeFabricReinforcement = options.PurgeFabricReinforcement;
+        PurgeSheets = options.PurgeSheets;
+        PurgeSchedules = options.PurgeSchedules;
+        PurgeUnused = options.PurgeUnused;
+    }
+
+    private PurgeOptions BuildPurgeOptions()
+    {
+        return new PurgeOptions
+        {
+            PurgeRvtLinks = PurgeRvtLinks,
+            PurgeCadImports = PurgeCadImports,
+            PurgeImages = PurgeImages,
+            PurgePointClouds = PurgePointClouds,
+            PurgeGroups = PurgeGroups,
+            PurgeAssemblies = PurgeAssemblies,
+            PurgeSpaces = PurgeSpaces,
+            PurgeRebar = PurgeRebar,
+            PurgeFabricReinforcement = PurgeFabricReinforcement,
+            PurgeSheets = PurgeSheets,
+            PurgeSchedules = PurgeSchedules,
+            PurgeUnused = PurgeUnused
+        };
+    }
+
+    private void LoadBlocksFromSettings(FileNameTemplate template)
+    {
+        Blocks.Clear();
+        foreach (var b in template.Blocks)
+        {
+            var item = new FileNameBlockItem
+            {
+                Index = b.Index,
+                Field = b.Field,
+                ParseRule = b.ParseRule
+            };
+            item.PropertyChanged += OnBlockItemChanged;
+            Blocks.Add(item);
+        }
+    }
+
+    private void LoadExportMappingsFromSettings(FileNameTemplate template)
+    {
+        ExportMappings.Clear();
+        foreach (var m in template.ExportMappings)
+        {
+            var item = new ExportMappingItem
+            {
+                Field = m.Field,
+                SourceValue = m.SourceValue,
+                TargetValue = m.TargetValue
+            };
+            item.PropertyChanged += OnMappingItemChanged;
+            ExportMappings.Add(item);
+        }
     }
 }

@@ -572,8 +572,9 @@ public interface IModelPurgeService
 ```csharp
 public interface IFileNameParser
 {
-    string? TransformStatus(string fileName, FileNameTemplate template);
-    bool Validate(string fileName, FileNameTemplate template, out string error);
+    string? TransformForExport(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary);
+    (bool IsValid, string ErrorMessage) Validate(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary);
+    ValidationResult ValidateDetailed(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary);
     Dictionary<string, string> ParseBlocks(string fileName, FileNameTemplate template);
 }
 ```

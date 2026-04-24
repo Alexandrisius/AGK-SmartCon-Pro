@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.x] - 2026-04-25
+
+### Added — Phase 11: ProjectManagement Module
+- ShareProject module: ISO 19650 export workflow (sync → detach → purge → save to shared zone)
+- ShareSettingsView: 4-tab settings (General, Purge, Views, Naming)
+- Field Library: reusable field definitions with validation (AllowedValues, CharCount)
+- FileNameParser: template-based file naming with validation and preview
+- ExportNameDialog: manual field override when validation fails
+- ParseRuleView: visual rule editor (5 parse modes)
+- RevitModelPurgeService: 12-category model cleanup
+- RevitShareProjectSettingsRepository: ExtensibleStorage persistence with JSON migration
+- LocalizationService keys for all PM strings (RU/EN)
+
+### Changed
+- All ViewModels now use IDialogService for dialogs (no more MessageBox.Show from VM)
+- All ViewModels now use IDialogPresenter for nested dialogs (no more new View(vm) from VM)
+- MappingEditorView now inherits DialogWindowBase (consistent with other views)
+- CommandHelper static class for shared IExternalCommand initialization pattern
+- LEGACY FittingCtcSetup removed (auto-CTC via Reflect replaces it)
+- IDialogService extended with ShowError, ShowQuestion, ShowFolderBrowser
+- PurgeOptions mapping deduplicated (3 instances → 2 helper methods)
+- I-09 expanded: Document explicitly allowed as opaque parameter carrier
+
+### Metrics
+- Tests: 676 → 716 (+40)
+- Modules: +1 (ProjectManagement)
+- LEGACY code removed: FittingCtcSetupView, FittingCtcSetupViewModel, EnsureFittingCtcForInsert, EnsureReducerCtcForInsert
+
 ## [1.3.0] - 2026-04-19
 
 ### Added — Phase 5: OSS Perfection (см. `.opencode/plans/oss-perfection-plan.md`)

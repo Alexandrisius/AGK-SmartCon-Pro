@@ -1,7 +1,6 @@
 using System.IO;
 using System.Linq;
 using Autodesk.Revit.UI;
-using Microsoft.Win32;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.ViewModels;
@@ -25,7 +24,7 @@ public sealed class PipeConnectDialogService(IDialogPresenter presenter) : IDial
 
     public void ShowWarning(string title, string message)
     {
-        TaskDialog.Show(title, message);
+        Autodesk.Revit.UI.TaskDialog.Show(title, message);
     }
 
     public IReadOnlyList<FittingMapping>? ShowFamilySelector(
@@ -37,24 +36,9 @@ public sealed class PipeConnectDialogService(IDialogPresenter presenter) : IDial
         return vm.GetResult();
     }
 
-    [Obsolete("LEGACY: CTC now assigned automatically via Reflect button. No callers.")]
-    public bool ShowFittingCtcSetup(
-        string familyName,
-        string symbolName,
-        IReadOnlyList<IFittingCtcSetupItem> connectors,
-        IReadOnlyList<ConnectorTypeDefinition> availableTypes)
-    {
-        // ViewModel expects the WPF-bindable implementation; callers in the
-        // PipeConnect layer already pass concrete FittingCtcSetupItem instances.
-        var items = connectors.Cast<FittingCtcSetupItem>().ToList();
-        var vm = new FittingCtcSetupViewModel(familyName, symbolName, items, availableTypes);
-        presenter.ShowDialog(vm);
-        return vm.IsValid;
-    }
-
     public string? ShowOpenJsonDialog(string title, string? initialDirectory = null, string? preselectFileName = null)
     {
-        var dialog = new OpenFileDialog
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = title,
             Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
@@ -79,7 +63,7 @@ public sealed class PipeConnectDialogService(IDialogPresenter presenter) : IDial
 
     public string? ShowSaveJsonDialog(string title, string? defaultFileName = null)
     {
-        var dialog = new SaveFileDialog
+        var dialog = new Microsoft.Win32.SaveFileDialog
         {
             Title = title,
             Filter = "JSON files (*.json)|*.json",
@@ -93,5 +77,33 @@ public sealed class PipeConnectDialogService(IDialogPresenter presenter) : IDial
 
         var result = dialog.ShowDialog();
         return result == true ? dialog.FileName : null;
+    }
+
+    public void ShowError(string title, string message)
+    {
+        System.Windows.MessageBox.Show(message, title, System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+    }
+
+    public bool ShowQuestion(string title, string message)
+    {
+        var result = System.Windows.MessageBox.Show(message, title, System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+        return result == System.Windows.MessageBoxResult.Yes;
+    }
+
+    public string? ShowFolderBrowser(string description, string? selectedPath = null)
+    {
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = description,
+#if !NETFRAMEWORK
+            UseDescriptionForTitle = true,
+#endif
+        };
+
+        if (!string.IsNullOrWhiteSpace(selectedPath) && Directory.Exists(selectedPath))
+            dialog.SelectedPath = selectedPath;
+
+        var result = dialog.ShowDialog();
+        return result == System.Windows.Forms.DialogResult.OK ? dialog.SelectedPath : null;
     }
 }

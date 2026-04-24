@@ -126,7 +126,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         var resolutionSvc = new CtcResolutionService(connSvc, mappingRepo, _virtualCtcStore);
         var guessSvc = new CtcGuessService(connSvc, mappingRepo, _virtualCtcStore);
         var familyWriter = new CtcFamilyWriter(connSvc, familyConnSvc, _virtualCtcStore);
-        _ctcManager = new FittingCtcManager(resolutionSvc, guessSvc, familyWriter, mappingRepo, dialogSvc);
+        _ctcManager = new FittingCtcManager(resolutionSvc, guessSvc, familyWriter);
         _connectExecutor = new ConnectExecutor(connSvc, transformSvc, paramResolver, fittingInsertSvc, networkMover, mappingRepo, _ctcManager);
         _initHandler = new PipeConnectInitHandler(connSvc, transformSvc, paramResolver, _ctcManager);
         _rotationHandler = rotationHandler;

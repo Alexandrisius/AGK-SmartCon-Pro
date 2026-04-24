@@ -18,7 +18,7 @@
 
 ## Чеклист перед мерджем
 
-- [ ] `build-and-deploy.bat` — 0 ошибок, 0 предупреждений на **всех** конфигурациях (R25 / R23 / R19)
+- [ ] `build-and-deploy.bat` — 0 ошибок, 0 предупреждений на **всех** конфигурациях (R25 / R24 / R21 / R19)
 - [ ] `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` — все тесты проходят
 - [ ] Инварианты `docs/invariants.md` (I-01..I-13) не нарушены
 - [ ] Новые доменные классы отражены в `docs/domain/models.md`

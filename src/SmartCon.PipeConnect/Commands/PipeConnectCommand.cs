@@ -15,11 +15,8 @@ public sealed class PipeConnectCommand : IExternalCommand
     {
         try
         {
-            var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
-            contextWriter.SetContext(commandData.Application);
-
-            var revitContext = (IRevitContext)contextWriter;
-            var doc = revitContext.GetDocument();
+            CommandHelper.InitializeContext(commandData.Application);
+            var doc = CommandHelper.GetDocument();
 
             var factory = ServiceHost.GetService<IPipeConnectViewModelFactory>();
 

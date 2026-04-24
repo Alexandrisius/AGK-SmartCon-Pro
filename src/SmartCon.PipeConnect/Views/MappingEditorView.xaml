@@ -1,7 +1,8 @@
-<Window x:Class="SmartCon.PipeConnect.Views.MappingEditorView"
+<controls:DialogWindowBase x:Class="SmartCon.PipeConnect.Views.MappingEditorView"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         Title="{DynamicResource Title_Settings}"
         Width="930" Height="420"
         WindowStartupLocation="CenterScreen"
@@ -281,4 +282,4 @@
         </TabItem>
 
     </TabControl>
-</Window>
+</controls:DialogWindowBase>

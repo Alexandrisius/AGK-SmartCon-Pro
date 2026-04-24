@@ -25,18 +25,15 @@ public sealed class ShareProjectCommand : IExternalCommand
 
         try
         {
-            SmartConLogger.Info("[PM] ExportProjectCommand started.");
+            SmartConLogger.Info("[PM] ShareProjectCommand started.");
 
             var uiapp = commandData.Application;
-            var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
-            contextWriter.SetContext(uiapp);
-
-            var revitContext = (IRevitContext)contextWriter;
-            var originalDoc = revitContext.GetDocument();
+            CommandHelper.InitializeContext(uiapp);
+            var originalDoc = CommandHelper.GetDocument();
 
             if (string.IsNullOrWhiteSpace(originalDoc.PathName))
             {
-                Autodesk.Revit.UI.TaskDialog.Show("Export Project", "File must be saved first.");
+                Autodesk.Revit.UI.TaskDialog.Show("Share Project", "File must be saved first.");
                 return Result.Failed;
             }
 
@@ -48,7 +45,7 @@ public sealed class ShareProjectCommand : IExternalCommand
             if (string.IsNullOrWhiteSpace(settings.ShareFolderPath) || settings.FileNameTemplate.Blocks.Count == 0)
             {
                 SmartConLogger.Warn("[PM] Settings incomplete — showing configure dialog.");
-                Autodesk.Revit.UI.TaskDialog.Show("Export Project",
+                Autodesk.Revit.UI.TaskDialog.Show("Share Project",
                     LocalizationService.GetString("PM_Result_NoSettings"));
                 return Result.Failed;
             }
@@ -122,7 +119,7 @@ public sealed class ShareProjectCommand : IExternalCommand
 
             if (string.IsNullOrWhiteSpace(sharedFileName))
             {
-                Autodesk.Revit.UI.TaskDialog.Show("Export Project", "Failed to transform file name.");
+                Autodesk.Revit.UI.TaskDialog.Show("Share Project", "Failed to transform file name.");
                 return Result.Failed;
             }
 
@@ -204,7 +201,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                         {
                             SmartConLogger.Warn($"[PM] Sync failed: {syncEx.Message}");
 
-                            using var td = new Autodesk.Revit.UI.TaskDialog("Export Project");
+                            using var td = new Autodesk.Revit.UI.TaskDialog("Share Project");
                             td.MainInstruction = $"Synchronization failed:\n{syncEx.Message}";
                             td.MainContent = "Continue without synchronization?";
                             td.CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No;
@@ -363,7 +360,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                     $"Time: {sw.Elapsed.TotalSeconds:F1}s";
 
                 SmartConLogger.Info($"[PM] Share succeeded: {sharedFilePath} ({sw.Elapsed.TotalSeconds:F1}s, {deletedCount} deleted)");
-                Autodesk.Revit.UI.TaskDialog.Show("Export Project", successMsg);
+                Autodesk.Revit.UI.TaskDialog.Show("Share Project", successMsg);
                 return Result.Succeeded;
             }
             catch (Exception ex)
@@ -416,7 +413,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                 uiapp.Application.FailuresProcessing -= failureHandler;
                 uiapp.DialogBoxShowing -= dialogHandler;
 
-                Autodesk.Revit.UI.TaskDialog.Show("Export Project", $"Export failed:\n{ex.Message}");
+                Autodesk.Revit.UI.TaskDialog.Show("Share Project", $"Export failed:\n{ex.Message}");
                 return Result.Failed;
             }
         }

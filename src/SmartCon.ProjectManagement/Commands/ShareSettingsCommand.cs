@@ -4,7 +4,6 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
-using SmartCon.Core.Services.Interfaces;
 using SmartCon.ProjectManagement.Views;
 
 namespace SmartCon.ProjectManagement.Commands;
@@ -18,11 +17,8 @@ public sealed class ShareSettingsCommand : IExternalCommand
         {
             SmartConLogger.Info("[PM] ShareSettingsCommand started.");
 
-            var contextWriter = ServiceHost.GetService<IRevitContextWriter>();
-            contextWriter.SetContext(commandData.Application);
-
-            var revitContext = (IRevitContext)contextWriter;
-            var doc = revitContext.GetDocument();
+            CommandHelper.InitializeContext(commandData.Application);
+            var doc = CommandHelper.GetDocument();
 
             var factory = ServiceHost.GetService<Services.IShareSettingsViewModelFactory>();
             var vm = factory.Create(doc);

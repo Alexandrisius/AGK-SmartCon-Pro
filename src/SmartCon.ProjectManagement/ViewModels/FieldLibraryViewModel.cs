@@ -8,6 +8,8 @@ namespace SmartCon.ProjectManagement.ViewModels;
 
 public sealed partial class FieldLibraryViewModel : ObservableObject, IObservableRequestClose
 {
+    private readonly IDialogPresenter _dialogPresenter;
+
     public ObservableCollection<FieldDefinitionItem> Fields { get; } = [];
 
     [ObservableProperty]
@@ -18,6 +20,11 @@ public sealed partial class FieldLibraryViewModel : ObservableObject, IObservabl
     public void SetOwnerWindow(Window? window) => _ownerWindow = window;
 
     public event Action<bool?>? RequestClose;
+
+    public FieldLibraryViewModel(IDialogPresenter dialogPresenter)
+    {
+        _dialogPresenter = dialogPresenter;
+    }
 
     [RelayCommand]
     private void AddField()
@@ -69,10 +76,12 @@ public sealed partial class FieldLibraryViewModel : ObservableObject, IObservabl
         var originalValues = fieldItem.AllowedValues.ToList();
 
         var vm = new AllowedValuesViewModel(fieldItem);
-        var view = new Views.AllowedValuesView(vm) { Owner = _ownerWindow };
-        view.ShowDialog();
 
-        if (view.CustomDialogResult == true)
+        bool? dialogResult = null;
+        vm.RequestClose += result => dialogResult = result;
+        _dialogPresenter.ShowDialog(vm);
+
+        if (dialogResult == true)
         {
             vm.ApplyTo(fieldItem);
         }

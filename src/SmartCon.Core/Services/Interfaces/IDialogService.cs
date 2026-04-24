@@ -27,17 +27,6 @@ public interface IDialogService
         IReadOnlyList<FittingMapping> currentSelection);
 
     /// <summary>
-    /// Shows a dialog to assign connector types (CTC) to fitting connectors.
-    /// Returns <c>true</c> if the user confirmed assignments.
-    /// </summary>
-    [Obsolete("LEGACY: CTC now assigned automatically via Reflect button. No callers.")]
-    bool ShowFittingCtcSetup(
-        string familyName,
-        string symbolName,
-        IReadOnlyList<IFittingCtcSetupItem> connectors,
-        IReadOnlyList<ConnectorTypeDefinition> availableTypes);
-
-    /// <summary>
     /// Shows an Open File dialog filtered to JSON files and returns the selected path,
     /// or <c>null</c> when the user cancels.
     /// </summary>
@@ -59,4 +48,18 @@ public interface IDialogService
     /// <param name="title">Dialog window title.</param>
     /// <param name="defaultFileName">Optional default file name suggested by the dialog.</param>
     string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
+
+    /// <summary>Shows an error dialog with the specified title and message.</summary>
+    void ShowError(string title, string message);
+
+    /// <summary>Shows a question dialog with Yes/No buttons. Returns <c>true</c> if Yes.</summary>
+    bool ShowQuestion(string title, string message);
+
+    /// <summary>
+    /// Shows a folder browser dialog and returns the selected path,
+    /// or <c>null</c> when the user cancels.
+    /// </summary>
+    /// <param name="description">Description shown in the dialog.</param>
+    /// <param name="selectedPath">Optional initially selected path.</param>
+    string? ShowFolderBrowser(string description, string? selectedPath = null);
 }

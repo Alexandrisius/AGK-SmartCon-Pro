@@ -4,6 +4,7 @@
     <RootNamespace>SmartCon.PipeConnect</RootNamespace>
     <AssemblyName>SmartCon.PipeConnect</AssemblyName>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 

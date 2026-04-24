@@ -1,7 +1,7 @@
 # ProjectManagement — Модуль управления шарингом проектов
 
-> **Статус:** Планирование
-> **Последнее обновление:** 2026-04-23
+> **Статус:** ✅ Реализован (Phase 11 завершена)
+> **Последнее обновление:** 2026-04-25
 
 ## Назначение
 
@@ -13,157 +13,48 @@
 
 ---
 
-## Промпт-план для AI-агента
+## Реализованные подфазы
 
-> **Инструкция:** Этот раздел — пошаговый план реализации модуля.
-> Выполняй подфазы последовательно. Каждая подфаза имеет критерии приёмки.
-> После завершения подфазы — запусти `build-and-deploy.bat` и тесты.
+### 11A — Core: модели и интерфейсы ✅
 
-### Подфаза 11A: Core — модели и интерфейсы
+- `ShareProjectSettings`, `FileNameTemplate`, `FileBlockDefinition`, `StatusMapping`, `PurgeOptions`
+- `ShareProjectResult`, `ViewInfo`, `FieldDefinition`
+- `IShareProjectSettingsRepository`, `IShareProjectService`, `IModelPurgeService`, `IFileNameParser`, `IViewRepository`
+- `ShareSettingsJsonSerializer` (pure C#, System.Text.Json)
 
-**Цель:** Создать все модели данных и интерфейсы в SmartCon.Core.
+### 11B — Revit: ExtensibleStorage + реализации сервисов ✅
 
-**Шаги:**
-1. Создать 7 моделей в `SmartCon.Core/Models/`:
-   - `ShareProjectSettings.cs` — корневая модель (ShareFolderPath, FileNameTemplate, PurgeOptions, KeepViewNames, SyncBeforeShare)
-   - `FileNameTemplate.cs` — шаблон (Delimiter, Blocks, StatusMappings)
-   - `FileBlockDefinition.cs` — блок (Index, Role, Label)
-   - `StatusMapping.cs` — пара (WipValue, SharedValue)
-   - `PurgeOptions.cs` — 10 boolean-флагов очистки
-   - `ShareProjectResult.cs` — результат (Success, SharedFilePath, ElapsedSeconds, ErrorMessage, ElementsDeleted, PurgedElementsCount)
-   - `ViewInfo.cs` — (Name, ElementId Id, ViewType)
-2. Создать 5 интерфейсов в `SmartCon.Core/Services/Interfaces/`:
-   - `IShareProjectSettingsRepository` — Load/Save/ExportToJson/ImportFromJson
-   - `IShareProjectService` — Share(settings) → ShareProjectResult
-   - `IModelPurgeService` — Purge(doc, options, keepViewNames) → int
-   - `IFileNameParser` — TransformStatus/Validate/ParseBlocks
-   - `IViewRepository` — GetAllViews(doc) → List<ViewInfo>
-3. Создать сериализатор `SmartCon.Core/Services/Storage/ShareSettingsJsonSerializer.cs`:
-   - Serialize(ShareProjectSettings) → string
-   - Deserialize(string) → ShareProjectSettings
-   - Формат JSON описан в `naming-template.md`
-4. Добавить ключи локализации в `LocalizationService` (RU + EN словари) для строк модуля
-5. Обновить `docs/domain/models.md` и `docs/domain/interfaces.md`
-6. Создать unit-тесты:
-   - `FileNameParserTests.cs` — тесткейсы в `naming-template.md`
-   - `ShareSettingsJsonSerializerTests.cs` — serialize/deserialize roundtrip
-   - `PurgeOptionsTests.cs` — default values
+- `ProjectManagementSchema` (ExtensibleStorage schema descriptor)
+- `RevitShareProjectSettingsRepository` (CRUD в DataStorage с JSON-миграцией)
+- `RevitShareProjectService` (8-шаговый алгоритм Share)
+- `RevitModelPurgeService` (12-категорийная очистка + PerformanceAdviser purge)
+- `RevitFileNameParser` (парсинг/трансформация/валидация имён)
+- `RevitViewRepository` (список видов из документа)
 
-**Критерии приёмки:**
-- Core компилируется на R25 + R21 без ошибок
-- I-09 соблюдён (Core не вызывает Revit API, нет using System.Windows)
-- Все unit-тесты pass
-- Модели добавлены в `docs/domain/models.md`
+### 11C — UI: окно настроек (ShareSettingsView) ✅
 
-### Подфаза 11B: Revit — ExtensibleStorage и реализации
+- `ShareSettingsViewModel` (4 таба: Общие, Очистка, Виды, Нейминг)
+- `FieldLibraryView` + `FieldLibraryViewModel` (CRUD библиотеки полей)
+- `ParseRuleView` + `ParseRuleViewModel` (визуальный редактор правил, 5 режимов)
+- `AllowedValuesView` + `AllowedValuesViewModel` (редактор допустимых значений)
+- `ExportNameDialog` + `ExportNameDialogViewModel` (ручное переопределение имени)
+- ShareSettingsView.xaml (TabControl, модальное, DialogWindowBase)
 
-**Цель:** Создать все Revit-зависимые реализации.
+### 11D — UI: прогресс шаринга + интеграция ✅
 
-**Шаги:**
-1. Создать `SmartCon.Revit/Storage/ProjectManagementSchema.cs`:
-   - Новый GUID (уникальный, не совпадающий с FittingMappingSchema)
-   - SchemaName = "SmartConProjectManagementSchema"
-   - DataStorageName = "SmartCon.ProjectManagement"
-   - Поля: SchemaVersion (int), Payload (string)
-   - AccessLevel = Public (как в FittingMappingSchema — VendorId "AGK" < 4 символов)
-2. Создать `SmartCon.Revit/Storage/RevitShareProjectSettingsRepository.cs`:
-   - Паттерн идентичен RevitFittingMappingRepository
-   - Чтение: FilteredElementCollector → DataStorage → Entity → Payload → Deserialize
-   - Запись: через ITransactionService.RunInTransaction
-   - ExportToJson/ImportFromJson: делегируют ShareSettingsJsonSerializer
-3. Создать `SmartCon.Revit/Sharing/RevitModelPurgeService.cs`:
-   - Алгоритм в `share-algorithm.md` (шаг 5)
-   - Каждая категория — отдельный приватный метод
-   - Purge через PerformanceAdviser GUID в цикле до стабилизации
-   - IFailuresPreprocessor через ITransactionService
-4. Создать `SmartCon.Revit/Sharing/RevitFileNameParser.cs`:
-   - Алгоритм в `naming-template.md`
-5. Создать `SmartCon.Revit/Sharing/RevitViewRepository.cs`:
-   - FilteredElementCollector.OfClass(typeof(View)) → List<ViewInfo>
-   - Исключить шаблоны (v.IsTemplate == false)
-6. Создать `SmartCon.Revit/Sharing/RevitShareProjectService.cs`:
-   - 8-шаговый алгоритм из `share-algorithm.md`
-   - IShareProjectService.Share(settings) → ShareProjectResult
+- `ShareProgressViewModel` (прогресс-бар + статус)
+- `ShareProgressView.xaml` (TopMost, немодальное)
+- `ShareProjectCommand` (IExternalCommand)
+- RibbonBuilder: панель ProjectManagement + 2 кнопки
+- ServiceRegistrar: регистрация ~15 сервисов и фабрик
 
-**Критерии приёмки:**
-- Revit компилируется на R25 + R21
-- I-03 (транзакции через сервис), I-05 (не хранить Element), I-07 (FailuresPreprocessor)
-- Все новые классы sealed
+### 11E — Тесты и полировка ✅
 
-### Подфаза 11C: UI — окно настроек
-
-**Цель:** Создать ShareSettingsView (модальное, 4 таба).
-
-**Шаги:**
-1. Создать ViewModels:
-   - `ShareSettingsViewModel.cs` — 4 группы свойств + команды
-   - `ViewSelectionItem.cs` — ObservableObject (IsSelected, Name, Id, ViewType)
-   - `FileNameBlockItem.cs` — ObservableObject (Index, Role, Label)
-   - `StatusMappingItem.cs` — ObservableObject (WipValue, SharedValue)
-2. Создать `ShareSettingsView.xaml`:
-   - наследовать от `DialogWindowBase` (как AboutView)
-   - `<ui:SingletonResources/>` в Window.Resources
-   - `LanguageManager.EnsureWindowResources(this)` в code-behind
-   - Background=`{DynamicResource BackgroundBrush}`
-   - TabControl с `FlatTabControl` / `FlatTabItem` (из SmartCon.UI Generic.xaml)
-   - DataGrid с `CompactDataGrid` стилями
-   - Buttons с `PrimaryButton` / `SecondaryButton` / `AccentButton`
-   - Все строки через `{DynamicResource ...}` (ключи в StringLocalization)
-3. Создать `ShareSettingsCommand.cs`:
-   - Модальное окно: `view.ShowDialog()`
-   - Owner = Revit main window handle (как в SettingsCommand PipeConnect)
-4. Создать фабрики:
-   - `IShareSettingsViewModelFactory.cs` + `ShareSettingsViewModelFactory.cs`
-
-**Критерии приёмки:**
-- Окно открывается модально из Ribbon
-- Все стили из SmartCon.UI (Generic.xaml) — единый визуал
-- I-10: code-behind только DataContext + EnsureWindowResources + BindCloseRequest
-- Локализация через DynamicResource
-
-### Подфаза 11D: UI — прогресс шаринга + Ribbon
-
-**Цель:** Завершить модуль — прогресс-бар, Ribbon, интеграция.
-
-**Шаги:**
-1. Создать `ShareProgressViewModel.cs`:
-   - Properties: StatusText, ProgressValue
-   - Команда Cancel (опционально)
-2. Создать `ShareProgressView.xaml`:
-   - `DialogWindowBase`, TopMost, WindowStyle=ToolWindow
-   - ProgressBar `FlatProgressBar`, Label, Минимальный размер 450×130
-3. Создать `ShareProjectCommand.cs`:
-   - IExternalCommand.Execute():
-     a. Load settings from IShareProjectSettingsRepository
-     b. Validate via IFileNameParser
-     c. Show ShareProgressView (немодальное)
-     d. Call IShareProjectService.Share(settings)
-     e. Update progress via Dispatcher (см. "Проблема прогресс-бара" ниже)
-     f. Show TaskDialog with result
-     g. Close progress window
-4. Обновить `SmartCon.App/Ribbon/RibbonBuilder.cs`:
-   - Новая панель "ProjectManagement" на вкладке SmartCon
-   - Кнопка "ShareProject" → ShareProject_32x32.png / ShareProjectCommand
-   - Кнопка "Settings" → Settings_32x32.png / ShareSettingsCommand
-5. Обновить `SmartCon.App/DI/ServiceRegistrar.cs`:
-   - Регистрация всех новых сервисов и фабрик
-6. Добавить ключи локализации в `StringLocalization.cs` (Keys-класс + BuildRu/BuildEn)
-
-**Критерии приёмки:**
-- Полный цикл: Settings → Share → файл в зоне Shared
-- Имя файла трансформировано (статус WIP→Shared)
-- Прогресс-бар обновляется корректно (до 100%)
-- Ribbon: новая панель с 2 кнопками + иконками
-- build-and-deploy.bat: 0 ошибок на R25, R21, R19
-
-### Подфаза 11E: Тесты и полировка
-
-**Шаги:**
-1. Unit-тесты: FileNameParserTests, ShareSettingsJsonSerializerTests, PurgeOptionsTests
-2. ViewModel-тесты: ShareSettingsViewModelTests (с моками IShareProjectSettingsRepository, IViewRepository)
-3. Проверить локализацию: все DynamicResource ключи определены в RU и EN
-4. `dotnet test` — 0 падений
-5. Обновить docs/: models.md, interfaces.md, solution-structure.md, roadmap.md (статус → Готов)
+- FileNameParserTests, ShareSettingsJsonSerializerTests, PurgeOptionsTests
+- ShareSettingsViewModelTests (VM-тесты с моками)
+- Локализация RU/EN (DynamicResource)
+- build-and-deploy.bat — 0 ошибок на всех конфигурациях
+- 716 тестов pass
 
 ---
 

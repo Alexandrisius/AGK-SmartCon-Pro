@@ -248,19 +248,28 @@ Commands, ViewModels, Views для операции Share Project.
 ```
 SmartCon.ProjectManagement/
 ├── Commands/
-│   ├── ShareProjectCommand.cs          <- IExternalCommand (Share)
-│   └── ShareSettingsCommand.cs         <- IExternalCommand (Settings, модальное окно)
+│   ├── ShareProjectCommand.cs
+│   └── ShareSettingsCommand.cs
 ├── ViewModels/
-│   ├── ShareSettingsViewModel.cs       <- VM для окна настроек (4 таба)
-│   ├── ShareProgressViewModel.cs       <- VM для прогресса шаринга
-│   ├── ViewSelectionItem.cs            <- элемент списка видов (Name + IsSelected)
-│   ├── FileNameBlockItem.cs            <- элемент блока имени (Index + Role + Label)
-│   └── StatusMappingItem.cs            <- элемент маппинга (WipValue + SharedValue)
+│   ├── ShareSettingsViewModel.cs
+│   ├── ShareProgressViewModel.cs
+│   ├── ExportNameDialogViewModel.cs
+│   ├── FileNameBlockItem.cs
+│   ├── ViewSelectionItem.cs
+│   ├── ExportMappingItem.cs
+│   ├── FieldDefinitionItem.cs
+│   ├── ParseRuleViewModel.cs
+│   ├── FieldLibraryViewModel.cs
+│   ├── AllowedValuesViewModel.cs
+│   └── EnumOption.cs
 ├── Views/
-│   ├── ShareSettingsView.xaml          <- окно настроек (TabControl, модальное)
-│   └── ShareProgressView.xaml          <- окно прогресса (TopMost, немодальное)
+│   ├── ShareSettingsView.xaml/.cs
+│   ├── ShareProgressView.xaml/.cs
+│   ├── ExportNameDialog.xaml/.cs
+│   ├── ParseRuleView.xaml/.cs
+│   ├── FieldLibraryView.xaml/.cs
+│   └── AllowedValuesView.xaml/.cs
 └── Services/
-    ├── ProjectManagementDialogService.cs  <- IDialogService implementation
     ├── IShareSettingsViewModelFactory.cs
     └── ShareSettingsViewModelFactory.cs
 ```

@@ -118,6 +118,7 @@ transaction.SetFailureHandlingOptions(options);
 
 **Разрешено в Core:**
 - Использовать Revit **value-типы как data carriers** в моделях и сигнатурах интерфейсов: `ElementId`, `XYZ`, `Domain`, `BuiltInParameter`, `ForgeTypeId`
+- Использовать `Document` как **opaque parameter** в интерфейсах (передаётся, но не вызываются его методы). Примеры: `IShareProjectSettingsRepository.Load(Document doc)`
 - `using Autodesk.Revit.DB;` — **только** в файлах моделей и интерфейсов для объявления типов
 - Для чистой математики (VectorUtils, ConnectorAligner) использовать `Vec3` вместо `XYZ` (ADR-009). Конвертация на границе Revit-слоя.
 

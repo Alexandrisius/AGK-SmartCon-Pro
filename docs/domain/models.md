@@ -519,9 +519,11 @@ public sealed record ShareProjectSettings
 {
     public string ShareFolderPath { get; init; } = string.Empty;
     public FileNameTemplate FileNameTemplate { get; init; } = new();
+    public List<FieldDefinition> FieldLibrary { get; init; } = [];
     public PurgeOptions PurgeOptions { get; init; } = new();
     public List<string> KeepViewNames { get; init; } = [];
     public bool SyncBeforeShare { get; init; } = true;
+    public static ShareProjectSettings Empty => new();
 }
 ```
 
@@ -554,8 +556,10 @@ public sealed record FileNameTemplate
 public sealed record FileBlockDefinition
 {
     public int Index { get; init; }
-    public string Role { get; init; } = "";     // "status", "discipline", "project", etc.
-    public string Label { get; init; } = "";    // отображаемое имя ("Статус", "Дисциплина")
+    public string Field { get; init; } = "";
+    public string Label { get; init; } = "";
+    public ParseRule? ParseRule { get; init; }
+    public List<string> AllowedValues { get; init; } = [];
 }
 ```
 
@@ -572,6 +576,26 @@ public sealed record StatusMapping
 {
     public string WipValue { get; init; } = "";     // "S0"
     public string SharedValue { get; init; } = "";  // "S1"
+}
+```
+
+---
+
+## FieldDefinition *(ProjectManagement)*
+
+Определение поля из библиотеки — переиспользуемое описание с валидацией.
+
+**Файл:** `SmartCon.Core/Models/FieldDefinition.cs`
+
+```csharp
+public sealed record FieldDefinition
+{
+    public string Name { get; init; } = "";
+    public string Label { get; init; } = "";
+    public ValidationMode ValidationMode { get; init; }
+    public List<string> AllowedValues { get; init; } = [];
+    public int? MinCharCount { get; init; }
+    public int? MaxCharCount { get; init; }
 }
 ```
 

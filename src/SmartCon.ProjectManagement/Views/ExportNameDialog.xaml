@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        Title="Export Project"
+        Title="Share Project"
         Width="520" SizeToContent="Height" MinWidth="420"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
