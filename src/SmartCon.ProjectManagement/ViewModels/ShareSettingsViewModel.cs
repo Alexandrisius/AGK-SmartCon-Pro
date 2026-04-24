@@ -191,6 +191,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
 
         AutoParseFileName();
         RefreshPreview();
+        RefreshMappingValidation();
     }
 
     private void OnBlockItemChanged(object? sender, PropertyChangedEventArgs e)
@@ -210,6 +211,10 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         {
             UpdateMappingCurrentValues();
             AutoParseFileName();
+        }
+        if (e.PropertyName is nameof(ExportMappingItem.Field) or nameof(ExportMappingItem.TargetValue))
+        {
+            RefreshMappingValidation();
         }
         RefreshPreview();
     }
@@ -259,6 +264,44 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             if (blockItem is null) continue;
             blockItem.IsValid = bv.IsValid;
             blockItem.ValidationError = bv.Error;
+        }
+    }
+
+    private void RefreshMappingValidation()
+    {
+        foreach (var mapping in ExportMappings)
+        {
+            var fieldDef = FieldLibrary.FirstOrDefault(fd =>
+                string.Equals(fd.Name, mapping.Field, StringComparison.OrdinalIgnoreCase));
+
+            if (fieldDef is not null && fieldDef.AllowedValues.Count > 0)
+            {
+                mapping.AllowedTargetValues.Clear();
+                foreach (var av in fieldDef.AllowedValues)
+                    mapping.AllowedTargetValues.Add(av);
+            }
+            else
+            {
+                mapping.AllowedTargetValues.Clear();
+            }
+
+            if (string.IsNullOrEmpty(mapping.Field) || string.IsNullOrWhiteSpace(mapping.TargetValue))
+            {
+                mapping.IsValid = true;
+                mapping.ValidationError = null;
+                continue;
+            }
+
+            if (fieldDef is null || fieldDef.ValidationMode == ValidationMode.None)
+            {
+                mapping.IsValid = true;
+                mapping.ValidationError = null;
+                continue;
+            }
+
+            var (valid, error) = _fileNameParser.ValidateSingleValue(mapping.TargetValue, fieldDef);
+            mapping.IsValid = valid;
+            mapping.ValidationError = valid ? null : error;
         }
     }
 
@@ -342,9 +385,59 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         if (SelectedBlockIndex >= 0 && SelectedBlockIndex < Blocks.Count)
         {
             Blocks.RemoveAt(SelectedBlockIndex);
+
+            for (int i = 0; i < Blocks.Count; i++)
+                Blocks[i].Index = i;
+
             RefreshValidation();
             RefreshPreview();
         }
+    }
+
+    [RelayCommand]
+    private void MoveBlockUp()
+    {
+        if (SelectedBlockIndex <= 0) return;
+
+        var targetIndex = SelectedBlockIndex - 1;
+
+        foreach (var b in Blocks) b.PropertyChanged -= OnBlockItemChanged;
+
+        Blocks.Move(SelectedBlockIndex, targetIndex);
+
+        for (int i = 0; i < Blocks.Count; i++)
+            Blocks[i].Index = i;
+
+        foreach (var b in Blocks) b.PropertyChanged += OnBlockItemChanged;
+
+        AutoParseFileName();
+        RefreshValidation();
+        RefreshPreview();
+
+        SelectedBlockIndex = targetIndex;
+    }
+
+    [RelayCommand]
+    private void MoveBlockDown()
+    {
+        if (SelectedBlockIndex < 0 || SelectedBlockIndex >= Blocks.Count - 1) return;
+
+        var targetIndex = SelectedBlockIndex + 1;
+
+        foreach (var b in Blocks) b.PropertyChanged -= OnBlockItemChanged;
+
+        Blocks.Move(SelectedBlockIndex, targetIndex);
+
+        for (int i = 0; i < Blocks.Count; i++)
+            Blocks[i].Index = i;
+
+        foreach (var b in Blocks) b.PropertyChanged += OnBlockItemChanged;
+
+        AutoParseFileName();
+        RefreshValidation();
+        RefreshPreview();
+
+        SelectedBlockIndex = targetIndex;
     }
 
     [RelayCommand]
@@ -429,6 +522,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
 
             AutoParseFileName();
             RefreshValidation();
+            RefreshMappingValidation();
             RefreshPreview();
 
             SmartConLogger.Info($"[PM] FieldLibrary updated: {FieldLibrary.Count} definitions");

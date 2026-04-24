@@ -44,8 +44,8 @@ public sealed partial class AllowedValuesViewModel : ObservableObject, IObservab
         }
     }
 
-    public bool ShowValuesList => ValidationMode is ValidationMode.AllowedValues or ValidationMode.AllowedValuesAndCharCount;
-    public bool ShowLengthFields => ValidationMode is ValidationMode.CharCount or ValidationMode.AllowedValuesAndCharCount;
+    public bool ShowValuesList => ValidationMode == ValidationMode.AllowedValues;
+    public bool ShowLengthFields => ValidationMode == ValidationMode.CharCount;
 
     public event Action<bool?>? RequestClose;
 
@@ -59,8 +59,7 @@ public sealed partial class AllowedValuesViewModel : ObservableObject, IObservab
         [
             new() { Value = ValidationMode.None, Display = LocalizationService.GetString("PM_ValMode_None"), Description = LocalizationService.GetString("PM_ValMode_None_Desc") },
             new() { Value = ValidationMode.AllowedValues, Display = LocalizationService.GetString("PM_ValMode_List"), Description = LocalizationService.GetString("PM_ValMode_List_Desc") },
-            new() { Value = ValidationMode.CharCount, Display = LocalizationService.GetString("PM_ValMode_Length"), Description = LocalizationService.GetString("PM_ValMode_Length_Desc") },
-            new() { Value = ValidationMode.AllowedValuesAndCharCount, Display = LocalizationService.GetString("PM_ValMode_Both"), Description = LocalizationService.GetString("PM_ValMode_Both_Desc") }
+            new() { Value = ValidationMode.CharCount, Display = LocalizationService.GetString("PM_ValMode_Length"), Description = LocalizationService.GetString("PM_ValMode_Length_Desc") }
         ];
 
         _selectedValidationModeOption = ValidationModeOptions.First(o => o.Value == _validationMode);

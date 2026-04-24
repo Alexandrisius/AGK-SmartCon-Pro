@@ -41,7 +41,6 @@ public sealed partial class FieldDefinitionItem : ObservableObject
             ValidationMode.None => "Любое",
             ValidationMode.AllowedValues => "Из списка",
             ValidationMode.CharCount => "Длина",
-            ValidationMode.AllowedValuesAndCharCount => "Список + Длина",
             _ => ValidationMode.ToString()
         };
     }

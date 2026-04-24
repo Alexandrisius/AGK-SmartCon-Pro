@@ -21,6 +21,7 @@ public partial class ShareSettingsView : DialogWindowBase
         ColMapField.Header = LocalizationService.GetString("PM_Col_Field");
         ColSource.Header = LocalizationService.GetString("PM_Col_SourceValue");
         ColTarget.Header = LocalizationService.GetString("PM_Col_TargetValue");
+        ColMapStatus.Header = LocalizationService.GetString("PM_Col_ValidationCheck");
 
         viewModel.SetOwnerWindow(this);
         BindCloseRequest(viewModel);

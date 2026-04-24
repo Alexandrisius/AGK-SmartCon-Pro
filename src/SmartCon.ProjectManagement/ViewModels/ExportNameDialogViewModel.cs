@@ -107,7 +107,7 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
 
             var mode = fieldDef.ValidationMode;
 
-            if (mode is ValidationMode.AllowedValues or ValidationMode.AllowedValuesAndCharCount)
+            if (mode == ValidationMode.AllowedValues)
             {
                 if (fieldDef.AllowedValues.Count > 0)
                 {
@@ -121,7 +121,7 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
                 }
             }
 
-            if (mode is ValidationMode.CharCount or ValidationMode.AllowedValuesAndCharCount)
+            if (mode == ValidationMode.CharCount)
             {
                 if (fieldDef.MinLength.HasValue && field.Value.Length < fieldDef.MinLength.Value)
                 {

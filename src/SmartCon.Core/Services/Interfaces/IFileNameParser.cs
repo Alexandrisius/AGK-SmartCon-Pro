@@ -7,5 +7,8 @@ public interface IFileNameParser
     string? TransformForExport(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary);
     (bool IsValid, string ErrorMessage) Validate(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary);
     ValidationResult ValidateDetailed(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary);
+    ValidationResult ValidateExportMappings(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary);
     Dictionary<string, string> ParseBlocks(string fileName, FileNameTemplate template);
+    Dictionary<string, string> GetMappedValues(string fileName, FileNameTemplate template);
+    (bool IsValid, string Error) ValidateSingleValue(string value, FieldDefinition fieldDef);
 }

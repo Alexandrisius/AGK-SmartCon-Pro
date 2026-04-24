@@ -166,6 +166,11 @@
                                   Style="{DynamicResource CompactDataGrid}"
                                   RowStyle="{DynamicResource CompactDataGridRow}"
                                   CellStyle="{DynamicResource CompactDataGridCell}">
+                            <DataGrid.ColumnHeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGrid.ColumnHeaderStyle>
                             <DataGrid.Columns>
                                 <DataGridTextColumn x:Name="ColIndex" Binding="{Binding Index}" Width="35" IsReadOnly="True"
                                                     ElementStyle="{StaticResource CenterCell}"/>
@@ -226,6 +231,10 @@
                                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
                             <Button Content="{DynamicResource PM_RemoveBlock}" Command="{Binding RemoveBlockCommand}"
                                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
+                            <Button Content="▲" Command="{Binding MoveBlockUpCommand}"
+                                    Style="{DynamicResource SecondaryButton}" Margin="0,0,2,0" MinWidth="28" ToolTip="{DynamicResource PM_MoveUp}"/>
+                            <Button Content="▼" Command="{Binding MoveBlockDownCommand}"
+                                    Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0" MinWidth="28" ToolTip="{DynamicResource PM_MoveDown}"/>
                             <Button Content="{DynamicResource PM_FieldLibrary}" Command="{Binding OpenFieldLibraryCommand}"
                                     Style="{DynamicResource SecondaryButton}"/>
                         </StackPanel>
@@ -237,8 +246,13 @@
                                   Style="{DynamicResource CompactDataGrid}"
                                   RowStyle="{DynamicResource CompactDataGridRow}"
                                   CellStyle="{DynamicResource CompactDataGridCell}">
+                            <DataGrid.ColumnHeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGrid.ColumnHeaderStyle>
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn x:Name="ColMapField" Width="120">
+                                <DataGridTemplateColumn x:Name="ColMapField" Width="110">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding Field}" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -255,8 +269,42 @@
                                 </DataGridTemplateColumn>
                                 <DataGridTextColumn x:Name="ColSource" Binding="{Binding SourceValue}" Width="*" IsReadOnly="True"
                                                     ElementStyle="{StaticResource CenterCell}"/>
-                                <DataGridTextColumn x:Name="ColTarget" Binding="{Binding TargetValue}" Width="*"
-                                                    ElementStyle="{StaticResource CenterCell}"/>
+                                <DataGridTemplateColumn x:Name="ColTarget" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding TargetValue}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                    <DataGridTemplateColumn.CellEditingTemplate>
+                                        <DataTemplate>
+                                            <ComboBox IsEditable="True"
+                                                      Text="{Binding TargetValue, UpdateSourceTrigger=PropertyChanged}"
+                                                      ItemsSource="{Binding AllowedTargetValues}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellEditingTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn x:Name="ColMapStatus" Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="{DynamicResource PM_ValidField}"/>
+                                                        <Setter Property="Foreground" Value="Green"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsValid}" Value="False">
+                                                                <Setter Property="Text" Value="{DynamicResource PM_InvalidField}"/>
+                                                                <Setter Property="Foreground" Value="Red"/>
+                                                                <Setter Property="ToolTip" Value="{Binding ValidationError}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                             </DataGrid.Columns>
                         </DataGrid>
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">

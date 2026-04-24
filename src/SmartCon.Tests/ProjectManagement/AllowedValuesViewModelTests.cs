@@ -136,35 +136,15 @@ public sealed class AllowedValuesViewModelTests
     }
 
     [Fact]
-    public void ShowBoth_TrueForAllowedValuesAndCharCount()
-    {
-        var item = CreateItem(ValidationMode.AllowedValuesAndCharCount);
-        var vm = new AllowedValuesViewModel(item);
-
-        Assert.True(vm.ShowValuesList);
-        Assert.True(vm.ShowLengthFields);
-    }
-
-    [Fact]
-    public void ShowNone_TrueForNone()
-    {
-        var item = CreateItem(ValidationMode.None);
-        var vm = new AllowedValuesViewModel(item);
-
-        Assert.False(vm.ShowValuesList);
-        Assert.False(vm.ShowLengthFields);
-    }
-
-    [Fact]
     public void ValidationModeChanged_UpdatesFlags()
     {
         var item = CreateItem(ValidationMode.None);
         var vm = new AllowedValuesViewModel(item);
 
-        vm.ValidationMode = ValidationMode.AllowedValuesAndCharCount;
+        vm.ValidationMode = ValidationMode.AllowedValues;
 
         Assert.True(vm.ShowValuesList);
-        Assert.True(vm.ShowLengthFields);
+        Assert.False(vm.ShowLengthFields);
     }
 
     [Fact]

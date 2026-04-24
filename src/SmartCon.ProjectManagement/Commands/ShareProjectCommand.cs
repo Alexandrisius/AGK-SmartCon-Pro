@@ -52,12 +52,20 @@ public sealed class ShareProjectCommand : IExternalCommand
 
             var parser = ServiceHost.GetService<IFileNameParser>();
             var validation = parser.ValidateDetailed(originalDoc.Title, settings.FileNameTemplate, settings.FieldLibrary);
+            var exportValidation = parser.ValidateExportMappings(originalDoc.Title, settings.FileNameTemplate, settings.FieldLibrary);
+
+            var hasAnyError = !validation.IsValid || !exportValidation.IsValid;
 
             string sharedFileName;
 
-            if (!validation.IsValid)
+            if (hasAnyError)
             {
-                SmartConLogger.Warn($"[PM] Validation failed for '{originalDoc.Title}': {validation.Summary}");
+                var allErrors = new List<string>();
+                if (!validation.IsValid) allErrors.Add(validation.Summary);
+                if (!exportValidation.IsValid) allErrors.Add(exportValidation.Summary);
+                var combinedSummary = string.Join("\n\n", allErrors);
+
+                SmartConLogger.Warn($"[PM] Validation failed for '{originalDoc.Title}': {combinedSummary}");
 
                 var existingOverride = settingsRepo.LoadExportNameOverride(originalDoc);
                 if (existingOverride is not null)
@@ -74,13 +82,19 @@ public sealed class ShareProjectCommand : IExternalCommand
                 }
                 else
                 {
-                    var details = string.Join("\n", validation.Blocks
+                    var currentDetails = validation.Blocks
                         .Where(b => !b.IsValid)
-                        .Select(b => $"  \u2022 {b.Field}: '{b.Value}' \u2014 {b.Error}"));
+                        .Select(b => $"  \u2022 {b.Field}: '{b.Value}' \u2014 {b.Error}");
+
+                    var exportDetails = exportValidation.Blocks
+                        .Where(b => !b.IsValid)
+                        .Select(b => $"  \u2022 {b.Field}: '{b.Value}' (mapped) \u2014 {b.Error}");
+
+                    var details = string.Join("\n", currentDetails.Concat(exportDetails));
 
                     var dialogVm = new ViewModels.ExportNameDialogViewModel(
                         originalDoc.Title,
-                        $"{LocalizationService.GetString("PM_Result_InvalidName")}\n\n{validation.Summary}\n{details}",
+                        $"{LocalizationService.GetString("PM_Result_InvalidName")}\n\n{combinedSummary}\n{details}",
                         settings.FileNameTemplate.Blocks,
                         settings.FieldLibrary,
                         settings.FileNameTemplate.ExportMappings);

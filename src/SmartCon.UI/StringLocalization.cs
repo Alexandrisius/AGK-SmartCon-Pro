@@ -152,6 +152,8 @@ public static class StringLocalization
         d[Keys.PM_SharedName] = "Shared:";
         d[Keys.PM_AddBlock] = "+ Добавить";
         d[Keys.PM_RemoveBlock] = "- Удалить";
+        d[Keys.PM_MoveUp] = "Переместить вверх";
+        d[Keys.PM_MoveDown] = "Переместить вниз";
         d[Keys.PM_AddMapping] = "+ Добавить";
         d[Keys.PM_RemoveMapping] = "- Удалить";
         d[Keys.PM_FieldLibrary] = "Библиотека полей...";
@@ -333,6 +335,8 @@ public static class StringLocalization
         d[Keys.PM_SharedName] = "Shared:";
         d[Keys.PM_AddBlock] = "+ Add";
         d[Keys.PM_RemoveBlock] = "- Remove";
+        d[Keys.PM_MoveUp] = "Move up";
+        d[Keys.PM_MoveDown] = "Move down";
         d[Keys.PM_AddMapping] = "+ Add";
         d[Keys.PM_RemoveMapping] = "- Remove";
         d[Keys.PM_FieldLibrary] = "Field Library...";
@@ -520,6 +524,8 @@ public static class StringLocalization
         public const string PM_SharedName = "PM_SharedName";
         public const string PM_AddBlock = "PM_AddBlock";
         public const string PM_RemoveBlock = "PM_RemoveBlock";
+        public const string PM_MoveUp = "PM_MoveUp";
+        public const string PM_MoveDown = "PM_MoveDown";
         public const string PM_AddMapping = "PM_AddMapping";
         public const string PM_RemoveMapping = "PM_RemoveMapping";
         public const string PM_FieldLibrary = "PM_FieldLibrary";

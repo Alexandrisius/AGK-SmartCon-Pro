@@ -19,4 +19,13 @@ public sealed class RevitFileNameParser : IFileNameParser
 
     public ValidationResult ValidateDetailed(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary)
         => _inner.ValidateDetailed(fileName, template, fieldLibrary);
+
+    public ValidationResult ValidateExportMappings(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary)
+        => _inner.ValidateExportMappings(fileName, template, fieldLibrary);
+
+    public Dictionary<string, string> GetMappedValues(string fileName, FileNameTemplate template)
+        => _inner.GetMappedValues(fileName, template);
+
+    public (bool IsValid, string Error) ValidateSingleValue(string value, FieldDefinition fieldDef)
+        => _inner.ValidateSingleValue(value, fieldDef);
 }

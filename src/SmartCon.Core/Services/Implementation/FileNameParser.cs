@@ -10,8 +10,18 @@ public sealed class FileNameParser : IFileNameParser
         if (string.IsNullOrWhiteSpace(fileName) || template.Blocks.Count == 0)
             return null;
 
-        var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+        var mapped = GetMappedValues(fileName, template);
         var extension = Path.GetExtension(fileName);
+
+        var orderedValues = template.Blocks
+            .OrderBy(b => b.Index)
+            .Select(b => mapped.TryGetValue(b.Field, out var v) ? v : string.Empty);
+
+        return string.Join("-", orderedValues) + extension;
+    }
+
+    public Dictionary<string, string> GetMappedValues(string fileName, FileNameTemplate template)
+    {
         var parsed = ParseBlocks(fileName, template);
 
         foreach (var mapping in template.ExportMappings)
@@ -23,11 +33,7 @@ public sealed class FileNameParser : IFileNameParser
             }
         }
 
-        var orderedValues = template.Blocks
-            .OrderBy(b => b.Index)
-            .Select(b => parsed.TryGetValue(b.Field, out var v) ? v : string.Empty);
-
-        return string.Join("-", orderedValues) + extension;
+        return parsed;
     }
 
     public (bool IsValid, string ErrorMessage) Validate(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary)
@@ -47,14 +53,33 @@ public sealed class FileNameParser : IFileNameParser
         if (!basicValid)
             return new ValidationResult(false, basicError, []);
 
-        var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
         var parsed = ParseBlocks(fileName, template);
+        return ValidateFieldValues(parsed, template, fieldLibrary);
+    }
+
+    public ValidationResult ValidateExportMappings(string fileName, FileNameTemplate template, List<FieldDefinition> fieldLibrary)
+    {
+        var (basicValid, basicError) = Validate(fileName, template, fieldLibrary);
+        if (!basicValid)
+            return new ValidationResult(false, basicError, []);
+
+        var mapped = GetMappedValues(fileName, template);
+        return ValidateFieldValues(mapped, template, fieldLibrary);
+    }
+
+    public (bool IsValid, string Error) ValidateSingleValue(string value, FieldDefinition fieldDef)
+    {
+        return ValidateValue(value, fieldDef);
+    }
+
+    private static ValidationResult ValidateFieldValues(Dictionary<string, string> values, FileNameTemplate template, List<FieldDefinition> fieldLibrary)
+    {
         var blockResults = new List<BlockValidation>();
         var errors = new List<string>();
 
         foreach (var block in template.Blocks.OrderBy(b => b.Index))
         {
-            var value = parsed.TryGetValue(block.Field, out var v) ? v : string.Empty;
+            var value = values.TryGetValue(block.Field, out var v) ? v : string.Empty;
 
             if (string.IsNullOrEmpty(block.Field))
             {
@@ -190,7 +215,7 @@ public sealed class FileNameParser : IFileNameParser
         if (mode == ValidationMode.None)
             return (true, string.Empty);
 
-        if (mode is ValidationMode.AllowedValues or ValidationMode.AllowedValuesAndCharCount)
+        if (mode == ValidationMode.AllowedValues)
         {
             if (fieldDef.AllowedValues.Count > 0)
             {
@@ -204,7 +229,7 @@ public sealed class FileNameParser : IFileNameParser
             }
         }
 
-        if (mode is ValidationMode.CharCount or ValidationMode.AllowedValuesAndCharCount)
+        if (mode == ValidationMode.CharCount)
         {
             if (fieldDef.MinLength.HasValue && value.Length < fieldDef.MinLength.Value)
                 return (false, $"Value '{value}' for field '{fieldDef.Name}' is too short. Min: {fieldDef.MinLength.Value}, actual: {value.Length}");

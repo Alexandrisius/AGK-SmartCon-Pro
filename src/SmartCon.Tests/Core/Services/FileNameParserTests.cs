@@ -305,33 +305,6 @@ public sealed class FileNameParserTests
         Assert.True(result.IsValid);
     }
 
-    [Fact]
-    public void ValidateDetailed_AllowedValuesAndCharCount_BothChecked()
-    {
-        var template = CreateTemplate((0, "status", DelimSeg("-", 0)));
-
-        var library = new List<FieldDefinition>
-        {
-            new()
-            {
-                Name = "status",
-                ValidationMode = ValidationMode.AllowedValuesAndCharCount,
-                AllowedValues = ["S1", "S22"],
-                MinLength = 2,
-                MaxLength = 3
-            }
-        };
-
-        var result1 = _parser.ValidateDetailed("S1-rest", template, library);
-        Assert.True(result1.IsValid);
-
-        var result2 = _parser.ValidateDetailed("S22-rest", template, library);
-        Assert.True(result2.IsValid);
-
-        var result3 = _parser.ValidateDetailed("S999-rest", template, library);
-        Assert.False(result3.IsValid);
-    }
-
     #endregion
 
     #region TransformForExport
@@ -445,6 +418,255 @@ public sealed class FileNameParserTests
         var result = _parser.TransformForExport("PRJ-S1.rvt", template, []);
 
         Assert.Equal("PRJ.rvt", result);
+    }
+
+    #endregion
+
+    #region GetMappedValues
+
+    [Fact]
+    public void GetMappedValues_AppliesMatchingMapping()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "project", ParseRule = DelimSeg("-", 0) },
+                new() { Index = 1, Field = "status", ParseRule = DelimSeg("-", 0) }
+            },
+            ExportMappings = new List<ExportMapping>
+            {
+                new() { Field = "status", SourceValue = "WIP", TargetValue = "SHARED" }
+            }
+        };
+
+        var mapped = _parser.GetMappedValues("ACME-WIP", template);
+
+        Assert.Equal("ACME", mapped["project"]);
+        Assert.Equal("SHARED", mapped["status"]);
+    }
+
+    [Fact]
+    public void GetMappedValues_NoMappings_ReturnsParsedValues()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "project", ParseRule = DelimSeg("-", 0) },
+                new() { Index = 1, Field = "status", ParseRule = DelimSeg("-", 0) }
+            },
+            ExportMappings = []
+        };
+
+        var mapped = _parser.GetMappedValues("ACME-WIP", template);
+
+        Assert.Equal("ACME", mapped["project"]);
+        Assert.Equal("WIP", mapped["status"]);
+    }
+
+    [Fact]
+    public void GetMappedValues_SourceValueMismatch_NoChange()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "status", ParseRule = DelimSeg("-", 0) }
+            },
+            ExportMappings = new List<ExportMapping>
+            {
+                new() { Field = "status", SourceValue = "WIP", TargetValue = "SHARED" }
+            }
+        };
+
+        var mapped = _parser.GetMappedValues("S1", template);
+
+        Assert.Equal("S1", mapped["status"]);
+    }
+
+    #endregion
+
+    #region ValidateExportMappings
+
+    [Fact]
+    public void ValidateExportMappings_MappedValueInvalid_ReturnsInvalid()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "project", ParseRule = DelimSeg("-", 0) },
+                new() { Index = 1, Field = "status", ParseRule = DelimSeg("-", 0) }
+            },
+            ExportMappings = new List<ExportMapping>
+            {
+                new() { Field = "status", SourceValue = "WIP", TargetValue = "GARBAGE" }
+            }
+        };
+
+        var fieldLibrary = new List<FieldDefinition>
+        {
+            new() { Name = "status", ValidationMode = ValidationMode.AllowedValues, AllowedValues = ["WIP", "SHARED"] }
+        };
+
+        var result = _parser.ValidateExportMappings("ACME-WIP", template, fieldLibrary);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("GARBAGE", result.Summary);
+    }
+
+    [Fact]
+    public void ValidateExportMappings_MappedValueValid_ReturnsValid()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "project", ParseRule = DelimSeg("-", 0) },
+                new() { Index = 1, Field = "status", ParseRule = DelimSeg("-", 0) }
+            },
+            ExportMappings = new List<ExportMapping>
+            {
+                new() { Field = "status", SourceValue = "WIP", TargetValue = "SHARED" }
+            }
+        };
+
+        var fieldLibrary = new List<FieldDefinition>
+        {
+            new() { Name = "status", ValidationMode = ValidationMode.AllowedValues, AllowedValues = ["WIP", "SHARED"] }
+        };
+
+        var result = _parser.ValidateExportMappings("ACME-WIP", template, fieldLibrary);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateExportMappings_CurrentValidButMappedInvalid_ReturnsInvalid()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "status", ParseRule = DelimSeg("-", 0) }
+            },
+            ExportMappings = new List<ExportMapping>
+            {
+                new() { Field = "status", SourceValue = "WIP", TargetValue = "XXX" }
+            }
+        };
+
+        var fieldLibrary = new List<FieldDefinition>
+        {
+            new() { Name = "status", ValidationMode = ValidationMode.AllowedValues, AllowedValues = ["WIP", "SHARED"] }
+        };
+
+        var currentValidation = _parser.ValidateDetailed("WIP", template, fieldLibrary);
+        Assert.True(currentValidation.IsValid);
+
+        var exportValidation = _parser.ValidateExportMappings("WIP", template, fieldLibrary);
+        Assert.False(exportValidation.IsValid);
+    }
+
+    [Fact]
+    public void ValidateExportMappings_NoFieldDefinition_ReturnsValid()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "status", ParseRule = DelimSeg("-", 0) }
+            },
+            ExportMappings = new List<ExportMapping>
+            {
+                new() { Field = "status", SourceValue = "WIP", TargetValue = "ANYTHING" }
+            }
+        };
+
+        var result = _parser.ValidateExportMappings("WIP", template, []);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateExportMappings_CharCountValidation_WorksOnMappedValue()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "code", ParseRule = DelimSeg("-", 0) }
+            },
+            ExportMappings = new List<ExportMapping>
+            {
+                new() { Field = "code", SourceValue = "AB", TargetValue = "ABCDE" }
+            }
+        };
+
+        var fieldLibrary = new List<FieldDefinition>
+        {
+            new() { Name = "code", ValidationMode = ValidationMode.CharCount, MaxLength = 3 }
+        };
+
+        var result = _parser.ValidateExportMappings("AB", template, fieldLibrary);
+
+        Assert.False(result.IsValid);
+    }
+
+    #endregion
+
+    #region ValidateSingleValue
+
+    [Fact]
+    public void ValidateSingleValue_AllowedValueValid_ReturnsTrue()
+    {
+        var fieldDef = new FieldDefinition
+        {
+            Name = "status", ValidationMode = ValidationMode.AllowedValues, AllowedValues = ["WIP", "SHARED"]
+        };
+
+        var (valid, _) = _parser.ValidateSingleValue("WIP", fieldDef);
+
+        Assert.True(valid);
+    }
+
+    [Fact]
+    public void ValidateSingleValue_AllowedValueInvalid_ReturnsFalse()
+    {
+        var fieldDef = new FieldDefinition
+        {
+            Name = "status", ValidationMode = ValidationMode.AllowedValues, AllowedValues = ["WIP", "SHARED"]
+        };
+
+        var (valid, error) = _parser.ValidateSingleValue("GARBAGE", fieldDef);
+
+        Assert.False(valid);
+        Assert.Contains("GARBAGE", error);
+    }
+
+    [Fact]
+    public void ValidateSingleValue_CharCountTooLong_ReturnsFalse()
+    {
+        var fieldDef = new FieldDefinition
+        {
+            Name = "code", ValidationMode = ValidationMode.CharCount, MaxLength = 3
+        };
+
+        var (valid, error) = _parser.ValidateSingleValue("ABCDE", fieldDef);
+
+        Assert.False(valid);
+        Assert.Contains("too long", error);
+    }
+
+    [Fact]
+    public void ValidateSingleValue_NoneValidation_ReturnsTrue()
+    {
+        var fieldDef = new FieldDefinition { Name = "free", ValidationMode = ValidationMode.None };
+
+        var (valid, _) = _parser.ValidateSingleValue("anything", fieldDef);
+
+        Assert.True(valid);
     }
 
     #endregion

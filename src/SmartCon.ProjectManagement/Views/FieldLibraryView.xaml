@@ -31,6 +31,11 @@
                   Style="{DynamicResource CompactDataGrid}"
                   RowStyle="{DynamicResource CompactDataGridRow}"
                   CellStyle="{DynamicResource CompactDataGridCell}">
+            <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                </Style>
+            </DataGrid.ColumnHeaderStyle>
             <DataGrid.Columns>
                 <DataGridTextColumn x:Name="ColFieldName" Binding="{Binding Name}" Width="100"
                                     ElementStyle="{StaticResource CenterCell}"/>
