@@ -1,3 +1,4 @@
+using System.IO;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Implementation;
 using Xunit;
@@ -420,6 +421,50 @@ public sealed class FileNameParserTests
         Assert.Equal("PRJ.rvt", result);
     }
 
+    [Fact]
+    public void TransformForExport_MultipleDotsInName_PreservesRealExtension()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks = new List<FileBlockDefinition>
+            {
+                new() { Index = 0, Field = "number", ParseRule = DelimSeg(".", 0) },
+                new() { Index = 1, Field = "name", ParseRule = DelimSeg(".", 0) }
+            },
+            ExportMappings = []
+        };
+
+        var result = _parser.TransformForExport("01.Подвал.rvt", template, []);
+
+        Assert.Equal("01-Подвал.rvt", result);
+    }
+
+    [Fact]
+    public void ParseBlocks_MultipleDotsInName_SkipsRvtExtension()
+    {
+        var template = CreateTemplate(
+            (0, "number", DelimSeg(".", 0)),
+            (1, "name", DelimSeg(".", 0)));
+
+        var result = _parser.ParseBlocks("01.Подвал.rvt", template);
+
+        Assert.Equal("01", result["number"]);
+        Assert.Equal("Подвал", result["name"]);
+    }
+
+    [Fact]
+    public void ParseBlocks_FileNameWithDotButNoRvtExtension_ParsesCorrectly()
+    {
+        var template = CreateTemplate(
+            (0, "number", DelimSeg(".", 0)),
+            (1, "name", RemainderRule()));
+
+        var result = _parser.ParseBlocks("01.Подвал.rvt", template);
+
+        Assert.Equal("01", result["number"]);
+        Assert.Equal("Подвал", result["name"]);
+    }
+
     #endregion
 
     #region GetMappedValues
@@ -667,6 +712,107 @@ public sealed class FileNameParserTests
         var (valid, _) = _parser.ValidateSingleValue("anything", fieldDef);
 
         Assert.True(valid);
+    }
+
+    #endregion
+
+    #region Issue #18 — worksharing local file with username suffix
+
+    [Fact]
+    public void ParseBlocks_DocTitle_WithoutRvt_DropsUsernameAsExtension()
+    {
+        var template = CreateTemplate(
+            (0, "project", DelimSeg("_", 0)),
+            (1, "user", DelimSeg(".", 1)));
+
+        var docTitle = "Project1_a.matorin";
+
+        var remaining = Path.GetFileNameWithoutExtension(docTitle);
+        Assert.Equal("Project1_a", remaining);
+
+        var parsed = _parser.ParseBlocks(docTitle, template);
+
+        Assert.Equal("Project1", parsed["project"]);
+        Assert.Equal(string.Empty, parsed["user"]);
+    }
+
+    [Fact]
+    public void ParseBlocks_FullFileName_WithRvt_ParsesUsernameCorrectly()
+    {
+        var template = CreateTemplate(
+            (0, "project", DelimSeg("_", 0)),
+            (1, "user", DelimSeg(".", 1)));
+
+        var fullFileName = "Project1_a.matorin.rvt";
+
+        var remaining = Path.GetFileNameWithoutExtension(fullFileName);
+        Assert.Equal("Project1_a.matorin", remaining);
+
+        var parsed = _parser.ParseBlocks(fullFileName, template);
+
+        Assert.Equal("Project1", parsed["project"]);
+        Assert.Equal("matorin", parsed["user"]);
+    }
+
+    [Fact]
+    public void TransformForExport_DocTitle_WithoutRvt_UsernameAppearsAsFakeExtension()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks =
+            [
+                new() { Index = 0, Field = "project", ParseRule = DelimSeg("_", 0) },
+                new() { Index = 1, Field = "user", ParseRule = DelimSeg(".", 0) }
+            ],
+            ExportMappings = []
+        };
+
+        var docTitle = "Project1_a.matorin";
+
+        var result = _parser.TransformForExport(docTitle, template, []);
+
+        Assert.Equal("Project1-a.matorin", result);
+    }
+
+    [Fact]
+    public void TransformForExport_FullFileName_WithRvt_CorrectExport()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks =
+            [
+                new() { Index = 0, Field = "project", ParseRule = DelimSeg("_", 0) },
+                new() { Index = 1, Field = "user", ParseRule = DelimSeg(".", 1) }
+            ],
+            ExportMappings = []
+        };
+
+        var fullFileName = "Project1_a.matorin.rvt";
+
+        var result = _parser.TransformForExport(fullFileName, template, []);
+
+        Assert.Equal("Project1-matorin.rvt", result);
+    }
+
+    [Fact]
+    public void ParseBlocks_WorksharingLocalFile_FullPath_ParsesAllFields()
+    {
+        var template = CreateTemplate(
+            (0, "code", DelimSeg("-", 0)),
+            (1, "discipline", DelimSeg("-", 0)),
+            (2, "phase", DelimSeg("-", 0)),
+            (3, "status", DelimSeg("_", 0)),
+            (4, "user", DelimSeg(".", 1)));
+
+        var fullFileName = "1001-AR-P-S1_a.klimovich.rvt";
+
+        var parsed = _parser.ParseBlocks(fullFileName, template);
+
+        Assert.Equal("1001", parsed["code"]);
+        Assert.Equal("AR", parsed["discipline"]);
+        Assert.Equal("P", parsed["phase"]);
+        Assert.Equal("S1", parsed["status"]);
+        Assert.Equal("klimovich", parsed["user"]);
     }
 
     #endregion

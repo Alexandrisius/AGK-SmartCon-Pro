@@ -50,9 +50,10 @@ public sealed class ShareProjectCommand : IExternalCommand
                 return Result.Failed;
             }
 
+            var currentFileName = System.IO.Path.GetFileName(originalDoc.PathName);
             var parser = ServiceHost.GetService<IFileNameParser>();
-            var validation = parser.ValidateDetailed(originalDoc.Title, settings.FileNameTemplate, settings.FieldLibrary);
-            var exportValidation = parser.ValidateExportMappings(originalDoc.Title, settings.FileNameTemplate, settings.FieldLibrary);
+            var validation = parser.ValidateDetailed(currentFileName, settings.FileNameTemplate, settings.FieldLibrary);
+            var exportValidation = parser.ValidateExportMappings(currentFileName, settings.FileNameTemplate, settings.FieldLibrary);
 
             var hasAnyError = !validation.IsValid || !exportValidation.IsValid;
 
@@ -65,7 +66,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                 if (!exportValidation.IsValid) allErrors.Add(exportValidation.Summary);
                 var combinedSummary = string.Join("\n\n", allErrors);
 
-                SmartConLogger.Warn($"[PM] Validation failed for '{originalDoc.Title}': {combinedSummary}");
+                SmartConLogger.Warn($"[PM] Validation failed for '{currentFileName}': {combinedSummary}");
 
                 var existingOverride = settingsRepo.LoadExportNameOverride(originalDoc);
                 if (existingOverride is not null)
@@ -93,7 +94,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                     var details = string.Join("\n", currentDetails.Concat(exportDetails));
 
                     var dialogVm = new ViewModels.ExportNameDialogViewModel(
-                        originalDoc.Title,
+                        currentFileName,
                         $"{LocalizationService.GetString("PM_Result_InvalidName")}\n\n{combinedSummary}\n{details}",
                         settings.FileNameTemplate.Blocks,
                         settings.FieldLibrary,
@@ -124,8 +125,8 @@ public sealed class ShareProjectCommand : IExternalCommand
             }
             else
             {
-                SmartConLogger.Info($"[PM] Validation passed for '{originalDoc.Title}'.");
-                sharedFileName = parser.TransformForExport(originalDoc.Title, settings.FileNameTemplate, settings.FieldLibrary) ?? string.Empty;
+                SmartConLogger.Info($"[PM] Validation passed for '{currentFileName}'.");
+                sharedFileName = parser.TransformForExport(currentFileName, settings.FileNameTemplate, settings.FieldLibrary) ?? string.Empty;
                 var extension = System.IO.Path.GetExtension(originalDoc.PathName);
                 if (!string.IsNullOrEmpty(extension) && !System.IO.Path.HasExtension(sharedFileName))
                     sharedFileName += extension;

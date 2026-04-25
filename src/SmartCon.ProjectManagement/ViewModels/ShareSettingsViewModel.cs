@@ -163,7 +163,9 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
 
         CurrentFilePath = _doc.PathName ?? string.Empty;
         CurrentFolder = string.IsNullOrEmpty(CurrentFilePath) ? string.Empty : Path.GetDirectoryName(CurrentFilePath) ?? string.Empty;
-        CurrentFileName = _doc.Title ?? string.Empty;
+        CurrentFileName = string.IsNullOrEmpty(_doc.PathName)
+            ? (_doc.Title ?? string.Empty)
+            : Path.GetFileName(_doc.PathName);
 
         SmartConLogger.Info($"[PM] ShareSettingsViewModel loading. File='{CurrentFileName}'");
 
