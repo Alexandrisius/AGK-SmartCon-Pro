@@ -82,6 +82,23 @@ public static class RibbonBuilder
 
         pmPanel.AddItem(shareSettingsButton);
 
+        // --- Family Manager Panel ---
+        var fmPanel = app.CreateRibbonPanel(TabName, "Family Manager");
+        var fmAssembly = Path.Combine(appDir, "SmartCon.FamilyManager.dll");
+
+        var familyManagerButton = new PushButtonData(
+            name: "FamilyManager",
+            text: "Family\nManager",
+            assemblyName: fmAssembly,
+            className: "SmartCon.FamilyManager.Commands.FamilyManagerCommand")
+        {
+            ToolTip = "Manage Revit family library",
+            LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.FamilyMan_32x32.png"),
+            Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.FamilyMan_16x16.png")
+        };
+
+        fmPanel.AddItem(familyManagerButton);
+
         // --- Info Panel (always rightmost) ---
         var infoPanel = app.CreateRibbonPanel(TabName, PanelInfo);
 

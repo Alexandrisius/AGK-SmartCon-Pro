@@ -19,6 +19,7 @@ public class DialogWindowBase : Window
     private void OnViewModelRequestClose(bool? result)
     {
         CustomDialogResult = result;
+        DialogResult = result;
         _closeFromViewModel = true;
         Close();
         _closeFromViewModel = false;

@@ -5,6 +5,8 @@ using Autodesk.Revit.UI;
 using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Services;
+using SmartCon.FamilyManager;
 using SmartCon.UI;
 
 namespace SmartCon.App;
@@ -32,6 +34,11 @@ public sealed class App : IExternalApplication
             ApplyUpdaterSelfUpdate();
             CleanupStalePendingUpdate();
             ServiceLocator.Initialize(application);
+
+            var fmProvider = ServiceHost.GetService<FamilyManagerPaneProvider>();
+            var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
+            application.RegisterDockablePane(fmPaneId, "Family Manager", fmProvider);
+
             RibbonBuilder.CreateRibbon(application);
             LanguageManager.Initialize();
 

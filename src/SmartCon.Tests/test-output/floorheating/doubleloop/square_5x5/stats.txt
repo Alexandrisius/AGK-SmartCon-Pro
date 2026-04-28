@@ -1,0 +1,62 @@
+﻿Fixture: square_5x5
+D0=200, EpsGeom=1
+
+=== SUPPLY SPIRAL ===
+supply.Segments.Count = 323
+  min length  = 140,00
+  max length  = 390,00
+  median len  = 385,00
+  segments with length >= d0/2 (100): 323
+
+=== INTERIOR SIDE ===
+side = RightOfDirection
+
+=== RAW SHIFTED ===
+rawShifted.Count = 323
+
+=== JOINED INNER CURVE ===
+innerVertices.Count = 324
+  miter joins     = 69
+  bevel joins     = 0
+  parallel joins  = 253
+  dedup'd joins   = 253   (revised v4-fix-A: collinear continuations collapsed)
+
+=== TRIMMED INNER CURVE (revised v4) ===
+trimmedInner.Count = 318
+  trimmed vertices = 6 (1,9% of original)
+
+=== ASSEMBLED DOUBLELOOP (revised v4: 3 bridges) ===
+assembledSplit.Count = 647
+  supply tail index range : 0..322
+  bridge1 + bridge2       : indices 323, 324
+  inner range             : starts ~325
+bridge1.Length   = 94,34
+bridge2.Length   = 94,34
+exitBridge.Length= 100,00
+
+=== SELF-INTERSECTIONS ===
+count = 0
+
+=== KERNEL OUTCOME (PatternMode.DoubleLoop) ===
+SUCCESS: loops=1, totalLength=229748,4
+
+=== RATIOS (revised v4 measurement) ===
+spiral.TotalLength  = 119751,3
+doubleLoop.Total    = 229748,4
+bridges total       = 288,7
+inner.TotalLength   = 109708,4
+A2 ratio (DL / sp)  = 1,919   (need >= 1.55)
+A5 return ratio     = 0,916   (need >= 0.60)
+
+=== A7.2 ParallelSpacing violations (Path Z2) ===
+violations count = 10
+  supply[  93] (  2600,0,   460,0) len= 282,8 ↔ inner[ 597] (  2581,4,   420,0) len= 282,8 = 44,1040 mm
+  supply[ 134] (  2600,0,   660,0) len= 282,8 ↔ inner[ 552] (  2581,4,   620,0) len= 282,8 = 44,1040 mm
+  supply[ 171] (  2600,0,   860,0) len= 282,8 ↔ inner[ 510] (  2581,4,   820,0) len= 282,8 = 44,1040 mm
+  supply[ 204] (  2600,0,  1060,0) len= 282,8 ↔ inner[ 473] (  2581,4,  1020,0) len= 282,8 = 44,1040 mm
+  supply[ 233] (  2600,0,  1260,0) len= 282,8 ↔ inner[ 439] (  2581,4,  1220,0) len= 282,8 = 44,1040 mm
+  supply[ 258] (  2600,0,  1460,0) len= 282,8 ↔ inner[ 410] (  2581,4,  1420,0) len= 282,8 = 44,1040 mm
+  supply[ 279] (  2600,0,  1660,0) len= 282,8 ↔ inner[ 384] (  2581,4,  1620,0) len= 282,8 = 44,1040 mm
+  supply[ 296] (  2600,0,  1860,0) len= 282,8 ↔ inner[ 363] (  2581,4,  1820,0) len= 282,8 = 44,1040 mm
+  supply[ 309] (  2600,0,  2060,0) len= 282,8 ↔ inner[ 345] (  2581,4,  2020,0) len= 282,8 = 44,1040 mm
+  supply[ 318] (  2600,0,  2260,0) len= 282,8 ↔ inner[ 332] (  2581,4,  2220,0) len= 282,8 = 44,1040 mm

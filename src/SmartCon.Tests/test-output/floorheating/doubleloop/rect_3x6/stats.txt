@@ -1,0 +1,57 @@
+﻿Fixture: rect_3x6
+D0=200, EpsGeom=1
+
+=== SUPPLY SPIRAL ===
+supply.Segments.Count = 230
+  min length  = 140,00
+  max length  = 382,86
+  median len  = 373,33
+  segments with length >= d0/2 (100): 230
+
+=== INTERIOR SIDE ===
+side = RightOfDirection
+
+=== RAW SHIFTED ===
+rawShifted.Count = 230
+
+=== JOINED INNER CURVE ===
+innerVertices.Count = 231
+  miter joins     = 39
+  bevel joins     = 0
+  parallel joins  = 190
+  dedup'd joins   = 190   (revised v4-fix-A: collinear continuations collapsed)
+
+=== TRIMMED INNER CURVE (revised v4) ===
+trimmedInner.Count = 209
+  trimmed vertices = 22 (9,5% of original)
+
+=== ASSEMBLED DOUBLELOOP (revised v4: 3 bridges) ===
+assembledSplit.Count = 443
+  supply tail index range : 0..229
+  bridge1 + bridge2       : indices 230, 231
+  inner range             : starts ~232
+bridge1.Length   = 94,34
+bridge2.Length   = 94,34
+exitBridge.Length= 100,00
+
+=== SELF-INTERSECTIONS ===
+count = 0
+
+=== KERNEL OUTCOME (PatternMode.DoubleLoop) ===
+SUCCESS: loops=1, totalLength=155719,9
+
+=== RATIOS (revised v4 measurement) ===
+spiral.TotalLength  = 83737,1
+doubleLoop.Total    = 155719,9
+bridges total       = 288,7
+inner.TotalLength   = 71694,2
+A2 ratio (DL / sp)  = 1,860   (need >= 1.55)
+A5 return ratio     = 0,856   (need >= 0.60)
+
+=== A7.2 ParallelSpacing violations (Path Z2) ===
+violations count = 5
+  supply[  85] (  1600,0,   460,0) len= 282,8 ↔ inner[ 397] (  1581,4,   420,0) len= 282,8 = 44,1040 mm
+  supply[ 122] (  1600,0,   660,0) len= 282,8 ↔ inner[ 355] (  1581,4,   620,0) len= 282,8 = 44,1040 mm
+  supply[ 155] (  1600,0,   860,0) len= 282,8 ↔ inner[ 318] (  1581,4,   820,0) len= 282,8 = 44,1040 mm
+  supply[ 184] (  1600,0,  1060,0) len= 282,8 ↔ inner[ 284] (  1581,4,  1020,0) len= 282,8 = 44,1040 mm
+  supply[ 209] (  1600,0,  1260,0) len= 282,8 ↔ inner[ 255] (  1581,4,  1220,0) len= 282,8 = 44,1040 mm

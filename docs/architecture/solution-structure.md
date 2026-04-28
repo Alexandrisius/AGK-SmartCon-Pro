@@ -13,6 +13,7 @@ SmartCon.sln
 ├── SmartCon.App               <- Точка входа: IExternalApplication, Ribbon, DI-регистрация.
 ├── SmartCon.PipeConnect       <- Модуль PipeConnect: Commands, ViewModels, Views.
 ├── SmartCon.ProjectManagement <- Модуль ProjectManagement: Share Project (ISO 19650).
+├── SmartCon.FamilyManager     <- Модуль FamilyManager: управление библиотекой семейств Revit (dockable panel, SQLite catalog).
 ├── SmartCon.Tests             <- Unit + ViewModel тесты (xUnit + Moq).
 └── SmartCon.Updater           <- Standalone .NET 8 updater: применяет pending
                                    update при закрытии Revit (staging-based).
@@ -277,6 +278,39 @@ SmartCon.ProjectManagement/
 > **Примечание:** Интерфейсы и модели — в SmartCon.Core.
 > Реализации Revit API — в SmartCon.Revit/Sharing/ и SmartCon.Revit/Storage/.
 > SmartCon.ProjectManagement зависит только от Core + UI (как PipeConnect).
+
+---
+
+## SmartCon.FamilyManager
+
+Модуль FamilyManager: управление библиотекой семейств Revit через dockable panel.
+
+```
+SmartCon.FamilyManager/
+├── Commands/
+│   └── FamilyManagerToggleCommand.cs   <- IExternalCommand для показа/скрытия панели
+├── ViewModels/
+│   ├── FamilyManagerViewModel.cs       <- основной VM каталога
+│   ├── FamilyImportViewModel.cs        <- VM импорта семейств
+│   └── FamilyLoadViewModel.cs          <- VM загрузки в проект
+├── Views/
+│   ├── FamilyManagerView.xaml/.cs      <- dockable panel (IDockablePaneProvider)
+│   ├── FamilyImportView.xaml/.cs       <- окно импорта
+│   └── FamilyLoadView.xaml/.cs         <- окно загрузки
+├── Services/
+│   ├── LocalCatalogProvider.cs         <- IWritableFamilyCatalogProvider
+│   ├── FamilyFileResolver.cs           <- IFamilyFileResolver
+│   ├── FamilyImportService.cs          <- IFamilyImportService
+│   ├── LocalProjectFamilyUsageRepository.cs <- IProjectFamilyUsageRepository
+│   ├── FamilyManagerDialogService.cs   <- IFamilyManagerDialogService
+│   └── IFamilyManagerViewModelFactory.cs
+└── Events/
+    └── FamilyManagerExternalEvent.cs   <- IExternalEventHandler
+```
+
+> **Примечание:** Интерфейсы и модели — в SmartCon.Core.
+> Реализации Revit API (IFamilyLoadService, IFamilyMetadataExtractionService) — в SmartCon.Revit/FamilyManager/.
+> SmartCon.FamilyManager зависит только от Core + UI (как PipeConnect и ProjectManagement).
 
 ---
 

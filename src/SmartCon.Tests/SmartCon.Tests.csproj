@@ -30,12 +30,16 @@
     <PackageReference Include="Nice3point.Revit.Api.RevitAPI">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
     <ProjectReference Include="..\SmartCon.PipeConnect\SmartCon.PipeConnect.csproj" />
     <ProjectReference Include="..\SmartCon.ProjectManagement\SmartCon.ProjectManagement.csproj" />
+    <ProjectReference Include="..\SmartCon.FamilyManager\SmartCon.FamilyManager.csproj" />
   </ItemGroup>
 
 </Project>

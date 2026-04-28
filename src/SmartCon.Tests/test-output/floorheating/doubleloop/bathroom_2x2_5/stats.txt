@@ -1,0 +1,55 @@
+﻿Fixture: bathroom_2x2_5
+D0=200, EpsGeom=1
+
+=== SUPPLY SPIRAL ===
+supply.Segments.Count = 74
+  min length  = 40,00
+  max length  = 363,33
+  median len  = 326,67
+  segments with length >= d0/2 (100): 71
+
+=== INTERIOR SIDE ===
+side = RightOfDirection
+
+=== RAW SHIFTED ===
+rawShifted.Count = 74
+
+=== JOINED INNER CURVE ===
+innerVertices.Count = 75
+  miter joins     = 27
+  bevel joins     = 0
+  parallel joins  = 46
+  dedup'd joins   = 46   (revised v4-fix-A: collinear continuations collapsed)
+
+=== TRIMMED INNER CURVE (revised v4) ===
+trimmedInner.Count = 67
+  trimmed vertices = 8 (10,7% of original)
+
+=== ASSEMBLED DOUBLELOOP (revised v4: 3 bridges) ===
+assembledSplit.Count = 143
+  supply tail index range : 0..73
+  bridge1 + bridge2       : indices 74, 75
+  inner range             : starts ~76
+bridge1.Length   = 139,28
+bridge2.Length   = 139,28
+exitBridge.Length= 100,00
+
+=== SELF-INTERSECTIONS ===
+count = 0
+
+=== KERNEL OUTCOME (PatternMode.DoubleLoop) ===
+SUCCESS: loops=1, totalLength=41298,5
+
+=== RATIOS (revised v4 measurement) ===
+spiral.TotalLength  = 22731,4
+doubleLoop.Total    = 41298,5
+bridges total       = 378,6
+inner.TotalLength   = 18188,5
+A2 ratio (DL / sp)  = 1,817   (need >= 1.55)
+A5 return ratio     = 0,800   (need >= 0.60)
+
+=== A7.2 ParallelSpacing violations (Path Z2) ===
+violations count = 3
+  supply[  41] (  1100,0,   460,0) len= 282,8 ↔ inner[ 119] (  1081,4,   420,0) len= 282,8 = 44,1040 mm
+  supply[  56] (  1100,0,   660,0) len= 282,8 ↔ inner[ 100] (  1081,4,   620,0) len= 282,8 = 44,1040 mm
+  supply[  67] (  1100,0,   860,0) len= 282,8 ↔ inner[  85] (  1081,4,   820,0) len= 282,8 = 44,1040 mm

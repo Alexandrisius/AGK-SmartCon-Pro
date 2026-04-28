@@ -594,3 +594,149 @@ public interface IViewRepository
     List<ViewInfo> GetAllViews(Document doc);
 }
 ```
+
+---
+
+## FamilyManager Interfaces
+
+Интерфейсы модуля FamilyManager (Phase 12). Все интерфейсы — в `SmartCon.Core/Services/Interfaces/FamilyManager/`.
+
+### IFamilyCatalogProvider
+
+Чтение каталога семейств: поиск, фильтрация, получение версий и файлов.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyCatalogProvider.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalogProvider.cs`
+
+```csharp
+public interface IFamilyCatalogProvider
+{
+    IReadOnlyList<FamilyCatalogItem> Search(FamilyCatalogQuery query);
+    FamilyCatalogItem? GetById(int id);
+    IReadOnlyList<FamilyCatalogVersion> GetVersions(int catalogItemId);
+    FamilyFileRecord? GetFile(int versionId);
+    CatalogProviderKind ProviderKind { get; }
+}
+```
+
+### IWritableFamilyCatalogProvider
+
+Запись в каталог: добавление, обновление, удаление записей.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IWritableFamilyCatalogProvider.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalogProvider.cs`
+
+```csharp
+public interface IWritableFamilyCatalogProvider : IFamilyCatalogProvider
+{
+    FamilyImportResult Import(FamilyImportRequest request);
+    FamilyBatchImportResult ImportBatch(IReadOnlyList<FamilyImportRequest> requests);
+    bool Delete(int catalogItemId);
+    bool UpdateItem(FamilyCatalogItem item);
+}
+```
+
+### IFamilyImportService
+
+Оркестрация импорта семейств: валидация, копирование в кэш, запись в БД.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyImportService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/FamilyImportService.cs`
+
+```csharp
+public interface IFamilyImportService
+{
+    FamilyImportResult Import(FamilyImportRequest request);
+    FamilyBatchImportResult ImportBatch(IReadOnlyList<FamilyImportRequest> requests);
+}
+```
+
+### IFamilyFileResolver
+
+Разрешение путей к файлам семейств (кэш → абсолютный путь).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyFileResolver.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/FamilyFileResolver.cs`
+
+```csharp
+public interface IFamilyFileResolver
+{
+    string? ResolveAbsolutePath(string relativeCachedPath);
+    FamilyResolvedFile? ResolveForVersion(int versionId);
+}
+```
+
+### IFamilyLoadService
+
+Загрузка семейства в проект Revit. **Не содержит `Document` в параметрах** — Document получается через `IRevitContext` в ExternalEvent.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyLoadService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyLoadService.cs`
+
+```csharp
+public interface IFamilyLoadService
+{
+    FamilyLoadResult Load(FamilyResolvedFile file, FamilyLoadOptions options);
+}
+```
+
+### IFamilyMetadataExtractionService
+
+Извлечение метаданных из `.rfa` (опционально, Post-MVP).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyMetadataExtractionService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyMetadataExtractionService.cs`
+
+```csharp
+public interface IFamilyMetadataExtractionService
+{
+    FamilyMetadataExtractionResult Extract(string rfaPath);
+}
+```
+
+### IProjectFamilyUsageRepository
+
+Хранение истории использования семейств в проектах.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IProjectFamilyUsageRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalProjectFamilyUsageRepository.cs`
+
+```csharp
+public interface IProjectFamilyUsageRepository
+{
+    void RecordUsage(int catalogItemId, string projectName, string revitVersion);
+    IReadOnlyList<ProjectFamilyUsage> GetUsageForItem(int catalogItemId);
+    IReadOnlyList<ProjectFamilyUsage> GetUsageForProject(string projectName);
+}
+```
+
+### IFamilyManagerDialogService
+
+UI-диалоги модуля FamilyManager.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyManagerDialogService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/FamilyManagerDialogService.cs`
+
+```csharp
+public interface IFamilyManagerDialogService
+{
+    string? ShowImportDialog();              // OpenFileDialog для выбора .rfa
+    bool ShowDeleteConfirmation(string familyName);
+    void ShowError(string title, string message);
+}
+```
+
+### IFamilyManagerExternalEvent
+
+Абстракция для ExternalEvent, используемого FamilyManager.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyManagerExternalEvent.cs`
+**Реализация:** `SmartCon.FamilyManager/Events/FamilyManagerExternalEvent.cs`
+
+```csharp
+public interface IFamilyManagerExternalEvent
+{
+    void RaiseLoadFamily(FamilyResolvedFile file, FamilyLoadOptions options);
+    void RaiseExtractMetadata(string rfaPath);
+}
+```

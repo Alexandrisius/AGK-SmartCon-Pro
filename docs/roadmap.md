@@ -34,6 +34,7 @@
 | **9** | Рефакторинг | 8 | ViewModel 631→384 строк, 12 handler-классов | ✅ Готов |
 | **10** | Open-source качество | 9 | Локализация, XML-docs, качество кода | ✅ Готов |
 | **11** | ProjectManagement | 0, 1 | Share Project (ISO 19650), ADR-013 | ✅ Готов |
+| **12** | FamilyManager MVP | 0, 1 | FamilyManager: dockable panel, SQLite catalog, import/load (ADR-014) | ✅ Готов |
 
 ---
 
@@ -289,3 +290,70 @@
 **Приёмка:** Все тесты pass. Multi-version сборка чистая. Документация обновлена.
 
 **Статус:** ✅ Готов (2026-04-25). Все подфазы 11A-11E реализованы. 716 тестов, 0 ошибок.
+
+---
+
+## Phase 12 — FamilyManager MVP
+
+**Цель:** Управление библиотекой семейств Revit через dockable panel.
+
+**Зависит от:** Фаза 0 (каркас), Фаза 1 (интерфейсы/модели)
+
+**Подфазы:**
+
+### 12A — Core: модели и интерфейсы
+
+- FamilyCatalogItem, FamilyCatalogVersion, FamilyFileRecord
+- FamilyTypeDescriptor, FamilyParameterDescriptor
+- FamilyCatalogQuery, FamilyImportRequest/Result, FamilyLoadResult/Options
+- FamilyMetadataExtractionResult, ProjectFamilyUsage
+- IFamilyCatalogProvider, IWritableFamilyCatalogProvider
+- IFamilyImportService, IFamilyFileResolver, IFamilyLoadService
+- IFamilyMetadataExtractionService, IProjectFamilyUsageRepository
+- IFamilyManagerDialogService, IFamilyManagerExternalEvent
+- Unit-тесты: модели, query logic
+
+**Приёмка:** Core-модели компилируются. I-09 соблюдён.
+
+### 12B — FamilyManager модуль: SQLite + File Cache
+
+- SmartCon.FamilyManager проект
+- Microsoft.Data.Sqlite 8.x, схема БД (schema_info, catalog_items, catalog_versions, family_files, project_usage)
+- LocalCatalogProvider (IWritableFamilyCatalogProvider)
+- FamilyFileResolver (cached_path → абсолютный путь)
+- FamilyImportService (копирование в кэш + запись в БД)
+- LocalProjectFamilyUsageRepository
+
+**Приёмка:** CRUD каталога работает. Файлы копируются в кэш. I-03, I-05 соблюдены.
+
+### 12C — UI: Dockable Panel
+
+- FamilyManagerViewModel (singleton)
+- FamilyManagerView.xaml (dockable panel)
+- FamilyManagerPaneProvider (IDockablePaneProvider)
+- Ribbon toggle button
+- Каталог: DataGrid, поиск, фильтрация
+- Drag-and-drop импорт .rfa
+
+**Приёмка:** Панель открывается как dockable. MVVM соблюдён (I-10). Локализация RU/EN.
+
+### 12D — Revit: загрузка и извлечение метаданных
+
+- RevitFamilyLoadService (IFamilyLoadService)
+- RevitFamilyMetadataExtractionService (опционально)
+- FamilyManagerExternalEvent (IExternalEventHandler)
+- Интеграция с IRevitContext
+
+**Приёмка:** Семейство загружается в проект. Document получается только в ExternalEvent.
+
+### 12E — Документация и ADR
+
+- ADR-014: FamilyManager MVP Architecture
+- Обновление docs/domain/models.md
+- Обновление docs/domain/interfaces.md
+- Обновление docs/architecture/solution-structure.md
+- Обновление docs/architecture/dependency-rule.md
+
+**Приёмка:** Документация SSOT синхронизирована с кодом.
+
+**Статус:** ✅ Готов (2026-04-28). ADR-014 принят. Документация обновлена.

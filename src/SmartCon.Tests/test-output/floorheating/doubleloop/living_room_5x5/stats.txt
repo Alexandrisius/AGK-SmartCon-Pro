@@ -1,0 +1,62 @@
+﻿Fixture: living_room_5x5
+D0=200, EpsGeom=1
+
+=== SUPPLY SPIRAL ===
+supply.Segments.Count = 326
+  min length  = 9,72
+  max length  = 391,55
+  median len  = 382,86
+  segments with length >= d0/2 (100): 324
+
+=== INTERIOR SIDE ===
+side = RightOfDirection
+
+=== RAW SHIFTED ===
+rawShifted.Count = 326
+
+=== JOINED INNER CURVE ===
+innerVertices.Count = 327
+  miter joins     = 70
+  bevel joins     = 0
+  parallel joins  = 255
+  dedup'd joins   = 255   (revised v4-fix-A: collinear continuations collapsed)
+
+=== TRIMMED INNER CURVE (revised v4) ===
+trimmedInner.Count = 327
+  trimmed vertices = 0 (0,0% of original)
+
+=== ASSEMBLED DOUBLELOOP (revised v4: 3 bridges) ===
+assembledSplit.Count = 657
+  supply tail index range : 0..325
+  bridge1 + bridge2       : indices 326, 327
+  inner range             : starts ~328
+bridge1.Length   = 50,00
+bridge2.Length   = 50,00
+exitBridge.Length= 100,00
+
+=== SELF-INTERSECTIONS ===
+count = 0
+
+=== KERNEL OUTCOME (PatternMode.DoubleLoop) ===
+SUCCESS: loops=1, totalLength=228983,8
+
+=== RATIOS (revised v4 measurement) ===
+spiral.TotalLength  = 119101,6
+doubleLoop.Total    = 228983,8
+bridges total       = 200,0
+inner.TotalLength   = 109682,2
+A2 ratio (DL / sp)  = 1,923   (need >= 1.55)
+A5 return ratio     = 0,921   (need >= 0.60)
+
+=== A7.2 ParallelSpacing violations (Path Z2) ===
+violations count = 10
+  supply[  93] (  1584,1,   460,0) len= 223,8 ↔ inner[ 607] (  1516,0,   420,0) len= 223,8 = 78,9162 mm
+  supply[ 134] (  1683,7,   660,0) len= 223,8 ↔ inner[ 561] (  1615,6,   620,0) len= 223,8 = 78,9162 mm
+  supply[ 172] (  1783,3,   860,0) len= 223,8 ↔ inner[ 520] (  1715,2,   820,0) len= 223,8 = 78,9162 mm
+  supply[ 205] (  1882,9,  1060,0) len= 223,8 ↔ inner[ 482] (  1814,8,  1020,0) len= 223,8 = 78,9162 mm
+  supply[ 234] (  1982,5,  1260,0) len= 223,8 ↔ inner[ 448] (  1914,4,  1220,0) len= 223,8 = 78,9162 mm
+  supply[ 259] (  2082,1,  1460,0) len= 223,8 ↔ inner[ 419] (  2014,0,  1420,0) len= 223,8 = 78,9162 mm
+  supply[ 281] (  2181,7,  1660,0) len= 223,8 ↔ inner[ 394] (  2113,6,  1620,0) len= 223,8 = 78,9162 mm
+  supply[ 298] (  2281,3,  1860,0) len= 223,8 ↔ inner[ 372] (  2213,2,  1820,0) len= 223,8 = 78,9162 mm
+  supply[ 311] (  2380,9,  2060,0) len= 223,8 ↔ inner[ 355] (  2312,8,  2020,0) len= 223,8 = 78,9162 mm
+  supply[ 320] (  2480,5,  2260,0) len= 223,8 ↔ inner[ 342] (  2412,5,  2220,0) len= 223,8 = 78,9162 mm

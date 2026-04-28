@@ -71,7 +71,7 @@ echo.
 echo [8/10] Deploying to Revit 2021-2024...
 set "DLL_R24=%APPDATA%\SmartCon\2024"
 if not exist "%DLL_R24%" mkdir "%DLL_R24%"
-copy /Y "src\SmartCon.App\bin\Debug.R24\net48\*.dll" "%DLL_R24%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R24\net48\win-x64\*.dll" "%DLL_R24%\" >nul
 set "ADDIN_R24=%APPDATA%\Autodesk\Revit\Addins\2024"
 if exist "%ADDIN_R24%" (
     call :WriteAddin "%ADDIN_R24%\SmartCon.addin" "%DLL_R24%\SmartCon.App.dll"
@@ -82,7 +82,7 @@ if exist "%ADDIN_R24%" (
 
 set "DLL_R21=%APPDATA%\SmartCon\2021-2023"
 if not exist "%DLL_R21%" mkdir "%DLL_R21%"
-copy /Y "src\SmartCon.App\bin\Debug.R21\net48\*.dll" "%DLL_R21%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R21\net48\win-x64\*.dll" "%DLL_R21%\" >nul
 
 set "ADDIN_2023=%APPDATA%\Autodesk\Revit\Addins\2023"
 if exist "%ADDIN_2023%" (
@@ -114,7 +114,7 @@ echo.
 echo [9/10] Deploying to Revit 2019-2020...
 set "DLL_R19=%APPDATA%\SmartCon\2019-2020"
 if not exist "%DLL_R19%" mkdir "%DLL_R19%"
-copy /Y "src\SmartCon.App\bin\Debug.R19\net48\*.dll" "%DLL_R19%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R19\net48\win-x64\*.dll" "%DLL_R19%\" >nul
 set "ADDIN_R19=%APPDATA%\Autodesk\Revit\Addins\2019"
 if exist "%ADDIN_R19%" (
     call :WriteAddin "%ADDIN_R19%\SmartCon.addin" "%DLL_R19%\SmartCon.App.dll"
