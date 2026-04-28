@@ -164,5 +164,6 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyManagerExternalEvent>(fmHandler);
 
         services.AddSingleton<IFamilyManagerViewModelFactory, FamilyManagerViewModelFactory>();
+        services.AddSingleton<IDatabaseManager, DatabaseManager>();
     }
 }

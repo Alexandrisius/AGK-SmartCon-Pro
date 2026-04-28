@@ -35,4 +35,33 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public void ShowError(string title, string message) => Autodesk.Revit.UI.TaskDialog.Show(title, message);
 
     public bool? ShowMetadataEdit(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public string? ShowInputDialog(string title, string prompt, string defaultText = "")
+    {
+        var vm = new ViewModels.InputDialogViewModel
+        {
+            Title = title,
+            Prompt = prompt,
+            InputText = defaultText
+        };
+        var view = new Views.InputDialogView(vm);
+        var window = new System.Windows.Window
+        {
+            Title = title,
+            Content = view,
+            SizeToContent = System.Windows.SizeToContent.WidthAndHeight,
+            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen,
+            ResizeMode = System.Windows.ResizeMode.NoResize
+        };
+        var result = window.ShowDialog();
+        return result == true ? vm.InputText : null;
+    }
+
+    public bool ShowConfirmation(string title, string message)
+    {
+        var td = new Autodesk.Revit.UI.TaskDialog(title);
+        td.MainContent = message;
+        td.CommonButtons = Autodesk.Revit.UI.TaskDialogCommonButtons.Yes | Autodesk.Revit.UI.TaskDialogCommonButtons.No;
+        return td.Show() == Autodesk.Revit.UI.TaskDialogResult.Yes;
+    }
 }

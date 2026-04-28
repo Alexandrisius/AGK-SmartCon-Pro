@@ -10,13 +10,14 @@ internal sealed class LocalCatalogDatabase
         // Initialize SQLitePCL provider for .NET Framework compatibility
         SQLitePCL.Batteries.Init();
     }
-    private readonly string _dbPath;
-    private readonly string _connectionString;
+
+    private string _dbPath;
+    private string _connectionString;
 
     public LocalCatalogDatabase()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var dir = Path.Combine(appData, "SmartCon", "FamilyManager");
+        var dir = Path.Combine(appData, "SmartCon", "FamilyManager", "databases", "default");
         _dbPath = Path.Combine(dir, "catalog.db");
         _connectionString = $"Data Source={_dbPath};Pooling=false";
     }
@@ -45,5 +46,14 @@ internal sealed class LocalCatalogDatabase
         {
             // Best-effort checkpoint
         }
+    }
+
+    public void SwitchDatabase(string databaseId)
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var dir = Path.Combine(appData, "SmartCon", "FamilyManager", "databases", databaseId);
+        _dbPath = Path.Combine(dir, "catalog.db");
+        _connectionString = $"Data Source={_dbPath};Pooling=false";
+        EnsureDatabase();
     }
 }

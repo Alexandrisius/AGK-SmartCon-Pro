@@ -18,6 +18,9 @@
 
         <Grid Grid.Row="0" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="140"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -25,35 +28,57 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <TextBox Grid.Column="0"
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding Databases}"
+                      SelectedItem="{Binding SelectedDatabase}"
+                      DisplayMemberPath="Name"
+                      VerticalContentAlignment="Center"
+                      Margin="0,0,4,0"
+                      Style="{DynamicResource CompactComboBox}"/>
+
+            <Button Grid.Column="1"
+                    Content="+"
+                    Command="{Binding CreateDatabaseCommand}"
+                    Margin="0,0,4,0"
+                    MinWidth="24"
+                    Style="{DynamicResource SecondaryButton}"/>
+
+            <Button Grid.Column="2"
+                    Content="🗑"
+                    Command="{Binding DeleteDatabaseCommand}"
+                    Margin="0,0,8,0"
+                    MinWidth="24"
+                    Style="{DynamicResource SecondaryButton}"/>
+
+            <TextBox Grid.Column="3"
                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                      VerticalContentAlignment="Center"
                      Padding="6,4"
                      Margin="0,0,4,0"
                      Style="{DynamicResource CompactTextBox}"/>
 
-            <Button Grid.Column="1"
+            <Button Grid.Column="4"
                     Content="{DynamicResource FM_Search}"
                     Command="{Binding SearchCommand}"
                     Margin="0,0,4,0"
                     MinWidth="60"
                     Style="{DynamicResource SecondaryButton}"/>
 
-            <Button Grid.Column="2"
+            <Button Grid.Column="5"
                     Content="{DynamicResource FM_ImportFile}"
                     Command="{Binding ImportFileCommand}"
                     Margin="0,0,4,0"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"/>
 
-            <Button Grid.Column="3"
+            <Button Grid.Column="6"
                     Content="{DynamicResource FM_ImportFolder}"
                     Command="{Binding ImportFolderCommand}"
                     Margin="0,0,4,0"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"/>
 
-            <Button Grid.Column="4"
+            <Button Grid.Column="7"
                     Content="{DynamicResource FM_LoadToProject}"
                     Command="{Binding LoadToProjectCommand}"
                     IsEnabled="{Binding CanLoadToProject}"
@@ -76,6 +101,12 @@
                   CanUserDeleteRows="False"
                   BorderThickness="1"
                   BorderBrush="{DynamicResource BorderAltBrush}">
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Удалить из каталога"
+                             Command="{Binding DeleteFamilyCommand}"/>
+                </ContextMenu>
+            </DataGrid.ContextMenu>
             <DataGrid.GroupStyle>
                 <GroupStyle>
                     <GroupStyle.ContainerStyle>
@@ -100,10 +131,10 @@
                 </GroupStyle>
             </DataGrid.GroupStyle>
             <DataGrid.Columns>
-                <DataGridTextColumn x:Name="ColName" Binding="{Binding Name}" Width="*"/>
-                <DataGridTextColumn x:Name="ColStatus" Binding="{Binding Status}" Width="80"/>
-                <DataGridTextColumn x:Name="ColVersion" Binding="{Binding VersionLabel}" Width="60"/>
-                <DataGridTextColumn x:Name="ColUpdated" Binding="{Binding UpdatedAtUtc, StringFormat='{}{0:yyyy-MM-dd}'}" Width="90"/>
+                <DataGridTextColumn x:Name="ColName" Binding="{Binding Name}" Width="*" MinWidth="120"/>
+                <DataGridTextColumn x:Name="ColStatus" Binding="{Binding Status}" Width="80" MinWidth="60"/>
+                <DataGridTextColumn x:Name="ColVersion" Binding="{Binding VersionLabel}" Width="60" MinWidth="50"/>
+                <DataGridTextColumn x:Name="ColUpdated" Binding="{Binding UpdatedAtUtc, StringFormat='{}{0:yyyy-MM-dd}'}" Width="90" MinWidth="70"/>
             </DataGrid.Columns>
         </DataGrid>
 

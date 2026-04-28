@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -99,7 +100,111 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
     public async Task<bool> DeleteItemAsync(string id, CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var tx = connection.BeginTransaction();
+
+        try
+        {
+            // 1. Get version_ids and file_ids for this item
+            var versionIds = new List<string>();
+            var fileIds = new List<string>();
+            using var selectCmd = connection.CreateCommand();
+            selectCmd.CommandText = "SELECT id, file_id FROM catalog_versions WHERE catalog_item_id = @id";
+            selectCmd.Parameters.Add(new SqliteParameter("@id", id));
+            using var reader = await selectCmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                versionIds.Add(reader.GetString(0));
+                fileIds.Add(reader.GetString(1));
+            }
+
+            // 2. Delete tags
+            using var delTags = connection.CreateCommand();
+            delTags.CommandText = "DELETE FROM catalog_tags WHERE catalog_item_id = @id";
+            delTags.Parameters.Add(new SqliteParameter("@id", id));
+            await delTags.ExecuteNonQueryAsync(ct);
+
+            // 3. Delete parameters
+            if (versionIds.Count > 0)
+            {
+                var inParams = string.Join(", ", versionIds.Select((_, i) => $"@v{i}"));
+                using var delParams = connection.CreateCommand();
+                delParams.CommandText = $"DELETE FROM family_parameters WHERE version_id IN ({inParams})";
+                for (var i = 0; i < versionIds.Count; i++)
+                    delParams.Parameters.Add(new SqliteParameter($"@v{i}", versionIds[i]));
+                await delParams.ExecuteNonQueryAsync(ct);
+
+                // 4. Delete types
+                using var delTypes = connection.CreateCommand();
+                delTypes.CommandText = $"DELETE FROM family_types WHERE version_id IN ({inParams})";
+                for (var i = 0; i < versionIds.Count; i++)
+                    delTypes.Parameters.Add(new SqliteParameter($"@v{i}", versionIds[i]));
+                await delTypes.ExecuteNonQueryAsync(ct);
+            }
+
+            // 5. Delete previews
+            using var delPreviews = connection.CreateCommand();
+            delPreviews.CommandText = "DELETE FROM previews WHERE catalog_item_id = @id";
+            delPreviews.Parameters.Add(new SqliteParameter("@id", id));
+            await delPreviews.ExecuteNonQueryAsync(ct);
+
+            // 6. Delete versions
+            using var delVersions = connection.CreateCommand();
+            delVersions.CommandText = "DELETE FROM catalog_versions WHERE catalog_item_id = @id";
+            delVersions.Parameters.Add(new SqliteParameter("@id", id));
+            await delVersions.ExecuteNonQueryAsync(ct);
+
+            // 7. Delete usage history
+            using var delUsage = connection.CreateCommand();
+            delUsage.CommandText = "DELETE FROM project_usage WHERE catalog_item_id = @id";
+            delUsage.Parameters.Add(new SqliteParameter("@id", id));
+            await delUsage.ExecuteNonQueryAsync(ct);
+
+            // 8. Delete catalog item
+            using var delItem = connection.CreateCommand();
+            delItem.CommandText = "DELETE FROM catalog_items WHERE id = @id";
+            delItem.Parameters.Add(new SqliteParameter("@id", id));
+            var rowsAffected = await delItem.ExecuteNonQueryAsync(ct);
+
+            // 9. Delete files and file records
+            foreach (var fileId in fileIds.Distinct())
+            {
+                // Get cached path before deleting record
+                using var fileCmd = connection.CreateCommand();
+                fileCmd.CommandText = "SELECT cached_path FROM family_files WHERE id = @fileId";
+                fileCmd.Parameters.Add(new SqliteParameter("@fileId", fileId));
+                var cachedPath = await fileCmd.ExecuteScalarAsync(ct) as string;
+
+                if (!string.IsNullOrEmpty(cachedPath))
+                {
+                    var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                    var absPath = Path.Combine(appData, "SmartCon", "FamilyManager", cachedPath);
+                    try
+                    {
+                        if (File.Exists(absPath))
+                            File.Delete(absPath);
+                    }
+                    catch
+                    {
+                        // Best-effort file deletion
+                    }
+                }
+
+                using var delFile = connection.CreateCommand();
+                delFile.CommandText = "DELETE FROM family_files WHERE id = @fileId";
+                delFile.Parameters.Add(new SqliteParameter("@fileId", fileId));
+                await delFile.ExecuteNonQueryAsync(ct);
+            }
+
+            tx.Commit();
+            return rowsAffected > 0;
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 
     public FamilyCatalogCapabilities GetCapabilities() => new(

@@ -22,4 +22,10 @@ public interface IFamilyManagerDialogService
 
     /// <summary>Show metadata edit dialog for a catalog item.</summary>
     bool? ShowMetadataEdit(object viewModel);
+
+    /// <summary>Show simple input dialog and return entered text, or null if cancelled.</summary>
+    string? ShowInputDialog(string title, string prompt, string defaultText = "");
+
+    /// <summary>Show Yes/No confirmation dialog. Returns true if user clicked Yes.</summary>
+    bool ShowConfirmation(string title, string message);
 }

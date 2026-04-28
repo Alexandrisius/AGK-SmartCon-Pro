@@ -23,6 +23,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly IFamilyManagerExternalEvent _externalEvent;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IRevitContext _revitContext;
+    private readonly IDatabaseManager _databaseManager;
     private CancellationTokenSource? _searchCts;
 
     [ObservableProperty] private string _searchText = string.Empty;
@@ -32,6 +33,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
+    [ObservableProperty] private ObservableCollection<DatabaseInfo> _databases = new();
+    [ObservableProperty] private DatabaseInfo? _selectedDatabase;
 
     public FamilyManagerMainViewModel(
         IFamilyCatalogProvider catalogProvider,
@@ -43,7 +46,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         IFamilyManagerDialogService dialogService,
         IFamilyManagerExternalEvent externalEvent,
         IFamilyManagerViewModelFactory viewModelFactory,
-        IRevitContext revitContext)
+        IRevitContext revitContext,
+        IDatabaseManager databaseManager)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -55,14 +59,37 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _externalEvent = externalEvent;
         _viewModelFactory = viewModelFactory;
         _revitContext = revitContext;
+        _databaseManager = databaseManager;
 
-        // Initial load of catalog data
+        _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
+
+        // Initialize empty view to prevent column collapse
+        FamilyItemsView = new ListCollectionView(new ObservableCollection<FamilyCatalogItemRow>());
+
+        // Initial load
         _ = InitializeAsync();
     }
 
     private async Task InitializeAsync()
     {
+        RefreshDatabases();
         await SearchAsync();
+    }
+
+    private void RefreshDatabases()
+    {
+        var list = _databaseManager.ListDatabases();
+        Databases = new ObservableCollection<DatabaseInfo>(list);
+        SelectedDatabase = Databases.FirstOrDefault(d => d.Id == _databaseManager.GetActiveDatabaseId());
+    }
+
+    private void OnActiveDatabaseChanged(object? sender, string databaseId)
+    {
+        System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
+        {
+            RefreshDatabases();
+            _ = SearchAsync();
+        });
     }
 
     partial void OnSearchTextChanged(string value)
@@ -75,6 +102,40 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
         CanLoadToProject = value is not null;
+    }
+
+    partial void OnSelectedDatabaseChanged(DatabaseInfo? value)
+    {
+        if (value is null) return;
+        if (value.Id == _databaseManager.GetActiveDatabaseId()) return;
+        _ = SwitchDatabaseAsync(value.Id);
+    }
+
+    private async Task SwitchDatabaseAsync(string databaseId)
+    {
+        IsLoading = true;
+        try
+        {
+            var success = await _databaseManager.SwitchDatabaseAsync(databaseId);
+            if (success)
+            {
+                var dbName = Databases.FirstOrDefault(d => d.Id == databaseId)?.Name ?? databaseId;
+                StatusMessage = $"База данных переключена на: {dbName}";
+            }
+            else
+            {
+                StatusMessage = "Ошибка переключения базы данных";
+                RefreshDatabases();
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     [RelayCommand]
@@ -310,4 +371,110 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         await SearchAsync();
     }
 
+    [RelayCommand]
+    private async Task CreateDatabaseAsync()
+    {
+        var name = _dialogService.ShowInputDialog(
+            "Новая база данных",
+            "Введите название новой базы данных:",
+            "Новый каталог");
+
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        IsLoading = true;
+        try
+        {
+            var db = await _databaseManager.CreateDatabaseAsync(name!.Trim());
+            RefreshDatabases();
+            SelectedDatabase = Databases.FirstOrDefault(d => d.Id == db.Id);
+            StatusMessage = $"База данных \"{db.Name}\" создана";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка создания БД: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteDatabaseAsync()
+    {
+        if (SelectedDatabase is null) return;
+
+        var isActive = SelectedDatabase.Id == _databaseManager.GetActiveDatabaseId();
+        var databases = _databaseManager.ListDatabases();
+        if (isActive && databases.Count <= 1)
+        {
+            _dialogService.ShowWarning("Удаление БД", "Нельзя удалить единственную базу данных.");
+            return;
+        }
+
+        var confirm = _dialogService.ShowInputDialog(
+            "Удаление базы данных",
+            $"Введите \"{SelectedDatabase.Name}\" для подтверждения удаления:",
+            "");
+
+        if (confirm != SelectedDatabase.Name) return;
+
+        IsLoading = true;
+        try
+        {
+            var success = await _databaseManager.DeleteDatabaseAsync(SelectedDatabase.Id);
+            if (success)
+            {
+                StatusMessage = $"База данных \"{SelectedDatabase.Name}\" удалена";
+                RefreshDatabases();
+            }
+            else
+            {
+                StatusMessage = "Ошибка удаления базы данных";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка удаления БД: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteFamilyAsync()
+    {
+        if (SelectedItem is null) return;
+
+        var confirmed = _dialogService.ShowConfirmation(
+            "Удаление семейства",
+            $"Удалить семейство \"{SelectedItem.Name}\" из каталога?");
+
+        if (!confirmed) return;
+
+        IsLoading = true;
+        try
+        {
+            var success = await _writableProvider.DeleteItemAsync(SelectedItem.Id);
+            if (success)
+            {
+                StatusMessage = $"Семейство \"{SelectedItem.Name}\" удалено из каталога";
+                await SearchAsync();
+            }
+            else
+            {
+                StatusMessage = "Ошибка удаления семейства";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Ошибка удаления: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
 }

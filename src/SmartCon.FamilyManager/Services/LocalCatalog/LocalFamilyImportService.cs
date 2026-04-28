@@ -221,7 +221,7 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
         }
 
         progress?.Report(new FamilyImportProgress(
-            CurrentFileIndex: files.Length,
+            CurrentFileIndex: files.Length - 1,
             TotalFiles: files.Length,
             CurrentFileName: "",
             SuccessCount: successCount,
