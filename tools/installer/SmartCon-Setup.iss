@@ -48,8 +48,8 @@ Source: "..\..\artifacts\publish\SmartCon-R24\*"; DestDir: "{app}\2024"; Check: 
 ; --- DLL set 3: Revit 2025 (net8.0-windows, RevitAPI 2025) ---
 Source: "..\..\artifacts\publish\SmartCon-R25\*"; DestDir: "{app}\2025"; Check: NeedR25; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
-; --- DLL set 4: Revit 2026 (net8.0-windows, RevitAPI 2026) ---
-Source: "..\..\artifacts\publish\SmartCon-R26\*"; DestDir: "{app}\2026"; Check: NeedR26; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
+; --- DLL set 4: Revit 2026 (net8.0-windows, same binary as R25) ---
+Source: "..\..\artifacts\publish\SmartCon-R25\*"; DestDir: "{app}\2026"; Check: NeedR26; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
 ; --- Updater (shared, net8.0) — always installed ---
 Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
