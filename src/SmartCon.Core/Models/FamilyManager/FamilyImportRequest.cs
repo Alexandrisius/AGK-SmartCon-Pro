@@ -7,10 +7,10 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Category">User-assigned category.</param>
 /// <param name="Tags">User-assigned tags.</param>
 /// <param name="Description">User-assigned description.</param>
-/// <param name="StorageMode">Storage mode (default: Cached).</param>
+/// <param name="StorageMode">Storage mode (default: Linked — no duplication).</param>
 public sealed record FamilyImportRequest(
     string FilePath,
     string? Category,
     IReadOnlyList<string>? Tags,
     string? Description,
-    FamilyFileStorageMode StorageMode = FamilyFileStorageMode.Cached);
+    FamilyFileStorageMode StorageMode = FamilyFileStorageMode.Linked);

@@ -18,4 +18,12 @@ public interface IWritableFamilyCatalogProvider
 
     /// <summary>Delete a catalog item and its associated data.</summary>
     Task<bool> DeleteItemAsync(string id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Switch storage mode for a catalog item's current version.
+    /// Cached→Linked: removes cached file, keeps original_path.
+    /// Linked→Cached: copies file from original_path to cache.
+    /// Pass originalPath to update the original path (e.g. when user picks a new location).
+    /// </summary>
+    Task<bool> SwitchStorageModeAsync(string catalogItemId, FamilyFileStorageMode newMode, string? originalPath = null, CancellationToken ct = default);
 }

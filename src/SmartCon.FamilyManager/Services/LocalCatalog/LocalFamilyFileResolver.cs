@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -27,7 +28,7 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT cv.id AS version_id, cv.catalog_item_id, ff.cached_path, ff.storage_mode
+            SELECT cv.id AS version_id, cv.catalog_item_id, ff.cached_path, ff.original_path, ff.storage_mode
             FROM catalog_versions cv
             INNER JOIN family_files ff ON ff.id = cv.file_id
             WHERE cv.id = @versionId
@@ -47,10 +48,43 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         var cachedPath = reader.IsDBNull(reader.GetOrdinal("cached_path"))
             ? null
             : reader.GetString(reader.GetOrdinal("cached_path"));
+        var originalPath = reader.IsDBNull(reader.GetOrdinal("original_path"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("original_path"));
         var storageMode = (FamilyFileStorageMode)Enum.Parse(typeof(FamilyFileStorageMode), reader.GetString(reader.GetOrdinal("storage_mode")));
 
-        if (storageMode == FamilyFileStorageMode.Missing || cachedPath is null)
+        SmartConLogger.Info($"[FileResolver] versionId={versionId}, mode={storageMode}, originalPath={originalPath ?? "null"}, cachedPath={cachedPath ?? "null"}");
+
+        if (storageMode == FamilyFileStorageMode.Missing)
         {
+            SmartConLogger.Info($"[FileResolver] StorageMode=Missing → returning empty path");
+            return new FamilyResolvedFile(
+                AbsolutePath: "",
+                CatalogItemId: catalogItemId,
+                VersionId: versionId);
+        }
+
+        if (storageMode == FamilyFileStorageMode.Linked)
+        {
+            if (!string.IsNullOrEmpty(originalPath) && File.Exists(originalPath))
+            {
+                SmartConLogger.Info($"[FileResolver] Linked → resolved: {originalPath}");
+                return new FamilyResolvedFile(
+                    AbsolutePath: originalPath!,
+                    CatalogItemId: catalogItemId,
+                    VersionId: versionId);
+            }
+
+            SmartConLogger.Info($"[FileResolver] Linked → file NOT found at: {originalPath ?? "null"}");
+            return new FamilyResolvedFile(
+                AbsolutePath: "",
+                CatalogItemId: catalogItemId,
+                VersionId: versionId);
+        }
+
+        if (string.IsNullOrEmpty(cachedPath))
+        {
+            SmartConLogger.Info($"[FileResolver] Cached → cachedPath is empty");
             return new FamilyResolvedFile(
                 AbsolutePath: "",
                 CatalogItemId: catalogItemId,
@@ -58,6 +92,7 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         }
 
         var absolutePath = Path.Combine(GetCanonicalRoot(), cachedPath);
+        SmartConLogger.Info($"[FileResolver] Cached → resolved: {absolutePath}");
         return new FamilyResolvedFile(
             AbsolutePath: absolutePath,
             CatalogItemId: catalogItemId,

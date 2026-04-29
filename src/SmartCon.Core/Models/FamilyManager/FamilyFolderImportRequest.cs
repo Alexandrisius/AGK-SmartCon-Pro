@@ -8,11 +8,11 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Category">User-assigned category for all files.</param>
 /// <param name="Tags">User-assigned tags for all files.</param>
 /// <param name="Description">User-assigned description prefix for all files.</param>
-/// <param name="StorageMode">Storage mode (default: Cached).</param>
+/// <param name="StorageMode">Storage mode (default: Linked — no duplication).</param>
 public sealed record FamilyFolderImportRequest(
     string FolderPath,
     bool Recursive,
     string? Category,
     IReadOnlyList<string>? Tags,
     string? Description,
-    FamilyFileStorageMode StorageMode = FamilyFileStorageMode.Cached);
+    FamilyFileStorageMode StorageMode = FamilyFileStorageMode.Linked);

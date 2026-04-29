@@ -15,4 +15,5 @@ public sealed partial class FamilyCatalogItemRow : ObservableObject
     [ObservableProperty] private DateTimeOffset _updatedAtUtc;
     [ObservableProperty] private IReadOnlyList<string> _tags = [];
     [ObservableProperty] private string? _description;
+    [ObservableProperty] private FamilyFileStorageMode _storageMode;
 }

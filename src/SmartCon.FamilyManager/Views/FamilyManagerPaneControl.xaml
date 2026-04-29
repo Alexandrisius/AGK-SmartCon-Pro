@@ -332,6 +332,14 @@
                     <MenuItem Header="{DynamicResource FM_LoadToProject}"
                               Command="{Binding LoadToProjectCommand}"
                               Style="{StaticResource ModernMenuItem}"/>
+                    <Separator Style="{StaticResource ModernSeparator}"/>
+                    <MenuItem Header="{DynamicResource FM_SwitchToLinked}"
+                              Command="{Binding SwitchToLinkedCommand}"
+                              Style="{StaticResource ModernMenuItem}"/>
+                    <MenuItem Header="{DynamicResource FM_SwitchToCached}"
+                              Command="{Binding SwitchToCachedCommand}"
+                              Style="{StaticResource ModernMenuItem}"/>
+                    <Separator Style="{StaticResource ModernSeparator}"/>
                     <MenuItem Header="{DynamicResource FM_EditMetadata}"
                               Command="{Binding EditMetadataCommand}"
                               Style="{StaticResource ModernMenuItem}"/>
@@ -365,6 +373,16 @@
                         <Style TargetType="TextBlock">
                             <Setter Property="VerticalAlignment" Value="Center"/>
                             <Setter Property="Padding" Value="8,0,4,0"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColStorage" Binding="{Binding StorageMode}" Width="55" MinWidth="45">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="4,0"/>
+                            <Setter Property="FontSize" Value="11"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>

@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -314,6 +315,169 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is long l ? (int)l : 0;
+    }
+
+    public async Task<FamilyFileStorageMode> GetStorageModeAsync(string catalogItemId, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT ff.storage_mode
+            FROM catalog_items ci
+            INNER JOIN catalog_versions cv ON cv.id = ci.current_version_id
+            INNER JOIN family_files ff ON ff.id = cv.file_id
+            WHERE ci.id = @id
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@id", catalogItemId));
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s
+            ? (FamilyFileStorageMode)Enum.Parse(typeof(FamilyFileStorageMode), s)
+            : FamilyFileStorageMode.Missing;
+    }
+
+    public async Task<bool> SwitchStorageModeAsync(string catalogItemId, FamilyFileStorageMode newMode, string? originalPath = null, CancellationToken ct = default)
+    {
+        SmartConLogger.Info($"[Switch] catalogItemId={catalogItemId}, newMode={newMode}, overrideOriginalPath={originalPath ?? "null"}");
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+
+        string fileId;
+        string? currentOriginalPath;
+        string? currentCachedPath;
+        string sha256;
+
+        using (var selectCmd = connection.CreateCommand())
+        {
+            selectCmd.CommandText = """
+                SELECT ff.id, ff.original_path, ff.cached_path, ff.sha256
+                FROM catalog_items ci
+                INNER JOIN catalog_versions cv ON cv.id = ci.current_version_id
+                INNER JOIN family_files ff ON ff.id = cv.file_id
+                WHERE ci.id = @id
+                """;
+            selectCmd.Parameters.Add(new SqliteParameter("@id", catalogItemId));
+
+            using var reader = await selectCmd.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct))
+                return false;
+
+            fileId = reader.GetString(0);
+            currentOriginalPath = reader.IsDBNull(1) ? null : reader.GetString(1);
+            currentCachedPath = reader.IsDBNull(2) ? null : reader.GetString(2);
+            sha256 = reader.GetString(3);
+        }
+
+        SmartConLogger.Info($"[Switch] fileId={fileId}, currentOriginalPath={currentOriginalPath ?? "null"}, currentCachedPath={currentCachedPath ?? "null"}, sha256={sha256[..16]}...");
+
+        var canonicalRoot = GetCanonicalRoot();
+
+        if (newMode == FamilyFileStorageMode.Linked)
+        {
+            var effectiveOriginalPath = originalPath ?? currentOriginalPath;
+            if (string.IsNullOrEmpty(effectiveOriginalPath))
+            {
+                SmartConLogger.Info($"[Switch] Cached→Linked FAILED: no originalPath available");
+                return false;
+            }
+
+            SmartConLogger.Info($"[Switch] Cached→Linked: originalPath={effectiveOriginalPath}");
+
+            using var tx = connection.BeginTransaction();
+            try
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "UPDATE family_files SET storage_mode = @mode, original_path = @origPath, cached_path = NULL WHERE id = @id";
+                cmd.Parameters.Add(new SqliteParameter("@mode", FamilyFileStorageMode.Linked.ToString()));
+                cmd.Parameters.Add(new SqliteParameter("@origPath", effectiveOriginalPath));
+                cmd.Parameters.Add(new SqliteParameter("@id", fileId));
+                await cmd.ExecuteNonQueryAsync(ct);
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+
+            if (!string.IsNullOrEmpty(currentCachedPath))
+            {
+                try
+                {
+                    var absCached = Path.Combine(canonicalRoot, currentCachedPath);
+                    if (File.Exists(absCached))
+                    {
+                        File.Delete(absCached);
+                        SmartConLogger.Info($"[Switch] Deleted cache file: {absCached}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Info($"[Switch] Failed to delete cache file: {ex.Message}");
+                }
+            }
+
+            SmartConLogger.Info($"[Switch] Cached→Link SUCCESS");
+            return true;
+        }
+
+        if (newMode == FamilyFileStorageMode.Cached)
+        {
+            var effectiveOriginalPath = originalPath ?? currentOriginalPath;
+            if (string.IsNullOrEmpty(effectiveOriginalPath) || !File.Exists(effectiveOriginalPath))
+            {
+                SmartConLogger.Info($"[Switch] Linked→Cached FAILED: file not found at {effectiveOriginalPath ?? "null"}");
+                return false;
+            }
+
+            SmartConLogger.Info($"[Switch] Linked→Cached: copying from {effectiveOriginalPath}");
+
+            string relativeCachedPath;
+            try
+            {
+                relativeCachedPath = $"cache/rfa/{sha256[..2]}/{sha256}.rfa";
+                var absoluteCachePath = Path.Combine(canonicalRoot, relativeCachedPath);
+                var cacheDir = Path.GetDirectoryName(absoluteCachePath)!;
+                Directory.CreateDirectory(cacheDir);
+                File.Copy(effectiveOriginalPath, absoluteCachePath, overwrite: true);
+                SmartConLogger.Info($"[Switch] Linked→Cached: copied to {absoluteCachePath}");
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Info($"[Switch] Linked→Cached: copy FAILED: {ex.Message}");
+                return false;
+            }
+
+            using var tx = connection.BeginTransaction();
+            try
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "UPDATE family_files SET storage_mode = @mode, cached_path = @cachedPath WHERE id = @id";
+                cmd.Parameters.Add(new SqliteParameter("@mode", FamilyFileStorageMode.Cached.ToString()));
+                cmd.Parameters.Add(new SqliteParameter("@cachedPath", relativeCachedPath));
+                cmd.Parameters.Add(new SqliteParameter("@id", fileId));
+                await cmd.ExecuteNonQueryAsync(ct);
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+
+            SmartConLogger.Info($"[Switch] Linked→Cached SUCCESS");
+            return true;
+        }
+
+        SmartConLogger.Info($"[Switch] Unsupported mode: {newMode}");
+        return false;
+    }
+
+    private static string GetCanonicalRoot()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        return Path.Combine(appData, "SmartCon", "FamilyManager");
     }
 
     private static async Task<IReadOnlyList<string>> LoadTagsAsync(SqliteConnection connection, string catalogItemId, CancellationToken ct)

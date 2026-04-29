@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -47,6 +48,8 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
         var metadata = await _metadataService.ExtractAsync(filePath, ct);
         var sha256 = metadata.Sha256;
 
+        SmartConLogger.Info($"[Import] File: {Path.GetFileName(filePath)}, SHA256: {sha256[..16]}..., Size: {metadata.FileSizeBytes}, StorageMode: {request.StorageMode}");
+
         var duplicateItem = await FindByHashAsync(sha256, ct);
         if (duplicateItem is not null)
         {
@@ -81,11 +84,17 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
                 Directory.CreateDirectory(cacheDir);
                 File.Copy(filePath, absoluteCachePath, overwrite: true);
                 cacheCopied = true;
+                SmartConLogger.Info($"[Import] Cached → copied to: {absoluteCachePath}");
             }
-            catch
+            catch (Exception ex)
             {
+                SmartConLogger.Info($"[Import] Cached → copy FAILED: {ex.Message}");
                 relativeCachedPath = null;
             }
+        }
+        else
+        {
+            SmartConLogger.Info($"[Import] Linked → no copy, originalPath: {filePath}");
         }
 
         try

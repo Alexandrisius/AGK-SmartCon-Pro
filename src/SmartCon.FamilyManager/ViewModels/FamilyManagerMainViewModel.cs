@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Windows.Data;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -194,7 +195,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     VersionLabel = versionLabel,
                     UpdatedAtUtc = item.UpdatedAtUtc,
                     Tags = item.Tags,
-                    Description = item.Description
+                    Description = item.Description,
+                    StorageMode = await _catalogProvider.GetStorageModeAsync(item.Id, ct)
                 });
             }
 
@@ -608,5 +610,100 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         {
             IsLoading = false;
         }
+    }
+
+    [RelayCommand]
+    private async Task SwitchToLinkedAsync()
+    {
+        if (SelectedItem is null) return;
+
+        var originalPath = await GetOriginalPathAsync(SelectedItem.Id);
+        if (string.IsNullOrEmpty(originalPath) || !File.Exists(originalPath))
+        {
+            var title = LanguageManager.GetString(StringLocalization.Keys.FM_SelectOriginalFile) ?? "Select family file";
+            originalPath = _dialogService.ShowOpenFileDialog(title);
+            if (originalPath is null) return;
+        }
+
+        IsLoading = true;
+        try
+        {
+            var success = await _writableProvider.SwitchStorageModeAsync(
+                SelectedItem.Id, FamilyFileStorageMode.Linked, originalPath);
+
+            if (success)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_SwitchedToLinked) ?? "Family \"{0}\" switched to linked",
+                    SelectedItem.Name);
+                await SearchAsync();
+            }
+            else
+            {
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SwitchError) ?? "Error switching storage mode";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_SwitchError) ?? "Error switching storage mode"}: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SwitchToCachedAsync()
+    {
+        if (SelectedItem is null) return;
+
+        var originalPath = await GetOriginalPathAsync(SelectedItem.Id);
+        if (string.IsNullOrEmpty(originalPath) || !File.Exists(originalPath))
+        {
+            var title = LanguageManager.GetString(StringLocalization.Keys.FM_SelectOriginalFile) ?? "Select family file";
+            originalPath = _dialogService.ShowOpenFileDialog(title);
+            if (originalPath is null) return;
+        }
+
+        IsLoading = true;
+        try
+        {
+            var success = await _writableProvider.SwitchStorageModeAsync(
+                SelectedItem.Id, FamilyFileStorageMode.Cached, originalPath);
+
+            if (success)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_SwitchedToCached) ?? "Family \"{0}\" copied to cache",
+                    SelectedItem.Name);
+                await SearchAsync();
+            }
+            else
+            {
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SwitchError) ?? "Error switching storage mode";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_SwitchError) ?? "Error switching storage mode"}: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task<string?> GetOriginalPathAsync(string catalogItemId)
+    {
+        var versions = await _catalogProvider.GetVersionsAsync(catalogItemId);
+        var item = await _catalogProvider.GetItemAsync(catalogItemId);
+        if (item?.CurrentVersionId is null) return null;
+
+        var currentVersion = versions.FirstOrDefault(v => v.Id == item.CurrentVersionId);
+        if (currentVersion is null) return null;
+
+        var file = await _catalogProvider.GetFileAsync(currentVersion.FileId);
+        return file?.OriginalPath;
     }
 }
