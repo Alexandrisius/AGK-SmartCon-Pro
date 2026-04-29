@@ -326,6 +326,9 @@
                   BorderBrush="{DynamicResource BorderAltBrush}">
             <DataGrid.ContextMenu>
                 <ContextMenu Style="{StaticResource ModernContextMenu}">
+                    <MenuItem Header="{DynamicResource FM_LoadAndPlace}"
+                              Command="{Binding LoadAndPlaceCommand}"
+                              Style="{StaticResource ModernMenuItem}"/>
                     <MenuItem Header="{DynamicResource FM_LoadToProject}"
                               Command="{Binding LoadToProjectCommand}"
                               Style="{StaticResource ModernMenuItem}"/>

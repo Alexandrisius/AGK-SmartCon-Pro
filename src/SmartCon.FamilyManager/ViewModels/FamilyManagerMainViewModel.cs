@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models.FamilyManager;
@@ -24,6 +26,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IRevitContext _revitContext;
     private readonly IDatabaseManager _databaseManager;
+    private readonly ITransactionService _transactionService;
     private CancellationTokenSource? _searchCts;
 
     [ObservableProperty] private string _searchText = string.Empty;
@@ -47,7 +50,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         IFamilyManagerExternalEvent externalEvent,
         IFamilyManagerViewModelFactory viewModelFactory,
         IRevitContext revitContext,
-        IDatabaseManager databaseManager)
+        IDatabaseManager databaseManager,
+        ITransactionService transactionService)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -60,6 +64,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _viewModelFactory = viewModelFactory;
         _revitContext = revitContext;
         _databaseManager = databaseManager;
+        _transactionService = transactionService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
 
@@ -352,6 +357,107 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                         result.ErrorMessage);
                 }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                    ex.Message);
+            }
+        });
+    }
+
+    [RelayCommand]
+    private void LoadAndPlace()
+    {
+        if (SelectedItem is null) return;
+
+        var selectedId = SelectedItem.Id;
+        var selectedVersionId = SelectedItem.CurrentVersionId;
+        var selectedName = SelectedItem.Name;
+
+        _externalEvent.RaiseWithApplication(appObj =>
+        {
+            var uiApp = (UIApplication)appObj;
+            var doc = _revitContext.GetDocument();
+            if (doc is null)
+            {
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoActiveDocument) ?? "No active document";
+                return;
+            }
+
+            if (selectedVersionId is null)
+            {
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoVersionSelected) ?? "No version selected";
+                return;
+            }
+
+            try
+            {
+                var resolved = _fileResolver.ResolveForLoadAsync(selectedVersionId, CancellationToken.None).GetAwaiter().GetResult();
+                var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName };
+                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
+
+                if (!result.Success)
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                        result.ErrorMessage);
+                    return;
+                }
+
+                var familyName = result.FamilyName ?? selectedName;
+
+                var family = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Autodesk.Revit.DB.Family))
+                    .Cast<Autodesk.Revit.DB.Family>()
+                    .FirstOrDefault(f => f.Name.Equals(familyName, StringComparison.OrdinalIgnoreCase));
+
+                if (family is null)
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                        "Family not found after loading");
+                    return;
+                }
+
+                var symbolId = family.GetFamilySymbolIds().Cast<ElementId>().FirstOrDefault();
+                if (symbolId is null)
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_NoFamilySymbol) ?? "No type found in family \"{0}\"",
+                        familyName);
+                    return;
+                }
+
+                var symbol = doc.GetElement(symbolId) as FamilySymbol;
+                if (symbol is null) return;
+
+                if (!symbol.IsActive)
+                {
+                    _transactionService.RunInTransaction("Activate Family Symbol", _ =>
+                    {
+                        if (!symbol.IsActive)
+                            symbol.Activate();
+                    });
+                }
+
+                uiApp.ActiveUIDocument.PostRequestForElementTypePlacement(symbol);
+
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
+                    familyName);
+
+                var usage = new ProjectFamilyUsage(
+                    Id: Guid.NewGuid().ToString(),
+                    CatalogItemId: selectedId,
+                    VersionId: selectedVersionId,
+                    ProviderId: string.Empty,
+                    ProjectFingerprint: doc.PathName ?? string.Empty,
+                    Action: "LoadAndPlace",
+                    CreatedAtUtc: DateTimeOffset.UtcNow);
+
+                _usageRepo.RecordUsageAsync(usage, CancellationToken.None).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {

@@ -31,6 +31,11 @@ public sealed class FamilyManagerExternalEvent : IExternalEventHandler, IFamilyM
         Raise(_ => action());
     }
 
+    public void RaiseWithApplication(Action<object> actionWithApp)
+    {
+        Raise(app => actionWithApp(app));
+    }
+
     public void Execute(UIApplication app)
     {
         _contextWriter.SetContext(app);
