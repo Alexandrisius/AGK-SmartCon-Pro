@@ -18,16 +18,45 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-    private static void ActivateRevitWindow()
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    private static void ForceActivateRevitWindow()
     {
         try
         {
-            var hWnd = Process.GetCurrentProcess().MainWindowHandle;
-            if (hWnd != IntPtr.Zero)
-                SetForegroundWindow(hWnd);
+            var revitHwnd = Process.GetCurrentProcess().MainWindowHandle;
+            if (revitHwnd == IntPtr.Zero) return;
+
+            var currentForeground = GetForegroundWindow();
+            if (currentForeground == revitHwnd) return;
+
+            var revitThreadId = GetWindowThreadProcessId(revitHwnd, out _);
+            var currentThreadId = GetCurrentThreadId();
+
+            if (revitThreadId != currentThreadId)
+                AttachThreadInput(currentThreadId, revitThreadId, true);
+
+            SetForegroundWindow(revitHwnd);
+            BringWindowToTop(revitHwnd);
+
+            if (revitThreadId != currentThreadId)
+                AttachThreadInput(currentThreadId, revitThreadId, false);
         }
-        catch { /* Best effort */ }
+        catch { }
     }
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
 
     public RevitFamilyLoadService(IRevitContext revitContext, ITransactionService transactionService)
     {
@@ -49,6 +78,8 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 loaded = doc.LoadFamily(path, loadOptions, out family);
             else
                 loaded = doc.LoadFamily(path, out family);
+
+            ForceActivateRevitWindow();
 
             if (!loaded || family is null)
                 return;
@@ -75,7 +106,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         {
             var displayName = loadedFamily.Name;
             SmartConLogger.Info($"[FamilyLoad] Successfully loaded family: {displayName}");
-            ActivateRevitWindow();
+            ForceActivateRevitWindow();
             return new FamilyLoadResult(true, displayName, $"Family '{displayName}' loaded successfully", null);
         }
 
@@ -116,7 +147,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             if (existingFamily != null)
             {
                 SmartConLogger.Info($"[FamilyLoad] Family '{checkName}' already loaded in project");
-                ActivateRevitWindow();
+                ForceActivateRevitWindow();
                 return Task.FromResult(new FamilyLoadResult(true, existingFamily.Name,
                     $"Family '{existingFamily.Name}' already loaded in project", null));
             }
