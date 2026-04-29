@@ -220,6 +220,28 @@ public static class StringLocalization
         d[Keys.FM_DuplicateSkipped] = "Дубликат пропущен: {0}";
         d[Keys.FM_Title_MetadataEdit] = "Редактирование метаданных";
 
+        d[Keys.FM_DbSwitched] = "База данных переключена на: {0}";
+        d[Keys.FM_DbSwitchError] = "Ошибка переключения базы данных";
+        d[Keys.FM_DbCreated] = "База данных \"{0}\" создана";
+        d[Keys.FM_DbCreateError] = "Ошибка создания БД: {0}";
+        d[Keys.FM_DbDeleted] = "База данных \"{0}\" удалена";
+        d[Keys.FM_DbDeleteError] = "Ошибка удаления БД: {0}";
+        d[Keys.FM_DbDeleteSingle] = "Нельзя удалить единственную базу данных.";
+        d[Keys.FM_DbDeleteTitle] = "Удаление базы данных";
+        d[Keys.FM_DbDeletePrompt] = "Введите \"{0}\" для подтверждения удаления:";
+        d[Keys.FM_DbNewTitle] = "Новая база данных";
+        d[Keys.FM_DbNewPrompt] = "Введите название новой базы данных:";
+        d[Keys.FM_DbNewDefault] = "Новый каталог";
+        d[Keys.FM_FamilyDeleted] = "Семейство \"{0}\" удалено из каталога";
+        d[Keys.FM_FamilyDeleteError] = "Ошибка удаления семейства";
+        d[Keys.FM_FamilyDeleteTitle] = "Удаление семейства";
+        d[Keys.FM_FamilyDeletePrompt] = "Удалить семейство \"{0}\" из каталога?";
+        d[Keys.FM_DeleteFromCatalog] = "Удалить из каталога";
+        d[Keys.FM_NoVersionSelected] = "Версия не выбрана";
+        d[Keys.FM_DefaultDbName] = "Основной каталог";
+        d[Keys.FM_NoCategory] = "Без категории";
+        d[Keys.FM_DeleteDb] = "✕";
+
         return d;
     }
 
@@ -432,6 +454,28 @@ public static class StringLocalization
         d[Keys.FM_LoadError] = "Load error: {0}";
         d[Keys.FM_DuplicateSkipped] = "Duplicate skipped: {0}";
         d[Keys.FM_Title_MetadataEdit] = "Edit Metadata";
+
+        d[Keys.FM_DbSwitched] = "Database switched to: {0}";
+        d[Keys.FM_DbSwitchError] = "Error switching database";
+        d[Keys.FM_DbCreated] = "Database \"{0}\" created";
+        d[Keys.FM_DbCreateError] = "Error creating database: {0}";
+        d[Keys.FM_DbDeleted] = "Database \"{0}\" deleted";
+        d[Keys.FM_DbDeleteError] = "Error deleting database: {0}";
+        d[Keys.FM_DbDeleteSingle] = "Cannot delete the only database.";
+        d[Keys.FM_DbDeleteTitle] = "Delete Database";
+        d[Keys.FM_DbDeletePrompt] = "Enter \"{0}\" to confirm deletion:";
+        d[Keys.FM_DbNewTitle] = "New Database";
+        d[Keys.FM_DbNewPrompt] = "Enter new database name:";
+        d[Keys.FM_DbNewDefault] = "New Catalog";
+        d[Keys.FM_FamilyDeleted] = "Family \"{0}\" deleted from catalog";
+        d[Keys.FM_FamilyDeleteError] = "Error deleting family";
+        d[Keys.FM_FamilyDeleteTitle] = "Delete Family";
+        d[Keys.FM_FamilyDeletePrompt] = "Delete family \"{0}\" from catalog?";
+        d[Keys.FM_DeleteFromCatalog] = "Delete from catalog";
+        d[Keys.FM_NoVersionSelected] = "No version selected";
+        d[Keys.FM_DefaultDbName] = "Main Catalog";
+        d[Keys.FM_NoCategory] = "No category";
+        d[Keys.FM_DeleteDb] = "✕";
 
         return d;
     }
@@ -653,5 +697,26 @@ public static class StringLocalization
         public const string FM_LoadError = "FM_LoadError";
         public const string FM_DuplicateSkipped = "FM_DuplicateSkipped";
         public const string FM_Title_MetadataEdit = "FM_Title_MetadataEdit";
+        public const string FM_DbSwitched = "FM_DbSwitched";
+        public const string FM_DbSwitchError = "FM_DbSwitchError";
+        public const string FM_DbCreated = "FM_DbCreated";
+        public const string FM_DbCreateError = "FM_DbCreateError";
+        public const string FM_DbDeleted = "FM_DbDeleted";
+        public const string FM_DbDeleteError = "FM_DbDeleteError";
+        public const string FM_DbDeleteSingle = "FM_DbDeleteSingle";
+        public const string FM_DbDeleteTitle = "FM_DbDeleteTitle";
+        public const string FM_DbDeletePrompt = "FM_DbDeletePrompt";
+        public const string FM_DbNewTitle = "FM_DbNewTitle";
+        public const string FM_DbNewPrompt = "FM_DbNewPrompt";
+        public const string FM_DbNewDefault = "FM_DbNewDefault";
+        public const string FM_FamilyDeleted = "FM_FamilyDeleted";
+        public const string FM_FamilyDeleteError = "FM_FamilyDeleteError";
+        public const string FM_FamilyDeleteTitle = "FM_FamilyDeleteTitle";
+        public const string FM_FamilyDeletePrompt = "FM_FamilyDeletePrompt";
+        public const string FM_DeleteFromCatalog = "FM_DeleteFromCatalog";
+        public const string FM_NoVersionSelected = "FM_NoVersionSelected";
+        public const string FM_DefaultDbName = "FM_DefaultDbName";
+        public const string FM_NoCategory = "FM_NoCategory";
+        public const string FM_DeleteDb = "FM_DeleteDb";
     }
 }

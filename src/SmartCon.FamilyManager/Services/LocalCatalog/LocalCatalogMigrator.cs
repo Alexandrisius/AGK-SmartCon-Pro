@@ -38,4 +38,30 @@ internal sealed class LocalCatalogMigrator
             """;
         await versionCmd.ExecuteNonQueryAsync(ct);
     }
+
+    public void Migrate()
+    {
+        _database.EnsureDatabase();
+
+        using var connection = _database.CreateConnection();
+        connection.Open();
+
+        using var journalCmd = connection.CreateCommand();
+        journalCmd.CommandText = "PRAGMA journal_mode=DELETE;";
+        journalCmd.ExecuteNonQuery();
+
+        using var tableCmd = connection.CreateCommand();
+        tableCmd.CommandText = FamilyCatalogSql.CreateTables;
+        tableCmd.ExecuteNonQuery();
+
+        using var indexCmd = connection.CreateCommand();
+        indexCmd.CommandText = FamilyCatalogSql.CreateIndexes;
+        indexCmd.ExecuteNonQuery();
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = """
+            INSERT OR IGNORE INTO schema_info (key, value) VALUES ('schema_version', '1')
+            """;
+        versionCmd.ExecuteNonQuery();
+    }
 }

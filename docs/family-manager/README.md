@@ -51,8 +51,8 @@
 - `SmartCon.FamilyManager` зависит только от `SmartCon.Core` и `SmartCon.UI`.
 - Revit API вызывается только через `SmartCon.Revit`.
 - MVP storage: SQLite + file cache.
-- Канонический локальный root: `%APPDATA%\AGK\SmartCon\FamilyManager\`.
-- База MVP: `%APPDATA%\AGK\SmartCon\FamilyManager\familymanager.db`.
+- Канонический локальный root: `%APPDATA%\SmartCon\FamilyManager\`.
+- База MVP: `%APPDATA%\SmartCon\FamilyManager\databases\{id}\catalog.db` (multi-DB pattern).
 - Канонические таблицы: `schema_info`, `catalog_items`, `catalog_versions`, `family_files`, `family_types`, `family_parameters`, `catalog_tags`, `attachments`, `project_usage`, `previews`.
 - MVP provider: `LocalCatalogProvider`.
 - Future providers: `RemoteCatalogProvider`, `CorporateCatalogProvider`, `PublicReadOnlyProvider`, `CompositeCatalogProvider`.

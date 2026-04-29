@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
@@ -23,6 +24,9 @@ internal sealed class DatabaseManager : IDatabaseManager
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         _rootPath = Path.Combine(appData, "SmartCon", "FamilyManager", "databases");
         _registryPath = Path.Combine(Path.GetDirectoryName(_rootPath)!, "databases.json");
+
+        var registry = LoadRegistry();
+        _catalogDatabase.SwitchDatabase(registry.ActiveDatabaseId);
     }
 
     public event EventHandler<string>? ActiveDatabaseChanged;
@@ -82,7 +86,7 @@ internal sealed class DatabaseManager : IDatabaseManager
             return Task.FromResult(true);
 
         var newRegistry = new DatabaseRegistry(databaseId, registry.Databases);
-        SaveRegistryAsync(newRegistry, ct).Wait(ct);
+        SaveRegistry(newRegistry);
 
         _catalogDatabase.SwitchDatabase(databaseId);
 
@@ -130,17 +134,16 @@ internal sealed class DatabaseManager : IDatabaseManager
     {
         if (!File.Exists(_registryPath))
         {
-            // Initialize with default database and create physical files
-            var defaultDb = new DatabaseInfo("default", "Основной каталог", DateTimeOffset.UtcNow);
+            var defaultDbName = LanguageManager.GetString(StringLocalization.Keys.FM_DefaultDbName) ?? "Main Catalog";
+            var defaultDb = new DatabaseInfo("default", defaultDbName, DateTimeOffset.UtcNow);
             var registry = new DatabaseRegistry("default", new[] { defaultDb });
-            SaveRegistryAsync(registry, CancellationToken.None).Wait();
+            SaveRegistry(registry);
 
-            // Ensure physical directory and database exist
             var dbPath = Path.Combine(_rootPath, "default");
             Directory.CreateDirectory(dbPath);
             _catalogDatabase.SwitchDatabase("default");
             var migrator = new LocalCatalogMigrator(_catalogDatabase);
-            migrator.MigrateAsync(CancellationToken.None).Wait();
+            migrator.Migrate();
 
             return registry;
         }
@@ -149,8 +152,9 @@ internal sealed class DatabaseManager : IDatabaseManager
         var dto = JsonSerializer.Deserialize<RegistryDto>(json, JsonOptions);
         if (dto is null || dto.Databases is null)
         {
-            var defaultDb = new DatabaseInfo("default", "Основной каталог", DateTimeOffset.UtcNow);
-            return new DatabaseRegistry("default", new[] { defaultDb });
+            var fallbackDbName = LanguageManager.GetString(StringLocalization.Keys.FM_DefaultDbName) ?? "Main Catalog";
+            var fallbackDb = new DatabaseInfo("default", fallbackDbName, DateTimeOffset.UtcNow);
+            return new DatabaseRegistry("default", new[] { fallbackDb });
         }
 
         var databases = dto.Databases
@@ -160,7 +164,7 @@ internal sealed class DatabaseManager : IDatabaseManager
         return new DatabaseRegistry(dto.ActiveDatabaseId, databases);
     }
 
-    private Task SaveRegistryAsync(DatabaseRegistry registry, CancellationToken ct)
+    private void SaveRegistry(DatabaseRegistry registry)
     {
         var dir = Path.GetDirectoryName(_registryPath)!;
         Directory.CreateDirectory(dir);
@@ -180,6 +184,11 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         var json = JsonSerializer.Serialize(dto, JsonOptions);
         File.WriteAllText(_registryPath, json);
+    }
+
+    private Task SaveRegistryAsync(DatabaseRegistry registry, CancellationToken ct)
+    {
+        SaveRegistry(registry);
         return Task.CompletedTask;
     }
 

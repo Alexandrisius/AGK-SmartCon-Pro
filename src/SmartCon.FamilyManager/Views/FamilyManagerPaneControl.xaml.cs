@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.UI;
 
@@ -10,7 +11,6 @@ public partial class FamilyManagerPaneControl : System.Windows.Controls.UserCont
     {
         InitializeComponent();
 
-        // Load string resources into local dictionary for DynamicResource to work in dockable pane context
         var dict = LanguageManager.GetCurrentStrings();
         if (dict is not null)
         {
@@ -19,6 +19,11 @@ public partial class FamilyManagerPaneControl : System.Windows.Controls.UserCont
 
         DataContext = viewModel;
         SetColumnHeaders();
+
+        SearchBox.TextChanged += (s, e) =>
+            SearchPlaceholder.Visibility = string.IsNullOrEmpty(SearchBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
     }
 
     private void SetColumnHeaders()

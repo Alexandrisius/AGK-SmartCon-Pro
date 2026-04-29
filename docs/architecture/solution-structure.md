@@ -288,24 +288,37 @@ SmartCon.ProjectManagement/
 ```
 SmartCon.FamilyManager/
 ├── Commands/
-│   └── FamilyManagerToggleCommand.cs   <- IExternalCommand для показа/скрытия панели
+│   └── FamilyManagerCommand.cs          // IExternalCommand — toggle dockable pane
+├── Events/
+│   └── FamilyManagerExternalEvent.cs    // IExternalEventHandler — Revit API thread bridge
 ├── ViewModels/
-│   ├── FamilyManagerViewModel.cs       <- основной VM каталога
-│   ├── FamilyImportViewModel.cs        <- VM импорта семейств
-│   └── FamilyLoadViewModel.cs          <- VM загрузки в проект
+│   ├── FamilyManagerMainViewModel.cs    // Main dockable panel VM (11 commands)
+│   ├── FamilyCatalogItemRow.cs          // DataGrid row model
+│   ├── FamilyMetadataEditViewModel.cs   // Metadata edit dialog VM
+│   └── InputDialogViewModel.cs          // Simple input dialog VM
 ├── Views/
-│   ├── FamilyManagerView.xaml/.cs      <- dockable panel (IDockablePaneProvider)
-│   ├── FamilyImportView.xaml/.cs       <- окно импорта
-│   └── FamilyLoadView.xaml/.cs         <- окно загрузки
+│   ├── FamilyManagerPaneControl.xaml(.cs)    // Dockable panel UserControl
+│   ├── FamilyMetadataEditView.xaml(.cs)      // Metadata edit dialog (DialogWindowBase)
+│   └── InputDialogView.xaml(.cs)             // Simple input dialog (DialogWindowBase)
 ├── Services/
-│   ├── LocalCatalogProvider.cs         <- IWritableFamilyCatalogProvider
-│   ├── FamilyFileResolver.cs           <- IFamilyFileResolver
-│   ├── FamilyImportService.cs          <- IFamilyImportService
-│   ├── LocalProjectFamilyUsageRepository.cs <- IProjectFamilyUsageRepository
-│   ├── FamilyManagerDialogService.cs   <- IFamilyManagerDialogService
-│   └── IFamilyManagerViewModelFactory.cs
-└── Events/
-    └── FamilyManagerExternalEvent.cs   <- IExternalEventHandler
+│   ├── FamilyManagerDialogService.cs         // IFamilyManagerDialogService impl
+│   ├── FamilyManagerViewModelFactory.cs      // IFamilyManagerViewModelFactory impl
+│   ├── IFamilyManagerViewModelFactory.cs     // Factory interface
+│   └── LocalCatalog/
+│       ├── DatabaseManager.cs                // IDatabaseManager impl (multi-DB registry)
+│       ├── FamilyCatalogSql.cs               // DDL constants (9 tables, 14 indexes)
+│       ├── LocalCatalogDatabase.cs           // SQLite connection management
+│       ├── LocalCatalogMigrator.cs           // Schema migration
+│       ├── LocalCatalogProvider.cs           // IFamilyCatalogProvider + IWritableFamilyCatalogProvider
+│       ├── LocalCatalogQueryBuilder.cs       // SQL WHERE/LIMIT builder
+│       ├── LocalFamilyImportService.cs       // IFamilyImportService impl (import pipeline)
+│       ├── LocalFamilyFileResolver.cs        // IFamilyFileResolver impl
+│       ├── LocalProjectFamilyUsageRepository.cs  // IProjectFamilyUsageRepository impl
+│       ├── Sha256FileHasher.cs               // SHA-256 file hashing
+│       └── FileNameOnlyMetadataExtractionService.cs  // IFamilyMetadataExtractionService (MVP)
+├── FamilyManagerPaneProvider.cs         // IDockablePaneProvider
+├── FamilyManagerPaneIds.cs              // DockablePaneId Guid
+└── SmartCon.FamilyManager.csproj        // Core + UI + Microsoft.Data.Sqlite
 ```
 
 > **Примечание:** Интерфейсы и модели — в SmartCon.Core.

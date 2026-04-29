@@ -1,25 +1,20 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed partial class InputDialogViewModel : ObservableObject
+public sealed partial class InputDialogViewModel : ObservableObject, IObservableRequestClose
 {
     [ObservableProperty] private string _title = string.Empty;
     [ObservableProperty] private string _prompt = string.Empty;
     [ObservableProperty] private string _inputText = string.Empty;
 
-    [RelayCommand]
-    private void Ok(System.Windows.Window window)
-    {
-        window.DialogResult = true;
-        window.Close();
-    }
+    public event Action<bool?>? RequestClose;
 
     [RelayCommand]
-    private void Cancel(System.Windows.Window window)
-    {
-        window.DialogResult = false;
-        window.Close();
-    }
+    private void Ok() => RequestClose?.Invoke(true);
+
+    [RelayCommand]
+    private void Cancel() => RequestClose?.Invoke(null);
 }

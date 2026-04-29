@@ -8,11 +8,12 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
-namespace SmartCon.Revit.Services.FamilyLoading;
+namespace SmartCon.Revit.FamilyManager;
 
 public sealed class RevitFamilyLoadService : IFamilyLoadService
 {
     private readonly IRevitContext _revitContext;
+    private readonly ITransactionService _transactionService;
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -28,32 +29,57 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         catch { /* Best effort */ }
     }
 
-    public RevitFamilyLoadService(IRevitContext revitContext)
+    public RevitFamilyLoadService(IRevitContext revitContext, ITransactionService transactionService)
     {
         _revitContext = revitContext;
+        _transactionService = transactionService;
     }
 
-    /// <summary>Renames a family inside an active transaction. Returns the new name or null if unchanged/failed.</summary>
-    private static string? TryRenameInsideTransaction(Autodesk.Revit.DB.Family family, string? preferredName)
+    private FamilyLoadResult? TryLoadInTransaction(
+        Document doc, string path, RevitFamilyLoadOptions? loadOptions, FamilyLoadOptions options)
     {
-        if (string.IsNullOrWhiteSpace(preferredName))
-            return null;
+        Autodesk.Revit.DB.Family? loadedFamily = null;
+        bool success = false;
 
-        var currentName = family.Name;
-        if (string.Equals(currentName, preferredName, StringComparison.OrdinalIgnoreCase))
-            return null;
+        _transactionService.RunInTransaction("Load Family", _ =>
+        {
+            bool loaded;
+            Autodesk.Revit.DB.Family family;
+            if (loadOptions is not null)
+                loaded = doc.LoadFamily(path, loadOptions, out family);
+            else
+                loaded = doc.LoadFamily(path, out family);
 
-        try
+            if (!loaded || family is null)
+                return;
+
+            loadedFamily = family;
+            success = true;
+
+            if (!string.IsNullOrWhiteSpace(options.PreferredName)
+                && !string.Equals(family.Name, options.PreferredName, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    family.Name = options.PreferredName;
+                    SmartConLogger.Info($"[FamilyLoad] Renamed family to '{options.PreferredName}'");
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Info($"[FamilyLoad] Rename failed (non-fatal): {ex.Message}");
+                }
+            }
+        });
+
+        if (success && loadedFamily is not null)
         {
-            family.Name = preferredName;
-            SmartConLogger.Info($"[FamilyLoad] Renamed family from '{currentName}' to '{preferredName}'");
-            return preferredName;
+            var displayName = loadedFamily.Name;
+            SmartConLogger.Info($"[FamilyLoad] Successfully loaded family: {displayName}");
+            ActivateRevitWindow();
+            return new FamilyLoadResult(true, displayName, $"Family '{displayName}' loaded successfully", null);
         }
-        catch (Exception ex)
-        {
-            SmartConLogger.Info($"[FamilyLoad] Failed to rename family: {ex.GetType().Name}: {ex.Message}");
-            return null;
-        }
+
+        return null;
     }
 
     public Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, CancellationToken ct = default)
@@ -78,12 +104,10 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             var fileInfo = new FileInfo(normalizedPath);
             SmartConLogger.Info($"[FamilyLoad] File size: {fileInfo.Length} bytes");
 
-            var hashName = Path.GetFileNameWithoutExtension(normalizedPath);
             var checkName = !string.IsNullOrWhiteSpace(options.PreferredName)
                 ? options.PreferredName
-                : hashName;
+                : Path.GetFileNameWithoutExtension(normalizedPath);
 
-            // Check if family already loaded by display name (or hash if no display name)
             var existingFamily = new FilteredElementCollector(doc)
                 .OfClass(typeof(Autodesk.Revit.DB.Family))
                 .Cast<Autodesk.Revit.DB.Family>()
@@ -93,77 +117,33 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             {
                 SmartConLogger.Info($"[FamilyLoad] Family '{checkName}' already loaded in project");
                 ActivateRevitWindow();
-                return Task.FromResult(new FamilyLoadResult(true, existingFamily.Name, $"Family '{existingFamily.Name}' already loaded in project", null));
+                return Task.FromResult(new FamilyLoadResult(true, existingFamily.Name,
+                    $"Family '{existingFamily.Name}' already loaded in project", null));
             }
 
             var loadOptions = new RevitFamilyLoadOptions();
 
-            // Attempt 1: LoadFamily + rename inside single transaction (single undoable action)
-            SmartConLogger.Info("[FamilyLoad] Attempt 1: LoadFamily with transaction...");
-            using (var tx = new Transaction(doc, "Load Family"))
-            {
-                tx.Start();
-                var loaded = doc.LoadFamily(normalizedPath, loadOptions, out Autodesk.Revit.DB.Family family);
-                
-                if (loaded && family is not null)
-                {
-                    var renamedName = TryRenameInsideTransaction(family, options.PreferredName);
-                    var displayName = renamedName ?? family.Name;
-                    tx.Commit();
-                    SmartConLogger.Info($"[FamilyLoad] Successfully loaded family: {displayName}");
-                    ActivateRevitWindow();
-                    return Task.FromResult(new FamilyLoadResult(true, displayName, $"Family '{displayName}' loaded successfully", null));
-                }
-                
-                tx.RollBack();
-                SmartConLogger.Info("[FamilyLoad] Attempt 1 failed");
-            }
+            SmartConLogger.Info("[FamilyLoad] Attempt 1: LoadFamily with options in transaction...");
+            var result1 = TryLoadInTransaction(doc, normalizedPath, loadOptions, options);
+            if (result1 is not null)
+                return Task.FromResult(result1);
+            SmartConLogger.Info("[FamilyLoad] Attempt 1 failed");
 
-            // Attempt 2: LoadFamily without IFamilyLoadOptions
             SmartConLogger.Info("[FamilyLoad] Attempt 2: LoadFamily without IFamilyLoadOptions...");
-            using (var tx = new Transaction(doc, "Load Family Basic"))
-            {
-                tx.Start();
-                var loaded = doc.LoadFamily(normalizedPath, out Autodesk.Revit.DB.Family family);
-                
-                if (loaded && family is not null)
-                {
-                    var renamedName = TryRenameInsideTransaction(family, options.PreferredName);
-                    var displayName = renamedName ?? family.Name;
-                    tx.Commit();
-                    SmartConLogger.Info($"[FamilyLoad] Successfully loaded family (basic): {displayName}");
-                    ActivateRevitWindow();
-                    return Task.FromResult(new FamilyLoadResult(true, displayName, $"Family '{displayName}' loaded successfully", null));
-                }
-                
-                tx.RollBack();
-                SmartConLogger.Info("[FamilyLoad] Attempt 2 failed");
-            }
+            var result2 = TryLoadInTransaction(doc, normalizedPath, null, options);
+            if (result2 is not null)
+                return Task.FromResult(result2);
+            SmartConLogger.Info("[FamilyLoad] Attempt 2 failed");
 
-            // Attempt 3: Load from temp copy
             var tempPath = Path.Combine(Path.GetTempPath(), $"SmartCon_Family_{Guid.NewGuid()}.rfa");
             try
             {
                 File.Copy(normalizedPath, tempPath, overwrite: true);
                 SmartConLogger.Info($"[FamilyLoad] Attempt 3: Loading from temp: {tempPath}");
 
-                using (var tx = new Transaction(doc, "Load Family Temp"))
-                {
-                    tx.Start();
-                    var loaded = doc.LoadFamily(tempPath, loadOptions, out Autodesk.Revit.DB.Family family);
-                    
-                    if (loaded && family is not null)
-                    {
-                        var renamedName = TryRenameInsideTransaction(family, options.PreferredName);
-                        var displayName = renamedName ?? family.Name;
-                        tx.Commit();
-                        SmartConLogger.Info($"[FamilyLoad] Successfully loaded from temp: {displayName}");
-                        ActivateRevitWindow();
-                        return Task.FromResult(new FamilyLoadResult(true, displayName, $"Family '{displayName}' loaded successfully", null));
-                    }
-                    
-                    tx.RollBack();
-                }
+                var result3 = TryLoadInTransaction(doc, tempPath, loadOptions, options);
+                if (result3 is not null)
+                    return Task.FromResult(result3);
             }
             finally
             {
@@ -171,7 +151,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             }
 
             SmartConLogger.Info("[FamilyLoad] All attempts failed");
-            return Task.FromResult(new FamilyLoadResult(false, null, null, 
+            return Task.FromResult(new FamilyLoadResult(false, null, null,
                 "Unable to load family. The file may be from a newer Revit version or incompatible with this project."));
         }
         catch (Exception ex)

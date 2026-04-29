@@ -599,144 +599,167 @@ public interface IViewRepository
 
 ## FamilyManager Interfaces
 
-Интерфейсы модуля FamilyManager (Phase 12). Все интерфейсы — в `SmartCon.Core/Services/Interfaces/FamilyManager/`.
+Интерфейсы модуля FamilyManager. Все интерфейсы — в `SmartCon.Core/Services/Interfaces/`.
 
 ### IFamilyCatalogProvider
 
-Чтение каталога семейств: поиск, фильтрация, получение версий и файлов.
+Чтение каталога семейств: поиск, получение версий и файлов. Все методы — async.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyCatalogProvider.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalogProvider.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyCatalogProvider.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalCatalogProvider.cs`
 
 ```csharp
 public interface IFamilyCatalogProvider
 {
-    IReadOnlyList<FamilyCatalogItem> Search(FamilyCatalogQuery query);
-    FamilyCatalogItem? GetById(int id);
-    IReadOnlyList<FamilyCatalogVersion> GetVersions(int catalogItemId);
-    FamilyFileRecord? GetFile(int versionId);
-    CatalogProviderKind ProviderKind { get; }
+    FamilyCatalogCapabilities GetCapabilities();
+    Task<IReadOnlyList<FamilyCatalogItem>> SearchAsync(FamilyCatalogQuery query, CancellationToken ct = default);
+    Task<FamilyCatalogItem?> GetItemAsync(string id, CancellationToken ct = default);
+    Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default);
+    Task<FamilyFileRecord?> GetFileAsync(string fileId, CancellationToken ct = default);
+    Task<int> GetItemCountAsync(CancellationToken ct = default);
 }
 ```
 
 ### IWritableFamilyCatalogProvider
 
-Запись в каталог: добавление, обновление, удаление записей.
+Запись в каталог: импорт, обновление, удаление записей. **Не наследует** `IFamilyCatalogProvider`.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IWritableFamilyCatalogProvider.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalogProvider.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IWritableFamilyCatalogProvider.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalCatalogProvider.cs`
 
 ```csharp
-public interface IWritableFamilyCatalogProvider : IFamilyCatalogProvider
+public interface IWritableFamilyCatalogProvider
 {
-    FamilyImportResult Import(FamilyImportRequest request);
-    FamilyBatchImportResult ImportBatch(IReadOnlyList<FamilyImportRequest> requests);
-    bool Delete(int catalogItemId);
-    bool UpdateItem(FamilyCatalogItem item);
+    Task<FamilyImportResult> ImportAsync(FamilyImportRequest request, CancellationToken ct = default);
+    Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
+    Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, FamilyContentStatus? status, CancellationToken ct = default);
+    Task<bool> DeleteItemAsync(string id, CancellationToken ct = default);
 }
 ```
 
 ### IFamilyImportService
 
-Оркестрация импорта семейств: валидация, копирование в кэш, запись в БД.
+Оркестрация импорта семейств: валидация, хеширование, копирование в кэш, запись в каталог.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyImportService.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/FamilyImportService.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyImportService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportService.cs`
 
 ```csharp
 public interface IFamilyImportService
 {
-    FamilyImportResult Import(FamilyImportRequest request);
-    FamilyBatchImportResult ImportBatch(IReadOnlyList<FamilyImportRequest> requests);
+    Task<FamilyImportResult> ImportFileAsync(FamilyImportRequest request, CancellationToken ct = default);
+    Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
 }
 ```
 
 ### IFamilyFileResolver
 
-Разрешение путей к файлам семейств (кэш → абсолютный путь).
+Разрешение путей к файлам семейств: кэш → абсолютный путь для загрузки.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyFileResolver.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/FamilyFileResolver.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyFileResolver.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFileResolver.cs`
 
 ```csharp
 public interface IFamilyFileResolver
 {
-    string? ResolveAbsolutePath(string relativeCachedPath);
-    FamilyResolvedFile? ResolveForVersion(int versionId);
+    Task<FamilyResolvedFile> ResolveForLoadAsync(string versionId, CancellationToken ct = default);
+    string GetCanonicalRoot();
 }
 ```
 
 ### IFamilyLoadService
 
-Загрузка семейства в проект Revit. **Не содержит `Document` в параметрах** — Document получается через `IRevitContext` в ExternalEvent.
+Загрузка семейства в проект Revit. **Не содержит `Document` в параметрах** — Document получается через `IRevitContext` в реализации.
+**Вызывать только из ExternalEvent handler (I-01).**
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyLoadService.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyLoadService.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyLoadService.cs`
 
 ```csharp
 public interface IFamilyLoadService
 {
-    FamilyLoadResult Load(FamilyResolvedFile file, FamilyLoadOptions options);
+    Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, CancellationToken ct = default);
 }
 ```
 
 ### IFamilyMetadataExtractionService
 
-Извлечение метаданных из `.rfa` (опционально, Post-MVP).
+Извлечение метаданных из `.rfa`. MVP: метаданные файлового уровня (имя, размер, хеш, timestamps). Post-MVP: глубокое извлечение через Revit API.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyMetadataExtractionService.cs`
-**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyMetadataExtractionService.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyMetadataExtractionService.cs`
 
 ```csharp
 public interface IFamilyMetadataExtractionService
 {
-    FamilyMetadataExtractionResult Extract(string rfaPath);
+    Task<FamilyMetadataExtractionResult> ExtractAsync(string filePath, CancellationToken ct = default);
 }
 ```
 
 ### IProjectFamilyUsageRepository
 
-Хранение истории использования семейств в проектах.
+Хранение истории использования семейств в проектах. Пишет в локальный SQLite, не зависит от Revit API.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IProjectFamilyUsageRepository.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalProjectFamilyUsageRepository.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IProjectFamilyUsageRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalProjectFamilyUsageRepository.cs`
 
 ```csharp
 public interface IProjectFamilyUsageRepository
 {
-    void RecordUsage(int catalogItemId, string projectName, string revitVersion);
-    IReadOnlyList<ProjectFamilyUsage> GetUsageForItem(int catalogItemId);
-    IReadOnlyList<ProjectFamilyUsage> GetUsageForProject(string projectName);
+    Task RecordUsageAsync(ProjectFamilyUsage usage, CancellationToken ct = default);
+    Task<IReadOnlyList<ProjectFamilyUsage>> GetUsageForItemAsync(string catalogItemId, CancellationToken ct = default);
+    Task<IReadOnlyList<ProjectFamilyUsage>> GetUsageForProjectAsync(string projectFingerprint, CancellationToken ct = default);
+}
+```
+
+### IDatabaseManager
+
+Управление базами данных каталога: создание, переключение, удаление. Событие `ActiveDatabaseChanged` оповещает об изменении активной БД.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IDatabaseManager.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/DatabaseManager.cs`
+
+```csharp
+public interface IDatabaseManager
+{
+    IReadOnlyList<DatabaseInfo> ListDatabases();
+    string GetActiveDatabaseId();
+    Task<DatabaseInfo> CreateDatabaseAsync(string name, CancellationToken ct = default);
+    Task<bool> SwitchDatabaseAsync(string databaseId, CancellationToken ct = default);
+    Task<bool> DeleteDatabaseAsync(string databaseId, CancellationToken ct = default);
+    event EventHandler<string>? ActiveDatabaseChanged;
 }
 ```
 
 ### IFamilyManagerDialogService
 
-UI-диалоги модуля FamilyManager.
+UI-диалоги модуля FamilyManager. Аналог `IDialogService` для PipeConnect.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyManagerDialogService.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyManagerDialogService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/FamilyManagerDialogService.cs`
 
 ```csharp
 public interface IFamilyManagerDialogService
 {
-    string? ShowImportDialog();              // OpenFileDialog для выбора .rfa
-    bool ShowDeleteConfirmation(string familyName);
+    string? ShowOpenFileDialog(string title, string? initialDirectory = null);
+    string? ShowFolderBrowserDialog(string title, string? initialDirectory = null);
+    void ShowWarning(string title, string message);
     void ShowError(string title, string message);
+    bool? ShowMetadataEdit(object viewModel);
+    string? ShowInputDialog(string title, string prompt, string defaultText = "");
+    bool ShowConfirmation(string title, string message);
 }
 ```
 
 ### IFamilyManagerExternalEvent
 
-Абстракция для ExternalEvent, используемого FamilyManager.
+Абстракция для ExternalEvent, используемого FamilyManager. Вызов `Raise` ставит `Action` в очередь на выполнение в контексте Revit API.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/FamilyManager/IFamilyManagerExternalEvent.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyManagerExternalEvent.cs`
 **Реализация:** `SmartCon.FamilyManager/Events/FamilyManagerExternalEvent.cs`
 
 ```csharp
 public interface IFamilyManagerExternalEvent
 {
-    void RaiseLoadFamily(FamilyResolvedFile file, FamilyLoadOptions options);
-    void RaiseExtractMetadata(string rfaPath);
+    void Raise(Action action);
 }
 ```

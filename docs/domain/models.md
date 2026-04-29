@@ -665,225 +665,421 @@ public sealed class ViewInfo
 ## FamilyManager Models
 
 Модели модуля FamilyManager (Phase 12). Все модели — immutable records, живут в `SmartCon.Core/Models/FamilyManager/`.
+Идентификаторы — `string` (GUID/ULID), даты — `DateTimeOffset`.
+
+---
 
 ### FamilyCatalogItem
 
-Логическая запись каталога семейств.
+Логическая запись каталога семейств — основная сущность, к которой привязаны версии и файлы.
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/FamilyCatalogItem.cs`
 
 ```csharp
-public sealed record FamilyCatalogItem
-{
-    public int Id { get; init; }
-    public string Name { get; init; } = string.Empty;
-    public string? Description { get; init; }
-    public string Category { get; init; } = string.Empty;
-    public FamilyContentStatus Status { get; init; }
-    public DateTime CreatedAt { get; init; }
-    public DateTime UpdatedAt { get; init; }
-}
+public sealed record FamilyCatalogItem(
+    string Id,
+    string ProviderId,
+    string Name,
+    string NormalizedName,
+    string? Description,
+    string? CategoryName,
+    string? Manufacturer,
+    FamilyContentStatus Status,
+    string? CurrentVersionId,
+    IReadOnlyList<string> Tags,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
 ```
+
+---
 
 ### FamilyCatalogVersion
 
-Версия записи каталога.
+Версия записи каталога — связка с конкретным файлом `.rfa`. Один CatalogItem может иметь несколько версий.
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/FamilyCatalogVersion.cs`
 
 ```csharp
-public sealed record FamilyCatalogVersion
-{
-    public int Id { get; init; }
-    public int CatalogItemId { get; init; }
-    public string VersionLabel { get; init; } = string.Empty;
-    public string? Notes { get; init; }
-    public DateTime CreatedAt { get; init; }
-}
+public sealed record FamilyCatalogVersion(
+    string Id,
+    string CatalogItemId,
+    string FileId,
+    string VersionLabel,
+    string Sha256,
+    int? RevitMajorVersion,
+    int? TypesCount,
+    int? ParametersCount,
+    DateTimeOffset ImportedAtUtc);
 ```
+
+---
 
 ### FamilyFileRecord
 
-Физический файл семейства.
+Физический файл семейства — путь к `.rfa` и метаданные файловой системы.
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/FamilyFileRecord.cs`
 
 ```csharp
-public sealed record FamilyFileRecord
-{
-    public int Id { get; init; }
-    public int VersionId { get; init; }
-    public string OriginalPath { get; init; } = string.Empty;
-    public string CachedPath { get; init; } = string.Empty;   // относительный путь в кэше
-    public long FileSizeBytes { get; init; }
-    public string? Checksum { get; init; }
-    public FamilyFileStorageMode StorageMode { get; init; }
-}
+public sealed record FamilyFileRecord(
+    string Id,
+    string? OriginalPath,
+    string? CachedPath,
+    string FileName,
+    long SizeBytes,
+    string Sha256,
+    DateTimeOffset? LastWriteTimeUtc,
+    FamilyFileStorageMode StorageMode);
 ```
 
-### FamilyTypeDescriptor / FamilyParameterDescriptor
-
-DTO для извлечения метаданных семейства (Post-MVP).
-
-**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyTypeDescriptor.cs`, `FamilyParameterDescriptor.cs`
-
-```csharp
-public sealed record FamilyTypeDescriptor
-{
-    public string Name { get; init; } = string.Empty;
-    public IReadOnlyList<FamilyParameterDescriptor> Parameters { get; init; } = [];
-}
-
-public sealed record FamilyParameterDescriptor
-{
-    public string Name { get; init; } = string.Empty;
-    public string? Formula { get; init; }
-    public bool IsInstance { get; init; }
-    public string? Value { get; init; }
-}
-```
+---
 
 ### FamilyCatalogQuery
 
-Запрос поиска по каталогу.
+Параметры запроса поиска по каталогу с пагинацией и фильтрацией.
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/FamilyCatalogQuery.cs`
 
 ```csharp
-public sealed record FamilyCatalogQuery
-{
-    public string? SearchText { get; init; }
-    public string? Category { get; init; }
-    public FamilyContentStatus? Status { get; init; }
-    public FamilyCatalogSort Sort { get; init; } = FamilyCatalogSort.Name;
-    public bool SortDescending { get; init; } = false;
-}
+public sealed record FamilyCatalogQuery(
+    string? SearchText,
+    string? CategoryFilter,
+    FamilyContentStatus? StatusFilter,
+    IReadOnlyList<string>? Tags,
+    string? ManufacturerFilter,
+    FamilyCatalogSort Sort,
+    int Offset,
+    int Limit);
 ```
 
-### FamilyImportRequest / FamilyImportResult / FamilyBatchImportResult
+---
 
-DTO для операции импорта семейств в каталог.
+### FamilyCatalogCapabilities
+
+Описание возможностей провайдера каталога — используется для адаптации UI.
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyCatalogCapabilities.cs`
+
+```csharp
+public sealed record FamilyCatalogCapabilities(
+    bool SupportsWrite,
+    bool SupportsSearch,
+    bool SupportsTags,
+    bool SupportsBatchImport,
+    bool SupportsVersionHistory,
+    CatalogProviderKind ProviderKind);
+```
+
+---
+
+### FamilyImportRequest
+
+Запрос на импорт одного файла `.rfa` в каталог.
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/FamilyImportRequest.cs`
 
 ```csharp
-public sealed record FamilyImportRequest
-{
-    public string SourcePath { get; init; } = string.Empty;
-    public string? TargetCategory { get; init; }
-    public string? VersionNotes { get; init; }
-}
+public sealed record FamilyImportRequest(
+    string FilePath,
+    string? Category,
+    IReadOnlyList<string>? Tags,
+    string? Description,
+    FamilyFileStorageMode StorageMode = FamilyFileStorageMode.Cached);
+```
 
-public sealed record FamilyImportResult
-{
-    public bool Success { get; init; }
-    public int? CatalogItemId { get; init; }
-    public string? ErrorMessage { get; init; }
-}
+---
 
-public sealed record FamilyBatchImportResult
+### FamilyImportResult
+
+Результат импорта одного файла — содержит ID созданных сущностей или флаг дубликата.
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyImportResult.cs`
+
+```csharp
+public sealed record FamilyImportResult(
+    bool Success,
+    string? CatalogItemId,
+    string? VersionId,
+    string? FileId,
+    string? FileName,
+    string? ErrorMessage,
+    bool WasSkippedAsDuplicate = false,
+    string? DuplicateCatalogItemId = null);
+```
+
+---
+
+### FamilyBatchImportResult
+
+Агрегированный результат импорта нескольких файлов.
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyBatchImportResult.cs`
+
+```csharp
+public sealed record FamilyBatchImportResult(
+    IReadOnlyList<FamilyImportResult> Results,
+    int TotalFiles,
+    int SuccessCount,
+    int SkippedCount,
+    int ErrorCount);
+```
+
+---
+
+### FamilyFolderImportRequest
+
+Запрос на импорт всех `.rfa` файлов из папки (с возможностью рекурсивного обхода).
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyFolderImportRequest.cs`
+
+```csharp
+public sealed record FamilyFolderImportRequest(
+    string FolderPath,
+    bool Recursive,
+    string? Category,
+    IReadOnlyList<string>? Tags,
+    string? Description,
+    FamilyFileStorageMode StorageMode = FamilyFileStorageMode.Cached);
+```
+
+---
+
+### FamilyImportProgress
+
+Прогресс пакетного импорта — передаётся в callback для обновления UI.
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyImportProgress.cs`
+
+```csharp
+public sealed record FamilyImportProgress(
+    int CurrentFileIndex,
+    int TotalFiles,
+    string CurrentFileName,
+    int SuccessCount,
+    int SkippedCount,
+    int ErrorCount);
+```
+
+---
+
+### FamilyLoadOptions
+
+Параметры загрузки семейства в проект Revit.
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyLoadOptions.cs`
+
+```csharp
+public sealed record FamilyLoadOptions(
+    bool OverwriteExisting = false,
+    bool UpdateFamilyIfChanged = false,
+    string? PreferredName = null)
 {
-    public int TotalCount { get; init; }
-    public int SuccessCount { get; init; }
-    public IReadOnlyList<FamilyImportResult> Results { get; init; } = [];
+    public static FamilyLoadOptions Default { get; } = new();
 }
 ```
 
-### FamilyLoadResult / FamilyLoadOptions / FamilyResolvedFile
+---
 
-DTO для загрузки семейства в проект Revit.
+### FamilyLoadResult
+
+Результат загрузки семейства в проект Revit.
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/FamilyLoadResult.cs`
 
 ```csharp
-public sealed record FamilyLoadOptions
-{
-    public bool OverwriteExisting { get; init; } = true;
-    public bool ActivateSymbol { get; init; } = false;
-}
-
-public sealed record FamilyResolvedFile
-{
-    public int CatalogItemId { get; init; }
-    public int VersionId { get; init; }
-    public string AbsolutePath { get; init; } = string.Empty;
-}
-
-public sealed record FamilyLoadResult
-{
-    public bool Success { get; init; }
-    public ElementId? FamilyId { get; init; }
-    public string? ErrorMessage { get; init; }
-}
+public sealed record FamilyLoadResult(
+    bool Success,
+    string? FamilyName,
+    string? Message,
+    string? ErrorMessage);
 ```
+
+---
+
+### FamilyResolvedFile
+
+Разрешённый путь к файлу `.rfa` — готов для загрузки в Revit.
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyResolvedFile.cs`
+
+```csharp
+public sealed record FamilyResolvedFile(
+    string AbsolutePath,
+    string? CatalogItemId,
+    string? VersionId);
+```
+
+---
 
 ### FamilyMetadataExtractionResult
 
-DTO результата извлечения метаданных из `.rfa`.
+Результат извлечения метаданных из `.rfa`. MVP — только файловые метаданные (имя, размер, хеш).
+Post-MVP — глубокое извлечение (категория, типы, параметры).
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/FamilyMetadataExtractionResult.cs`
 
 ```csharp
-public sealed record FamilyMetadataExtractionResult
-{
-    public bool Success { get; init; }
-    public string? FamilyName { get; init; }
-    public string? Category { get; init; }
-    public IReadOnlyList<FamilyTypeDescriptor> Types { get; init; } = [];
-    public string? ErrorMessage { get; init; }
-}
+public sealed record FamilyMetadataExtractionResult(
+    string FileName,
+    long FileSizeBytes,
+    string Sha256,
+    DateTimeOffset? LastWriteTimeUtc,
+    string? CategoryName,
+    int? RevitMajorVersion,
+    IReadOnlyList<FamilyTypeDescriptor>? Types,
+    IReadOnlyList<FamilyParameterDescriptor>? Parameters);
 ```
+
+---
+
+### FamilyTypeDescriptor
+
+Дескриптор типоразмера семейства (Post-MVP: заполняется при глубоком извлечении).
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyTypeDescriptor.cs`
+
+```csharp
+public sealed record FamilyTypeDescriptor(
+    string Id,
+    string VersionId,
+    string Name,
+    int SortOrder);
+```
+
+---
+
+### FamilyParameterDescriptor
+
+Дескриптор параметра семейства (Post-MVP: заполняется при глубоком извлечении).
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyParameterDescriptor.cs`
+
+```csharp
+public sealed record FamilyParameterDescriptor(
+    string Id,
+    string VersionId,
+    string? TypeId,
+    string Name,
+    string? StorageType,
+    string? ValueText,
+    bool? IsInstance,
+    bool? IsReadonly,
+    string? ForgeTypeId);
+```
+
+---
 
 ### ProjectFamilyUsage
 
-Запись истории использования семейства в проекте.
+Запись истории использования семейства в проекте Revit.
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/ProjectFamilyUsage.cs`
 
 ```csharp
-public sealed record ProjectFamilyUsage
-{
-    public int Id { get; init; }
-    public int CatalogItemId { get; init; }
-    public string ProjectName { get; init; } = string.Empty;
-    public DateTime UsedAt { get; init; }
-    public string RevitVersion { get; init; } = string.Empty;
-}
+public sealed record ProjectFamilyUsage(
+    string Id,
+    string CatalogItemId,
+    string VersionId,
+    string ProviderId,
+    string ProjectFingerprint,
+    string Action,
+    DateTimeOffset CreatedAtUtc);
 ```
+
+---
+
+### DatabaseRegistry
+
+Реестр баз данных каталога — хранит активную базу и список всех доступных.
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/DatabaseRegistry.cs`
+
+```csharp
+public sealed record DatabaseRegistry(
+    string ActiveDatabaseId,
+    IReadOnlyList<DatabaseInfo> Databases);
+```
+
+---
+
+### DatabaseInfo
+
+Информация об одной базе данных каталога.
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/DatabaseInfo.cs`
+
+```csharp
+public sealed record DatabaseInfo(
+    string Id,
+    string Name,
+    DateTimeOffset CreatedAtUtc);
+```
+
+---
 
 ### Enums
 
-**Файл:** `SmartCon.Core/Models/FamilyManager/FamilyManagerEnums.cs`
+Каждый enum в отдельном файле в `SmartCon.Core/Models/FamilyManager/`.
+
+#### FamilyContentStatus
+
+Статус записи каталога.
+
+**Файл:** `FamilyContentStatus.cs`
 
 ```csharp
 public enum FamilyContentStatus
 {
-    Draft,
-    Active,
-    Deprecated,
-    Archived
+    Draft = 0,       // только импортировано, не проверено
+    Verified = 1,    // проверено и одобрено
+    Deprecated = 2,  // устарело, не использовать в новых проектах
+    Archived = 3     // архив, скрыто из поиска по умолчанию
 }
+```
 
+#### FamilyFileStorageMode
+
+Способ хранения файла семейства.
+
+**Файл:** `FamilyFileStorageMode.cs`
+
+```csharp
 public enum FamilyFileStorageMode
 {
-    Cached,      // файл скопирован в локальный кэш
-    Linked,      // путь к оригиналу, без копирования
-    Embedded     // [Future] BLOB в SQLite
+    Linked = 0,   // ссылка на оригинальный путь
+    Cached = 1,   // копия в управляемом кэше
+    Missing = 2   // файл недоступен (удалён/перемещён)
 }
+```
 
+#### CatalogProviderKind
+
+Тип провайдера каталога.
+
+**Файл:** `CatalogProviderKind.cs`
+
+```csharp
 public enum CatalogProviderKind
 {
-    Local,       // SQLite + file cache
-    Remote,      // [Future] REST API
-    Corporate,   // [Future] корпоративный сервер
-    Composite    // [Future] агрегирующий провайдер
+    Local = 0,          // локальный SQLite
+    Remote = 1,         // удалённый сервер
+    Corporate = 2,      // корпоративная сеть
+    PublicReadOnly = 3  // публичный read-only
 }
+```
 
+#### FamilyCatalogSort
+
+Порядок сортировки результатов поиска.
+
+**Файл:** `FamilyCatalogSort.cs`
+
+```csharp
 public enum FamilyCatalogSort
 {
-    Name,
-    Category,
-    UpdatedAt,
-    CreatedAt
+    NameAsc = 0,   // по имени ↑
+    NameDesc = 1,  // по имени ↓
+    DateAsc = 2,   // по дате ↑
+    DateDesc = 3   // по дате ↓
 }
 ```

@@ -1,6 +1,6 @@
 using Autodesk.Revit.DB;
 
-namespace SmartCon.Revit.Services.FamilyLoading;
+namespace SmartCon.Revit.FamilyManager;
 
 /// <summary>
 /// Реализация IFamilyLoadOptions, которая разрешает загрузку семейства

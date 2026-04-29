@@ -6,7 +6,225 @@
         Background="{DynamicResource BackgroundBrush}">
 
     <UserControl.Resources>
-        <ui:SingletonResources/>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <Style x:Key="DangerIconButton" TargetType="Button">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
+                <Setter Property="Width" Value="24"/>
+                <Setter Property="Height" Value="24"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="3">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#FFFEECEE"/>
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#FFE53935"/>
+                                    <Setter Property="Foreground" Value="#FFE53935"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#FFFDDDDD"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource DisabledBgBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ModernContextMenu" TargetType="ContextMenu">
+                <Setter Property="Background" Value="White"/>
+                <Setter Property="BorderBrush" Value="#FFE0E0E0"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="4"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ContextMenu">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"
+                                    Padding="{TemplateBinding Padding}"
+                                    SnapsToDevicePixels="True">
+                                <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ModernMenuItem" TargetType="MenuItem">
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="12,7,16,7"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="ItemBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}"
+                                    Margin="1">
+                                <ContentPresenter ContentSource="Header"
+                                                  VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="DangerMenuItem" TargetType="MenuItem">
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="12,7,16,7"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="ItemBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}"
+                                    Margin="1">
+                                <ContentPresenter ContentSource="Header"
+                                                  VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="#FFFEECEE"/>
+                                    <Setter Property="Foreground" Value="#FFE53935"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="#FFFDDDDD"/>
+                                    <Setter Property="Foreground" Value="#FFC62828"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ModernSeparator" TargetType="Separator">
+                <Setter Property="Height" Value="1"/>
+                <Setter Property="Margin" Value="4,3,4,3"/>
+                <Setter Property="Background" Value="#FFE0E0E0"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Separator">
+                            <Border Background="{TemplateBinding Background}"
+                                    Height="{TemplateBinding Height}"
+                                    Margin="{TemplateBinding Margin}"/>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="CategoryExpander" TargetType="Expander">
+                <Setter Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
+                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                <Setter Property="IsExpanded" Value="True"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Expander">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                <StackPanel>
+                                    <ToggleButton x:Name="HeaderSite"
+                                                  IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                  Content="{TemplateBinding Header}"
+                                                  ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                                  Cursor="Hand"
+                                                  Background="Transparent"
+                                                  BorderThickness="0"
+                                                  Foreground="{TemplateBinding Foreground}"
+                                                  Padding="6,4,8,4"
+                                                  MinHeight="24"
+                                                  HorizontalAlignment="Stretch"
+                                                  HorizontalContentAlignment="Left">
+                                        <ToggleButton.Template>
+                                            <ControlTemplate TargetType="ToggleButton">
+                                                <Border x:Name="ToggleBg"
+                                                        Background="{TemplateBinding Background}"
+                                                        SnapsToDevicePixels="True">
+                                                    <DockPanel LastChildFill="True">
+                                                        <TextBlock x:Name="ToggleIcon"
+                                                                   DockPanel.Dock="Left"
+                                                                   Text="&#x25BC;"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="4,0,6,0"/>
+                                                        <ContentPresenter VerticalAlignment="Center"/>
+                                                    </DockPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ToggleBg" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsChecked" Value="False">
+                                                        <Setter TargetName="ToggleIcon" Property="Text" Value="&#x25B6;"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </ToggleButton.Template>
+                                    </ToggleButton>
+                                    <ContentPresenter x:Name="ExpandSite"
+                                                      Visibility="Collapsed"/>
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsExpanded" Value="True">
+                                    <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+        </ResourceDictionary>
     </UserControl.Resources>
 
     <Grid Margin="8">
@@ -18,12 +236,10 @@
 
         <Grid Grid.Row="0" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="140"/>
+                <ColumnDefinition Width="180"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="2*"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
@@ -37,53 +253,60 @@
                       Style="{DynamicResource CompactComboBox}"/>
 
             <Button Grid.Column="1"
-                    Content="+"
                     Command="{Binding CreateDatabaseCommand}"
                     Margin="0,0,4,0"
-                    MinWidth="24"
-                    Style="{DynamicResource SecondaryButton}"/>
+                    Width="28" Height="26"
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="0">
+                <Viewbox Width="8" Height="8" Stretch="Uniform">
+                    <Path Data="M 0,4 L 8,4 M 4,0 L 4,8"
+                          Stroke="{DynamicResource TextPrimaryBrush}"
+                          StrokeThickness="1.5"/>
+                </Viewbox>
+            </Button>
 
             <Button Grid.Column="2"
-                    Content="🗑"
                     Command="{Binding DeleteDatabaseCommand}"
                     Margin="0,0,8,0"
-                    MinWidth="24"
-                    Style="{DynamicResource SecondaryButton}"/>
+                    Width="28" Height="26"
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="0">
+                <Viewbox Width="10" Height="10" Stretch="Uniform">
+                    <Path Data="M 0,0 L 10,10 M 0,10 L 10,0"
+                          Stroke="#FFE53935"
+                          StrokeThickness="2"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"/>
+                </Viewbox>
+            </Button>
 
-            <TextBox Grid.Column="3"
-                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     VerticalContentAlignment="Center"
-                     Padding="6,4"
-                     Margin="0,0,4,0"
-                     Style="{DynamicResource CompactTextBox}"/>
+            <Grid Grid.Column="3" Margin="0,0,4,0">
+                <TextBox x:Name="SearchBox"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalContentAlignment="Center"
+                         Padding="6,4"
+                         Style="{DynamicResource CompactTextBox}"
+                         Background="Transparent"/>
+                <TextBlock x:Name="SearchPlaceholder"
+                           Text="{DynamicResource FM_SearchPlaceholder}"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Margin="8,0,0,0"
+                           IsHitTestVisible="False"/>
+            </Grid>
 
             <Button Grid.Column="4"
-                    Content="{DynamicResource FM_Search}"
-                    Command="{Binding SearchCommand}"
-                    Margin="0,0,4,0"
-                    MinWidth="60"
-                    Style="{DynamicResource SecondaryButton}"/>
-
-            <Button Grid.Column="5"
                     Content="{DynamicResource FM_ImportFile}"
                     Command="{Binding ImportFileCommand}"
                     Margin="0,0,4,0"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"/>
 
-            <Button Grid.Column="6"
+            <Button Grid.Column="5"
                     Content="{DynamicResource FM_ImportFolder}"
                     Command="{Binding ImportFolderCommand}"
-                    Margin="0,0,4,0"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"/>
-
-            <Button Grid.Column="7"
-                    Content="{DynamicResource FM_LoadToProject}"
-                    Command="{Binding LoadToProjectCommand}"
-                    IsEnabled="{Binding CanLoadToProject}"
-                    MinWidth="100"
-                    Style="{DynamicResource PrimaryButton}"/>
         </Grid>
 
         <DataGrid Grid.Row="1"
@@ -102,9 +325,17 @@
                   BorderThickness="1"
                   BorderBrush="{DynamicResource BorderAltBrush}">
             <DataGrid.ContextMenu>
-                <ContextMenu>
-                    <MenuItem Header="Удалить из каталога"
-                             Command="{Binding DeleteFamilyCommand}"/>
+                <ContextMenu Style="{StaticResource ModernContextMenu}">
+                    <MenuItem Header="{DynamicResource FM_LoadToProject}"
+                              Command="{Binding LoadToProjectCommand}"
+                              Style="{StaticResource ModernMenuItem}"/>
+                    <MenuItem Header="{DynamicResource FM_EditMetadata}"
+                              Command="{Binding EditMetadataCommand}"
+                              Style="{StaticResource ModernMenuItem}"/>
+                    <Separator Style="{StaticResource ModernSeparator}"/>
+                    <MenuItem Header="{DynamicResource FM_DeleteFromCatalog}"
+                              Command="{Binding DeleteFamilyCommand}"
+                              Style="{StaticResource DangerMenuItem}"/>
                 </ContextMenu>
             </DataGrid.ContextMenu>
             <DataGrid.GroupStyle>
@@ -114,13 +345,8 @@
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="{x:Type GroupItem}">
-                                        <Expander IsExpanded="True"
-                                                  Header="{Binding Name}"
-                                                  Background="{DynamicResource HoverAltSurfaceBrush}"
-                                                  Foreground="{DynamicResource TextSecondaryBrush}"
-                                                  BorderBrush="{DynamicResource BorderAltBrush}"
-                                                  BorderThickness="0,0,0,1"
-                                                  Padding="4,2">
+                                        <Expander Style="{StaticResource CategoryExpander}"
+                                                  Header="{Binding Name}">
                                             <ItemsPresenter/>
                                         </Expander>
                                     </ControlTemplate>
@@ -131,37 +357,56 @@
                 </GroupStyle>
             </DataGrid.GroupStyle>
             <DataGrid.Columns>
-                <DataGridTextColumn x:Name="ColName" Binding="{Binding Name}" Width="*" MinWidth="120"/>
-                <DataGridTextColumn x:Name="ColStatus" Binding="{Binding Status}" Width="80" MinWidth="60"/>
-                <DataGridTextColumn x:Name="ColVersion" Binding="{Binding VersionLabel}" Width="60" MinWidth="50"/>
-                <DataGridTextColumn x:Name="ColUpdated" Binding="{Binding UpdatedAtUtc, StringFormat='{}{0:yyyy-MM-dd}'}" Width="90" MinWidth="70"/>
+                <DataGridTextColumn x:Name="ColName" Binding="{Binding Name}" Width="*" MinWidth="120">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="8,0,4,0"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColStatus" Binding="{Binding Status}" Width="80" MinWidth="60">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="4,0"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColVersion" Binding="{Binding VersionLabel}" Width="60" MinWidth="50">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="4,0"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColUpdated" Binding="{Binding UpdatedAtUtc, StringFormat='{}{0:yyyy-MM-dd}'}" Width="90" MinWidth="70">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="4,0"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
             </DataGrid.Columns>
         </DataGrid>
 
-            <Grid Grid.Row="2" Margin="0,4,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+        <Grid Grid.Row="2" Margin="0,4,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0"
-                           Text="{Binding StatusMessage}"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+            <TextBlock Grid.Column="0"
+                       Text="{Binding StatusMessage}"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}"/>
 
-                <TextBlock Grid.Column="1"
-                           Text="{Binding TotalItemCount}"
-                           VerticalAlignment="Center"
-                           Margin="8,0,0,0"/>
-
-                <Button Grid.Column="2"
-                        Content="{DynamicResource FM_EditMetadata}"
-                        Command="{Binding EditMetadataCommand}"
-                        IsEnabled="{Binding CanLoadToProject}"
-                        Margin="8,0,0,0"
-                        MinWidth="80"
-                        Style="{DynamicResource SecondaryButton}"/>
-            </Grid>
+            <TextBlock Grid.Column="1"
+                       Text="{Binding TotalItemCount}"
+                       VerticalAlignment="Center"
+                       Margin="8,0,0,0"/>
+        </Grid>
     </Grid>
 </UserControl>

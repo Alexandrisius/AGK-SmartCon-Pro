@@ -63,10 +63,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
 
-        // Initialize empty view to prevent column collapse
         FamilyItemsView = new ListCollectionView(new ObservableCollection<FamilyCatalogItemRow>());
 
-        // Initial load
         _ = InitializeAsync();
     }
 
@@ -76,20 +74,27 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         await SearchAsync();
     }
 
+    private bool _suppressDatabaseChanged;
+
     private void RefreshDatabases()
     {
-        var list = _databaseManager.ListDatabases();
-        Databases = new ObservableCollection<DatabaseInfo>(list);
-        SelectedDatabase = Databases.FirstOrDefault(d => d.Id == _databaseManager.GetActiveDatabaseId());
+        _suppressDatabaseChanged = true;
+        try
+        {
+            var list = _databaseManager.ListDatabases();
+            Databases = new ObservableCollection<DatabaseInfo>(list);
+            SelectedDatabase = Databases.FirstOrDefault(d => d.Id == _databaseManager.GetActiveDatabaseId());
+        }
+        finally
+        {
+            _suppressDatabaseChanged = false;
+        }
     }
 
     private void OnActiveDatabaseChanged(object? sender, string databaseId)
     {
-        System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
-        {
-            RefreshDatabases();
-            _ = SearchAsync();
-        });
+        RefreshDatabases();
+        _ = SearchAsync();
     }
 
     partial void OnSearchTextChanged(string value)
@@ -107,6 +112,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     partial void OnSelectedDatabaseChanged(DatabaseInfo? value)
     {
         if (value is null) return;
+        if (_suppressDatabaseChanged) return;
         if (value.Id == _databaseManager.GetActiveDatabaseId()) return;
         _ = SwitchDatabaseAsync(value.Id);
     }
@@ -120,17 +126,19 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             if (success)
             {
                 var dbName = Databases.FirstOrDefault(d => d.Id == databaseId)?.Name ?? databaseId;
-                StatusMessage = $"База данных переключена на: {dbName}";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Database switched to: {0}",
+                    dbName);
             }
             else
             {
-                StatusMessage = "Ошибка переключения базы данных";
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database";
                 RefreshDatabases();
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Ошибка: {ex.Message}";
+            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database"}: {ex.Message}";
         }
         finally
         {
@@ -172,7 +180,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 {
                     Id = item.Id,
                     Name = item.Name,
-                    CategoryName = string.IsNullOrWhiteSpace(item.CategoryName) ? "Без категории" : item.CategoryName,
+                    CategoryName = string.IsNullOrWhiteSpace(item.CategoryName)
+                        ? LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category"
+                        : item.CategoryName,
                     Manufacturer = item.Manufacturer,
                     Status = item.Status,
                     CurrentVersionId = item.CurrentVersionId,
@@ -309,15 +319,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             if (selectedVersionId is null)
             {
-                StatusMessage = "No version selected";
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoVersionSelected) ?? "No version selected";
                 return;
             }
 
             try
             {
-                var resolved = _fileResolver.ResolveForLoadAsync(selectedVersionId, CancellationToken.None).Result;
+                var resolved = _fileResolver.ResolveForLoadAsync(selectedVersionId, CancellationToken.None).GetAwaiter().GetResult();
                 var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName };
-                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).Result;
+                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
 
                 if (result.Success)
                 {
@@ -334,7 +344,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                         Action: "Load",
                         CreatedAtUtc: DateTimeOffset.UtcNow);
 
-                    _usageRepo.RecordUsageAsync(usage, CancellationToken.None).Wait();
+                    _usageRepo.RecordUsageAsync(usage, CancellationToken.None).GetAwaiter().GetResult();
                 }
                 else
                 {
@@ -375,9 +385,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private async Task CreateDatabaseAsync()
     {
         var name = _dialogService.ShowInputDialog(
-            "Новая база данных",
-            "Введите название новой базы данных:",
-            "Новый каталог");
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewTitle) ?? "New Database",
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPrompt) ?? "Enter new database name:",
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewDefault) ?? "New Catalog");
 
         if (string.IsNullOrWhiteSpace(name)) return;
 
@@ -387,11 +397,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             var db = await _databaseManager.CreateDatabaseAsync(name!.Trim());
             RefreshDatabases();
             SelectedDatabase = Databases.FirstOrDefault(d => d.Id == db.Id);
-            StatusMessage = $"База данных \"{db.Name}\" создана";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created",
+                db.Name);
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Ошибка создания БД: {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error creating database: {0}",
+                ex.Message);
         }
         finally
         {
@@ -408,13 +422,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         var databases = _databaseManager.ListDatabases();
         if (isActive && databases.Count <= 1)
         {
-            _dialogService.ShowWarning("Удаление БД", "Нельзя удалить единственную базу данных.");
+            _dialogService.ShowWarning(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Delete Database",
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteSingle) ?? "Cannot delete the only database.");
             return;
         }
 
         var confirm = _dialogService.ShowInputDialog(
-            "Удаление базы данных",
-            $"Введите \"{SelectedDatabase.Name}\" для подтверждения удаления:",
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Delete Database",
+            string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeletePrompt) ?? "Enter \"{0}\" to confirm deletion:",
+                SelectedDatabase.Name),
             "");
 
         if (confirm != SelectedDatabase.Name) return;
@@ -425,17 +443,21 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             var success = await _databaseManager.DeleteDatabaseAsync(SelectedDatabase.Id);
             if (success)
             {
-                StatusMessage = $"База данных \"{SelectedDatabase.Name}\" удалена";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleted) ?? "Database \"{0}\" deleted",
+                    SelectedDatabase.Name);
                 RefreshDatabases();
             }
             else
             {
-                StatusMessage = "Ошибка удаления базы данных";
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteError) ?? "Error deleting database";
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Ошибка удаления БД: {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteError) ?? "Error deleting database: {0}",
+                ex.Message);
         }
         finally
         {
@@ -449,8 +471,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         if (SelectedItem is null) return;
 
         var confirmed = _dialogService.ShowConfirmation(
-            "Удаление семейства",
-            $"Удалить семейство \"{SelectedItem.Name}\" из каталога?");
+            LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteTitle) ?? "Delete Family",
+            string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeletePrompt) ?? "Delete family \"{0}\" from catalog?",
+                SelectedItem.Name));
 
         if (!confirmed) return;
 
@@ -460,17 +484,19 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             var success = await _writableProvider.DeleteItemAsync(SelectedItem.Id);
             if (success)
             {
-                StatusMessage = $"Семейство \"{SelectedItem.Name}\" удалено из каталога";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleted) ?? "Family \"{0}\" deleted from catalog",
+                    SelectedItem.Name);
                 await SearchAsync();
             }
             else
             {
-                StatusMessage = "Ошибка удаления семейства";
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error deleting family";
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Ошибка удаления: {ex.Message}";
+            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error deleting family"}: {ex.Message}";
         }
         finally
         {

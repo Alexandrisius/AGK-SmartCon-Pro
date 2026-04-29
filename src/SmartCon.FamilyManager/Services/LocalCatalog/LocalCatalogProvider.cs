@@ -14,14 +14,14 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         _database = database;
     }
 
-    public async Task<FamilyImportResult> ImportAsync(FamilyImportRequest request, CancellationToken ct = default)
+    public Task<FamilyImportResult> ImportAsync(FamilyImportRequest request, CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException("Use IFamilyImportService for import operations.");
     }
 
-    public async Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default)
+    public Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException("Use IFamilyImportService for import operations.");
     }
 
     public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, FamilyContentStatus? status, CancellationToken ct = default)

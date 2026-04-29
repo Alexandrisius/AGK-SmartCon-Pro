@@ -15,11 +15,11 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
 
     public string? ShowOpenFileDialog(string title, string? initialDirectory = null)
     {
-        using var dialog = new OpenFileDialog();
+        var dialog = new Microsoft.Win32.OpenFileDialog();
         dialog.Title = title;
         dialog.Filter = "Revit Family Files (*.rfa)|*.rfa|All Files (*.*)|*.*";
         if (initialDirectory is not null) dialog.InitialDirectory = initialDirectory;
-        return dialog.ShowDialog() == DialogResult.OK ? dialog.FileName : null;
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
     public string? ShowFolderBrowserDialog(string title, string? initialDirectory = null)
@@ -45,15 +45,7 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
             InputText = defaultText
         };
         var view = new Views.InputDialogView(vm);
-        var window = new System.Windows.Window
-        {
-            Title = title,
-            Content = view,
-            SizeToContent = System.Windows.SizeToContent.WidthAndHeight,
-            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen,
-            ResizeMode = System.Windows.ResizeMode.NoResize
-        };
-        var result = window.ShowDialog();
+        var result = view.ShowDialog();
         return result == true ? vm.InputText : null;
     }
 
