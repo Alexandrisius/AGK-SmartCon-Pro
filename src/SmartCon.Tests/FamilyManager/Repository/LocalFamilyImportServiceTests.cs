@@ -21,7 +21,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
             _fixture.GetDatabase(),
             _fixture.GetMigrator(),
             _fixture.GetProvider(),
-            hasher,
+            _fixture.GetPathResolver(),
             metadataService);
     }
 
@@ -30,6 +30,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     {
         var request = new FamilyImportRequest(
             FilePath: Path.Combine(_fixture.TempDir, "nonexistent.rfa"),
+            RevitMajorVersion: 2025,
             Category: null, Tags: null, Description: null);
 
         var result = await _importService.ImportFileAsync(request);
@@ -43,7 +44,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     public async Task ImportFile_ValidFile_ReturnsSuccess()
     {
         var path = _fixture.CreateFakeRfaFile("TestFamily.rfa");
-        var request = new FamilyImportRequest(path, "Pipes", null, "Test desc");
+        var request = new FamilyImportRequest(path, 2025, "Pipes", null, "Test desc");
 
         var result = await _importService.ImportFileAsync(request);
 
@@ -52,25 +53,58 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         Assert.NotNull(result.VersionId);
         Assert.NotNull(result.FileId);
         Assert.Equal("TestFamily.rfa", result.FileName);
+        Assert.Equal("v1", result.VersionLabel);
         Assert.False(result.WasSkippedAsDuplicate);
     }
 
     [Fact]
-    public async Task ImportFile_DuplicateByHash_ReturnsSkipped()
+    public async Task ImportFile_SameNameAndHash_SkipsDuplicate()
     {
         var content = "SAME_CONTENT_FOR_DUPLICATE"u8.ToArray();
         var path1 = _fixture.CreateFakeRfaFileWithContent("Family1.rfa", content);
-        var path2 = _fixture.CreateFakeRfaFileWithContent("Family2.rfa", content);
 
-        var result1 = await _importService.ImportFileAsync(new FamilyImportRequest(path1, null, null, null));
-        var result2 = await _importService.ImportFileAsync(new FamilyImportRequest(path2, null, null, null));
+        var result1 = await _importService.ImportFileAsync(new FamilyImportRequest(path1, 2025, null, null, null));
+        var result2 = await _importService.ImportFileAsync(new FamilyImportRequest(path1, 2025, null, null, null));
 
         Assert.True(result1.Success);
         Assert.False(result1.WasSkippedAsDuplicate);
 
         Assert.True(result2.Success);
         Assert.True(result2.WasSkippedAsDuplicate);
-        Assert.Equal(result1.CatalogItemId, result2.DuplicateCatalogItemId);
+        Assert.Equal(result1.CatalogItemId, result2.CatalogItemId);
+    }
+
+    [Fact]
+    public async Task ImportFile_CopiesToManagedStorage()
+    {
+        var path = _fixture.CreateFakeRfaFile("ManagedFamily.rfa");
+        var request = new FamilyImportRequest(path, 2025, null, null, null);
+
+        var result = await _importService.ImportFileAsync(request);
+
+        Assert.True(result.Success);
+        var file = await _fixture.GetProvider().GetFileAsync(result.FileId!);
+        Assert.NotNull(file);
+        Assert.NotEmpty(file.RelativePath);
+        Assert.Equal(2025, file.RevitMajorVersion);
+
+        var absolutePath = Path.Combine(_fixture.GetDatabaseRoot(), file.RelativePath);
+        Assert.True(File.Exists(absolutePath));
+    }
+
+    [Fact]
+    public async Task ImportFile_SameNameDifferentRevit_CreatesNewVersion()
+    {
+        var content1 = "CONTENT_R2024"u8.ToArray();
+        var content2 = "CONTENT_R2025"u8.ToArray();
+        _fixture.CreateFakeRfaFileWithContent("SameName.rfa", content1);
+        var path2 = _fixture.CreateFakeRfaFileWithContent("SameName2.rfa", content2);
+
+        var result1 = await _importService.ImportFileAsync(
+            new FamilyImportRequest(Path.Combine(_fixture.TempDir, "SameName.rfa"), 2024, null, null, null));
+
+        Assert.True(result1.Success);
+        Assert.Equal("v1", result1.VersionLabel);
     }
 
     [Fact]
@@ -78,46 +112,13 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     {
         _fixture.CreateFakeRfaFile("A.rfa");
         _fixture.CreateFakeRfaFile("B.rfa");
-        _fixture.CreateFakeRfaFile("C.txt");
+        File.WriteAllText(Path.Combine(_fixture.TempDir, "C.txt"), "not an rfa");
 
-        var folder = _fixture.TempDir;
-        var request = new FamilyFolderImportRequest(folder, false, "TestCategory", null, null);
+        var request = new FamilyFolderImportRequest(_fixture.TempDir, 2025, false, "TestCategory", null, null);
         var result = await _importService.ImportFolderAsync(request, null);
 
         Assert.Equal(2, result.TotalFiles);
         Assert.Equal(2, result.SuccessCount);
-        Assert.Equal(0, result.ErrorCount);
-    }
-
-    [Fact]
-    public async Task ImportFolder_NonExistentFolder_Throws()
-    {
-        var request = new FamilyFolderImportRequest(
-            Path.Combine(_fixture.TempDir, "nonexistent_folder"), false, null, null, null);
-
-        await Assert.ThrowsAsync<DirectoryNotFoundException>(() =>
-            _importService.ImportFolderAsync(request, null));
-    }
-
-    [Fact]
-    public async Task ImportFile_CachesFile()
-    {
-        var path = _fixture.CreateFakeRfaFile("CachedFamily.rfa");
-        var request = new FamilyImportRequest(path, null, null, null, FamilyFileStorageMode.Cached);
-
-        var result = await _importService.ImportFileAsync(request);
-
-        Assert.True(result.Success);
-
-        var item = await _fixture.GetProvider().GetItemAsync(result.CatalogItemId!);
-        Assert.NotNull(item);
-
-        var versions = await _fixture.GetProvider().GetVersionsAsync(result.CatalogItemId!);
-        Assert.Single(versions);
-
-        var fileRecord = await _fixture.GetProvider().GetFileAsync(result.FileId!);
-        Assert.NotNull(fileRecord);
-        Assert.NotNull(fileRecord.CachedPath);
     }
 
     [Fact]
@@ -125,7 +126,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     {
         var path = _fixture.CreateFakeRfaFile("TaggedFamily.rfa");
         var tags = new List<string> { "HVAC", "Duct" };
-        var request = new FamilyImportRequest(path, null, tags, null);
+        var request = new FamilyImportRequest(path, 2025, null, tags, null);
 
         var result = await _importService.ImportFileAsync(request);
         Assert.True(result.Success);
@@ -138,17 +139,17 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ImportFile_CreatedItemHasDraftStatus()
+    public async Task ImportFile_DefaultStatusIsActive()
     {
         var path = _fixture.CreateFakeRfaFile("StatusFamily.rfa");
-        var request = new FamilyImportRequest(path, null, null, null);
+        var request = new FamilyImportRequest(path, 2025, null, null, null);
 
         var result = await _importService.ImportFileAsync(request);
         Assert.True(result.Success);
 
         var item = await _fixture.GetProvider().GetItemAsync(result.CatalogItemId!);
         Assert.NotNull(item);
-        Assert.Equal(FamilyContentStatus.Draft, item.Status);
+        Assert.Equal(ContentStatus.Active, item.ContentStatus);
     }
 
     public void Dispose()

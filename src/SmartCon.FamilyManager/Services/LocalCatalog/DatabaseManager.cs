@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
@@ -15,169 +16,266 @@ internal sealed class DatabaseManager : IDatabaseManager
     };
 
     private readonly LocalCatalogDatabase _catalogDatabase;
-    private readonly string _rootPath;
     private readonly string _registryPath;
 
     public DatabaseManager(LocalCatalogDatabase catalogDatabase)
     {
         _catalogDatabase = catalogDatabase;
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        _rootPath = Path.Combine(appData, "SmartCon", "FamilyManager", "databases");
-        _registryPath = Path.Combine(Path.GetDirectoryName(_rootPath)!, "databases.json");
+        var fmDir = Path.Combine(appData, "SmartCon", "FamilyManager");
+        Directory.CreateDirectory(fmDir);
+        _registryPath = Path.Combine(fmDir, "registry.json");
 
         var registry = LoadRegistry();
-        _catalogDatabase.SwitchDatabase(registry.ActiveDatabaseId);
+        if (registry.ActiveConnectionId is not null)
+        {
+            var active = registry.Connections.FirstOrDefault(c => c.Id == registry.ActiveConnectionId);
+            if (active is not null)
+            {
+                _catalogDatabase.SwitchToPath(active.Path);
+            }
+        }
     }
 
     public event EventHandler<string>? ActiveDatabaseChanged;
 
-    public IReadOnlyList<DatabaseInfo> ListDatabases()
+    public IReadOnlyList<DatabaseConnection> ListConnections()
     {
         var registry = LoadRegistry();
-        return registry.Databases;
+        return registry.Connections;
     }
 
-    public string GetActiveDatabaseId()
+    public DatabaseConnection? GetActiveConnection()
     {
         var registry = LoadRegistry();
-        return registry.ActiveDatabaseId;
+        if (registry.ActiveConnectionId is null) return null;
+        return registry.Connections.FirstOrDefault(c => c.Id == registry.ActiveConnectionId);
     }
 
-    public async Task<DatabaseInfo> CreateDatabaseAsync(string name, CancellationToken ct = default)
+    public string? GetActiveDatabasePath()
+    {
+        return GetActiveConnection()?.Path;
+    }
+
+    public async Task<DatabaseConnection> CreateDatabaseAsync(string name, string path, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Database name cannot be empty.", nameof(name));
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Database path cannot be empty.", nameof(path));
 
-        var registry = LoadRegistry();
         var id = Guid.NewGuid().ToString("N");
-        var dbPath = Path.Combine(_rootPath, id);
-        Directory.CreateDirectory(dbPath);
+        var dbRoot = Path.GetFullPath(Path.Combine(path, name.Trim()));
+        Directory.CreateDirectory(dbRoot);
 
-        var info = new DatabaseInfo(id, name.Trim(), DateTimeOffset.UtcNow);
-        var databases = registry.Databases.ToList();
-        databases.Add(info);
+        var connection = new DatabaseConnection(id, name.Trim(), dbRoot, DateTimeOffset.UtcNow);
 
-        // Temporarily switch to new DB path, migrate, then restore
-        var previousDbId = registry.ActiveDatabaseId;
-        _catalogDatabase.SwitchDatabase(id);
+        var previousRoot = _catalogDatabase.GetDatabaseRoot();
+        _catalogDatabase.SwitchToPath(dbRoot);
         try
         {
             var migrator = new LocalCatalogMigrator(_catalogDatabase);
             await migrator.MigrateAsync(ct);
+
+            using var dbConn = _catalogDatabase.CreateConnection();
+            await dbConn.OpenAsync(ct);
+            using var metaCmd = dbConn.CreateCommand();
+            metaCmd.CommandText = """
+                INSERT INTO database_meta (id, name, description, created_at_utc, schema_version)
+                VALUES (@id, @name, @description, @createdAtUtc, 2)
+                """;
+            metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", id));
+            metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", name.Trim()));
+            metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@description", DBNull.Value));
+            metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+            await metaCmd.ExecuteNonQueryAsync(ct);
         }
-        finally
+        catch
         {
-            _catalogDatabase.SwitchDatabase(previousDbId);
+            _catalogDatabase.SwitchToPath(previousRoot);
+            throw;
         }
 
-        // Save registry after successful migration
-        await SaveRegistryAsync(new DatabaseRegistry(registry.ActiveDatabaseId, databases), ct);
+        var registry = LoadRegistry();
+        var connections = registry.Connections.ToList();
+        connections.Add(connection);
+        await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
 
-        return info;
+        _catalogDatabase.SwitchToPath(dbRoot);
+        ActiveDatabaseChanged?.Invoke(this, id);
+        return connection;
     }
 
-    public Task<bool> SwitchDatabaseAsync(string databaseId, CancellationToken ct = default)
+    public async Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var dbFile = Path.Combine(fullPath, "catalog.db");
+        if (!File.Exists(dbFile))
+            throw new FileNotFoundException($"Database not found at: {fullPath}");
+
+        var id = Guid.NewGuid().ToString("N");
+        var name = Path.GetFileName(fullPath);
+
+        using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbFile};Mode=ReadOnly;Pooling=false");
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM database_meta LIMIT 1";
+        var dbName = await cmd.ExecuteScalarAsync(ct) as string;
+        if (dbName is not null)
+            name = dbName;
+
+        var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow);
+
+        var registry = LoadRegistry();
+        var connections = registry.Connections.ToList();
+        connections.Add(connection);
+        await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
+
+        _catalogDatabase.SwitchToPath(fullPath);
+        ActiveDatabaseChanged?.Invoke(this, id);
+        return connection;
+    }
+
+    public Task<bool> SwitchDatabaseAsync(string connectionId, CancellationToken ct = default)
     {
         var registry = LoadRegistry();
-        if (!registry.Databases.Any(d => d.Id == databaseId))
+        var conn = registry.Connections.FirstOrDefault(c => c.Id == connectionId);
+        if (conn is null)
             return Task.FromResult(false);
 
-        if (registry.ActiveDatabaseId == databaseId)
+        if (registry.ActiveConnectionId == connectionId)
             return Task.FromResult(true);
 
-        var newRegistry = new DatabaseRegistry(databaseId, registry.Databases);
-        SaveRegistry(newRegistry);
+        SaveRegistry(new DatabaseConnectionRegistry(connectionId, registry.Connections));
+        _catalogDatabase.SwitchToPath(conn.Path);
 
-        _catalogDatabase.SwitchDatabase(databaseId);
-
-        ActiveDatabaseChanged?.Invoke(this, databaseId);
+        ActiveDatabaseChanged?.Invoke(this, connectionId);
         return Task.FromResult(true);
     }
 
-    public async Task<bool> DeleteDatabaseAsync(string databaseId, CancellationToken ct = default)
+    public Task<bool> DisconnectDatabaseAsync(string connectionId, CancellationToken ct = default)
     {
         var registry = LoadRegistry();
-        var db = registry.Databases.FirstOrDefault(d => d.Id == databaseId);
-        if (db is null)
+        var conn = registry.Connections.FirstOrDefault(c => c.Id == connectionId);
+        if (conn is null)
+            return Task.FromResult(false);
+
+        var connections = registry.Connections.Where(c => c.Id != connectionId).ToList();
+
+        string? newActiveId = registry.ActiveConnectionId;
+        if (registry.ActiveConnectionId == connectionId)
+        {
+            var other = connections.FirstOrDefault();
+            if (other is null)
+                return Task.FromResult(false);
+
+            newActiveId = other.Id;
+            _catalogDatabase.SwitchToPath(other.Path);
+        }
+
+        SaveRegistry(new DatabaseConnectionRegistry(newActiveId, connections));
+        ActiveDatabaseChanged?.Invoke(this, newActiveId ?? connectionId);
+        return Task.FromResult(true);
+    }
+
+    public async Task<bool> DeleteDatabaseAsync(string connectionId, CancellationToken ct = default)
+    {
+        var registry = LoadRegistry();
+        var conn = registry.Connections.FirstOrDefault(c => c.Id == connectionId);
+        if (conn is null)
             return false;
 
-        // If deleting active database, switch to another one first
-        string newActiveId = registry.ActiveDatabaseId;
-        if (registry.ActiveDatabaseId == databaseId)
-        {
-            var otherDb = registry.Databases.FirstOrDefault(d => d.Id != databaseId);
-            if (otherDb is null)
-                return false; // Cannot delete the only database
+        var connections = registry.Connections.Where(c => c.Id != connectionId).ToList();
 
-            newActiveId = otherDb.Id;
-            _catalogDatabase.SwitchDatabase(newActiveId);
+        string? newActiveId = registry.ActiveConnectionId;
+        if (registry.ActiveConnectionId == connectionId)
+        {
+            var other = connections.FirstOrDefault();
+            if (other is null)
+                return false;
+
+            newActiveId = other.Id;
+            _catalogDatabase.SwitchToPath(other.Path);
         }
 
-        var dbPath = Path.Combine(_rootPath, databaseId);
-        if (Directory.Exists(dbPath))
+        if (Directory.Exists(conn.Path))
         {
-            Directory.Delete(dbPath, recursive: true);
+            DeleteDirectoryWithRetry(conn.Path);
         }
 
-        var databases = registry.Databases.Where(d => d.Id != databaseId).ToList();
-        await SaveRegistryAsync(new DatabaseRegistry(newActiveId, databases), ct);
+        await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
 
-        if (newActiveId != registry.ActiveDatabaseId)
+        if (newActiveId != registry.ActiveConnectionId)
         {
-            ActiveDatabaseChanged?.Invoke(this, newActiveId);
+            ActiveDatabaseChanged?.Invoke(this, newActiveId!);
         }
 
+        SmartConLogger.Info($"[DatabaseManager] Database at '{conn.Path}' deleted");
         return true;
     }
 
-    private DatabaseRegistry LoadRegistry()
+    private static void DeleteDirectoryWithRetry(string path, int maxRetries = 3)
+    {
+        for (var i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (IOException) when (i < maxRetries - 1)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                Thread.Sleep(200 * (i + 1));
+            }
+        }
+    }
+
+    private DatabaseConnectionRegistry LoadRegistry()
     {
         if (!File.Exists(_registryPath))
         {
-            var defaultDbName = LanguageManager.GetString(StringLocalization.Keys.FM_DefaultDbName) ?? "Main Catalog";
-            var defaultDb = new DatabaseInfo("default", defaultDbName, DateTimeOffset.UtcNow);
-            var registry = new DatabaseRegistry("default", new[] { defaultDb });
+            var registry = new DatabaseConnectionRegistry(null, []);
             SaveRegistry(registry);
-
-            var dbPath = Path.Combine(_rootPath, "default");
-            Directory.CreateDirectory(dbPath);
-            _catalogDatabase.SwitchDatabase("default");
-            var migrator = new LocalCatalogMigrator(_catalogDatabase);
-            migrator.Migrate();
-
             return registry;
         }
 
-        var json = File.ReadAllText(_registryPath);
-        var dto = JsonSerializer.Deserialize<RegistryDto>(json, JsonOptions);
-        if (dto is null || dto.Databases is null)
+        try
         {
-            var fallbackDbName = LanguageManager.GetString(StringLocalization.Keys.FM_DefaultDbName) ?? "Main Catalog";
-            var fallbackDb = new DatabaseInfo("default", fallbackDbName, DateTimeOffset.UtcNow);
-            return new DatabaseRegistry("default", new[] { fallbackDb });
+            var json = File.ReadAllText(_registryPath);
+            var dto = JsonSerializer.Deserialize<RegistryDto>(json, JsonOptions);
+            if (dto is null)
+                return new DatabaseConnectionRegistry(null, []);
+
+            var connections = dto.Connections
+                .Select(c => new DatabaseConnection(c.Id, c.Name, c.Path, c.CreatedAtUtc))
+                .ToList();
+
+            return new DatabaseConnectionRegistry(dto.ActiveConnectionId, connections);
         }
-
-        var databases = dto.Databases
-            .Select(d => new DatabaseInfo(d.Id, d.Name, d.CreatedAtUtc))
-            .ToList();
-
-        return new DatabaseRegistry(dto.ActiveDatabaseId, databases);
+        catch
+        {
+            return new DatabaseConnectionRegistry(null, []);
+        }
     }
 
-    private void SaveRegistry(DatabaseRegistry registry)
+    private void SaveRegistry(DatabaseConnectionRegistry registry)
     {
         var dir = Path.GetDirectoryName(_registryPath)!;
         Directory.CreateDirectory(dir);
 
         var dto = new RegistryDto
         {
-            ActiveDatabaseId = registry.ActiveDatabaseId,
-            Databases = registry.Databases
-                .Select(d => new DatabaseDto
+            ActiveConnectionId = registry.ActiveConnectionId,
+            Connections = registry.Connections
+                .Select(c => new ConnectionDto
                 {
-                    Id = d.Id,
-                    Name = d.Name,
-                    CreatedAtUtc = d.CreatedAtUtc
+                    Id = c.Id,
+                    Name = c.Name,
+                    Path = c.Path,
+                    CreatedAtUtc = c.CreatedAtUtc
                 })
                 .ToList()
         };
@@ -186,7 +284,7 @@ internal sealed class DatabaseManager : IDatabaseManager
         File.WriteAllText(_registryPath, json);
     }
 
-    private Task SaveRegistryAsync(DatabaseRegistry registry, CancellationToken ct)
+    private Task SaveRegistryAsync(DatabaseConnectionRegistry registry, CancellationToken ct)
     {
         SaveRegistry(registry);
         return Task.CompletedTask;
@@ -194,14 +292,15 @@ internal sealed class DatabaseManager : IDatabaseManager
 
     private sealed class RegistryDto
     {
-        public string ActiveDatabaseId { get; set; } = string.Empty;
-        public List<DatabaseDto> Databases { get; set; } = new();
+        public string? ActiveConnectionId { get; set; }
+        public List<ConnectionDto> Connections { get; set; } = new();
     }
 
-    private sealed class DatabaseDto
+    private sealed class ConnectionDto
     {
         public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string Path { get; set; } = string.Empty;
         public DateTimeOffset CreatedAtUtc { get; set; }
     }
 }

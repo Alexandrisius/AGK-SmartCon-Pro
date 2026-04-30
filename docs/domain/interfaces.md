@@ -599,13 +599,13 @@ public interface IViewRepository
 
 ## FamilyManager Interfaces
 
-Интерфейсы модуля FamilyManager. Все интерфейсы — в `SmartCon.Core/Services/Interfaces/`.
+Интерфейсы модуля FamilyManager (Phase 13: Published Storage). Все интерфейсы — в `SmartCon.Core/Services/Interfaces/`.
 
 ### IFamilyCatalogProvider
 
 Чтение каталога семейств: поиск, получение версий и файлов. Все методы — async.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyCatalogProvider.cs`
+**Файл:** `IFamilyCatalogProvider.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalCatalogProvider.cs`
 
 ```csharp
@@ -617,14 +617,15 @@ public interface IFamilyCatalogProvider
     Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default);
     Task<FamilyFileRecord?> GetFileAsync(string fileId, CancellationToken ct = default);
     Task<int> GetItemCountAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default);
 }
 ```
 
 ### IWritableFamilyCatalogProvider
 
-Запись в каталог: импорт, обновление, удаление записей. **Не наследует** `IFamilyCatalogProvider`.
+Запись в каталог: импорт, обновление, удаление записей. Импорт копирует файлы в managed storage.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IWritableFamilyCatalogProvider.cs`
+**Файл:** `IWritableFamilyCatalogProvider.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalCatalogProvider.cs`
 
 ```csharp
@@ -632,16 +633,16 @@ public interface IWritableFamilyCatalogProvider
 {
     Task<FamilyImportResult> ImportAsync(FamilyImportRequest request, CancellationToken ct = default);
     Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
-    Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, FamilyContentStatus? status, CancellationToken ct = default);
+    Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default);
     Task<bool> DeleteItemAsync(string id, CancellationToken ct = default);
 }
 ```
 
 ### IFamilyImportService
 
-Оркестрация импорта семейств: валидация, хеширование, копирование в кэш, запись в каталог.
+Оркестрация импорта семейств: валидация, хеширование, копирование в managed storage, запись в каталог.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyImportService.cs`
+**Файл:** `IFamilyImportService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportService.cs`
 
 ```csharp
@@ -654,16 +655,33 @@ public interface IFamilyImportService
 
 ### IFamilyFileResolver
 
-Разрешение путей к файлам семейств: кэш → абсолютный путь для загрузки.
+Разрешение путей к файлам семейств из managed storage. Выбирает лучший файл для целевой версии Revit.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyFileResolver.cs`
+**Файл:** `IFamilyFileResolver.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFileResolver.cs`
 
 ```csharp
 public interface IFamilyFileResolver
 {
-    Task<FamilyResolvedFile> ResolveForLoadAsync(string versionId, CancellationToken ct = default);
-    string GetCanonicalRoot();
+    Task<FamilyResolvedFile> ResolveForLoadAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
+    string? GetDatabaseRoot();
+}
+```
+
+### IFamilyAssetService
+
+Управление вспомогательными ассетами (изображения, документы, lookup tables) семейств.
+
+**Файл:** `IFamilyAssetService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyAssetService.cs`
+
+```csharp
+public interface IFamilyAssetService
+{
+    Task<FamilyAsset> AddAssetAsync(string catalogItemId, string? versionLabel, FamilyAssetType assetType, string sourceFilePath, string? description, CancellationToken ct = default);
+    Task<IReadOnlyList<FamilyAsset>> GetAssetsAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default);
+    Task<bool> DeleteAssetAsync(string assetId, CancellationToken ct = default);
+    Task<string?> ResolveAssetPathAsync(string assetId, CancellationToken ct = default);
 }
 ```
 
@@ -672,7 +690,7 @@ public interface IFamilyFileResolver
 Загрузка семейства в проект Revit. **Не содержит `Document` в параметрах** — Document получается через `IRevitContext` в реализации.
 **Вызывать только из ExternalEvent handler (I-01).**
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyLoadService.cs`
+**Файл:** `IFamilyLoadService.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyLoadService.cs`
 
 ```csharp
@@ -686,7 +704,7 @@ public interface IFamilyLoadService
 
 Извлечение метаданных из `.rfa`. MVP: метаданные файлового уровня (имя, размер, хеш, timestamps). Post-MVP: глубокое извлечение через Revit API.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyMetadataExtractionService.cs`
+**Файл:** `IFamilyMetadataExtractionService.cs`
 
 ```csharp
 public interface IFamilyMetadataExtractionService
@@ -699,7 +717,7 @@ public interface IFamilyMetadataExtractionService
 
 Хранение истории использования семейств в проектах. Пишет в локальный SQLite, не зависит от Revit API.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IProjectFamilyUsageRepository.cs`
+**Файл:** `IProjectFamilyUsageRepository.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalProjectFamilyUsageRepository.cs`
 
 ```csharp
@@ -713,28 +731,31 @@ public interface IProjectFamilyUsageRepository
 
 ### IDatabaseManager
 
-Управление базами данных каталога: создание, переключение, удаление. Событие `ActiveDatabaseChanged` оповещает об изменении активной БД.
+Управление подключениями к базам данных каталога. Registry хранится в `%APPDATA%\SmartCon\FamilyManager\registry.json`.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IDatabaseManager.cs`
+**Файл:** `IDatabaseManager.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/DatabaseManager.cs`
 
 ```csharp
 public interface IDatabaseManager
 {
-    IReadOnlyList<DatabaseInfo> ListDatabases();
-    string GetActiveDatabaseId();
-    Task<DatabaseInfo> CreateDatabaseAsync(string name, CancellationToken ct = default);
-    Task<bool> SwitchDatabaseAsync(string databaseId, CancellationToken ct = default);
-    Task<bool> DeleteDatabaseAsync(string databaseId, CancellationToken ct = default);
+    IReadOnlyList<DatabaseConnection> ListConnections();
+    DatabaseConnection? GetActiveConnection();
+    string? GetActiveDatabasePath();
+    Task<DatabaseConnection> CreateDatabaseAsync(string name, string path, CancellationToken ct = default);
+    Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default);
+    Task<bool> SwitchDatabaseAsync(string connectionId, CancellationToken ct = default);
+    Task<bool> DisconnectDatabaseAsync(string connectionId, CancellationToken ct = default);
+    Task<bool> DeleteDatabaseAsync(string connectionId, CancellationToken ct = default);
     event EventHandler<string>? ActiveDatabaseChanged;
 }
 ```
 
 ### IFamilyManagerDialogService
 
-UI-диалоги модуля FamilyManager. Аналог `IDialogService` для PipeConnect.
+UI-диалоги модуля FamilyManager.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyManagerDialogService.cs`
+**Файл:** `IFamilyManagerDialogService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/FamilyManagerDialogService.cs`
 
 ```csharp
@@ -754,12 +775,13 @@ public interface IFamilyManagerDialogService
 
 Абстракция для ExternalEvent, используемого FamilyManager. Вызов `Raise` ставит `Action` в очередь на выполнение в контексте Revit API.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyManagerExternalEvent.cs`
+**Файл:** `IFamilyManagerExternalEvent.cs`
 **Реализация:** `SmartCon.FamilyManager/Events/FamilyManagerExternalEvent.cs`
 
 ```csharp
 public interface IFamilyManagerExternalEvent
 {
     void Raise(Action action);
+    void RaiseWithApplication(Action<object> actionWithApp);
 }
 ```

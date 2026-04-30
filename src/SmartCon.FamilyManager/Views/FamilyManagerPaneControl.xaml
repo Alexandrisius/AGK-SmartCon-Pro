@@ -236,17 +236,17 @@
 
         <Grid Grid.Row="0" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="150"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="2*"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <ComboBox Grid.Column="0"
-                      ItemsSource="{Binding Databases}"
-                      SelectedItem="{Binding SelectedDatabase}"
+                      ItemsSource="{Binding Connections}"
+                      SelectedItem="{Binding SelectedConnection}"
                       DisplayMemberPath="Name"
                       VerticalContentAlignment="Center"
                       Margin="0,0,4,0"
@@ -254,10 +254,11 @@
 
             <Button Grid.Column="1"
                     Command="{Binding CreateDatabaseCommand}"
-                    Margin="0,0,4,0"
+                    Margin="0,0,2,0"
                     Width="28" Height="26"
                     Style="{DynamicResource SecondaryButton}"
-                    Padding="0">
+                    Padding="0"
+                    ToolTip="Create new database">
                 <Viewbox Width="8" Height="8" Stretch="Uniform">
                     <Path Data="M 0,4 L 8,4 M 4,0 L 4,8"
                           Stroke="{DynamicResource TextPrimaryBrush}"
@@ -266,21 +267,38 @@
             </Button>
 
             <Button Grid.Column="2"
-                    Command="{Binding DeleteDatabaseCommand}"
-                    Margin="0,0,8,0"
+                    Command="{Binding ConnectDatabaseCommand}"
+                    Margin="0,0,2,0"
                     Width="28" Height="26"
                     Style="{DynamicResource SecondaryButton}"
-                    Padding="0">
+                    Padding="0"
+                    ToolTip="Connect existing database">
                 <Viewbox Width="10" Height="10" Stretch="Uniform">
-                    <Path Data="M 0,0 L 10,10 M 0,10 L 10,0"
-                          Stroke="#FFE53935"
-                          StrokeThickness="2"
+                    <Path Data="M 1,5 L 4,8 L 9,2"
+                          Stroke="{DynamicResource TextPrimaryBrush}"
+                          StrokeThickness="1.5"
                           StrokeStartLineCap="Round"
                           StrokeEndLineCap="Round"/>
                 </Viewbox>
             </Button>
 
-            <Grid Grid.Column="3" Margin="0,0,4,0">
+            <Button Grid.Column="3"
+                    Command="{Binding DisconnectDatabaseCommand}"
+                    Margin="0,0,2,0"
+                    Width="28" Height="26"
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="0"
+                    ToolTip="{DynamicResource FM_Disconnect}">
+                <Viewbox Width="10" Height="10" Stretch="Uniform">
+                    <Path Data="M 1,1 L 9,9 M 9,1 L 1,9"
+                          Stroke="{DynamicResource TextMutedBrush}"
+                          StrokeThickness="1.5"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"/>
+                </Viewbox>
+            </Button>
+
+            <Grid Grid.Column="4" Margin="0,0,4,0">
                 <TextBox x:Name="SearchBox"
                          Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                          VerticalContentAlignment="Center"
@@ -295,16 +313,9 @@
                            IsHitTestVisible="False"/>
             </Grid>
 
-            <Button Grid.Column="4"
-                    Content="{DynamicResource FM_ImportFile}"
-                    Command="{Binding ImportFileCommand}"
-                    Margin="0,0,4,0"
-                    MinWidth="80"
-                    Style="{DynamicResource SecondaryButton}"/>
-
             <Button Grid.Column="5"
-                    Content="{DynamicResource FM_ImportFolder}"
-                    Command="{Binding ImportFolderCommand}"
+                    Content="{DynamicResource FM_Import}"
+                    Command="{Binding ImportCommand}"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"/>
         </Grid>
@@ -331,13 +342,6 @@
                               Style="{StaticResource ModernMenuItem}"/>
                     <MenuItem Header="{DynamicResource FM_LoadToProject}"
                               Command="{Binding LoadToProjectCommand}"
-                              Style="{StaticResource ModernMenuItem}"/>
-                    <Separator Style="{StaticResource ModernSeparator}"/>
-                    <MenuItem Header="{DynamicResource FM_SwitchToLinked}"
-                              Command="{Binding SwitchToLinkedCommand}"
-                              Style="{StaticResource ModernMenuItem}"/>
-                    <MenuItem Header="{DynamicResource FM_SwitchToCached}"
-                              Command="{Binding SwitchToCachedCommand}"
                               Style="{StaticResource ModernMenuItem}"/>
                     <Separator Style="{StaticResource ModernSeparator}"/>
                     <MenuItem Header="{DynamicResource FM_EditMetadata}"
@@ -376,17 +380,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-                <DataGridTextColumn x:Name="ColStorage" Binding="{Binding StorageMode}" Width="55" MinWidth="45">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="VerticalAlignment" Value="Center"/>
-                            <Setter Property="Padding" Value="4,0"/>
-                            <Setter Property="FontSize" Value="11"/>
-                            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn x:Name="ColStatus" Binding="{Binding Status}" Width="80" MinWidth="60">
+                <DataGridTextColumn x:Name="ColStatus" Binding="{Binding ContentStatus}" Width="80">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -394,7 +388,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-                <DataGridTextColumn x:Name="ColVersion" Binding="{Binding VersionLabel}" Width="60" MinWidth="50">
+                <DataGridTextColumn x:Name="ColVersion" Binding="{Binding VersionLabel}" Width="45">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -402,7 +396,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-                <DataGridTextColumn x:Name="ColUpdated" Binding="{Binding UpdatedAtUtc, StringFormat='{}{0:yyyy-MM-dd}'}" Width="90" MinWidth="70">
+                <DataGridTextColumn x:Name="ColUpdated" Binding="{Binding UpdatedAtUtc, StringFormat='{}{0:yyyy-MM-dd}'}" Width="85">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="VerticalAlignment" Value="Center"/>

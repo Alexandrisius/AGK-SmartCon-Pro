@@ -14,7 +14,7 @@ namespace SmartCon.Core.Models.FamilyManager;
 public sealed record FamilyCatalogQuery(
     string? SearchText,
     string? CategoryFilter,
-    FamilyContentStatus? StatusFilter,
+    ContentStatus? StatusFilter,
     IReadOnlyList<string>? Tags,
     string? ManufacturerFilter,
     FamilyCatalogSort Sort,

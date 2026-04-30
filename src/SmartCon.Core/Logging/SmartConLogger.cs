@@ -19,84 +19,96 @@ public static class SmartConLogger
 
     public static LogLevel MinLevel { get; set; } = LogLevel.Debug;
 
-    private static readonly Lazy<StreamWriter> _mainWriter;
-    private static readonly Lazy<StreamWriter> _lookupWriter;
-    private static readonly Lazy<StreamWriter> _formulaWriter;
+    private static StreamWriter? _mainWriterField;
+    private static StreamWriter? _lookupWriterField;
+    private static StreamWriter? _formulaWriterField;
 
     static SmartConLogger()
     {
         try { Directory.CreateDirectory(LogDir); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Init failed: {ex.Message}"); }
-
-        _mainWriter = new Lazy<StreamWriter>(() => CreateWriter(LogPath));
-        _lookupWriter = new Lazy<StreamWriter>(() => CreateWriter(LookupLogPath));
-        _formulaWriter = new Lazy<StreamWriter>(() => CreateWriter(FormulaLogPath));
     }
 
     private static StreamWriter CreateWriter(string path)
         => new StreamWriter(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
         { AutoFlush = true };
 
-    public static void Info(string message) => Write(_mainWriter, "INF", message);
+       public static void TruncateMainLog()
+    {
+        lock (_lock)
+        {
+            if (_mainWriterField != null)
+            {
+                try
+                {
+                    _mainWriterField.Flush();
+                    _mainWriterField.Dispose();
+                }
+                catch { }
+                _mainWriterField = null;
+            }
+
+            try
+            {
+                if (File.Exists(LogPath))
+                    File.WriteAllText(LogPath, string.Empty);
+            }
+            catch { }
+        }
+    }
+
+    public static void Info(string message) => WriteMain("INF", message);
     public static void Debug(string message)
     {
-        if (MinLevel <= LogLevel.Debug) Write(_mainWriter, "DBG", message);
+        if (MinLevel <= LogLevel.Debug) WriteMain("DBG", message);
     }
     public static void DebugSection(string title)
     {
-        if (MinLevel <= LogLevel.Debug) Write(_mainWriter, "DBG", $"── {title} ──");
+        if (MinLevel <= LogLevel.Debug) WriteMain("DBG", $"── {title} ──");
     }
     public static void DebugLines(string header, string[] lines, int maxLines = 20)
     {
         if (MinLevel > LogLevel.Debug) return;
-        Write(_mainWriter, "DBG", $"{header} ({lines.Length} lines):");
+        WriteMain("DBG", $"{header} ({lines.Length} lines):");
         int count = System.Math.Min(lines.Length, maxLines);
         for (int i = 0; i < count; i++)
-            Write(_mainWriter, "CSV", $"  [{i}] {lines[i]}");
+            WriteMain("CSV", $"  [{i}] {lines[i]}");
         if (lines.Length > maxLines)
-            Write(_mainWriter, "CSV", $"  ... ({lines.Length - maxLines} more lines hidden)");
+            WriteMain("CSV", $"  ... ({lines.Length - maxLines} more lines hidden)");
     }
-    public static void Warn(string message) => Write(_mainWriter, "WRN", message);
-    public static void Error(string message) => Write(_mainWriter, "ERR", message);
+    public static void Warn(string message) => WriteMain("WRN", message);
+    public static void Error(string message) => WriteMain("ERR", message);
 
     public static void LogSessionStart(string commandName)
     {
         RotateLogIfNeeded();
         CleanupOldBakFiles();
 
-        var header = $"{'=',70}";
+        var header = new string('=', 70);
         var line = $"SESSION START: {commandName}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]";
-        Write(_mainWriter, "INF", header);
-        Write(_mainWriter, "INF", line);
-        Write(_mainWriter, "INF", header);
-        Write(_lookupWriter, "INF", header);
-        Write(_lookupWriter, "INF", line);
-        Write(_lookupWriter, "INF", header);
-        Write(_formulaWriter, "INF", header);
-        Write(_formulaWriter, "INF", line);
-        Write(_formulaWriter, "INF", header);
+        WriteMain("INF", header);
+        WriteMain("INF", line);
+        WriteMain("INF", header);
+        WriteLookup("INF", header);
+        WriteLookup("INF", line);
+        WriteLookup("INF", header);
+        WriteFormula("INF", header);
+        WriteFormula("INF", line);
+        WriteFormula("INF", header);
     }
 
-    public static void Lookup(string message)
-    {
-        Write(_lookupWriter, "LKP", message);
-    }
+    public static void Lookup(string message) => WriteLookup("LKP", message);
 
-
-
-    public static void Formula(string message)
-    {
-        Write(_formulaWriter, "FRM", message);
-    }
+    public static void Formula(string message) => WriteFormula("FRM", message);
 
     public static void FormulaOk(string operation, string formula, string detail)
     {
-        Write(_formulaWriter, " OK", $"[{operation}] '{formula}' → {detail}");
+        WriteFormula(" OK", $"[{operation}] '{formula}' → {detail}");
     }
 
     public static void FormulaFail(string operation, string formula, string reason)
     {
-        Write(_formulaWriter, "FAIL", $"[{operation}] '{formula}' → {reason}");
+        WriteFormula("FAIL", $"[{operation}] '{formula}' → {reason}");
     }
 
     private static void RotateLogIfNeeded()
@@ -107,12 +119,13 @@ public static class SmartConLogger
             var fi = new FileInfo(LogPath);
             if (fi.Length < MaxLogSizeBytes) return;
 
-            if (_mainWriter.IsValueCreated)
+            lock (_lock)
             {
-                lock (_lock)
+                if (_mainWriterField != null)
                 {
-                    _mainWriter.Value.Flush();
-                    _mainWriter.Value.Dispose();
+                    _mainWriterField.Flush();
+                    _mainWriterField.Dispose();
+                    _mainWriterField = null;
                 }
             }
 
@@ -142,14 +155,40 @@ public static class SmartConLogger
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Cleanup failed: {ex.Message}"); }
     }
 
-    private static void Write(Lazy<StreamWriter> writer, string level, string message)
+    private static void WriteMain(string level, string message)
     {
         try
         {
             lock (_lock)
             {
-                writer.Value.WriteLine(
-                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
+                _mainWriterField ??= CreateWriter(LogPath);
+                _mainWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
+            }
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
+    }
+
+    private static void WriteLookup(string level, string message)
+    {
+        try
+        {
+            lock (_lock)
+            {
+                _lookupWriterField ??= CreateWriter(LookupLogPath);
+                _lookupWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
+            }
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
+    }
+
+    private static void WriteFormula(string level, string message)
+    {
+        try
+        {
+            lock (_lock)
+            {
+                _formulaWriterField ??= CreateWriter(FormulaLogPath);
+                _formulaWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
             }
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }

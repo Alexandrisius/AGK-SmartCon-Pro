@@ -3,14 +3,16 @@ using SmartCon.Core.Models.FamilyManager;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Resolves family file paths for loading into Revit.
-/// Converts relative cached paths to absolute paths.
+/// Resolves family file paths from managed storage for loading into Revit.
 /// </summary>
 public interface IFamilyFileResolver
 {
-    /// <summary>Resolve the absolute path for a version's file.</summary>
-    Task<FamilyResolvedFile> ResolveForLoadAsync(string versionId, CancellationToken ct = default);
+    /// <summary>
+    /// Resolve the absolute path for a version's file.
+    /// Selects the best match for the target Revit version (exact match, then fallback).
+    /// </summary>
+    Task<FamilyResolvedFile> ResolveForLoadAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
 
-    /// <summary>Get the canonical root directory for the file cache.</summary>
-    string GetCanonicalRoot();
+    /// <summary>Get the active database root directory path.</summary>
+    string? GetDatabaseRoot();
 }

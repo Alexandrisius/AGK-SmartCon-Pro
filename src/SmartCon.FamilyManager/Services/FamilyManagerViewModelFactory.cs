@@ -15,9 +15,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
 
     public FamilyMetadataEditViewModel CreateMetadataEditViewModel(
         string catalogItemId, string name, string? description,
-        string? category, IReadOnlyList<string> tags, FamilyContentStatus status)
+        string? category, IReadOnlyList<string> tags, ContentStatus contentStatus)
     {
         return new FamilyMetadataEditViewModel(
-            catalogItemId, name, description, category, tags, status, _writableProvider);
+            catalogItemId, name, description, category, tags, contentStatus, _writableProvider);
     }
 }

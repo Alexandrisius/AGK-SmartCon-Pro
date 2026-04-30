@@ -1,6 +1,5 @@
 using System.IO;
 using System.Reflection;
-using Microsoft.Data.Sqlite;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 
 namespace SmartCon.Tests.FamilyManager.Repository;
@@ -14,6 +13,7 @@ internal sealed class TempCatalogFixture : IDisposable
     private readonly LocalCatalogDatabase _database;
     private readonly LocalCatalogMigrator _migrator;
     private readonly LocalCatalogProvider _provider;
+    private readonly StoragePathResolver _pathResolver;
 
     public TempCatalogFixture()
     {
@@ -22,28 +22,18 @@ internal sealed class TempCatalogFixture : IDisposable
         DbPath = Path.Combine(TempDir, "catalog.db");
         ConnectionString = $"Data Source={DbPath}";
 
-        _database = CreateDatabase(DbPath);
+        _database = new LocalCatalogDatabase();
+        _database.SwitchToPath(TempDir);
         _migrator = new LocalCatalogMigrator(_database);
         _provider = new LocalCatalogProvider(_database);
+        _pathResolver = new StoragePathResolver(_database);
     }
 
     public LocalCatalogDatabase GetDatabase() => _database;
     public LocalCatalogMigrator GetMigrator() => _migrator;
     public LocalCatalogProvider GetProvider() => _provider;
-
-    private static LocalCatalogDatabase CreateDatabase(string path)
-    {
-        var db = new LocalCatalogDatabase();
-        var field = typeof(LocalCatalogDatabase).GetField("_dbPath",
-            BindingFlags.NonPublic | BindingFlags.Instance)!;
-        field.SetValue(db, path);
-
-        var csField = typeof(LocalCatalogDatabase).GetField("_connectionString",
-            BindingFlags.NonPublic | BindingFlags.Instance)!;
-        csField.SetValue(db, $"Data Source={path}");
-
-        return db;
-    }
+    public StoragePathResolver GetPathResolver() => _pathResolver;
+    public string GetDatabaseRoot() => _database.GetDatabaseRoot();
 
     public async Task MigrateAsync()
     {

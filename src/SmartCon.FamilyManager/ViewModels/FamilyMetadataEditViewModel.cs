@@ -1,4 +1,3 @@
-using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models.FamilyManager;
@@ -16,10 +15,10 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
     [ObservableProperty] private string? _description;
     [ObservableProperty] private string? _category;
     [ObservableProperty] private string _tagsText = string.Empty;
-    [ObservableProperty] private FamilyContentStatus _status;
+    [ObservableProperty] private ContentStatus _contentStatus;
 
-    public IReadOnlyList<FamilyContentStatus> AvailableStatuses { get; } =
-        Enum.GetValues(typeof(FamilyContentStatus)).Cast<FamilyContentStatus>().ToArray();
+    public IReadOnlyList<ContentStatus> AvailableStatuses { get; } =
+        Enum.GetValues(typeof(ContentStatus)).Cast<ContentStatus>().ToArray();
 
     public event Action<bool?>? RequestClose;
 
@@ -29,7 +28,7 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
         string? description,
         string? category,
         IReadOnlyList<string> tags,
-        FamilyContentStatus status,
+        ContentStatus contentStatus,
         IWritableFamilyCatalogProvider writableProvider)
     {
         _catalogItemId = catalogItemId;
@@ -39,7 +38,7 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
         Description = description;
         Category = category;
         TagsText = tags is not null && tags.Count > 0 ? string.Join(", ", tags) : string.Empty;
-        Status = status;
+        ContentStatus = contentStatus;
     }
 
     [RelayCommand]
@@ -57,7 +56,7 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
             Description,
             Category,
             tags,
-            Status);
+            ContentStatus);
 
         RequestClose?.Invoke(true);
     }

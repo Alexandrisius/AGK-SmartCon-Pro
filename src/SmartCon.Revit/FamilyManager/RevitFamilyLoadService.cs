@@ -1,8 +1,6 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -14,49 +12,6 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
 {
     private readonly IRevitContext _revitContext;
     private readonly ITransactionService _transactionService;
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
-
-    private static void ForceActivateRevitWindow()
-    {
-        try
-        {
-            var revitHwnd = Process.GetCurrentProcess().MainWindowHandle;
-            if (revitHwnd == IntPtr.Zero) return;
-
-            var currentForeground = GetForegroundWindow();
-            if (currentForeground == revitHwnd) return;
-
-            var revitThreadId = GetWindowThreadProcessId(revitHwnd, out _);
-            var currentThreadId = GetCurrentThreadId();
-
-            if (revitThreadId != currentThreadId)
-                AttachThreadInput(currentThreadId, revitThreadId, true);
-
-            SetForegroundWindow(revitHwnd);
-            BringWindowToTop(revitHwnd);
-
-            if (revitThreadId != currentThreadId)
-                AttachThreadInput(currentThreadId, revitThreadId, false);
-        }
-        catch { }
-    }
-
-    [DllImport("user32.dll")]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
 
     public RevitFamilyLoadService(IRevitContext revitContext, ITransactionService transactionService)
     {
@@ -78,8 +33,6 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 loaded = doc.LoadFamily(path, loadOptions, out family);
             else
                 loaded = doc.LoadFamily(path, out family);
-
-            ForceActivateRevitWindow();
 
             if (!loaded || family is null)
                 return;
@@ -106,7 +59,6 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         {
             var displayName = loadedFamily.Name;
             SmartConLogger.Info($"[FamilyLoad] Successfully loaded family: {displayName}");
-            ForceActivateRevitWindow();
             return new FamilyLoadResult(true, displayName, $"Family '{displayName}' loaded successfully", null);
         }
 
@@ -135,6 +87,15 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             var fileInfo = new FileInfo(normalizedPath);
             SmartConLogger.Info($"[FamilyLoad] File size: {fileInfo.Length} bytes");
 
+            using var basicInfo = BasicFileInfo.Extract(normalizedPath);
+            if (basicInfo?.IsSavedInLaterVersion == true)
+            {
+                var fileFormat = basicInfo.Format ?? "unknown";
+                SmartConLogger.Info($"[FamilyLoad] Family saved in newer version: {fileFormat}");
+                return Task.FromResult(new FamilyLoadResult(false, null, null,
+                    $"Family was saved in Revit {fileFormat} and cannot be opened in the current version."));
+            }
+
             var checkName = !string.IsNullOrWhiteSpace(options.PreferredName)
                 ? options.PreferredName
                 : Path.GetFileNameWithoutExtension(normalizedPath);
@@ -147,7 +108,6 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             if (existingFamily != null)
             {
                 SmartConLogger.Info($"[FamilyLoad] Family '{checkName}' already loaded in project");
-                ForceActivateRevitWindow();
                 return Task.FromResult(new FamilyLoadResult(true, existingFamily.Name,
                     $"Family '{existingFamily.Name}' already loaded in project", null));
             }

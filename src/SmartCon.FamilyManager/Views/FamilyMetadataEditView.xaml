@@ -61,8 +61,8 @@
             <TextBlock Text="{DynamicResource FM_Status}" Margin="0,0,0,4"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
             <ComboBox ItemsSource="{Binding AvailableStatuses}"
-                      SelectedItem="{Binding Status}"
-                      Style="{DynamicResource CompactComboBox}"/>
+                       SelectedItem="{Binding ContentStatus}"
+                       Style="{DynamicResource CompactComboBox}"/>
         </StackPanel>
 
         <Grid Grid.Row="6" HorizontalAlignment="Right" VerticalAlignment="Bottom">

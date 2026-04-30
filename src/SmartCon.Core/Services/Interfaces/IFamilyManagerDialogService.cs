@@ -4,12 +4,14 @@ namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
 /// UI dialogs for FamilyManager module.
-/// Analogous to IDialogService (PipeConnect-specific) but for FamilyManager.
 /// </summary>
 public interface IFamilyManagerDialogService
 {
     /// <summary>Show file open dialog filtered for .rfa files.</summary>
     string? ShowOpenFileDialog(string title, string? initialDirectory = null);
+
+    /// <summary>Show import dialog: select a file (.rfa) or navigate to a folder to import all families.</summary>
+    string? ShowImportDialog(string title, string? initialDirectory = null);
 
     /// <summary>Show folder browser dialog.</summary>
     string? ShowFolderBrowserDialog(string title, string? initialDirectory = null);

@@ -25,6 +25,6 @@ public interface IFamilyCatalogProvider
     /// <summary>Get total item count.</summary>
     Task<int> GetItemCountAsync(CancellationToken ct = default);
 
-    /// <summary>Get storage mode of the current version's file for a catalog item.</summary>
-    Task<FamilyFileStorageMode> GetStorageModeAsync(string catalogItemId, CancellationToken ct = default);
+    /// <summary>Get available Revit major versions for a catalog item's current version.</summary>
+    Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default);
 }

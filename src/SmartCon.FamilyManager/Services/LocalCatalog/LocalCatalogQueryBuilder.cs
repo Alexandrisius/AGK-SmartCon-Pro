@@ -32,7 +32,7 @@ internal static class LocalCatalogQueryBuilder
         if (query.StatusFilter is not null)
         {
             var paramName = $"@status_{paramIndex++}";
-            conditions.Add($"ci.status = {paramName}");
+            conditions.Add($"ci.content_status = {paramName}");
             parameters.Add(new SqliteParameter(paramName, query.StatusFilter.Value.ToString()));
         }
 
@@ -74,12 +74,6 @@ internal static class LocalCatalogQueryBuilder
         FamilyCatalogSort.DateDesc => "ORDER BY ci.created_at_utc DESC",
         _ => "ORDER BY ci.normalized_name ASC"
     };
-
-    public static string BuildLimitOffset(FamilyCatalogQuery query)
-    {
-        var sql = "LIMIT @limit OFFSET @offset";
-        return sql;
-    }
 
     public static List<SqliteParameter> BuildLimitOffsetParameters(FamilyCatalogQuery query)
     {

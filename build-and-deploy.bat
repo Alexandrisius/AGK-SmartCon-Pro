@@ -78,6 +78,7 @@ if not exist "%DLL_R24%" mkdir "%DLL_R24%"
 copy /Y "src\SmartCon.App\bin\Debug.R24\net48\win-x64\*.dll" "%DLL_R24%\" >nul
 set "ADDIN_R24=%APPDATA%\Autodesk\Revit\Addins\2024"
 if exist "%ADDIN_R24%" (
+    if exist "%ADDIN_R24%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R24%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R24%\SmartCon.addin" "%DLL_R24%\SmartCon.App.dll"
     echo [OK] Revit 2024
 ) else (
@@ -100,6 +101,7 @@ if exist "%ADDIN_2023%" (
 
 set "ADDIN_R22=%APPDATA%\Autodesk\Revit\Addins\2022"
 if exist "%ADDIN_R22%" (
+    if exist "%ADDIN_R22%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R22%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R22%\SmartCon.addin" "%DLL_R21%\SmartCon.App.dll"
     echo [OK] Revit 2022
 ) else (
@@ -108,6 +110,7 @@ if exist "%ADDIN_R22%" (
 
 set "ADDIN_R21=%APPDATA%\Autodesk\Revit\Addins\2021"
 if exist "%ADDIN_R21%" (
+    if exist "%ADDIN_R21%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R21%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R21%\SmartCon.addin" "%DLL_R21%\SmartCon.App.dll"
     echo [OK] Revit 2021
 ) else (
@@ -121,6 +124,7 @@ if not exist "%DLL_R19%" mkdir "%DLL_R19%"
 copy /Y "src\SmartCon.App\bin\Debug.R19\net48\win-x64\*.dll" "%DLL_R19%\" >nul
 set "ADDIN_R19=%APPDATA%\Autodesk\Revit\Addins\2019"
 if exist "%ADDIN_R19%" (
+    if exist "%ADDIN_R19%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R19%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R19%\SmartCon.addin" "%DLL_R19%\SmartCon.App.dll"
     echo [OK] Revit 2019
 ) else (
@@ -128,6 +132,7 @@ if exist "%ADDIN_R19%" (
 )
 set "ADDIN_R20=%APPDATA%\Autodesk\Revit\Addins\2020"
 if exist "%ADDIN_R20%" (
+    if exist "%ADDIN_R20%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R20%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R20%\SmartCon.addin" "%DLL_R19%\SmartCon.App.dll"
     echo [OK] Revit 2020
 ) else (

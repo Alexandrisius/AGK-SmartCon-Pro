@@ -14,15 +14,15 @@ public sealed class LocalCatalogProviderTests
     }
 
     private static async Task SeedItemAsync(TempCatalogFixture fixture, string id, string name, string normalizedName,
-        string? category = null, string? status = "Draft", string[]? tags = null)
+        string? category = null, string? status = "Active", string[]? tags = null)
     {
         using var connection = new SqliteConnection(fixture.ConnectionString);
         await connection.OpenAsync();
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_items (id, provider_id, name, normalized_name, description, category_name, manufacturer, status, current_version_id, created_at_utc, updated_at_utc)
-            VALUES (@id, 'local', @name, @normalizedName, NULL, @category, NULL, @status, NULL, @createdAt, @updatedAt)
+            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, manufacturer, content_status, current_version_label, published_by, created_at_utc, updated_at_utc)
+            VALUES (@id, @name, @normalizedName, NULL, @category, NULL, @status, NULL, NULL, @createdAt, @updatedAt)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@name", name));
@@ -99,6 +99,7 @@ public sealed class LocalCatalogProviderTests
         Assert.NotNull(item);
         Assert.Equal("Valve", item.Name);
         Assert.Equal("Mechanical", item.CategoryName);
+        Assert.Equal(ContentStatus.Active, item.ContentStatus);
     }
 
     [Fact]
@@ -119,43 +120,14 @@ public sealed class LocalCatalogProviderTests
     public async Task SearchAsync_FilterByStatus()
     {
         using var fixture = await CreateAndMigrate();
-        await SeedItemAsync(fixture, "s1", "Active Item", "active item", null, "Verified");
-        await SeedItemAsync(fixture, "s2", "Draft Item", "draft item", null, "Draft");
+        await SeedItemAsync(fixture, "s1", "Active Item", "active item", null, "Active");
+        await SeedItemAsync(fixture, "s2", "Deprecated Item", "deprecated item", null, "Deprecated");
 
-        var query = new FamilyCatalogQuery(null, null, FamilyContentStatus.Verified, null, null, FamilyCatalogSort.NameAsc, 0, 50);
+        var query = new FamilyCatalogQuery(null, null, ContentStatus.Active, null, null, FamilyCatalogSort.NameAsc, 0, 50);
         var results = await fixture.GetProvider().SearchAsync(query);
 
         Assert.Single(results);
         Assert.Equal("Active Item", results[0].Name);
-    }
-
-    [Fact]
-    public async Task GetVersionsAsync_ReturnsVersions()
-    {
-        using var fixture = await CreateAndMigrate();
-        await SeedItemAsync(fixture, "v1", "Versioned Item", "versioned item");
-
-        using var conn = new SqliteConnection(fixture.ConnectionString);
-        await conn.OpenAsync();
-        using var fc = conn.CreateCommand();
-        fc.CommandText = """
-            INSERT INTO family_files (id, original_path, cached_path, file_name, size_bytes, sha256, last_write_time_utc, storage_mode)
-            VALUES ('file1', NULL, NULL, 'test.rfa', 100, 'abc123', NULL, 'Cached')
-            """;
-        await fc.ExecuteNonQueryAsync();
-
-        using var vc = conn.CreateCommand();
-        vc.CommandText = """
-            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, sha256, revit_major_version, types_count, parameters_count, imported_at_utc)
-            VALUES ('ver1', 'v1', 'file1', 'v1', 'abc123', NULL, NULL, NULL, @importedAt)
-            """;
-        vc.Parameters.Add(new SqliteParameter("@importedAt", DateTimeOffset.UtcNow.ToString("o")));
-        await vc.ExecuteNonQueryAsync();
-
-        var versions = await fixture.GetProvider().GetVersionsAsync("v1");
-        Assert.Single(versions);
-        Assert.Equal("v1", versions[0].VersionLabel);
-        Assert.Equal("abc123", versions[0].Sha256);
     }
 
     [Fact]
@@ -169,5 +141,29 @@ public sealed class LocalCatalogProviderTests
         Assert.Equal("New Name", updated.Name);
         Assert.Equal("New Desc", updated.Description);
         Assert.Equal("New Category", updated.CategoryName);
+    }
+
+    [Fact]
+    public async Task UpdateItemAsync_ChangesStatus()
+    {
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "st1", "Status Test", "status test");
+
+        var updated = await fixture.GetProvider().UpdateItemAsync("st1", null, null, null, null, ContentStatus.Deprecated);
+
+        Assert.Equal(ContentStatus.Deprecated, updated.ContentStatus);
+    }
+
+    [Fact]
+    public async Task DeleteItemAsync_RemovesItem()
+    {
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "del1", "Delete Me", "delete me");
+
+        var deleted = await fixture.GetProvider().DeleteItemAsync("del1");
+        Assert.True(deleted);
+
+        var item = await fixture.GetProvider().GetItemAsync("del1");
+        Assert.Null(item);
     }
 }

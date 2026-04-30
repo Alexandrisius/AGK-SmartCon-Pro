@@ -25,8 +25,10 @@ public sealed class LocalCatalogMigratorTests
         Assert.Contains("catalog_items", tables);
         Assert.Contains("catalog_versions", tables);
         Assert.Contains("family_files", tables);
+        Assert.Contains("family_assets", tables);
         Assert.Contains("catalog_tags", tables);
         Assert.Contains("project_usage", tables);
+        Assert.Contains("database_meta", tables);
     }
 
     [Fact]
@@ -56,6 +58,6 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("1", version);
+        Assert.Equal("2", version);
     }
 }

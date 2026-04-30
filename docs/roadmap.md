@@ -35,6 +35,7 @@
 | **10** | Open-source качество | 9 | Локализация, XML-docs, качество кода | ✅ Готов |
 | **11** | ProjectManagement | 0, 1 | Share Project (ISO 19650), ADR-013 | ✅ Готов |
 | **12** | FamilyManager MVP | 0, 1 | FamilyManager: dockable panel, SQLite catalog, import/load (ADR-014) | ✅ Готов |
+| **13** | FamilyManager Published Storage | 12 | Published Storage (ISO 19650), ADR-015 | ✅ Готов |
 
 ---
 
@@ -357,3 +358,59 @@
 **Приёмка:** Документация SSOT синхронизирована с кодом.
 
 **Статус:** ✅ Готов (2026-04-28). ADR-014 принят. Документация обновлена.
+
+---
+
+## Phase 13 — FamilyManager Published Storage
+
+**Цель:** Трансформация FamilyManager из локального кэша в Published-хранилище BIM-контента (ISO 19650).
+
+**Зависит от:** Фаза 12 (FamilyManager MVP)
+
+**Подфазы:**
+
+### 13A — Core: новые модели и интерфейсы
+
+- ContentStatus (Active/Deprecated/Retired) вместо FamilyContentStatus
+- FamilyAsset, FamilyAssetType для вспомогательных материалов
+- DatabaseConnection, DatabaseConnectionRegistry для path-based подключений
+- Обновление FamilyCatalogItem, FamilyFileRecord, FamilyImportRequest
+- IFamilyAssetService, обновлённый IDatabaseManager, IFamilyFileResolver
+- Удаление FamilyFileStorageMode, FamilyContentStatus, DatabaseInfo, DatabaseRegistry
+
+### 13B — Новая схема БД (SQLite v2)
+
+- FamilyCatalogSql v2: 8 таблиц с FOREIGN KEY + CASCADE
+- StoragePathResolver: утилита для путей managed storage
+- DatabaseManager: Create(path), Connect(path), Disconnect, Delete
+- LocalCatalogDatabase: SwitchToPath вместо SwitchDatabase
+
+### 13C — Published Storage Engine
+
+- LocalFamilyImportService: копирование .rfa в managed storage
+- LocalCatalogProvider: cascade delete, content_status
+- LocalFamilyFileResolver: resolve по catalogItemId + targetRevitVersion
+
+### 13D — Asset Management
+
+- LocalFamilyAssetService: CRUD для вспомогательных файлов
+
+### 13E — UI: обновление Dockable Panel
+
+- ConnectDatabase/DisconnectDatabase команды
+- RevitVersions колонка, ContentStatus вместо Status
+- SetActive/SetDeprecated/SetRetired контекстное меню
+
+### 13F — Revit: загрузка из managed storage
+
+- RevitFamilyLoadService: без изменений (работает через FamilyResolvedFile)
+- ViewModel передаёт catalogItemId + targetRevitVersion
+
+### 13G — Документация
+
+- ADR-015: FamilyManager Published Storage Architecture
+- Обновление models.md, interfaces.md, solution-structure, roadmap
+
+**Приёмка:** Все конфигурации (R25/R24/R21/R19) собираются с 0 ошибок.
+
+**Статус:** ✅ Готов (2026-04-30). ADR-015 принят. 4 конфигурации собираются.

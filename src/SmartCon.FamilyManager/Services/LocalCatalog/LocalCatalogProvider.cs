@@ -1,6 +1,5 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
-using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -25,7 +24,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         throw new NotSupportedException("Use IFamilyImportService for import operations.");
     }
 
-    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, FamilyContentStatus? status, CancellationToken ct = default)
+    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
@@ -58,7 +57,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
             if (status is not null)
             {
-                setClauses.Add("status = @status");
+                setClauses.Add("content_status = @status");
                 cmd.Parameters.Add(new SqliteParameter("@status", status.Value.ToString()));
             }
 
@@ -103,102 +102,45 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
-        using var tx = connection.BeginTransaction();
 
+        using var tx = connection.BeginTransaction();
         try
         {
-            // 1. Get version_ids and file_ids for this item
-            var versionIds = new List<string>();
-            var fileIds = new List<string>();
-            using var selectCmd = connection.CreateCommand();
-            selectCmd.CommandText = "SELECT id, file_id FROM catalog_versions WHERE catalog_item_id = @id";
-            selectCmd.Parameters.Add(new SqliteParameter("@id", id));
-            using var reader = await selectCmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
+            var relativePaths = new List<string>();
+            using (var selectCmd = connection.CreateCommand())
             {
-                versionIds.Add(reader.GetString(0));
-                fileIds.Add(reader.GetString(1));
+                selectCmd.CommandText = "SELECT relative_path FROM family_files WHERE id IN (SELECT file_id FROM catalog_versions WHERE catalog_item_id = @id)";
+                selectCmd.Parameters.Add(new SqliteParameter("@id", id));
+                using var reader = await selectCmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    relativePaths.Add(reader.GetString(0));
+                }
             }
 
-            // 2. Delete tags
-            using var delTags = connection.CreateCommand();
-            delTags.CommandText = "DELETE FROM catalog_tags WHERE catalog_item_id = @id";
-            delTags.Parameters.Add(new SqliteParameter("@id", id));
-            await delTags.ExecuteNonQueryAsync(ct);
-
-            // 3. Delete parameters
-            if (versionIds.Count > 0)
-            {
-                var inParams = string.Join(", ", versionIds.Select((_, i) => $"@v{i}"));
-                using var delParams = connection.CreateCommand();
-                delParams.CommandText = $"DELETE FROM family_parameters WHERE version_id IN ({inParams})";
-                for (var i = 0; i < versionIds.Count; i++)
-                    delParams.Parameters.Add(new SqliteParameter($"@v{i}", versionIds[i]));
-                await delParams.ExecuteNonQueryAsync(ct);
-
-                // 4. Delete types
-                using var delTypes = connection.CreateCommand();
-                delTypes.CommandText = $"DELETE FROM family_types WHERE version_id IN ({inParams})";
-                for (var i = 0; i < versionIds.Count; i++)
-                    delTypes.Parameters.Add(new SqliteParameter($"@v{i}", versionIds[i]));
-                await delTypes.ExecuteNonQueryAsync(ct);
-            }
-
-            // 5. Delete previews
-            using var delPreviews = connection.CreateCommand();
-            delPreviews.CommandText = "DELETE FROM previews WHERE catalog_item_id = @id";
-            delPreviews.Parameters.Add(new SqliteParameter("@id", id));
-            await delPreviews.ExecuteNonQueryAsync(ct);
-
-            // 6. Delete versions
-            using var delVersions = connection.CreateCommand();
-            delVersions.CommandText = "DELETE FROM catalog_versions WHERE catalog_item_id = @id";
-            delVersions.Parameters.Add(new SqliteParameter("@id", id));
-            await delVersions.ExecuteNonQueryAsync(ct);
-
-            // 7. Delete usage history
-            using var delUsage = connection.CreateCommand();
-            delUsage.CommandText = "DELETE FROM project_usage WHERE catalog_item_id = @id";
-            delUsage.Parameters.Add(new SqliteParameter("@id", id));
-            await delUsage.ExecuteNonQueryAsync(ct);
-
-            // 8. Delete catalog item
             using var delItem = connection.CreateCommand();
             delItem.CommandText = "DELETE FROM catalog_items WHERE id = @id";
             delItem.Parameters.Add(new SqliteParameter("@id", id));
             var rowsAffected = await delItem.ExecuteNonQueryAsync(ct);
 
-            // 9. Delete files and file records
-            foreach (var fileId in fileIds.Distinct())
-            {
-                // Get cached path before deleting record
-                using var fileCmd = connection.CreateCommand();
-                fileCmd.CommandText = "SELECT cached_path FROM family_files WHERE id = @fileId";
-                fileCmd.Parameters.Add(new SqliteParameter("@fileId", fileId));
-                var cachedPath = await fileCmd.ExecuteScalarAsync(ct) as string;
+            tx.Commit();
 
-                if (!string.IsNullOrEmpty(cachedPath))
+            if (rowsAffected > 0)
+            {
+                var dbRoot = _database.GetDatabaseRoot();
+                var familyDir = Path.Combine(dbRoot, "files", id);
+                if (Directory.Exists(familyDir))
                 {
-                    var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                    var absPath = Path.Combine(appData, "SmartCon", "FamilyManager", cachedPath);
                     try
                     {
-                        if (File.Exists(absPath))
-                            File.Delete(absPath);
+                        Directory.Delete(familyDir, recursive: true);
                     }
                     catch
                     {
-                        // Best-effort file deletion
                     }
                 }
-
-                using var delFile = connection.CreateCommand();
-                delFile.CommandText = "DELETE FROM family_files WHERE id = @fileId";
-                delFile.Parameters.Add(new SqliteParameter("@fileId", fileId));
-                await delFile.ExecuteNonQueryAsync(ct);
             }
 
-            tx.Commit();
             return rowsAffected > 0;
         }
         catch
@@ -278,7 +220,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT * FROM catalog_versions WHERE catalog_item_id = @itemId ORDER BY imported_at_utc DESC";
+        cmd.CommandText = "SELECT * FROM catalog_versions WHERE catalog_item_id = @itemId ORDER BY published_at_utc DESC";
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
         var versions = new List<FamilyCatalogVersion>();
@@ -317,167 +259,28 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         return result is long l ? (int)l : 0;
     }
 
-    public async Task<FamilyFileStorageMode> GetStorageModeAsync(string catalogItemId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT ff.storage_mode
-            FROM catalog_items ci
-            INNER JOIN catalog_versions cv ON cv.id = ci.current_version_id
-            INNER JOIN family_files ff ON ff.id = cv.file_id
-            WHERE ci.id = @id
+            SELECT DISTINCT cv.revit_major_version
+            FROM catalog_versions cv
+            INNER JOIN catalog_items ci ON ci.id = cv.catalog_item_id
+            WHERE cv.catalog_item_id = @id AND ci.current_version_label = cv.version_label
+            ORDER BY cv.revit_major_version DESC
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", catalogItemId));
 
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result is string s
-            ? (FamilyFileStorageMode)Enum.Parse(typeof(FamilyFileStorageMode), s)
-            : FamilyFileStorageMode.Missing;
-    }
-
-    public async Task<bool> SwitchStorageModeAsync(string catalogItemId, FamilyFileStorageMode newMode, string? originalPath = null, CancellationToken ct = default)
-    {
-        SmartConLogger.Info($"[Switch] catalogItemId={catalogItemId}, newMode={newMode}, overrideOriginalPath={originalPath ?? "null"}");
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
-
-        string fileId;
-        string? currentOriginalPath;
-        string? currentCachedPath;
-        string sha256;
-
-        using (var selectCmd = connection.CreateCommand())
+        var versions = new List<int>();
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
         {
-            selectCmd.CommandText = """
-                SELECT ff.id, ff.original_path, ff.cached_path, ff.sha256
-                FROM catalog_items ci
-                INNER JOIN catalog_versions cv ON cv.id = ci.current_version_id
-                INNER JOIN family_files ff ON ff.id = cv.file_id
-                WHERE ci.id = @id
-                """;
-            selectCmd.Parameters.Add(new SqliteParameter("@id", catalogItemId));
-
-            using var reader = await selectCmd.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct))
-                return false;
-
-            fileId = reader.GetString(0);
-            currentOriginalPath = reader.IsDBNull(1) ? null : reader.GetString(1);
-            currentCachedPath = reader.IsDBNull(2) ? null : reader.GetString(2);
-            sha256 = reader.GetString(3);
+            versions.Add(reader.GetInt32(0));
         }
 
-        SmartConLogger.Info($"[Switch] fileId={fileId}, currentOriginalPath={currentOriginalPath ?? "null"}, currentCachedPath={currentCachedPath ?? "null"}, sha256={sha256[..16]}...");
-
-        var canonicalRoot = GetCanonicalRoot();
-
-        if (newMode == FamilyFileStorageMode.Linked)
-        {
-            var effectiveOriginalPath = originalPath ?? currentOriginalPath;
-            if (string.IsNullOrEmpty(effectiveOriginalPath))
-            {
-                SmartConLogger.Info($"[Switch] Cached→Linked FAILED: no originalPath available");
-                return false;
-            }
-
-            SmartConLogger.Info($"[Switch] Cached→Linked: originalPath={effectiveOriginalPath}");
-
-            using var tx = connection.BeginTransaction();
-            try
-            {
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = "UPDATE family_files SET storage_mode = @mode, original_path = @origPath, cached_path = NULL WHERE id = @id";
-                cmd.Parameters.Add(new SqliteParameter("@mode", FamilyFileStorageMode.Linked.ToString()));
-                cmd.Parameters.Add(new SqliteParameter("@origPath", effectiveOriginalPath));
-                cmd.Parameters.Add(new SqliteParameter("@id", fileId));
-                await cmd.ExecuteNonQueryAsync(ct);
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
-
-            if (!string.IsNullOrEmpty(currentCachedPath))
-            {
-                try
-                {
-                    var absCached = Path.Combine(canonicalRoot, currentCachedPath);
-                    if (File.Exists(absCached))
-                    {
-                        File.Delete(absCached);
-                        SmartConLogger.Info($"[Switch] Deleted cache file: {absCached}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Info($"[Switch] Failed to delete cache file: {ex.Message}");
-                }
-            }
-
-            SmartConLogger.Info($"[Switch] Cached→Link SUCCESS");
-            return true;
-        }
-
-        if (newMode == FamilyFileStorageMode.Cached)
-        {
-            var effectiveOriginalPath = originalPath ?? currentOriginalPath;
-            if (string.IsNullOrEmpty(effectiveOriginalPath) || !File.Exists(effectiveOriginalPath))
-            {
-                SmartConLogger.Info($"[Switch] Linked→Cached FAILED: file not found at {effectiveOriginalPath ?? "null"}");
-                return false;
-            }
-
-            SmartConLogger.Info($"[Switch] Linked→Cached: copying from {effectiveOriginalPath}");
-
-            string relativeCachedPath;
-            try
-            {
-                relativeCachedPath = $"cache/rfa/{sha256[..2]}/{sha256}.rfa";
-                var absoluteCachePath = Path.Combine(canonicalRoot, relativeCachedPath);
-                var cacheDir = Path.GetDirectoryName(absoluteCachePath)!;
-                Directory.CreateDirectory(cacheDir);
-                File.Copy(effectiveOriginalPath, absoluteCachePath, overwrite: true);
-                SmartConLogger.Info($"[Switch] Linked→Cached: copied to {absoluteCachePath}");
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Info($"[Switch] Linked→Cached: copy FAILED: {ex.Message}");
-                return false;
-            }
-
-            using var tx = connection.BeginTransaction();
-            try
-            {
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = "UPDATE family_files SET storage_mode = @mode, cached_path = @cachedPath WHERE id = @id";
-                cmd.Parameters.Add(new SqliteParameter("@mode", FamilyFileStorageMode.Cached.ToString()));
-                cmd.Parameters.Add(new SqliteParameter("@cachedPath", relativeCachedPath));
-                cmd.Parameters.Add(new SqliteParameter("@id", fileId));
-                await cmd.ExecuteNonQueryAsync(ct);
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
-
-            SmartConLogger.Info($"[Switch] Linked→Cached SUCCESS");
-            return true;
-        }
-
-        SmartConLogger.Info($"[Switch] Unsupported mode: {newMode}");
-        return false;
-    }
-
-    private static string GetCanonicalRoot()
-    {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appData, "SmartCon", "FamilyManager");
+        return versions;
     }
 
     private static async Task<IReadOnlyList<string>> LoadTagsAsync(SqliteConnection connection, string catalogItemId, CancellationToken ct)
@@ -498,7 +301,6 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
     internal static FamilyCatalogItem ReadCatalogItem(SqliteDataReader reader) => new(
         Id: reader.GetString(reader.GetOrdinal("id")),
-        ProviderId: reader.GetString(reader.GetOrdinal("provider_id")),
         Name: reader.GetString(reader.GetOrdinal("name")),
         NormalizedName: reader.GetString(reader.GetOrdinal("normalized_name")),
         Description: reader.IsDBNull(reader.GetOrdinal("description"))
@@ -510,11 +312,14 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         Manufacturer: reader.IsDBNull(reader.GetOrdinal("manufacturer"))
             ? null
             : reader.GetString(reader.GetOrdinal("manufacturer")),
-        Status: (FamilyContentStatus)Enum.Parse(typeof(FamilyContentStatus), reader.GetString(reader.GetOrdinal("status"))),
-        CurrentVersionId: reader.IsDBNull(reader.GetOrdinal("current_version_id"))
+        ContentStatus: (ContentStatus)Enum.Parse(typeof(ContentStatus), reader.GetString(reader.GetOrdinal("content_status"))),
+        CurrentVersionLabel: reader.IsDBNull(reader.GetOrdinal("current_version_label"))
             ? null
-            : reader.GetString(reader.GetOrdinal("current_version_id")),
+            : reader.GetString(reader.GetOrdinal("current_version_label")),
         Tags: [],
+        PublishedBy: reader.IsDBNull(reader.GetOrdinal("published_by"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("published_by")),
         CreatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("created_at_utc"))),
         UpdatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("updated_at_utc"))));
 
@@ -524,30 +329,21 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         FileId: reader.GetString(reader.GetOrdinal("file_id")),
         VersionLabel: reader.GetString(reader.GetOrdinal("version_label")),
         Sha256: reader.GetString(reader.GetOrdinal("sha256")),
-        RevitMajorVersion: reader.IsDBNull(reader.GetOrdinal("revit_major_version"))
-            ? null
-            : reader.GetInt32(reader.GetOrdinal("revit_major_version")),
+        RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
         TypesCount: reader.IsDBNull(reader.GetOrdinal("types_count"))
             ? null
             : reader.GetInt32(reader.GetOrdinal("types_count")),
         ParametersCount: reader.IsDBNull(reader.GetOrdinal("parameters_count"))
             ? null
             : reader.GetInt32(reader.GetOrdinal("parameters_count")),
-        ImportedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("imported_at_utc"))));
+        PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
 
-    internal static FamilyFileRecord ReadFileRecord(SqliteDataReader reader) => new(
+    private static FamilyFileRecord ReadFileRecord(SqliteDataReader reader) => new(
         Id: reader.GetString(reader.GetOrdinal("id")),
-        OriginalPath: reader.IsDBNull(reader.GetOrdinal("original_path"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("original_path")),
-        CachedPath: reader.IsDBNull(reader.GetOrdinal("cached_path"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("cached_path")),
+        RelativePath: reader.GetString(reader.GetOrdinal("relative_path")),
         FileName: reader.GetString(reader.GetOrdinal("file_name")),
         SizeBytes: reader.GetInt64(reader.GetOrdinal("size_bytes")),
         Sha256: reader.GetString(reader.GetOrdinal("sha256")),
-        LastWriteTimeUtc: reader.IsDBNull(reader.GetOrdinal("last_write_time_utc"))
-            ? null
-            : DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("last_write_time_utc"))),
-        StorageMode: (FamilyFileStorageMode)Enum.Parse(typeof(FamilyFileStorageMode), reader.GetString(reader.GetOrdinal("storage_mode"))));
+        RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
+        ImportedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("imported_at_utc"))));
 }

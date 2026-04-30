@@ -6,6 +6,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
@@ -37,8 +38,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
-    [ObservableProperty] private ObservableCollection<DatabaseInfo> _databases = new();
-    [ObservableProperty] private DatabaseInfo? _selectedDatabase;
+    [ObservableProperty] private ObservableCollection<DatabaseConnection> _connections = new();
+    [ObservableProperty] private DatabaseConnection? _selectedConnection;
+    [ObservableProperty] private int _currentRevitVersion;
 
     public FamilyManagerMainViewModel(
         IFamilyCatalogProvider catalogProvider,
@@ -71,75 +73,98 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
         FamilyItemsView = new ListCollectionView(new ObservableCollection<FamilyCatalogItemRow>());
 
-        _ = InitializeAsync();
+        DetectRevitVersion();
+        FireAndForget(InitializeAsync);
+    }
+
+    private void DetectRevitVersion()
+    {
+        try
+        {
+            var doc = _revitContext.GetDocument();
+            if (doc?.Application?.VersionNumber is string versionStr && int.TryParse(versionStr, out var v))
+            {
+                CurrentRevitVersion = v;
+            }
+        }
+        catch { }
     }
 
     private async Task InitializeAsync()
     {
-        RefreshDatabases();
+        SmartConLogger.TruncateMainLog();
+        SmartConLogger.Info($"======================================================================");
+        SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
+        SmartConLogger.Info($"======================================================================");
+
+        RefreshConnections();
         await SearchAsync();
     }
 
-    private bool _suppressDatabaseChanged;
+    private bool _suppressConnectionChanged;
 
-    private void RefreshDatabases()
+    private void RefreshConnections()
     {
-        _suppressDatabaseChanged = true;
+        _suppressConnectionChanged = true;
         try
         {
-            var list = _databaseManager.ListDatabases();
-            Databases = new ObservableCollection<DatabaseInfo>(list);
-            SelectedDatabase = Databases.FirstOrDefault(d => d.Id == _databaseManager.GetActiveDatabaseId());
+            var list = _databaseManager.ListConnections();
+            Connections = new ObservableCollection<DatabaseConnection>(list);
+            var active = _databaseManager.GetActiveConnection();
+            SelectedConnection = Connections.FirstOrDefault(c => c.Id == active?.Id);
         }
         finally
         {
-            _suppressDatabaseChanged = false;
+            _suppressConnectionChanged = false;
         }
     }
 
-    private void OnActiveDatabaseChanged(object? sender, string databaseId)
+    private void OnActiveDatabaseChanged(object? sender, string connectionId)
     {
-        RefreshDatabases();
-        _ = SearchAsync();
+        RefreshConnections();
+        FireAndForget(() => SearchAsync());
     }
 
     partial void OnSearchTextChanged(string value)
     {
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
-        _ = SearchAsync(_searchCts.Token);
+        FireAndForget(() => SearchAsync(_searchCts.Token));
     }
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
-        CanLoadToProject = value is not null;
+        CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active;
+        LoadToProjectCommand.NotifyCanExecuteChanged();
+        LoadAndPlaceCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnSelectedDatabaseChanged(DatabaseInfo? value)
+    partial void OnSelectedConnectionChanged(DatabaseConnection? value)
     {
         if (value is null) return;
-        if (_suppressDatabaseChanged) return;
-        if (value.Id == _databaseManager.GetActiveDatabaseId()) return;
-        _ = SwitchDatabaseAsync(value.Id);
+        if (_suppressConnectionChanged) return;
+        var active = _databaseManager.GetActiveConnection();
+        if (active?.Id == value.Id) return;
+        FireAndForget(() => SwitchDatabaseAsync(value.Id));
     }
 
-    private async Task SwitchDatabaseAsync(string databaseId)
+    private async Task SwitchDatabaseAsync(string connectionId)
     {
         IsLoading = true;
         try
         {
-            var success = await _databaseManager.SwitchDatabaseAsync(databaseId);
+            var success = await _databaseManager.SwitchDatabaseAsync(connectionId);
             if (success)
             {
-                var dbName = Databases.FirstOrDefault(d => d.Id == databaseId)?.Name ?? databaseId;
+                var conn = Connections.FirstOrDefault(c => c.Id == connectionId);
                 StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Database switched to: {0}",
-                    dbName);
+                    LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Switched to: {0}",
+                    conn?.Name ?? connectionId);
             }
             else
             {
                 StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database";
-                RefreshDatabases();
+                RefreshConnections();
             }
         }
         catch (Exception ex)
@@ -166,7 +191,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 ManufacturerFilter: null,
                 Sort: FamilyCatalogSort.NameAsc,
                 Offset: 0,
-                Limit: 100);
+                Limit: 200);
 
             var results = await _catalogProvider.SearchAsync(query, ct);
             TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
@@ -174,14 +199,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             var rows = new ObservableCollection<FamilyCatalogItemRow>();
             foreach (var item in results)
             {
-                string? versionLabel = null;
-                if (item.CurrentVersionId is not null)
-                {
-                    var versions = await _catalogProvider.GetVersionsAsync(item.Id, ct);
-                    var current = versions.FirstOrDefault(v => v.Id == item.CurrentVersionId);
-                    versionLabel = current?.VersionLabel;
-                }
-
                 rows.Add(new FamilyCatalogItemRow
                 {
                     Id = item.Id,
@@ -190,13 +207,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                         ? LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category"
                         : item.CategoryName,
                     Manufacturer = item.Manufacturer,
-                    Status = item.Status,
-                    CurrentVersionId = item.CurrentVersionId,
-                    VersionLabel = versionLabel,
+                    ContentStatus = item.ContentStatus,
+                    CurrentVersionLabel = item.CurrentVersionLabel,
+                    VersionLabel = item.CurrentVersionLabel,
                     UpdatedAtUtc = item.UpdatedAtUtc,
                     Tags = item.Tags,
                     Description = item.Description,
-                    StorageMode = await _catalogProvider.GetStorageModeAsync(item.Id, ct)
                 });
             }
 
@@ -222,16 +238,28 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ImportFileAsync()
+    private async Task ImportAsync()
     {
-        var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import File";
-        var path = _dialogService.ShowOpenFileDialog(title);
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_Import) ?? "Import";
+        var path = _dialogService.ShowImportDialog(title);
         if (path is null) return;
 
+        if (Directory.Exists(path))
+        {
+            await ImportFolder(path);
+        }
+        else if (File.Exists(path))
+        {
+            await ImportFile(path);
+        }
+    }
+
+    private async Task ImportFile(string path)
+    {
         IsLoading = true;
         try
         {
-            var request = new FamilyImportRequest(path, null, null, null);
+            var request = new FamilyImportRequest(path, CurrentRevitVersion, null, null, null);
             var result = await _importService.ImportFileAsync(request);
 
             if (result.WasSkippedAsDuplicate)
@@ -267,17 +295,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private async Task ImportFolderAsync()
+    private async Task ImportFolder(string path)
     {
-        var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFolder) ?? "Import Folder";
-        var path = _dialogService.ShowFolderBrowserDialog(title);
-        if (path is null) return;
-
         IsLoading = true;
         try
         {
-            var request = new FamilyFolderImportRequest(path, true, null, null, null);
+            var request = new FamilyFolderImportRequest(path, CurrentRevitVersion, true, null, null, null);
             var progress = new Progress<FamilyImportProgress>(p =>
             {
                 StatusMessage = string.Format(
@@ -306,14 +329,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
     private void LoadToProject()
     {
         if (SelectedItem is null) return;
 
         var selectedId = SelectedItem.Id;
-        var selectedVersionId = SelectedItem.CurrentVersionId;
         var selectedName = SelectedItem.Name;
+        var targetRevit = CurrentRevitVersion;
 
         _externalEvent.Raise(() =>
         {
@@ -324,15 +347,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 return;
             }
 
-            if (selectedVersionId is null)
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoVersionSelected) ?? "No version selected";
-                return;
-            }
-
             try
             {
-                var resolved = _fileResolver.ResolveForLoadAsync(selectedVersionId, CancellationToken.None).GetAwaiter().GetResult();
+                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+
+                if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                {
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoVersionSelected) ?? "No version available for this Revit version";
+                    return;
+                }
+
                 var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName };
                 var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
 
@@ -345,13 +369,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
                         CatalogItemId: selectedId,
-                        VersionId: selectedVersionId,
-                        ProviderId: string.Empty,
-                        ProjectFingerprint: doc.PathName ?? string.Empty,
+                        VersionId: resolved.VersionId,
+                        ProjectName: Path.GetFileName(doc.PathName),
+                        ProjectPath: doc.PathName,
+                        RevitMajorVersion: targetRevit,
                         Action: "Load",
                         CreatedAtUtc: DateTimeOffset.UtcNow);
 
-                    _usageRepo.RecordUsageAsync(usage, CancellationToken.None).GetAwaiter().GetResult();
+                    FireAndForget(() => _usageRepo.RecordUsageAsync(usage, CancellationToken.None));
                 }
                 else
                 {
@@ -369,14 +394,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         });
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
     private void LoadAndPlace()
     {
         if (SelectedItem is null) return;
 
         var selectedId = SelectedItem.Id;
-        var selectedVersionId = SelectedItem.CurrentVersionId;
         var selectedName = SelectedItem.Name;
+        var targetRevit = CurrentRevitVersion;
 
         _externalEvent.RaiseWithApplication(appObj =>
         {
@@ -388,15 +413,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 return;
             }
 
-            if (selectedVersionId is null)
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoVersionSelected) ?? "No version selected";
-                return;
-            }
-
             try
             {
-                var resolved = _fileResolver.ResolveForLoadAsync(selectedVersionId, CancellationToken.None).GetAwaiter().GetResult();
+                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+
+                if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                {
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoVersionSelected) ?? "No version available";
+                    return;
+                }
+
                 var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName };
                 var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
 
@@ -424,13 +450,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 }
 
                 var symbolId = family.GetFamilySymbolIds().Cast<ElementId>().FirstOrDefault();
-                if (symbolId is null)
-                {
-                    StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_NoFamilySymbol) ?? "No type found in family \"{0}\"",
-                        familyName);
-                    return;
-                }
+                if (symbolId is null) return;
 
                 var symbol = doc.GetElement(symbolId) as FamilySymbol;
                 if (symbol is null) return;
@@ -444,7 +464,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     });
                 }
 
-                uiApp.ActiveUIDocument.PostRequestForElementTypePlacement(symbol);
+                var uidoc = uiApp.ActiveUIDocument;
+                if (uidoc is not null)
+                {
+                    uidoc.PostRequestForElementTypePlacement(symbol);
+                }
 
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
@@ -453,13 +477,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 var usage = new ProjectFamilyUsage(
                     Id: Guid.NewGuid().ToString(),
                     CatalogItemId: selectedId,
-                    VersionId: selectedVersionId,
-                    ProviderId: string.Empty,
-                    ProjectFingerprint: doc.PathName ?? string.Empty,
+                    VersionId: resolved.VersionId,
+                    ProjectName: Path.GetFileName(doc.PathName),
+                    ProjectPath: doc.PathName,
+                    RevitMajorVersion: targetRevit,
                     Action: "LoadAndPlace",
                     CreatedAtUtc: DateTimeOffset.UtcNow);
 
-                _usageRepo.RecordUsageAsync(usage, CancellationToken.None).GetAwaiter().GetResult();
+                FireAndForget(() => _usageRepo.RecordUsageAsync(usage, CancellationToken.None));
             }
             catch (Exception ex)
             {
@@ -481,7 +506,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             SelectedItem.Description,
             SelectedItem.CategoryName,
             SelectedItem.Tags,
-            SelectedItem.Status);
+            SelectedItem.ContentStatus);
 
         var result = _dialogService.ShowMetadataEdit(vm);
         if (result != true) return;
@@ -492,9 +517,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     [RelayCommand]
     private async Task CreateDatabaseAsync()
     {
+        var path = _dialogService.ShowFolderBrowserDialog(
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbSelectPath) ?? "Select parent folder for database");
+        if (string.IsNullOrWhiteSpace(path)) return;
+
         var name = _dialogService.ShowInputDialog(
             LanguageManager.GetString(StringLocalization.Keys.FM_DbNewTitle) ?? "New Database",
-            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPrompt) ?? "Enter new database name:",
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPrompt) ?? "Enter database name:",
             LanguageManager.GetString(StringLocalization.Keys.FM_DbNewDefault) ?? "New Catalog");
 
         if (string.IsNullOrWhiteSpace(name)) return;
@@ -502,12 +531,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         IsLoading = true;
         try
         {
-            var db = await _databaseManager.CreateDatabaseAsync(name!.Trim());
-            RefreshDatabases();
-            SelectedDatabase = Databases.FirstOrDefault(d => d.Id == db.Id);
+            var conn = await _databaseManager.CreateDatabaseAsync(name!.Trim(), path!);
+            RefreshConnections();
+            SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
             StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created",
-                db.Name);
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created at {1}",
+                conn.Name, conn.Path);
         }
         catch (Exception ex)
         {
@@ -522,13 +551,78 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task ConnectDatabaseAsync()
+    {
+        var path = _dialogService.ShowFolderBrowserDialog(
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbSelectPath) ?? "Select database folder");
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        IsLoading = true;
+        try
+        {
+            var conn = await _databaseManager.ConnectDatabaseAsync(path!);
+            RefreshConnections();
+            SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Connected to: {0}",
+                conn.Name);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DisconnectDatabaseAsync()
+    {
+        if (SelectedConnection is null) return;
+
+        var connections = _databaseManager.ListConnections();
+        if (connections.Count <= 1)
+        {
+            _dialogService.ShowWarning(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Disconnect",
+                "Cannot disconnect the only database.");
+            return;
+        }
+
+        IsLoading = true;
+        try
+        {
+            var success = await _databaseManager.DisconnectDatabaseAsync(SelectedConnection.Id);
+            if (success)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleted) ?? "Disconnected: {0}",
+                    SelectedConnection.Name);
+                RefreshConnections();
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task DeleteDatabaseAsync()
     {
-        if (SelectedDatabase is null) return;
+        if (SelectedConnection is null) return;
 
-        var isActive = SelectedDatabase.Id == _databaseManager.GetActiveDatabaseId();
-        var databases = _databaseManager.ListDatabases();
-        if (isActive && databases.Count <= 1)
+        var isActive = _databaseManager.GetActiveConnection()?.Id == SelectedConnection.Id;
+        var connections = _databaseManager.ListConnections();
+        if (isActive && connections.Count <= 1)
         {
             _dialogService.ShowWarning(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Delete Database",
@@ -540,31 +634,27 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Delete Database",
             string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbDeletePrompt) ?? "Enter \"{0}\" to confirm deletion:",
-                SelectedDatabase.Name),
+                SelectedConnection.Name),
             "");
 
-        if (confirm != SelectedDatabase.Name) return;
+        if (confirm != SelectedConnection.Name) return;
 
         IsLoading = true;
         try
         {
-            var success = await _databaseManager.DeleteDatabaseAsync(SelectedDatabase.Id);
+            var success = await _databaseManager.DeleteDatabaseAsync(SelectedConnection.Id);
             if (success)
             {
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleted) ?? "Database \"{0}\" deleted",
-                    SelectedDatabase.Name);
-                RefreshDatabases();
-            }
-            else
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteError) ?? "Error deleting database";
+                    SelectedConnection.Name);
+                RefreshConnections();
             }
         }
         catch (Exception ex)
         {
             StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteError) ?? "Error deleting database: {0}",
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteError) ?? "Error: {0}",
                 ex.Message);
         }
         finally
@@ -581,7 +671,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         var confirmed = _dialogService.ShowConfirmation(
             LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteTitle) ?? "Delete Family",
             string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeletePrompt) ?? "Delete family \"{0}\" from catalog?",
+                LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeletePrompt) ?? "Delete \"{0}\"?",
                 SelectedItem.Name));
 
         if (!confirmed) return;
@@ -593,18 +683,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             if (success)
             {
                 StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleted) ?? "Family \"{0}\" deleted from catalog",
+                    LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleted) ?? "Deleted: {0}",
                     SelectedItem.Name);
                 await SearchAsync();
-            }
-            else
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error deleting family";
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error deleting family"}: {ex.Message}";
+            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error"}: {ex.Message}";
         }
         finally
         {
@@ -612,98 +698,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private async Task SwitchToLinkedAsync()
+    private static async void FireAndForget(Func<Task> taskFactory)
     {
-        if (SelectedItem is null) return;
-
-        var originalPath = await GetOriginalPathAsync(SelectedItem.Id);
-        if (string.IsNullOrEmpty(originalPath) || !File.Exists(originalPath))
-        {
-            var title = LanguageManager.GetString(StringLocalization.Keys.FM_SelectOriginalFile) ?? "Select family file";
-            originalPath = _dialogService.ShowOpenFileDialog(title);
-            if (originalPath is null) return;
-        }
-
-        IsLoading = true;
         try
         {
-            var success = await _writableProvider.SwitchStorageModeAsync(
-                SelectedItem.Id, FamilyFileStorageMode.Linked, originalPath);
-
-            if (success)
-            {
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_SwitchedToLinked) ?? "Family \"{0}\" switched to linked",
-                    SelectedItem.Name);
-                await SearchAsync();
-            }
-            else
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SwitchError) ?? "Error switching storage mode";
-            }
+            await taskFactory();
         }
-        catch (Exception ex)
+        catch
         {
-            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_SwitchError) ?? "Error switching storage mode"}: {ex.Message}";
         }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
-
-    [RelayCommand]
-    private async Task SwitchToCachedAsync()
-    {
-        if (SelectedItem is null) return;
-
-        var originalPath = await GetOriginalPathAsync(SelectedItem.Id);
-        if (string.IsNullOrEmpty(originalPath) || !File.Exists(originalPath))
-        {
-            var title = LanguageManager.GetString(StringLocalization.Keys.FM_SelectOriginalFile) ?? "Select family file";
-            originalPath = _dialogService.ShowOpenFileDialog(title);
-            if (originalPath is null) return;
-        }
-
-        IsLoading = true;
-        try
-        {
-            var success = await _writableProvider.SwitchStorageModeAsync(
-                SelectedItem.Id, FamilyFileStorageMode.Cached, originalPath);
-
-            if (success)
-            {
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_SwitchedToCached) ?? "Family \"{0}\" copied to cache",
-                    SelectedItem.Name);
-                await SearchAsync();
-            }
-            else
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SwitchError) ?? "Error switching storage mode";
-            }
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_SwitchError) ?? "Error switching storage mode"}: {ex.Message}";
-        }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
-
-    private async Task<string?> GetOriginalPathAsync(string catalogItemId)
-    {
-        var versions = await _catalogProvider.GetVersionsAsync(catalogItemId);
-        var item = await _catalogProvider.GetItemAsync(catalogItemId);
-        if (item?.CurrentVersionId is null) return null;
-
-        var currentVersion = versions.FirstOrDefault(v => v.Id == item.CurrentVersionId);
-        if (currentVersion is null) return null;
-
-        var file = await _catalogProvider.GetFileAsync(currentVersion.FileId);
-        return file?.OriginalPath;
     }
 }

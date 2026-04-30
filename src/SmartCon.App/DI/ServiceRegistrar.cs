@@ -139,9 +139,10 @@ public static class ServiceRegistrar
         services.AddSingleton<IViewRepository, RevitViewRepository>();
         services.AddSingleton<IShareSettingsViewModelFactory, ShareSettingsViewModelFactory>();
 
-        // --- FamilyManager (Phase 12) ---
+        // --- FamilyManager (Phase 13) ---
         services.AddSingleton<LocalCatalogDatabase>();
         services.AddSingleton<LocalCatalogMigrator>();
+        services.AddSingleton<StoragePathResolver>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
         services.AddSingleton<IWritableFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
@@ -149,6 +150,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();
         services.AddSingleton<IProjectFamilyUsageRepository, LocalProjectFamilyUsageRepository>();
+        services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
         services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();

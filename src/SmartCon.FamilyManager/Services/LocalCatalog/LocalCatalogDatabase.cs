@@ -7,29 +7,33 @@ internal sealed class LocalCatalogDatabase
 {
     static LocalCatalogDatabase()
     {
-        // Initialize SQLitePCL provider for .NET Framework compatibility
         SQLitePCL.Batteries.Init();
     }
 
     private string _dbPath;
     private string _connectionString;
+    private string _databaseRoot;
 
     public LocalCatalogDatabase()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var dir = Path.Combine(appData, "SmartCon", "FamilyManager", "databases", "default");
-        _dbPath = Path.Combine(dir, "catalog.db");
-        _connectionString = $"Data Source={_dbPath};Pooling=false";
+        _databaseRoot = Path.Combine(appData, "SmartCon", "FamilyManager", "default");
+        _dbPath = Path.Combine(_databaseRoot, "catalog.db");
+        _connectionString = BuildConnectionString(_dbPath);
     }
 
     public string ConnectionString => _connectionString;
 
+    public string GetDatabaseRoot() => _databaseRoot;
+
     public SqliteConnection CreateConnection() => new(_connectionString);
 
-    public void EnsureDatabase()
+    public void SwitchToPath(string databaseRootPath)
     {
-        var dir = Path.GetDirectoryName(_dbPath)!;
-        Directory.CreateDirectory(dir);
+        _databaseRoot = databaseRootPath;
+        _dbPath = Path.Combine(_databaseRoot, "catalog.db");
+        _connectionString = BuildConnectionString(_dbPath);
+        Directory.CreateDirectory(_databaseRoot);
     }
 
     public void Checkpoint()
@@ -44,16 +48,11 @@ internal sealed class LocalCatalogDatabase
         }
         catch
         {
-            // Best-effort checkpoint
         }
     }
 
-    public void SwitchDatabase(string databaseId)
+    private static string BuildConnectionString(string dbPath)
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var dir = Path.Combine(appData, "SmartCon", "FamilyManager", "databases", databaseId);
-        _dbPath = Path.Combine(dir, "catalog.db");
-        _connectionString = $"Data Source={_dbPath};Pooling=false";
-        EnsureDatabase();
+        return $"Data Source={dbPath};Pooling=false";
     }
 }

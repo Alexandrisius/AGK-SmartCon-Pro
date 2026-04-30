@@ -191,6 +191,7 @@ public static class StringLocalization
         d[Keys.PM_ExportName_Preview] = "Предпросмотр: ";
 
         d[Keys.FM_SearchPlaceholder] = "Поиск семейств...";
+        d[Keys.FM_Import] = "Импорт";
         d[Keys.FM_ImportFile] = "Импорт файла";
         d[Keys.FM_ImportFolder] = "Импорт папки";
         d[Keys.FM_LoadToProject] = "Загрузить в проект";
@@ -199,12 +200,9 @@ public static class StringLocalization
         d[Keys.FM_NoActiveDocument] = "Нет активного документа";
         d[Keys.FM_ImportProgress] = "Импорт {0} из {1}...";
         d[Keys.FM_ColName] = "Имя";
-        d[Keys.FM_ColCategory] = "Категория";
         d[Keys.FM_ColStatus] = "Статус";
         d[Keys.FM_ColVersion] = "Версия";
         d[Keys.FM_ColUpdated] = "Обновлено";
-        d[Keys.FM_StatusTotal] = "Всего: {0}";
-        d[Keys.FM_Search] = "Поиск";
         d[Keys.FM_Save] = "Сохранить";
         d[Keys.FM_Cancel] = "Отмена";
         d[Keys.FM_Name] = "Имя";
@@ -212,20 +210,10 @@ public static class StringLocalization
         d[Keys.FM_Category] = "Категория";
         d[Keys.FM_Tags] = "Теги (через запятую)";
         d[Keys.FM_Status] = "Статус";
-        d[Keys.FM_Loading] = "Загрузка...";
-        d[Keys.FM_NoItems] = "Каталог пуст. Импортируйте файлы .rfa.";
         d[Keys.FM_ImportSuccess] = "Импортировано: {0}";
         d[Keys.FM_ImportError] = "Ошибка импорта: {0}";
         d[Keys.FM_LoadSuccess] = "Семейство \"{0}\" загружено в проект";
         d[Keys.FM_LoadAndPlaceSuccess] = "Семейство \"{0}\" — нажмите для размещения";
-        d[Keys.FM_NoFamilySymbol] = "В семействе \"{0}\" не найден типоразмер";
-        d[Keys.FM_CopyFiles] = "Копировать файлы";
-        d[Keys.FM_SwitchToLinked] = "Освободить место (по ссылке)";
-        d[Keys.FM_SwitchToCached] = "Сохранить копию";
-        d[Keys.FM_SwitchedToLinked] = "Семейство \"{0}\" переведено в режим по ссылке";
-        d[Keys.FM_SwitchedToCached] = "Семейство \"{0}\" скопировано в кэш";
-        d[Keys.FM_SwitchError] = "Ошибка переключения режима хранения";
-        d[Keys.FM_SelectOriginalFile] = "Выберите файл семейства";
         d[Keys.FM_LoadError] = "Ошибка загрузки: {0}";
         d[Keys.FM_DuplicateSkipped] = "Дубликат пропущен: {0}";
         d[Keys.FM_Title_MetadataEdit] = "Редактирование метаданных";
@@ -248,9 +236,9 @@ public static class StringLocalization
         d[Keys.FM_FamilyDeletePrompt] = "Удалить семейство \"{0}\" из каталога?";
         d[Keys.FM_DeleteFromCatalog] = "Удалить из каталога";
         d[Keys.FM_NoVersionSelected] = "Версия не выбрана";
-        d[Keys.FM_DefaultDbName] = "Основной каталог";
         d[Keys.FM_NoCategory] = "Без категории";
-        d[Keys.FM_DeleteDb] = "✕";
+        d[Keys.FM_DbSelectPath] = "Выберите расположение базы данных";
+        d[Keys.FM_Disconnect] = "Отключить базу данных";
 
         return d;
     }
@@ -436,6 +424,7 @@ public static class StringLocalization
         d[Keys.PM_ExportName_Preview] = "Preview: ";
 
         d[Keys.FM_SearchPlaceholder] = "Search families...";
+        d[Keys.FM_Import] = "Import";
         d[Keys.FM_ImportFile] = "Import File";
         d[Keys.FM_ImportFolder] = "Import Folder";
         d[Keys.FM_LoadToProject] = "Load to Project";
@@ -444,12 +433,9 @@ public static class StringLocalization
         d[Keys.FM_NoActiveDocument] = "No active document";
         d[Keys.FM_ImportProgress] = "Importing {0} of {1}...";
         d[Keys.FM_ColName] = "Name";
-        d[Keys.FM_ColCategory] = "Category";
         d[Keys.FM_ColStatus] = "Status";
         d[Keys.FM_ColVersion] = "Version";
         d[Keys.FM_ColUpdated] = "Updated";
-        d[Keys.FM_StatusTotal] = "Total: {0}";
-        d[Keys.FM_Search] = "Search";
         d[Keys.FM_Save] = "Save";
         d[Keys.FM_Cancel] = "Cancel";
         d[Keys.FM_Name] = "Name";
@@ -457,20 +443,10 @@ public static class StringLocalization
         d[Keys.FM_Category] = "Category";
         d[Keys.FM_Tags] = "Tags (comma-separated)";
         d[Keys.FM_Status] = "Status";
-        d[Keys.FM_Loading] = "Loading...";
-        d[Keys.FM_NoItems] = "Catalog is empty. Import .rfa files.";
         d[Keys.FM_ImportSuccess] = "Imported: {0}";
         d[Keys.FM_ImportError] = "Import error: {0}";
         d[Keys.FM_LoadSuccess] = "Family \"{0}\" loaded into project";
         d[Keys.FM_LoadAndPlaceSuccess] = "Family \"{0}\" — click to place";
-        d[Keys.FM_NoFamilySymbol] = "No type found in family \"{0}\"";
-        d[Keys.FM_CopyFiles] = "Copy files";
-        d[Keys.FM_SwitchToLinked] = "Free space (use link)";
-        d[Keys.FM_SwitchToCached] = "Save copy";
-        d[Keys.FM_SwitchedToLinked] = "Family \"{0}\" switched to linked";
-        d[Keys.FM_SwitchedToCached] = "Family \"{0}\" copied to cache";
-        d[Keys.FM_SwitchError] = "Error switching storage mode";
-        d[Keys.FM_SelectOriginalFile] = "Select family file";
         d[Keys.FM_LoadError] = "Load error: {0}";
         d[Keys.FM_DuplicateSkipped] = "Duplicate skipped: {0}";
         d[Keys.FM_Title_MetadataEdit] = "Edit Metadata";
@@ -493,9 +469,9 @@ public static class StringLocalization
         d[Keys.FM_FamilyDeletePrompt] = "Delete family \"{0}\" from catalog?";
         d[Keys.FM_DeleteFromCatalog] = "Delete from catalog";
         d[Keys.FM_NoVersionSelected] = "No version selected";
-        d[Keys.FM_DefaultDbName] = "Main Catalog";
         d[Keys.FM_NoCategory] = "No category";
-        d[Keys.FM_DeleteDb] = "✕";
+        d[Keys.FM_DbSelectPath] = "Select database location";
+        d[Keys.FM_Disconnect] = "Disconnect database";
 
         return d;
     }
@@ -689,6 +665,7 @@ public static class StringLocalization
         public const string PM_Result_NoSettings = "PM_Result_NoSettings";
 
         public const string FM_SearchPlaceholder = "FM_SearchPlaceholder";
+        public const string FM_Import = "FM_Import";
         public const string FM_ImportFile = "FM_ImportFile";
         public const string FM_ImportFolder = "FM_ImportFolder";
         public const string FM_LoadToProject = "FM_LoadToProject";
@@ -697,12 +674,9 @@ public static class StringLocalization
         public const string FM_NoActiveDocument = "FM_NoActiveDocument";
         public const string FM_ImportProgress = "FM_ImportProgress";
         public const string FM_ColName = "FM_ColName";
-        public const string FM_ColCategory = "FM_ColCategory";
         public const string FM_ColStatus = "FM_ColStatus";
         public const string FM_ColVersion = "FM_ColVersion";
         public const string FM_ColUpdated = "FM_ColUpdated";
-        public const string FM_StatusTotal = "FM_StatusTotal";
-        public const string FM_Search = "FM_Search";
         public const string FM_Save = "FM_Save";
         public const string FM_Cancel = "FM_Cancel";
         public const string FM_Name = "FM_Name";
@@ -710,20 +684,10 @@ public static class StringLocalization
         public const string FM_Category = "FM_Category";
         public const string FM_Tags = "FM_Tags";
         public const string FM_Status = "FM_Status";
-        public const string FM_Loading = "FM_Loading";
-        public const string FM_NoItems = "FM_NoItems";
         public const string FM_ImportSuccess = "FM_ImportSuccess";
         public const string FM_ImportError = "FM_ImportError";
         public const string FM_LoadSuccess = "FM_LoadSuccess";
         public const string FM_LoadAndPlaceSuccess = "FM_LoadAndPlaceSuccess";
-        public const string FM_NoFamilySymbol = "FM_NoFamilySymbol";
-        public const string FM_CopyFiles = "FM_CopyFiles";
-        public const string FM_SwitchToLinked = "FM_SwitchToLinked";
-        public const string FM_SwitchToCached = "FM_SwitchToCached";
-        public const string FM_SwitchedToLinked = "FM_SwitchedToLinked";
-        public const string FM_SwitchedToCached = "FM_SwitchedToCached";
-        public const string FM_SwitchError = "FM_SwitchError";
-        public const string FM_SelectOriginalFile = "FM_SelectOriginalFile";
         public const string FM_LoadError = "FM_LoadError";
         public const string FM_DuplicateSkipped = "FM_DuplicateSkipped";
         public const string FM_Title_MetadataEdit = "FM_Title_MetadataEdit";
@@ -745,8 +709,8 @@ public static class StringLocalization
         public const string FM_FamilyDeletePrompt = "FM_FamilyDeletePrompt";
         public const string FM_DeleteFromCatalog = "FM_DeleteFromCatalog";
         public const string FM_NoVersionSelected = "FM_NoVersionSelected";
-        public const string FM_DefaultDbName = "FM_DefaultDbName";
         public const string FM_NoCategory = "FM_NoCategory";
-        public const string FM_DeleteDb = "FM_DeleteDb";
+        public const string FM_DbSelectPath = "FM_DbSelectPath";
+        public const string FM_Disconnect = "FM_Disconnect";
     }
 }
