@@ -233,9 +233,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             var rootNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
             var expandAll = !string.IsNullOrWhiteSpace(SearchText);
 
+            var expandedIds = new HashSet<string>();
+            if (!expandAll) CollectExpandedIds(TreeNodes, expandedIds);
+
             foreach (var catNode in tree.GetRootNodes())
             {
-                var catVm = BuildCategoryNode(tree, catNode, results, expandAll);
+                var catVm = BuildCategoryNode(tree, catNode, results, expandAll, expandedIds);
                 if (catVm is CategoryNodeViewModel { FamilyCount: > 0 }) rootNodes.Add(catVm);
             }
 
@@ -264,6 +267,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 }));
             }
             noCatNode.FamilyCount = uncategorized.Count;
+            if (!expandAll && expandedIds.Contains("__no_category__")) noCatNode.IsExpanded = true;
             rootNodes.Add(noCatNode);
 
             TreeNodes = rootNodes;
@@ -281,13 +285,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
     }
 
-    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyList<FamilyCatalogItem> allItems, bool expandAll = false)
+    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyList<FamilyCatalogItem> allItems, bool expandAll, HashSet<string>? expandedIds = null)
     {
         var vm = new CategoryNodeViewModel(catNode);
 
         foreach (var child in tree.GetChildren(catNode.Id))
         {
-            var childVm = BuildCategoryNode(tree, child, allItems, expandAll);
+            var childVm = BuildCategoryNode(tree, child, allItems, expandAll, expandedIds);
             if (childVm is CategoryNodeViewModel { FamilyCount: > 0 }) vm.Children.Add(childVm);
         }
 
@@ -310,7 +314,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
 
         vm.FamilyCount = CountFamiliesRecursive(vm);
-        if (expandAll && vm.FamilyCount > 0) vm.IsExpanded = true;
+        if (vm.FamilyCount > 0)
+        {
+            if (expandAll) vm.IsExpanded = true;
+            else if (expandedIds is not null && expandedIds.Contains(catNode.Id)) vm.IsExpanded = true;
+        }
         return vm;
     }
 
@@ -325,6 +333,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 count += CountFamiliesRecursive(child);
         }
         return count;
+    }
+
+    private static void CollectExpandedIds(ObservableCollection<CatalogTreeNodeViewModel>? nodes, HashSet<string> ids)
+    {
+        if (nodes is null) return;
+        foreach (var node in nodes)
+        {
+            if (node is CategoryNodeViewModel cat && cat.IsExpanded)
+                ids.Add(cat.CategoryId);
+            CollectExpandedIds(node.Children, ids);
+        }
     }
 
     [RelayCommand]

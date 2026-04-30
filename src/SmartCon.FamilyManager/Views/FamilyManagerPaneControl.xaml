@@ -262,26 +262,10 @@
                   Padding="2"
                   AllowDrop="True">
 
-            <TreeView.ContextMenu>
-                <ContextMenu Style="{StaticResource ModernContextMenu}">
-                    <MenuItem Header="{DynamicResource FM_LoadAndPlace}"
-                              Command="{Binding LoadAndPlaceCommand}"
-                              Style="{StaticResource ModernMenuItem}"/>
-                    <MenuItem Header="{DynamicResource FM_LoadToProject}"
-                              Command="{Binding LoadToProjectCommand}"
-                              Style="{StaticResource ModernMenuItem}"/>
-                    <Separator Style="{StaticResource ModernSeparator}"/>
-                    <MenuItem Header="{DynamicResource FM_EditMetadata}"
-                              Command="{Binding EditMetadataCommand}"
-                              Style="{StaticResource ModernMenuItem}"/>
-                    <Separator Style="{StaticResource ModernSeparator}"/>
-                    <MenuItem Header="{DynamicResource FM_DeleteFromCatalog}"
-                              Command="{Binding DeleteFamilyCommand}"
-                              Style="{StaticResource DangerMenuItem}"/>
-                </ContextMenu>
-            </TreeView.ContextMenu>
-
             <TreeView.Resources>
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
+                                 Color="{x:Static SystemColors.HighlightColor}"/>
+
                 <HierarchicalDataTemplate DataType="{x:Type vm:CategoryNodeViewModel}"
                                            ItemsSource="{Binding Children}">
                     <StackPanel Orientation="Horizontal" Margin="2,1">
@@ -297,7 +281,29 @@
                 <DataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}">
                     <TextBlock Text="{Binding DisplayName}"
                                Margin="2,1"
-                               VerticalAlignment="Center"/>
+                               VerticalAlignment="Center"
+                               Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
+                        <TextBlock.ContextMenu>
+                            <ContextMenu Style="{StaticResource ModernContextMenu}"
+                                         Focusable="False"
+                                         DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="{DynamicResource FM_LoadAndPlace}"
+                                          Command="{Binding LoadAndPlaceCommand}"
+                                          Style="{StaticResource ModernMenuItem}"/>
+                                <MenuItem Header="{DynamicResource FM_LoadToProject}"
+                                          Command="{Binding LoadToProjectCommand}"
+                                          Style="{StaticResource ModernMenuItem}"/>
+                                <Separator Style="{StaticResource ModernSeparator}"/>
+                                <MenuItem Header="{DynamicResource FM_EditMetadata}"
+                                          Command="{Binding EditMetadataCommand}"
+                                          Style="{StaticResource ModernMenuItem}"/>
+                                <Separator Style="{StaticResource ModernSeparator}"/>
+                                <MenuItem Header="{DynamicResource FM_DeleteFromCatalog}"
+                                          Command="{Binding DeleteFamilyCommand}"
+                                          Style="{StaticResource DangerMenuItem}"/>
+                            </ContextMenu>
+                        </TextBlock.ContextMenu>
+                    </TextBlock>
                 </DataTemplate>
             </TreeView.Resources>
 
@@ -308,6 +314,11 @@
                     <Setter Property="AllowDrop" Value="True"/>
                     <EventSetter Event="TreeViewItem.DragOver" Handler="TreeViewItem_DragOver"/>
                     <EventSetter Event="TreeViewItem.Drop" Handler="TreeViewItem_Drop"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                    </Style.Triggers>
                 </Style>
             </TreeView.ItemContainerStyle>
         </TreeView>
