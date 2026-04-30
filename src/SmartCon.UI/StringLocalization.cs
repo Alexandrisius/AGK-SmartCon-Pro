@@ -196,6 +196,8 @@ public static class StringLocalization
         d[Keys.FM_ImportFolder] = "Импорт папки";
         d[Keys.FM_LoadToProject] = "Загрузить в проект";
         d[Keys.FM_LoadAndPlace] = "Загрузить и разместить";
+        d[Keys.FM_ExtractTypes] = "Извлечь типоразмеры";
+        d[Keys.FM_PlaceType] = "Разместить тип";
         d[Keys.FM_EditMetadata] = "Редактировать";
         d[Keys.FM_NoActiveDocument] = "Нет активного документа";
         d[Keys.FM_ImportProgress] = "Импорт {0} из {1}...";
@@ -453,6 +455,8 @@ public static class StringLocalization
         d[Keys.FM_ImportFolder] = "Import Folder";
         d[Keys.FM_LoadToProject] = "Load to Project";
         d[Keys.FM_LoadAndPlace] = "Load and Place";
+        d[Keys.FM_ExtractTypes] = "Extract Types";
+        d[Keys.FM_PlaceType] = "Place Type";
         d[Keys.FM_EditMetadata] = "Edit";
         d[Keys.FM_NoActiveDocument] = "No active document";
         d[Keys.FM_ImportProgress] = "Importing {0} of {1}...";
@@ -718,6 +722,8 @@ public static class StringLocalization
         public const string FM_ImportFolder = "FM_ImportFolder";
         public const string FM_LoadToProject = "FM_LoadToProject";
         public const string FM_LoadAndPlace = "FM_LoadAndPlace";
+        public const string FM_ExtractTypes = "FM_ExtractTypes";
+        public const string FM_PlaceType = "FM_PlaceType";
         public const string FM_EditMetadata = "FM_EditMetadata";
         public const string FM_NoActiveDocument = "FM_NoActiveDocument";
         public const string FM_ImportProgress = "FM_ImportProgress";

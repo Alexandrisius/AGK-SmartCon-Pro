@@ -278,7 +278,8 @@
                     </StackPanel>
                 </HierarchicalDataTemplate>
 
-                <DataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}">
+                <HierarchicalDataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}"
+                                            ItemsSource="{Binding Children}">
                     <TextBlock Text="{Binding DisplayName}"
                                Margin="2,1"
                                VerticalAlignment="Center"
@@ -294,6 +295,10 @@
                                           Command="{Binding LoadToProjectCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
                                 <Separator Style="{StaticResource ModernSeparator}"/>
+                                <MenuItem Header="{DynamicResource FM_ExtractTypes}"
+                                          Command="{Binding ExtractTypesCommand}"
+                                          Style="{StaticResource ModernMenuItem}"/>
+                                <Separator Style="{StaticResource ModernSeparator}"/>
                                 <MenuItem Header="{DynamicResource FM_EditMetadata}"
                                           Command="{Binding EditMetadataCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
@@ -301,6 +306,23 @@
                                 <MenuItem Header="{DynamicResource FM_DeleteFromCatalog}"
                                           Command="{Binding DeleteFamilyCommand}"
                                           Style="{StaticResource DangerMenuItem}"/>
+                            </ContextMenu>
+                        </TextBlock.ContextMenu>
+                    </TextBlock>
+                </HierarchicalDataTemplate>
+
+                <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
+                    <TextBlock Text="{Binding DisplayName}"
+                               Margin="14,1,2,1"
+                               VerticalAlignment="Center"
+                               Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
+                        <TextBlock.ContextMenu>
+                            <ContextMenu Style="{StaticResource ModernContextMenu}"
+                                         Focusable="False"
+                                         DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="{DynamicResource FM_PlaceType}"
+                                          Command="{Binding PlaceTypeCommand}"
+                                          Style="{StaticResource ModernMenuItem}"/>
                             </ContextMenu>
                         </TextBlock.ContextMenu>
                     </TextBlock>
@@ -315,6 +337,13 @@
                     <EventSetter Event="TreeViewItem.DragOver" Handler="TreeViewItem_DragOver"/>
                     <EventSetter Event="TreeViewItem.Drop" Handler="TreeViewItem_Drop"/>
                     <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsSelected}" Value="False"/>
+                                <Condition Binding="{Binding IsType}" Value="True"/>
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                        </MultiDataTrigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter Property="Foreground" Value="White"/>
                         </Trigger>

@@ -150,6 +150,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IWritableFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
         services.AddSingleton<LocalCategoryRepository>();
         services.AddSingleton<ICategoryRepository>(sp => sp.GetRequiredService<LocalCategoryRepository>());
+        services.AddSingleton<LocalFamilyTypeRepository>();
+        services.AddSingleton<IFamilyTypeRepository>(sp => sp.GetRequiredService<LocalFamilyTypeRepository>());
         services.AddSingleton<Sha256FileHasher>();
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();

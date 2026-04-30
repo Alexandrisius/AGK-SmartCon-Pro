@@ -123,6 +123,21 @@ internal static class FamilyCatalogSql
         ALTER TABLE catalog_items ADD COLUMN category_id TEXT
         """;
 
+    public const string CreateFamilyTypes = """
+        CREATE TABLE IF NOT EXISTS family_types (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            type_name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            UNIQUE(catalog_item_id, type_name)
+        )
+        """;
+
+    public const string CreateFamilyTypesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id)
+        """;
+
     public const string CreateTables = $"""
         {CreateDatabaseMeta};
         {CreateSchemaInfo};
@@ -132,7 +147,8 @@ internal static class FamilyCatalogSql
         {CreateFamilyAssets};
         {CreateCatalogTags};
         {CreateProjectUsage};
-        {CreateCategories}
+        {CreateCategories};
+        {CreateFamilyTypes}
         """;
 
     public const string CreateIndexes = """
@@ -152,6 +168,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_project_usage_created ON project_usage (created_at_utc);
         CREATE INDEX IF NOT EXISTS ix_family_assets_item ON family_assets (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_family_assets_type ON family_assets (asset_type);
-        CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id)
+        CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id);
+        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id)
         """;
 }

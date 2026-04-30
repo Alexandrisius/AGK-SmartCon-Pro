@@ -28,6 +28,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly IDatabaseManager _databaseManager;
     private readonly ITransactionService _transactionService;
     private readonly ICategoryRepository _categoryRepository;
+    private readonly IFamilyTypeRepository _typeRepository;
     private CancellationTokenSource? _searchCts;
 
     [ObservableProperty] private string _searchText = string.Empty;
@@ -55,7 +56,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         IRevitContext revitContext,
         IDatabaseManager databaseManager,
         ITransactionService transactionService,
-        ICategoryRepository categoryRepository)
+        ICategoryRepository categoryRepository,
+        IFamilyTypeRepository typeRepository)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -70,6 +72,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _databaseManager = databaseManager;
         _transactionService = transactionService;
         _categoryRepository = categoryRepository;
+        _typeRepository = typeRepository;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
 
@@ -156,10 +159,44 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 Description = leaf.Description,
             };
         }
+        else if (value is FamilyTypeNodeViewModel typeNode)
+        {
+            var parent = FindParentOf(TreeNodes, typeNode);
+            if (parent is FamilyLeafNodeViewModel parentLeaf)
+            {
+                SelectedItem = new FamilyCatalogItemRow
+                {
+                    Id = parentLeaf.CatalogItemId,
+                    Name = parentLeaf.DisplayName,
+                    CategoryId = parentLeaf.CategoryId,
+                    CategoryName = parentLeaf.CategoryPath,
+                    ContentStatus = parentLeaf.ContentStatus,
+                    VersionLabel = parentLeaf.VersionLabel,
+                    UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
+                    Tags = parentLeaf.Tags,
+                    Description = parentLeaf.Description,
+                };
+            }
+            else
+            {
+                SelectedItem = null;
+            }
+        }
         else
         {
             SelectedItem = null;
         }
+    }
+
+    private static CatalogTreeNodeViewModel? FindParentOf(ObservableCollection<CatalogTreeNodeViewModel> nodes, CatalogTreeNodeViewModel target)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Children.Contains(target)) return node;
+            var found = FindParentOf(node.Children, target);
+            if (found is not null) return found;
+        }
+        return null;
     }
 
     partial void OnSelectedConnectionChanged(DatabaseConnection? value)
@@ -234,7 +271,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             var expandAll = !string.IsNullOrWhiteSpace(SearchText);
 
             var expandedIds = new HashSet<string>();
-            if (!expandAll) CollectExpandedIds(TreeNodes, expandedIds);
+            var expandedFamilyIds = new HashSet<string>();
+            if (!expandAll) CollectExpandedIds(TreeNodes, expandedIds, expandedFamilyIds);
 
             foreach (var catNode in tree.GetRootNodes())
             {
@@ -269,6 +307,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             noCatNode.FamilyCount = uncategorized.Count;
             if (!expandAll && expandedIds.Contains("__no_category__")) noCatNode.IsExpanded = true;
             rootNodes.Add(noCatNode);
+
+            try
+            {
+                await AttachCachedTypesAsync(rootNodes, expandedFamilyIds, ct);
+            }
+            catch { }
 
             TreeNodes = rootNodes;
         }
@@ -335,14 +379,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         return count;
     }
 
-    private static void CollectExpandedIds(ObservableCollection<CatalogTreeNodeViewModel>? nodes, HashSet<string> ids)
+    private static void CollectExpandedIds(ObservableCollection<CatalogTreeNodeViewModel>? nodes, HashSet<string> catIds, HashSet<string>? familyIds)
     {
         if (nodes is null) return;
         foreach (var node in nodes)
         {
-            if (node is CategoryNodeViewModel cat && cat.IsExpanded)
-                ids.Add(cat.CategoryId);
-            CollectExpandedIds(node.Children, ids);
+            if (node.IsExpanded)
+            {
+                if (node is CategoryNodeViewModel cat) catIds.Add(cat.CategoryId);
+                else if (node is FamilyLeafNodeViewModel leaf && familyIds is not null) familyIds.Add(leaf.CatalogItemId);
+            }
+            CollectExpandedIds(node.Children, catIds, familyIds);
         }
     }
 
@@ -487,6 +534,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadSuccess) ?? "Family \"{0}\" loaded",
                         result.FamilyName ?? selectedName);
 
+                    var familyName = result.FamilyName ?? selectedName;
+                    var loadedFamily = FindLoadedFamily(doc, familyName);
+                    if (loadedFamily is not null)
+                    {
+                        var typeNames = ReadFamilyTypeNames(doc, loadedFamily);
+                        if (typeNames.Count > 0)
+                            FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames));
+                    }
+
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
                         CatalogItemId: selectedId,
@@ -557,10 +613,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
                 var familyName = result.FamilyName ?? selectedName;
 
-                var family = new FilteredElementCollector(doc)
-                    .OfClass(typeof(Autodesk.Revit.DB.Family))
-                    .Cast<Autodesk.Revit.DB.Family>()
-                    .FirstOrDefault(f => f.Name.Equals(familyName, StringComparison.OrdinalIgnoreCase));
+                var family = FindLoadedFamily(doc, familyName);
 
                 if (family is null)
                 {
@@ -569,6 +622,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                         "Family not found after loading");
                     return;
                 }
+
+                var typeNames = ReadFamilyTypeNames(doc, family);
+                if (typeNames.Count > 0)
+                    FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames));
 
                 var symbolId = family.GetFamilySymbolIds().Cast<ElementId>().FirstOrDefault();
                 if (symbolId is null) return;
@@ -839,6 +896,196 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    private void ExtractTypes()
+    {
+        if (SelectedItem is null) return;
+
+        var selectedId = SelectedItem.Id;
+        var selectedName = SelectedItem.Name;
+        var targetRevit = CurrentRevitVersion;
+
+        _externalEvent.Raise(() =>
+        {
+            var doc = _revitContext.GetDocument();
+            if (doc is null) return;
+
+            try
+            {
+                var family = FindLoadedFamily(doc, selectedName);
+
+                if (family is not null)
+                {
+                    var names = ReadFamilyTypeNames(doc, family);
+                    if (names.Count > 0)
+                        FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, names));
+                    return;
+                }
+
+                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                if (string.IsNullOrEmpty(resolved.AbsolutePath)) return;
+
+                List<string>? typeNames = null;
+                _transactionService.RunAndRollback("Extract Types", d =>
+                {
+                    if (!d.LoadFamily(resolved.AbsolutePath, new SimpleFamilyLoadOptions(), out var loaded) || loaded is null) return;
+                    typeNames = ReadFamilyTypeNames(d, loaded);
+                });
+
+                if (typeNames is not null && typeNames.Count > 0)
+                    FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames));
+            }
+            catch { }
+        });
+    }
+
+    [RelayCommand]
+    private void PlaceType()
+    {
+        if (SelectedTreeNode is not FamilyTypeNodeViewModel typeNode) return;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return;
+
+        var catalogItemId = leaf.CatalogItemId;
+        var familyName = leaf.DisplayName;
+        var typeName = typeNode.TypeName;
+        var targetRevit = CurrentRevitVersion;
+
+        _externalEvent.RaiseWithApplication(appObj =>
+        {
+            var uiApp = (UIApplication)appObj;
+            var doc = _revitContext.GetDocument();
+            if (doc is null) return;
+
+            try
+            {
+                var family = FindLoadedFamily(doc, familyName);
+
+                if (family is null)
+                {
+                    var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                    if (string.IsNullOrEmpty(resolved.AbsolutePath)) return;
+
+                    var loadOptions = FamilyLoadOptions.Default with { PreferredName = familyName };
+                    _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
+
+                    family = FindLoadedFamily(doc, familyName);
+                }
+
+                if (family is null) return;
+
+                var symbol = FindFamilySymbolByName(doc, family, typeName);
+                if (symbol is null) return;
+
+                if (!symbol.IsActive)
+                {
+                    _transactionService.RunInTransaction("Activate Symbol", _ =>
+                    {
+                        if (!symbol.IsActive) symbol.Activate();
+                    });
+                }
+
+                uiApp.ActiveUIDocument?.PostRequestForElementTypePlacement(symbol);
+
+                FireAndForget(async () =>
+                {
+                    await SaveTypesAndReloadTreeAsync(catalogItemId, ReadFamilyTypeNames(doc, family));
+                });
+            }
+            catch { }
+        });
+    }
+
+    private async Task SaveTypesAndReloadTreeAsync(string catalogItemId, List<string> typeNames)
+    {
+        var types = typeNames.Select((name, i) => new FamilyTypeDescriptor(
+            Guid.NewGuid().ToString(), catalogItemId, name, i)).ToList();
+
+        await _typeRepository.SaveTypesAsync(catalogItemId, types.AsReadOnly(), CancellationToken.None);
+        await LoadTreeAsync();
+    }
+
+    private static Autodesk.Revit.DB.Family? FindLoadedFamily(Document doc, string familyName)
+    {
+        return new FilteredElementCollector(doc)
+            .OfClass(typeof(Autodesk.Revit.DB.Family))
+            .Cast<Autodesk.Revit.DB.Family>()
+            .FirstOrDefault(f => f.Name.Equals(familyName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static List<string> ReadFamilyTypeNames(Document doc, Autodesk.Revit.DB.Family family)
+    {
+        return family.GetFamilySymbolIds()
+            .Select(id => doc.GetElement(id))
+            .OfType<FamilySymbol>()
+            .Select(s => s.Name)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static FamilySymbol? FindFamilySymbolByName(Document doc, Autodesk.Revit.DB.Family family, string typeName)
+    {
+        return family.GetFamilySymbolIds()
+            .Select(id => doc.GetElement(id))
+            .OfType<FamilySymbol>()
+            .FirstOrDefault(s => s.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task AttachCachedTypesAsync(ObservableCollection<CatalogTreeNodeViewModel> rootNodes, HashSet<string> expandedFamilyIds, CancellationToken ct)
+    {
+        var familyIds = new List<string>();
+        CollectFamilyIds(rootNodes, familyIds);
+        if (familyIds.Count == 0) return;
+
+        var batch = await _typeRepository.GetAllTypesBatchAsync(familyIds, ct);
+
+        AttachTypesToNodes(rootNodes, batch, expandedFamilyIds);
+    }
+
+    private static void CollectFamilyIds(ObservableCollection<CatalogTreeNodeViewModel> nodes, List<string> ids)
+    {
+        foreach (var node in nodes)
+        {
+            if (node is FamilyLeafNodeViewModel leaf)
+                ids.Add(leaf.CatalogItemId);
+            CollectFamilyIds(node.Children, ids);
+        }
+    }
+
+    private static void AttachTypesToNodes(ObservableCollection<CatalogTreeNodeViewModel> nodes, IReadOnlyDictionary<string, IReadOnlyList<FamilyTypeDescriptor>> batch, HashSet<string> expandedFamilyIds)
+    {
+        foreach (var node in nodes)
+        {
+            if (node is FamilyLeafNodeViewModel leaf && batch.TryGetValue(leaf.CatalogItemId, out var types))
+            {
+                foreach (var t in types)
+                    leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+
+                if (expandedFamilyIds.Contains(leaf.CatalogItemId))
+                    leaf.IsExpanded = true;
+            }
+            AttachTypesToNodes(node.Children, batch, expandedFamilyIds);
+        }
+    }
+
+    private sealed class SimpleFamilyLoadOptions : IFamilyLoadOptions
+    {
+        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
+        {
+            overwriteParameterValues = true;
+            return true;
+        }
+
+        public bool OnSharedFamilyFound(Autodesk.Revit.DB.Family sharedFamily, bool familyInUse,
+            out Autodesk.Revit.DB.FamilySource source, out bool overwriteParameterValues)
+        {
+            source = Autodesk.Revit.DB.FamilySource.Family;
+            overwriteParameterValues = true;
+            return true;
         }
     }
 

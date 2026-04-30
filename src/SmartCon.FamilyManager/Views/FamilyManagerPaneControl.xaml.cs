@@ -61,7 +61,7 @@ public sealed partial class FamilyManagerPaneControl : SWC.UserControl
     {
         if (e.OriginalSource is not SW.DependencyObject dep) return;
         var tvi = FindAncestor<SWC.TreeViewItem>(dep);
-        if (tvi?.DataContext is FamilyLeafNodeViewModel) tvi.IsSelected = true;
+        if (tvi?.DataContext is FamilyLeafNodeViewModel or FamilyTypeNodeViewModel) tvi.IsSelected = true;
     }
 
     private void CategoryTree_PreviewMouseDown(object sender, SWI.MouseButtonEventArgs e)

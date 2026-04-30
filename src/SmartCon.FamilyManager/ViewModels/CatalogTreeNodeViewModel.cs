@@ -11,4 +11,5 @@ public abstract partial class CatalogTreeNodeViewModel : ObservableObject
     [ObservableProperty] private bool _isSelected;
 
     public abstract bool IsCategory { get; }
+    public virtual bool IsType => false;
 }
