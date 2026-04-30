@@ -7,5 +7,5 @@ public interface IFamilyManagerViewModelFactory
 {
     FamilyMetadataEditViewModel CreateMetadataEditViewModel(
         string catalogItemId, string name, string? description,
-        string? category, IReadOnlyList<string> tags, ContentStatus contentStatus);
+        string? categoryId, string? categoryPath, IReadOnlyList<string> tags, ContentStatus contentStatus);
 }

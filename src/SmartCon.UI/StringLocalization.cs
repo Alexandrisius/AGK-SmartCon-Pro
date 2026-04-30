@@ -240,6 +240,30 @@ public static class StringLocalization
         d[Keys.FM_DbSelectPath] = "Выберите расположение базы данных";
         d[Keys.FM_Disconnect] = "Отключить базу данных";
 
+        d[Keys.FM_CTE_Title] = "Редактор дерева категорий";
+        d[Keys.FM_CTE_AddRoot] = "+ Корень";
+        d[Keys.FM_CTE_AddChild] = "+ Вложенная";
+        d[Keys.FM_CTE_Rename] = "Переименовать";
+        d[Keys.FM_CTE_Delete] = "Удалить";
+        d[Keys.FM_CTE_Import] = "Импорт";
+        d[Keys.FM_CTE_Export] = "Экспорт";
+        d[Keys.FM_CTE_Close] = "Закрыть";
+        d[Keys.FM_CTE_AddCategory] = "Добавить категорию";
+        d[Keys.FM_CTE_CategoryName] = "Название категории:";
+        d[Keys.FM_CTE_AddSubcategory] = "Добавить подкатегорию";
+        d[Keys.FM_CTE_SubcategoryName] = "Название подкатегории:";
+        d[Keys.FM_CTE_NewName] = "Новое название:";
+        d[Keys.FM_CTE_DeleteCategory] = "Удаление категории";
+        d[Keys.FM_CTE_DeleteConfirm] = "Удалить \"{0}\"? {1} семейств будут перемещены в \"{2}\".";
+        d[Keys.FM_CTE_DeleteEmpty] = "Удалить \"{0}\"?";
+        d[Keys.FM_CTE_Deleted] = "Удалено: {0}";
+        d[Keys.FM_CTE_ImportTree] = "Импорт дерева категорий";
+        d[Keys.FM_CTE_Imported] = "Импортировано {0} категорий";
+        d[Keys.FM_CTE_ExportTree] = "Экспорт дерева категорий";
+        d[Keys.FM_CTE_Exported] = "Экспортировано в {0}";
+        d[Keys.FM_CP_Title] = "Выбор категории";
+        d[Keys.FM_CP_Clear] = "Сбросить";
+
         return d;
     }
 
@@ -472,6 +496,30 @@ public static class StringLocalization
         d[Keys.FM_NoCategory] = "No category";
         d[Keys.FM_DbSelectPath] = "Select database location";
         d[Keys.FM_Disconnect] = "Disconnect database";
+
+        d[Keys.FM_CTE_Title] = "Category Tree Editor";
+        d[Keys.FM_CTE_AddRoot] = "+ Root";
+        d[Keys.FM_CTE_AddChild] = "+ Child";
+        d[Keys.FM_CTE_Rename] = "Rename";
+        d[Keys.FM_CTE_Delete] = "Delete";
+        d[Keys.FM_CTE_Import] = "Import";
+        d[Keys.FM_CTE_Export] = "Export";
+        d[Keys.FM_CTE_Close] = "Close";
+        d[Keys.FM_CTE_AddCategory] = "Add Category";
+        d[Keys.FM_CTE_CategoryName] = "Category name:";
+        d[Keys.FM_CTE_AddSubcategory] = "Add Subcategory";
+        d[Keys.FM_CTE_SubcategoryName] = "Subcategory name:";
+        d[Keys.FM_CTE_NewName] = "New name:";
+        d[Keys.FM_CTE_DeleteCategory] = "Delete Category";
+        d[Keys.FM_CTE_DeleteConfirm] = "Delete \"{0}\"? {1} families will be moved to \"{2}\".";
+        d[Keys.FM_CTE_DeleteEmpty] = "Delete \"{0}\"?";
+        d[Keys.FM_CTE_Deleted] = "Deleted: {0}";
+        d[Keys.FM_CTE_ImportTree] = "Import Category Tree";
+        d[Keys.FM_CTE_Imported] = "Imported {0} categories";
+        d[Keys.FM_CTE_ExportTree] = "Export Category Tree";
+        d[Keys.FM_CTE_Exported] = "Exported to {0}";
+        d[Keys.FM_CP_Title] = "Select Category";
+        d[Keys.FM_CP_Clear] = "Clear";
 
         return d;
     }
@@ -712,5 +760,29 @@ public static class StringLocalization
         public const string FM_NoCategory = "FM_NoCategory";
         public const string FM_DbSelectPath = "FM_DbSelectPath";
         public const string FM_Disconnect = "FM_Disconnect";
+
+        public const string FM_CTE_Title = "FM_CTE_Title";
+        public const string FM_CTE_AddRoot = "FM_CTE_AddRoot";
+        public const string FM_CTE_AddChild = "FM_CTE_AddChild";
+        public const string FM_CTE_Rename = "FM_CTE_Rename";
+        public const string FM_CTE_Delete = "FM_CTE_Delete";
+        public const string FM_CTE_Import = "FM_CTE_Import";
+        public const string FM_CTE_Export = "FM_CTE_Export";
+        public const string FM_CTE_Close = "FM_CTE_Close";
+        public const string FM_CTE_AddCategory = "FM_CTE_AddCategory";
+        public const string FM_CTE_CategoryName = "FM_CTE_CategoryName";
+        public const string FM_CTE_AddSubcategory = "FM_CTE_AddSubcategory";
+        public const string FM_CTE_SubcategoryName = "FM_CTE_SubcategoryName";
+        public const string FM_CTE_NewName = "FM_CTE_NewName";
+        public const string FM_CTE_DeleteCategory = "FM_CTE_DeleteCategory";
+        public const string FM_CTE_DeleteConfirm = "FM_CTE_DeleteConfirm";
+        public const string FM_CTE_DeleteEmpty = "FM_CTE_DeleteEmpty";
+        public const string FM_CTE_Deleted = "FM_CTE_Deleted";
+        public const string FM_CTE_ImportTree = "FM_CTE_ImportTree";
+        public const string FM_CTE_Imported = "FM_CTE_Imported";
+        public const string FM_CTE_ExportTree = "FM_CTE_ExportTree";
+        public const string FM_CTE_Exported = "FM_CTE_Exported";
+        public const string FM_CP_Title = "FM_CP_Title";
+        public const string FM_CP_Clear = "FM_CP_Clear";
     }
 }

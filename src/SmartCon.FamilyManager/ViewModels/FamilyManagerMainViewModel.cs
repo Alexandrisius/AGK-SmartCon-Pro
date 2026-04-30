@@ -1,7 +1,5 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.IO;
-using System.Windows.Data;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -29,11 +27,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly IRevitContext _revitContext;
     private readonly IDatabaseManager _databaseManager;
     private readonly ITransactionService _transactionService;
+    private readonly ICategoryRepository _categoryRepository;
     private CancellationTokenSource? _searchCts;
 
     [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private FamilyCatalogItemRow? _selectedItem;
-    [ObservableProperty] private ICollectionView? _familyItemsView;
+    [ObservableProperty] private ObservableCollection<CatalogTreeNodeViewModel> _treeNodes = [];
+    [ObservableProperty] private CatalogTreeNodeViewModel? _selectedTreeNode;
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
@@ -54,7 +54,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         IFamilyManagerViewModelFactory viewModelFactory,
         IRevitContext revitContext,
         IDatabaseManager databaseManager,
-        ITransactionService transactionService)
+        ITransactionService transactionService,
+        ICategoryRepository categoryRepository)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -68,10 +69,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _revitContext = revitContext;
         _databaseManager = databaseManager;
         _transactionService = transactionService;
+        _categoryRepository = categoryRepository;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
-
-        FamilyItemsView = new ListCollectionView(new ObservableCollection<FamilyCatalogItemRow>());
 
         DetectRevitVersion();
         FireAndForget(InitializeAsync);
@@ -98,7 +98,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         SmartConLogger.Info($"======================================================================");
 
         RefreshConnections();
-        await SearchAsync();
+        await LoadTreeAsync();
     }
 
     private bool _suppressConnectionChanged;
@@ -122,14 +122,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private void OnActiveDatabaseChanged(object? sender, string connectionId)
     {
         RefreshConnections();
-        FireAndForget(() => SearchAsync());
+        FireAndForget(() => LoadTreeAsync());
     }
 
     partial void OnSearchTextChanged(string value)
     {
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
-        FireAndForget(() => SearchAsync(_searchCts.Token));
+        FireAndForget(() => LoadTreeAsync(_searchCts.Token));
     }
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
@@ -137,6 +137,29 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active;
         LoadToProjectCommand.NotifyCanExecuteChanged();
         LoadAndPlaceCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedTreeNodeChanged(CatalogTreeNodeViewModel? value)
+    {
+        if (value is FamilyLeafNodeViewModel leaf)
+        {
+            SelectedItem = new FamilyCatalogItemRow
+            {
+                Id = leaf.CatalogItemId,
+                Name = leaf.DisplayName,
+                CategoryId = leaf.CategoryId,
+                CategoryName = leaf.CategoryPath,
+                ContentStatus = leaf.ContentStatus,
+                VersionLabel = leaf.VersionLabel,
+                UpdatedAtUtc = leaf.UpdatedAtUtc,
+                Tags = leaf.Tags,
+                Description = leaf.Description,
+            };
+        }
+        else
+        {
+            SelectedItem = null;
+        }
     }
 
     partial void OnSelectedConnectionChanged(DatabaseConnection? value)
@@ -178,11 +201,22 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task SearchAsync(CancellationToken ct = default)
+    private async Task LoadTreeAsync(CancellationToken ct = default)
     {
         IsLoading = true;
         try
         {
+            IReadOnlyList<Core.Models.FamilyManager.CategoryNode> categories = [];
+            try
+            {
+                categories = await _categoryRepository.GetAllAsync(ct);
+            }
+            catch
+            {
+            }
+
+            var tree = new CategoryTree(categories);
+
             var query = new FamilyCatalogQuery(
                 SearchText: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText,
                 CategoryFilter: null,
@@ -191,21 +225,35 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 ManufacturerFilter: null,
                 Sort: FamilyCatalogSort.NameAsc,
                 Offset: 0,
-                Limit: 200);
+                Limit: 500);
 
             var results = await _catalogProvider.SearchAsync(query, ct);
             TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
 
-            var rows = new ObservableCollection<FamilyCatalogItemRow>();
-            foreach (var item in results)
+            var rootNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+            var expandAll = !string.IsNullOrWhiteSpace(SearchText);
+
+            foreach (var catNode in tree.GetRootNodes())
             {
-                rows.Add(new FamilyCatalogItemRow
+                var catVm = BuildCategoryNode(tree, catNode, results, expandAll);
+                if (catVm is CategoryNodeViewModel { FamilyCount: > 0 }) rootNodes.Add(catVm);
+            }
+
+            var uncategorized = results.Where(r => string.IsNullOrEmpty(r.CategoryId)).ToList();
+            var noCatLabel = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
+            var noCatNode = new CategoryNodeViewModel(
+                categoryId: "__no_category__",
+                name: noCatLabel,
+                parentId: null,
+                fullPath: noCatLabel);
+            foreach (var item in uncategorized)
+            {
+                noCatNode.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
                 {
                     Id = item.Id,
                     Name = item.Name,
-                    CategoryName = string.IsNullOrWhiteSpace(item.CategoryName)
-                        ? LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category"
-                        : item.CategoryName,
+                    CategoryId = item.CategoryId,
+                    CategoryName = null,
                     Manufacturer = item.Manufacturer,
                     ContentStatus = item.ContentStatus,
                     CurrentVersionLabel = item.CurrentVersionLabel,
@@ -213,18 +261,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     UpdatedAtUtc = item.UpdatedAtUtc,
                     Tags = item.Tags,
                     Description = item.Description,
-                });
+                }));
             }
+            noCatNode.FamilyCount = uncategorized.Count;
+            rootNodes.Add(noCatNode);
 
-            var view = new ListCollectionView(rows);
-            view.GroupDescriptions.Add(new PropertyGroupDescription("CategoryName"));
-            view.SortDescriptions.Add(new SortDescription("CategoryName", ListSortDirection.Ascending));
-            view.SortDescriptions.Add(new SortDescription("Name", ListSortDirection.Ascending));
-            FamilyItemsView = view;
+            TreeNodes = rootNodes;
         }
-        catch (OperationCanceledException)
-        {
-        }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             StatusMessage = string.Format(
@@ -234,6 +278,64 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyList<FamilyCatalogItem> allItems, bool expandAll = false)
+    {
+        var vm = new CategoryNodeViewModel(catNode);
+
+        foreach (var child in tree.GetChildren(catNode.Id))
+        {
+            var childVm = BuildCategoryNode(tree, child, allItems, expandAll);
+            if (childVm is CategoryNodeViewModel { FamilyCount: > 0 }) vm.Children.Add(childVm);
+        }
+
+        foreach (var item in allItems.Where(i => i.CategoryId == catNode.Id))
+        {
+            vm.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
+            {
+                Id = item.Id,
+                Name = item.Name,
+                CategoryId = item.CategoryId,
+                CategoryName = catNode.FullPath,
+                Manufacturer = item.Manufacturer,
+                ContentStatus = item.ContentStatus,
+                CurrentVersionLabel = item.CurrentVersionLabel,
+                VersionLabel = item.CurrentVersionLabel,
+                UpdatedAtUtc = item.UpdatedAtUtc,
+                Tags = item.Tags,
+                Description = item.Description,
+            }));
+        }
+
+        vm.FamilyCount = CountFamiliesRecursive(vm);
+        if (expandAll && vm.FamilyCount > 0) vm.IsExpanded = true;
+        return vm;
+    }
+
+    private static int CountFamiliesRecursive(CatalogTreeNodeViewModel node)
+    {
+        var count = 0;
+        foreach (var child in node.Children)
+        {
+            if (child is FamilyLeafNodeViewModel)
+                count++;
+            else
+                count += CountFamiliesRecursive(child);
+        }
+        return count;
+    }
+
+    [RelayCommand]
+    private async Task OpenCategoryEditorAsync()
+    {
+        var editorVm = new CategoryTreeEditorViewModel(_categoryRepository, _dialogService);
+        await editorVm.InitializeAsync();
+        var result = _dialogService.ShowCategoryTreeEditor(editorVm);
+        if (result == true)
+        {
+            await LoadTreeAsync();
         }
     }
 
@@ -281,7 +383,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     result.ErrorMessage);
             }
 
-            await SearchAsync();
+            await LoadTreeAsync();
         }
         catch (Exception ex)
         {
@@ -315,7 +417,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
                 $"{result.SuccessCount} / {result.TotalFiles}");
 
-            await SearchAsync();
+            await LoadTreeAsync();
         }
         catch (Exception ex)
         {
@@ -500,10 +602,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     {
         if (SelectedItem is null) return;
 
+        var itemId = SelectedItem.Id;
         var vm = _viewModelFactory.CreateMetadataEditViewModel(
             SelectedItem.Id,
             SelectedItem.Name,
             SelectedItem.Description,
+            SelectedItem.CategoryId,
             SelectedItem.CategoryName,
             SelectedItem.Tags,
             SelectedItem.ContentStatus);
@@ -511,7 +615,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         var result = _dialogService.ShowMetadataEdit(vm);
         if (result != true) return;
 
-        await SearchAsync();
+        await LoadTreeAsync();
+        ExpandAndSelectItem(itemId);
     }
 
     [RelayCommand]
@@ -685,12 +790,32 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleted) ?? "Deleted: {0}",
                     SelectedItem.Name);
-                await SearchAsync();
+                await LoadTreeAsync();
             }
         }
         catch (Exception ex)
         {
             StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error"}: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public async Task MoveFamilyToCategoryAsync(string familyId, string? targetCategoryId)
+    {
+        IsLoading = true;
+        try
+        {
+            await _writableProvider.UpdateItemAsync(familyId, null, null, targetCategoryId, null, null);
+            await LoadTreeAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
+                ex.Message);
         }
         finally
         {
@@ -707,5 +832,34 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         catch
         {
         }
+    }
+
+    private void ExpandAndSelectItem(string catalogItemId)
+    {
+        foreach (var root in TreeNodes)
+        {
+            if (ExpandToItem(root, catalogItemId))
+                return;
+        }
+    }
+
+    private bool ExpandToItem(CatalogTreeNodeViewModel node, string catalogItemId)
+    {
+        foreach (var child in node.Children)
+        {
+            if (child is FamilyLeafNodeViewModel leaf && leaf.CatalogItemId == catalogItemId)
+            {
+                node.IsExpanded = true;
+                leaf.IsSelected = true;
+                SelectedTreeNode = leaf;
+                return true;
+            }
+            if (ExpandToItem(child, catalogItemId))
+            {
+                node.IsExpanded = true;
+                return true;
+            }
+        }
+        return false;
     }
 }

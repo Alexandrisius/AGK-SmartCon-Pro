@@ -24,7 +24,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         throw new NotSupportedException("Use IFamilyImportService for import operations.");
     }
 
-    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default)
+    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
@@ -49,11 +49,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                 cmd.Parameters.Add(new SqliteParameter("@description", description));
             }
 
-            if (category is not null)
-            {
-                setClauses.Add("category_name = @categoryName");
-                cmd.Parameters.Add(new SqliteParameter("@categoryName", category));
-            }
+            setClauses.Add("category_id = @categoryId");
+            cmd.Parameters.Add(new SqliteParameter("@categoryId", (object?)categoryId ?? DBNull.Value));
 
             if (status is not null)
             {
@@ -299,29 +296,37 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         return tags;
     }
 
-    internal static FamilyCatalogItem ReadCatalogItem(SqliteDataReader reader) => new(
-        Id: reader.GetString(reader.GetOrdinal("id")),
-        Name: reader.GetString(reader.GetOrdinal("name")),
-        NormalizedName: reader.GetString(reader.GetOrdinal("normalized_name")),
-        Description: reader.IsDBNull(reader.GetOrdinal("description"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("description")),
-        CategoryName: reader.IsDBNull(reader.GetOrdinal("category_name"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("category_name")),
-        Manufacturer: reader.IsDBNull(reader.GetOrdinal("manufacturer"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("manufacturer")),
-        ContentStatus: (ContentStatus)Enum.Parse(typeof(ContentStatus), reader.GetString(reader.GetOrdinal("content_status"))),
-        CurrentVersionLabel: reader.IsDBNull(reader.GetOrdinal("current_version_label"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("current_version_label")),
-        Tags: [],
-        PublishedBy: reader.IsDBNull(reader.GetOrdinal("published_by"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("published_by")),
-        CreatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("created_at_utc"))),
-        UpdatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("updated_at_utc"))));
+    internal static FamilyCatalogItem ReadCatalogItem(SqliteDataReader reader)
+    {
+        var categoryPath = !reader.IsDBNull(reader.GetOrdinal("category_name"))
+            ? reader.GetString(reader.GetOrdinal("category_name"))
+            : null;
+
+        var categoryId = TryGetString(reader, "category_id");
+
+        return new FamilyCatalogItem(
+            Id: reader.GetString(reader.GetOrdinal("id")),
+            Name: reader.GetString(reader.GetOrdinal("name")),
+            NormalizedName: reader.GetString(reader.GetOrdinal("normalized_name")),
+            Description: reader.IsDBNull(reader.GetOrdinal("description"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("description")),
+            CategoryPath: categoryPath,
+            CategoryId: categoryId,
+            Manufacturer: reader.IsDBNull(reader.GetOrdinal("manufacturer"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("manufacturer")),
+            ContentStatus: (ContentStatus)Enum.Parse(typeof(ContentStatus), reader.GetString(reader.GetOrdinal("content_status"))),
+            CurrentVersionLabel: reader.IsDBNull(reader.GetOrdinal("current_version_label"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("current_version_label")),
+            Tags: [],
+            PublishedBy: reader.IsDBNull(reader.GetOrdinal("published_by"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("published_by")),
+            CreatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("created_at_utc"))),
+            UpdatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("updated_at_utc"))));
+    }
 
     private static FamilyCatalogVersion ReadCatalogVersion(SqliteDataReader reader) => new(
         Id: reader.GetString(reader.GetOrdinal("id")),
@@ -346,4 +351,14 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         Sha256: reader.GetString(reader.GetOrdinal("sha256")),
         RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
         ImportedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("imported_at_utc"))));
+
+    private static string? TryGetString(SqliteDataReader reader, string columnName)
+    {
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            if (reader.GetName(i) == columnName && !reader.IsDBNull(i))
+                return reader.GetString(i);
+        }
+        return null;
+    }
 }

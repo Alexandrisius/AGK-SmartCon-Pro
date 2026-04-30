@@ -25,7 +25,16 @@ internal static class LocalCatalogQueryBuilder
         if (!string.IsNullOrWhiteSpace(query.CategoryFilter))
         {
             var paramName = $"@category_{paramIndex++}";
-            conditions.Add($"ci.category_name = {paramName}");
+            conditions.Add($"""
+                ci.category_id IN (
+                    WITH RECURSIVE subtree AS (
+                        SELECT id FROM categories WHERE id = {paramName}
+                        UNION ALL
+                        SELECT c.id FROM categories c JOIN subtree s ON c.parent_id = s.id
+                    )
+                    SELECT id FROM subtree
+                )
+                """);
             parameters.Add(new SqliteParameter(paramName, query.CategoryFilter));
         }
 

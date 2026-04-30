@@ -10,10 +10,13 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
 {
     private readonly string _catalogItemId;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
+    private readonly ICategoryRepository _categoryRepository;
+    private readonly IFamilyManagerDialogService _dialogService;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
-    [ObservableProperty] private string? _category;
+    [ObservableProperty] private string? _categoryId;
+    [ObservableProperty] private string? _categoryPath;
     [ObservableProperty] private string _tagsText = string.Empty;
     [ObservableProperty] private ContentStatus _contentStatus;
 
@@ -26,19 +29,46 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
         string catalogItemId,
         string name,
         string? description,
-        string? category,
+        string? categoryId,
+        string? categoryPath,
         IReadOnlyList<string> tags,
         ContentStatus contentStatus,
-        IWritableFamilyCatalogProvider writableProvider)
+        IWritableFamilyCatalogProvider writableProvider,
+        ICategoryRepository categoryRepository,
+        IFamilyManagerDialogService dialogService)
     {
         _catalogItemId = catalogItemId;
         _writableProvider = writableProvider;
+        _categoryRepository = categoryRepository;
+        _dialogService = dialogService;
 
         Name = name;
         Description = description;
-        Category = category;
+        CategoryId = categoryId;
+        CategoryPath = categoryPath ?? LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
         TagsText = tags is not null && tags.Count > 0 ? string.Join(", ", tags) : string.Empty;
         ContentStatus = contentStatus;
+    }
+
+    [RelayCommand]
+    private async Task PickCategory()
+    {
+        var pickerVm = new CategoryPickerViewModel(_categoryRepository);
+        await pickerVm.InitializeAsync();
+        var result = _dialogService.ShowCategoryPicker(pickerVm);
+        if (result is not null)
+        {
+            if (string.IsNullOrEmpty(result))
+            {
+                CategoryId = null;
+                CategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
+            }
+            else
+            {
+                CategoryId = result;
+                CategoryPath = pickerVm.SelectedPath;
+            }
+        }
     }
 
     [RelayCommand]
@@ -54,7 +84,7 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
             _catalogItemId,
             Name,
             Description,
-            Category,
+            CategoryId,
             tags,
             ContentStatus);
 

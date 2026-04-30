@@ -128,6 +128,8 @@ public static class ServiceRegistrar
             presenter.Register<FieldLibraryViewModel>(vm => new FieldLibraryView(vm));
             presenter.Register<AllowedValuesViewModel>(vm => new AllowedValuesView(vm));
             presenter.Register<FamilyMetadataEditViewModel>(vm => new FamilyMetadataEditView(vm));
+            presenter.Register<CategoryTreeEditorViewModel>(vm => new CategoryTreeEditorView(vm));
+            presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -146,6 +148,8 @@ public static class ServiceRegistrar
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
         services.AddSingleton<IWritableFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
+        services.AddSingleton<LocalCategoryRepository>();
+        services.AddSingleton<ICategoryRepository>(sp => sp.GetRequiredService<LocalCategoryRepository>());
         services.AddSingleton<Sha256FileHasher>();
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();

@@ -26,6 +26,7 @@ internal static class FamilyCatalogSql
             normalized_name TEXT NOT NULL,
             description TEXT,
             category_name TEXT,
+            category_id TEXT,
             manufacturer TEXT,
             content_status TEXT NOT NULL DEFAULT 'Active',
             current_version_label TEXT,
@@ -103,6 +104,25 @@ internal static class FamilyCatalogSql
         )
         """;
 
+    public const string CreateCategories = """
+        CREATE TABLE IF NOT EXISTS categories (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            parent_id TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at_utc TEXT NOT NULL,
+            FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateCategoriesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id)
+        """;
+
+    public const string MigrateV3AddCategoryIdColumn = """
+        ALTER TABLE catalog_items ADD COLUMN category_id TEXT
+        """;
+
     public const string CreateTables = $"""
         {CreateDatabaseMeta};
         {CreateSchemaInfo};
@@ -111,7 +131,8 @@ internal static class FamilyCatalogSql
         {CreateFamilyFiles};
         {CreateFamilyAssets};
         {CreateCatalogTags};
-        {CreateProjectUsage}
+        {CreateProjectUsage};
+        {CreateCategories}
         """;
 
     public const string CreateIndexes = """
@@ -130,6 +151,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_project_usage_path ON project_usage (project_path);
         CREATE INDEX IF NOT EXISTS ix_project_usage_created ON project_usage (created_at_utc);
         CREATE INDEX IF NOT EXISTS ix_family_assets_item ON family_assets (catalog_item_id);
-        CREATE INDEX IF NOT EXISTS ix_family_assets_type ON family_assets (asset_type)
+        CREATE INDEX IF NOT EXISTS ix_family_assets_type ON family_assets (asset_type);
+        CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id)
         """;
 }

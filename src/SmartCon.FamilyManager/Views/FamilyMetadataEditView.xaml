@@ -4,7 +4,7 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         Title="{DynamicResource FM_Title_MetadataEdit}"
-        Width="420" Height="400" MinHeight="300"
+        Width="420" Height="420" MinHeight="340"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="False"
@@ -46,8 +46,18 @@
         <StackPanel Grid.Row="2" Margin="0,0,0,8">
             <TextBlock Text="{DynamicResource FM_Category}" Margin="0,0,0,4"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
-            <TextBox Text="{Binding Category, UpdateSourceTrigger=PropertyChanged}" Padding="4,2"
-                     Style="{DynamicResource CompactTextBox}"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0" Text="{Binding CategoryPath, Mode=OneWay}" IsReadOnly="True"
+                         Padding="4,2" Style="{DynamicResource CompactTextBox}"
+                         Background="{DynamicResource HoverAltSurfaceBrush}"/>
+                <Button Grid.Column="1" Content="..." Command="{Binding PickCategoryCommand}"
+                        Width="28" Height="24" Margin="4,0,0,0"
+                        Style="{DynamicResource SecondaryButton}" Padding="0"/>
+            </Grid>
         </StackPanel>
 
         <StackPanel Grid.Row="3" Margin="0,0,0,8">

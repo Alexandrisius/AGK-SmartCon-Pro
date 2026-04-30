@@ -98,18 +98,29 @@ public sealed class LocalCatalogProviderTests
         var item = await fixture.GetProvider().GetItemAsync("item2");
         Assert.NotNull(item);
         Assert.Equal("Valve", item.Name);
-        Assert.Equal("Mechanical", item.CategoryName);
+        Assert.Equal("Mechanical", item.CategoryPath);
         Assert.Equal(ContentStatus.Active, item.ContentStatus);
     }
 
     [Fact]
-    public async Task SearchAsync_FilterByCategory()
+    public async Task SearchAsync_FilterByCategoryId()
     {
         using var fixture = await CreateAndMigrate();
-        await SeedItemAsync(fixture, "c1", "Pipe A", "pipe a", "Pipes");
-        await SeedItemAsync(fixture, "c2", "Valve B", "valve b", "Mechanical");
+        await SeedItemAsync(fixture, "c1", "Pipe A", "pipe a");
+        await SeedItemAsync(fixture, "c2", "Valve B", "valve b");
 
-        var query = new FamilyCatalogQuery(null, "Pipes", null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
+        using var conn = new SqliteConnection(fixture.ConnectionString);
+        await conn.OpenAsync();
+        using var catCmd = conn.CreateCommand();
+        catCmd.CommandText = "INSERT INTO categories (id, name, sort_order, created_at_utc) VALUES ('cat1', 'Pipes', 0, @t)";
+        catCmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+        await catCmd.ExecuteNonQueryAsync();
+
+        using var updCmd = conn.CreateCommand();
+        updCmd.CommandText = "UPDATE catalog_items SET category_id = 'cat1' WHERE id = 'c1'";
+        await updCmd.ExecuteNonQueryAsync();
+
+        var query = new FamilyCatalogQuery(null, "cat1", null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
         var results = await fixture.GetProvider().SearchAsync(query);
 
         Assert.Single(results);
@@ -131,16 +142,16 @@ public sealed class LocalCatalogProviderTests
     }
 
     [Fact]
-    public async Task UpdateItemAsync_UpdatesNameAndCategory()
+    public async Task UpdateItemAsync_UpdatesNameAndCategoryId()
     {
         using var fixture = await CreateAndMigrate();
         await SeedItemAsync(fixture, "upd1", "Old Name", "old name", "Old Category");
 
-        var updated = await fixture.GetProvider().UpdateItemAsync("upd1", "New Name", "New Desc", "New Category", null, null);
+        var updated = await fixture.GetProvider().UpdateItemAsync("upd1", "New Name", "New Desc", "cat-123", null, null);
 
         Assert.Equal("New Name", updated.Name);
         Assert.Equal("New Desc", updated.Description);
-        Assert.Equal("New Category", updated.CategoryName);
+        Assert.Equal("cat-123", updated.CategoryId);
     }
 
     [Fact]

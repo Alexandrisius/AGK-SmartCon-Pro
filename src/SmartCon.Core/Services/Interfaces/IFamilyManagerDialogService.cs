@@ -30,4 +30,16 @@ public interface IFamilyManagerDialogService
 
     /// <summary>Show Yes/No confirmation dialog. Returns true if user clicked Yes.</summary>
     bool ShowConfirmation(string title, string message);
+
+    /// <summary>Show category tree editor dialog.</summary>
+    bool? ShowCategoryTreeEditor(object viewModel);
+
+    /// <summary>Show category picker dialog and return selected category ID, or null if cancelled.</summary>
+    string? ShowCategoryPicker(object viewModel);
+
+    /// <summary>Show open file dialog filtered for .json files.</summary>
+    string? ShowOpenJsonDialog(string title, string? initialDirectory = null);
+
+    /// <summary>Show save file dialog for .json files.</summary>
+    string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
 }

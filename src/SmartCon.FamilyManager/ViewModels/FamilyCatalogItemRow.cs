@@ -7,6 +7,7 @@ public sealed partial class FamilyCatalogItemRow : ObservableObject
 {
     [ObservableProperty] private string _id = string.Empty;
     [ObservableProperty] private string _name = string.Empty;
+    [ObservableProperty] private string? _categoryId;
     [ObservableProperty] private string? _categoryName;
     [ObservableProperty] private string? _manufacturer;
     [ObservableProperty] private ContentStatus _contentStatus;

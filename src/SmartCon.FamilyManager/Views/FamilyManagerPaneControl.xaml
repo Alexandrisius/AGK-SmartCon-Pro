@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
         Background="{DynamicResource BackgroundBrush}">
 
     <UserControl.Resources>
@@ -156,74 +157,6 @@
                 </Setter>
             </Style>
 
-            <Style x:Key="CategoryExpander" TargetType="Expander">
-                <Setter Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
-                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
-                <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                <Setter Property="IsExpanded" Value="True"/>
-                <Setter Property="FontSize" Value="12"/>
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="Expander">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}">
-                                <StackPanel>
-                                    <ToggleButton x:Name="HeaderSite"
-                                                  IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                                  Content="{TemplateBinding Header}"
-                                                  ContentTemplate="{TemplateBinding HeaderTemplate}"
-                                                  Cursor="Hand"
-                                                  Background="Transparent"
-                                                  BorderThickness="0"
-                                                  Foreground="{TemplateBinding Foreground}"
-                                                  Padding="6,4,8,4"
-                                                  MinHeight="24"
-                                                  HorizontalAlignment="Stretch"
-                                                  HorizontalContentAlignment="Left">
-                                        <ToggleButton.Template>
-                                            <ControlTemplate TargetType="ToggleButton">
-                                                <Border x:Name="ToggleBg"
-                                                        Background="{TemplateBinding Background}"
-                                                        SnapsToDevicePixels="True">
-                                                    <DockPanel LastChildFill="True">
-                                                        <TextBlock x:Name="ToggleIcon"
-                                                                   DockPanel.Dock="Left"
-                                                                   Text="&#x25BC;"
-                                                                   FontSize="10"
-                                                                   Foreground="{DynamicResource TextMutedBrush}"
-                                                                   HorizontalAlignment="Center"
-                                                                   VerticalAlignment="Center"
-                                                                   Margin="4,0,6,0"/>
-                                                        <ContentPresenter VerticalAlignment="Center"/>
-                                                    </DockPanel>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="ToggleBg" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsChecked" Value="False">
-                                                        <Setter TargetName="ToggleIcon" Property="Text" Value="&#x25B6;"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </ToggleButton.Template>
-                                    </ToggleButton>
-                                    <ContentPresenter x:Name="ExpandSite"
-                                                      Visibility="Collapsed"/>
-                                </StackPanel>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsExpanded" Value="True">
-                                    <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -240,7 +173,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
@@ -320,22 +253,16 @@
                     Style="{DynamicResource SecondaryButton}"/>
         </Grid>
 
-        <DataGrid Grid.Row="1"
-                  ItemsSource="{Binding FamilyItemsView}"
-                  SelectedItem="{Binding SelectedItem}"
-                  Style="{DynamicResource CompactDataGrid}"
-                  RowStyle="{DynamicResource CompactDataGridRow}"
-                  CellStyle="{DynamicResource CompactDataGridCell}"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  SelectionMode="Single"
-                  HeadersVisibility="Column"
-                  GridLinesVisibility="Horizontal"
-                  CanUserAddRows="False"
-                  CanUserDeleteRows="False"
+        <TreeView Grid.Row="1"
+                  x:Name="CategoryTree"
+                  ItemsSource="{Binding TreeNodes}"
+                  Background="Transparent"
+                  BorderBrush="{DynamicResource BorderAltBrush}"
                   BorderThickness="1"
-                  BorderBrush="{DynamicResource BorderAltBrush}">
-            <DataGrid.ContextMenu>
+                  Padding="2"
+                  AllowDrop="True">
+
+            <TreeView.ContextMenu>
                 <ContextMenu Style="{StaticResource ModernContextMenu}">
                     <MenuItem Header="{DynamicResource FM_LoadAndPlace}"
                               Command="{Binding LoadAndPlaceCommand}"
@@ -352,64 +279,43 @@
                               Command="{Binding DeleteFamilyCommand}"
                               Style="{StaticResource DangerMenuItem}"/>
                 </ContextMenu>
-            </DataGrid.ContextMenu>
-            <DataGrid.GroupStyle>
-                <GroupStyle>
-                    <GroupStyle.ContainerStyle>
-                        <Style TargetType="{x:Type GroupItem}">
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="{x:Type GroupItem}">
-                                        <Expander Style="{StaticResource CategoryExpander}"
-                                                  Header="{Binding Name}">
-                                            <ItemsPresenter/>
-                                        </Expander>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </GroupStyle.ContainerStyle>
-                </GroupStyle>
-            </DataGrid.GroupStyle>
-            <DataGrid.Columns>
-                <DataGridTextColumn x:Name="ColName" Binding="{Binding Name}" Width="*" MinWidth="120">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="VerticalAlignment" Value="Center"/>
-                            <Setter Property="Padding" Value="8,0,4,0"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn x:Name="ColStatus" Binding="{Binding ContentStatus}" Width="80">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="VerticalAlignment" Value="Center"/>
-                            <Setter Property="Padding" Value="4,0"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn x:Name="ColVersion" Binding="{Binding VersionLabel}" Width="45">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="VerticalAlignment" Value="Center"/>
-                            <Setter Property="Padding" Value="4,0"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn x:Name="ColUpdated" Binding="{Binding UpdatedAtUtc, StringFormat='{}{0:yyyy-MM-dd}'}" Width="85">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="VerticalAlignment" Value="Center"/>
-                            <Setter Property="Padding" Value="4,0"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-            </DataGrid.Columns>
-        </DataGrid>
+            </TreeView.ContextMenu>
+
+            <TreeView.Resources>
+                <HierarchicalDataTemplate DataType="{x:Type vm:CategoryNodeViewModel}"
+                                           ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal" Margin="2,1">
+                        <TextBlock Text="{Binding DisplayName}"
+                                   FontWeight="SemiBold" FontSize="12"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding FamilyCount, StringFormat=' ({0})'}"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </HierarchicalDataTemplate>
+
+                <DataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}">
+                    <TextBlock Text="{Binding DisplayName}"
+                               Margin="2,1"
+                               VerticalAlignment="Center"/>
+                </DataTemplate>
+            </TreeView.Resources>
+
+            <TreeView.ItemContainerStyle>
+                <Style TargetType="TreeViewItem">
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                    <Setter Property="AllowDrop" Value="True"/>
+                    <EventSetter Event="TreeViewItem.DragOver" Handler="TreeViewItem_DragOver"/>
+                    <EventSetter Event="TreeViewItem.Drop" Handler="TreeViewItem_Drop"/>
+                </Style>
+            </TreeView.ItemContainerStyle>
+        </TreeView>
 
         <Grid Grid.Row="2" Margin="0,4,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
@@ -422,6 +328,20 @@
                        Text="{Binding TotalItemCount}"
                        VerticalAlignment="Center"
                        Margin="8,0,0,0"/>
+
+            <Button Grid.Column="2"
+                    Command="{Binding OpenCategoryEditorCommand}"
+                    Width="24" Height="24" Margin="4,0,0,0"
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="0"
+                    ToolTip="Edit categories">
+                <Viewbox Width="12" Height="12" Stretch="Uniform">
+                    <Path Data="M 6,0.5 L 7,0.5 L 7.3,2.1 L 8.8,2.7 L 10.1,1.6 L 10.8,2.3 L 9.7,3.6 L 10.3,5.1 L 11.9,5.4 L 11.9,6.6 L 10.3,6.9 L 9.7,8.4 L 10.8,9.7 L 10.1,10.4 L 8.8,9.3 L 7.3,9.9 L 7,11.5 L 6,11.5 L 5.7,9.9 L 4.2,9.3 L 2.9,10.4 L 2.2,9.7 L 3.3,8.4 L 2.7,6.9 L 1.1,6.6 L 1.1,5.4 L 2.7,5.1 L 3.3,3.6 L 2.2,2.3 L 2.9,1.6 L 4.2,2.7 L 5.7,2.1 Z M 6.5,4 A 2.5,2.5 0 1,0 6.5,9 A 2.5,2.5 0 1,0 6.5,4"
+                          Stroke="{DynamicResource TextSecondaryBrush}"
+                          StrokeThickness="0.7"
+                          Fill="Transparent"/>
+                </Viewbox>
+            </Button>
         </Grid>
     </Grid>
 </UserControl>

@@ -92,4 +92,40 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
         td.CommonButtons = Autodesk.Revit.UI.TaskDialogCommonButtons.Yes | Autodesk.Revit.UI.TaskDialogCommonButtons.No;
         return td.Show() == Autodesk.Revit.UI.TaskDialogResult.Yes;
     }
+
+    public bool? ShowCategoryTreeEditor(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public string? ShowCategoryPicker(object viewModel)
+    {
+        var result = _presenter.ShowDialog(viewModel);
+        if (result != true) return null;
+        if (viewModel is ViewModels.CategoryPickerViewModel pickerVm)
+            return pickerVm.SelectedCategoryId ?? "";
+        return null;
+    }
+
+    public string? ShowOpenJsonDialog(string title, string? initialDirectory = null)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog();
+        dialog.Title = title;
+        dialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*";
+        dialog.CheckFileExists = true;
+        dialog.CheckPathExists = true;
+        if (!string.IsNullOrWhiteSpace(initialDirectory))
+            dialog.InitialDirectory = initialDirectory;
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    public string? ShowSaveJsonDialog(string title, string? defaultFileName = null)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog();
+        dialog.Title = title;
+        dialog.Filter = "JSON files (*.json)|*.json";
+        dialog.DefaultExt = ".json";
+        dialog.AddExtension = true;
+        dialog.OverwritePrompt = true;
+        if (!string.IsNullOrWhiteSpace(defaultFileName))
+            dialog.FileName = defaultFileName;
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
 }
