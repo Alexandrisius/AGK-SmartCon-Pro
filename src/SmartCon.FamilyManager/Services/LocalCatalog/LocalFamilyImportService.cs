@@ -14,19 +14,22 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
     private readonly LocalCatalogProvider _catalogProvider;
     private readonly StoragePathResolver _pathResolver;
     private readonly IFamilyMetadataExtractionService _metadataService;
+    private readonly IRevitFileInfoReader? _fileInfoReader;
 
     public LocalFamilyImportService(
         LocalCatalogDatabase database,
         LocalCatalogMigrator migrator,
         LocalCatalogProvider catalogProvider,
         StoragePathResolver pathResolver,
-        IFamilyMetadataExtractionService metadataService)
+        IFamilyMetadataExtractionService metadataService,
+        IRevitFileInfoReader? fileInfoReader = null)
     {
         _database = database;
         _migrator = migrator;
         _catalogProvider = catalogProvider;
         _pathResolver = pathResolver;
         _metadataService = metadataService;
+        _fileInfoReader = fileInfoReader;
     }
 
     public async Task<FamilyImportResult> ImportFileAsync(FamilyImportRequest request, CancellationToken ct = default)
@@ -48,7 +51,7 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
 
         var metadata = await _metadataService.ExtractAsync(filePath, ct);
         var sha256 = metadata.Sha256;
-        var revitVersion = request.RevitMajorVersion;
+        var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         SmartConLogger.Info($"[Import] File: {Path.GetFileName(filePath)}, SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
 
@@ -87,8 +90,9 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
             var fileName = metadata.FileName;
             var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, revitVersion, fileName);
             File.Copy(filePath, absolutePath, overwrite: true);
+            File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
             relativePath = _pathResolver.GetRelativePath(absolutePath);
-            SmartConLogger.Info($"[Import] Copied to managed storage: {absolutePath}");
+            SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
         }
         catch (Exception ex)
         {
@@ -201,9 +205,10 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
 
             try
             {
+                var detectedVersion = _fileInfoReader?.ReadRevitVersion(file) ?? request.RevitMajorVersion;
                 var importRequest = new FamilyImportRequest(
                     FilePath: file,
-                    RevitMajorVersion: request.RevitMajorVersion,
+                    RevitMajorVersion: detectedVersion,
                     Category: request.Category,
                     Tags: request.Tags,
                     Description: request.Description);

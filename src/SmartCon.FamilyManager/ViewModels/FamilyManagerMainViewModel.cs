@@ -81,8 +81,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     {
         try
         {
-            var doc = _revitContext.GetDocument();
-            if (doc?.Application?.VersionNumber is string versionStr && int.TryParse(versionStr, out var v))
+            var versionStr = _revitContext.GetRevitVersion();
+            if (int.TryParse(versionStr, out var v))
             {
                 CurrentRevitVersion = v;
             }

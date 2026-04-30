@@ -156,6 +156,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IProjectFamilyUsageRepository, LocalProjectFamilyUsageRepository>();
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
+        services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
         services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
 
