@@ -6,6 +6,9 @@ using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
+/// <summary>
+/// ViewModel for the family metadata edit dialog.
+/// </summary>
 public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObservableRequestClose
 {
     private readonly string _catalogItemId;

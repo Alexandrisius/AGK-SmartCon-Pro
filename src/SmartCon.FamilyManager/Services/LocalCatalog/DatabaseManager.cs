@@ -226,8 +226,6 @@ internal sealed class DatabaseManager : IDatabaseManager
             }
             catch (IOException) when (i < maxRetries - 1)
             {
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
                 Thread.Sleep(200 * (i + 1));
             }
         }

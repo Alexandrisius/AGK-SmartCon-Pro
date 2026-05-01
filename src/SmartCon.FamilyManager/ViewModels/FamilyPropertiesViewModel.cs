@@ -2,12 +2,16 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
+/// <summary>
+/// ViewModel for the family properties dialog.
+/// </summary>
 public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObservableRequestClose
 {
     private readonly string _catalogItemId;
@@ -152,8 +156,9 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                 PresetCategoryInfo = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Warn($"LoadPresetsAsync failed: {ex.Message}");
             HasPresets = false;
             EffectiveParameters = [];
         }
@@ -296,8 +301,9 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         {
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Warn($"OpenAsset failed: {ex.Message}");
         }
     }
 

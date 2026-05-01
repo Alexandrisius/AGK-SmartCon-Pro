@@ -3,6 +3,9 @@ using SmartCon.FamilyManager.ViewModels;
 
 namespace SmartCon.FamilyManager.Services;
 
+/// <summary>
+/// Factory for creating FamilyManager ViewModels with resolved dependencies.
+/// </summary>
 public interface IFamilyManagerViewModelFactory
 {
     FamilyMetadataEditViewModel CreateMetadataEditViewModel(

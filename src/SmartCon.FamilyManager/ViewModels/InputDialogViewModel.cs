@@ -4,6 +4,9 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
+/// <summary>
+/// ViewModel for the generic input dialog.
+/// </summary>
 public sealed partial class InputDialogViewModel : ObservableObject, IObservableRequestClose
 {
     [ObservableProperty] private string _title = string.Empty;

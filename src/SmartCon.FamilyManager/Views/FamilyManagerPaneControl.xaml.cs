@@ -5,6 +5,7 @@ using SW = System.Windows;
 using SWC = System.Windows.Controls;
 using SWI = System.Windows.Input;
 using SWT = System.Windows.Threading;
+using System.Threading.Tasks;
 
 namespace SmartCon.FamilyManager.Views;
 
@@ -168,7 +169,7 @@ public sealed partial class FamilyManagerPaneControl : SWC.UserControl
         _dragHoverItem = null;
     }
 
-    private async void TreeViewItem_Drop(object sender, SW.DragEventArgs e)
+    private void TreeViewItem_Drop(object sender, SW.DragEventArgs e)
     {
         CancelDragExpandTimer();
 
@@ -180,6 +181,17 @@ public sealed partial class FamilyManagerPaneControl : SWC.UserControl
         var categoryId = targetCategory.CategoryId == "__no_category__"
             ? null
             : targetCategory.CategoryId;
-        await vm.MoveFamilyToCategoryAsync(droppedFamily.CatalogItemId, categoryId);
+        FireAndForget(() => vm.MoveFamilyToCategoryAsync(droppedFamily.CatalogItemId, categoryId));
+    }
+
+    private static async void FireAndForget(Func<Task> taskFactory)
+    {
+        try
+        {
+            await taskFactory();
+        }
+        catch
+        {
+        }
     }
 }

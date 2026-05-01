@@ -762,14 +762,47 @@ UI-диалоги модуля FamilyManager.
 public interface IFamilyManagerDialogService
 {
     string? ShowOpenFileDialog(string title, string? initialDirectory = null);
+    string? ShowImportDialog(string title, string? initialDirectory = null);
+    string[]? ShowImportFilesDialog(string title, string? initialDirectory = null);
     string? ShowFolderBrowserDialog(string title, string? initialDirectory = null);
     void ShowWarning(string title, string message);
     void ShowError(string title, string message);
     bool? ShowMetadataEdit(object viewModel);
     string? ShowInputDialog(string title, string prompt, string defaultText = "");
     bool ShowConfirmation(string title, string message);
+    bool? ShowCategoryTreeEditor(object viewModel);
+    string? ShowCategoryPicker(object viewModel);
+    string? ShowOpenJsonDialog(string title, string? initialDirectory = null);
+    string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
+    bool? ShowProperties(object viewModel);
+    string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null);
+    bool? ShowPresetEditor(object viewModel);
 }
 ```
+
+### IFamilyTypeRepository
+
+Хранение и чтение типоразмеров семейств (FamilyTypeDescriptor) для каталога.
+
+**Файл:** `IFamilyTypeRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyTypeRepository.cs`
+
+```csharp
+public interface IFamilyTypeRepository
+{
+    Task<IReadOnlyList<FamilyTypeDescriptor>> GetTypesForItemAsync(string catalogItemId, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyTypeDescriptor>>> GetAllTypesBatchAsync(IEnumerable<string> catalogItemIds, CancellationToken ct = default);
+    Task SaveTypesAsync(string catalogItemId, IReadOnlyList<FamilyTypeDescriptor> types, CancellationToken ct = default);
+    Task<bool> HasTypesAsync(string catalogItemId, CancellationToken ct = default);
+}
+```
+
+### ICategoryRepository
+
+CRUD для дерева категорий каталога семейств.
+
+**Файл:** `ICategoryRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalCategoryRepository.cs`
 
 ### IFamilyManagerExternalEvent
 

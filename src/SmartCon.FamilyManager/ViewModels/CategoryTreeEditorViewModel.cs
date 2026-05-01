@@ -4,12 +4,16 @@ using System.Linq;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
+/// <summary>
+/// ViewModel for the category tree editor dialog.
+/// </summary>
 public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObservableRequestClose
 {
     private readonly ICategoryRepository _categoryRepository;
@@ -41,8 +45,9 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         {
             nodes = await _categoryRepository.GetAllAsync(ct);
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Warn($"CategoryTreeEditor GetAllAsync failed: {ex.Message}");
         }
 
         IReadOnlyDictionary<string, int> familyCounts = new Dictionary<string, int>();
@@ -50,8 +55,9 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         {
             familyCounts = await _categoryRepository.GetAllFamilyCountsAsync(ct);
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Warn($"CategoryTreeEditor GetAllFamilyCountsAsync failed: {ex.Message}");
         }
 
         var tree = new CategoryTree(nodes);
@@ -303,16 +309,4 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
 
     [RelayCommand]
     private void Close() => RequestClose?.Invoke(true);
-}
-
-public sealed class CategoryTreeImportData
-{
-    public int Version { get; set; } = 1;
-    public List<CategoryImportItem>? Categories { get; set; }
-
-    public sealed class CategoryImportItem
-    {
-        public string Name { get; set; } = string.Empty;
-        public List<CategoryImportItem>? Children { get; set; }
-    }
 }

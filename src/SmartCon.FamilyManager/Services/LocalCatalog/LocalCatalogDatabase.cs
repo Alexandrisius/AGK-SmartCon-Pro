@@ -10,6 +10,7 @@ internal sealed class LocalCatalogDatabase
         SQLitePCL.Batteries.Init();
     }
 
+    private readonly object _switchLock = new();
     private string _dbPath;
     private string _connectionString;
     private string _databaseRoot;
@@ -30,10 +31,13 @@ internal sealed class LocalCatalogDatabase
 
     public void SwitchToPath(string databaseRootPath)
     {
-        _databaseRoot = databaseRootPath;
-        _dbPath = Path.Combine(_databaseRoot, "catalog.db");
-        _connectionString = BuildConnectionString(_dbPath);
-        Directory.CreateDirectory(_databaseRoot);
+        lock (_switchLock)
+        {
+            _databaseRoot = databaseRootPath;
+            _dbPath = Path.Combine(_databaseRoot, "catalog.db");
+            _connectionString = BuildConnectionString(_dbPath);
+        }
+        Directory.CreateDirectory(databaseRootPath);
     }
 
     public void Checkpoint()

@@ -320,6 +320,10 @@ public static class StringLocalization
         d[Keys.FM_PE_RemoveParameter] = "- Удалить";
         d[Keys.FM_Props_XlsNote] = "XLS — рабочий файл, CSV — для Revit Lookup Table";
 
+        d[Keys.FM_FamilyNotFoundAfterLoad] = "Семейство не найдено после загрузки";
+        d[Keys.FM_CannotDisconnectOnlyDatabase] = "Нельзя отключить единственную базу данных.";
+        d[Keys.FM_ErrorFormat] = "Ошибка: {0}";
+
         return d;
     }
 
@@ -632,6 +636,10 @@ public static class StringLocalization
         d[Keys.FM_PE_AddParameter] = "+ Add parameter";
         d[Keys.FM_PE_RemoveParameter] = "- Remove";
         d[Keys.FM_Props_XlsNote] = "XLS — working file, CSV — for Revit Lookup Table";
+
+        d[Keys.FM_FamilyNotFoundAfterLoad] = "Family not found after loading";
+        d[Keys.FM_CannotDisconnectOnlyDatabase] = "Cannot disconnect the only database.";
+        d[Keys.FM_ErrorFormat] = "Error: {0}";
 
         return d;
     }
@@ -952,5 +960,8 @@ public static class StringLocalization
         public const string FM_PE_AddParameter = "FM_PE_AddParameter";
         public const string FM_PE_RemoveParameter = "FM_PE_RemoveParameter";
         public const string FM_Props_XlsNote = "FM_Props_XlsNote";
+        public const string FM_FamilyNotFoundAfterLoad = "FM_FamilyNotFoundAfterLoad";
+        public const string FM_CannotDisconnectOnlyDatabase = "FM_CannotDisconnectOnlyDatabase";
+        public const string FM_ErrorFormat = "FM_ErrorFormat";
     }
 }

@@ -4,11 +4,11 @@
 [![Revit 2019–2026](https://img.shields.io/badge/Revit-2019--2026-green)](https://www.autodesk.com/products/revit/)
 [![C# 12](https://img.shields.io/badge/C%23-12-purple)](https://learn.microsoft.com/en-us/dotnet/csharp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 716](https://img.shields.io/badge/Tests-716%20pass-brightgreen)]()
+[![Tests: 730](https://img.shields.io/badge/Tests-730%20pass-brightgreen)]()
 [![Build](https://github.com/Alexandrisius/AGK-SmartCon-Pro/actions/workflows/build.yml/badge.svg)](https://github.com/Alexandrisius/AGK-SmartCon-Pro/actions/workflows/build.yml)
 
 **SmartCon** — набор инструментов для MEP-инженеров в Autodesk Revit.
-Автоматизация соединений, экспорт проектов и другие рутинные операции — всё в одном плагине.
+Автоматизация соединений, управление семействами, экспорт проектов и другие рутинные операции — всё в одном плагине.
 
 > [Полное руководство пользователя (USER-GUIDE.md)](USER-GUIDE.md) — пошаговые инструкции, все бизнес-кейсы, скриншоты UI.
 
@@ -20,6 +20,7 @@
 |---------|----------|-------|
 | **PipeConnect** | Соединение MEP-элементов в 3D двумя кликами | [YouTube](https://www.youtube.com/watch?v=F55N9cCMIMk) |
 | **Share Project** | Экспорт модели в Shared-зону (ISO 19650) | *скоро* |
+| **FamilyManager** | Управление библиотекой семейств Revit (dockable panel, SQLite каталог) | *скоро* |
 
 ---
 
@@ -115,9 +116,42 @@
 
 ---
 
+## FamilyManager
+
+Dockable panel для управления библиотекой семейств Revit — BIM content management внутри SmartCon.
+Импорт, каталогизация, поиск, версионность и загрузка семейств в проект — всё из одного окна.
+
+### FamilyManager за 30 секунд
+
+```
+1. Нажмите FamilyManager на панели Family Library
+2. При первом запуске — создайте базу данных (укажите папку)
+3. Перетащите .rfa-файл на панель или нажмите Import
+4. Семейство появится в каталоге с автоматическим извлечением метаданных
+5. Выберите семейство → Load для загрузки в текущий проект
+6. Или Load & Place — загрузить и сразу разместить экземпляр
+```
+
+### Ключевые возможности
+
+| Возможность | Описание |
+|---|---|
+| **Dockable panel** | Каталог семейств всегда под рукой — не закрывает модель |
+| **SQLite-каталог** | Быстрый поиск, фильтрация, дерево категорий |
+| **Импорт** | Drag-and-drop .rfa или через диалог (одиночный / папка) |
+| **Published Storage** | Статусы Active/Deprecated/Retired — управление жизненным циклом (ADR-015) |
+| **Версии** | Поддержка нескольких версий Revit для одного семейства |
+| **Assets** | Вспомогательные файлы (изображения, документы) привязаны к семейству |
+| **Load & Place** | Загрузка семейства в проект и размещение экземпляра |
+| **Multi-database** | Подключение к нескольким каталогам (личный, корпоративный) |
+
+> Подробно — в [USER-GUIDE.md](USER-GUIDE.md#часть-3-familymanager).
+
+---
+
 ## Ribbon — интерфейс в Revit
 
-После установки на ленте Revit появляется вкладка **SmartCon** с двумя панелями:
+После установки на ленте Revit появляется вкладка **SmartCon** с тремя панелями:
 
 ### Pipe Systems
 
@@ -132,6 +166,12 @@
 |--------|-----------|
 | **Share Project** | Экспорт модели в Shared-зону |
 | **Settings** | Настройка шаблона имени, Field Library, purge-опций, видов |
+
+### Family Library
+
+| Кнопка | Назначение |
+|--------|-----------|
+| **FamilyManager** | Открыть/закрыть панель управления семействами |
 
 ### Info
 
@@ -181,12 +221,14 @@ flowchart LR
     UI[SmartCon.UI\nShared WPF controls]
     PipeConnect[SmartCon.PipeConnect\nCommands / Views / ViewModels]
     PM[SmartCon.ProjectManagement\nShare Project module]
+    FM[SmartCon.FamilyManager\nFamily Library / SQLite]
     Revit[SmartCon.Revit\nRevit API adapters]
     Core[SmartCon.Core\nDomain / Interfaces / Algorithms]
     Tests[SmartCon.Tests\nUnit tests]
 
     App --> PipeConnect
     App --> PM
+    App --> FM
     App --> Revit
     PipeConnect --> Core
     PipeConnect --> Revit
@@ -194,6 +236,8 @@ flowchart LR
     PM --> Core
     PM --> Revit
     PM --> UI
+    FM --> Core
+    FM --> UI
     Revit --> Core
     Tests --> Core
     Tests --> PipeConnect
@@ -206,7 +250,8 @@ SmartCon.UI                — Общие WPF-стили и контролы
 SmartCon.App               — Точка входа: IExternalApplication, Ribbon, DI-контейнер
 SmartCon.PipeConnect       — Модуль PipeConnect: Commands, ViewModels, Views
 SmartCon.ProjectManagement — Модуль Share Project: Commands, ViewModels, Views, Settings
-SmartCon.Tests             — Unit-тесты (xUnit + Moq, 716 тестов)
+SmartCon.FamilyManager     — Модуль FamilyManager: управление библиотекой семейств (dockable panel, SQLite catalog)
+SmartCon.Tests             — Unit-тесты (xUnit + Moq, 730 тестов)
 ```
 
 | Компонент | Технология |

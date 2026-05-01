@@ -111,26 +111,26 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     public async Task<bool> DeleteAssetAsync(string assetId, CancellationToken ct = default)
     {
         await EnsureMigratedAsync(ct);
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+
         string? relativePath;
-        using (var connection = _database.CreateConnection())
+        using (var selectCmd = connection.CreateCommand())
         {
-            await connection.OpenAsync(ct);
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT relative_path FROM family_assets WHERE id = @id";
-            cmd.Parameters.Add(new SqliteParameter("@id", assetId));
-            relativePath = await cmd.ExecuteScalarAsync(ct) as string;
+            selectCmd.CommandText = "SELECT relative_path FROM family_assets WHERE id = @id";
+            selectCmd.Parameters.Add(new SqliteParameter("@id", assetId));
+            relativePath = await selectCmd.ExecuteScalarAsync(ct) as string;
         }
 
         if (relativePath is null)
             return false;
 
-        using (var connection = _database.CreateConnection())
+        using (var deleteCmd = connection.CreateCommand())
         {
-            await connection.OpenAsync(ct);
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "DELETE FROM family_assets WHERE id = @id";
-            cmd.Parameters.Add(new SqliteParameter("@id", assetId));
-            var rows = await cmd.ExecuteNonQueryAsync(ct);
+            deleteCmd.CommandText = "DELETE FROM family_assets WHERE id = @id";
+            deleteCmd.Parameters.Add(new SqliteParameter("@id", assetId));
+            var rows = await deleteCmd.ExecuteNonQueryAsync(ct);
 
             if (rows > 0)
             {
@@ -169,11 +169,13 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     public async Task SetPrimaryAssetAsync(string assetId, CancellationToken ct = default)
     {
         await EnsureMigratedAsync(ct);
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+
         string? catalogItemId;
-        using (var conn = _database.CreateConnection())
+        using (var readCmd = connection.CreateCommand())
         {
-            await conn.OpenAsync(ct);
-            using var readCmd = conn.CreateCommand();
             readCmd.CommandText = "SELECT catalog_item_id FROM family_assets WHERE id = @id";
             readCmd.Parameters.Add(new SqliteParameter("@id", assetId));
             catalogItemId = await readCmd.ExecuteScalarAsync(ct) as string;
@@ -181,8 +183,6 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
 
         if (catalogItemId is null) return;
 
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
         using var tx = connection.BeginTransaction();
         try
         {

@@ -1,11 +1,15 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
+/// <summary>
+/// ViewModel for the category picker dialog.
+/// </summary>
 public sealed partial class CategoryPickerViewModel : ObservableObject, IObservableRequestClose
 {
     private readonly ICategoryRepository _categoryRepository;
@@ -37,8 +41,9 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
         {
             nodes = await _categoryRepository.GetAllAsync(ct);
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Warn($"CategoryPicker LoadTreeAsync failed: {ex.Message}");
         }
 
         var tree = new CategoryTree(nodes);
@@ -130,6 +135,13 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
     private static async void FireAndForget(Func<Task> taskFactory)
     {
-        try { await taskFactory(); } catch { }
+        try
+        {
+            await taskFactory();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"FireAndForget: {ex}");
+        }
     }
 }

@@ -700,7 +700,8 @@ public enum FamilyAssetType
     Document = 2,
     Model3D = 3,
     LookupTable = 4,
-    Other = 5
+    Other = 5,
+    Spreadsheet = 6
 }
 ```
 
@@ -748,7 +749,8 @@ public sealed record FamilyCatalogItem(
     string Name,
     string NormalizedName,
     string? Description,
-    string? CategoryName,
+    string? CategoryPath,
+    string? CategoryId,
     string? Manufacturer,
     ContentStatus ContentStatus,
     string? CurrentVersionLabel,
@@ -773,10 +775,10 @@ public sealed record FamilyCatalogVersion(
     string FileId,
     string VersionLabel,
     string Sha256,
-    int? RevitMajorVersion,
+    int RevitMajorVersion,
     int? TypesCount,
     int? ParametersCount,
-    DateTimeOffset ImportedAtUtc);
+    DateTimeOffset PublishedAtUtc);
 ```
 
 ---
@@ -817,7 +819,98 @@ public sealed record FamilyAsset(
     string RelativePath,
     long SizeBytes,
     string? Description,
+    DateTimeOffset CreatedAtUtc,
+    bool IsPrimary = false);
+```
+
+---
+
+### AttributePreset
+
+Набор параметров для извлечения из семейств, привязанный к категории. Дочерние категории наследуют параметры от родительских.
+
+**Файл:** `AttributePreset.cs`
+
+```csharp
+public sealed record AttributePreset(
+    string Id,
+    string? CategoryId,
+    IReadOnlyList<AttributePresetParameter> Parameters,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+```
+
+---
+
+### AttributePresetParameter
+
+Описание одного параметра в пресете.
+
+**Файл:** `AttributePresetParameter.cs`
+
+```csharp
+public sealed record AttributePresetParameter(
+    string ParameterName,
+    string? DisplayName,
+    int SortOrder)
+{
+    public string DisplayText => DisplayName ?? ParameterName;
+}
+```
+
+---
+
+### CategoryNode
+
+Узел дерева категорий. Формирует иерархию категорий каталога семейств.
+
+**Файл:** `CategoryNode.cs`
+
+```csharp
+public sealed record CategoryNode(
+    string Id,
+    string Name,
+    string? ParentId,
+    int SortOrder,
+    string FullPath,
     DateTimeOffset CreatedAtUtc);
+```
+
+---
+
+### CategoryTree
+
+Иммутабельное дерево категорий с быстрым поиском по ID и дочерним узлам.
+
+**Файл:** `CategoryTree.cs`
+
+```csharp
+public sealed class CategoryTree
+{
+    public CategoryTree(IReadOnlyList<CategoryNode> nodes);
+    public IReadOnlyList<CategoryNode> GetAllNodes();
+    public CategoryNode? GetById(string id);
+    public IReadOnlyList<CategoryNode> GetChildren(string? parentId);
+    public IReadOnlyList<CategoryNode> GetRootNodes();
+    public string GetFullPath(string id);
+    public IReadOnlyList<string> GetDescendantIds(string categoryId);
+    public string BuildFullPath(string id);
+}
+```
+
+---
+
+### FamilyUpdateRequest
+
+Запрос на обновление файла семейства в каталоге.
+
+**Файл:** `FamilyUpdateRequest.cs`
+
+```csharp
+public sealed record FamilyUpdateRequest(
+    string CatalogItemId,
+    string FilePath,
+    int RevitMajorVersion);
 ```
 
 ---
@@ -1030,7 +1123,7 @@ public sealed record FamilyMetadataExtractionResult(
 ```csharp
 public sealed record FamilyTypeDescriptor(
     string Id,
-    string VersionId,
+    string CatalogItemId,
     string Name,
     int SortOrder);
 ```
@@ -1076,73 +1169,4 @@ public sealed record ProjectFamilyUsage(
     DateTimeOffset CreatedAtUtc);
 ```
 
----
 
-### Enums
-
-Каждый enum в отдельном файле в `SmartCon.Core/Models/FamilyManager/`.
-
-#### ContentStatus *(Phase 13)*
-
-Статус опубликованного контента.
-
-**Файл:** `ContentStatus.cs`
-
-```csharp
-public enum ContentStatus
-{
-    Active = 0,
-    Deprecated = 1,
-    Retired = 2
-}
-```
-
-#### FamilyAssetType *(Phase 13)*
-
-Тип вспомогательного ассета.
-
-**Файл:** `FamilyAssetType.cs`
-
-```csharp
-public enum FamilyAssetType
-{
-    Image = 0,
-    Video = 1,
-    Document = 2,
-    Model3D = 3,
-    LookupTable = 4,
-    Other = 5
-}
-```
-
-#### CatalogProviderKind
-
-Тип провайдера каталога.
-
-**Файл:** `CatalogProviderKind.cs`
-
-```csharp
-public enum CatalogProviderKind
-{
-    Local = 0,
-    Remote = 1,
-    Corporate = 2,
-    PublicReadOnly = 3
-}
-```
-
-#### FamilyCatalogSort
-
-Порядок сортировки результатов поиска.
-
-**Файл:** `FamilyCatalogSort.cs`
-
-```csharp
-public enum FamilyCatalogSort
-{
-    NameAsc = 0,
-    NameDesc = 1,
-    DateAsc = 2,
-    DateDesc = 3
-}
-```

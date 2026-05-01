@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Phase 12-13: FamilyManager Module
+- FamilyManager: dockable panel for managing Revit family libraries
+- SQLite catalog with search, filtering, category tree
+- Import .rfa files via drag-and-drop or file dialog (single/folder)
+- Published Storage with Active/Deprecated/Retired statuses (ADR-015)
+- Multi-database support: create, connect, switch, delete databases
+- Asset management: attach auxiliary files (images, documents) to families
+- Attribute presets: configurable parameter extraction per category
+- Category tree: hierarchical organization with drag-and-drop reorder
+- Family types: extract and cache type symbols for quick placement
+- Load & Place: load family into Revit project and place instances
+- Family update: re-import with version increment
+- Auto-detect Revit version from .rfa via BasicFileInfo
+- Read-only managed storage to prevent accidental modifications (ADR-016)
+- ADR-014: FamilyManager MVP Architecture
+- ADR-015: Published Storage Architecture
+- ADR-016: Readonly Files Architecture
+
+### Metrics
+- Tests: 716 → 730
+- Modules: +1 (FamilyManager)
+- New models: 20+ (FamilyCatalogItem, FamilyCatalogVersion, FamilyFileRecord, etc.)
+- New interfaces: 13 (IFamilyCatalogProvider, IFamilyImportService, etc.)
+
 ## [1.4.x] - 2026-04-25
 
 ### Added — Phase 11: ProjectManagement Module

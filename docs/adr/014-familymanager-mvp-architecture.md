@@ -1,6 +1,6 @@
 # ADR-014: FamilyManager MVP Architecture
 
-**Status:** accepted
+**Status:** superseded by ADR-015
 **Date:** 2026-04-28
 
 ## Context

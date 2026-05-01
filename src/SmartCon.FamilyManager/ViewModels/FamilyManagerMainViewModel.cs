@@ -13,6 +13,9 @@ using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
+/// <summary>
+/// ViewModel for the FamilyManager dockable panel.
+/// </summary>
 public sealed partial class FamilyManagerMainViewModel : ObservableObject
 {
     private readonly IFamilyCatalogProvider _catalogProvider;
@@ -90,7 +93,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 CurrentRevitVersion = v;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"DetectRevitVersion failed: {ex.Message}");
+        }
     }
 
     private async Task InitializeAsync()
@@ -250,8 +256,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             {
                 categories = await _categoryRepository.GetAllAsync(ct);
             }
-            catch
+            catch (Exception ex)
             {
+                SmartConLogger.Warn($"LoadTreeAsync GetAllAsync failed: {ex.Message}");
             }
 
             var tree = new CategoryTree(categories);
@@ -314,7 +321,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             {
                 await AttachCachedTypesAsync(rootNodes, expandedFamilyIds, ct);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"AttachCachedTypesAsync failed: {ex.Message}");
+            }
 
             TreeNodes = rootNodes;
         }
@@ -558,7 +568,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             try
             {
-                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                var resolved = _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).GetAwaiter().GetResult();
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
@@ -633,7 +643,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             try
             {
-                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                var resolved = _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).GetAwaiter().GetResult();
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
@@ -660,7 +670,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 {
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
-                        "Family not found after loading");
+                        LanguageManager.GetString(StringLocalization.Keys.FM_FamilyNotFoundAfterLoad) ?? "Family not found after loading");
                     return;
                 }
 
@@ -843,7 +853,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         {
             _dialogService.ShowWarning(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Disconnect",
-                "Cannot disconnect the only database.");
+                LanguageManager.GetString(StringLocalization.Keys.FM_CannotDisconnectOnlyDatabase) ?? "Cannot disconnect the only database.");
             return;
         }
 
@@ -861,7 +871,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
+                ex.Message);
         }
         finally
         {
@@ -1048,7 +1060,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     return;
                 }
 
-                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                var resolved = _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).GetAwaiter().GetResult();
                 if (string.IsNullOrEmpty(resolved.AbsolutePath)) return;
 
                 List<string>? typeNames = null;
@@ -1061,7 +1073,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 if (typeNames is not null && typeNames.Count > 0)
                     FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames));
             }
-            catch { }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"ExtractTypes failed: {ex.Message}");
+            }
         });
     }
 
@@ -1090,7 +1105,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
                 if (family is null)
                 {
-                    var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                    var resolved = _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None).GetAwaiter().GetResult();
                     if (string.IsNullOrEmpty(resolved.AbsolutePath)) return;
 
                     var loadOptions = FamilyLoadOptions.Default with { PreferredName = familyName };
@@ -1119,7 +1134,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     await SaveTypesAndReloadTreeAsync(catalogItemId, ReadFamilyTypeNames(doc, family));
                 });
             }
-            catch { }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"PlaceType failed: {ex.Message}");
+            }
         });
     }
 
@@ -1218,8 +1236,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         {
             await taskFactory();
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Error($"FireAndForget: {ex}");
         }
     }
 

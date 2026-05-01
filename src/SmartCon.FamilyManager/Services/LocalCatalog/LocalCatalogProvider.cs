@@ -192,10 +192,15 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             items.Add(item);
         }
 
-        for (var i = 0; i < items.Count; i++)
+        if (items.Count > 0)
         {
-            var tags = await LoadTagsAsync(connection, items[i].Id, ct);
-            items[i] = items[i] with { Tags = tags };
+            var tagsMap = await LoadAllTagsBatchAsync(connection, items.Select(i => i.Id).ToList(), ct);
+            for (var i = 0; i < items.Count; i++)
+            {
+                tagsMap.TryGetValue(items[i].Id, out var tags);
+                tags ??= [];
+                items[i] = items[i] with { Tags = tags };
+            }
         }
 
         return items;
@@ -300,6 +305,36 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         }
 
         return tags;
+    }
+
+    private static async Task<Dictionary<string, List<string>>> LoadAllTagsBatchAsync(
+        SqliteConnection connection, IReadOnlyList<string> itemIds, CancellationToken ct)
+    {
+        var result = new Dictionary<string, List<string>>(itemIds.Count);
+        if (itemIds.Count == 0) return result;
+
+        var parameters = new string[itemIds.Count];
+        for (var i = 0; i < itemIds.Count; i++)
+            parameters[i] = $"@id{i}";
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"SELECT catalog_item_id, tag FROM catalog_tags WHERE catalog_item_id IN ({string.Join(", ", parameters)}) ORDER BY tag";
+
+        for (var i = 0; i < itemIds.Count; i++)
+        {
+            cmd.Parameters.Add(new SqliteParameter(parameters[i], itemIds[i]));
+            result[itemIds[i]] = [];
+        }
+
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var itemId = reader.GetString(0);
+            var tag = reader.GetString(1);
+            result[itemId].Add(tag);
+        }
+
+        return result;
     }
 
     internal static FamilyCatalogItem ReadCatalogItem(SqliteDataReader reader)
