@@ -30,7 +30,7 @@
 - Новые доменные классы → обнови `docs/domain/models.md`
 - Новые интерфейсы → обнови `docs/domain/interfaces.md`
 - Архитектурные решения → создай ADR в `docs/adr/`
-- Смена статуса фазы → обнови `docs/roadmap.md` и `docs/README.md`
+- Смена статуса фазы → обнови `docs/README.md`
 
 ## Мульти-версионная сборка (ОБЯЗАТЕЛЬНО)
 
@@ -246,8 +246,7 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 ```
 docs/
 ├── README.md                          <- ТОЧКА ВХОДА (индекс)
-├── invariants.md                      <- Жёсткие правила I-01..I-13
-├── roadmap.md                         <- Фазы разработки
+├── invariants.md                      <- Жёсткие правила I-01..I-16
 ├── references.md                      <- Внешние ссылки на Revit API docs
 ├── architecture/
 │   ├── solution-structure.md          <- Проекты, папки, файлы
@@ -261,8 +260,6 @@ docs/
 │   ├── state-machine.md               <- Диаграмма состояний PipeConnect
 │   ├── algorithms.md                  <- Алгоритмы: выравнивание, параметры, фитинги
 │   └── ui-spec.md                     <- Спецификация UI окон
-├── plans/
-│   └── improvement-plan.md            <- План улучшений
 └── adr/
     ├── README.md                      <- Индекс ADR
     ├── 001-clean-architecture.md
@@ -281,10 +278,13 @@ docs/
 ```
 src/
 ├── SmartCon.sln
-├── SmartCon.Core/          <- Чистый C#. Модели, интерфейсы, алгоритмы
-├── SmartCon.Revit/         <- Реализации интерфейсов Core через Revit API
-├── SmartCon.UI/            <- Общая WPF-библиотека: стили, контролы
-├── SmartCon.App/           <- Точка входа: IExternalApplication, Ribbon, DI
-├── SmartCon.PipeConnect/   <- Модуль PipeConnect: Commands, ViewModels, Views
-└── SmartCon.Tests/         <- Unit + ViewModel тесты (xUnit + Moq)
+├── SmartCon.Core/              <- Чистый C#. Модели, интерфейсы, алгоритмы
+├── SmartCon.Revit/             <- Реализации интерфейсов Core через Revit API
+├── SmartCon.UI/                <- Общая WPF-библиотека: стили, контролы
+├── SmartCon.App/               <- Точка входа: IExternalApplication, Ribbon, DI
+├── SmartCon.PipeConnect/       <- Модуль PipeConnect: Commands, ViewModels, Views
+├── SmartCon.ProjectManagement/ <- Модуль Share Project: Commands, ViewModels, Views
+├── SmartCon.FamilyManager/     <- Модуль FamilyManager: dockable panel, SQLite catalog
+├── SmartCon.Updater/           <- Standalone .NET 8 updater
+└── SmartCon.Tests/             <- Unit + ViewModel тесты (xUnit + Moq)
 ```

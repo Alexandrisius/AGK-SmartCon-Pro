@@ -4,7 +4,7 @@
 [![Revit 2019–2026](https://img.shields.io/badge/Revit-2019--2026-green)](https://www.autodesk.com/products/revit/)
 [![C# 12](https://img.shields.io/badge/C%23-12-purple)](https://learn.microsoft.com/en-us/dotnet/csharp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 730](https://img.shields.io/badge/Tests-730%20pass-brightgreen)]()
+[![Tests: ~940](https://img.shields.io/badge/Tests-~940%20pass-brightgreen)]()
 [![Build](https://github.com/Alexandrisius/AGK-SmartCon-Pro/actions/workflows/build.yml/badge.svg)](https://github.com/Alexandrisius/AGK-SmartCon-Pro/actions/workflows/build.yml)
 
 **SmartCon** — набор инструментов для MEP-инженеров в Autodesk Revit.
@@ -251,7 +251,7 @@ SmartCon.App               — Точка входа: IExternalApplication, Ribb
 SmartCon.PipeConnect       — Модуль PipeConnect: Commands, ViewModels, Views
 SmartCon.ProjectManagement — Модуль Share Project: Commands, ViewModels, Views, Settings
 SmartCon.FamilyManager     — Модуль FamilyManager: управление библиотекой семейств (dockable panel, SQLite catalog)
-SmartCon.Tests             — Unit-тесты (xUnit + Moq, 730 тестов)
+SmartCon.Tests             — Unit-тесты (xUnit + Moq, ~940 тестов)
 ```
 
 | Компонент | Технология |
@@ -318,7 +318,6 @@ Multi-version shipping-артефакты:
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Правила сборки, тестов и оформления вкладов |
 | [SECURITY.md](SECURITY.md) | Политика сообщений об уязвимостях |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Правила поведения в сообществе |
-| [CHANGELOG.md](CHANGELOG.md) | История изменений по SemVer |
 | [Issue Templates](.github/ISSUE_TEMPLATE/) | Шаблоны bug report / feature request |
 
 Автоматизация проекта разделена по ролям:
