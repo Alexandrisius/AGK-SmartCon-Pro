@@ -845,6 +845,56 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task UpdateFamilyAsync()
+    {
+        if (SelectedTreeNode is not FamilyLeafNodeViewModel leaf) return;
+
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_Update) ?? "Update";
+        var path = _dialogService.ShowOpenFileDialog(title);
+        if (path is null) return;
+
+        IsLoading = true;
+        try
+        {
+            var request = new FamilyUpdateRequest(leaf.CatalogItemId, path, CurrentRevitVersion);
+            var result = await _importService.UpdateFamilyAsync(request);
+
+            if (result.WasSkippedAsDuplicate)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_UpdateIdentical) ?? "File is identical to current version: {0}",
+                    result.FileName);
+            }
+            else if (result.Success)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_UpdateSuccess) ?? "Updated: {0} → {1}",
+                    result.FileName,
+                    result.VersionLabel);
+            }
+            else
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_UpdateError) ?? "Update error: {0}",
+                    result.ErrorMessage);
+            }
+
+            await LoadTreeAsync();
+            ExpandAndSelectItem(leaf.CatalogItemId);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_UpdateError) ?? "Update error: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task DeleteFamilyAsync()
     {
         if (SelectedItem is null) return;

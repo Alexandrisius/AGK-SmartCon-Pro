@@ -273,6 +273,144 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
         return LocalCatalogProvider.ReadCatalogItem(reader) with { Tags = [] };
     }
 
+    public async Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default)
+    {
+        await _migrator.MigrateAsync(ct);
+
+        var filePath = request.FilePath;
+        if (!File.Exists(filePath))
+        {
+            return new FamilyImportResult(
+                Success: false,
+                CatalogItemId: null,
+                VersionId: null,
+                FileId: null,
+                FileName: Path.GetFileName(filePath),
+                VersionLabel: null,
+                ErrorMessage: $"File not found: {filePath}");
+        }
+
+        var metadata = await _metadataService.ExtractAsync(filePath, ct);
+        var sha256 = metadata.Sha256;
+        var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
+
+        SmartConLogger.Info($"[Update] File: {Path.GetFileName(filePath)}, SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
+
+        var existingVersion = await FindVersionByHashAndRevitAsync(request.CatalogItemId, sha256, revitVersion, ct);
+        if (existingVersion is not null)
+        {
+            return new FamilyImportResult(
+                Success: true,
+                CatalogItemId: request.CatalogItemId,
+                VersionId: existingVersion.Id,
+                FileId: existingVersion.FileId,
+                FileName: metadata.FileName,
+                VersionLabel: existingVersion.VersionLabel,
+                ErrorMessage: null,
+                WasSkippedAsDuplicate: true);
+        }
+
+        var versionLabel = await GetNextVersionLabelAsync(request.CatalogItemId, ct);
+        var newName = Path.GetFileNameWithoutExtension(filePath);
+        var normalizedName = FamilyNameNormalizer.Normalize(newName);
+        var now = DateTimeOffset.UtcNow;
+        var fileRecordId = Guid.NewGuid().ToString();
+        var versionId = Guid.NewGuid().ToString();
+
+        string relativePath;
+        try
+        {
+            _pathResolver.EnsureFamilyDirectories(request.CatalogItemId, versionLabel, revitVersion);
+            var absolutePath = _pathResolver.GetRfaFilePath(request.CatalogItemId, versionLabel, revitVersion, metadata.FileName);
+            File.Copy(filePath, absolutePath, overwrite: true);
+            File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+            relativePath = _pathResolver.GetRelativePath(absolutePath);
+            SmartConLogger.Info($"[Update] Copied to managed storage (read-only): {absolutePath}");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Info($"[Update] Copy FAILED: {ex.Message}");
+            return new FamilyImportResult(
+                Success: false,
+                CatalogItemId: null,
+                VersionId: null,
+                FileId: null,
+                FileName: metadata.FileName,
+                VersionLabel: null,
+                ErrorMessage: $"Failed to copy file to managed storage: {ex.Message}");
+        }
+
+        try
+        {
+            using var connection = _database.CreateConnection();
+            await connection.OpenAsync(ct);
+            using var tx = connection.BeginTransaction();
+
+            using (var fkCmd = connection.CreateCommand())
+            {
+                fkCmd.CommandText = "PRAGMA foreign_keys=ON;";
+                await fkCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            try
+            {
+                await InsertFileRecordAsync(connection, fileRecordId, relativePath, metadata, revitVersion, now, ct);
+                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct);
+                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct);
+
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+
+            _database.Checkpoint();
+
+            return new FamilyImportResult(
+                Success: true,
+                CatalogItemId: request.CatalogItemId,
+                VersionId: versionId,
+                FileId: fileRecordId,
+                FileName: metadata.FileName,
+                VersionLabel: versionLabel,
+                ErrorMessage: null,
+                WasNewVersion: true);
+        }
+        catch
+        {
+            try
+            {
+                var absPath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
+                if (File.Exists(absPath))
+                    File.Delete(absPath);
+            }
+            catch
+            {
+            }
+
+            throw;
+        }
+    }
+
+    private static async Task UpdateCatalogItemWithNameAsync(SqliteConnection connection, string id,
+        string newName, string normalizedName, string versionLabel, DateTimeOffset now, CancellationToken ct)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE catalog_items
+            SET name = @name, normalized_name = @normalizedName, current_version_label = @versionLabel, updated_at_utc = @updatedAtUtc
+            WHERE id = @id
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@id", id));
+        cmd.Parameters.Add(new SqliteParameter("@name", newName));
+        cmd.Parameters.Add(new SqliteParameter("@normalizedName", normalizedName));
+        cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
+        cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private async Task<FamilyCatalogVersion?> FindVersionByHashAndRevitAsync(string catalogItemId, string sha256, int revitVersion, CancellationToken ct)
     {
         using var connection = _database.CreateConnection();

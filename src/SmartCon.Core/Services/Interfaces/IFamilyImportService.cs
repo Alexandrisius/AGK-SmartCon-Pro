@@ -13,4 +13,10 @@ public interface IFamilyImportService
 
     /// <summary>Import all .rfa files from a folder with progress.</summary>
     Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
+
+    /// <summary>
+    /// Update an existing catalog item with a new file version.
+    /// Increments version label, copies file to managed storage, updates name from file.
+    /// </summary>
+    Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default);
 }

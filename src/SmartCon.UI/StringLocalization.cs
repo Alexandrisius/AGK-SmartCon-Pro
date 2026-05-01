@@ -242,6 +242,11 @@ public static class StringLocalization
         d[Keys.FM_DbSelectPath] = "Выберите расположение базы данных";
         d[Keys.FM_Disconnect] = "Отключить базу данных";
 
+        d[Keys.FM_Update] = "Обновить";
+        d[Keys.FM_UpdateSuccess] = "Обновлено: {0} → {1}";
+        d[Keys.FM_UpdateIdentical] = "Файл идентичен текущей версии: {0}";
+        d[Keys.FM_UpdateError] = "Ошибка обновления: {0}";
+
         d[Keys.FM_CTE_Title] = "Редактор дерева категорий";
         d[Keys.FM_CTE_AddRoot] = "+ Корень";
         d[Keys.FM_CTE_AddChild] = "+ Вложенная";
@@ -500,6 +505,11 @@ public static class StringLocalization
         d[Keys.FM_NoCategory] = "No category";
         d[Keys.FM_DbSelectPath] = "Select database location";
         d[Keys.FM_Disconnect] = "Disconnect database";
+
+        d[Keys.FM_Update] = "Update";
+        d[Keys.FM_UpdateSuccess] = "Updated: {0} → {1}";
+        d[Keys.FM_UpdateIdentical] = "File is identical to current version: {0}";
+        d[Keys.FM_UpdateError] = "Update error: {0}";
 
         d[Keys.FM_CTE_Title] = "Category Tree Editor";
         d[Keys.FM_CTE_AddRoot] = "+ Root";
@@ -766,6 +776,11 @@ public static class StringLocalization
         public const string FM_NoCategory = "FM_NoCategory";
         public const string FM_DbSelectPath = "FM_DbSelectPath";
         public const string FM_Disconnect = "FM_Disconnect";
+
+        public const string FM_Update = "FM_Update";
+        public const string FM_UpdateSuccess = "FM_UpdateSuccess";
+        public const string FM_UpdateIdentical = "FM_UpdateIdentical";
+        public const string FM_UpdateError = "FM_UpdateError";
 
         public const string FM_CTE_Title = "FM_CTE_Title";
         public const string FM_CTE_AddRoot = "FM_CTE_AddRoot";

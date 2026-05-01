@@ -279,12 +279,17 @@
                 </HierarchicalDataTemplate>
 
                 <HierarchicalDataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}"
-                                            ItemsSource="{Binding Children}">
-                    <TextBlock Text="{Binding DisplayName}"
-                               Margin="2,1"
-                               VerticalAlignment="Center"
-                               Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
-                        <TextBlock.ContextMenu>
+                                             ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal" Margin="2,1"
+                                Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
+                        <TextBlock Text="{Binding DisplayName}"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding VersionLabel, StringFormat=' {}({0})'}"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"
+                                   Margin="4,0,0,0"/>
+                        <StackPanel.ContextMenu>
                             <ContextMenu Style="{StaticResource ModernContextMenu}"
                                          Focusable="False"
                                          DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
@@ -299,6 +304,9 @@
                                           Command="{Binding ExtractTypesCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
                                 <Separator Style="{StaticResource ModernSeparator}"/>
+                                <MenuItem Header="{DynamicResource FM_Update}"
+                                          Command="{Binding UpdateFamilyCommand}"
+                                          Style="{StaticResource ModernMenuItem}"/>
                                 <MenuItem Header="{DynamicResource FM_EditMetadata}"
                                           Command="{Binding EditMetadataCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
@@ -307,8 +315,8 @@
                                           Command="{Binding DeleteFamilyCommand}"
                                           Style="{StaticResource DangerMenuItem}"/>
                             </ContextMenu>
-                        </TextBlock.ContextMenu>
-                    </TextBlock>
+                        </StackPanel.ContextMenu>
+                    </StackPanel>
                 </HierarchicalDataTemplate>
 
                 <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
