@@ -33,17 +33,22 @@ add-ins directory.
 
 ### Single-version build
 
+When switching between different TFMs (`net8.0-windows` ↔ `net48`), run
+`dotnet restore` first — the RevitAPI NuGet package has different versions per TFM.
+
 ```bash
 # Revit 2025 (net8.0-windows)
+dotnet restore src/SmartCon.App/SmartCon.App.csproj
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 
-# Revit 2024 (net48, separate artifact)
+# Revit 2024 (net48, separate artifact) — restore required after net8!
+dotnet restore src/SmartCon.App/SmartCon.App.csproj
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 
-# Revit 2021-2023 (net48)
+# Revit 2021-2023 (net48) — same TFM, no restore needed
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
 
-# Revit 2019-2020 (net48)
+# Revit 2019-2020 (net48) — same TFM, no restore needed
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19
 ```
 
@@ -62,15 +67,28 @@ Requirements:
 dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
 ```
 
-All 841 tests must pass before submitting a PR. Tests that require a live
+All ~940 tests must pass before submitting a PR. Tests that require a live
 Revit runtime are automatically skipped in CI.
 
 ## Automation Overview
 
-- **GitHub Actions `build.yml`** — CI validation for `push` / `pull_request`. It checks that the repository still builds and tests pass.
-- **GitHub Actions `release.yml`** — GitHub-side release automation on tag `v*`. Intended for open-source distribution and GitHub Releases.
-- **`build-and-deploy.bat`** — local developer script for debug build + deploy into locally installed Revit versions.
-- **`tools/release.ps1`** — maintainer release script. This is the primary local release workflow: version bump, build, tests, publish, ZIP, optional installer, git tag, GitHub release.
+### GitHub Actions
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `build.yml` | push to `main`, PR, tags `v*` | CI: build 5 configs (R19/R21/R24/R25/R26) + run tests |
+| `codeql.yml` | push/PR to `main`, weekly Monday | Security scanning (C#) |
+| `stale.yml` | daily at 04:00 UTC | Auto-close inactive issues/PRs after 30 days |
+
+### Local scripts
+
+| Script | Purpose |
+|---|---|
+| `build-and-deploy.bat` | Debug build of all versions + deploy to locally installed Revit |
+| `tools/release.ps1` | Maintainer release: version bump, build, test, publish, ZIP, optional Inno Setup installer, git tag, push, GitHub Release via `gh` CLI |
+
+Releases are created **locally** by `tools/release.ps1` — there is no CI-side
+release workflow. The `build.yml` workflow only validates the build on tags `v*`.
 
 ## Code Style
 
@@ -111,24 +129,27 @@ Refactor transaction service interface
 SmartCon follows a layered architecture with strict dependency rules:
 
 ```
-SmartCon.App --> PipeConnect --> SmartCon.Revit --> SmartCon.Core
-                                      \-> SmartCon.UI   \-> SmartCon.Core
-App --> ProjectManagement
-App --> FamilyManager --> SmartCon.Core
-                     \-> SmartCon.UI
+SmartCon.App ──> SmartCon.PipeConnect ──> SmartCon.Revit ──> SmartCon.Core
+              ──> SmartCon.ProjectManagement               \-> SmartCon.UI
+              ──> SmartCon.FamilyManager
+              ──> SmartCon.Updater (standalone net8.0, no Revit dependency)
 ```
 
 - **SmartCon.Core** — Pure C#, no Revit API calls, no WPF. Domain models, interfaces, algorithms.
 - **SmartCon.Revit** — Revit API implementations of Core interfaces.
 - **SmartCon.UI** — Shared WPF styles and controls.
-- **SmartCon.PipeConnect** — Module-specific commands, ViewModels, Views.
-- **SmartCon.FamilyManager** — dockable panel, SQLite catalog, family management.
+- **SmartCon.PipeConnect** — PipeConnect module: Commands, ViewModels, Views.
+- **SmartCon.ProjectManagement** — Share Project module (ISO 19650): Commands, ViewModels, Views.
+- **SmartCon.FamilyManager** — FamilyManager module: dockable panel, SQLite catalog, family management.
 - **SmartCon.App** — Entry point: `IExternalApplication`, Ribbon, DI container.
+- **SmartCon.Updater** — Standalone .NET 8 updater: applies pending update when Revit closes.
 
-Key invariants (see `docs/invariants.md`):
+Key invariants (see `docs/invariants.md`, I-01 through I-16):
 - Revit API from WPF — only through `IExternalEventHandler`
 - Transactions — only through `ITransactionService`
 - Never store `Element`/`Connector` between transactions; use `ElementId`
+- Core must never call Revit API methods (only use value types as carriers)
+- MVVM strictly: `.xaml.cs` contains only `DataContext = viewModel`
 
 ## Adding Code
 
@@ -141,5 +162,13 @@ Key invariants (see `docs/invariants.md`):
 
 - Keep PRs focused on a single concern
 - Include tests for new logic in `SmartCon.Core`
-- Ensure `dotnet build` and `dotnet test` pass
+- Ensure all CI checks pass: build (R19/R21/R24/R25/R26) + tests
 - Reference related issues in the PR description
+
+### CI checks required for merge
+
+The `main` branch is protected. All PRs require:
+- ✅ 5 build matrix jobs pass (R19, R21, R24, R25, R26)
+- ✅ Test job passes
+- ✅ 1 approval from CODEOWNERS
+- Linear history (no merge commits)
