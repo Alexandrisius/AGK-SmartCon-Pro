@@ -24,7 +24,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         throw new NotSupportedException("Use IFamilyImportService for import operations.");
     }
 
-    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default)
+    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, string? manufacturer = null, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
@@ -56,6 +56,12 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             {
                 setClauses.Add("content_status = @status");
                 cmd.Parameters.Add(new SqliteParameter("@status", status.Value.ToString()));
+            }
+
+            if (manufacturer is not null)
+            {
+                setClauses.Add("manufacturer = @manufacturer");
+                cmd.Parameters.Add(new SqliteParameter("@manufacturer", manufacturer));
             }
 
             setClauses.Add("updated_at_utc = @updatedAtUtc");

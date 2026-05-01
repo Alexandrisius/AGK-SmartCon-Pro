@@ -76,6 +76,7 @@ internal static class FamilyCatalogSql
             size_bytes INTEGER NOT NULL,
             description TEXT,
             created_at_utc TEXT NOT NULL,
+            is_primary INTEGER DEFAULT 0,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
         )
         """;
@@ -138,6 +139,35 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id)
         """;
 
+    public const string CreateAttributePresets = """
+        CREATE TABLE IF NOT EXISTS attribute_presets (
+            id TEXT PRIMARY KEY,
+            category_id TEXT,
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateAttributePresetParameters = """
+        CREATE TABLE IF NOT EXISTS attribute_preset_parameters (
+            preset_id TEXT NOT NULL,
+            parameter_name TEXT NOT NULL,
+            display_name TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (preset_id, parameter_name),
+            FOREIGN KEY (preset_id) REFERENCES attribute_presets(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateAttributePresetsIndexes = """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id)
+        """;
+
+    public const string MigrateV5AddIsPrimaryColumn = """
+        ALTER TABLE family_assets ADD COLUMN is_primary INTEGER DEFAULT 0
+        """;
+
     public const string CreateTables = $"""
         {CreateDatabaseMeta};
         {CreateSchemaInfo};
@@ -148,7 +178,9 @@ internal static class FamilyCatalogSql
         {CreateCatalogTags};
         {CreateProjectUsage};
         {CreateCategories};
-        {CreateFamilyTypes}
+        {CreateFamilyTypes};
+        {CreateAttributePresets};
+        {CreateAttributePresetParameters}
         """;
 
     public const string CreateIndexes = """
@@ -169,6 +201,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_assets_item ON family_assets (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_family_assets_type ON family_assets (asset_type);
         CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id);
-        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id)
+        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id)
         """;
 }

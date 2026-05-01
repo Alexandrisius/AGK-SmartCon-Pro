@@ -45,4 +45,10 @@ public interface IFamilyManagerDialogService
 
     /// <summary>Show save file dialog for .json files.</summary>
     string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
+
+    bool? ShowProperties(object viewModel);
+
+    string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null);
+
+    bool? ShowPresetEditor(object viewModel);
 }

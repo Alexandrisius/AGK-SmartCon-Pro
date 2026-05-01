@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows.Forms;
 using Autodesk.Revit.UI;
+using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services;
@@ -141,4 +142,29 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
             dialog.FileName = defaultFileName;
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
+
+    public bool? ShowProperties(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog();
+        dialog.Title = title;
+        dialog.Filter = GetAssetFilter(assetType);
+        dialog.CheckFileExists = true;
+        if (initialDirectory is not null) dialog.InitialDirectory = initialDirectory;
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    public bool? ShowPresetEditor(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    private static string GetAssetFilter(FamilyAssetType assetType) => assetType switch
+    {
+        FamilyAssetType.Image => "Image files (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff|All files (*.*)|*.*",
+        FamilyAssetType.Video => "Video files (*.mp4;*.avi;*.mov;*.wmv;*.mkv)|*.mp4;*.avi;*.mov;*.wmv;*.mkv|All files (*.*)|*.*",
+        FamilyAssetType.Document => "Document files (*.pdf;*.doc;*.docx;*.txt;*.rtf)|*.pdf;*.doc;*.docx;*.txt;*.rtf|All files (*.*)|*.*",
+        FamilyAssetType.Model3D => "3D Model files (*.glb;*.gltf;*.fbx;*.obj;*.stl)|*.glb;*.gltf;*.fbx;*.obj;*.stl|All files (*.*)|*.*",
+        FamilyAssetType.LookupTable => "Lookup table files (*.csv;*.txt)|*.csv;*.txt|All files (*.*)|*.*",
+        FamilyAssetType.Spreadsheet => "Spreadsheet files (*.xls;*.xlsx;*.xlsm)|*.xls;*.xlsx;*.xlsm|All files (*.*)|*.*",
+        _ => "All files (*.*)|*.*"
+    };
 }

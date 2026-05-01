@@ -70,6 +70,7 @@ internal sealed class StoragePathResolver
         FamilyAssetType.Document => "documents",
         FamilyAssetType.Model3D => "models",
         FamilyAssetType.LookupTable => "lookup",
+        FamilyAssetType.Spreadsheet => "spreadsheets",
         _ => "other"
     };
 

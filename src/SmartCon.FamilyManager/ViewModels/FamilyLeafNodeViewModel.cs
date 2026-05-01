@@ -10,6 +10,7 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     public string CatalogItemId { get; }
     public string? CategoryId { get; }
     public string? CategoryPath { get; }
+    public string? Manufacturer { get; }
     public ContentStatus ContentStatus { get; }
     public string? VersionLabel { get; }
     public DateTimeOffset UpdatedAtUtc { get; }
@@ -22,6 +23,7 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         CategoryId = row.CategoryId;
         CategoryPath = row.CategoryName;
         DisplayName = row.Name;
+        Manufacturer = row.Manufacturer;
         ContentStatus = row.ContentStatus;
         VersionLabel = row.VersionLabel;
         UpdatedAtUtc = row.UpdatedAtUtc;

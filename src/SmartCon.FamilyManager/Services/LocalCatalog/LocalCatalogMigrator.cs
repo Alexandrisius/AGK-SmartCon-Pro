@@ -46,7 +46,7 @@ internal sealed class LocalCatalogMigrator
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = """
-                INSERT OR IGNORE INTO schema_info (key, value) VALUES ('schema_version', '4')
+                INSERT OR IGNORE INTO schema_info (key, value) VALUES ('schema_version', '5')
                 """;
             await versionCmd.ExecuteNonQueryAsync(ct);
         }
@@ -54,6 +54,9 @@ internal sealed class LocalCatalogMigrator
         await MigrateV2Async(connection, ct);
         await MigrateV3Async(connection, ct);
         await MigrateV4Async(connection, ct);
+        await MigrateV5Async(connection, ct);
+
+        await EnsureCriticalColumnsAsync(connection, ct);
     }
 
     public void Migrate()
@@ -90,7 +93,7 @@ internal sealed class LocalCatalogMigrator
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = """
-                INSERT OR IGNORE INTO schema_info (key, value) VALUES ('schema_version', '4')
+                INSERT OR IGNORE INTO schema_info (key, value) VALUES ('schema_version', '5')
                 """;
             versionCmd.ExecuteNonQuery();
         }
@@ -98,6 +101,9 @@ internal sealed class LocalCatalogMigrator
         MigrateV2(connection);
         MigrateV3(connection);
         MigrateV4(connection);
+        MigrateV5(connection);
+
+        EnsureCriticalColumns(connection);
     }
 
     private static async Task MigrateV2Async(SqliteConnection connection, CancellationToken ct)
@@ -194,6 +200,96 @@ internal sealed class LocalCatalogMigrator
         using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = "UPDATE schema_info SET value = '4' WHERE key = 'schema_version'";
         versionCmd.ExecuteNonQuery();
+    }
+
+    private static async Task MigrateV5Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 5) return;
+
+        if (!await TableExistsAsync(connection, "attribute_presets", ct))
+        {
+            using var createPresetsCmd = connection.CreateCommand();
+            createPresetsCmd.CommandText = FamilyCatalogSql.CreateAttributePresets;
+            await createPresetsCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "attribute_preset_parameters", ct))
+        {
+            using var createParamsCmd = connection.CreateCommand();
+            createParamsCmd.CommandText = FamilyCatalogSql.CreateAttributePresetParameters;
+            await createParamsCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV5AddIsPrimaryColumn;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateAttributePresetsIndexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '5' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static void MigrateV5(SqliteConnection connection)
+    {
+        var currentVersion = GetSchemaVersion(connection);
+        if (currentVersion >= 5) return;
+
+        if (!TableExists(connection, "attribute_presets"))
+        {
+            using var createPresetsCmd = connection.CreateCommand();
+            createPresetsCmd.CommandText = FamilyCatalogSql.CreateAttributePresets;
+            createPresetsCmd.ExecuteNonQuery();
+        }
+
+        if (!TableExists(connection, "attribute_preset_parameters"))
+        {
+            using var createParamsCmd = connection.CreateCommand();
+            createParamsCmd.CommandText = FamilyCatalogSql.CreateAttributePresetParameters;
+            createParamsCmd.ExecuteNonQuery();
+        }
+
+        if (!ColumnExists(connection, "family_assets", "is_primary"))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV5AddIsPrimaryColumn;
+            alterCmd.ExecuteNonQuery();
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateAttributePresetsIndexes;
+        idxCmd.ExecuteNonQuery();
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '5' WHERE key = 'schema_version'";
+        versionCmd.ExecuteNonQuery();
+    }
+
+    private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV5AddIsPrimaryColumn;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static void EnsureCriticalColumns(SqliteConnection connection)
+    {
+        if (!ColumnExists(connection, "family_assets", "is_primary"))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV5AddIsPrimaryColumn;
+            cmd.ExecuteNonQuery();
+        }
     }
 
     private static async Task<int> GetSchemaVersionAsync(SqliteConnection connection, CancellationToken ct)

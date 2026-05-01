@@ -19,4 +19,10 @@ public interface IFamilyAssetService
 
     /// <summary>Resolve absolute path for an asset file.</summary>
     Task<string?> ResolveAssetPathAsync(string assetId, CancellationToken ct = default);
+
+    /// <summary>Mark an asset as the primary asset for its type (unmarks any previous primary).</summary>
+    Task SetPrimaryAssetAsync(string assetId, CancellationToken ct = default);
+
+    /// <summary>Get the primary image asset for a catalog item, if one is set.</summary>
+    Task<FamilyAsset?> GetPrimaryImageAsync(string catalogItemId, CancellationToken ct = default);
 }

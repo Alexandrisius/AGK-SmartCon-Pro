@@ -363,8 +363,8 @@
                                 <MenuItem Header="{DynamicResource FM_Update}"
                                           Command="{Binding UpdateFamilyCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
-                                <MenuItem Header="{DynamicResource FM_EditMetadata}"
-                                          Command="{Binding EditMetadataCommand}"
+                                <MenuItem Header="{DynamicResource FM_Properties}"
+                                          Command="{Binding OpenPropertiesCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
                                 <Separator Style="{StaticResource ModernSeparator}"/>
                                 <MenuItem Header="{DynamicResource FM_DeleteFromCatalog}"

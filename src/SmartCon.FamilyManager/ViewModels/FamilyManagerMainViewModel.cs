@@ -152,6 +152,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                 Name = leaf.DisplayName,
                 CategoryId = leaf.CategoryId,
                 CategoryName = leaf.CategoryPath,
+                Manufacturer = leaf.Manufacturer,
                 ContentStatus = leaf.ContentStatus,
                 VersionLabel = leaf.VersionLabel,
                 UpdatedAtUtc = leaf.UpdatedAtUtc,
@@ -170,6 +171,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     Name = parentLeaf.DisplayName,
                     CategoryId = parentLeaf.CategoryId,
                     CategoryName = parentLeaf.CategoryPath,
+                    Manufacturer = parentLeaf.Manufacturer,
                     ContentStatus = parentLeaf.ContentStatus,
                     VersionLabel = parentLeaf.VersionLabel,
                     UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
@@ -728,6 +730,38 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             SelectedItem.ContentStatus);
 
         var result = _dialogService.ShowMetadataEdit(vm);
+        if (result != true) return;
+
+        await LoadTreeAsync();
+        ExpandAndSelectItem(itemId);
+    }
+
+    [RelayCommand]
+    private async Task OpenProperties()
+    {
+        if (SelectedItem is null) return;
+
+        var itemId = SelectedItem.Id;
+        var updatedAt = SelectedItem.UpdatedAtUtc != default
+            ? SelectedItem.UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            : null;
+
+        var vm = _viewModelFactory.CreatePropertiesViewModel(
+            SelectedItem.Id,
+            SelectedItem.Name,
+            SelectedItem.Description,
+            SelectedItem.CategoryId,
+            SelectedItem.CategoryName,
+            SelectedItem.Tags,
+            SelectedItem.ContentStatus,
+            SelectedItem.Manufacturer,
+            SelectedItem.VersionLabel,
+            null,
+            null,
+            updatedAt);
+
+        vm.InitializeCommand.Execute(null);
+        var result = _dialogService.ShowProperties(vm);
         if (result != true) return;
 
         await LoadTreeAsync();

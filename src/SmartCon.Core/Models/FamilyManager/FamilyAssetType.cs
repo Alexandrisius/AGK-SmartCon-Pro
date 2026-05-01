@@ -21,5 +21,8 @@ public enum FamilyAssetType
     LookupTable = 4,
 
     /// <summary>Other file type.</summary>
-    Other = 5
+    Other = 5,
+
+    /// <summary>Spreadsheet: Excel, CSV data table.</summary>
+    Spreadsheet = 6
 }

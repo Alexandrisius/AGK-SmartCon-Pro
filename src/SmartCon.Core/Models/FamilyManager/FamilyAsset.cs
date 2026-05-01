@@ -13,6 +13,7 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="SizeBytes">File size in bytes.</param>
 /// <param name="Description">User-provided description.</param>
 /// <param name="CreatedAtUtc">When the asset was added.</param>
+/// <param name="IsPrimary">Whether this is the primary asset for its type.</param>
 public sealed record FamilyAsset(
     string Id,
     string CatalogItemId,
@@ -22,4 +23,5 @@ public sealed record FamilyAsset(
     string RelativePath,
     long SizeBytes,
     string? Description,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    bool IsPrimary = false);

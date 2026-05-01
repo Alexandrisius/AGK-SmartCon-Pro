@@ -130,6 +130,7 @@ public static class ServiceRegistrar
             presenter.Register<FamilyMetadataEditViewModel>(vm => new FamilyMetadataEditView(vm));
             presenter.Register<CategoryTreeEditorViewModel>(vm => new CategoryTreeEditorView(vm));
             presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
+            presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -157,6 +158,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();
         services.AddSingleton<IProjectFamilyUsageRepository, LocalProjectFamilyUsageRepository>();
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
+        services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
         services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
         services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
