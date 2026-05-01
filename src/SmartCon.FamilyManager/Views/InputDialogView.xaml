@@ -38,12 +38,12 @@
         <StackPanel Grid.Row="2"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right">
-            <Button Content="OK"
+            <Button Content="{DynamicResource Btn_OK}"
                     Command="{Binding OkCommand}"
                     MinWidth="70"
                     Margin="0,0,8,0"
                     Style="{DynamicResource PrimaryButton}"/>
-            <Button Content="Отмена"
+            <Button Content="{DynamicResource Btn_Cancel}"
                     Command="{Binding CancelCommand}"
                     MinWidth="70"
                     Style="{DynamicResource SecondaryButton}"/>

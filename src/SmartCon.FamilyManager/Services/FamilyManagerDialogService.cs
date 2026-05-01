@@ -58,6 +58,19 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
         return path;
     }
 
+    public string[]? ShowImportFilesDialog(string title, string? initialDirectory = null)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog();
+        dialog.Title = title;
+        dialog.Filter = "Revit Family Files (*.rfa)|*.rfa";
+        if (initialDirectory is not null) dialog.InitialDirectory = initialDirectory;
+        dialog.Multiselect = true;
+        dialog.CheckFileExists = true;
+
+        if (dialog.ShowDialog() != true) return null;
+        return dialog.FileNames;
+    }
+
     public string? ShowFolderBrowserDialog(string title, string? initialDirectory = null)
     {
         using var dialog = new FolderBrowserDialog();

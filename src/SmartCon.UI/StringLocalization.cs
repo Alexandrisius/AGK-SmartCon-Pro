@@ -272,6 +272,10 @@ public static class StringLocalization
         d[Keys.FM_CP_Title] = "Выбор категории";
         d[Keys.FM_CP_Clear] = "Сбросить";
 
+        d[Keys.FM_Tip_CreateDb] = "Создать новую базу данных";
+        d[Keys.FM_Tip_ConnectDb] = "Подключить существующую базу данных";
+        d[Keys.FM_Tip_EditCategories] = "Редактировать категории";
+
         return d;
     }
 
@@ -536,6 +540,10 @@ public static class StringLocalization
         d[Keys.FM_CTE_Exported] = "Exported to {0}";
         d[Keys.FM_CP_Title] = "Select Category";
         d[Keys.FM_CP_Clear] = "Clear";
+
+        d[Keys.FM_Tip_CreateDb] = "Create new database";
+        d[Keys.FM_Tip_ConnectDb] = "Connect existing database";
+        d[Keys.FM_Tip_EditCategories] = "Edit categories";
 
         return d;
     }
@@ -808,5 +816,9 @@ public static class StringLocalization
         public const string FM_CTE_Exported = "FM_CTE_Exported";
         public const string FM_CP_Title = "FM_CP_Title";
         public const string FM_CP_Clear = "FM_CP_Clear";
+
+        public const string FM_Tip_CreateDb = "FM_Tip_CreateDb";
+        public const string FM_Tip_ConnectDb = "FM_Tip_ConnectDb";
+        public const string FM_Tip_EditCategories = "FM_Tip_EditCategories";
     }
 }

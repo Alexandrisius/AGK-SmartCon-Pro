@@ -10,6 +10,7 @@ public static class RibbonBuilder
     private const string TabName = "SmartCon";
     private const string PanelPipeSystems = "Pipe Systems";
     private const string PanelProjectManagement = "Project Management";
+    private const string PanelContentManagement = "Content Management";
     private const string PanelInfo = "Info";
 
     public static void CreateRibbon(UIControlledApplication app)
@@ -82,8 +83,8 @@ public static class RibbonBuilder
 
         pmPanel.AddItem(shareSettingsButton);
 
-        // --- Family Manager Panel ---
-        var fmPanel = app.CreateRibbonPanel(TabName, "Family Manager");
+        // --- Content Management Panel ---
+        var fmPanel = app.CreateRibbonPanel(TabName, PanelContentManagement);
         var fmAssembly = Path.Combine(appDir, "SmartCon.FamilyManager.dll");
 
         var familyManagerButton = new PushButtonData(

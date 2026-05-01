@@ -1,3 +1,4 @@
+using SmartCon.Core.Services;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.UI;
 using SW = System.Windows;
@@ -18,11 +19,9 @@ public sealed partial class FamilyManagerPaneControl : SWC.UserControl
     {
         InitializeComponent();
 
-        var dict = LanguageManager.GetCurrentStrings();
-        if (dict is not null)
-        {
-            Resources.MergedDictionaries.Add(dict);
-        }
+        RefreshLanguageDictionary();
+
+        LocalizationService.LanguageChanged += OnLanguageChanged;
 
         DataContext = viewModel;
 
@@ -106,6 +105,23 @@ public sealed partial class FamilyManagerPaneControl : SWC.UserControl
             _isDragging = false;
             CancelDragExpandTimer();
         }
+    }
+
+    private void OnLanguageChanged()
+    {
+        Dispatcher.BeginInvoke(RefreshLanguageDictionary);
+    }
+
+    private void RefreshLanguageDictionary()
+    {
+        var existing = Resources.MergedDictionaries.FirstOrDefault(d =>
+            d.Contains(StringLocalization.Keys.Btn_Cancel));
+        if (existing is not null)
+            Resources.MergedDictionaries.Remove(existing);
+
+        var dict = LanguageManager.GetCurrentStrings();
+        if (dict is not null)
+            Resources.MergedDictionaries.Add(dict);
     }
 
     private void TreeViewItem_DragOver(object sender, SW.DragEventArgs e)

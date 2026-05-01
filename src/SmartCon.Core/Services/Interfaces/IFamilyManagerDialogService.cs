@@ -13,6 +13,9 @@ public interface IFamilyManagerDialogService
     /// <summary>Show import dialog: select a file (.rfa) or navigate to a folder to import all families.</summary>
     string? ShowImportDialog(string title, string? initialDirectory = null);
 
+    /// <summary>Show multi-file import dialog: select multiple .rfa files.</summary>
+    string[]? ShowImportFilesDialog(string title, string? initialDirectory = null);
+
     /// <summary>Show folder browser dialog.</summary>
     string? ShowFolderBrowserDialog(string title, string? initialDirectory = null);
 

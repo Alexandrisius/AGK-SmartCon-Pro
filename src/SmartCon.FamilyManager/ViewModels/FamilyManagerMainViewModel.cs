@@ -406,20 +406,59 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ImportAsync()
+    private async Task ImportFilesAsync()
     {
-        var title = LanguageManager.GetString(StringLocalization.Keys.FM_Import) ?? "Import";
-        var path = _dialogService.ShowImportDialog(title);
-        if (path is null) return;
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import Files";
+        var paths = _dialogService.ShowImportFilesDialog(title);
+        if (paths is null || paths.Length == 0) return;
 
-        if (Directory.Exists(path))
+        IsLoading = true;
+        try
         {
-            await ImportFolder(path);
+            var successCount = 0;
+            var skipCount = 0;
+            var errorCount = 0;
+
+            for (var i = 0; i < paths.Length; i++)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportProgress) ?? "Importing {0} of {1}...",
+                    i + 1, paths.Length);
+
+                var request = new FamilyImportRequest(paths[i], CurrentRevitVersion, null, null, null);
+                var result = await _importService.ImportFileAsync(request);
+
+                if (result.WasSkippedAsDuplicate) skipCount++;
+                else if (result.Success) successCount++;
+                else errorCount++;
+            }
+
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
+                $"{successCount} / {paths.Length}");
+
+            await LoadTreeAsync();
         }
-        else if (File.Exists(path))
+        catch (Exception ex)
         {
-            await ImportFile(path);
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}",
+                ex.Message);
         }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportFolderAsync()
+    {
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFolder) ?? "Import Folder";
+        var path = _dialogService.ShowFolderBrowserDialog(title);
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        await ImportFolder(path!);
     }
 
     private async Task ImportFile(string path)
