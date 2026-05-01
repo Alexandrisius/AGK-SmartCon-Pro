@@ -156,9 +156,13 @@ public sealed class FileNameParser : IFileNameParser
         if (rule.SegmentIndex < 0 || rule.SegmentIndex >= segments.Length)
             return (string.Empty, text);
 
-        var value = segments[rule.SegmentIndex];
+        var count = rule.SegmentCount <= 0 ? 1 : rule.SegmentCount;
+        var end = System.Math.Min(rule.SegmentIndex + count, segments.Length);
+
+        var valueSegments = segments.Skip(rule.SegmentIndex).Take(end - rule.SegmentIndex);
+        var value = string.Join(rule.Delimiter, valueSegments);
         var remainingSegments = segments
-            .Where((_, i) => i != rule.SegmentIndex)
+            .Where((_, i) => i < rule.SegmentIndex || i >= end)
             .ToArray();
 
         var remaining = string.Join(rule.Delimiter, remainingSegments);

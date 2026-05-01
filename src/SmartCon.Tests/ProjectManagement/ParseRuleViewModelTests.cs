@@ -225,4 +225,65 @@ public sealed class ParseRuleViewModelTests
 
         Assert.False(result);
     }
+
+    [Fact]
+    public void Constructor_InitializesSegmentCountFromRule()
+    {
+        var rule = new ParseRule
+        {
+            Mode = ParseMode.DelimiterSegment,
+            Delimiter = "-",
+            SegmentIndex = 0,
+            SegmentCount = 2
+        };
+
+        var vm = CreateVm(rule);
+
+        Assert.Equal(2, vm.SegmentCount);
+    }
+
+    [Fact]
+    public void BuildRule_DelimiterSegment_WithSegmentCount()
+    {
+        var vm = CreateVm();
+        vm.Mode = ParseMode.DelimiterSegment;
+        vm.Delimiter = "-";
+        vm.SegmentIndex = 0;
+        vm.SegmentCount = 2;
+
+        var rule = vm.BuildRule();
+
+        Assert.Equal(0, rule.SegmentIndex);
+        Assert.Equal(2, rule.SegmentCount);
+    }
+
+    [Fact]
+    public void Preview_MultiSegment_ExtractsCorrectValue()
+    {
+        var vm = CreateVm(previewFileName: "12-59-Сарай.rvt");
+        vm.Mode = ParseMode.DelimiterSegment;
+        vm.Delimiter = "-";
+        vm.SegmentIndex = 0;
+        vm.SegmentCount = 2;
+
+        Assert.Equal("12-59", vm.PreviewValue);
+        Assert.Equal("Сарай", vm.PreviewRemaining);
+    }
+
+    [Fact]
+    public void Preview_SegmentCountChanged_RefreshesPreview()
+    {
+        var vm = CreateVm(previewFileName: "A-B-C-D.rvt");
+        vm.Mode = ParseMode.DelimiterSegment;
+        vm.Delimiter = "-";
+        vm.SegmentIndex = 1;
+        vm.SegmentCount = 1;
+
+        Assert.Equal("B", vm.PreviewValue);
+
+        vm.SegmentCount = 2;
+
+        Assert.Equal("B-C", vm.PreviewValue);
+        Assert.Equal("A-D", vm.PreviewRemaining);
+    }
 }

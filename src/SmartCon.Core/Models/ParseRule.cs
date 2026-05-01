@@ -6,6 +6,7 @@ public sealed record ParseRule
 
     public string Delimiter { get; init; } = "-";
     public int SegmentIndex { get; init; }
+    public int SegmentCount { get; init; } = 1;
 
     public int CharCount { get; init; }
 

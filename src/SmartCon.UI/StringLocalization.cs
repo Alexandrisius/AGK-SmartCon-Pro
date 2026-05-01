@@ -180,6 +180,7 @@ public static class StringLocalization
         d[Keys.PM_ParseMode] = "Режим:";
         d[Keys.PM_Delimiter] = "Разделитель:";
         d[Keys.PM_SegmentIndex] = "Сегмент:";
+        d[Keys.PM_SegmentCount] = "Кол-во:";
         d[Keys.PM_CharCount] = "Кол-во симв.:";
         d[Keys.PM_OpenMarker] = "Откр.:";
         d[Keys.PM_CloseMarker] = "Закр.:";
@@ -444,6 +445,7 @@ public static class StringLocalization
         d[Keys.PM_ParseMode] = "Mode:";
         d[Keys.PM_Delimiter] = "Delimiter:";
         d[Keys.PM_SegmentIndex] = "Segment:";
+        d[Keys.PM_SegmentCount] = "Count:";
         d[Keys.PM_CharCount] = "Char count:";
         d[Keys.PM_OpenMarker] = "Open:";
         d[Keys.PM_CloseMarker] = "Close:";
@@ -708,6 +710,7 @@ public static class StringLocalization
         public const string PM_ParseMode = "PM_ParseMode";
         public const string PM_Delimiter = "PM_Delimiter";
         public const string PM_SegmentIndex = "PM_SegmentIndex";
+        public const string PM_SegmentCount = "PM_SegmentCount";
         public const string PM_CharCount = "PM_CharCount";
         public const string PM_OpenMarker = "PM_OpenMarker";
         public const string PM_CloseMarker = "PM_CloseMarker";

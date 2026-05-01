@@ -25,6 +25,9 @@ public sealed class FileNameParserTests
     private static ParseRule DelimSeg(string delimiter, int index)
         => new() { Mode = ParseMode.DelimiterSegment, Delimiter = delimiter, SegmentIndex = index };
 
+    private static ParseRule DelimSegMulti(string delimiter, int index, int count)
+        => new() { Mode = ParseMode.DelimiterSegment, Delimiter = delimiter, SegmentIndex = index, SegmentCount = count };
+
     private static ParseRule FixedW(int count)
         => new() { Mode = ParseMode.FixedWidth, CharCount = count };
 
@@ -813,6 +816,88 @@ public sealed class FileNameParserTests
         Assert.Equal("P", parsed["phase"]);
         Assert.Equal("S1", parsed["status"]);
         Assert.Equal("klimovich", parsed["user"]);
+    }
+
+    #endregion
+
+    #region SegmentCount — multi-segment extraction
+
+    [Fact]
+    public void ApplyParseRule_DelimiterSegment_MultiSegment_ExtractsTwoConsecutive()
+    {
+        var (value, remaining) = FileNameParser.ApplyParseRule("12-59-Сарай", DelimSegMulti("-", 0, 2));
+        Assert.Equal("12-59", value);
+        Assert.Equal("Сарай", remaining);
+    }
+
+    [Fact]
+    public void ApplyParseRule_DelimiterSegment_MultiSegment_MiddleRange()
+    {
+        var (value, remaining) = FileNameParser.ApplyParseRule("A-B-C-D-E", DelimSegMulti("-", 1, 2));
+        Assert.Equal("B-C", value);
+        Assert.Equal("A-D-E", remaining);
+    }
+
+    [Fact]
+    public void ApplyParseRule_DelimiterSegment_MultiSegment_CountExceedsAvailable()
+    {
+        var (value, remaining) = FileNameParser.ApplyParseRule("A-B-C", DelimSegMulti("-", 1, 10));
+        Assert.Equal("B-C", value);
+        Assert.Equal("A", remaining);
+    }
+
+    [Fact]
+    public void ApplyParseRule_DelimiterSegment_SegmentCountZero_TreatedAsOne()
+    {
+        var (value, remaining) = FileNameParser.ApplyParseRule("A-B-C", DelimSegMulti("-", 0, 0));
+        Assert.Equal("A", value);
+        Assert.Equal("B-C", remaining);
+    }
+
+    [Fact]
+    public void ApplyParseRule_DelimiterSegment_SegmentCountNegative_TreatedAsOne()
+    {
+        var (value, remaining) = FileNameParser.ApplyParseRule("A-B-C", DelimSegMulti("-", 1, -5));
+        Assert.Equal("B", value);
+        Assert.Equal("A-C", remaining);
+    }
+
+    [Fact]
+    public void ParseBlocks_MultiSegmentBlock_ConsumptiveParsing()
+    {
+        var template = CreateTemplate(
+            (0, "code", DelimSegMulti("-", 0, 2)),
+            (1, "name", RemainderRule()));
+
+        var result = _parser.ParseBlocks("12-59-Сарай.rvt", template);
+
+        Assert.Equal("12-59", result["code"]);
+        Assert.Equal("Сарай", result["name"]);
+    }
+
+    [Fact]
+    public void ParseBlocks_MultiSegmentBlock_ThreePartName()
+    {
+        var template = CreateTemplate(
+            (0, "prefix", DelimSegMulti("-", 0, 2)),
+            (1, "suffix", DelimSegMulti("-", 0, 2)));
+
+        var result = _parser.ParseBlocks("X-Y-Z-W.rvt", template);
+
+        Assert.Equal("X-Y", result["prefix"]);
+        Assert.Equal("Z-W", result["suffix"]);
+    }
+
+    [Fact]
+    public void TransformForExport_MultiSegmentBlock_ReconstructsCorrectly()
+    {
+        var template = CreateTemplate(
+            (0, "code", DelimSegMulti("-", 0, 2)),
+            (1, "name", DelimSeg("-", 0)));
+
+        var result = _parser.TransformForExport("12-59-Сарай.rvt", template, []);
+
+        Assert.Equal("12-59-Сарай.rvt", result);
     }
 
     #endregion
