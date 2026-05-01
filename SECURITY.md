@@ -2,38 +2,36 @@
 
 ## Supported Versions
 
-SmartCon поддерживает последнюю стабильную релизную версию. Только она получает
-обновления безопасности.
+Only the **latest stable release** receives security updates. Older versions are not supported.
 
-| Версия | Поддерживается |
-|--------|----------------|
-| 1.4.x  | ✅             |
-| < 1.4  | ❌             |
+| Version | Supported |
+| ------- | --------- |
+| Latest  | ✅        |
+| Older   | ❌        |
 
 ## Reporting a Vulnerability
 
-Если вы обнаружили уязвимость — **не открывайте публичный issue**.
+**Do not open a public issue for security vulnerabilities.**
 
-Вместо этого:
+Instead, use one of these channels:
 
-1. Создайте
-   [private security advisory](https://github.com/Alexandrisius/AGK-SmartCon-Pro/security/advisories/new)
-   в GitHub; или
-2. Напишите напрямую владельцу репозитория (см. `.github/CODEOWNERS`).
+1. **GitHub Private Security Advisory** (preferred):
+   [Create advisory](https://github.com/Alexandrisius/AGK-SmartCon-Pro/security/advisories/new)
+2. **Direct contact** with the repository maintainer (see `.github/CODEOWNERS`)
 
-Мы постараемся ответить в течение 7 рабочих дней. После подтверждения фикс
-будет опубликован как патч-релиз с упоминанием автора (если вы не против).
+We aim to respond within **7 business days**. After confirmation, a fix will be published as a patch release with credit to the reporter (unless you prefer to remain anonymous).
 
 ## Scope
 
-В scope:
+**In scope:**
 
-- Исполнение произвольного кода через загруженный проект Revit
-- Утечки учётных данных / токенов через логи
-- Небезопасная десериализация JSON-маппинга
+- Arbitrary code execution via a loaded Revit project or family file
+- Credential or token leaks through logs or configuration files
+- Unsafe deserialization of JSON mapping data
+- SQLite injection in the FamilyManager catalog
 
-Вне scope:
+**Out of scope:**
 
-- Проблемы конкретной установки Revit
-- Социальная инженерия
-- DoS через чрезмерно большие проекты
+- Issues specific to a particular Revit installation
+- Social engineering attacks
+- Denial of service through excessively large project files

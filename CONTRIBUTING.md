@@ -1,6 +1,10 @@
 # Contributing to SmartCon
 
-Thank you for your interest in contributing to SmartCon — a Revit plugin for automating MEP operations.
+Thank you for your interest in contributing to SmartCon — a Revit plugin for
+automating MEP operations.
+
+This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+By participating, you are expected to uphold this code.
 
 ## Build
 
@@ -160,10 +164,11 @@ Key invariants (see `docs/invariants.md`, I-01 through I-16):
 
 ## Pull Requests
 
-- Keep PRs focused on a single concern
-- Include tests for new logic in `SmartCon.Core`
-- Ensure all CI checks pass: build (R19/R21/R24/R25/R26) + tests
-- Reference related issues in the PR description
+1. Fork the repository and create a branch from `main`
+2. Make your changes — keep PRs focused on a single concern
+3. Add tests for new logic in `SmartCon.Core`
+4. Ensure all CI checks pass: build (R19/R21/R24/R25/R26) + tests
+5. Open a PR against `main` with a clear description and reference to related issues
 
 ### CI checks required for merge
 
