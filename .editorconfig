@@ -196,3 +196,9 @@ dotnet_diagnostic.CA1863.severity = suggestion
 
 # CA1869: Cache and reuse JsonSerializerOptions
 dotnet_diagnostic.CA1869.severity = suggestion
+
+# CA2263: Prefer generic Enum.Parse/GetValues — not available in net48
+dotnet_diagnostic.CA2263.severity = none
+
+# CA1872: Prefer Convert.ToHexString — not available in net48
+dotnet_diagnostic.CA1872.severity = none

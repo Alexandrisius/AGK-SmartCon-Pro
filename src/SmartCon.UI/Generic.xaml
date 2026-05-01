@@ -360,12 +360,28 @@
     <Style x:Key="CompactDataGridRow" TargetType="DataGridRow">
         <Setter Property="Height" Value="26"/>
         <Style.Triggers>
+            <!-- Selected row -->
             <Trigger Property="IsSelected" Value="True">
                 <Setter Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
             </Trigger>
-            <Trigger Property="IsMouseOver" Value="True">
+            <!-- Mouse over selected row - keep selection visible -->
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsSelected" Value="True"/>
+                    <Condition Property="IsMouseOver" Value="True"/>
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            </MultiTrigger>
+            <!-- Mouse over unselected row -->
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsSelected" Value="False"/>
+                    <Condition Property="IsMouseOver" Value="True"/>
+                </MultiTrigger.Conditions>
                 <Setter Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
-            </Trigger>
+            </MultiTrigger>
         </Style.Triggers>
     </Style>
 

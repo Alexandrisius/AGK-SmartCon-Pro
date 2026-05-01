@@ -23,7 +23,7 @@ body:
     attributes:
       label: SmartCon version
       description: См. About → Version, или `Version.txt`
-      placeholder: "1.3.0"
+      placeholder: ""
     validations:
       required: true
 
@@ -67,12 +67,24 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      description: Какой модуль SmartCon затронут?
+      options:
+        - PipeConnect
+        - Share Project
+        - FamilyManager
+    validations:
+      required: true
+
   - type: textarea
     id: logs
     attributes:
       label: Logs
       description: |
-        Содержимое `%APPDATA%\AGK\SmartCon\smartcon.log` (или
+        Содержимое `%APPDATA%\SmartCon\smartcon.log` (или
         `lookup-diagnostic.log` / `formula-diagnostic.log` если релевантно).
       render: text
 

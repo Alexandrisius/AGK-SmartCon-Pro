@@ -16,15 +16,16 @@
 
 ## Матрица зависимостей
 
-| Проект | Core | Revit | UI | App | PipeConnect | ProjectManagement |
-|---|---|---|---|---|---|---|
-| **Core** | — | — | — | — | — | — |
-| **Revit** | да | — | — | — | — | — |
-| **UI** | да | — | — | — | — | — |
-| **App** | да | да | да | — | да | да |
-| **PipeConnect** | да | — | да | — | — | — |
-| **ProjectManagement** | да | — | да | — | — | — |
-| **Tests** | да | — | — | — | да | да |
+| Проект | Core | Revit | UI | App | PipeConnect | ProjectManagement | FamilyManager |
+|---|---|---|---|---|---|---|---|
+| **Core** | — | — | — | — | — | — | — |
+| **Revit** | да | — | — | — | — | — | — |
+| **UI** | да | — | — | — | — | — | — |
+| **App** | да | да | да | — | да | да | да |
+| **PipeConnect** | да | — | да | — | — | — | — |
+| **ProjectManagement** | да | — | да | — | — | — | — |
+| **FamilyManager** | да | — | да | — | — | — | — |
+| **Tests** | да | — | — | — | да | да | да |
 
 ## Жёсткие запреты
 
@@ -33,6 +34,7 @@
 3. **PipeConnect -> Revit:** `SmartCon.PipeConnect` НЕ ссылается на `SmartCon.Revit` напрямую. Вся работа с Revit API — через интерфейсы Core, реализованные в Revit. PipeConnect ссылается на RevitAPI.dll / RevitAPIUI.dll (CopyLocal=false) для `IExternalCommand` и `[Transaction]`.
 4. **UI -> Revit:** `SmartCon.UI` НЕ ссылается на `SmartCon.Revit`.
 5. **ProjectManagement -> Revit:** `SmartCon.ProjectManagement` НЕ ссылается на `SmartCon.Revit` напрямую. Вся работа с Revit API — через интерфейсы Core. ProjectManagement ссылается на RevitAPI.dll / RevitAPIUI.dll (CopyLocal=false) для `IExternalCommand` и `[Transaction]`.
+6. **FamilyManager -> Revit:** `SmartCon.FamilyManager` НЕ ссылается на `SmartCon.Revit` напрямую. Вся работа с Revit API — через интерфейсы Core. FamilyManager ссылается на RevitAPI.dll / RevitAPIUI.dll (CopyLocal=false) для `IExternalCommand` и `[Transaction]`.
 
 ## Как это работает
 

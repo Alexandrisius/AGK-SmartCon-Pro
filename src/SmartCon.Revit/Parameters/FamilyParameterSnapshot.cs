@@ -28,7 +28,7 @@ internal sealed class FamilyParameterSnapshot
     /// Build a snapshot from the given <see cref="FamilyManager"/>.
     /// Safe to call once — the resulting snapshot can be reused without COM issues.
     /// </summary>
-    public static FamilyParameterSnapshot Build(FamilyManager fm)
+    public static FamilyParameterSnapshot Build(Autodesk.Revit.DB.FamilyManager fm)
     {
         var paramList = new List<(string? Name, string? Formula)>();
         var formulaDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

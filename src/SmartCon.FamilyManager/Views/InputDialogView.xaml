@@ -1,0 +1,52 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.InputDialogView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        Title="{Binding Title}"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Window.Resources>
+        <ui:SingletonResources/>
+    </Window.Resources>
+
+    <Grid Margin="16" MinWidth="300">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="{Binding Prompt}"
+                   Margin="0,0,0,8"
+                   Foreground="{DynamicResource TextBrush}"
+                   TextWrapping="Wrap"/>
+
+        <TextBox Grid.Row="1"
+                 Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,16"
+                 Padding="6,4"
+                 Style="{DynamicResource CompactTextBox}"
+                 x:Name="InputTextBox"/>
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button Content="{DynamicResource Btn_OK}"
+                    Command="{Binding OkCommand}"
+                    MinWidth="70"
+                    Margin="0,0,8,0"
+                    Style="{DynamicResource PrimaryButton}"/>
+            <Button Content="{DynamicResource Btn_Cancel}"
+                    Command="{Binding CancelCommand}"
+                    MinWidth="70"
+                    Style="{DynamicResource SecondaryButton}"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

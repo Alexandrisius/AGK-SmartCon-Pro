@@ -29,8 +29,9 @@ public sealed partial class FileNameBlockItem : ObservableObject
     {
         return ParseRule.Mode switch
         {
-            ParseMode.DelimiterSegment =>
-                $"Разд. [{ParseRule.Delimiter}] #{ParseRule.SegmentIndex}",
+            ParseMode.DelimiterSegment => ParseRule.SegmentCount > 1
+                ? $"Разд. [{ParseRule.Delimiter}] #{ParseRule.SegmentIndex}-{ParseRule.SegmentIndex + ParseRule.SegmentCount - 1}"
+                : $"Разд. [{ParseRule.Delimiter}] #{ParseRule.SegmentIndex}",
             ParseMode.FixedWidth =>
                 $"{ParseRule.CharCount} симв.",
             ParseMode.BetweenMarkers =>

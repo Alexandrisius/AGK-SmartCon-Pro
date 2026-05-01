@@ -247,7 +247,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
     /// Вызывать внутри открытой транзакции на familyDoc.
     /// </summary>
     private static bool TrySetDrivingFamilyParameter(
-        FamilyManager fm, ConnectorElement connElem, Parameter connParam, string value)
+        Autodesk.Revit.DB.FamilyManager fm, ConnectorElement connElem, Parameter connParam, string value)
     {
         FamilyParameter? drivingFp = null;
 

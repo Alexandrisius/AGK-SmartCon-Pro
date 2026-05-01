@@ -3,6 +3,12 @@ using Microsoft.Extensions.DependencyInjection;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager;
+using SmartCon.FamilyManager.Events;
+using SmartCon.FamilyManager.Services;
+using SmartCon.FamilyManager.Services.LocalCatalog;
+using SmartCon.FamilyManager.ViewModels;
+using SmartCon.FamilyManager.Views;
 using SmartCon.PipeConnect.Events;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
@@ -17,6 +23,7 @@ using SmartCon.Revit.Selection;
 using SmartCon.ProjectManagement.Services;
 using SmartCon.ProjectManagement.ViewModels;
 using SmartCon.ProjectManagement.Views;
+using SmartCon.Revit.FamilyManager;
 using SmartCon.Revit.Sharing;
 using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
@@ -120,6 +127,10 @@ public static class ServiceRegistrar
             presenter.Register<ParseRuleViewModel>(vm => new ParseRuleView(vm));
             presenter.Register<FieldLibraryViewModel>(vm => new FieldLibraryView(vm));
             presenter.Register<AllowedValuesViewModel>(vm => new AllowedValuesView(vm));
+            presenter.Register<FamilyMetadataEditViewModel>(vm => new FamilyMetadataEditView(vm));
+            presenter.Register<CategoryTreeEditorViewModel>(vm => new CategoryTreeEditorView(vm));
+            presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
+            presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -130,5 +141,40 @@ public static class ServiceRegistrar
         services.AddSingleton<IFileNameParser, RevitFileNameParser>();
         services.AddSingleton<IViewRepository, RevitViewRepository>();
         services.AddSingleton<IShareSettingsViewModelFactory, ShareSettingsViewModelFactory>();
+
+        // --- FamilyManager (Phase 13) ---
+        services.AddSingleton<LocalCatalogDatabase>();
+        services.AddSingleton<LocalCatalogMigrator>();
+        services.AddSingleton<StoragePathResolver>();
+        services.AddSingleton<LocalCatalogProvider>();
+        services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
+        services.AddSingleton<IWritableFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
+        services.AddSingleton<LocalCategoryRepository>();
+        services.AddSingleton<ICategoryRepository>(sp => sp.GetRequiredService<LocalCategoryRepository>());
+        services.AddSingleton<LocalFamilyTypeRepository>();
+        services.AddSingleton<IFamilyTypeRepository>(sp => sp.GetRequiredService<LocalFamilyTypeRepository>());
+        services.AddSingleton<Sha256FileHasher>();
+        services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
+        services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();
+        services.AddSingleton<IProjectFamilyUsageRepository, LocalProjectFamilyUsageRepository>();
+        services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
+        services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
+        services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
+        services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
+        services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
+        services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
+
+        services.AddSingleton<FamilyManagerMainViewModel>();
+        services.AddSingleton<FamilyManagerPaneControl>();
+        services.AddSingleton<FamilyManagerPaneProvider>();
+
+        var fmHandler = new FamilyManagerExternalEvent(revitContext);
+        var fmEvent = ExternalEvent.Create(fmHandler);
+        fmHandler.Initialize(fmEvent);
+        services.AddSingleton(fmHandler);
+        services.AddSingleton<IFamilyManagerExternalEvent>(fmHandler);
+
+        services.AddSingleton<IFamilyManagerViewModelFactory, FamilyManagerViewModelFactory>();
+        services.AddSingleton<IDatabaseManager, DatabaseManager>();
     }
 }

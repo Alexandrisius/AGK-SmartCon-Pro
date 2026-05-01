@@ -24,3 +24,6 @@
 | [011](011-dn-symbol-name-in-dropdown.md) | Отображение имени типоразмера в выпадающем списке DN | implemented | 2026-04-17 |
 | [012](012-per-project-extensible-storage.md) | Per-project ExtensibleStorage для маппинга фитингов | accepted | 2026-04-19 |
 | [013](013-project-management-module.md) | Модуль ProjectManagement — Share Project (ISO 19650) | accepted | 2026-04-23 |
+| [014](014-familymanager-mvp-architecture.md) | FamilyManager MVP Architecture | superseded by 015 | 2026-04-28 |
+| [015](015-familymanager-published-storage.md) | FamilyManager Published Storage (ISO 19650) | accepted | 2026-04-30 |
+| [016](016-familymanager-readonly-files.md) | ReadOnly-флаг для managed-файлов семейств | accepted | 2026-04-30 |

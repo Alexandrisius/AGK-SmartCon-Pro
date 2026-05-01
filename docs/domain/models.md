@@ -652,10 +652,521 @@ public sealed record ShareProjectResult
 **Файл:** `SmartCon.Core/Models/ViewInfo.cs`
 
 ```csharp
-public sealed record ViewInfo
+public sealed class ViewInfo
 {
     public string Name { get; init; } = string.Empty;
     public ElementId Id { get; init; }
     public string ViewType { get; init; } = string.Empty;
 }
 ```
+
+---
+
+## FamilyManager Models
+
+Модели модуля FamilyManager (Phase 13: Published Storage). Все модели — immutable records, живут в `SmartCon.Core/Models/FamilyManager/`.
+Идентификаторы — `string` (GUID), даты — `DateTimeOffset`.
+
+---
+
+### ContentStatus
+
+Статус опубликованного контента в каталоге. FM — Published-зона, всё импортированное = опубликовано.
+
+**Файл:** `ContentStatus.cs`
+
+```csharp
+public enum ContentStatus
+{
+    Active = 0,       // доступно для загрузки в проекты
+    Deprecated = 1,   // устарело, не рекомендуется для новых проектов
+    Retired = 2       // снято с публикации, недоступно для загрузки
+}
+```
+
+---
+
+### FamilyAssetType
+
+Тип вспомогательного ассета (изображение, документ и т.д.), прикреплённого к семейству.
+
+**Файл:** `FamilyAssetType.cs`
+
+```csharp
+public enum FamilyAssetType
+{
+    Image = 0,
+    Video = 1,
+    Document = 2,
+    Model3D = 3,
+    LookupTable = 4,
+    Other = 5,
+    Spreadsheet = 6
+}
+```
+
+---
+
+### DatabaseConnection
+
+Подключение к базе данных каталога по пути. Папка содержит `catalog.db` (SQLite) + `files/` (managed storage).
+
+**Файл:** `DatabaseConnection.cs`
+
+```csharp
+public sealed record DatabaseConnection(
+    string Id,
+    string Name,
+    string Path,
+    DateTimeOffset CreatedAtUtc);
+```
+
+---
+
+### DatabaseConnectionRegistry
+
+Реестр подключений. Сохраняется как `registry.json` в `%APPDATA%\SmartCon\FamilyManager\`.
+
+**Файл:** `DatabaseConnectionRegistry.cs`
+
+```csharp
+public sealed record DatabaseConnectionRegistry(
+    string? ActiveConnectionId,
+    IReadOnlyList<DatabaseConnection> Connections);
+```
+
+---
+
+### FamilyCatalogItem
+
+Логическая запись каталога семейств — основная сущность, к которой привязаны версии и файлы.
+
+**Файл:** `FamilyCatalogItem.cs`
+
+```csharp
+public sealed record FamilyCatalogItem(
+    string Id,
+    string Name,
+    string NormalizedName,
+    string? Description,
+    string? CategoryPath,
+    string? CategoryId,
+    string? Manufacturer,
+    ContentStatus ContentStatus,
+    string? CurrentVersionLabel,
+    IReadOnlyList<string> Tags,
+    string? PublishedBy,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+```
+
+---
+
+### FamilyCatalogVersion
+
+Версия записи каталога — связка с конкретным файлом `.rfa`. Один CatalogItem может иметь несколько версий.
+
+**Файл:** `FamilyCatalogVersion.cs`
+
+```csharp
+public sealed record FamilyCatalogVersion(
+    string Id,
+    string CatalogItemId,
+    string FileId,
+    string VersionLabel,
+    string Sha256,
+    int RevitMajorVersion,
+    int? TypesCount,
+    int? ParametersCount,
+    DateTimeOffset PublishedAtUtc);
+```
+
+---
+
+### FamilyFileRecord
+
+Физический файл семейства в managed storage. Путь: `{db-root}/files/{family-id}/{version}/r{revit}/{sha256}.rfa`.
+
+**Файл:** `FamilyFileRecord.cs`
+
+```csharp
+public sealed record FamilyFileRecord(
+    string Id,
+    string RelativePath,
+    string FileName,
+    long SizeBytes,
+    string Sha256,
+    int RevitMajorVersion,
+    DateTimeOffset ImportedAtUtc);
+```
+
+---
+
+### FamilyAsset
+
+Вспомогательный ассет (изображение, документ, lookup table), привязанный к семейству.
+Файлы хранятся в `{db-root}/files/{family-id}/{version}/assets/{type}/`.
+
+**Файл:** `FamilyAsset.cs`
+
+```csharp
+public sealed record FamilyAsset(
+    string Id,
+    string CatalogItemId,
+    string? VersionLabel,
+    FamilyAssetType AssetType,
+    string FileName,
+    string RelativePath,
+    long SizeBytes,
+    string? Description,
+    DateTimeOffset CreatedAtUtc,
+    bool IsPrimary = false);
+```
+
+---
+
+### AttributePreset
+
+Набор параметров для извлечения из семейств, привязанный к категории. Дочерние категории наследуют параметры от родительских.
+
+**Файл:** `AttributePreset.cs`
+
+```csharp
+public sealed record AttributePreset(
+    string Id,
+    string? CategoryId,
+    IReadOnlyList<AttributePresetParameter> Parameters,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+```
+
+---
+
+### AttributePresetParameter
+
+Описание одного параметра в пресете.
+
+**Файл:** `AttributePresetParameter.cs`
+
+```csharp
+public sealed record AttributePresetParameter(
+    string ParameterName,
+    string? DisplayName,
+    int SortOrder)
+{
+    public string DisplayText => DisplayName ?? ParameterName;
+}
+```
+
+---
+
+### CategoryNode
+
+Узел дерева категорий. Формирует иерархию категорий каталога семейств.
+
+**Файл:** `CategoryNode.cs`
+
+```csharp
+public sealed record CategoryNode(
+    string Id,
+    string Name,
+    string? ParentId,
+    int SortOrder,
+    string FullPath,
+    DateTimeOffset CreatedAtUtc);
+```
+
+---
+
+### CategoryTree
+
+Иммутабельное дерево категорий с быстрым поиском по ID и дочерним узлам.
+
+**Файл:** `CategoryTree.cs`
+
+```csharp
+public sealed class CategoryTree
+{
+    public CategoryTree(IReadOnlyList<CategoryNode> nodes);
+    public IReadOnlyList<CategoryNode> GetAllNodes();
+    public CategoryNode? GetById(string id);
+    public IReadOnlyList<CategoryNode> GetChildren(string? parentId);
+    public IReadOnlyList<CategoryNode> GetRootNodes();
+    public string GetFullPath(string id);
+    public IReadOnlyList<string> GetDescendantIds(string categoryId);
+    public string BuildFullPath(string id);
+}
+```
+
+---
+
+### FamilyUpdateRequest
+
+Запрос на обновление файла семейства в каталоге.
+
+**Файл:** `FamilyUpdateRequest.cs`
+
+```csharp
+public sealed record FamilyUpdateRequest(
+    string CatalogItemId,
+    string FilePath,
+    int RevitMajorVersion);
+```
+
+---
+
+### FamilyCatalogQuery
+
+Параметры запроса поиска по каталогу с пагинацией и фильтрацией.
+
+**Файл:** `FamilyCatalogQuery.cs`
+
+```csharp
+public sealed record FamilyCatalogQuery(
+    string? SearchText,
+    string? CategoryFilter,
+    ContentStatus? StatusFilter,
+    IReadOnlyList<string>? Tags,
+    string? ManufacturerFilter,
+    FamilyCatalogSort Sort,
+    int Offset,
+    int Limit);
+```
+
+---
+
+### FamilyCatalogCapabilities
+
+Описание возможностей провайдера каталога — используется для адаптации UI.
+
+**Файл:** `FamilyCatalogCapabilities.cs`
+
+```csharp
+public sealed record FamilyCatalogCapabilities(
+    bool SupportsWrite,
+    bool SupportsSearch,
+    bool SupportsTags,
+    bool SupportsBatchImport,
+    bool SupportsVersionHistory,
+    CatalogProviderKind ProviderKind);
+```
+
+---
+
+### FamilyImportRequest
+
+Запрос на импорт одного файла `.rfa` в каталог. Файл копируется в managed storage.
+
+**Файл:** `FamilyImportRequest.cs`
+
+```csharp
+public sealed record FamilyImportRequest(
+    string FilePath,
+    int RevitMajorVersion,
+    string? Category,
+    IReadOnlyList<string>? Tags,
+    string? Description);
+```
+
+---
+
+### FamilyImportResult
+
+Результат импорта одного файла — содержит ID созданных сущностей или флаг дубликата.
+
+**Файл:** `FamilyImportResult.cs`
+
+```csharp
+public sealed record FamilyImportResult(
+    bool Success,
+    string? CatalogItemId,
+    string? VersionId,
+    string? FileId,
+    string? FileName,
+    string? VersionLabel,
+    string? ErrorMessage,
+    bool WasSkippedAsDuplicate = false,
+    bool WasNewVersion = false);
+```
+
+---
+
+### FamilyBatchImportResult
+
+Агрегированный результат импорта нескольких файлов.
+
+**Файл:** `FamilyBatchImportResult.cs`
+
+```csharp
+public sealed record FamilyBatchImportResult(
+    IReadOnlyList<FamilyImportResult> Results,
+    int TotalFiles,
+    int SuccessCount,
+    int SkippedCount,
+    int ErrorCount);
+```
+
+---
+
+### FamilyFolderImportRequest
+
+Запрос на импорт всех `.rfa` файлов из папки (с возможностью рекурсивного обхода).
+
+**Файл:** `FamilyFolderImportRequest.cs`
+
+```csharp
+public sealed record FamilyFolderImportRequest(
+    string FolderPath,
+    int RevitMajorVersion,
+    bool Recursive,
+    string? Category,
+    IReadOnlyList<string>? Tags,
+    string? Description);
+```
+
+---
+
+### FamilyImportProgress
+
+Прогресс пакетного импорта — передаётся в callback для обновления UI.
+
+**Файл:** `FamilyImportProgress.cs`
+
+```csharp
+public sealed record FamilyImportProgress(
+    int CurrentFileIndex,
+    int TotalFiles,
+    string CurrentFileName,
+    int SuccessCount,
+    int SkippedCount,
+    int ErrorCount);
+```
+
+---
+
+### FamilyLoadOptions
+
+Параметры загрузки семейства в проект Revit.
+
+**Файл:** `FamilyLoadOptions.cs`
+
+```csharp
+public sealed record FamilyLoadOptions(
+    bool OverwriteExisting = false,
+    bool UpdateFamilyIfChanged = false,
+    string? PreferredName = null)
+{
+    public static FamilyLoadOptions Default { get; } = new();
+}
+```
+
+---
+
+### FamilyLoadResult
+
+Результат загрузки семейства в проект Revit.
+
+**Файл:** `FamilyLoadResult.cs`
+
+```csharp
+public sealed record FamilyLoadResult(
+    bool Success,
+    string? FamilyName,
+    string? Message,
+    string? ErrorMessage);
+```
+
+---
+
+### FamilyResolvedFile
+
+Разрешённый путь к файлу `.rfa` — готов для загрузки в Revit.
+
+**Файл:** `FamilyResolvedFile.cs`
+
+```csharp
+public sealed record FamilyResolvedFile(
+    string AbsolutePath,
+    string? CatalogItemId,
+    string? VersionId);
+```
+
+---
+
+### FamilyMetadataExtractionResult
+
+Результат извлечения метаданных из `.rfa`. MVP — только файловые метаданные (имя, размер, хеш).
+Post-MVP — глубокое извлечение (категория, типы, параметры).
+
+**Файл:** `FamilyMetadataExtractionResult.cs`
+
+```csharp
+public sealed record FamilyMetadataExtractionResult(
+    string FileName,
+    long FileSizeBytes,
+    string Sha256,
+    DateTimeOffset? LastWriteTimeUtc,
+    string? CategoryName,
+    int? RevitMajorVersion,
+    IReadOnlyList<FamilyTypeDescriptor>? Types,
+    IReadOnlyList<FamilyParameterDescriptor>? Parameters);
+```
+
+---
+
+### FamilyTypeDescriptor
+
+Дескриптор типоразмера семейства (Post-MVP: заполняется при глубоком извлечении).
+
+**Файл:** `FamilyTypeDescriptor.cs`
+
+```csharp
+public sealed record FamilyTypeDescriptor(
+    string Id,
+    string CatalogItemId,
+    string Name,
+    int SortOrder);
+```
+
+---
+
+### FamilyParameterDescriptor
+
+Дескриптор параметра семейства (Post-MVP: заполняется при глубоком извлечении).
+
+**Файл:** `FamilyParameterDescriptor.cs`
+
+```csharp
+public sealed record FamilyParameterDescriptor(
+    string Id,
+    string VersionId,
+    string? TypeId,
+    string Name,
+    string? StorageType,
+    string? ValueText,
+    bool? IsInstance,
+    bool? IsReadonly,
+    string? ForgeTypeId);
+```
+
+---
+
+### ProjectFamilyUsage
+
+Запись истории использования семейства в проекте Revit.
+
+**Файл:** `ProjectFamilyUsage.cs`
+
+```csharp
+public sealed record ProjectFamilyUsage(
+    string Id,
+    string CatalogItemId,
+    string? VersionId,
+    string? ProjectName,
+    string? ProjectPath,
+    int? RevitMajorVersion,
+    string Action,
+    DateTimeOffset CreatedAtUtc);
+```
+
+

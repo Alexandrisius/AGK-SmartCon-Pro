@@ -213,3 +213,33 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 проект.
 
 Подробнее: [`adr/012-per-project-extensible-storage.md`](adr/012-per-project-extensible-storage.md).
+
+---
+
+## I-14: SQLite Thread Safety
+
+Все SQLite-операции идут через `LocalCatalogDatabase`:
+
+- WAL journal mode для конкурентных чтений
+- Только один writer одновременно (ограничение SQLite)
+- `LocalCatalogDatabase.SwitchToPath` защищён lock-ом
+- `new SqliteConnection()` вне `LocalCatalogDatabase` **запрещён**
+
+---
+
+## I-15: Dockable Panel Lifecycle
+
+- `FamilyManagerPaneProvider` — singleton, регистрируется один раз в `OnStartup`
+- Панель **не пересоздаётся** при клике на кнопку — только `Show()`/`Hide()` через `DockablePane`
+- ViewModel — singleton на экземпляр панели
+- Состояние панели сохраняется между show/hide
+
+---
+
+## I-16: Managed Storage Immutability
+
+`.rfa` файлы в managed storage (`%APPDATA%\SmartCon\FamilyManager\databases\{id}\storage\`) — **read-only** после импорта:
+
+- Прямое изменение файлов **запрещено** — изменения = новая версия (ADR-016)
+- `Sha256FileHasher` верифицирует целостность файла при чтении
+- `IFamilyFileResolver` — единственная точка входа для доступа к файлам

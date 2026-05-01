@@ -281,7 +281,7 @@ internal static class FamilyParameterAnalyzer
 
     private static bool IsIdentChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
-    private static FamilyParameter? FindFamilyParameter(FamilyManager fm, string name)
+    private static FamilyParameter? FindFamilyParameter(Autodesk.Revit.DB.FamilyManager fm, string name)
     {
         foreach (FamilyParameter fp in fm.Parameters)
         {

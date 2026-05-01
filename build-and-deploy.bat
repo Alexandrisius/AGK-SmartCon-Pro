@@ -51,8 +51,8 @@ set "ADDIN_R25=%APPDATA%\Autodesk\Revit\Addins\2025"
 set "DLL_R25=%APPDATA%\SmartCon\2025"
 if exist "%ADDIN_R25%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R25%\SmartCon" 2>nul )
 if not exist "%DLL_R25%" mkdir "%DLL_R25%"
-copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\*.dll" "%DLL_R25%\" >nul
-copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\SmartCon.App.deps.json" "%DLL_R25%\" >nul 2>nul
+copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\*.dll" "%DLL_R25%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\SmartCon.App.deps.json" "%DLL_R25%\" >nul 2>nul
 call :WriteAddin "%ADDIN_R25%\SmartCon.addin" "%DLL_R25%\SmartCon.App.dll"
 echo [OK] Revit 2025
 
@@ -62,18 +62,23 @@ set "ADDIN_R26=%APPDATA%\Autodesk\Revit\Addins\2026"
 set "DLL_R26=%APPDATA%\SmartCon\2026"
 if exist "%ADDIN_R26%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R26%\SmartCon" 2>nul )
 if not exist "%DLL_R26%" mkdir "%DLL_R26%"
-copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\*.dll" "%DLL_R26%\" >nul
-copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\SmartCon.App.deps.json" "%DLL_R26%\" >nul 2>nul
-call :WriteAddin "%ADDIN_R26%\SmartCon.addin" "%DLL_R26%\SmartCon.App.dll"
-echo [OK] Revit 2026
+copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\*.dll" "%DLL_R26%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\SmartCon.App.deps.json" "%DLL_R26%\" >nul 2>nul
+if exist "%ADDIN_R26%" (
+    call :WriteAddin "%ADDIN_R26%\SmartCon.addin" "%DLL_R26%\SmartCon.App.dll"
+    echo [OK] Revit 2026
+) else (
+    echo [SKIP] Revit 2026 not installed
+)
 
 echo.
 echo [8/10] Deploying to Revit 2021-2024...
 set "DLL_R24=%APPDATA%\SmartCon\2024"
 if not exist "%DLL_R24%" mkdir "%DLL_R24%"
-copy /Y "src\SmartCon.App\bin\Debug.R24\net48\*.dll" "%DLL_R24%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R24\net48\win-x64\*.dll" "%DLL_R24%\" >nul
 set "ADDIN_R24=%APPDATA%\Autodesk\Revit\Addins\2024"
 if exist "%ADDIN_R24%" (
+    if exist "%ADDIN_R24%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R24%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R24%\SmartCon.addin" "%DLL_R24%\SmartCon.App.dll"
     echo [OK] Revit 2024
 ) else (
@@ -82,7 +87,7 @@ if exist "%ADDIN_R24%" (
 
 set "DLL_R21=%APPDATA%\SmartCon\2021-2023"
 if not exist "%DLL_R21%" mkdir "%DLL_R21%"
-copy /Y "src\SmartCon.App\bin\Debug.R21\net48\*.dll" "%DLL_R21%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R21\net48\win-x64\*.dll" "%DLL_R21%\" >nul
 
 set "ADDIN_2023=%APPDATA%\Autodesk\Revit\Addins\2023"
 if exist "%ADDIN_2023%" (
@@ -96,6 +101,7 @@ if exist "%ADDIN_2023%" (
 
 set "ADDIN_R22=%APPDATA%\Autodesk\Revit\Addins\2022"
 if exist "%ADDIN_R22%" (
+    if exist "%ADDIN_R22%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R22%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R22%\SmartCon.addin" "%DLL_R21%\SmartCon.App.dll"
     echo [OK] Revit 2022
 ) else (
@@ -104,6 +110,7 @@ if exist "%ADDIN_R22%" (
 
 set "ADDIN_R21=%APPDATA%\Autodesk\Revit\Addins\2021"
 if exist "%ADDIN_R21%" (
+    if exist "%ADDIN_R21%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R21%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R21%\SmartCon.addin" "%DLL_R21%\SmartCon.App.dll"
     echo [OK] Revit 2021
 ) else (
@@ -114,9 +121,10 @@ echo.
 echo [9/10] Deploying to Revit 2019-2020...
 set "DLL_R19=%APPDATA%\SmartCon\2019-2020"
 if not exist "%DLL_R19%" mkdir "%DLL_R19%"
-copy /Y "src\SmartCon.App\bin\Debug.R19\net48\*.dll" "%DLL_R19%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R19\net48\win-x64\*.dll" "%DLL_R19%\" >nul
 set "ADDIN_R19=%APPDATA%\Autodesk\Revit\Addins\2019"
 if exist "%ADDIN_R19%" (
+    if exist "%ADDIN_R19%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R19%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R19%\SmartCon.addin" "%DLL_R19%\SmartCon.App.dll"
     echo [OK] Revit 2019
 ) else (
@@ -124,6 +132,7 @@ if exist "%ADDIN_R19%" (
 )
 set "ADDIN_R20=%APPDATA%\Autodesk\Revit\Addins\2020"
 if exist "%ADDIN_R20%" (
+    if exist "%ADDIN_R20%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R20%\SmartCon" 2>nul )
     call :WriteAddin "%ADDIN_R20%\SmartCon.addin" "%DLL_R19%\SmartCon.App.dll"
     echo [OK] Revit 2020
 ) else (

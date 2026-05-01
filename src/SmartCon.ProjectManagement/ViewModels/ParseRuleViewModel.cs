@@ -20,6 +20,9 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
     private int _segmentIndex;
 
     [ObservableProperty]
+    private int _segmentCount = 1;
+
+    [ObservableProperty]
     private int _charCount = 3;
 
     [ObservableProperty]
@@ -69,6 +72,7 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
         _mode = initialRule.Mode;
         _delimiter = initialRule.Delimiter;
         _segmentIndex = initialRule.SegmentIndex;
+        _segmentCount = initialRule.SegmentCount;
         _charCount = initialRule.CharCount;
         _openMarker = initialRule.OpenMarker;
         _closeMarker = initialRule.CloseMarker;
@@ -101,6 +105,7 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
 
     partial void OnDelimiterChanged(string value) => RefreshPreview();
     partial void OnSegmentIndexChanged(int value) => RefreshPreview();
+    partial void OnSegmentCountChanged(int value) => RefreshPreview();
     partial void OnCharCountChanged(int value) => RefreshPreview();
     partial void OnOpenMarkerChanged(string value) => RefreshPreview();
     partial void OnCloseMarkerChanged(string value) => RefreshPreview();
@@ -145,6 +150,7 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
             Mode = Mode,
             Delimiter = Delimiter,
             SegmentIndex = SegmentIndex,
+            SegmentCount = SegmentCount,
             CharCount = CharCount,
             OpenMarker = OpenMarker,
             CloseMarker = CloseMarker,

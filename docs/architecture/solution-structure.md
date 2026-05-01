@@ -13,6 +13,7 @@ SmartCon.sln
 ├── SmartCon.App               <- Точка входа: IExternalApplication, Ribbon, DI-регистрация.
 ├── SmartCon.PipeConnect       <- Модуль PipeConnect: Commands, ViewModels, Views.
 ├── SmartCon.ProjectManagement <- Модуль ProjectManagement: Share Project (ISO 19650).
+├── SmartCon.FamilyManager     <- Модуль FamilyManager: управление библиотекой семейств Revit (dockable panel, SQLite catalog).
 ├── SmartCon.Tests             <- Unit + ViewModel тесты (xUnit + Moq).
 └── SmartCon.Updater           <- Standalone .NET 8 updater: применяет pending
                                    update при закрытии Revit (staging-based).
@@ -280,27 +281,135 @@ SmartCon.ProjectManagement/
 
 ---
 
+## SmartCon.FamilyManager
+
+Модуль FamilyManager: управление библиотекой семейств Revit через dockable panel.
+
+```
+SmartCon.FamilyManager/
+├── Commands/
+│   └── FamilyManagerCommand.cs          // IExternalCommand — toggle dockable pane
+├── Events/
+│   └── FamilyManagerExternalEvent.cs    // IExternalEventHandler — Revit API thread bridge
+├── Diagnostics/                         // (пусто, зарезервировано для будущей диагностики)
+├── ViewModels/
+│   ├── FamilyManagerMainViewModel.cs    // Main dockable panel VM (11 commands)
+│   ├── FamilyCatalogItemRow.cs          // DataGrid row model
+│   ├── FamilyMetadataEditViewModel.cs   // Metadata edit dialog VM
+│   ├── InputDialogViewModel.cs          // Simple input dialog VM
+│   ├── CatalogTreeNodeViewModel.cs      // Catalog tree node base VM
+│   ├── CategoryNodeViewModel.cs         // Category tree node VM
+│   ├── CategoryPickerViewModel.cs       // Category picker dialog VM
+│   ├── CategoryTreeEditorViewModel.cs   // Category tree editor dialog VM
+│   ├── FamilyLeafNodeViewModel.cs       // Family leaf node in catalog tree
+│   ├── FamilyPropertiesViewModel.cs     // Family properties panel VM
+│   └── FamilyTypeNodeViewModel.cs       // Family type node in catalog tree
+├── Views/
+│   ├── FamilyManagerPaneControl.xaml(.cs)     // Dockable panel UserControl
+│   ├── FamilyMetadataEditView.xaml(.cs)       // Metadata edit dialog (DialogWindowBase)
+│   ├── InputDialogView.xaml(.cs)              // Simple input dialog (DialogWindowBase)
+│   ├── CategoryPickerView.xaml(.cs)           // Category picker dialog
+│   ├── CategoryTreeEditorView.xaml(.cs)       // Category tree editor dialog
+│   └── FamilyPropertiesView.xaml(.cs)         // Family properties panel
+├── Services/
+│   ├── FamilyManagerDialogService.cs         // IFamilyManagerDialogService impl
+│   ├── FamilyManagerViewModelFactory.cs      // IFamilyManagerViewModelFactory impl
+│   ├── IFamilyManagerViewModelFactory.cs     // Factory interface
+│   └── LocalCatalog/
+│       ├── DatabaseManager.cs                // IDatabaseManager impl (multi-DB registry)
+│       ├── FamilyCatalogSql.cs               // DDL constants (9 tables, 14 indexes)
+│       ├── LocalCatalogDatabase.cs           // SQLite connection management
+│       ├── LocalCatalogMigrator.cs           // Schema migration
+│       ├── LocalCatalogProvider.cs           // IFamilyCatalogProvider + IWritableFamilyCatalogProvider
+│       ├── LocalCatalogQueryBuilder.cs       // SQL WHERE/LIMIT builder
+│       ├── LocalCategoryRepository.cs        // ICategoryRepository impl
+│       ├── LocalFamilyAssetService.cs        // IFamilyAssetService impl
+│       ├── LocalFamilyFileResolver.cs        // IFamilyFileResolver impl
+│       ├── LocalFamilyImportService.cs       // IFamilyImportService impl (import pipeline)
+│       ├── LocalFamilyTypeRepository.cs      // IFamilyTypeRepository impl
+│       ├── LocalProjectFamilyUsageRepository.cs  // IProjectFamilyUsageRepository impl
+│       ├── LocalAttributePresetService.cs    // IAttributePresetService impl
+│       ├── StoragePathResolver.cs            // Managed storage path resolution
+│       ├── Sha256FileHasher.cs               // SHA-256 file hashing
+│       └── FileNameOnlyMetadataExtractionService.cs  // IFamilyMetadataExtractionService (MVP)
+├── FamilyManagerPaneProvider.cs         // IDockablePaneProvider
+├── FamilyManagerPaneIds.cs              // DockablePaneId Guid
+└── SmartCon.FamilyManager.csproj        // Core + UI + Microsoft.Data.Sqlite
+```
+
+> **Примечание:** Интерфейсы и модели — в SmartCon.Core.
+> Реализации Revit API (IFamilyLoadService, IFamilyMetadataExtractionService) — в SmartCon.Revit/FamilyManager/.
+> SmartCon.FamilyManager зависит только от Core + UI (как PipeConnect и ProjectManagement).
+
+---
+
 ## SmartCon.Tests
 
 ```
 SmartCon.Tests/
 ├── Core/
+│   ├── ConstantsTests.cs
 │   ├── Models/
-│   │   ├── ConnectorProxyTests.cs
-│   │   └── ConnectionTypeCodeTests.cs
+│   │   ├── ConnectionTypeCodeTests.cs
+│   │   ├── CtcGuesserTests.cs
+│   │   ├── FamilySizeFormatterTests.cs
+│   │   ├── FamilySizeOptionDedupAndSuffixTests.cs
+│   │   ├── FamilySizeOptionTests.cs
+│   │   ├── FittingCardItemTests.cs
+│   │   ├── LookupColumnConstraintTests.cs
+│   │   ├── PipeConnectStateTests.cs
+│   │   ├── PurgeOptionsTests.cs
+│   │   ├── SizeOptionTests.cs
+│   │   ├── SizeTableRowTests.cs
+│   │   └── VirtualCtcStoreTests.cs
 │   ├── Math/
+│   │   ├── BestSizeMatcherTests.cs
+│   │   ├── ConnectorAlignerTests.cs
+│   │   ├── LookupTableCsvParserTests.cs
+│   │   ├── MultiColumnLookupTests.cs
+│   │   ├── SizeRowSymbolMatcherTests.cs
 │   │   ├── VectorUtilsTests.cs
-│   │   └── ConnectorAlignerTests.cs
+│   │   └── FormulaEngine/
+│   │       ├── EvaluatorTests.cs
+│   │       ├── FormulaEngineEdgeCaseTests.cs
+│   │       ├── IfSimplifierTests.cs
+│   │       ├── ParserTests.cs
+│   │       ├── SizeLookupParserTests.cs
+│   │       ├── SolverTests.cs
+│   │       ├── TokenizerTests.cs
+│   │       ├── UnitStripperTests.cs
+│   │       └── VariableExtractorTests.cs
 │   └── Services/
-│       ├── FormulaSolverTests.cs
+│       ├── ConnectorTypeItemTests.cs
+│       ├── FamilySelectorViewModelTests.cs
+│       ├── FileNameParserTests.cs
+│       ├── FittingChainResolverTests.cs
 │       ├── FittingMapperTests.cs
-│       └── PathfinderServiceTests.cs
-├── PipeConnect/
-│   └── ViewModels/
-│       └── PipeConnectEditorViewModelTests.cs
-└── ProjectManagement/
-    ├── FileNameParserTests.cs
-    ├── ShareSettingsJsonSerializerTests.cs
-    ├── PurgeOptionsTests.cs
-    └── ShareSettingsViewModelTests.cs
+│       ├── MappingEditorViewModelTests.cs
+│       ├── MappingRuleItemTests.cs
+│       ├── MiniTypeSelectorViewModelTests.cs
+│       ├── ParameterResolutionFlowTests.cs
+│       ├── ServiceHostTests.cs
+│       ├── ShareSettingsJsonSerializerTests.cs
+│       └── Storage/
+│           └── FittingMappingJsonSerializerTests.cs
+├── FamilyManager/
+│   ├── Core/
+│   │   ├── FamilyCatalogQueryValidatorTests.cs
+│   │   ├── FamilyNameNormalizerTests.cs
+│   │   └── FamilySearchNormalizerTests.cs
+│   ├── Models/
+│   │   └── ContentStatusTests.cs
+│   └── Repository/
+│       ├── LocalCatalogMigratorTests.cs
+│       ├── LocalCatalogProviderTests.cs
+│       ├── LocalFamilyImportServiceTests.cs
+│       ├── LocalProjectFamilyUsageRepositoryTests.cs
+│       ├── Sha256FileHasherTests.cs
+│       └── TempCatalogFixture.cs
+├── ProjectManagement/
+│   ├── AllowedValuesViewModelTests.cs
+│   ├── ExportNameDialogViewModelTests.cs
+│   └── ParseRuleViewModelTests.cs
+└── TestDoubles/
 ```

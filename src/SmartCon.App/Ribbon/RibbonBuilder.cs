@@ -10,6 +10,7 @@ public static class RibbonBuilder
     private const string TabName = "SmartCon";
     private const string PanelPipeSystems = "Pipe Systems";
     private const string PanelProjectManagement = "Project Management";
+    private const string PanelContentManagement = "Content Management";
     private const string PanelInfo = "Info";
 
     public static void CreateRibbon(UIControlledApplication app)
@@ -81,6 +82,23 @@ public static class RibbonBuilder
         };
 
         pmPanel.AddItem(shareSettingsButton);
+
+        // --- Content Management Panel ---
+        var fmPanel = app.CreateRibbonPanel(TabName, PanelContentManagement);
+        var fmAssembly = Path.Combine(appDir, "SmartCon.FamilyManager.dll");
+
+        var familyManagerButton = new PushButtonData(
+            name: "FamilyManager",
+            text: "Family\nManager",
+            assemblyName: fmAssembly,
+            className: "SmartCon.FamilyManager.Commands.FamilyManagerCommand")
+        {
+            ToolTip = "Manage Revit family library",
+            LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.FamilyMan_32x32.png"),
+            Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.FamilyMan_16x16.png")
+        };
+
+        fmPanel.AddItem(familyManagerButton);
 
         // --- Info Panel (always rightmost) ---
         var infoPanel = app.CreateRibbonPanel(TabName, PanelInfo);

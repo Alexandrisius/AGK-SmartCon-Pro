@@ -62,7 +62,7 @@ Requirements:
 dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
 ```
 
-All 716 tests must pass before submitting a PR. Tests that require a live
+All 841 tests must pass before submitting a PR. Tests that require a live
 Revit runtime are automatically skipped in CI.
 
 ## Automation Overview
@@ -114,12 +114,15 @@ SmartCon follows a layered architecture with strict dependency rules:
 SmartCon.App --> PipeConnect --> SmartCon.Revit --> SmartCon.Core
                                       \-> SmartCon.UI   \-> SmartCon.Core
 App --> ProjectManagement
+App --> FamilyManager --> SmartCon.Core
+                     \-> SmartCon.UI
 ```
 
 - **SmartCon.Core** — Pure C#, no Revit API calls, no WPF. Domain models, interfaces, algorithms.
 - **SmartCon.Revit** — Revit API implementations of Core interfaces.
 - **SmartCon.UI** — Shared WPF styles and controls.
 - **SmartCon.PipeConnect** — Module-specific commands, ViewModels, Views.
+- **SmartCon.FamilyManager** — dockable panel, SQLite catalog, family management.
 - **SmartCon.App** — Entry point: `IExternalApplication`, Ribbon, DI container.
 
 Key invariants (see `docs/invariants.md`):
