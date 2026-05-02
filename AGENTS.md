@@ -188,10 +188,6 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 1. `ref_search_documentation(query)` — поиск. Запрос на английском с указанием языка/фреймворка (напр. `"CommunityToolkit.Mvvm NuGet latest version C#"`)
 2. `ref_read_url(url)` — чтение. URL бери ТОЧНО из результата поиска (с хешем `#section`)
 
-### 3. Skill `saury-revit` — Шаблон для новых Revit-проектов
-
-**НЕ используется для текущего проекта.** Этот skill нужен только если пользователь просит создать **новый** Revit-плагин с нуля через `Saury.Revit.Template` dotnet-шаблон.
-
 ### Итого: что когда использовать
 
 | Нужно | Инструмент |
@@ -201,7 +197,6 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 | Пример кода с Revit API | `revit-api` skill → `core-patterns.md` |
 | Версия NuGet-пакета | MCP REF → `ref_search_documentation` |
 | .NET/WPF/DI паттерн | MCP REF → `ref_search_documentation` |
-| Создать новый Revit-проект | `saury-revit` skill |
 
 ## CI/CD — GitHub Actions
 
