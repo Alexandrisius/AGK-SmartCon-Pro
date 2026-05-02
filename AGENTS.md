@@ -210,9 +210,9 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 
 ### Branch Protection на main
 
-Ветка `main` защищена (**включая admin** — enforce_admins=true):
+Ветка `main` защищена:
 - Обязательны 2 umbrella-checks: `build-success` + `test-success` (всегда завершаются, даже если src не менялся)
-- Нужен 1 approval от CODEOWNERS
+- Нужен 1 approval от CODEOWNERS (внешние контрибьюторы — только через review; владелец может bypass)
 - Linear history (no merge commits)
 - Force push запрещён
 - **ВСЕГДА через PR** — даже admin не может пушить напрямую в main
