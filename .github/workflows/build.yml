@@ -4,20 +4,35 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            src:
+              - 'src/**'
+              - 'Directory.Build.props'
+              - 'Directory.Packages.props'
+              - '.editorconfig'
+              - '*.sln'
+
   build:
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     runs-on: windows-latest
     strategy:
       matrix:
@@ -38,9 +53,30 @@ jobs:
       - name: Build ${{ matrix.configuration }}
         run: dotnet build src/SmartCon.App/SmartCon.App.csproj -c ${{ matrix.configuration }}
 
+  build-success:
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check build result
+        run: |
+          if [[ "${{ needs.changes.outputs.src }}" == "true" ]]; then
+            if [[ "${{ needs.build.result }}" == "success" ]]; then
+              echo "Build passed"
+              exit 0
+            else
+              echo "Build failed: ${{ needs.build.result }}"
+              exit 1
+            fi
+          else
+            echo "No source changes — skipping build"
+            exit 0
+          fi
+
   test:
+    needs: [changes, build]
+    if: needs.changes.outputs.src == 'true'
     runs-on: windows-latest
-    needs: build
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v5
@@ -55,3 +91,23 @@ jobs:
 
       - name: Run Tests
         run: dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Release.R25
+
+  test-success:
+    needs: [changes, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test result
+        run: |
+          if [[ "${{ needs.changes.outputs.src }}" == "true" ]]; then
+            if [[ "${{ needs.test.result }}" == "success" ]]; then
+              echo "Tests passed"
+              exit 0
+            else
+              echo "Tests failed: ${{ needs.test.result }}"
+              exit 1
+            fi
+          else
+            echo "No source changes — skipping tests"
+            exit 0
+          fi
