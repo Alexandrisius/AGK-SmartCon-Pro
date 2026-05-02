@@ -204,14 +204,14 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 
 | Файл | Триггер | Что делает |
 |---|---|---|
-| `build.yml` | push в main, PR, tags `v*` | Билдит 5 конфигураций (R19/R21/R24/R25/R26) + тесты |
+| `build.yml` | push в main, PR, tags `v*` | Smart CI: если `src/**` не менялся — skip за 30 сек, иначе полная сборка 5 конфигураций + тесты |
 | `codeql.yml` | push/PR в main, еженедельно | Security scanning (C#) |
 | `stale.yml` | ежедневно | Закрывает issues/PR без активности 30+ дней |
 
 ### Branch Protection на main
 
 Ветка `main` защищена (**включая admin** — enforce_admins=true):
-- Обязательны 6 status checks: build (R19/R21/R24/R25/R26) + test
+- Обязательны 2 umbrella-checks: `build-success` + `test-success` (всегда завершаются, даже если src не менялся)
 - Нужен 1 approval от CODEOWNERS
 - Linear history (no merge commits)
 - Force push запрещён
@@ -235,7 +235,7 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
    gh pr create --title "feat: описание" --base main --head <branch>
    ```
 4. **Сообщить пользователю** ссылку на PR
-5. **Дождаться** зелёных CI-чеков (6 checks)
+5. **Дождаться** зелёных CI-чеков (`build-success` + `test-success`)
 6. **Squash-merge** через `gh pr merge --squash` (НЕ merge, НЕ rebase)
 7. **Удалить локальную feature-ветку**: `git checkout main && git pull && git branch -d <branch>`
    (remote-ветка удаляется автоматически GitHub — `delete_branch_on_merge: true`)
