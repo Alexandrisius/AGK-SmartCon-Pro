@@ -59,7 +59,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
         }
     }
 
-    private static List<CategoryNode> FilterNodesWithAncestors(CategoryTree tree, string search)
+    internal static List<CategoryNode> FilterNodesWithAncestors(CategoryTree tree, string search)
     {
         var allNodes = tree.GetAllNodes();
         var normalizedSearch = search.ToLowerInvariant();

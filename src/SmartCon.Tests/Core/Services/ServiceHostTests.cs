@@ -16,6 +16,7 @@ public sealed class ServiceHostTests
     [Fact]
     public void GetService_WhenInitialized_ResolvesService()
     {
+        ServiceHost.Reset();
         ServiceHost.Initialize(type =>
         {
             if (type == typeof(string))

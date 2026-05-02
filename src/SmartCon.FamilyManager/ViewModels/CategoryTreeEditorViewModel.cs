@@ -79,7 +79,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         return result;
     }
 
-    private static int ComputeRecursiveCount(CategoryNodeViewModel vm, IReadOnlyDictionary<string, int> familyCounts)
+    internal static int ComputeRecursiveCount(CategoryNodeViewModel vm, IReadOnlyDictionary<string, int> familyCounts)
     {
         var total = familyCounts.TryGetValue(vm.CategoryId, out var c) ? c : 0;
         foreach (var child in vm.Children)
@@ -206,7 +206,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
     }
 
-    private static bool TryRemoveNode(ObservableCollection<CatalogTreeNodeViewModel> nodes, string categoryId)
+    internal static bool TryRemoveNode(ObservableCollection<CatalogTreeNodeViewModel> nodes, string categoryId)
     {
         for (var i = 0; i < nodes.Count; i++)
         {
@@ -276,7 +276,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
     }
 
-    private static List<CategoryTreeImportData.CategoryImportItem> BuildExportTree(CategoryTree tree, string? parentId)
+    internal static List<CategoryTreeImportData.CategoryImportItem> BuildExportTree(CategoryTree tree, string? parentId)
     {
         var result = new List<CategoryTreeImportData.CategoryImportItem>();
         foreach (var node in tree.GetChildren(parentId))
@@ -290,7 +290,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         return result;
     }
 
-    private static List<CategoryNode> FlattenImportData(List<CategoryTreeImportData.CategoryImportItem> items, string? parentId, int startOrder)
+    internal static List<CategoryNode> FlattenImportData(List<CategoryTreeImportData.CategoryImportItem> items, string? parentId, int startOrder)
     {
         var result = new List<CategoryNode>();
         for (var i = 0; i < items.Count; i++)

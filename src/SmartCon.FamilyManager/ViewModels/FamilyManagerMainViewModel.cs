@@ -196,7 +196,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
     }
 
-    private static CatalogTreeNodeViewModel? FindParentOf(ObservableCollection<CatalogTreeNodeViewModel> nodes, CatalogTreeNodeViewModel target)
+    internal static CatalogTreeNodeViewModel? FindParentOf(ObservableCollection<CatalogTreeNodeViewModel> nodes, CatalogTreeNodeViewModel target)
     {
         foreach (var node in nodes)
         {
@@ -378,7 +378,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         return vm;
     }
 
-    private static int CountFamiliesRecursive(CatalogTreeNodeViewModel node)
+    internal static int CountFamiliesRecursive(CatalogTreeNodeViewModel node)
     {
         var count = 0;
         foreach (var child in node.Children)
@@ -1187,7 +1187,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         AttachTypesToNodes(rootNodes, batch, expandedFamilyIds);
     }
 
-    private static void CollectFamilyIds(ObservableCollection<CatalogTreeNodeViewModel> nodes, List<string> ids)
+    internal static void CollectFamilyIds(ObservableCollection<CatalogTreeNodeViewModel> nodes, List<string> ids)
     {
         foreach (var node in nodes)
         {

@@ -303,8 +303,8 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             }
         }
 
-        var constrainedValues = IntersectRadiusSets(perTableConstrained);
-        var unconstrainedValues = IntersectRadiusSets(perTableUnconstrained);
+        var constrainedValues = SmartCon.Core.Services.RadiusSetIntersector.Intersect(perTableConstrained);
+        var unconstrainedValues = SmartCon.Core.Services.RadiusSetIntersector.Intersect(perTableUnconstrained);
 
         var allValues = constrainedValues.Count > 0 ? constrainedValues : unconstrainedValues;
         if (constrainedValues.Count > 0 && unconstrainedValues.Count > 0)
@@ -323,27 +323,6 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         }
 
         SmartConLogger.Debug($"  Total: {result.Count} unique sizes from LookupTable");
-        return result;
-    }
-
-    private static SortedSet<double> IntersectRadiusSets(List<SortedSet<double>> sets)
-    {
-        if (sets.Count == 0) return [];
-        if (sets.Count == 1) return sets[0];
-
-        var result = new SortedSet<double>(sets[0]);
-        for (int i = 1; i < sets.Count; i++)
-        {
-            var keep = new SortedSet<double>();
-            foreach (var v in result)
-            {
-                if (sets[i].Any(s => Math.Abs(s - v) < 1e-6))
-                    keep.Add(v);
-            }
-            result = keep;
-        }
-
-        SmartConLogger.Debug($"  [Intersect] {sets.Count} sets, [{string.Join(" ∩ ", sets.Select(s => s.Count))}] → {result.Count}");
         return result;
     }
 

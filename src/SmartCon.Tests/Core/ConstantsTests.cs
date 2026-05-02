@@ -1,7 +1,6 @@
 using SmartCon.Core;
 using Xunit;
 
-using static SmartCon.Core.Units;
 namespace SmartCon.Tests.Core;
 
 public sealed class ConstantsTests
@@ -9,34 +8,28 @@ public sealed class ConstantsTests
     [Fact]
     public void Units_FeetToMm_Is304Point8()
     {
-        Assert.Equal(304.8, FeetToMm);
+        Assert.Equal(304.8, Units.FeetToMm);
     }
 
     [Fact]
     public void Units_MmToFeet_IsInverseOfFeetToMm()
     {
-        Assert.Equal(1.0 / 304.8, MmToFeet);
+        Assert.Equal(1.0 / 304.8, Units.MmToFeet);
     }
 
     [Fact]
     public void Units_RoundTrip_FeetToMmAndBack()
     {
         const double feet = 1.5;
-        double mm = feet * FeetToMm;
-        double backToFeet = mm * MmToFeet;
+        double mm = feet * Units.FeetToMm;
+        double backToFeet = mm * Units.MmToFeet;
         Assert.Equal(feet, backToFeet, precision: 10);
-    }
-
-    [Fact]
-    public void Units_KnownConversion_1Foot_Is304Point8Mm()
-    {
-        Assert.Equal(304.8, 1.0 * FeetToMm);
     }
 
     [Fact]
     public void Units_KnownConversion_1Mm_Is_MmToFeet()
     {
-        double result = 1.0 * MmToFeet;
+        double result = 1.0 * Units.MmToFeet;
         Assert.True(result > 0.003280 && result < 0.003282,
             $"1mm in feet should be ~0.003281, got {result}");
     }

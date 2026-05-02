@@ -5,64 +5,74 @@ namespace SmartCon.Tests.Core.Models;
 
 public sealed class PipeConnectStateTests
 {
-    private static readonly (PipeConnectState From, PipeConnectState To)[] ValidTransitions =
-    [
-        (PipeConnectState.AwaitingStaticSelection, PipeConnectState.AwaitingDynamicSelection),
-        (PipeConnectState.AwaitingStaticSelection, PipeConnectState.Cancelled),
-        (PipeConnectState.AwaitingDynamicSelection, PipeConnectState.AligningConnectors),
-        (PipeConnectState.AwaitingDynamicSelection, PipeConnectState.Cancelled),
-        (PipeConnectState.AligningConnectors, PipeConnectState.ResolvingParameters),
-        (PipeConnectState.AligningConnectors, PipeConnectState.Cancelled),
-        (PipeConnectState.ResolvingParameters, PipeConnectState.ResolvingFittings),
-        (PipeConnectState.ResolvingParameters, PipeConnectState.Cancelled),
-        (PipeConnectState.ResolvingFittings, PipeConnectState.PostProcessing),
-        (PipeConnectState.ResolvingFittings, PipeConnectState.Cancelled),
-        (PipeConnectState.PostProcessing, PipeConnectState.Committed),
-        (PipeConnectState.PostProcessing, PipeConnectState.Cancelled),
-    ];
-
-    public static TheoryData<PipeConnectState, PipeConnectState> ValidTransitionData =>
-        TheoryDataFromPairs(ValidTransitions);
-
-    public static TheoryData<PipeConnectState, PipeConnectState> InvalidTransitionData =>
-        ComputeInvalidTransitions();
-
     [Theory]
-    [MemberData(nameof(ValidTransitionData))]
-    public void CanTransition_ValidTransition_ReturnsTrue(PipeConnectState from, PipeConnectState to)
+    [InlineData(PipeConnectState.AwaitingStaticSelection, PipeConnectState.AwaitingDynamicSelection, true)]
+    [InlineData(PipeConnectState.AwaitingStaticSelection, PipeConnectState.Cancelled, true)]
+    [InlineData(PipeConnectState.AwaitingDynamicSelection, PipeConnectState.AligningConnectors, true)]
+    [InlineData(PipeConnectState.AligningConnectors, PipeConnectState.ResolvingParameters, true)]
+    [InlineData(PipeConnectState.ResolvingParameters, PipeConnectState.ResolvingFittings, true)]
+    [InlineData(PipeConnectState.ResolvingFittings, PipeConnectState.PostProcessing, true)]
+    [InlineData(PipeConnectState.PostProcessing, PipeConnectState.Committed, true)]
+    [InlineData(PipeConnectState.PostProcessing, PipeConnectState.Cancelled, true)]
+    [InlineData(PipeConnectState.AwaitingStaticSelection, PipeConnectState.Committed, false)]
+    [InlineData(PipeConnectState.AwaitingDynamicSelection, PipeConnectState.Committed, false)]
+    [InlineData(PipeConnectState.AligningConnectors, PipeConnectState.AwaitingStaticSelection, false)]
+    [InlineData(PipeConnectState.ResolvingParameters, PipeConnectState.AligningConnectors, false)]
+    [InlineData(PipeConnectState.ResolvingFittings, PipeConnectState.AwaitingDynamicSelection, false)]
+    [InlineData(PipeConnectState.AwaitingDynamicSelection, PipeConnectState.ResolvingFittings, false)]
+    public void CanTransition_ReturnsExpected(PipeConnectState from, PipeConnectState to, bool expected)
     {
-        Assert.True(IsValidTransition(from, to), $"Expected {from} -> {to} to be valid");
-    }
-
-    [Theory]
-    [MemberData(nameof(InvalidTransitionData))]
-    public void CanTransition_InvalidTransition_ReturnsFalse(PipeConnectState from, PipeConnectState to)
-    {
-        Assert.False(IsValidTransition(from, to), $"Expected {from} -> {to} to be invalid");
+        Assert.Equal(expected, PipeConnectStateMachine.CanTransition(from, to));
     }
 
     [Fact]
-    public void Cancelled_IsTerminal()
+    public void CanTransition_SameState_ReturnsTrue()
     {
-        var states = Enum.GetValues<PipeConnectState>()
-            .Where(s => s != PipeConnectState.Cancelled);
-
-        foreach (var state in states)
+        foreach (var state in Enum.GetValues<PipeConnectState>())
         {
-            Assert.False(IsValidTransition(PipeConnectState.Cancelled, state),
+            Assert.True(PipeConnectStateMachine.CanTransition(state, state),
+                $"Same-state transition should be allowed for {state}");
+        }
+    }
+
+    [Theory]
+    [InlineData(PipeConnectState.Committed)]
+    [InlineData(PipeConnectState.Cancelled)]
+    public void IsTerminal_TerminalStates_ReturnTrue(PipeConnectState state)
+    {
+        Assert.True(PipeConnectStateMachine.IsTerminal(state));
+    }
+
+    [Theory]
+    [InlineData(PipeConnectState.AwaitingStaticSelection)]
+    [InlineData(PipeConnectState.AwaitingDynamicSelection)]
+    [InlineData(PipeConnectState.AligningConnectors)]
+    [InlineData(PipeConnectState.ResolvingParameters)]
+    [InlineData(PipeConnectState.ResolvingFittings)]
+    [InlineData(PipeConnectState.PostProcessing)]
+    public void IsTerminal_NonTerminalStates_ReturnFalse(PipeConnectState state)
+    {
+        Assert.False(PipeConnectStateMachine.IsTerminal(state));
+    }
+
+    [Fact]
+    public void Cancelled_CannotTransitionToAnyState()
+    {
+        foreach (var state in Enum.GetValues<PipeConnectState>())
+        {
+            if (state == PipeConnectState.Cancelled) continue;
+            Assert.False(PipeConnectStateMachine.CanTransition(PipeConnectState.Cancelled, state),
                 $"Cancelled should not transition to {state}");
         }
     }
 
     [Fact]
-    public void Committed_IsTerminal()
+    public void Committed_CannotTransitionToAnyState()
     {
-        var states = Enum.GetValues<PipeConnectState>()
-            .Where(s => s != PipeConnectState.Committed);
-
-        foreach (var state in states)
+        foreach (var state in Enum.GetValues<PipeConnectState>())
         {
-            Assert.False(IsValidTransition(PipeConnectState.Committed, state),
+            if (state == PipeConnectState.Committed) continue;
+            Assert.False(PipeConnectStateMachine.CanTransition(PipeConnectState.Committed, state),
                 $"Committed should not transition to {state}");
         }
     }
@@ -72,38 +82,5 @@ public sealed class PipeConnectStateTests
     {
         var defined = Enum.GetValues<PipeConnectState>();
         Assert.Equal(8, defined.Length);
-    }
-
-    private static bool IsValidTransition(PipeConnectState from, PipeConnectState to)
-    {
-        return ValidTransitions.Contains((from, to));
-    }
-
-    private static TheoryData<PipeConnectState, PipeConnectState> TheoryDataFromPairs(
-        (PipeConnectState From, PipeConnectState To)[] pairs)
-    {
-        var data = new TheoryData<PipeConnectState, PipeConnectState>();
-        foreach (var (from, to) in pairs)
-            data.Add(from, to);
-        return data;
-    }
-
-    private static TheoryData<PipeConnectState, PipeConnectState> ComputeInvalidTransitions()
-    {
-        var allStates = Enum.GetValues<PipeConnectState>();
-        var validSet = new HashSet<(PipeConnectState, PipeConnectState)>(ValidTransitions);
-        var data = new TheoryData<PipeConnectState, PipeConnectState>();
-
-        foreach (var from in allStates)
-        {
-            foreach (var to in allStates)
-            {
-                if (from == to) continue;
-                if (!validSet.Contains((from, to)))
-                    data.Add(from, to);
-            }
-        }
-
-        return data;
     }
 }

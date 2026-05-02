@@ -4,34 +4,23 @@ using SmartCon.Core.Services.Implementation;
 using SmartCon.ProjectManagement.ViewModels;
 using Xunit;
 
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
-
 namespace SmartCon.Tests.ProjectManagement;
 
+[Collection("ServiceHost")]
 public sealed class ExportNameDialogViewModelTests
 {
-    private static void EnsureServiceHost()
-    {
-        try
-        {
-            ServiceHost.GetService<SmartCon.Core.Services.Interfaces.IFileNameParser>();
-        }
-        catch (InvalidOperationException)
-        {
-            ServiceHost.Initialize(t =>
-            {
-                if (t == typeof(SmartCon.Core.Services.Interfaces.IFileNameParser))
-                    return new FileNameParser();
-                throw new InvalidOperationException($"Unknown service: {t}");
-            });
-        }
-    }
-
     private static ExportNameDialogViewModel CreateVm(
         string fileName, string validationErrors, List<FileBlockDefinition> blocks,
         List<FieldDefinition> fieldLibrary, List<ExportMapping> exportMappings)
     {
-        EnsureServiceHost();
+        ServiceHost.Reset();
+        ServiceHost.Initialize(t =>
+        {
+            if (t == typeof(SmartCon.Core.Services.Interfaces.IFileNameParser))
+                return new FileNameParser();
+            throw new InvalidOperationException($"Unknown service: {t}");
+        });
+
         return new ExportNameDialogViewModel(fileName, validationErrors, blocks, fieldLibrary, exportMappings);
     }
 
@@ -233,3 +222,6 @@ public sealed class ExportNameDialogViewModelTests
         Assert.False(result);
     }
 }
+
+[CollectionDefinition("ServiceHost", DisableParallelization = true)]
+public sealed class ServiceHostCollection;

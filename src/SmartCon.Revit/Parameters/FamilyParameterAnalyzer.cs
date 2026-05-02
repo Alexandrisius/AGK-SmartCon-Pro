@@ -243,7 +243,7 @@ internal static class FamilyParameterAnalyzer
 
             foreach (var (name, candidateFp) in candidates)
             {
-                if (!ContainsParamReference(formula, name)) continue;
+                if (!SmartCon.Core.Services.FormulaParamMatcher.ContainsParamReference(formula, name)) continue;
                 rootParamName = name;
                 rootIsInst = candidateFp.IsInstance;
                 SmartConLogger.Debug($"    → rootParam='{rootParamName}', isInstance={rootIsInst}");
@@ -259,29 +259,9 @@ internal static class FamilyParameterAnalyzer
         return (directName, rootParamName, formula, rootIsInst, foundViaDiameter);
     }
 
-    // ── Вспомогательные ───────────────────────────────────────────────────
+  // ── Вспомогательные ───────────────────────────────────────────────────
 
-    /// <summary>
-    /// Проверяет, встречается ли <paramref name="paramName"/> в <paramref name="formula"/>
-    /// как самостоятельное имя параметра (не часть другого идентификатора).
-    /// </summary>
-    private static bool ContainsParamReference(string formula, string paramName)
-    {
-        int idx = 0;
-        while ((idx = formula.IndexOf(paramName, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
-        {
-            bool leftOk = idx == 0 || !IsIdentChar(formula[idx - 1]);
-            bool rightOk = idx + paramName.Length >= formula.Length
-                        || !IsIdentChar(formula[idx + paramName.Length]);
-            if (leftOk && rightOk) return true;
-            idx += paramName.Length;
-        }
-        return false;
-    }
-
-    private static bool IsIdentChar(char c) => char.IsLetterOrDigit(c) || c == '_';
-
-    private static FamilyParameter? FindFamilyParameter(Autodesk.Revit.DB.FamilyManager fm, string name)
+  private static FamilyParameter? FindFamilyParameter(Autodesk.Revit.DB.FamilyManager fm, string name)
     {
         foreach (FamilyParameter fp in fm.Parameters)
         {

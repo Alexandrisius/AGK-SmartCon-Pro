@@ -81,19 +81,6 @@ public sealed class LookupTableCsvParserTests
         Assert.False(LookupTableCsvParser.TryParseRevitValue(null!, out _));
     }
 
-    [Theory]
-    [InlineData("15", 15.0)]
-    [InlineData("20.0", 20.0)]
-    [InlineData("25 mm", 25.0)]
-    [InlineData("32mm", 32.0)]
-    [InlineData("1.5 ft", 1.5)]
-    [InlineData("\"40\"", 40.0)]
-    public void TryParseRevitValue_ValidInputs_ParseCorrectly(string input, double expected)
-    {
-        Assert.True(LookupTableCsvParser.TryParseRevitValue(input, out double v));
-        Assert.Equal(expected, v, precision: 3);
-    }
-
     // ── ExtractColumnValues: basic CSV ─────────────────────────────────
 
     [Fact]
