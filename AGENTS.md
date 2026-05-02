@@ -205,17 +205,20 @@ python .agents/skills/revit-api/scripts/search_api.py namespace "Autodesk.Revit.
 | Файл | Триггер | Что делает |
 |---|---|---|
 | `build.yml` | push в main, PR, tags `v*` | Smart CI: если `src/**` не менялся — skip за 30 сек, иначе полная сборка 5 конфигураций + тесты |
-| `codeql.yml` | push/PR в main, еженедельно | Security scanning (C#) |
+| `codeql.yml` | push в main, еженедельно | Security scanning (C#). НЕ запускается на PR — информационный, не блокирует merge |
 | `stale.yml` | ежедневно | Закрывает issues/PR без активности 30+ дней |
 
 ### Branch Protection на main
 
 Ветка `main` защищена:
 - Обязательны 2 umbrella-checks: `build-success` + `test-success` (всегда завершаются, даже если src не менялся)
-- Нужен 1 approval от CODEOWNERS (внешние контрибьюторы — только через review; владелец может bypass)
-- Linear history (no merge commits)
+- Review **не требуется** (solo-мейнтейнер не может одобрить свой PR — ограничение GitHub)
+- `CODEOWNERS` файл существует для документации владения кодом и автоматических review-реквестов контрибьюторам
+- Linear history (no merge commits) — только squash-merge
 - Force push запрещён
-- **ВСЕГДА через PR** — даже admin не может пушить напрямую в main
+- `enforce_admins: false` — владелец может bypass при необходимости
+- **ВСЕГДА через PR** — по конвенции (AGENTS.md), даже если GitHub технически позволяет push напрямую
+- При появлении контрибьюторов — пересмотреть review policy
 
 ### Workflow слияния feature → main (ОБЯЗАТЕЛЬНО)
 
