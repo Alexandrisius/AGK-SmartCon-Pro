@@ -32,16 +32,35 @@ public sealed partial class FileNameBlockItem : ObservableObject
             ParseMode.DelimiterSegment => ParseRule.SegmentCount > 1
                 ? $"Разд. [{ParseRule.Delimiter}] #{ParseRule.SegmentIndex}-{ParseRule.SegmentIndex + ParseRule.SegmentCount - 1}"
                 : $"Разд. [{ParseRule.Delimiter}] #{ParseRule.SegmentIndex}",
-            ParseMode.FixedWidth =>
-                $"{ParseRule.CharCount} симв.",
+            ParseMode.FixedWidth => ParseRule.CharOffset > 0
+                ? $"Фикс. +{ParseRule.CharOffset} ×{ParseRule.CharCount}"
+                : $"{ParseRule.CharCount} симв.",
             ParseMode.BetweenMarkers =>
-                $"{ParseRule.OpenMarker} ... {ParseRule.CloseMarker}",
-            ParseMode.AfterMarker =>
-                $"После [{ParseRule.Marker}]",
+                FormatBetweenDisplay(),
+            ParseMode.AfterMarker => ParseRule.MarkerIndex > 1
+                ? $"После [{ParseRule.Marker}] №{ParseRule.MarkerIndex}"
+                : $"После [{ParseRule.Marker}]",
             ParseMode.Remainder =>
                 "Остаток",
             _ => ParseRule.Mode.ToString()
         };
+    }
+
+    private string FormatBetweenDisplay()
+    {
+        var open = ParseRule.OpenMarker;
+        var close = ParseRule.CloseMarker;
+        var hasOpenIdx = ParseRule.OpenMarkerIndex > 1;
+        var hasCloseIdx = ParseRule.CloseMarkerIndex > 1;
+
+        if (!hasOpenIdx && !hasCloseIdx)
+            return $"{open} ... {close}";
+
+        var parts = new List<string>();
+        if (hasOpenIdx) parts.Add($"открывающий №{ParseRule.OpenMarkerIndex}");
+        if (hasCloseIdx) parts.Add($"закрывающий №{ParseRule.CloseMarkerIndex}");
+
+        return $"{open} ... {close} ({string.Join(", ", parts)})";
     }
 
     public void RefreshParseRuleDisplay()

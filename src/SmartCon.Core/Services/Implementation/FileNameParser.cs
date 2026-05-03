@@ -153,16 +153,17 @@ public sealed class FileNameParser : IFileNameParser
     {
         var segments = text.Split([rule.Delimiter], StringSplitOptions.None);
 
-        if (rule.SegmentIndex < 0 || rule.SegmentIndex >= segments.Length)
+        var index = rule.SegmentIndex - 1;
+        if (index < 0 || index >= segments.Length)
             return (string.Empty, text);
 
         var count = rule.SegmentCount <= 0 ? 1 : rule.SegmentCount;
-        var end = System.Math.Min(rule.SegmentIndex + count, segments.Length);
+        var end = System.Math.Min(index + count, segments.Length);
 
-        var valueSegments = segments.Skip(rule.SegmentIndex).Take(end - rule.SegmentIndex);
+        var valueSegments = segments.Skip(index).Take(end - index);
         var value = string.Join(rule.Delimiter, valueSegments);
         var remainingSegments = segments
-            .Where((_, i) => i < rule.SegmentIndex || i >= end)
+            .Where((_, i) => i < index || i >= end)
             .ToArray();
 
         var remaining = string.Join(rule.Delimiter, remainingSegments);
@@ -171,6 +172,14 @@ public sealed class FileNameParser : IFileNameParser
 
     private static (string Value, string Remaining) ApplyFixedWidth(string text, ParseRule rule)
     {
+        if (rule.CharOffset > 0)
+        {
+            if (rule.CharOffset >= text.Length)
+                return (string.Empty, string.Empty);
+
+            text = text[rule.CharOffset..];
+        }
+
         if (rule.CharCount <= 0)
             return (string.Empty, text);
 
@@ -184,12 +193,12 @@ public sealed class FileNameParser : IFileNameParser
 
     private static (string Value, string Remaining) ApplyBetweenMarkers(string text, ParseRule rule)
     {
-        var openIdx = text.IndexOf(rule.OpenMarker, StringComparison.Ordinal);
+        var openIdx = NthIndexOf(text, rule.OpenMarker, rule.OpenMarkerIndex - 1);
         if (openIdx < 0)
             return (string.Empty, text);
 
-        var closeIdx = text.IndexOf(rule.CloseMarker, openIdx + rule.OpenMarker.Length, StringComparison.Ordinal);
-        if (closeIdx < 0)
+        var closeIdx = NthIndexOf(text, rule.CloseMarker, rule.CloseMarkerIndex - 1);
+        if (closeIdx < 0 || closeIdx <= openIdx)
             return (string.Empty, text);
 
         var valueStart = openIdx + rule.OpenMarker.Length;
@@ -204,12 +213,27 @@ public sealed class FileNameParser : IFileNameParser
 
     private static (string Value, string Remaining) ApplyAfterMarker(string text, ParseRule rule)
     {
-        var idx = text.IndexOf(rule.Marker, StringComparison.Ordinal);
+        var idx = NthIndexOf(text, rule.Marker, rule.MarkerIndex - 1);
         if (idx < 0)
             return (string.Empty, text);
 
         var value = text[(idx + rule.Marker.Length)..];
         return (value, string.Empty);
+    }
+
+    private static int NthIndexOf(string text, string value, int index, int startIndex = 0)
+    {
+        var current = startIndex;
+        for (var i = 0; i <= index; i++)
+        {
+            current = text.IndexOf(value, current, StringComparison.Ordinal);
+            if (current < 0)
+                return -1;
+            if (i < index)
+                current += value.Length;
+        }
+
+        return current;
     }
 
     private static (bool IsValid, string Error) ValidateValue(string value, FieldDefinition fieldDef)

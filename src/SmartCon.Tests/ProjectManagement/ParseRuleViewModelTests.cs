@@ -40,13 +40,13 @@ public sealed class ParseRuleViewModelTests
         var vm = CreateVm();
         vm.Mode = ParseMode.DelimiterSegment;
         vm.Delimiter = "_";
-        vm.SegmentIndex = 2;
+        vm.SegmentIndex = 3;
 
         var rule = vm.BuildRule();
 
         Assert.Equal(ParseMode.DelimiterSegment, rule.Mode);
         Assert.Equal("_", rule.Delimiter);
-        Assert.Equal(2, rule.SegmentIndex);
+        Assert.Equal(3, rule.SegmentIndex);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public sealed class ParseRuleViewModelTests
         var vm = CreateVm(previewFileName: "PRJ-S0-DEV.rvt");
         vm.Mode = ParseMode.DelimiterSegment;
         vm.Delimiter = "-";
-        vm.SegmentIndex = 1;
+        vm.SegmentIndex = 2;
 
         Assert.Equal("S0", vm.PreviewValue);
     }
@@ -157,7 +157,7 @@ public sealed class ParseRuleViewModelTests
     {
         var preceding = new List<ParseRule>
         {
-            ParseRule.DefaultDelimiter("-", 0)
+            ParseRule.DefaultDelimiter("-", 1)
         };
 
         var vm = CreateVm(
@@ -165,7 +165,7 @@ public sealed class ParseRuleViewModelTests
             precedingRules: preceding);
         vm.Mode = ParseMode.DelimiterSegment;
         vm.Delimiter = "-";
-        vm.SegmentIndex = 1;
+        vm.SegmentIndex = 2;
 
         Assert.Equal("DEV", vm.PreviewValue);
     }
@@ -233,7 +233,7 @@ public sealed class ParseRuleViewModelTests
         {
             Mode = ParseMode.DelimiterSegment,
             Delimiter = "-",
-            SegmentIndex = 0,
+            SegmentIndex = 1,
             SegmentCount = 2
         };
 
@@ -248,12 +248,12 @@ public sealed class ParseRuleViewModelTests
         var vm = CreateVm();
         vm.Mode = ParseMode.DelimiterSegment;
         vm.Delimiter = "-";
-        vm.SegmentIndex = 0;
+        vm.SegmentIndex = 1;
         vm.SegmentCount = 2;
 
         var rule = vm.BuildRule();
 
-        Assert.Equal(0, rule.SegmentIndex);
+        Assert.Equal(1, rule.SegmentIndex);
         Assert.Equal(2, rule.SegmentCount);
     }
 
@@ -263,7 +263,7 @@ public sealed class ParseRuleViewModelTests
         var vm = CreateVm(previewFileName: "12-59-Сарай.rvt");
         vm.Mode = ParseMode.DelimiterSegment;
         vm.Delimiter = "-";
-        vm.SegmentIndex = 0;
+        vm.SegmentIndex = 1;
         vm.SegmentCount = 2;
 
         Assert.Equal("12-59", vm.PreviewValue);
@@ -276,7 +276,7 @@ public sealed class ParseRuleViewModelTests
         var vm = CreateVm(previewFileName: "A-B-C-D.rvt");
         vm.Mode = ParseMode.DelimiterSegment;
         vm.Delimiter = "-";
-        vm.SegmentIndex = 1;
+        vm.SegmentIndex = 2;
         vm.SegmentCount = 1;
 
         Assert.Equal("B", vm.PreviewValue);

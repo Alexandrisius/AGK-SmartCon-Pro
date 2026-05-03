@@ -17,10 +17,13 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
     private string _delimiter = "-";
 
     [ObservableProperty]
-    private int _segmentIndex;
+    private int _segmentIndex = 1;
 
     [ObservableProperty]
     private int _segmentCount = 1;
+
+    [ObservableProperty]
+    private int _charOffset;
 
     [ObservableProperty]
     private int _charCount = 3;
@@ -29,10 +32,19 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
     private string _openMarker = "(";
 
     [ObservableProperty]
+    private int _openMarkerIndex = 1;
+
+    [ObservableProperty]
     private string _closeMarker = ")";
 
     [ObservableProperty]
+    private int _closeMarkerIndex = 1;
+
+    [ObservableProperty]
     private string _marker = "-";
+
+    [ObservableProperty]
+    private int _markerIndex = 1;
 
     [ObservableProperty]
     private string _previewFileName = string.Empty;
@@ -73,10 +85,14 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
         _delimiter = initialRule.Delimiter;
         _segmentIndex = initialRule.SegmentIndex;
         _segmentCount = initialRule.SegmentCount;
+        _charOffset = initialRule.CharOffset;
         _charCount = initialRule.CharCount;
         _openMarker = initialRule.OpenMarker;
+        _openMarkerIndex = initialRule.OpenMarkerIndex;
         _closeMarker = initialRule.CloseMarker;
+        _closeMarkerIndex = initialRule.CloseMarkerIndex;
         _marker = initialRule.Marker;
+        _markerIndex = initialRule.MarkerIndex;
         _previewFileName = previewFileName;
         _precedingRules = precedingRules;
 
@@ -106,10 +122,14 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
     partial void OnDelimiterChanged(string value) => RefreshPreview();
     partial void OnSegmentIndexChanged(int value) => RefreshPreview();
     partial void OnSegmentCountChanged(int value) => RefreshPreview();
+    partial void OnCharOffsetChanged(int value) => RefreshPreview();
     partial void OnCharCountChanged(int value) => RefreshPreview();
     partial void OnOpenMarkerChanged(string value) => RefreshPreview();
+    partial void OnOpenMarkerIndexChanged(int value) => RefreshPreview();
     partial void OnCloseMarkerChanged(string value) => RefreshPreview();
+    partial void OnCloseMarkerIndexChanged(int value) => RefreshPreview();
     partial void OnMarkerChanged(string value) => RefreshPreview();
+    partial void OnMarkerIndexChanged(int value) => RefreshPreview();
 
     private void RefreshModeVisibility()
     {
@@ -151,10 +171,14 @@ public sealed partial class ParseRuleViewModel : ObservableObject, IObservableRe
             Delimiter = Delimiter,
             SegmentIndex = SegmentIndex,
             SegmentCount = SegmentCount,
+            CharOffset = CharOffset,
             CharCount = CharCount,
             OpenMarker = OpenMarker,
+            OpenMarkerIndex = OpenMarkerIndex,
             CloseMarker = CloseMarker,
-            Marker = Marker
+            CloseMarkerIndex = CloseMarkerIndex,
+            Marker = Marker,
+            MarkerIndex = MarkerIndex
         };
     }
 
