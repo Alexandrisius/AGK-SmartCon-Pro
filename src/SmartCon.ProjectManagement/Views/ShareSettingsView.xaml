@@ -114,15 +114,29 @@
                     <Grid Margin="8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <TextBox Grid.Row="0" Text="{Binding ViewSearchText, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="{DynamicResource PM_SearchViews}"
-                             Style="{DynamicResource CompactTextBox}" Margin="0,0,0,6"/>
+                    <TextBlock Grid.Row="0" Text="{DynamicResource PM_ViewsTitle}"
+                               TextWrapping="Wrap" Margin="0,0,0,6"
+                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
 
-                    <ListBox Grid.Row="1" ItemsSource="{Binding FilteredViews}" Style="{DynamicResource CompactListBox}">
+                    <Grid Grid.Row="1" Margin="0,0,0,6">
+                        <TextBox x:Name="ViewSearchBox"
+                                 Text="{Binding ViewSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="{DynamicResource PM_SearchViews}"
+                                 Style="{DynamicResource CompactTextBox}"/>
+                        <TextBlock x:Name="ViewSearchPlaceholder"
+                                   Text="{DynamicResource PM_SearchViews}"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   Margin="8,0,0,0"
+                                   IsHitTestVisible="False"/>
+                    </Grid>
+
+                    <ListBox Grid.Row="2" ItemsSource="{Binding FilteredViews}" Style="{DynamicResource CompactListBox}">
                         <ListBox.GroupStyle>
                             <GroupStyle>
                                 <GroupStyle.HeaderTemplate>
@@ -146,7 +160,7 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <TextBlock Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource TextSecondaryBrush}">
+                    <TextBlock Grid.Row="3" Margin="0,4,0,0" Foreground="{DynamicResource TextSecondaryBrush}">
                         <Run Text="{DynamicResource PM_SelectedCount}"/>
                         <Run Text="{Binding SelectedCount, Mode=OneWay}"/>
                     </TextBlock>

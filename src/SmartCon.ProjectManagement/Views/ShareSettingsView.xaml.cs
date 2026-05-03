@@ -23,6 +23,11 @@ public partial class ShareSettingsView : DialogWindowBase
         ColTarget.Header = LocalizationService.GetString("PM_Col_TargetValue");
         ColMapStatus.Header = LocalizationService.GetString("PM_Col_ValidationCheck");
 
+        ViewSearchBox.TextChanged += (_, _) =>
+            ViewSearchPlaceholder.Visibility = string.IsNullOrEmpty(ViewSearchBox.Text)
+                ? System.Windows.Visibility.Visible
+                : System.Windows.Visibility.Collapsed;
+
         viewModel.SetOwnerWindow(this);
         BindCloseRequest(viewModel);
     }

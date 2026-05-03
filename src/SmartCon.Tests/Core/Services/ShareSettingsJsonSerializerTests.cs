@@ -33,7 +33,7 @@ public sealed class ShareSettingsJsonSerializerTests
                     {
                         Index = 0,
                         Field = "project",
-                        ParseRule = ParseRule.DefaultDelimiter("-", 0)
+                        ParseRule = ParseRule.DefaultDelimiter("-", 1)
                     },
                     new FileBlockDefinition
                     {

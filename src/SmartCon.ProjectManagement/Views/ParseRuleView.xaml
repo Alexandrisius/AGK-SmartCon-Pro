@@ -4,7 +4,7 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         Title="{DynamicResource PM_Title_ParseRule}"
-        Width="560" Height="340" MinWidth="500" MinHeight="300"
+        Width="480" Height="410" MinWidth="440" MinHeight="370"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
@@ -18,6 +18,7 @@
 
     <Grid Margin="16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -58,35 +59,55 @@
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8"
                      Visibility="{Binding IsFixedWidth, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{DynamicResource PM_CharCount}" Width="100"
+            <TextBlock Text="{DynamicResource PM_CharOffset}" Width="100"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding CharOffset, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
+            <TextBlock Text="{DynamicResource PM_CharCount}" Margin="16,0,0,0"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding CharCount, UpdateSourceTrigger=PropertyChanged}" Width="50"
-                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
-        </StackPanel>
-
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,8"
-                     Visibility="{Binding IsBetweenMarkers, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{DynamicResource PM_OpenMarker}" Width="100"
-                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
-            <TextBox Text="{Binding OpenMarker, UpdateSourceTrigger=PropertyChanged}" Width="40"
-                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
-            <TextBlock Text="{DynamicResource PM_CloseMarker}" Margin="16,0,0,0"
-                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
-            <TextBox Text="{Binding CloseMarker, UpdateSourceTrigger=PropertyChanged}" Width="40"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,0"
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,4"
+                     Visibility="{Binding IsBetweenMarkers, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{DynamicResource PM_OpenMarker}" Width="100"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding OpenMarker, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
+            <TextBlock Text="{DynamicResource PM_MarkerIndex}" Margin="8,0,0,0"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding OpenMarkerIndex, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,8"
+                     Visibility="{Binding IsBetweenMarkers, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{DynamicResource PM_CloseMarker}" Width="100"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding CloseMarker, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
+            <TextBlock Text="{DynamicResource PM_MarkerIndex}" Margin="8,0,0,0"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding CloseMarkerIndex, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,0,0,0"
                      Visibility="{Binding IsAfterMarker, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="{DynamicResource PM_Marker}" Width="100"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding Marker, UpdateSourceTrigger=PropertyChanged}" Width="60"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
+            <TextBlock Text="{DynamicResource PM_MarkerIndex}" Margin="12,0,0,0"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <TextBox Text="{Binding MarkerIndex, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                     Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
         </StackPanel>
 
-        <Border Grid.Row="5" Background="{DynamicResource BorderAltBrush}" Height="1"/>
+        <Border Grid.Row="6" Background="{DynamicResource BorderAltBrush}" Height="1"/>
 
-        <Grid Grid.Row="6">
+        <Grid Grid.Row="7">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>

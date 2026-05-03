@@ -30,7 +30,7 @@ public sealed class ExportNameDialogViewModelTests
         {
             Index = d.Index,
             Field = d.Field,
-            ParseRule = ParseRule.DefaultDelimiter("-", 0)
+            ParseRule = ParseRule.DefaultDelimiter("-", 1)
         }).ToList();
     }
 

@@ -123,8 +123,8 @@ public static class StringLocalization
         d[Keys.PM_PurgeCadImports] = "CAD / IFC-связи";
         d[Keys.PM_PurgeImages] = "Растровые изображения";
         d[Keys.PM_PurgePointClouds] = "Облака точек";
-        d[Keys.PM_PurgeGroups] = "Группы и типы групп";
-        d[Keys.PM_PurgeAssemblies] = "Сборки";
+        d[Keys.PM_PurgeGroups] = "Группы (разгруппировать)";
+        d[Keys.PM_PurgeAssemblies] = "Сборки (разобрать)";
         d[Keys.PM_PurgeSpaces] = "MEP-пространства";
         d[Keys.PM_PurgeRebar] = "Арматура (Rebar)";
         d[Keys.PM_PurgeFabric] = "Арматурные каркасы";
@@ -185,6 +185,8 @@ public static class StringLocalization
         d[Keys.PM_OpenMarker] = "Откр.:";
         d[Keys.PM_CloseMarker] = "Закр.:";
         d[Keys.PM_Marker] = "Маркер:";
+        d[Keys.PM_CharOffset] = "Пропуск:";
+        d[Keys.PM_MarkerIndex] = "№ символа:";
         d[Keys.PM_Result] = "Результат:";
         d[Keys.PM_Remaining] = "Остаток:";
         d[Keys.PM_ExportName_CurrentLabel] = "Текущее имя: ";
@@ -440,8 +442,8 @@ public static class StringLocalization
         d[Keys.PM_PurgeCadImports] = "CAD / IFC Links";
         d[Keys.PM_PurgeImages] = "Raster Images";
         d[Keys.PM_PurgePointClouds] = "Point Clouds";
-        d[Keys.PM_PurgeGroups] = "Groups and Group Types";
-        d[Keys.PM_PurgeAssemblies] = "Assemblies";
+        d[Keys.PM_PurgeGroups] = "Groups (ungroup)";
+        d[Keys.PM_PurgeAssemblies] = "Assemblies (disassemble)";
         d[Keys.PM_PurgeSpaces] = "MEP Spaces";
         d[Keys.PM_PurgeRebar] = "Rebar";
         d[Keys.PM_PurgeFabric] = "Fabric Reinforcement";
@@ -502,6 +504,8 @@ public static class StringLocalization
         d[Keys.PM_OpenMarker] = "Open:";
         d[Keys.PM_CloseMarker] = "Close:";
         d[Keys.PM_Marker] = "Marker:";
+        d[Keys.PM_CharOffset] = "Skip:";
+        d[Keys.PM_MarkerIndex] = "Symbol #:";
         d[Keys.PM_Result] = "Result:";
         d[Keys.PM_Remaining] = "Remaining:";
         d[Keys.PM_ExportName_CurrentLabel] = "Current name: ";
@@ -819,6 +823,8 @@ public static class StringLocalization
         public const string PM_OpenMarker = "PM_OpenMarker";
         public const string PM_CloseMarker = "PM_CloseMarker";
         public const string PM_Marker = "PM_Marker";
+        public const string PM_CharOffset = "PM_CharOffset";
+        public const string PM_MarkerIndex = "PM_MarkerIndex";
         public const string PM_Result = "PM_Result";
         public const string PM_Remaining = "PM_Remaining";
         public const string PM_ExportName_CurrentLabel = "PM_ExportName_CurrentLabel";
