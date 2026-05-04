@@ -19,6 +19,10 @@ updates:
         versions: [">= 7.0.0"]
       - dependency-name: "PolySharp"
         versions: [">= 2.0.0"]
+      - dependency-name: "Microsoft.Data.Sqlite"
+        versions: [">= 9.0.0"]
+      - dependency-name: "SQLitePCLRaw.bundle_e_sqlite3"
+        versions: [">= 3.0.0"]
 
   - package-ecosystem: github-actions
     directory: /
