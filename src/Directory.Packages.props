@@ -28,8 +28,8 @@
     <PackageVersion Include="System.Net.Http" Version="4.3.4" />
 
     <!-- SQLite — version frozen at 8.x (9.0+ may break net48). Compatible with net8.0-windows and net48 (.NET Standard 2.0) -->
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.19" />
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.6" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.7" />
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
 
     <!--
       ВНИМАНИЕ: RevitAPI NuGet НЕ указываем в PackageVersion!
