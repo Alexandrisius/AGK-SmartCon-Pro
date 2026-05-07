@@ -112,7 +112,6 @@ python scripts/search_api.py member "GetParameters"
 
 1. 直接读取 [references/core-patterns.md](references/core-patterns.md)，包含 11 个核心模式的 C# 代码示例。
 2. 若需进一步查看模式中涉及的 API 细节，按路径 A 继续查询。
-3. **Async/Threading 陷阱速查**：读取 [references/async-threading-patterns.md](references/async-threading-patterns.md) — Revit 插件最常见的死锁原因与解决方案。
 
 ### 第 3 步：组织回答
 
