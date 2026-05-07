@@ -131,6 +131,7 @@ public static class ServiceRegistrar
             presenter.Register<CategoryTreeEditorViewModel>(vm => new CategoryTreeEditorView(vm));
             presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
+            presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -159,6 +160,18 @@ public static class ServiceRegistrar
         services.AddSingleton<IProjectFamilyUsageRepository, LocalProjectFamilyUsageRepository>();
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
+        services.AddSingleton<LocalAttributeDefinitionRepository>();
+        services.AddSingleton<IAttributeDefinitionRepository>(sp => sp.GetRequiredService<LocalAttributeDefinitionRepository>());
+        services.AddSingleton<LocalCategoryAttributeBindingService>();
+        services.AddSingleton<ICategoryAttributeBindingService>(sp => sp.GetRequiredService<LocalCategoryAttributeBindingService>());
+        services.AddSingleton<LocalAttributeValueRepository>();
+        services.AddSingleton<IAttributeValueRepository>(sp => sp.GetRequiredService<LocalAttributeValueRepository>());
+        services.AddSingleton<LocalFamilyDataImportRunRepository>();
+        services.AddSingleton<IFamilyDataImportRunRepository>(sp => sp.GetRequiredService<LocalFamilyDataImportRunRepository>());
+        services.AddSingleton<IFamilyMetadataPackageService, LocalFamilyMetadataPackageService>();
+        services.AddSingleton<IFamilyDataExtractionService, RevitFamilyDataExtractionService>();
+        services.AddSingleton<FamilyDataImportService>();
+        services.AddSingleton<IFamilyDataImportService>(sp => sp.GetRequiredService<FamilyDataImportService>());
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
         services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
         services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();

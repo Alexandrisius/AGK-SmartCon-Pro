@@ -27,3 +27,4 @@
 | [014](014-familymanager-mvp-architecture.md) | FamilyManager MVP Architecture | superseded by 015 | 2026-04-28 |
 | [015](015-familymanager-published-storage.md) | FamilyManager Published Storage (ISO 19650) | accepted | 2026-04-30 |
 | [016](016-familymanager-readonly-files.md) | ReadOnly-флаг для managed-файлов семейств | accepted | 2026-04-30 |
+| [017](017-familymanager-attribute-extraction.md) | FamilyManager Attribute Extraction Foundation | accepted | 2026-05-06 |

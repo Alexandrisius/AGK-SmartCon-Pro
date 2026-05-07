@@ -32,6 +32,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly ITransactionService _transactionService;
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyTypeRepository _typeRepository;
+    private readonly IFamilyDataExtractionService _extractionService;
+    private readonly IFamilyDataImportService _dataImportService;
+    private readonly IAttributeDefinitionRepository _attributeDefRepository;
+    private readonly ICategoryAttributeBindingService _bindingService;
+    private readonly IFamilyMetadataPackageService _packageService;
     private CancellationTokenSource? _searchCts;
 
     [ObservableProperty] private string _searchText = string.Empty;
@@ -60,7 +65,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         IDatabaseManager databaseManager,
         ITransactionService transactionService,
         ICategoryRepository categoryRepository,
-        IFamilyTypeRepository typeRepository)
+        IFamilyTypeRepository typeRepository,
+        IFamilyDataExtractionService extractionService,
+        IFamilyDataImportService dataImportService,
+        IAttributeDefinitionRepository attributeDefRepository,
+        ICategoryAttributeBindingService bindingService,
+        IFamilyMetadataPackageService packageService)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -76,6 +86,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _transactionService = transactionService;
         _categoryRepository = categoryRepository;
         _typeRepository = typeRepository;
+        _extractionService = extractionService;
+        _dataImportService = dataImportService;
+        _attributeDefRepository = attributeDefRepository;
+        _bindingService = bindingService;
+        _packageService = packageService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
 
@@ -408,7 +423,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenCategoryEditorAsync()
     {
-        var editorVm = new CategoryTreeEditorViewModel(_categoryRepository, _dialogService);
+        var editorVm = new CategoryTreeEditorViewModel(_categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _packageService);
         await editorVm.InitializeAsync();
         var result = _dialogService.ShowCategoryTreeEditor(editorVm);
         if (result == true)
@@ -673,10 +688,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                         LanguageManager.GetString(StringLocalization.Keys.FM_FamilyNotFoundAfterLoad) ?? "Family not found after loading");
                     return;
                 }
-
-                var typeNames = ReadFamilyTypeNames(doc, family);
-                if (typeNames.Count > 0)
-                    FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames));
 
                 var symbolId = family.GetFamilySymbolIds().Cast<ElementId>().FirstOrDefault();
                 if (symbolId is null) return;
@@ -1077,6 +1088,67 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             {
                 SmartConLogger.Warn($"ExtractTypes failed: {ex.Message}");
             }
+        });
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    private void ImportData()
+    {
+        if (SelectedItem is null) return;
+
+        var selectedId = SelectedItem.Id;
+        var targetRevit = CurrentRevitVersion;
+
+        IsLoading = true;
+        StatusMessage = string.Empty;
+
+        FireAndForget(async () =>
+        {
+            var prepareResult = await _dataImportService.PrepareExtractionAsync(selectedId, targetRevit, CancellationToken.None);
+
+            if (!prepareResult.Success)
+            {
+                StatusMessage = prepareResult.ErrorMessage ?? "Ошибка подготовки";
+                IsLoading = false;
+                return;
+            }
+
+            if (string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
+            {
+                StatusMessage = "Файл семейства не найден";
+                IsLoading = false;
+                return;
+            }
+
+            var rfaPath = prepareResult.ResolvedFilePath;
+            var paramNames = prepareResult.ParameterNames;
+            var versionId = prepareResult.Item?.CurrentVersionLabel;
+
+            _externalEvent.Raise(() =>
+            {
+                try
+                {
+                    var extractionResult = _extractionService.Extract(rfaPath!, paramNames);
+
+                    var saveResult = _dataImportService.SaveExtractionResultAsync(
+                        selectedId, extractionResult, versionId, null, CancellationToken.None).GetAwaiter().GetResult();
+
+                    StatusMessage = saveResult.Success
+                        ? $"Импортировано: {saveResult.TypesCount} типоразмеров, {saveResult.AttributesFoundCount} значений найдено"
+                        : $"Ошибка импорта: {saveResult.ErrorMessage}";
+
+                    FireAndForget(async () => await LoadTreeAsync());
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"ImportData failed: {ex.Message}");
+                    StatusMessage = $"Ошибка: {ex.Message}";
+                }
+                finally
+                {
+                    IsLoading = false;
+                }
+            });
         });
     }
 

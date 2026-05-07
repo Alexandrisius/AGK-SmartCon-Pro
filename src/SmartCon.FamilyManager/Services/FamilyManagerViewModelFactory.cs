@@ -11,19 +11,34 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyAssetService _assetService;
     private readonly IAttributePresetService _presetService;
     private readonly IFamilyManagerDialogService _dialogService;
+    private readonly ICategoryAttributeBindingService _bindingService;
+    private readonly IAttributeValueRepository _valueRepository;
+    private readonly IFamilyDataImportRunRepository _runRepository;
+    private readonly IFamilyTypeRepository _typeRepository;
+    private readonly IAttributeDefinitionRepository _attributeDefRepository;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
         ICategoryRepository categoryRepository,
         IFamilyAssetService assetService,
         IAttributePresetService presetService,
-        IFamilyManagerDialogService dialogService)
+        IFamilyManagerDialogService dialogService,
+        ICategoryAttributeBindingService bindingService,
+        IAttributeValueRepository valueRepository,
+        IFamilyDataImportRunRepository runRepository,
+        IFamilyTypeRepository typeRepository,
+        IAttributeDefinitionRepository attributeDefRepository)
     {
         _writableProvider = writableProvider;
         _categoryRepository = categoryRepository;
         _assetService = assetService;
         _presetService = presetService;
         _dialogService = dialogService;
+        _bindingService = bindingService;
+        _valueRepository = valueRepository;
+        _runRepository = runRepository;
+        _typeRepository = typeRepository;
+        _attributeDefRepository = attributeDefRepository;
     }
 
     public FamilyMetadataEditViewModel CreateMetadataEditViewModel(
@@ -48,6 +63,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             catalogItemId, name, description,
             categoryId, categoryPath, tags, contentStatus,
             manufacturer, versionLabel, fileSizeText, createdAtText, updatedAtText,
-            _writableProvider, _categoryRepository, _assetService, _presetService, _dialogService);
+            _writableProvider, _categoryRepository, _assetService, _presetService, _dialogService,
+            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository);
     }
 }

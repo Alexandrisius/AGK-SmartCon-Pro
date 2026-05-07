@@ -142,21 +142,6 @@
                 </Setter>
             </Style>
 
-            <Style x:Key="ModernSeparator" TargetType="Separator">
-                <Setter Property="Height" Value="1"/>
-                <Setter Property="Margin" Value="4,3,4,3"/>
-                <Setter Property="Background" Value="#FFE0E0E0"/>
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="Separator">
-                            <Border Background="{TemplateBinding Background}"
-                                    Height="{TemplateBinding Height}"
-                                    Margin="{TemplateBinding Margin}"/>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -355,18 +340,15 @@
                                 <MenuItem Header="{DynamicResource FM_LoadToProject}"
                                           Command="{Binding LoadToProjectCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
-                                <Separator Style="{StaticResource ModernSeparator}"/>
-                                <MenuItem Header="{DynamicResource FM_ExtractTypes}"
-                                          Command="{Binding ExtractTypesCommand}"
+                                <MenuItem Header="{DynamicResource FM_ImportData}"
+                                          Command="{Binding ImportDataCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
-                                <Separator Style="{StaticResource ModernSeparator}"/>
                                 <MenuItem Header="{DynamicResource FM_Update}"
                                           Command="{Binding UpdateFamilyCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
                                 <MenuItem Header="{DynamicResource FM_Properties}"
                                           Command="{Binding OpenPropertiesCommand}"
                                           Style="{StaticResource ModernMenuItem}"/>
-                                <Separator Style="{StaticResource ModernSeparator}"/>
                                 <MenuItem Header="{DynamicResource FM_DeleteFromCatalog}"
                                           Command="{Binding DeleteFamilyCommand}"
                                           Style="{StaticResource DangerMenuItem}"/>

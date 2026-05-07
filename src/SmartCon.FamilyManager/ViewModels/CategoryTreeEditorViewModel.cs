@@ -11,32 +11,71 @@ using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-/// <summary>
-/// ViewModel for the category tree editor dialog.
-/// </summary>
 public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObservableRequestClose
 {
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyManagerDialogService _dialogService;
+    private readonly IAttributeDefinitionRepository _attributeDefRepository;
+    private readonly ICategoryAttributeBindingService _bindingService;
+    private readonly IFamilyMetadataPackageService _packageService;
+    private List<AttributeListItemViewModel> _allAttributeItems = [];
+    private readonly Dictionary<string, bool> _bindingChanges = new();
+    private readonly List<CategoryNodeViewModel> _pendingCategoryDeletions = [];
+    private FamilyMetadataPackage? _pendingImportPackage;
 
     [ObservableProperty] private ObservableCollection<CategoryNodeViewModel> _rootNodes = [];
     [ObservableProperty] private CategoryNodeViewModel? _selectedNode;
     [ObservableProperty] private string _statusMessage = string.Empty;
+    [ObservableProperty] private ObservableCollection<AttributeListItemViewModel> _attributeItems = [];
+    [ObservableProperty] private string _attributeFilterText = string.Empty;
+    [ObservableProperty] private string? _selectedGroupFilter;
+    [ObservableProperty] private ObservableCollection<string> _availableGroups = [];
+    [ObservableProperty] private string _selectedCategoryPath = string.Empty;
+    [ObservableProperty] private bool _hasSelectedCategory;
+    [ObservableProperty] private bool _hasUnsavedChanges;
+    [ObservableProperty] private bool _isSaved;
 
     public event Action<bool?>? RequestClose;
 
     public CategoryTreeEditorViewModel(
         ICategoryRepository categoryRepository,
-        IFamilyManagerDialogService dialogService)
+        IFamilyManagerDialogService dialogService,
+        IAttributeDefinitionRepository attributeDefRepository,
+        ICategoryAttributeBindingService bindingService,
+        IFamilyMetadataPackageService packageService)
     {
         _categoryRepository = categoryRepository;
         _dialogService = dialogService;
+        _attributeDefRepository = attributeDefRepository;
+        _bindingService = bindingService;
+        _packageService = packageService;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         await LoadTreeAsync(ct);
     }
+
+    partial void OnSelectedNodeChanged(CategoryNodeViewModel? value)
+    {
+        HasSelectedCategory = value is not null;
+        if (value is not null)
+        {
+            SelectedCategoryPath = BuildCategoryPath(value);
+            FireAndForget(() => LoadAttributesForCategoryAsync(value));
+        }
+        else
+        {
+            SelectedCategoryPath = string.Empty;
+            AttributeItems = [];
+            AvailableGroups = [];
+            _allAttributeItems = [];
+        }
+    }
+
+    partial void OnAttributeFilterTextChanged(string value) => ApplyAttributeFilter();
+
+    partial void OnSelectedGroupFilterChanged(string? value) => ApplyAttributeFilter();
 
     private async Task LoadTreeAsync(CancellationToken ct = default)
     {
@@ -90,22 +129,342 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         return total;
     }
 
-    [RelayCommand]
-    private async Task AddRootAsync()
+    private async Task LoadAttributesForCategoryAsync(CategoryNodeViewModel? categoryNode)
     {
-        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AddCategory) ?? "Add Category";
-        var prompt = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_CategoryName) ?? "Category name:";
-        var name = _dialogService.ShowInputDialog(title, prompt);
-        if (string.IsNullOrWhiteSpace(name)) return;
+        if (categoryNode is null)
+        {
+            HasSelectedCategory = false;
+            AttributeItems = [];
+            AvailableGroups = [];
+            _allAttributeItems = [];
+            return;
+        }
 
         try
         {
-            var sortOrder = RootNodes.Count;
-            var node = await _categoryRepository.AddAsync(name!, null, sortOrder);
-            var vm = new CategoryNodeViewModel(node);
-            RootNodes.Add(vm);
-            SelectedNode = vm;
-            vm.IsSelected = true;
+            var categoryId = categoryNode.CategoryId;
+            var allDefs = await _attributeDefRepository.GetAllAsync();
+            var categories = await _categoryRepository.GetAllAsync();
+            var categoryNameById = categories.ToDictionary(c => c.Id, c => c.Name);
+
+            // Collect effective attributes (DB + draft tree)
+            List<EffectiveCategoryAttribute> effectiveAttrs;
+            List<CategoryAttributeBinding> directBindings;
+            
+            // Build effective attrs with draft awareness for ALL categories
+            effectiveAttrs = await GetDraftEffectiveAttributesAsync(categoryNode, categoryNameById);
+            directBindings = categoryNode.IsNew
+                ? GetDraftDirectBindings(categoryNode)
+                : [..await _bindingService.GetDirectBindingsAsync(categoryId)];
+
+            var effectiveByAttrId = effectiveAttrs.ToDictionary(e => e.AttributeId);
+            var bindingByAttrId = directBindings.ToDictionary(b => b.AttributeId);
+
+            var items = new List<AttributeListItemViewModel>();
+            foreach (var def in allDefs.Where(d => d.IsActive))
+            {
+                effectiveByAttrId.TryGetValue(def.Id, out var effective);
+                bindingByAttrId.TryGetValue(def.Id, out var binding);
+
+                var sourceName = effective?.SourceCategoryId is not null
+                    && categoryNameById.TryGetValue(effective.SourceCategoryId, out var catName)
+                    ? catName : null;
+
+                var isBound = effective is not null;
+                var key = $"{categoryId}:{def.Id}";
+                if (_bindingChanges.TryGetValue(key, out var changedBound))
+                {
+                    isBound = changedBound;
+                }
+
+                items.Add(new AttributeListItemViewModel
+                {
+                    AttributeId = def.Id,
+                    Name = def.Name,
+                    Group = def.Group,
+                    IsBound = isBound,
+                    OriginalIsBound = effective is not null,
+                    IsInherited = effective?.IsInherited ?? false,
+                    SourceCategoryName = sourceName,
+                    BindingId = binding?.Id,
+                    IsEnabled = effective?.IsEnabled ?? true,
+                    Parent = this
+                });
+            }
+
+            _allAttributeItems = items;
+
+            var groups = allDefs
+                .Where(d => d.IsActive && d.Group is not null)
+                .Select(d => d.Group!)
+                .Distinct()
+                .OrderBy(g => g)
+                .ToList();
+
+            var allGroupsLabel = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AllGroups) ?? "Все атрибуты";
+            var allGroups = new List<string> { allGroupsLabel };
+            allGroups.AddRange(groups);
+
+            AvailableGroups = new ObservableCollection<string>(allGroups);
+            SelectedGroupFilter = allGroupsLabel;
+            AttributeFilterText = string.Empty;
+            ApplyAttributeFilter();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"LoadAttributesForCategoryAsync failed: {ex.Message}");
+        }
+    }
+
+    private async Task<List<EffectiveCategoryAttribute>> GetDraftEffectiveAttributesAsync(
+        CategoryNodeViewModel node, Dictionary<string, string> categoryNameById)
+    {
+        var result = new Dictionary<string, EffectiveCategoryAttribute>();
+
+        // Step 1: Load base effective attrs
+        if (!node.IsNew)
+        {
+            var dbEffective = await _bindingService.GetEffectiveAttributesAsync(node.CategoryId);
+            foreach (var attr in dbEffective)
+            {
+                result[attr.AttributeId] = attr;
+            }
+
+            // Apply ALL ancestor draft changes recursively
+            await ApplyAncestorDraftChangesAsync(node.ParentId, result);
+        }
+        else if (node.ParentId is not null)
+        {
+            // Draft node: inherit from parent recursively with draft awareness
+            var parent = FindNodeById(RootNodes, node.ParentId);
+            if (parent is not null)
+            {
+                var parentEffective = await GetDraftEffectiveAttributesAsync(parent, categoryNameById);
+                foreach (var attr in parentEffective)
+                {
+                    result[attr.AttributeId] = attr with { IsInherited = true };
+                }
+            }
+            else
+            {
+                var dbEffective = await _bindingService.GetEffectiveAttributesAsync(node.ParentId);
+                foreach (var attr in dbEffective)
+                {
+                    result[attr.AttributeId] = attr with { IsInherited = true };
+                }
+            }
+        }
+
+        // Step 2: Apply own draft changes (add/remove bindings)
+        var ownChanges = _bindingChanges
+            .Where(c =>
+            {
+                var parts = c.Key.Split(new[] { ':' }, 2);
+                return parts.Length == 2 && parts[0] == node.CategoryId;
+            })
+            .ToList();
+
+        foreach (var change in ownChanges)
+        {
+            var parts = change.Key.Split(new[] { ':' }, 2);
+            var attrId = parts[1];
+
+            if (change.Value)
+            {
+                // Added binding
+                if (!result.ContainsKey(attrId))
+                {
+                    var attrDef = await _attributeDefRepository.GetByIdAsync(attrId);
+                    if (attrDef is not null)
+                    {
+                        result[attrId] = new EffectiveCategoryAttribute(
+                            attrId,
+                            attrDef.Name,
+                            attrDef.Group,
+                            result.Count,
+                            true,
+                            false, // direct binding, not inherited
+                            node.CategoryId);
+                    }
+                }
+            }
+            else
+            {
+                // Removed binding
+                result.Remove(attrId);
+            }
+        }
+
+        return [..result.Values];
+    }
+
+    private List<CategoryAttributeBinding> GetDraftDirectBindings(CategoryNodeViewModel node)
+    {
+        var result = new List<CategoryAttributeBinding>();
+
+        foreach (var change in _bindingChanges)
+        {
+            var parts = change.Key.Split(new[] { ':' }, 2);
+            if (parts.Length != 2 || parts[0] != node.CategoryId) continue;
+
+            if (change.Value)
+            {
+                result.Add(new CategoryAttributeBinding(
+                    Guid.NewGuid().ToString(),
+                    node.CategoryId,
+                    parts[1],
+                    result.Count,
+                    true));
+            }
+        }
+
+        return result;
+    }
+
+    private async Task ApplyAncestorDraftChangesAsync(
+        string? parentId,
+        Dictionary<string, EffectiveCategoryAttribute> result)
+    {
+        if (parentId is null) return;
+
+        // Check if this ancestor has draft changes
+        var parentChanges = _bindingChanges
+            .Where(c => c.Key.StartsWith($"{parentId}:"))
+            .ToList();
+
+        foreach (var change in parentChanges)
+        {
+            var parts = change.Key.Split(new[] { ':' }, 2);
+            if (parts.Length != 2) continue;
+            var attrId = parts[1];
+            var isBound = change.Value;
+
+            if (isBound && !result.ContainsKey(attrId))
+            {
+                var attrDef = await _attributeDefRepository.GetByIdAsync(attrId);
+                if (attrDef is not null)
+                {
+                    result[attrId] = new EffectiveCategoryAttribute(
+                        attrId,
+                        attrDef.Name,
+                        attrDef.Group,
+                        result.Count,
+                        true,
+                        true,
+                        parentId);
+                }
+            }
+            else if (!isBound && result.ContainsKey(attrId) && result[attrId].SourceCategoryId == parentId)
+            {
+                result.Remove(attrId);
+            }
+        }
+
+        // Recursively apply grandparent's draft changes
+        var parent = FindNodeById(RootNodes, parentId);
+        if (parent is not null)
+        {
+            await ApplyAncestorDraftChangesAsync(parent.ParentId, result);
+        }
+        else
+        {
+            // Parent only in DB - get its parentId from DB
+            var parentNode = await _categoryRepository.GetByIdAsync(parentId);
+            await ApplyAncestorDraftChangesAsync(parentNode?.ParentId, result);
+        }
+    }
+
+    private static CategoryNodeViewModel? FindNodeById(ObservableCollection<CategoryNodeViewModel> nodes, string categoryId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.CategoryId == categoryId) return node;
+            var found = FindNodeById(node.Children, categoryId);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    private static CategoryNodeViewModel? FindNodeById(ObservableCollection<CatalogTreeNodeViewModel> nodes, string categoryId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node is CategoryNodeViewModel cat && cat.CategoryId == categoryId) return cat;
+            var found = FindNodeById(node.Children, categoryId);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    internal void HandleBindingToggle(AttributeListItemViewModel item, bool shouldBeBound)
+    {
+        if (SelectedNode is null) return;
+        var categoryId = SelectedNode.CategoryId;
+        var attributeId = item.AttributeId;
+
+        var key = $"{categoryId}:{attributeId}";
+        _bindingChanges[key] = shouldBeBound;
+
+        item.IsBound = shouldBeBound;
+        item.IsDirty = true;
+        UpdateHasUnsavedChanges();
+        ApplyAttributeFilter();
+    }
+
+    private void UpdateHasUnsavedChanges()
+    {
+        var allNodes = FlattenNodes(RootNodes);
+        HasUnsavedChanges = _pendingCategoryDeletions.Count > 0
+                         || _bindingChanges.Count > 0
+                         || allNodes.Any(n => n.IsNew || n.IsDirty);
+    }
+
+    private void ApplyAttributeFilter()
+    {
+        var filtered = _allAttributeItems.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(AttributeFilterText))
+        {
+            var filter = AttributeFilterText.Trim().ToUpperInvariant();
+            filtered = filtered.Where(x =>
+                x.Name.ToUpperInvariant().Contains(filter) ||
+                (x.Group is not null && x.Group.ToUpperInvariant().Contains(filter)));
+        }
+
+        var allGroupsLabel = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AllGroups) ?? "Все атрибуты";
+        if (!string.IsNullOrWhiteSpace(SelectedGroupFilter) && SelectedGroupFilter != allGroupsLabel)
+        {
+            filtered = filtered.Where(x => x.Group == SelectedGroupFilter);
+        }
+
+        AttributeItems = new ObservableCollection<AttributeListItemViewModel>(filtered);
+    }
+
+    [RelayCommand]
+    private async Task OpenAttributeLibraryAsync()
+    {
+        var libraryVm = new AttributeLibraryViewModel(
+            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository);
+        await libraryVm.InitializeAsync();
+        _dialogService.ShowAttributeLibrary(libraryVm);
+
+        if (SelectedNode is not null)
+            await LoadAttributesForCategoryAsync(SelectedNode);
+    }
+
+    [RelayCommand]
+    private async Task ExportCategoriesAsync()
+    {
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ExportTree) ?? "Export Categories";
+        var path = _dialogService.ShowSaveJsonDialog(title, "categories");
+        if (path is null) return;
+
+        try
+        {
+            var package = await _packageService.ExportCategoriesAsync();
+            var json = JsonSerializer.Serialize(package, new JsonSerializerOptions { WriteIndented = true });
+            await Task.Run(() => File.WriteAllText(path, json));
+            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Exported) ?? "Exported to {0}", path);
         }
         catch (Exception ex)
         {
@@ -114,7 +473,129 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     }
 
     [RelayCommand]
-    private async Task AddChildAsync()
+    private async Task ExportAttributesAsync()
+    {
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ExportAttrs) ?? "Export Attributes";
+        var path = _dialogService.ShowSaveJsonDialog(title, "attributes");
+        if (path is null) return;
+
+        try
+        {
+            var package = await _packageService.ExportAttributesAsync();
+            var json = JsonSerializer.Serialize(package, new JsonSerializerOptions { WriteIndented = true });
+            await Task.Run(() => File.WriteAllText(path, json));
+            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Exported) ?? "Exported to {0}", path);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportFullAsync()
+    {
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ExportFull) ?? "Export Full Package";
+        var path = _dialogService.ShowSaveJsonDialog(title, "smartcon-metadata");
+        if (path is null) return;
+
+        try
+        {
+            var package = await _packageService.ExportFullAsync();
+            var json = JsonSerializer.Serialize(package, new JsonSerializerOptions { WriteIndented = true });
+            await Task.Run(() => File.WriteAllText(path, json));
+            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Exported) ?? "Exported to {0}", path);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private void ImportFromJson()
+    {
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ImportTree) ?? "Import Metadata";
+        var path = _dialogService.ShowOpenJsonDialog(title);
+        if (path is null) return;
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            var package = JsonSerializer.Deserialize<FamilyMetadataPackage>(json);
+            if (package is null) return;
+
+            var importedNodes = new List<CategoryNodeViewModel>();
+            foreach (var cat in package.Categories)
+            {
+                importedNodes.AddRange(ImportCategoryNode(cat, null, 0));
+            }
+
+            RootNodes = new ObservableCollection<CategoryNodeViewModel>(importedNodes);
+            _bindingChanges.Clear();
+            _pendingImportPackage = package;
+            SelectedNode = null;
+            UpdateHasUnsavedChanges();
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Imported) ?? "Imported {0} categories",
+                importedNodes.Count);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}", ex.Message);
+        }
+    }
+
+    private static List<CategoryNodeViewModel> ImportCategoryNode(FamilyMetadataCategoryNode node, string? parentId, int sortOrder)
+    {
+        var result = new List<CategoryNodeViewModel>();
+        var categoryId = Guid.NewGuid().ToString();
+        var vm = new CategoryNodeViewModel(categoryId, node.Name, parentId, node.Name)
+        {
+            SortOrder = sortOrder,
+            OriginalSortOrder = sortOrder,
+            IsNew = true,
+            IsDirty = true
+        };
+        result.Add(vm);
+
+        for (int i = 0; i < node.Children.Count; i++)
+        {
+            var children = ImportCategoryNode(node.Children[i], categoryId, i);
+            foreach (var child in children)
+            {
+                vm.Children.Add(child);
+            }
+        }
+
+        return result;
+    }
+
+    [RelayCommand]
+    private void AddRoot()
+    {
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AddCategory) ?? "Add Category";
+        var prompt = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_CategoryName) ?? "Category name:";
+        var name = _dialogService.ShowInputDialog(title, prompt);
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var sortOrder = RootNodes.Count;
+        var categoryId = Guid.NewGuid().ToString();
+        var vm = new CategoryNodeViewModel(categoryId, name!, null, name!)
+        {
+            SortOrder = sortOrder,
+            OriginalSortOrder = sortOrder,
+            IsNew = true,
+            IsDirty = true
+        };
+        RootNodes.Add(vm);
+        SelectedNode = vm;
+        vm.IsSelected = true;
+        UpdateHasUnsavedChanges();
+    }
+
+    [RelayCommand]
+    private void AddChild()
     {
         if (SelectedNode is not CategoryNodeViewModel parent) return;
 
@@ -123,24 +604,25 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         var name = _dialogService.ShowInputDialog(title, prompt);
         if (string.IsNullOrWhiteSpace(name)) return;
 
-        try
+        var sortOrder = parent.Children.Count;
+        var categoryId = Guid.NewGuid().ToString();
+        var fullPath = $"{parent.FullPath}/{name}";
+        var childVm = new CategoryNodeViewModel(categoryId, name!, parent.CategoryId, fullPath)
         {
-            var sortOrder = parent.Children.Count;
-            var node = await _categoryRepository.AddAsync(name!, parent.CategoryId, sortOrder);
-            var childVm = new CategoryNodeViewModel(node);
-            parent.Children.Add(childVm);
-            parent.IsExpanded = true;
-            SelectedNode = childVm;
-            childVm.IsSelected = true;
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
-        }
+            SortOrder = sortOrder,
+            OriginalSortOrder = sortOrder,
+            IsNew = true,
+            IsDirty = true
+        };
+        parent.Children.Add(childVm);
+        parent.IsExpanded = true;
+        SelectedNode = childVm;
+        childVm.IsSelected = true;
+        UpdateHasUnsavedChanges();
     }
 
     [RelayCommand]
-    private async Task RenameAsync()
+    private void Rename()
     {
         if (SelectedNode is not CategoryNodeViewModel node) return;
 
@@ -149,47 +631,30 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         var newName = _dialogService.ShowInputDialog(title, prompt, node.DisplayName);
         if (string.IsNullOrWhiteSpace(newName) || newName == node.DisplayName) return;
 
-        try
-        {
-            var updated = await _categoryRepository.RenameAsync(node.CategoryId, newName!);
-            if (updated is not null)
-            {
-                node.DisplayName = updated.Name;
-            }
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
-        }
+        node.DisplayName = newName!;
+        node.IsDirty = true;
+        UpdateHasUnsavedChanges();
     }
 
     [RelayCommand]
-    private async Task DeleteAsync()
+    private void Delete()
     {
         if (SelectedNode is not CategoryNodeViewModel node) return;
 
-        try
-        {
-            var count = await _categoryRepository.GetFamilyCountAsync(node.CategoryId);
-            var noCat = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
-            var message = count > 0
-                ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_DeleteConfirm) ?? "Delete \"{0}\"? {1} families will be moved to \"{2}\".", node.DisplayName, count, noCat)
-                : string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_DeleteEmpty) ?? "Delete \"{0}\"?", node.DisplayName);
+        var count = node.FamilyCount;
+        var noCat = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
+        var message = count > 0
+            ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_DeleteConfirm) ?? "Delete \"{0}\"? {1} families will be moved to \"{2}\".", node.DisplayName, count, noCat)
+            : string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_DeleteEmpty) ?? "Delete \"{0}\"?", node.DisplayName);
 
-            var delTitle = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_DeleteCategory) ?? "Delete Category";
-            if (!_dialogService.ShowConfirmation(delTitle, message)) return;
+        var delTitle = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_DeleteCategory) ?? "Delete Category";
+        if (!_dialogService.ShowConfirmation(delTitle, message)) return;
 
-            var success = await _categoryRepository.DeleteAsync(node.CategoryId);
-            if (success)
-            {
-                RemoveNodeFromTree(node.CategoryId);
-                StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Deleted) ?? "Deleted: {0}", node.DisplayName);
-            }
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
-        }
+        node.IsDeleted = true;
+        _pendingCategoryDeletions.Add(node);
+        RemoveNodeFromTree(node.CategoryId);
+        SelectedNode = null;
+        UpdateHasUnsavedChanges();
     }
 
     private void RemoveNodeFromTree(string categoryId)
@@ -222,58 +687,12 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     }
 
     [RelayCommand]
-    private async Task MoveNodeAsync((CategoryNodeViewModel Node, CategoryNodeViewModel? NewParent, int SortOrder) args)
+    private void MoveNode((CategoryNodeViewModel Node, CategoryNodeViewModel? NewParent, int SortOrder) args)
     {
         var (node, newParent, sortOrder) = args;
-        var newParentId = newParent?.CategoryId;
-        await _categoryRepository.MoveAsync(node.CategoryId, newParentId, sortOrder);
-        await LoadTreeAsync();
-    }
-
-    [RelayCommand]
-    private async Task ImportAsync()
-    {
-        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ImportTree) ?? "Import Category Tree";
-        var path = _dialogService.ShowOpenJsonDialog(title);
-        if (path is null) return;
-
-        try
-        {
-            var json = await Task.Run(() => File.ReadAllText(path));
-            var data = JsonSerializer.Deserialize<CategoryTreeImportData>(json);
-            if (data?.Categories is null) return;
-
-            var flatNodes = FlattenImportData(data.Categories, null, 0);
-            await _categoryRepository.ReplaceAllAsync(flatNodes);
-            await LoadTreeAsync();
-            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Imported) ?? "Imported {0} categories", flatNodes.Count);
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}", ex.Message);
-        }
-    }
-
-    [RelayCommand]
-    private async Task ExportAsync()
-    {
-        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ExportTree) ?? "Export Category Tree";
-        var path = _dialogService.ShowSaveJsonDialog(title, "categories");
-        if (path is null) return;
-
-        try
-        {
-            var nodes = await _categoryRepository.GetAllAsync();
-            var tree = new CategoryTree(nodes);
-            var exportData = BuildExportTree(tree, null);
-            var json = JsonSerializer.Serialize(new CategoryTreeImportData { Categories = exportData }, new JsonSerializerOptions { WriteIndented = true });
-            await Task.Run(() => File.WriteAllText(path, json));
-            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Exported) ?? "Exported to {0}", path);
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
-        }
+        node.ParentId = newParent?.CategoryId;
+        node.SortOrder = sortOrder;
+        node.IsDirty = true;
     }
 
     internal static List<CategoryTreeImportData.CategoryImportItem> BuildExportTree(CategoryTree tree, string? parentId)
@@ -307,6 +726,208 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         return result;
     }
 
+    private string BuildCategoryPath(CategoryNodeViewModel target)
+    {
+        var path = new List<string>();
+        foreach (var root in RootNodes)
+        {
+            path.Add(root.DisplayName);
+            if (root.CategoryId == target.CategoryId) break;
+            if (SearchPathInChildren(root.Children, target.CategoryId, path)) break;
+            path.RemoveAt(path.Count - 1);
+        }
+        return string.Join(" > ", path);
+    }
+
+    private static bool SearchPathInChildren(IList<CatalogTreeNodeViewModel> children, string targetId, List<string> path)
+    {
+        foreach (var child in children)
+        {
+            if (child is not CategoryNodeViewModel cat) continue;
+            path.Add(cat.DisplayName);
+            if (cat.CategoryId == targetId) return true;
+            if (SearchPathInChildren(cat.Children, targetId, path)) return true;
+            path.RemoveAt(path.Count - 1);
+        }
+        return false;
+    }
+
     [RelayCommand]
-    private void Close() => RequestClose?.Invoke(true);
+    private void ContextMenuRename()
+    {
+        if (SelectedNode is not CategoryNodeViewModel node) return;
+        Rename();
+    }
+
+    [RelayCommand]
+    private void ContextMenuAddChild()
+    {
+        if (SelectedNode is not CategoryNodeViewModel parent) return;
+        AddChild();
+    }
+
+    [RelayCommand]
+    private void ContextMenuDelete()
+    {
+        if (SelectedNode is not CategoryNodeViewModel node) return;
+        Delete();
+    }
+
+    [RelayCommand]
+    private async Task SaveAsync()
+    {
+        try
+        {
+            foreach (var node in _pendingCategoryDeletions.Where(n => !n.IsNew))
+            {
+                await _categoryRepository.DeleteAsync(node.CategoryId);
+            }
+            _pendingCategoryDeletions.Clear();
+
+            var allNodes = FlattenNodes(RootNodes);
+
+            var tempToRealId = new Dictionary<string, string>();
+
+            foreach (var node in allNodes.Where(n => n.IsNew))
+            {
+                var realParentId = node.ParentId is not null && tempToRealId.TryGetValue(node.ParentId, out var mappedParent)
+                    ? mappedParent
+                    : node.ParentId;
+
+                var created = await _categoryRepository.AddAsync(node.DisplayName, realParentId, node.SortOrder);
+                tempToRealId[node.CategoryId] = created.Id;
+                node.CategoryId = created.Id;
+                node.ParentId = realParentId;
+                node.IsNew = false;
+                node.IsDirty = false;
+            }
+
+            foreach (var node in allNodes.Where(n => n.IsDirty && !n.IsNew))
+            {
+                if (node.DisplayName != node.OriginalName)
+                {
+                    await _categoryRepository.RenameAsync(node.CategoryId, node.DisplayName);
+                    node.OriginalName = node.DisplayName;
+                }
+                if (node.ParentId != node.OriginalParentId || node.SortOrder != node.OriginalSortOrder)
+                {
+                    await _categoryRepository.MoveAsync(node.CategoryId, node.ParentId, node.SortOrder);
+                    node.OriginalParentId = node.ParentId;
+                    node.OriginalSortOrder = node.SortOrder;
+                }
+                node.IsDirty = false;
+            }
+
+            var resolvedBindings = new Dictionary<string, bool>();
+            foreach (var change in _bindingChanges)
+            {
+                var parts = change.Key.Split(new[] { ':' }, 2);
+                if (parts.Length != 2) continue;
+                var categoryId = parts[0];
+                var attributeId = parts[1];
+
+                var realCategoryId = tempToRealId.TryGetValue(categoryId, out var mappedId)
+                    ? mappedId
+                    : categoryId;
+
+                var key = $"{realCategoryId}:{attributeId}";
+                resolvedBindings[key] = change.Value;
+            }
+            _bindingChanges.Clear();
+
+            foreach (var change in resolvedBindings)
+            {
+                var parts = change.Key.Split(new[] { ':' }, 2);
+                if (parts.Length != 2) continue;
+                var categoryId = parts[0];
+                var attributeId = parts[1];
+                var shouldBeBound = change.Value;
+
+                var existing = await _bindingService.GetDirectBindingsAsync(categoryId);
+                var existingBinding = existing.FirstOrDefault(b => b.AttributeId == attributeId);
+
+                if (shouldBeBound && existingBinding is null)
+                {
+                    var sortOrder = existing.Count;
+                    await _bindingService.CreateBindingAsync(categoryId, attributeId, sortOrder);
+                }
+                else if (!shouldBeBound && existingBinding is not null)
+                {
+                    await _bindingService.DeleteBindingAsync(existingBinding.Id);
+                }
+            }
+
+            if (_pendingImportPackage is not null)
+            {
+                var packageWithoutCategories = new FamilyMetadataPackage
+                {
+                    Format = _pendingImportPackage.Format,
+                    Version = _pendingImportPackage.Version,
+                    ExportedAtUtc = _pendingImportPackage.ExportedAtUtc,
+                    Sections = new FamilyMetadataPackageSections
+                    {
+                        Categories = false,
+                        Attributes = _pendingImportPackage.Sections.Attributes,
+                        Bindings = _pendingImportPackage.Sections.Bindings
+                    },
+                    Categories = [],
+                    Attributes = _pendingImportPackage.Attributes,
+                    Bindings = _pendingImportPackage.Bindings
+                };
+                await _packageService.ImportAsync(packageWithoutCategories);
+                _pendingImportPackage = null;
+            }
+
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Saved) ?? "Saved";
+            HasUnsavedChanges = false;
+            IsSaved = true;
+            await Task.Delay(500);
+            IsSaved = false;
+            StatusMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
+        }
+    }
+
+    private static List<CategoryNodeViewModel> FlattenNodes(ObservableCollection<CategoryNodeViewModel> nodes)
+    {
+        var result = new List<CategoryNodeViewModel>();
+        foreach (var node in nodes)
+        {
+            result.Add(node);
+            result.AddRange(FlattenNodes(node.Children));
+        }
+        return result;
+    }
+
+    private static List<CategoryNodeViewModel> FlattenNodes(ObservableCollection<CatalogTreeNodeViewModel> nodes)
+    {
+        var result = new List<CategoryNodeViewModel>();
+        foreach (var node in nodes)
+        {
+            if (node is CategoryNodeViewModel cat)
+            {
+                result.Add(cat);
+                result.AddRange(FlattenNodes(cat.Children));
+            }
+        }
+        return result;
+    }
+
+    [RelayCommand]
+    private void Cancel() => RequestClose?.Invoke(false);
+
+    private static async void FireAndForget(Func<Task> taskFactory)
+    {
+        try
+        {
+            await taskFactory();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"FireAndForget: {ex.Message}");
+        }
+    }
 }

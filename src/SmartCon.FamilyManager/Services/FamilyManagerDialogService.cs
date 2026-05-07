@@ -101,10 +101,13 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
 
     public bool ShowConfirmation(string title, string message)
     {
-        var td = new Autodesk.Revit.UI.TaskDialog(title);
-        td.MainContent = message;
-        td.CommonButtons = Autodesk.Revit.UI.TaskDialogCommonButtons.Yes | Autodesk.Revit.UI.TaskDialogCommonButtons.No;
-        return td.Show() == Autodesk.Revit.UI.TaskDialogResult.Yes;
+        var vm = new ViewModels.ConfirmationDialogViewModel
+        {
+            Title = title,
+            Message = message
+        };
+        var view = new Views.ConfirmationDialogView(vm);
+        return view.ShowDialog() == true;
     }
 
     public bool? ShowCategoryTreeEditor(object viewModel) => _presenter.ShowDialog(viewModel);
@@ -156,6 +159,8 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     }
 
     public bool? ShowPresetEditor(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public bool? ShowAttributeLibrary(object viewModel) => _presenter.ShowDialog(viewModel);
 
     private static string GetAssetFilter(FamilyAssetType assetType) => assetType switch
     {

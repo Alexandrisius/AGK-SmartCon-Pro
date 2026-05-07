@@ -9,9 +9,6 @@ using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-/// <summary>
-/// ViewModel for the family properties dialog.
-/// </summary>
 public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObservableRequestClose
 {
     private readonly string _catalogItemId;
@@ -20,6 +17,11 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IFamilyAssetService _assetService;
     private readonly IAttributePresetService _presetService;
     private readonly IFamilyManagerDialogService _dialogService;
+    private readonly ICategoryAttributeBindingService _bindingService;
+    private readonly IAttributeValueRepository _valueRepository;
+    private readonly IFamilyDataImportRunRepository _runRepository;
+    private readonly IFamilyTypeRepository _typeRepository;
+    private readonly IAttributeDefinitionRepository _attributeDefRepository;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -49,6 +51,21 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [ObservableProperty] private bool _hasPresets;
     [ObservableProperty] private FamilyAsset? _selectedAsset;
 
+    [ObservableProperty] private ObservableCollection<FamilyTypeSelectorItem> _availableTypes = [];
+    [ObservableProperty] private FamilyTypeSelectorItem? _selectedType;
+    [ObservableProperty] private ObservableCollection<AttributeValueRow> _attributeRows = [];
+    [ObservableProperty] private string _attributesStatusMessage = string.Empty;
+    [ObservableProperty] private bool _hasAttributeData;
+    [ObservableProperty] private bool _hasNoCategory;
+    [ObservableProperty] private bool _hasNoBindings;
+    [ObservableProperty] private bool _hasNotImported;
+    [ObservableProperty] private string _importRunInfo = string.Empty;
+    [ObservableProperty] private int _attributesFoundCount;
+    [ObservableProperty] private int _attributesMissingCount;
+
+    private IReadOnlyList<EffectiveCategoryAttribute> _effectiveAttributes = [];
+    private IReadOnlyList<ExtractedAttributeValue> _allValues = [];
+
     public IReadOnlyList<ContentStatus> AvailableStatuses { get; } =
         Enum.GetValues(typeof(ContentStatus)).Cast<ContentStatus>().ToArray();
 
@@ -71,7 +88,12 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         ICategoryRepository categoryRepository,
         IFamilyAssetService assetService,
         IAttributePresetService presetService,
-        IFamilyManagerDialogService dialogService)
+        IFamilyManagerDialogService dialogService,
+        ICategoryAttributeBindingService bindingService,
+        IAttributeValueRepository valueRepository,
+        IFamilyDataImportRunRepository runRepository,
+        IFamilyTypeRepository typeRepository,
+        IAttributeDefinitionRepository attributeDefRepository)
     {
         _catalogItemId = catalogItemId;
         _writableProvider = writableProvider;
@@ -79,6 +101,11 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _assetService = assetService;
         _presetService = presetService;
         _dialogService = dialogService;
+        _bindingService = bindingService;
+        _valueRepository = valueRepository;
+        _runRepository = runRepository;
+        _typeRepository = typeRepository;
+        _attributeDefRepository = attributeDefRepository;
 
         Name = name;
         Description = description;
@@ -101,6 +128,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         {
             await LoadAssetsAsync(ct);
             await LoadPresetsAsync(ct);
+            await LoadAttributesDataAsync(ct);
         }
         finally
         {
@@ -162,6 +190,102 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
             HasPresets = false;
             EffectiveParameters = [];
         }
+    }
+
+    private async Task LoadAttributesDataAsync(CancellationToken ct)
+    {
+        try
+        {
+            if (CategoryId is null)
+            {
+                HasNoCategory = true;
+                return;
+            }
+
+            var effectiveAttrs = await _bindingService.GetEffectiveAttributesAsync(CategoryId, ct);
+            var allDefs = await _attributeDefRepository.GetAllAsync(ct);
+            var activeAttrIds = allDefs.Where(a => a.IsActive).Select(a => a.Id).ToHashSet();
+            _effectiveAttributes = effectiveAttrs.Where(a => a.IsEnabled && activeAttrIds.Contains(a.AttributeId)).ToList();
+
+            if (_effectiveAttributes.Count == 0)
+            {
+                HasNoBindings = true;
+                return;
+            }
+
+            var run = await _runRepository.GetLatestRunAsync(_catalogItemId, ct);
+            if (run is null)
+            {
+                HasNotImported = true;
+                return;
+            }
+
+            var completedText = run.CompletedAtUtc.HasValue
+                ? run.CompletedAtUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                : "—";
+            ImportRunInfo = $"Импорт {completedText} • Revit {run.RevitMajorVersion} • {run.TypesCount} типов";
+
+            var types = await _typeRepository.GetTypesForItemAsync(_catalogItemId, ct);
+            AvailableTypes = new ObservableCollection<FamilyTypeSelectorItem>(
+                types.Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
+
+            var allValues = await _valueRepository.GetValuesForItemAsync(_catalogItemId, run.VersionId, ct);
+            _allValues = allValues;
+
+            var firstTypeId = AvailableTypes.Count > 0 ? AvailableTypes[0].TypeId : null;
+            var typeValues = firstTypeId is not null
+                ? allValues.Where(v => v.TypeId == firstTypeId).ToList()
+                : allValues.ToList();
+            var found = typeValues.Count(v => v.Status == AttributeValueStatus.Found);
+            var missing = _effectiveAttributes.Count - found;
+            if (missing < 0) missing = 0;
+            AttributesFoundCount = found;
+            AttributesMissingCount = missing;
+
+            HasAttributeData = true;
+
+            if (AvailableTypes.Count > 0)
+                SelectedType = AvailableTypes[0];
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"LoadAttributesDataAsync failed: {ex.Message}");
+            AttributesStatusMessage = ex.Message;
+        }
+    }
+
+    partial void OnSelectedTypeChanged(FamilyTypeSelectorItem? value)
+    {
+        LoadTypeAttributes(value);
+    }
+
+    private void LoadTypeAttributes(FamilyTypeSelectorItem? selected)
+    {
+        if (selected is null || _effectiveAttributes.Count == 0)
+        {
+            AttributeRows = [];
+            return;
+        }
+
+        var typeValues = _allValues.Where(v => v.TypeId == selected.TypeId).ToList();
+        var rows = new List<AttributeValueRow>();
+
+        foreach (var attr in _effectiveAttributes.OrderBy(a => a.SortOrder))
+        {
+            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId);
+            rows.Add(new AttributeValueRow
+            {
+                AttributeName = attr.Name,
+                Value = match?.ValueText,
+                Status = match?.Status.ToString() ?? "MissingParameter",
+                StatusDetail = match?.Message,
+                IsFound = match is not null && match.Status == AttributeValueStatus.Found,
+                IsInherited = attr.IsInherited,
+                Group = attr.Group
+            });
+        }
+
+        AttributeRows = new ObservableCollection<AttributeValueRow>(rows);
     }
 
     [RelayCommand]
@@ -323,4 +447,22 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
             IsBusy = false;
         }
     }
+}
+
+public sealed class FamilyTypeSelectorItem
+{
+    public string TypeId { get; init; } = string.Empty;
+    public string TypeName { get; init; } = string.Empty;
+    public override string ToString() => TypeName;
+}
+
+public sealed class AttributeValueRow
+{
+    public string AttributeName { get; init; } = string.Empty;
+    public string? Value { get; init; }
+    public string Status { get; init; } = "OK";
+    public string? StatusDetail { get; init; }
+    public bool IsFound { get; init; }
+    public bool IsInherited { get; init; }
+    public string? Group { get; init; }
 }

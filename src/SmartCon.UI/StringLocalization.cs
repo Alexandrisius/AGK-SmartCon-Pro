@@ -200,6 +200,7 @@ public static class StringLocalization
         d[Keys.FM_LoadToProject] = "Загрузить в проект";
         d[Keys.FM_LoadAndPlace] = "Загрузить и разместить";
         d[Keys.FM_ExtractTypes] = "Извлечь типоразмеры";
+        d[Keys.FM_ImportData] = "Импорт данных";
         d[Keys.FM_PlaceType] = "Разместить тип";
         d[Keys.FM_EditMetadata] = "Редактировать";
         d[Keys.FM_NoActiveDocument] = "Нет активного документа";
@@ -267,10 +268,29 @@ public static class StringLocalization
         d[Keys.FM_CTE_DeleteConfirm] = "Удалить \"{0}\"? {1} семейств будут перемещены в \"{2}\".";
         d[Keys.FM_CTE_DeleteEmpty] = "Удалить \"{0}\"?";
         d[Keys.FM_CTE_Deleted] = "Удалено: {0}";
+        d[Keys.FM_CTE_Saved] = "Сохранено";
         d[Keys.FM_CTE_ImportTree] = "Импорт дерева категорий";
         d[Keys.FM_CTE_Imported] = "Импортировано {0} категорий";
         d[Keys.FM_CTE_ExportTree] = "Экспорт дерева категорий";
         d[Keys.FM_CTE_Exported] = "Экспортировано в {0}";
+        d[Keys.FM_CTE_AttrExists] = "Атрибут \"{0}\" уже существует.";
+        d[Keys.FM_CTE_ExportAttrs] = "Экспорт атрибутов";
+        d[Keys.FM_CTE_ExportFull] = "Экспорт полного пакета";
+        d[Keys.FM_CTE_CategoriesAndAttrs] = "Категории и атрибуты";
+        d[Keys.FM_CTE_CategoryTree] = "Дерево категорий";
+        d[Keys.FM_CTE_AttributesFor] = "Атрибуты:";
+        d[Keys.FM_CTE_SelectCategory] = "Выберите категорию";
+        d[Keys.FM_CTE_SelectCategoryHint] = "Выберите категорию для управления атрибутами";
+        d[Keys.FM_CTE_AllGroups] = "Все атрибуты";
+        d[Keys.FM_CTE_SearchAttrs] = "Поиск атрибутов...";
+        d[Keys.FM_CTE_Inherited] = "(наследован)";
+        d[Keys.FM_CTE_NewAttrName] = "Новый атрибут";
+        d[Keys.FM_CTE_AddAttr] = "Добавить";
+        d[Keys.FM_CTE_AttrLibrary] = "Библиотека атрибутов...";
+        d[Keys.FM_CTE_ImportJson] = "Импорт из JSON";
+        d[Keys.FM_CTE_UnsavedChangesTitle] = "Несохранённые изменения";
+        d[Keys.FM_CTE_UnsavedChangesMessage] = "У вас есть несохранённые изменения. Сохранить перед закрытием?";
+        d[Keys.FM_CTE_ExportColon] = "Экспорт:";
         d[Keys.FM_CP_Title] = "Выбор категории";
         d[Keys.FM_CP_Clear] = "Сбросить";
 
@@ -322,9 +342,43 @@ public static class StringLocalization
         d[Keys.FM_PE_RemoveParameter] = "- Удалить";
         d[Keys.FM_Props_XlsNote] = "XLS — рабочий файл, CSV — для Revit Lookup Table";
 
+        d[Keys.FM_Props_NoCategoryAttr] = "Семейству не назначена категория. Назначьте категорию, чтобы определить обязательные атрибуты.";
+        d[Keys.FM_Props_NoBindingsAttr] = "Для категории нет обязательных атрибутов.";
+        d[Keys.FM_Props_NotImported] = "Атрибуты ещё не импортированы";
+        d[Keys.FM_Props_NotImportedDesc] = "Используйте команду «Импорт данных» из контекстного меню семейства в основной панели.";
+        d[Keys.FM_Props_Completeness] = "Полнота";
+        d[Keys.FM_Props_TypeSize] = "Типоразмер";
+
         d[Keys.FM_FamilyNotFoundAfterLoad] = "Семейство не найдено после загрузки";
         d[Keys.FM_CannotDisconnectOnlyDatabase] = "Нельзя отключить единственную базу данных.";
         d[Keys.FM_ErrorFormat] = "Ошибка: {0}";
+
+        d[Keys.FM_AL_Title] = "Библиотека атрибутов";
+        d[Keys.FM_AL_Search] = "Поиск атрибутов...";
+        d[Keys.FM_AL_Name] = "Имя";
+        d[Keys.FM_AL_Group] = "Группа";
+        d[Keys.FM_AL_Active] = "Активен";
+        d[Keys.FM_AL_UsedIn] = "Используется в";
+        d[Keys.FM_AL_Delete] = "Удалить";
+        d[Keys.FM_AL_Close] = "Закрыть";
+        d[Keys.FM_AL_ConfirmDelete] = "Удалить атрибут \"{0}\"? Он используется в {1} категориях.";
+        d[Keys.FM_AL_ConfirmDeleteEmpty] = "Удалить атрибут \"{0}\"?";
+        d[Keys.FM_AL_Add] = "Добавить";
+        d[Keys.FM_AL_Rename] = "Переименовать";
+        d[Keys.FM_AL_SetGroup] = "Группа";
+        d[Keys.FM_AL_EnterName] = "Имя атрибута:";
+        d[Keys.FM_AL_EnterGroup] = "Имя группы:";
+
+        d[Keys.Btn_Yes] = "Да";
+        d[Keys.Btn_No] = "Нет";
+        d[Keys.FM_CTE_ContextMenu_Rename] = "Переименовать";
+        d[Keys.FM_CTE_ContextMenu_AddChild] = "Добавить подкатегорию";
+        d[Keys.FM_CTE_ContextMenu_Delete] = "Удалить";
+        d[Keys.FM_CTE_NewCategory] = "Новая категория";
+        d[Keys.FM_CTE_Attributes] = "Атрибуты";
+        d[Keys.FM_AL_DeactivateTitle] = "Деактивация атрибута";
+        d[Keys.FM_AL_DeactivateMessage] = "Атрибут используется в {0} категориях. При деактивации все привязки будут удалены. Продолжить?";
+        d[Keys.FM_Confirm_Title] = "Подтверждение";
 
         return d;
     }
@@ -519,6 +573,7 @@ public static class StringLocalization
         d[Keys.FM_LoadToProject] = "Load to Project";
         d[Keys.FM_LoadAndPlace] = "Load and Place";
         d[Keys.FM_ExtractTypes] = "Extract Types";
+        d[Keys.FM_ImportData] = "Import Data";
         d[Keys.FM_PlaceType] = "Place Type";
         d[Keys.FM_EditMetadata] = "Edit";
         d[Keys.FM_NoActiveDocument] = "No active document";
@@ -586,10 +641,29 @@ public static class StringLocalization
         d[Keys.FM_CTE_DeleteConfirm] = "Delete \"{0}\"? {1} families will be moved to \"{2}\".";
         d[Keys.FM_CTE_DeleteEmpty] = "Delete \"{0}\"?";
         d[Keys.FM_CTE_Deleted] = "Deleted: {0}";
+        d[Keys.FM_CTE_Saved] = "Saved";
         d[Keys.FM_CTE_ImportTree] = "Import Category Tree";
         d[Keys.FM_CTE_Imported] = "Imported {0} categories";
         d[Keys.FM_CTE_ExportTree] = "Export Category Tree";
         d[Keys.FM_CTE_Exported] = "Exported to {0}";
+        d[Keys.FM_CTE_AttrExists] = "Attribute \"{0}\" already exists.";
+        d[Keys.FM_CTE_ExportAttrs] = "Export Attributes";
+        d[Keys.FM_CTE_ExportFull] = "Export Full Package";
+        d[Keys.FM_CTE_CategoriesAndAttrs] = "Categories & Attributes";
+        d[Keys.FM_CTE_CategoryTree] = "Category Tree";
+        d[Keys.FM_CTE_AttributesFor] = "Attributes:";
+        d[Keys.FM_CTE_SelectCategory] = "Select a category";
+        d[Keys.FM_CTE_SelectCategoryHint] = "Select a category to manage attributes";
+        d[Keys.FM_CTE_AllGroups] = "All attributes";
+        d[Keys.FM_CTE_SearchAttrs] = "Search attributes...";
+        d[Keys.FM_CTE_Inherited] = "(inherited)";
+        d[Keys.FM_CTE_NewAttrName] = "New attribute";
+        d[Keys.FM_CTE_AddAttr] = "Add";
+        d[Keys.FM_CTE_AttrLibrary] = "Attribute Library...";
+        d[Keys.FM_CTE_ImportJson] = "Import JSON";
+        d[Keys.FM_CTE_UnsavedChangesTitle] = "Unsaved Changes";
+        d[Keys.FM_CTE_UnsavedChangesMessage] = "You have unsaved changes. Save before closing?";
+        d[Keys.FM_CTE_ExportColon] = "Export:";
         d[Keys.FM_CP_Title] = "Select Category";
         d[Keys.FM_CP_Clear] = "Clear";
 
@@ -641,9 +715,43 @@ public static class StringLocalization
         d[Keys.FM_PE_RemoveParameter] = "- Remove";
         d[Keys.FM_Props_XlsNote] = "XLS — working file, CSV — for Revit Lookup Table";
 
+        d[Keys.FM_Props_NoCategoryAttr] = "No category assigned. Assign a category to define required attributes.";
+        d[Keys.FM_Props_NoBindingsAttr] = "No required attributes for this category.";
+        d[Keys.FM_Props_NotImported] = "Attributes not yet imported";
+        d[Keys.FM_Props_NotImportedDesc] = "Use the 'Import Data' command from the family's context menu in the main panel.";
+        d[Keys.FM_Props_Completeness] = "Completeness";
+        d[Keys.FM_Props_TypeSize] = "Type";
+
         d[Keys.FM_FamilyNotFoundAfterLoad] = "Family not found after loading";
         d[Keys.FM_CannotDisconnectOnlyDatabase] = "Cannot disconnect the only database.";
         d[Keys.FM_ErrorFormat] = "Error: {0}";
+
+        d[Keys.FM_AL_Title] = "Attribute Library";
+        d[Keys.FM_AL_Search] = "Search attributes...";
+        d[Keys.FM_AL_Name] = "Name";
+        d[Keys.FM_AL_Group] = "Group";
+        d[Keys.FM_AL_Active] = "Active";
+        d[Keys.FM_AL_UsedIn] = "Used in";
+        d[Keys.FM_AL_Delete] = "Delete";
+        d[Keys.FM_AL_Close] = "Close";
+        d[Keys.FM_AL_ConfirmDelete] = "Delete attribute \"{0}\"? It is used in {1} categories.";
+        d[Keys.FM_AL_ConfirmDeleteEmpty] = "Delete attribute \"{0}\"?";
+        d[Keys.FM_AL_Add] = "Add";
+        d[Keys.FM_AL_Rename] = "Rename";
+        d[Keys.FM_AL_SetGroup] = "Group";
+        d[Keys.FM_AL_EnterName] = "Attribute name:";
+        d[Keys.FM_AL_EnterGroup] = "Group name:";
+
+        d[Keys.Btn_Yes] = "Yes";
+        d[Keys.Btn_No] = "No";
+        d[Keys.FM_CTE_ContextMenu_Rename] = "Rename";
+        d[Keys.FM_CTE_ContextMenu_AddChild] = "Add Subcategory";
+        d[Keys.FM_CTE_ContextMenu_Delete] = "Delete";
+        d[Keys.FM_CTE_NewCategory] = "New Category";
+        d[Keys.FM_CTE_Attributes] = "Attributes";
+        d[Keys.FM_AL_DeactivateTitle] = "Deactivate Attribute";
+        d[Keys.FM_AL_DeactivateMessage] = "Attribute is used in {0} categories. Deactivating will remove all bindings. Continue?";
+        d[Keys.FM_Confirm_Title] = "Confirm";
 
         return d;
     }
@@ -846,6 +954,7 @@ public static class StringLocalization
         public const string FM_LoadToProject = "FM_LoadToProject";
         public const string FM_LoadAndPlace = "FM_LoadAndPlace";
         public const string FM_ExtractTypes = "FM_ExtractTypes";
+        public const string FM_ImportData = "FM_ImportData";
         public const string FM_PlaceType = "FM_PlaceType";
         public const string FM_EditMetadata = "FM_EditMetadata";
         public const string FM_NoActiveDocument = "FM_NoActiveDocument";
@@ -912,10 +1021,29 @@ public static class StringLocalization
         public const string FM_CTE_DeleteConfirm = "FM_CTE_DeleteConfirm";
         public const string FM_CTE_DeleteEmpty = "FM_CTE_DeleteEmpty";
         public const string FM_CTE_Deleted = "FM_CTE_Deleted";
+        public const string FM_CTE_Saved = "FM_CTE_Saved";
         public const string FM_CTE_ImportTree = "FM_CTE_ImportTree";
         public const string FM_CTE_Imported = "FM_CTE_Imported";
         public const string FM_CTE_ExportTree = "FM_CTE_ExportTree";
         public const string FM_CTE_Exported = "FM_CTE_Exported";
+        public const string FM_CTE_AttrExists = "FM_CTE_AttrExists";
+        public const string FM_CTE_ExportAttrs = "FM_CTE_ExportAttrs";
+        public const string FM_CTE_ExportFull = "FM_CTE_ExportFull";
+        public const string FM_CTE_CategoriesAndAttrs = "FM_CTE_CategoriesAndAttrs";
+        public const string FM_CTE_CategoryTree = "FM_CTE_CategoryTree";
+        public const string FM_CTE_AttributesFor = "FM_CTE_AttributesFor";
+        public const string FM_CTE_SelectCategory = "FM_CTE_SelectCategory";
+        public const string FM_CTE_SelectCategoryHint = "FM_CTE_SelectCategoryHint";
+        public const string FM_CTE_AllGroups = "FM_CTE_AllGroups";
+        public const string FM_CTE_SearchAttrs = "FM_CTE_SearchAttrs";
+        public const string FM_CTE_Inherited = "FM_CTE_Inherited";
+        public const string FM_CTE_NewAttrName = "FM_CTE_NewAttrName";
+        public const string FM_CTE_AddAttr = "FM_CTE_AddAttr";
+        public const string FM_CTE_AttrLibrary = "FM_CTE_AttrLibrary";
+        public const string FM_CTE_ImportJson = "FM_CTE_ImportJson";
+        public const string FM_CTE_UnsavedChangesTitle = "FM_CTE_UnsavedChangesTitle";
+        public const string FM_CTE_UnsavedChangesMessage = "FM_CTE_UnsavedChangesMessage";
+        public const string FM_CTE_ExportColon = "FM_CTE_ExportColon";
         public const string FM_CP_Title = "FM_CP_Title";
         public const string FM_CP_Clear = "FM_CP_Clear";
 
@@ -969,5 +1097,36 @@ public static class StringLocalization
         public const string FM_FamilyNotFoundAfterLoad = "FM_FamilyNotFoundAfterLoad";
         public const string FM_CannotDisconnectOnlyDatabase = "FM_CannotDisconnectOnlyDatabase";
         public const string FM_ErrorFormat = "FM_ErrorFormat";
+        public const string FM_AL_Title = "FM_AL_Title";
+        public const string FM_AL_Search = "FM_AL_Search";
+        public const string FM_AL_Name = "FM_AL_Name";
+        public const string FM_AL_Group = "FM_AL_Group";
+        public const string FM_AL_Active = "FM_AL_Active";
+        public const string FM_AL_UsedIn = "FM_AL_UsedIn";
+        public const string FM_AL_Delete = "FM_AL_Delete";
+        public const string FM_AL_Close = "FM_AL_Close";
+        public const string FM_AL_ConfirmDelete = "FM_AL_ConfirmDelete";
+        public const string FM_AL_ConfirmDeleteEmpty = "FM_AL_ConfirmDeleteEmpty";
+        public const string FM_AL_Add = "FM_AL_Add";
+        public const string FM_AL_Rename = "FM_AL_Rename";
+        public const string FM_AL_SetGroup = "FM_AL_SetGroup";
+        public const string FM_AL_EnterName = "FM_AL_EnterName";
+        public const string FM_AL_EnterGroup = "FM_AL_EnterGroup";
+        public const string FM_Props_NoCategoryAttr = "FM_Props_NoCategoryAttr";
+        public const string FM_Props_NoBindingsAttr = "FM_Props_NoBindingsAttr";
+        public const string FM_Props_NotImported = "FM_Props_NotImported";
+        public const string FM_Props_NotImportedDesc = "FM_Props_NotImportedDesc";
+        public const string FM_Props_Completeness = "FM_Props_Completeness";
+        public const string FM_Props_TypeSize = "FM_Props_TypeSize";
+        public const string Btn_Yes = "Btn_Yes";
+        public const string Btn_No = "Btn_No";
+        public const string FM_CTE_ContextMenu_Rename = "FM_CTE_ContextMenu_Rename";
+        public const string FM_CTE_ContextMenu_AddChild = "FM_CTE_ContextMenu_AddChild";
+        public const string FM_CTE_ContextMenu_Delete = "FM_CTE_ContextMenu_Delete";
+        public const string FM_CTE_NewCategory = "FM_CTE_NewCategory";
+        public const string FM_CTE_Attributes = "FM_CTE_Attributes";
+        public const string FM_AL_DeactivateTitle = "FM_AL_DeactivateTitle";
+        public const string FM_AL_DeactivateMessage = "FM_AL_DeactivateMessage";
+        public const string FM_Confirm_Title = "FM_Confirm_Title";
     }
 }
