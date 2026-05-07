@@ -10,6 +10,11 @@ public class DialogWindowBase : Window
 
     public bool? CustomDialogResult { get; protected set; }
 
+    public DialogWindowBase()
+    {
+        Topmost = true;
+    }
+
     protected void BindCloseRequest(IObservableRequestClose viewModel)
     {
         viewModel.RequestClose += OnViewModelRequestClose;

@@ -20,7 +20,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, type_name, sort_order FROM family_types WHERE catalog_item_id = @itemId ORDER BY sort_order";
+        cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId ORDER BY sort_order";
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -29,7 +29,46 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                 reader.GetString(0),
                 catalogItemId,
                 reader.GetString(1),
-                reader.GetInt32(2)));
+                reader.GetInt32(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
+        }
+
+        return result.AsReadOnly();
+    }
+
+    public async Task<IReadOnlyList<FamilyTypeDescriptor>> GetTypesForItemVersionAsync(string catalogItemId, string? versionId, CancellationToken ct = default)
+    {
+        var result = new List<FamilyTypeDescriptor>();
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+
+        if (versionId is null)
+        {
+            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId AND version_id IS NULL ORDER BY sort_order";
+            cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        }
+        else
+        {
+            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId AND version_id = @versionId ORDER BY sort_order";
+            cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+        }
+
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new FamilyTypeDescriptor(
+                reader.GetString(0),
+                catalogItemId,
+                reader.GetString(1),
+                reader.GetInt32(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
         }
 
         return result.AsReadOnly();
@@ -47,7 +86,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
 
         var placeholders = string.Join(",", Enumerable.Range(0, idList.Count).Select(i => $"@p{i}"));
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT id, catalog_item_id, type_name, sort_order FROM family_types WHERE catalog_item_id IN ({placeholders}) ORDER BY sort_order";
+        cmd.CommandText = $"SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id IN ({placeholders}) ORDER BY sort_order";
         for (var i = 0; i < idList.Count; i++)
             cmd.Parameters.Add(new SqliteParameter($"@p{i}", idList[i]));
 
@@ -59,7 +98,10 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                 reader.GetString(0),
                 itemId,
                 reader.GetString(2),
-                reader.GetInt32(3));
+                reader.GetInt32(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6));
 
             if (!result.TryGetValue(itemId, out var list))
             {
@@ -90,11 +132,52 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
             for (var i = 0; i < types.Count; i++)
             {
                 using var insertCmd = connection.CreateCommand();
-                insertCmd.CommandText = "INSERT INTO family_types (id, catalog_item_id, type_name, sort_order) VALUES (@id, @itemId, @name, @sort)";
+                insertCmd.CommandText = "INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id) VALUES (@id, @itemId, @name, @sort, @versionId, @fileId, @runId)";
                 insertCmd.Parameters.Add(new SqliteParameter("@id", types[i].Id));
                 insertCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
                 insertCmd.Parameters.Add(new SqliteParameter("@name", types[i].Name));
                 insertCmd.Parameters.Add(new SqliteParameter("@sort", i));
+                insertCmd.Parameters.Add(new SqliteParameter("@versionId", (object?)types[i].VersionId ?? DBNull.Value));
+                insertCmd.Parameters.Add(new SqliteParameter("@fileId", (object?)types[i].FileId ?? DBNull.Value));
+                insertCmd.Parameters.Add(new SqliteParameter("@runId", (object?)types[i].ExtractionRunId ?? DBNull.Value));
+                await insertCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    public async Task SaveTypesForRunAsync(string catalogItemId, string? versionId, string? fileId, string runId, IReadOnlyList<FamilyTypeDescriptor> types, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var tx = connection.BeginTransaction();
+
+        try
+        {
+            using (var delCmd = connection.CreateCommand())
+            {
+                delCmd.CommandText = "DELETE FROM family_types WHERE catalog_item_id = @itemId";
+                delCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                await delCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            for (var i = 0; i < types.Count; i++)
+            {
+                using var insertCmd = connection.CreateCommand();
+                insertCmd.CommandText = "INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id) VALUES (@id, @itemId, @name, @sort, @versionId, @fileId, @runId)";
+                insertCmd.Parameters.Add(new SqliteParameter("@id", types[i].Id));
+                insertCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                insertCmd.Parameters.Add(new SqliteParameter("@name", types[i].Name));
+                insertCmd.Parameters.Add(new SqliteParameter("@sort", i));
+                insertCmd.Parameters.Add(new SqliteParameter("@versionId", (object?)versionId ?? DBNull.Value));
+                insertCmd.Parameters.Add(new SqliteParameter("@fileId", (object?)fileId ?? DBNull.Value));
+                insertCmd.Parameters.Add(new SqliteParameter("@runId", runId));
                 await insertCmd.ExecuteNonQueryAsync(ct);
             }
 

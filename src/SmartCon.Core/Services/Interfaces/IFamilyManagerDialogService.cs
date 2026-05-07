@@ -51,4 +51,6 @@ public interface IFamilyManagerDialogService
     string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null);
 
     bool? ShowPresetEditor(object viewModel);
+
+    bool? ShowAttributeLibrary(object viewModel);
 }

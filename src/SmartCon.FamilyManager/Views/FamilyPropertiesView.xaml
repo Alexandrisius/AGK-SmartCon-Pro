@@ -408,39 +408,78 @@
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
                     <StackPanel>
-                        <TextBlock Text="{Binding PresetCategoryInfo, Mode=OneWay}"
-                                   FontWeight="SemiBold" Margin="0,0,0,8"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
 
-                        <ItemsControl ItemsSource="{Binding EffectiveParameters}" Margin="0,0,0,12">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="200"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding DisplayText}"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}" FontWeight="Medium"/>
-                                        <TextBlock Grid.Column="1" Text="—"
-                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <TextBlock Text="{DynamicResource FM_Props_NoCategoryAttr}"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                                   HorizontalAlignment="Center" Margin="0,24"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   Visibility="{Binding HasNoCategory, Converter={StaticResource BoolToVisibility}}"/>
 
-                         <TextBlock Text="{DynamicResource FM_Props_NoPresets}"
-                                    Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                                    HorizontalAlignment="Center" Margin="0,24"
-                                    Visibility="{Binding HasPresets, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"/>
+                        <TextBlock Text="{DynamicResource FM_Props_NoBindingsAttr}"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                                   HorizontalAlignment="Center" Margin="0,24"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   Visibility="{Binding HasNoBindings, Converter={StaticResource BoolToVisibility}}"/>
 
-                         <TextBlock Text="{DynamicResource FM_Props_NoAttributes}"
-                                    FontWeight="SemiBold" Margin="0,16,0,4"
-                                    Foreground="{DynamicResource TextPrimaryBrush}"
-                                    HorizontalAlignment="Center"/>
-                        <TextBlock Text="{DynamicResource FM_Props_NoAttributesDesc}"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                   HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+                        <StackPanel Visibility="{Binding HasNotImported, Converter={StaticResource BoolToVisibility}}"
+                                    HorizontalAlignment="Center" Margin="0,24">
+                            <TextBlock Text="{DynamicResource FM_Props_NotImported}"
+                                       FontWeight="SemiBold" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            <TextBlock Text="{DynamicResource FM_Props_NotImportedDesc}"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                       HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
+                                       Margin="0,4,0,0" MaxWidth="400"/>
+                        </StackPanel>
+
+                        <StackPanel Visibility="{Binding HasAttributeData, Converter={StaticResource BoolToVisibility}}">
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{DynamicResource FM_Props_TypeSize}" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableTypes}"
+                                          SelectedItem="{Binding SelectedType}"
+                                          DisplayMemberPath="TypeName"
+                                          Style="{DynamicResource CompactComboBox}"/>
+                            </Grid>
+
+                            <ItemsControl ItemsSource="{Binding AttributeRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="200"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding AttributeName}"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" FontWeight="Medium"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Value, TargetNullValue='—'}"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock Grid.Column="2" FontSize="11" Margin="8,0,0,0">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="OK"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFound}" Value="False">
+                                                                <Setter Property="Text" Value="{Binding Status}"/>
+                                                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
