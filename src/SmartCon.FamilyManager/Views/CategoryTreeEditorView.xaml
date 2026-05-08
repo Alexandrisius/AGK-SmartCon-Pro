@@ -148,7 +148,8 @@
                             </i:EventTrigger>
                         </i:Interaction.Triggers>
                         <TreeView.ContextMenu>
-                            <ContextMenu Style="{StaticResource ModernContextMenu}">
+                            <ContextMenu behaviors:LocalizationBehavior.AutoRefresh="True"
+                                         Style="{StaticResource ModernContextMenu}">
                                 <MenuItem Header="{DynamicResource FM_CTE_NewCategory}" Command="{Binding AddRootCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
                             </ContextMenu>
                         </TreeView.ContextMenu>
@@ -157,7 +158,8 @@
                                 <StackPanel Orientation="Horizontal"
                                             Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
                                     <StackPanel.ContextMenu>
-                                        <ContextMenu Style="{StaticResource ModernContextMenu}"
+                                        <ContextMenu behaviors:LocalizationBehavior.AutoRefresh="True"
+                                                     Style="{StaticResource ModernContextMenu}"
                                                      DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
                                             <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
                                             <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
@@ -392,7 +394,8 @@
                           Stretch="Uniform"/>
                 </ToggleButton>
 
-                <Popup IsOpen="{Binding IsChecked, ElementName=ExportSplitToggle, Mode=OneWay}"
+                <Popup behaviors:LocalizationBehavior.AutoRefresh="True"
+                       IsOpen="{Binding IsChecked, ElementName=ExportSplitToggle, Mode=OneWay}"
                        StaysOpen="False"
                        PlacementTarget="{Binding ElementName=ExportSplitToggle}"
                        Placement="Bottom"
