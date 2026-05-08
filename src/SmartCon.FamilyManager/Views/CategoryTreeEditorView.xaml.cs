@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.UI;
 using SmartCon.UI.Controls;
@@ -36,6 +37,25 @@ public sealed partial class CategoryTreeEditorView : DialogWindowBase
                 vm.SelectedNode = node;
             }
         }
+    }
+
+    private void TreeView_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject dep) return;
+        if (FindAncestor<TreeViewItem>(dep) is not null) return;
+
+        if (CategoryTree.SelectedItem is CategoryNodeViewModel selected)
+            selected.IsSelected = false;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject current) where T : DependencyObject
+    {
+        while (current is not null)
+        {
+            if (current is T result) return result;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
