@@ -1,3 +1,4 @@
+using System.Windows;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.UI;
 using SmartCon.UI.Controls;
@@ -10,5 +11,16 @@ public sealed partial class FamilyManagerPaneControl : System.Windows.Controls.U
     {
         InitializeComponent();
         DataContext = viewModel;
+
+        Loaded += OnLoaded;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= OnLoaded;
+
+        var window = Window.GetWindow(this);
+        if (window is not null)
+            LanguageManager.EnsureWindowResources(window);
     }
 }
