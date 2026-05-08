@@ -243,3 +243,29 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 - Прямое изменение файлов **запрещено** — изменения = новая версия (ADR-016)
 - `Sha256FileHasher` верифицирует целостность файла при чтении
 - `IFamilyFileResolver` — единственная точка входа для доступа к файлам
+
+---
+
+## I-17: Инструменты поиска — строгое разделение
+
+**Exa — единственный инструмент для поиска в интернете.** REF — только для NuGet/.NET docs.
+
+**Запрещено:**
+- Использовать REF (`ref_search_documentation`) для поиска в интернете, форумов, блогов, StackOverflow
+- Использовать REF для примеров кода, если нет конкретной библиотеки/NuGet-пакета
+- Использовать REF для Revit API — только skill `revit-api`
+
+**Разрешено (REF):**
+- Версии NuGet-пакетов: `"CommunityToolkit.Mvvm NuGet latest version C#"`
+- Документация Microsoft Learn: .NET API, WPF, DI
+- Чтение конкретных страниц по URL с `#section`
+
+**Разрешено (Exa):**
+- Всё остальное: форумы Autodesk, StackOverflow, GitHub, блоги, примеры кода
+- Общие алгоритмы и паттерны программирования
+- Примеры использования библиотек из StackOverflow/GitHub
+
+**Pipeline:**
+1. Нужен пример кода → `get_code_context_exa` (если доступен) → `exa_web_search_exa`
+2. Нужна версия пакета → `ref_search_documentation`
+3. Нужна сигнатура Revit API → `revit-api` skill

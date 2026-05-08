@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         Title="{DynamicResource FM_CP_Title}"
         Width="380" Height="460" MinWidth="300" MinHeight="250"
         WindowStartupLocation="CenterScreen"
@@ -27,12 +29,19 @@
                  Padding="4,2" Margin="0,0,0,8"
                  Style="{DynamicResource CompactTextBox}"/>
 
-        <TreeView Grid.Row="1"
+        <TreeView x:Name="PickerTree"
+                  Grid.Row="1"
                   ItemsSource="{Binding RootNodes}"
-                  SelectedItemChanged="TreeView_SelectedItemChanged"
+                  behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
                   Background="Transparent"
                   BorderBrush="{DynamicResource BorderAltBrush}"
                   BorderThickness="1">
+            <i:Interaction.Triggers>
+                <i:EventTrigger EventName="SelectedItemChanged">
+                    <i:InvokeCommandAction Command="{Binding SelectedItemChangedCommand}"
+                                            CommandParameter="{Binding SelectedItem, ElementName=PickerTree}"/>
+                </i:EventTrigger>
+            </i:Interaction.Triggers>
             <TreeView.ItemTemplate>
                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                     <StackPanel Orientation="Horizontal">

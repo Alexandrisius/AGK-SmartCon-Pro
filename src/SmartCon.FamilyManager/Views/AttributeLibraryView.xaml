@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         Title="{DynamicResource FM_AL_Title}"
         Width="700" Height="480" MinWidth="550" MinHeight="350"
         WindowStartupLocation="CenterScreen"
@@ -51,7 +52,8 @@
                         <DataTemplate>
                             <CheckBox IsChecked="{Binding IsActive, Mode=OneWay}"
                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                      Click="CheckBox_Click"
+                                      behaviors:CheckBoxToggleBehavior.ToggleCommand="{Binding DataContext.ToggleActiveCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                      behaviors:CheckBoxToggleBehavior.ToggleCommandParameter="{Binding}"
                                       IsThreeState="False"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>

@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         Title="{DynamicResource FM_CTE_CategoriesAndAttrs}"
         Width="850" Height="580" MinWidth="700" MinHeight="450"
         WindowStartupLocation="CenterScreen"
@@ -135,10 +137,16 @@
 
                     <TreeView x:Name="CategoryTree"
                               ItemsSource="{Binding RootNodes}"
-                              SelectedItemChanged="TreeView_SelectedItemChanged"
-                              PreviewMouseDown="TreeView_PreviewMouseDown"
+                              behaviors:TreeViewBehaviors.RightClickSelect="True"
+                              behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
                               Background="Transparent"
                               BorderThickness="0">
+                        <i:Interaction.Triggers>
+                            <i:EventTrigger EventName="SelectedItemChanged">
+                                <i:InvokeCommandAction Command="{Binding SelectedItemChangedCommand}"
+                                                       CommandParameter="{Binding SelectedItem, ElementName=CategoryTree}"/>
+                            </i:EventTrigger>
+                        </i:Interaction.Triggers>
                         <TreeView.ContextMenu>
                             <ContextMenu Style="{StaticResource ModernContextMenu}">
                                 <MenuItem Header="{DynamicResource FM_CTE_NewCategory}" Command="{Binding AddRootCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
@@ -175,7 +183,6 @@
                             <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
                                 <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
-                                <EventSetter Event="PreviewMouseRightButtonDown" Handler="TreeViewItem_PreviewMouseRightButtonDown"></EventSetter>
                             </Style>
                         </TreeView.ItemContainerStyle>
                     </TreeView>
@@ -235,6 +242,7 @@
                         <Grid Grid.Column="1">
                             <TextBox x:Name="SearchBox"
                                      Text="{Binding AttributeFilterText, UpdateSourceTrigger=PropertyChanged}"
+                                     behaviors:TextBoxBehaviors.Placeholder="{Binding ElementName=SearchPlaceholder}"
                                      Style="{DynamicResource CompactTextBox}"/>
                             <TextBlock x:Name="SearchPlaceholder"
                                        Text="{DynamicResource FM_CTE_SearchAttrs}"

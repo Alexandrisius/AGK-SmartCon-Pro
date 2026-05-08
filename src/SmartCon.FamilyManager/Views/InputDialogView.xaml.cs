@@ -12,6 +12,5 @@ public partial class InputDialogView : DialogWindowBase
         LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
-        Loaded += (_, _) => InputTextBox.Focus();
     }
 }

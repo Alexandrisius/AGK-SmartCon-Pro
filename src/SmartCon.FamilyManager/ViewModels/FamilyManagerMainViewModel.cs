@@ -10,6 +10,7 @@ using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
+using SmartCon.UI.Behaviors;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
@@ -209,6 +210,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         {
             SelectedItem = null;
         }
+    }
+
+    [RelayCommand]
+    private void OnTreeViewSelectedItemChanged(object? selectedItem)
+    {
+        SelectedTreeNode = selectedItem as CatalogTreeNodeViewModel;
     }
 
     internal static CatalogTreeNodeViewModel? FindParentOf(ObservableCollection<CatalogTreeNodeViewModel> nodes, CatalogTreeNodeViewModel target)
@@ -1053,6 +1060,34 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         {
             IsLoading = false;
         }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStartDrag))]
+    private void StartDrag(object? item)
+    {
+        // Drag permission gate. Behavior handles the actual DoDragDrop.
+    }
+
+    private bool CanStartDrag(object? item) => item is FamilyLeafNodeViewModel;
+
+    [RelayCommand(CanExecute = nameof(CanDropFamily))]
+    private async Task DropFamilyAsync(TreeViewDropInfo? info)
+    {
+        if (info is not { Payload: FamilyLeafNodeViewModel leaf, Target: CategoryNodeViewModel target })
+            return;
+
+        var categoryId = target.CategoryId == "__no_category__"
+            ? null
+            : target.CategoryId;
+
+        await MoveFamilyToCategoryAsync(leaf.CatalogItemId, categoryId);
+    }
+
+    private bool CanDropFamily(TreeViewDropInfo? info)
+    {
+        if (info is null) return false;
+        return info.Payload is FamilyLeafNodeViewModel
+            && info.Target is CategoryNodeViewModel;
     }
 
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]

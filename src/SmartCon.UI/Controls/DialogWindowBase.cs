@@ -7,6 +7,7 @@ namespace SmartCon.UI.Controls;
 public class DialogWindowBase : Window
 {
     private bool _closeFromViewModel;
+    private ICloseAwareViewModel? _closeAwareViewModel;
 
     public bool? CustomDialogResult { get; protected set; }
 
@@ -19,6 +20,9 @@ public class DialogWindowBase : Window
     {
         viewModel.RequestClose += OnViewModelRequestClose;
         Closing += HandleClosing;
+
+        if (viewModel is ICloseAwareViewModel aware)
+            _closeAwareViewModel = aware;
     }
 
     private void OnViewModelRequestClose(bool? result)
@@ -33,7 +37,27 @@ public class DialogWindowBase : Window
     private void HandleClosing(object? sender, CancelEventArgs e)
     {
         if (_closeFromViewModel) return;
-        OnUserInitiatedClose(e);
+
+        if (_closeAwareViewModel is not null)
+        {
+            var args = new CloseConfirmationArgs();
+            _closeAwareViewModel.ConfirmClose(args);
+
+            if (args.Cancel)
+            {
+                e.Cancel = true;
+                if (args.DeferredAction is not null)
+                    Dispatcher.BeginInvoke(args.DeferredAction);
+                return;
+            }
+
+            CustomDialogResult = args.DialogResult ?? false;
+        }
+        else
+        {
+            CustomDialogResult = false;
+        }
+
     }
 
     protected virtual void OnUserInitiatedClose(CancelEventArgs e)

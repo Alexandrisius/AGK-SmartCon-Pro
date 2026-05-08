@@ -117,6 +117,12 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
     }
 
     [RelayCommand]
+    private void OnSelectedItemChanged(object? selectedItem)
+    {
+        SelectedNode = selectedItem as CategoryNodeViewModel;
+    }
+
+    [RelayCommand]
     private void Select()
     {
         RequestClose?.Invoke(true);

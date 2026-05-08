@@ -12,7 +12,7 @@ using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel
 {
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyManagerDialogService _dialogService;
@@ -757,6 +757,12 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     }
 
     [RelayCommand]
+    private void OnSelectedItemChanged(object? selectedItem)
+    {
+        SelectedNode = selectedItem as CategoryNodeViewModel;
+    }
+
+    [RelayCommand]
     private void ContextMenuRename()
     {
         if (SelectedNode is not CategoryNodeViewModel node) return;
@@ -932,6 +938,26 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             Core.Services.Interfaces.DialogResult.No => false,
             _ => null
         };
+    }
+
+    public void ConfirmClose(CloseConfirmationArgs args)
+    {
+        if (!HasUnsavedChanges)
+            return;
+
+        var result = ConfirmUnsavedChanges();
+        if (result is null)
+        {
+            args.Cancel = true;
+            return;
+        }
+
+        if (result == true)
+        {
+            args.DeferredAction = () => SaveCommand.Execute(null);
+        }
+
+        args.DialogResult = false;
     }
 
     [RelayCommand]
