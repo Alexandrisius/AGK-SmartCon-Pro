@@ -4,6 +4,9 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        behaviors:LocalizationBehavior.AutoRefresh="True"
         Background="{DynamicResource BackgroundBrush}">
 
     <UserControl.Resources>
@@ -222,6 +225,7 @@
                          VerticalContentAlignment="Center"
                          Padding="6,4"
                          Style="{DynamicResource CompactTextBox}"
+                         behaviors:TextBoxBehaviors.Placeholder="{Binding ElementName=SearchPlaceholder}"
                          Background="Transparent"/>
                 <TextBlock x:Name="SearchPlaceholder"
                            Text="{DynamicResource FM_SearchPlaceholder}"
@@ -293,11 +297,22 @@
         <TreeView Grid.Row="1"
                   x:Name="CategoryTree"
                   ItemsSource="{Binding TreeNodes}"
+                  behaviors:TreeViewBehaviors.RightClickSelect="True"
+                  behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
+                  behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
+                  behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
+                  behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
                   Background="Transparent"
                   BorderBrush="{DynamicResource BorderAltBrush}"
                   BorderThickness="1"
                   Padding="2"
                   AllowDrop="True">
+            <i:Interaction.Triggers>
+                <i:EventTrigger EventName="SelectedItemChanged">
+                    <i:InvokeCommandAction Command="{Binding TreeViewSelectedItemChangedCommand}"
+                                           CommandParameter="{Binding SelectedItem, ElementName=CategoryTree}"/>
+                </i:EventTrigger>
+            </i:Interaction.Triggers>
 
             <TreeView.Resources>
                 <HierarchicalDataTemplate DataType="{x:Type vm:CategoryNodeViewModel}"
@@ -378,10 +393,11 @@
                 <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
                     <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
-                    <Setter Property="AllowDrop" Value="True"></Setter>
-                    <EventSetter Event="TreeViewItem.DragOver" Handler="TreeViewItem_DragOver"></EventSetter>
-                    <EventSetter Event="TreeViewItem.Drop" Handler="TreeViewItem_Drop"></EventSetter>
+                    <Setter Property="AllowDrop" Value="False"></Setter>
                     <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsCategory}" Value="True">
+                            <Setter Property="AllowDrop" Value="True"></Setter>
+                        </DataTrigger>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>
                                 <Condition Binding="{Binding IsSelected}" Value="False"></Condition>

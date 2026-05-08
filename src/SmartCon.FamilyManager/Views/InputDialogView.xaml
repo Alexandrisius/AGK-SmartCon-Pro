@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         Title="{Binding Title}"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterScreen"
@@ -32,8 +33,9 @@
                  Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
                  Margin="0,0,0,16"
                  Padding="6,4"
-                 Style="{DynamicResource CompactTextBox}"
-                 x:Name="InputTextBox"/>
+                  Style="{DynamicResource CompactTextBox}"
+                  behaviors:FocusBehavior.FocusOnLoad="True"
+                  x:Name="InputTextBox"/>
 
         <StackPanel Grid.Row="2"
                     Orientation="Horizontal"

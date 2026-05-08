@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
+using SmartCon.UI.Behaviors;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
@@ -133,6 +134,18 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         draft.IsActive = newActive;
         draft.IsDirty = true;
         return true;
+    }
+
+    [RelayCommand]
+    private void ToggleActive(CheckBoxTogglePayload payload)
+    {
+        if (payload.Parameter is not AttributeDefinitionDraft draft) return;
+
+        if (!TrySetActive(draft, payload.NewValue))
+        {
+            // Command did not execute — UI stays unchanged
+            return;
+        }
     }
 
     [RelayCommand]
