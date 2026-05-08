@@ -66,12 +66,15 @@ public static class TreeViewBehaviors
     private static void OnTreeViewPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not TreeView treeView) return;
-        if (e.OriginalSource is not DependencyObject dep) return;
+
+        var hit = VisualTreeHelper.HitTest(treeView, e.GetPosition(treeView));
+        if (hit?.VisualHit is not DependencyObject dep) return;
 
         var treeViewItem = FindAncestor<TreeViewItem>(dep);
         if (treeViewItem is null) return;
 
         treeViewItem.IsSelected = true;
+        e.Handled = true;
     }
 
     #endregion
