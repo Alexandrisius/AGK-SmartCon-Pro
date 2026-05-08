@@ -36,15 +36,20 @@
             <TreeView.ItemTemplate>
                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#x1F4C1;" Margin="0,0,4,0" FontSize="12"/>
+                        <Path Data="{StaticResource FolderIconGeometry}"
+                               Fill="{DynamicResource TextMutedBrush}"
+                               Width="13" Height="13"
+                               Margin="0,0,6,0"
+                               Stretch="Uniform"
+                               VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </HierarchicalDataTemplate>
             </TreeView.ItemTemplate>
             <TreeView.ItemContainerStyle>
-                <Style TargetType="TreeViewItem">
-                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
+                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
                 </Style>
             </TreeView.ItemContainerStyle>
         </TreeView>

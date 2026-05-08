@@ -664,8 +664,217 @@ public sealed class ViewInfo
 
 ## FamilyManager Models
 
-Модели модуля FamilyManager (Phase 13: Published Storage). Все модели — immutable records, живут в `SmartCon.Core/Models/FamilyManager/`.
+Модели модуля FamilyManager (Phase 13–17: Published Storage → Attribute Extraction). Все модели — immutable records, живут в `SmartCon.Core/Models/FamilyManager/`.
 Идентификаторы — `string` (GUID), даты — `DateTimeOffset`.
+
+### CatalogProviderKind
+
+Тип провайдера каталога (локальный, сетевой, облачный).
+
+**Файл:** `CatalogProviderKind.cs`
+
+```csharp
+public enum CatalogProviderKind
+{
+    Local,
+    Network,
+    Cloud
+}
+```
+
+---
+
+### AttributeDefinition
+
+Определение атрибута (параметра) для извлечения из семейств. Заменяет устаревший `AttributePreset` (ADR-017).
+
+**Файл:** `AttributeDefinition.cs`
+
+```csharp
+public sealed record AttributeDefinition(
+    string Id,
+    string Name,
+    string? Group,
+    bool IsActive,
+    DateTimeOffset CreatedAtUtc);
+```
+
+---
+
+### CategoryAttributeBinding
+
+Связь категории с атрибутом — какие параметры извлекать для семейств данной категории.
+
+**Файл:** `CategoryAttributeBinding.cs`
+
+```csharp
+public sealed record CategoryAttributeBinding(
+    string Id,
+    string CategoryId,
+    string AttributeId,
+    int SortOrder,
+    bool IsEnabled);
+```
+
+---
+
+### EffectiveCategoryAttribute
+
+Эффективный атрибут категории с учётом наследования от родительских категорий.
+
+**Файл:** `EffectiveCategoryAttribute.cs`
+
+```csharp
+public sealed record EffectiveCategoryAttribute(
+    string AttributeId,
+    string Name,
+    string? Group,
+    int SortOrder,
+    bool IsEnabled,
+    bool IsInherited,
+    string? SourceCategoryId);
+```
+
+---
+
+### FamilyMetadataPackage
+
+Пакет метаданных для импорта/экспорта категорий, атрибутов и связей.
+
+**Файл:** `FamilyMetadataPackage.cs`
+
+```csharp
+public sealed class FamilyMetadataPackage
+{
+    public string Format { get; init; } = "smartcon.familymanager.metadata-package";
+    public int Version { get; init; } = 2;
+    public DateTimeOffset ExportedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    public FamilyMetadataPackageSections Sections { get; init; } = new();
+    public List<FamilyMetadataCategoryNode> Categories { get; init; } = [];
+    public List<FamilyMetadataAttribute> Attributes { get; init; } = [];
+    public List<FamilyMetadataBinding> Bindings { get; init; } = [];
+}
+
+public sealed class FamilyMetadataPackageSections
+{
+    public bool Categories { get; init; }
+    public bool Attributes { get; init; }
+    public bool Bindings { get; init; }
+}
+
+public sealed class FamilyMetadataCategoryNode
+{
+    public string Name { get; init; } = string.Empty;
+    public List<FamilyMetadataCategoryNode> Children { get; init; } = [];
+}
+
+public sealed class FamilyMetadataAttribute
+{
+    public string Name { get; init; } = string.Empty;
+    public string? Group { get; init; }
+}
+
+public sealed class FamilyMetadataBinding
+{
+    public string CategoryPath { get; init; } = string.Empty;
+    public string AttributeName { get; init; } = string.Empty;
+    public int SortOrder { get; init; }
+    public bool IsEnabled { get; init; } = true;
+}
+```
+
+---
+
+### FamilyDataImportRun
+
+Запись о запуске импорта данных семейств (извлечение атрибутов из `.rfa`).
+
+**Файл:** `FamilyDataImportRun.cs`
+
+```csharp
+public sealed record FamilyDataImportRun(
+    string Id,
+    string CatalogItemId,
+    string? VersionId,
+    FamilyDataImportStatus Status,
+    string? ErrorMessage,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? CompletedAtUtc);
+```
+
+---
+
+### FamilyDataImportStatus
+
+Статус импорта данных семейства.
+
+**Файл:** `FamilyDataImportStatus.cs`
+
+```csharp
+public enum FamilyDataImportStatus
+{
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Skipped
+}
+```
+
+---
+
+### ExtractedAttributeValue
+
+Извлечённое значение атрибута из семейства.
+
+**Файл:** `ExtractedAttributeValue.cs`
+
+```csharp
+public sealed record ExtractedAttributeValue(
+    string Id,
+    string CatalogItemId,
+    string? VersionId,
+    string AttributeId,
+    string? TypeId,
+    string? ValueText,
+    AttributeValueStatus Status,
+    DateTimeOffset ExtractedAtUtc);
+```
+
+---
+
+### AttributeValueStatus
+
+Статус извлечённого значения.
+
+**Файл:** `AttributeValueStatus.cs`
+
+```csharp
+public enum AttributeValueStatus
+{
+    Valid,
+    Missing,
+    Error
+}
+```
+
+---
+
+### AttributeScope
+
+Область применения атрибута (тип/экземпляр).
+
+**Файл:** `AttributeScope.cs`
+
+```csharp
+public enum AttributeScope
+{
+    Type,
+    Instance
+}
+```
+
+---
 
 ---
 

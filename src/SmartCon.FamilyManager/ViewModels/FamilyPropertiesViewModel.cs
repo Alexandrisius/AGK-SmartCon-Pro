@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -22,6 +23,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IFamilyDataImportRunRepository _runRepository;
     private readonly IFamilyTypeRepository _typeRepository;
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
+    private readonly IFamilyManagerViewModelFactory _viewModelFactory;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -93,7 +95,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IAttributeValueRepository valueRepository,
         IFamilyDataImportRunRepository runRepository,
         IFamilyTypeRepository typeRepository,
-        IAttributeDefinitionRepository attributeDefRepository)
+        IAttributeDefinitionRepository attributeDefRepository,
+        IFamilyManagerViewModelFactory viewModelFactory)
     {
         _catalogItemId = catalogItemId;
         _writableProvider = writableProvider;
@@ -106,6 +109,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _runRepository = runRepository;
         _typeRepository = typeRepository;
         _attributeDefRepository = attributeDefRepository;
+        _viewModelFactory = viewModelFactory;
 
         Name = name;
         Description = description;
@@ -291,7 +295,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [RelayCommand]
     private async Task PickCategory()
     {
-        var pickerVm = new CategoryPickerViewModel(_categoryRepository);
+        var pickerVm = _viewModelFactory.CreateCategoryPickerViewModel();
         await pickerVm.InitializeAsync();
         var result = _dialogService.ShowCategoryPicker(pickerVm);
         if (result is not null)

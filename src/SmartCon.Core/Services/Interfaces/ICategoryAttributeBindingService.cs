@@ -13,4 +13,6 @@ public interface ICategoryAttributeBindingService
 
     Task<IReadOnlyList<CategoryAttributeBinding>> GetBindingsForAttributeAsync(string attributeId, CancellationToken ct = default);
     Task DeleteBindingsForAttributeAsync(string attributeId, CancellationToken ct = default);
+
+    Task<IReadOnlyDictionary<string, int>> GetBindingCountsAsync(IEnumerable<string> attributeIds, CancellationToken ct = default);
 }

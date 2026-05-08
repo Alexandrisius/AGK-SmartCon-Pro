@@ -113,7 +113,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
     partial void OnSearchTextChanged(string value)
     {
-        FireAndForget(() => LoadTreeAsync());
+        _ = FireAndForgetAsync(() => LoadTreeAsync());
     }
 
     [RelayCommand]
@@ -133,7 +133,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
     [RelayCommand]
     private void Cancel() => RequestClose?.Invoke(false);
 
-    private static async void FireAndForget(Func<Task> taskFactory)
+    private static async Task FireAndForgetAsync(Func<Task> taskFactory)
     {
         try
         {

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows;
 using System.Windows.Forms;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Models.FamilyManager;
@@ -77,7 +78,7 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
         using var dialog = new FolderBrowserDialog();
         dialog.Description = title;
         if (initialDirectory is not null) dialog.SelectedPath = initialDirectory;
-        return dialog.ShowDialog() == DialogResult.OK ? dialog.SelectedPath : null;
+        return dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK ? dialog.SelectedPath : null;
     }
 
     public void ShowWarning(string title, string message) => Autodesk.Revit.UI.TaskDialog.Show(title, message);
@@ -108,6 +109,18 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
         };
         var view = new Views.ConfirmationDialogView(vm);
         return view.ShowDialog() == true;
+    }
+
+    public global::SmartCon.Core.Services.Interfaces.DialogResult ShowYesNoCancel(string title, string message)
+    {
+        var result = System.Windows.MessageBox.Show(message, title, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        return result switch
+        {
+            MessageBoxResult.Yes => Core.Services.Interfaces.DialogResult.Yes,
+            MessageBoxResult.No => Core.Services.Interfaces.DialogResult.No,
+            MessageBoxResult.Cancel => Core.Services.Interfaces.DialogResult.Cancel,
+            _ => Core.Services.Interfaces.DialogResult.None
+        };
     }
 
     public bool? ShowCategoryTreeEditor(object viewModel) => _presenter.ShowDialog(viewModel);

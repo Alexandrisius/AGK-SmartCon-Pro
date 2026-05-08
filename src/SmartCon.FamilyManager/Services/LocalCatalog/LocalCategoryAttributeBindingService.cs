@@ -195,6 +195,34 @@ internal sealed class LocalCategoryAttributeBindingService : ICategoryAttributeB
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<IReadOnlyDictionary<string, int>> GetBindingCountsAsync(IEnumerable<string> attributeIds, CancellationToken ct = default)
+    {
+        await EnsureMigratedAsync(ct);
+        var idList = attributeIds.ToList();
+        if (idList.Count == 0)
+            return new Dictionary<string, int>();
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+
+        var placeholders = string.Join(", ", idList.Select((_, i) => $"@p{i}"));
+        cmd.CommandText = $"SELECT attribute_id, COUNT(*) as cnt FROM category_attribute_bindings WHERE attribute_id IN ({placeholders}) GROUP BY attribute_id";
+        for (int i = 0; i < idList.Count; i++)
+        {
+            cmd.Parameters.Add(new SqliteParameter($"@p{i}", idList[i]));
+        }
+
+        var result = new Dictionary<string, int>();
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result[reader.GetString(0)] = reader.GetInt32(1);
+        }
+
+        return result;
+    }
+
     private static async Task<List<(CategoryAttributeBinding Binding, string Name, string? Group)>> ReadDirectBindingsWithDefinitionAsync(SqliteConnection connection, string? categoryId, CancellationToken ct)
     {
         var result = new List<(CategoryAttributeBinding, string, string?)>();

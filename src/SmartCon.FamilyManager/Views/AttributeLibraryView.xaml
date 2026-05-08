@@ -33,20 +33,20 @@
                   Style="{DynamicResource CompactDataGrid}"
                   RowStyle="{DynamicResource CompactDataGridRow}"
                   CellStyle="{DynamicResource CompactDataGridCell}"
-                  CellEditEnding="AttributesGrid_CellEditEnding">
+                  >
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
                 </Style>
             </DataGrid.ColumnHeaderStyle>
             <DataGrid.Columns>
-                <DataGridTextColumn x:Name="ColName" Header="{DynamicResource FM_AL_Name}"
+                <DataGridTextColumn x:Name="ColName"
                                     Binding="{Binding Name, UpdateSourceTrigger=LostFocus}" Width="*"
                                     ElementStyle="{StaticResource CenterCell}"/>
-                <DataGridTextColumn x:Name="ColGroup" Header="{DynamicResource FM_AL_Group}"
+                <DataGridTextColumn x:Name="ColGroup"
                                     Binding="{Binding Group, UpdateSourceTrigger=LostFocus}" Width="120"
                                     ElementStyle="{StaticResource CenterCell}"/>
-                <DataGridTemplateColumn x:Name="ColActive" Header="{DynamicResource FM_AL_Active}" Width="60">
+                <DataGridTemplateColumn x:Name="ColActive" Width="60">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <CheckBox IsChecked="{Binding IsActive, Mode=OneWay}"
@@ -72,7 +72,7 @@
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="{DynamicResource Btn_Save}" Command="{Binding SaveCommand}"
                     Style="{DynamicResource PrimaryButton}" MinWidth="80" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource Btn_Cancel}" Command="{Binding CancelCommand}"
+            <Button Content="{DynamicResource FM_AL_Close}" Command="{Binding CancelCommand}"
                     Style="{DynamicResource SecondaryButton}" MinWidth="80"/>
         </StackPanel>
     </Grid>

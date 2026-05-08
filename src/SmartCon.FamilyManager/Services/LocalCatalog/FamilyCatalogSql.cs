@@ -267,7 +267,11 @@ internal static class FamilyCatalogSql
         {CreateCategories};
         {CreateFamilyTypes};
         {CreateAttributePresets};
-        {CreateAttributePresetParameters}
+        {CreateAttributePresetParameters};
+        {CreateAttributeDefinitions};
+        {CreateCategoryAttributeBindings};
+        {CreateFamilyDataImportRuns};
+        {CreateExtractedAttributeValues}
         """;
 
     public const string CreateIndexes = """

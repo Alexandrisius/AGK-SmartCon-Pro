@@ -149,7 +149,7 @@ internal sealed class LocalFamilyMetadataPackageService : IFamilyMetadataPackage
             }
         }
 
-        if (package.Sections.Bindings && package.Categories.Count > 0)
+        if (package.Sections.Bindings)
         {
             var allCategories = await _categoryRepository.GetAllAsync(ct);
             var pathToCategory = allCategories.ToDictionary(c => c.FullPath, c => c, StringComparer.OrdinalIgnoreCase);

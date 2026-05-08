@@ -19,12 +19,6 @@ internal sealed class LocalCatalogMigrator
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
 
-        using (var journalCmd = connection.CreateCommand())
-        {
-            journalCmd.CommandText = "PRAGMA journal_mode=DELETE;";
-            await journalCmd.ExecuteNonQueryAsync(ct);
-        }
-
         using (var foreignKeysCmd = connection.CreateCommand())
         {
             foreignKeysCmd.CommandText = "PRAGMA foreign_keys=ON;";
@@ -66,12 +60,6 @@ internal sealed class LocalCatalogMigrator
 
         using var connection = _database.CreateConnection();
         connection.Open();
-
-        using (var journalCmd = connection.CreateCommand())
-        {
-            journalCmd.CommandText = "PRAGMA journal_mode=DELETE;";
-            journalCmd.ExecuteNonQuery();
-        }
 
         using (var foreignKeysCmd = connection.CreateCommand())
         {

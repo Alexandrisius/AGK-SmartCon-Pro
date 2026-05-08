@@ -759,6 +759,15 @@ UI-диалоги модуля FamilyManager.
 **Реализация:** `SmartCon.FamilyManager/Services/FamilyManagerDialogService.cs`
 
 ```csharp
+public enum DialogResult
+{
+    None,
+    OK,
+    Cancel,
+    Yes,
+    No
+}
+
 public interface IFamilyManagerDialogService
 {
     string? ShowOpenFileDialog(string title, string? initialDirectory = null);
@@ -770,6 +779,7 @@ public interface IFamilyManagerDialogService
     bool? ShowMetadataEdit(object viewModel);
     string? ShowInputDialog(string title, string prompt, string defaultText = "");
     bool ShowConfirmation(string title, string message);
+    DialogResult ShowYesNoCancel(string title, string message);
     bool? ShowCategoryTreeEditor(object viewModel);
     string? ShowCategoryPicker(object viewModel);
     string? ShowOpenJsonDialog(string title, string? initialDirectory = null);
@@ -777,6 +787,7 @@ public interface IFamilyManagerDialogService
     bool? ShowProperties(object viewModel);
     string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null);
     bool? ShowPresetEditor(object viewModel);
+    bool? ShowAttributeLibrary(object viewModel);
 }
 ```
 
@@ -803,6 +814,106 @@ CRUD для дерева категорий каталога семейств.
 
 **Файл:** `ICategoryRepository.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalCategoryRepository.cs`
+
+### IFamilyManagerViewModelFactory
+
+Factory для создания ViewModel FamilyManager с разрешёнными зависимостями (защита от DI-anti-pattern: ViewModel не запрашивают сервисы напрямую из конструктора).
+
+**Файл:** `SmartCon.FamilyManager/Services/IFamilyManagerViewModelFactory.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/FamilyManagerViewModelFactory.cs`
+
+```csharp
+public interface IFamilyManagerViewModelFactory
+{
+    FamilyMetadataEditViewModel CreateMetadataEditViewModel(
+        string catalogItemId, string name, string? description,
+        string? categoryId, string? categoryPath, IReadOnlyList<string> tags, ContentStatus contentStatus);
+    FamilyPropertiesViewModel CreatePropertiesViewModel(
+        string catalogItemId, string name, string? description,
+        string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
+        ContentStatus contentStatus, string? manufacturer, string? versionLabel,
+        string? fileSizeText, string? createdAtText, string? updatedAtText);
+    CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
+    AttributeLibraryViewModel CreateAttributeLibraryViewModel();
+    CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
+}
+```
+
+---
+
+### IAttributeDefinitionRepository
+
+CRUD для определений атрибутов (AttributeDefinition). Заменяет устаревший IAttributePresetRepository.
+
+**Файл:** `IAttributeDefinitionRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalAttributeDefinitionRepository.cs`
+
+```csharp
+public interface IAttributeDefinitionRepository
+{
+    Task<IReadOnlyList<AttributeDefinition>> GetAllAsync(CancellationToken ct = default);
+    Task<AttributeDefinition?> GetByIdAsync(string id, CancellationToken ct = default);
+    Task<AttributeDefinition?> GetByNameAsync(string name, CancellationToken ct = default);
+    Task<AttributeDefinition> CreateAsync(string name, string? group, CancellationToken ct = default);
+    Task<AttributeDefinition> UpdateAsync(string id, string? name, string? group, bool? isActive, CancellationToken ct = default);
+    Task<bool> DeleteAsync(string id, CancellationToken ct = default);
+    Task<bool> NameExistsAsync(string name, string? excludeId, CancellationToken ct = default);
+}
+```
+
+---
+
+### ICategoryAttributeBindingService
+
+Управление связями категорий с атрибутами. Поддерживает эффективные (с учётом наследования) и прямые привязки.
+
+**Файл:** `ICategoryAttributeBindingService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalCategoryAttributeBindingService.cs`
+
+```csharp
+public interface ICategoryAttributeBindingService
+{
+    Task<IReadOnlyList<CategoryAttributeBinding>> GetBindingsForCategoryAsync(string categoryId, CancellationToken ct = default);
+    Task<IReadOnlyList<EffectiveCategoryAttribute>> GetEffectiveAttributesAsync(string? categoryId, CancellationToken ct = default);
+    Task<CategoryAttributeBinding> CreateBindingAsync(string categoryId, string attributeId, int sortOrder, CancellationToken ct = default);
+    Task<bool> DeleteBindingAsync(string bindingId, CancellationToken ct = default);
+    Task<CategoryAttributeBinding> UpdateBindingAsync(string bindingId, int? sortOrder, bool? isEnabled, CancellationToken ct = default);
+    Task<IReadOnlyList<CategoryAttributeBinding>> GetDirectBindingsAsync(string categoryId, CancellationToken ct = default);
+    Task<IReadOnlyList<CategoryAttributeBinding>> GetBindingsForAttributeAsync(string attributeId, CancellationToken ct = default);
+    Task DeleteBindingsForAttributeAsync(string attributeId, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, int>> GetBindingCountsAsync(IEnumerable<string> attributeIds, CancellationToken ct = default);
+}
+```
+
+---
+
+### IFamilyMetadataPackageService
+
+Импорт/экспорт метаданных каталога (категории, атрибуты, связи) в JSON.
+
+**Файл:** `IFamilyMetadataPackageService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyMetadataPackageService.cs`
+
+```csharp
+public sealed class FamilyMetadataImportResult
+{
+    public int CategoriesImported { get; init; }
+    public int AttributesImported { get; init; }
+    public int BindingsImported { get; init; }
+    public int BindingsSkipped { get; init; }
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
+
+public interface IFamilyMetadataPackageService
+{
+    Task<FamilyMetadataPackage> ExportCategoriesAsync(CancellationToken ct = default);
+    Task<FamilyMetadataPackage> ExportAttributesAsync(CancellationToken ct = default);
+    Task<FamilyMetadataPackage> ExportFullAsync(CancellationToken ct = default);
+    Task<FamilyMetadataImportResult> ImportAsync(FamilyMetadataPackage package, CancellationToken ct = default);
+}
+```
+
+---
 
 ### IFamilyManagerExternalEvent
 

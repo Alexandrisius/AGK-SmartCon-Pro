@@ -54,21 +54,12 @@ public sealed partial class CategoryTreeEditorView : DialogWindowBase
     {
         if (DataContext is CategoryTreeEditorViewModel vm && vm.HasUnsavedChanges)
         {
-            var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes";
-            var message = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?";
-            
-            var result = System.Windows.MessageBox.Show(
-                this,
-                message,
-                title,
-                MessageBoxButton.YesNoCancel,
-                MessageBoxImage.Question);
-
-            if (result == MessageBoxResult.Cancel)
+            var result = vm.ConfirmUnsavedChanges();
+            if (result is null)
             {
                 e.Cancel = true;
             }
-            else if (result == MessageBoxResult.Yes)
+            else if (result == true)
             {
                 vm.SaveCommand.Execute(null);
             }
