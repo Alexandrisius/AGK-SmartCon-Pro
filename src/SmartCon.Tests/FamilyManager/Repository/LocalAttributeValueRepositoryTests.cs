@@ -13,7 +13,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     public LocalAttributeValueRepositoryTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
         _repo = new LocalAttributeValueRepository(_fixture.GetDatabase());
     }
 

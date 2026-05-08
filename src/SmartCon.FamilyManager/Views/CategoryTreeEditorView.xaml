@@ -103,27 +103,32 @@
                           BorderThickness="1">
                     <TreeView.ContextMenu>
                         <ContextMenu Style="{StaticResource ModernContextMenu}">
-                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"/>
-                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"/>
-                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_Delete}" Command="{Binding ContextMenuDeleteCommand}" Style="{StaticResource ModernMenuItem}"/>
+                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_Delete}" Command="{Binding ContextMenuDeleteCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
                         </ContextMenu>
                     </TreeView.ContextMenu>
                     <TreeView.ItemTemplate>
                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#x1F4C1;" Margin="0,0,4,0" FontSize="12"/>
+                                <Path Data="{StaticResource FolderIconGeometry}"
+                                       Fill="{DynamicResource TextMutedBrush}"
+                                       Width="13" Height="13"
+                                       Margin="0,0,6,0"
+                                       Stretch="Uniform"
+                                       VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding FamilyCount, StringFormat='({0})'}"
-                                           Margin="6,0,0,0" VerticalAlignment="Center"
+                                           Margin="4,0,0,0" VerticalAlignment="Center"
                                            Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
                             </StackPanel>
                         </HierarchicalDataTemplate>
                     </TreeView.ItemTemplate>
                     <TreeView.ItemContainerStyle>
-                        <Style TargetType="TreeViewItem">
-                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
-                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="TreeViewItem_PreviewMouseRightButtonDown"/>
+                        <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
+                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
+                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="TreeViewItem_PreviewMouseRightButtonDown"></EventSetter>
                         </Style>
                     </TreeView.ItemContainerStyle>
                 </TreeView>
@@ -295,11 +300,7 @@
                               x:Name="ExportSplitToggle"
                               Width="18"
                               Margin="1,0,0,0"
-                              Padding="0"
-                              Background="{DynamicResource HoverSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderAltBrush}"
-                              BorderThickness="1"
-                              Cursor="Hand">
+                              Style="{DynamicResource ModernSplitToggle}">
                     <Path Data="M 0,0 L 4,4 L 8,0"
                           Stroke="{DynamicResource TextPrimaryBrush}"
                           StrokeThickness="1.2"
@@ -311,12 +312,12 @@
                        StaysOpen="False"
                        PlacementTarget="{Binding ElementName=ExportSplitToggle}"
                        Placement="Bottom"
-                       PopupAnimation="Slide">
+                       AllowsTransparency="True">
                     <Border Background="{DynamicResource BackgroundBrush}"
                             BorderBrush="{DynamicResource BorderAltBrush}"
                             BorderThickness="1"
-                            CornerRadius="4"
-                            Padding="2">
+                            CornerRadius="6"
+                            Padding="4">
                         <StackPanel>
                             <Button Content="{DynamicResource FM_CTE_ExportTree}"
                                     Command="{Binding ExportCategoriesCommand}"
@@ -363,7 +364,7 @@
                 </Button.Style>
             </Button>
 
-            <Button Grid.Column="4" Content="{DynamicResource Btn_Cancel}"
+            <Button Grid.Column="4" Content="{DynamicResource FM_CTE_Close}"
                     Command="{Binding CancelCommand}"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"

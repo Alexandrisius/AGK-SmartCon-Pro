@@ -1,3 +1,4 @@
+using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.UI;
@@ -38,10 +39,7 @@ public sealed partial class FamilyManagerPaneControl : SWC.UserControl
         CategoryTree.PreviewMouseRightButtonDown += CategoryTree_PreviewMouseRightButtonDown;
         CategoryTree.PreviewMouseDown += CategoryTree_PreviewMouseDown;
 
-        SearchBox.TextChanged += (s, e) =>
-            SearchPlaceholder.Visibility = string.IsNullOrEmpty(SearchBox.Text)
-                ? SW.Visibility.Visible
-                : SW.Visibility.Collapsed;
+        SearchBox.TextChanged += (s, e) => UpdateSearchPlaceholder();
     }
 
     private void CategoryTree_SelectedItemChanged(object sender, SW.RoutedPropertyChangedEventArgs<object> e)
@@ -181,17 +179,25 @@ public sealed partial class FamilyManagerPaneControl : SWC.UserControl
         var categoryId = targetCategory.CategoryId == "__no_category__"
             ? null
             : targetCategory.CategoryId;
-        FireAndForget(() => vm.MoveFamilyToCategoryAsync(droppedFamily.CatalogItemId, categoryId));
+        _ = FireAndForgetAsync(() => vm.MoveFamilyToCategoryAsync(droppedFamily.CatalogItemId, categoryId));
     }
 
-    private static async void FireAndForget(Func<Task> taskFactory)
+    private void UpdateSearchPlaceholder()
+    {
+        SearchPlaceholder.Visibility = string.IsNullOrEmpty(SearchBox.Text)
+            ? SW.Visibility.Visible
+            : SW.Visibility.Collapsed;
+    }
+
+    private static async Task FireAndForgetAsync(Func<Task> taskFactory)
     {
         try
         {
             await taskFactory();
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Error($"FireAndForget: {ex}");
         }
     }
 }

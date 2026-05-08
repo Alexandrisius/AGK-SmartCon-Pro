@@ -15,7 +15,7 @@ public sealed class LocalMetadataPackageServiceTests : IDisposable
     public LocalMetadataPackageServiceTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
         _categoryRepo = new LocalCategoryRepository(_fixture.GetDatabase());
         _attrDefRepo = new LocalAttributeDefinitionRepository(_fixture.GetDatabase());
         _bindingService = new LocalCategoryAttributeBindingService(_fixture.GetDatabase(), _categoryRepo, _fixture.GetMigrator());

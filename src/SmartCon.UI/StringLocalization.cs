@@ -218,6 +218,10 @@ public static class StringLocalization
         d[Keys.FM_Status] = "Статус";
         d[Keys.FM_ImportSuccess] = "Импортировано: {0}";
         d[Keys.FM_ImportError] = "Ошибка импорта: {0}";
+        d[Keys.FM_ImportPrepareError] = "Ошибка подготовки";
+        d[Keys.FM_FamilyFileNotFound] = "Файл семейства не найден";
+        d[Keys.FM_ImportResultFormat] = "Импортировано: {0} типоразмеров, {1} значений найдено";
+        d[Keys.FM_ImportDataError] = "Ошибка импорта: {0}";
         d[Keys.FM_LoadSuccess] = "Семейство \"{0}\" загружено в проект";
         d[Keys.FM_LoadAndPlaceSuccess] = "Семейство \"{0}\" — нажмите для размещения";
         d[Keys.FM_LoadError] = "Ошибка загрузки: {0}";
@@ -591,6 +595,10 @@ public static class StringLocalization
         d[Keys.FM_Status] = "Status";
         d[Keys.FM_ImportSuccess] = "Imported: {0}";
         d[Keys.FM_ImportError] = "Import error: {0}";
+        d[Keys.FM_ImportPrepareError] = "Preparation error";
+        d[Keys.FM_FamilyFileNotFound] = "Family file not found";
+        d[Keys.FM_ImportResultFormat] = "Imported: {0} types, {1} values found";
+        d[Keys.FM_ImportDataError] = "Import error: {0}";
         d[Keys.FM_LoadSuccess] = "Family \"{0}\" loaded into project";
         d[Keys.FM_LoadAndPlaceSuccess] = "Family \"{0}\" — click to place";
         d[Keys.FM_LoadError] = "Load error: {0}";
@@ -972,6 +980,10 @@ public static class StringLocalization
         public const string FM_Status = "FM_Status";
         public const string FM_ImportSuccess = "FM_ImportSuccess";
         public const string FM_ImportError = "FM_ImportError";
+        public const string FM_ImportPrepareError = "FM_ImportPrepareError";
+        public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
+        public const string FM_ImportResultFormat = "FM_ImportResultFormat";
+        public const string FM_ImportDataError = "FM_ImportDataError";
         public const string FM_LoadSuccess = "FM_LoadSuccess";
         public const string FM_LoadAndPlaceSuccess = "FM_LoadAndPlaceSuccess";
         public const string FM_LoadError = "FM_LoadError";

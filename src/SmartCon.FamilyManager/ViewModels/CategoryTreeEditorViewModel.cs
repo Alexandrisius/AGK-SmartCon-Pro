@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -18,6 +19,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
     private readonly ICategoryAttributeBindingService _bindingService;
     private readonly IFamilyMetadataPackageService _packageService;
+    private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private List<AttributeListItemViewModel> _allAttributeItems = [];
     private readonly Dictionary<string, bool> _bindingChanges = new();
     private readonly List<CategoryNodeViewModel> _pendingCategoryDeletions = [];
@@ -36,19 +38,22 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     [ObservableProperty] private bool _isSaved;
 
     public event Action<bool?>? RequestClose;
+    public event Action? Saved;
 
     public CategoryTreeEditorViewModel(
         ICategoryRepository categoryRepository,
         IFamilyManagerDialogService dialogService,
         IAttributeDefinitionRepository attributeDefRepository,
         ICategoryAttributeBindingService bindingService,
-        IFamilyMetadataPackageService packageService)
+        IFamilyMetadataPackageService packageService,
+        IFamilyManagerViewModelFactory viewModelFactory)
     {
         _categoryRepository = categoryRepository;
         _dialogService = dialogService;
         _attributeDefRepository = attributeDefRepository;
         _bindingService = bindingService;
         _packageService = packageService;
+        _viewModelFactory = viewModelFactory;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -62,7 +67,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         if (value is not null)
         {
             SelectedCategoryPath = BuildCategoryPath(value);
-            FireAndForget(() => LoadAttributesForCategoryAsync(value));
+            _ = FireAndForgetAsync(() => LoadAttributesForCategoryAsync(value));
         }
         else
         {
@@ -443,8 +448,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     [RelayCommand]
     private async Task OpenAttributeLibraryAsync()
     {
-        var libraryVm = new AttributeLibraryViewModel(
-            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository);
+        var libraryVm = _viewModelFactory.CreateAttributeLibraryViewModel();
         await libraryVm.InitializeAsync();
         _dialogService.ShowAttributeLibrary(libraryVm);
 
@@ -884,6 +888,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             await Task.Delay(500);
             IsSaved = false;
             StatusMessage = string.Empty;
+            Saved?.Invoke();
         }
         catch (Exception ex)
         {
@@ -916,10 +921,23 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         return result;
     }
 
+    public bool? ConfirmUnsavedChanges()
+    {
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes";
+        var message = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?";
+        var result = _dialogService.ShowYesNoCancel(title, message);
+        return result switch
+        {
+            Core.Services.Interfaces.DialogResult.Yes => true,
+            Core.Services.Interfaces.DialogResult.No => false,
+            _ => null
+        };
+    }
+
     [RelayCommand]
     private void Cancel() => RequestClose?.Invoke(false);
 
-    private static async void FireAndForget(Func<Task> taskFactory)
+    private static async Task FireAndForgetAsync(Func<Task> taskFactory)
     {
         try
         {

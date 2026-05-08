@@ -13,7 +13,7 @@ public sealed class LocalAttributePresetServiceTests : IDisposable
     public LocalAttributePresetServiceTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
 
         _categoryRepository = new LocalCategoryRepository(_fixture.GetDatabase());
         _service = new LocalAttributePresetService(

@@ -16,6 +16,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyDataImportRunRepository _runRepository;
     private readonly IFamilyTypeRepository _typeRepository;
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
+    private readonly IFamilyMetadataPackageService _packageService;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -27,7 +28,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IAttributeValueRepository valueRepository,
         IFamilyDataImportRunRepository runRepository,
         IFamilyTypeRepository typeRepository,
-        IAttributeDefinitionRepository attributeDefRepository)
+        IAttributeDefinitionRepository attributeDefRepository,
+        IFamilyMetadataPackageService packageService)
     {
         _writableProvider = writableProvider;
         _categoryRepository = categoryRepository;
@@ -39,6 +41,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _runRepository = runRepository;
         _typeRepository = typeRepository;
         _attributeDefRepository = attributeDefRepository;
+        _packageService = packageService;
     }
 
     public FamilyMetadataEditViewModel CreateMetadataEditViewModel(
@@ -50,7 +53,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             categoryId: categoryId,
             categoryPath: categoryPath,
             tags, contentStatus,
-            _writableProvider, _categoryRepository, _dialogService);
+            _writableProvider, _categoryRepository, _dialogService, this);
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -64,6 +67,23 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             categoryId, categoryPath, tags, contentStatus,
             manufacturer, versionLabel, fileSizeText, createdAtText, updatedAtText,
             _writableProvider, _categoryRepository, _assetService, _presetService, _dialogService,
-            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository);
+            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this);
+    }
+
+    public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
+    {
+        return new CategoryTreeEditorViewModel(
+            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _packageService, this);
+    }
+
+    public AttributeLibraryViewModel CreateAttributeLibraryViewModel()
+    {
+        return new AttributeLibraryViewModel(
+            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository);
+    }
+
+    public CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true)
+    {
+        return new CategoryPickerViewModel(_categoryRepository, allowClear);
     }
 }

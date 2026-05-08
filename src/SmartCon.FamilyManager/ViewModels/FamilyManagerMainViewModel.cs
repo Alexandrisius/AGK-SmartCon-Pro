@@ -95,7 +95,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
 
         DetectRevitVersion();
-        FireAndForget(InitializeAsync);
+        _ = InitializeAsync();
     }
 
     private void DetectRevitVersion()
@@ -146,14 +146,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private void OnActiveDatabaseChanged(object? sender, string connectionId)
     {
         RefreshConnections();
-        FireAndForget(() => LoadTreeAsync());
+        _ = LoadTreeAsync();
     }
 
     partial void OnSearchTextChanged(string value)
     {
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
-        FireAndForget(() => LoadTreeAsync(_searchCts.Token));
+        _ = LoadTreeAsync(_searchCts.Token);
     }
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
@@ -228,7 +228,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         if (_suppressConnectionChanged) return;
         var active = _databaseManager.GetActiveConnection();
         if (active?.Id == value.Id) return;
-        FireAndForget(() => SwitchDatabaseAsync(value.Id));
+        _ = SwitchDatabaseAsync(value.Id);
     }
 
     private async Task SwitchDatabaseAsync(string connectionId)
@@ -298,9 +298,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             var expandedFamilyIds = new HashSet<string>();
             if (!expandAll) CollectExpandedIds(TreeNodes, expandedIds, expandedFamilyIds);
 
+            var itemsByCategory = results
+                .GroupBy(i => i.CategoryId ?? string.Empty)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
             foreach (var catNode in tree.GetRootNodes())
             {
-                var catVm = BuildCategoryNode(tree, catNode, results, expandAll, expandedIds);
+                var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds);
                 if (catVm is CategoryNodeViewModel { FamilyCount: > 0 }) rootNodes.Add(catVm);
             }
 
@@ -356,36 +360,45 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
     }
 
-    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyList<FamilyCatalogItem> allItems, bool expandAll, HashSet<string>? expandedIds = null)
+    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyDictionary<string, List<FamilyCatalogItem>> itemsByCategory, bool expandAll, HashSet<string>? expandedIds = null)
     {
         var vm = new CategoryNodeViewModel(catNode);
+        var familyCount = 0;
 
         foreach (var child in tree.GetChildren(catNode.Id))
         {
-            var childVm = BuildCategoryNode(tree, child, allItems, expandAll, expandedIds);
-            if (childVm is CategoryNodeViewModel { FamilyCount: > 0 }) vm.Children.Add(childVm);
-        }
-
-        foreach (var item in allItems.Where(i => i.CategoryId == catNode.Id))
-        {
-            vm.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
+            var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds);
+            if (childVm is CategoryNodeViewModel childCat)
             {
-                Id = item.Id,
-                Name = item.Name,
-                CategoryId = item.CategoryId,
-                CategoryName = catNode.FullPath,
-                Manufacturer = item.Manufacturer,
-                ContentStatus = item.ContentStatus,
-                CurrentVersionLabel = item.CurrentVersionLabel,
-                VersionLabel = item.CurrentVersionLabel,
-                UpdatedAtUtc = item.UpdatedAtUtc,
-                Tags = item.Tags,
-                Description = item.Description,
-            }));
+                if (childCat.FamilyCount > 0) vm.Children.Add(childVm);
+                familyCount += childCat.FamilyCount;
+            }
         }
 
-        vm.FamilyCount = CountFamiliesRecursive(vm);
-        if (vm.FamilyCount > 0)
+        if (itemsByCategory.TryGetValue(catNode.Id, out var items))
+        {
+            familyCount += items.Count;
+            foreach (var item in items)
+            {
+                vm.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
+                {
+                    Id = item.Id,
+                    Name = item.Name,
+                    CategoryId = item.CategoryId,
+                    CategoryName = catNode.FullPath,
+                    Manufacturer = item.Manufacturer,
+                    ContentStatus = item.ContentStatus,
+                    CurrentVersionLabel = item.CurrentVersionLabel,
+                    VersionLabel = item.CurrentVersionLabel,
+                    UpdatedAtUtc = item.UpdatedAtUtc,
+                    Tags = item.Tags,
+                    Description = item.Description,
+                }));
+            }
+        }
+
+        vm.FamilyCount = familyCount;
+        if (familyCount > 0)
         {
             if (expandAll) vm.IsExpanded = true;
             else if (expandedIds is not null && expandedIds.Contains(catNode.Id)) vm.IsExpanded = true;
@@ -423,13 +436,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenCategoryEditorAsync()
     {
-        var editorVm = new CategoryTreeEditorViewModel(_categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _packageService);
+        var editorVm = _viewModelFactory.CreateCategoryTreeEditorViewModel();
+        editorVm.Saved += () => _ = LoadTreeAsync();
         await editorVm.InitializeAsync();
-        var result = _dialogService.ShowCategoryTreeEditor(editorVm);
-        if (result == true)
-        {
-            await LoadTreeAsync();
-        }
+        _dialogService.ShowCategoryTreeEditor(editorVm);
     }
 
     [RelayCommand]
@@ -583,7 +593,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             try
             {
-                var resolved = _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).GetAwaiter().GetResult();
+                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
@@ -658,7 +668,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             try
             {
-                var resolved = _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).GetAwaiter().GetResult();
+                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
@@ -1108,14 +1118,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             if (!prepareResult.Success)
             {
-                StatusMessage = prepareResult.ErrorMessage ?? "Ошибка подготовки";
+                StatusMessage = prepareResult.ErrorMessage ?? LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
                 IsLoading = false;
                 return;
             }
 
             if (string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
             {
-                StatusMessage = "Файл семейства не найден";
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FamilyFileNotFound) ?? "Family file not found";
                 IsLoading = false;
                 return;
             }
@@ -1134,15 +1144,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                         selectedId, extractionResult, versionId, null, CancellationToken.None).GetAwaiter().GetResult();
 
                     StatusMessage = saveResult.Success
-                        ? $"Импортировано: {saveResult.TypesCount} типоразмеров, {saveResult.AttributesFoundCount} значений найдено"
-                        : $"Ошибка импорта: {saveResult.ErrorMessage}";
+                        ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0} types, {1} values found", saveResult.TypesCount, saveResult.AttributesFoundCount)
+                        : string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataError) ?? "Import error: {0}", saveResult.ErrorMessage);
 
                     FireAndForget(async () => await LoadTreeAsync());
                 }
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn($"ImportData failed: {ex.Message}");
-                    StatusMessage = $"Ошибка: {ex.Message}";
+                    StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
                 }
                 finally
                 {
@@ -1302,6 +1312,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Fire-and-forget helper for post-operations inside ExternalEvent callbacks.
+    /// MUST be async void (not async Task) — ExternalEvent handler runs on Revit UI thread
+    /// and must not capture or await any Task. See revit-api-best-practice/async-threading-patterns.md
+    /// </summary>
     private static async void FireAndForget(Func<Task> taskFactory)
     {
         try

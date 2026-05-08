@@ -15,7 +15,7 @@ public sealed class LocalCategoryAttributeBindingServiceTests : IDisposable
     public LocalCategoryAttributeBindingServiceTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
         _categoryRepository = new LocalCategoryRepository(_fixture.GetDatabase());
         _attributeDefRepo = new LocalAttributeDefinitionRepository(_fixture.GetDatabase());
         _service = new LocalCategoryAttributeBindingService(_fixture.GetDatabase(), _categoryRepository, _fixture.GetMigrator());

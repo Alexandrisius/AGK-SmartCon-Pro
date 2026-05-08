@@ -39,10 +39,11 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         try
         {
             var allDefs = await _attributeDefRepository.GetAllAsync(ct);
+            var bindingCounts = await _bindingService.GetBindingCountsAsync(allDefs.Select(d => d.Id), ct);
 
             var drafts = allDefs.Select(def =>
             {
-                var bindings = _bindingService.GetBindingsForAttributeAsync(def.Id, ct).GetAwaiter().GetResult();
+                bindingCounts.TryGetValue(def.Id, out var count);
                 return new AttributeDefinitionDraft
                 {
                     OriginalId = def.Id,
@@ -50,7 +51,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
                     Group = def.Group,
                     IsActive = def.IsActive,
                     OriginalIsActive = def.IsActive,
-                    BindingCount = bindings.Count,
+                    BindingCount = count,
                     IsNew = false,
                     IsDirty = false
                 };
@@ -119,6 +120,19 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
             LanguageManager.GetString(StringLocalization.Keys.FM_AL_DeactivateMessage) ?? "Used in {0} categories. Continue?",
             bindingCount);
         return _dialogService.ShowConfirmation(title, msg);
+    }
+
+    public bool TrySetActive(AttributeDefinitionDraft draft, bool newActive)
+    {
+        if (!newActive && !draft.IsNew && draft.BindingCount > 0)
+        {
+            if (!ConfirmDeactivation(draft.BindingCount))
+                return false;
+        }
+
+        draft.IsActive = newActive;
+        draft.IsDirty = true;
+        return true;
     }
 
     [RelayCommand]

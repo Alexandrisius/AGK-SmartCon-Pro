@@ -13,7 +13,7 @@ public sealed class LocalFamilyDataImportRunRepositoryTests : IDisposable
     public LocalFamilyDataImportRunRepositoryTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
         _repo = new LocalFamilyDataImportRunRepository(_fixture.GetDatabase());
     }
 

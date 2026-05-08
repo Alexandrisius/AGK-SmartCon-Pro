@@ -3,6 +3,7 @@ using SmartCon.Core.Models;
 using Xunit;
 using SmartCon.Core;
 
+
 using static SmartCon.Core.Units;
 namespace SmartCon.Tests.Core.Math;
 

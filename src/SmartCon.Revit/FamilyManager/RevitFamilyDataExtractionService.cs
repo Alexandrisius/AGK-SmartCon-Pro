@@ -33,7 +33,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
 
             var fm = familyDoc.FamilyManager;
 
-            var paramMap = new Dictionary<string, FamilyParameter>(StringComparer.OrdinalIgnoreCase);
+            var paramMap = new Dictionary<string, FamilyParameter>(StringComparer.Ordinal);
             foreach (FamilyParameter param in fm.Parameters)
             {
                 if (param.Definition?.Name is string name)

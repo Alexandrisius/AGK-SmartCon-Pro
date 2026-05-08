@@ -249,11 +249,7 @@
                               x:Name="ImportSplitToggle"
                               Width="18"
                               Margin="1,0,0,0"
-                              Padding="0"
-                              Background="{DynamicResource HoverSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderAltBrush}"
-                              BorderThickness="1"
-                              Cursor="Hand">
+                              Style="{DynamicResource ModernSplitToggle}">
                     <Path Data="M 0,0 L 4,4 L 8,0"
                           Stroke="{DynamicResource TextPrimaryBrush}"
                           StrokeThickness="1.2"
@@ -265,12 +261,12 @@
                        StaysOpen="False"
                        PlacementTarget="{Binding ElementName=ImportSplitToggle}"
                        Placement="Bottom"
-                       PopupAnimation="Slide">
+                       AllowsTransparency="True">
                     <Border Background="White"
                             BorderBrush="{DynamicResource BorderAltBrush}"
                             BorderThickness="1"
-                            CornerRadius="4"
-                            Padding="2">
+                            CornerRadius="6"
+                            Padding="4">
                         <StackPanel>
                             <Button Content="{DynamicResource FM_ImportFile}"
                                     Command="{Binding ImportFilesCommand}"
@@ -304,24 +300,28 @@
                   AllowDrop="True">
 
             <TreeView.Resources>
-                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
-                                 Color="{x:Static SystemColors.HighlightColor}"/>
-
                 <HierarchicalDataTemplate DataType="{x:Type vm:CategoryNodeViewModel}"
                                            ItemsSource="{Binding Children}">
-                    <StackPanel Orientation="Horizontal" Margin="2,1">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource FolderIconGeometry}"
+                               Fill="{DynamicResource TextMutedBrush}"
+                               Width="14" Height="14"
+                               Margin="0,0,6,0"
+                               Stretch="Uniform"
+                               VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding DisplayName}"
                                    FontWeight="SemiBold" FontSize="12"
                                    VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding FamilyCount, StringFormat=' ({0})'}"
                                    Foreground="{DynamicResource TextMutedBrush}"
-                                   FontSize="11" VerticalAlignment="Center"/>
+                                   FontSize="11" VerticalAlignment="Center"
+                                   Margin="4,0,0,0"/>
                     </StackPanel>
                 </HierarchicalDataTemplate>
 
                 <HierarchicalDataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}"
                                              ItemsSource="{Binding Children}">
-                    <StackPanel Orientation="Horizontal" Margin="2,1"
+                    <StackPanel Orientation="Horizontal"
                                 Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
                         <TextBlock Text="{Binding DisplayName}"
                                    VerticalAlignment="Center"/>
@@ -336,22 +336,22 @@
                                          DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
                                 <MenuItem Header="{DynamicResource FM_LoadAndPlace}"
                                           Command="{Binding LoadAndPlaceCommand}"
-                                          Style="{StaticResource ModernMenuItem}"/>
+                                          Style="{StaticResource ModernMenuItem}"></MenuItem>
                                 <MenuItem Header="{DynamicResource FM_LoadToProject}"
                                           Command="{Binding LoadToProjectCommand}"
-                                          Style="{StaticResource ModernMenuItem}"/>
+                                          Style="{StaticResource ModernMenuItem}"></MenuItem>
                                 <MenuItem Header="{DynamicResource FM_ImportData}"
                                           Command="{Binding ImportDataCommand}"
-                                          Style="{StaticResource ModernMenuItem}"/>
+                                          Style="{StaticResource ModernMenuItem}"></MenuItem>
                                 <MenuItem Header="{DynamicResource FM_Update}"
                                           Command="{Binding UpdateFamilyCommand}"
-                                          Style="{StaticResource ModernMenuItem}"/>
+                                          Style="{StaticResource ModernMenuItem}"></MenuItem>
                                 <MenuItem Header="{DynamicResource FM_Properties}"
                                           Command="{Binding OpenPropertiesCommand}"
-                                          Style="{StaticResource ModernMenuItem}"/>
+                                          Style="{StaticResource ModernMenuItem}"></MenuItem>
                                 <MenuItem Header="{DynamicResource FM_DeleteFromCatalog}"
                                           Command="{Binding DeleteFamilyCommand}"
-                                          Style="{StaticResource DangerMenuItem}"/>
+                                          Style="{StaticResource DangerMenuItem}"></MenuItem>
                             </ContextMenu>
                         </StackPanel.ContextMenu>
                     </StackPanel>
@@ -359,7 +359,6 @@
 
                 <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
                     <TextBlock Text="{Binding DisplayName}"
-                               Margin="14,1,2,1"
                                VerticalAlignment="Center"
                                Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
                         <TextBlock.ContextMenu>
@@ -368,7 +367,7 @@
                                          DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
                                 <MenuItem Header="{DynamicResource FM_PlaceType}"
                                           Command="{Binding PlaceTypeCommand}"
-                                          Style="{StaticResource ModernMenuItem}"/>
+                                          Style="{StaticResource ModernMenuItem}"></MenuItem>
                             </ContextMenu>
                         </TextBlock.ContextMenu>
                     </TextBlock>
@@ -376,23 +375,20 @@
             </TreeView.Resources>
 
             <TreeView.ItemContainerStyle>
-                <Style TargetType="TreeViewItem">
-                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
-                    <Setter Property="AllowDrop" Value="True"/>
-                    <EventSetter Event="TreeViewItem.DragOver" Handler="TreeViewItem_DragOver"/>
-                    <EventSetter Event="TreeViewItem.Drop" Handler="TreeViewItem_Drop"/>
+                <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
+                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
+                    <Setter Property="AllowDrop" Value="True"></Setter>
+                    <EventSetter Event="TreeViewItem.DragOver" Handler="TreeViewItem_DragOver"></EventSetter>
+                    <EventSetter Event="TreeViewItem.Drop" Handler="TreeViewItem_Drop"></EventSetter>
                     <Style.Triggers>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>
-                                <Condition Binding="{Binding IsSelected}" Value="False"/>
-                                <Condition Binding="{Binding IsType}" Value="True"/>
+                                <Condition Binding="{Binding IsSelected}" Value="False"></Condition>
+                                <Condition Binding="{Binding IsType}" Value="True"></Condition>
                             </MultiDataTrigger.Conditions>
-                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"></Setter>
                         </MultiDataTrigger>
-                        <Trigger Property="IsSelected" Value="True">
-                            <Setter Property="Foreground" Value="White"/>
-                        </Trigger>
                     </Style.Triggers>
                 </Style>
             </TreeView.ItemContainerStyle>
