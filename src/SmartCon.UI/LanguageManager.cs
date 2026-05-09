@@ -3,23 +3,41 @@ using SmartCon.Core.Services;
 
 namespace SmartCon.UI;
 
+/// <summary>
+/// Manages the active application language and provides the current string resources.
+/// </summary>
 public static class LanguageManager
 {
-    private static readonly List<WeakReference<Window>> _registeredWindows = [];
     private static ResourceDictionary? _currentDict;
 
+    /// <summary>
+    /// Initializes the language manager. Must be called once at application startup,
+    /// before any UI is shown.
+    /// </summary>
     public static void Initialize()
     {
+        if (Application.Current is null)
+        {
+            try { _ = new Application(); }
+            catch { /* Application already exists in another domain */ }
+        }
+
         LocalizationService.LoadSavedLanguage();
         ApplyLanguage(LocalizationService.CurrentLanguage);
         LocalizationService.LanguageChanged += OnLanguageChanged;
     }
 
+    /// <summary>
+    /// Switches the application language.
+    /// </summary>
     public static void SwitchLanguage(Language lang)
     {
         LocalizationService.SetLanguage(lang);
     }
 
+    /// <summary>
+    /// Returns the current resource dictionary containing all localized strings.
+    /// </summary>
     public static ResourceDictionary? GetCurrentStrings()
     {
         if (_currentDict is null)
@@ -27,31 +45,17 @@ public static class LanguageManager
         return _currentDict;
     }
 
+    /// <summary>
+    /// Returns the localized string for the given key, or null if not found.
+    /// </summary>
     public static string? GetString(string key)
     {
         return GetCurrentStrings()?[key] as string;
     }
 
-    public static void EnsureWindowResources(Window window)
-    {
-        var dict = GetCurrentStrings();
-        if (dict is null) return;
-
-        var existing = window.Resources.MergedDictionaries.FirstOrDefault(d =>
-            d.Contains(StringLocalization.Keys.Btn_Cancel));
-        if (existing is not null)
-            window.Resources.MergedDictionaries.Remove(existing);
-
-        window.Resources.MergedDictionaries.Add(dict);
-
-        _registeredWindows.RemoveAll(wr => !wr.TryGetTarget(out _));
-        _registeredWindows.Add(new WeakReference<Window>(window));
-    }
-
     private static void OnLanguageChanged()
     {
         ApplyLanguage(LocalizationService.CurrentLanguage);
-        RefreshAllWindows();
         LocalizationService.SaveLanguage();
     }
 
@@ -68,26 +72,6 @@ public static class LanguageManager
                 app.Resources.MergedDictionaries.Remove(old);
 
             app.Resources.MergedDictionaries.Add(_currentDict);
-        }
-    }
-
-    private static void RefreshAllWindows()
-    {
-        for (int i = _registeredWindows.Count - 1; i >= 0; i--)
-        {
-            if (!_registeredWindows[i].TryGetTarget(out var window))
-            {
-                _registeredWindows.RemoveAt(i);
-                continue;
-            }
-
-            var existing = window.Resources.MergedDictionaries.FirstOrDefault(d =>
-                d.Contains(StringLocalization.Keys.Btn_Cancel));
-            if (existing is not null)
-                window.Resources.MergedDictionaries.Remove(existing);
-
-            if (_currentDict is not null)
-                window.Resources.MergedDictionaries.Add(_currentDict);
         }
     }
 }

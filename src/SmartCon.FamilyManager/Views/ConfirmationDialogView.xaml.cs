@@ -9,7 +9,6 @@ public partial class ConfirmationDialogView : DialogWindowBase
     public ConfirmationDialogView(ConfirmationDialogViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
     }

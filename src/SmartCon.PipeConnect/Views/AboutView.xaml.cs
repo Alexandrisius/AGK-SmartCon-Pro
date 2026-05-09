@@ -10,7 +10,6 @@ public partial class AboutView : DialogWindowBase
     public AboutView(AboutViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
     }

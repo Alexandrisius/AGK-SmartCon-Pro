@@ -10,7 +10,6 @@ public partial class ExportNameDialog : DialogWindowBase
     public ExportNameDialog(ExportNameDialogViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
 
         BindCloseRequest(viewModel);

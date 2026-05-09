@@ -76,6 +76,9 @@ public static class LocalizationBehavior
 
         var dict = LanguageManager.GetCurrentStrings();
         if (dict is not null)
+        {
             element.Resources.MergedDictionaries.Add(dict);
+            element.UpdateLayout();
+        }
     }
 }

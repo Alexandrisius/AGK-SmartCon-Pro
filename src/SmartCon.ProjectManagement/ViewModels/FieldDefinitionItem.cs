@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 
 namespace SmartCon.ProjectManagement.ViewModels;
 
@@ -26,23 +27,22 @@ public sealed partial class FieldDefinitionItem : ObservableObject
     [ObservableProperty]
     private int? _maxLength;
 
-    [ObservableProperty]
-    private string _validationModeDisplay = string.Empty;
+    public string ValidationModeDisplay => ValidationMode switch
+    {
+        ValidationMode.None => LocalizationService.GetString("PM_ValMode_None") ?? "Any",
+        ValidationMode.AllowedValues => LocalizationService.GetString("PM_ValMode_List") ?? "List",
+        ValidationMode.CharCount => LocalizationService.GetString("PM_ValMode_Length") ?? "Length",
+        _ => ValidationMode.ToString()
+    };
 
     partial void OnValidationModeChanged(ValidationMode value)
     {
-        UpdateValidationModeDisplay();
+        OnPropertyChanged(nameof(ValidationModeDisplay));
     }
 
-    public void UpdateValidationModeDisplay()
+    public void RefreshValidationModeDisplay()
     {
-        ValidationModeDisplay = ValidationMode switch
-        {
-            ValidationMode.None => "Любое",
-            ValidationMode.AllowedValues => "Из списка",
-            ValidationMode.CharCount => "Длина",
-            _ => ValidationMode.ToString()
-        };
+        OnPropertyChanged(nameof(ValidationModeDisplay));
     }
 
     public FieldDefinition ToModel()
@@ -61,7 +61,7 @@ public sealed partial class FieldDefinitionItem : ObservableObject
 
     public static FieldDefinitionItem FromModel(FieldDefinition model)
     {
-        var item = new FieldDefinitionItem
+        return new FieldDefinitionItem
         {
             Name = model.Name,
             DisplayName = model.DisplayName,
@@ -71,7 +71,5 @@ public sealed partial class FieldDefinitionItem : ObservableObject
             MinLength = model.MinLength,
             MaxLength = model.MaxLength
         };
-        item.UpdateValidationModeDisplay();
-        return item;
     }
 }

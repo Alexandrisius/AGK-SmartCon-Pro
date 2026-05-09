@@ -9,7 +9,6 @@ public sealed partial class CategoryPickerView : DialogWindowBase
     public CategoryPickerView(CategoryPickerViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
     }

@@ -4,6 +4,8 @@
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        behaviors:LocalizationBehavior.AutoRefresh="True"
         Title="{DynamicResource Title_EditorSetup}"
         Width="600" Height="500"
         ResizeMode="NoResize"

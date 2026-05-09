@@ -30,3 +30,4 @@
 | [017](017-familymanager-attribute-extraction.md) | FamilyManager Attribute Extraction Foundation | accepted | 2026-05-06 |
 | [018](018-familymanager-refactoring.md) | FamilyManager Refactoring — DI Patterns, Async Safety, and Performance | accepted | 2026-05-07 |
 | [019](019-drag-drop-visual-feedback.md) | Drag & Drop Visual Feedback — Adorner-based DnD | accepted | 2026-05-09 |
+| [020](020-localization-architecture.md) | Единая архитектура локализации через LocalizationBehavior | accepted | 2026-05-09 |

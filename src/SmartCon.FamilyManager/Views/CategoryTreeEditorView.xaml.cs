@@ -10,7 +10,6 @@ public sealed partial class CategoryTreeEditorView : DialogWindowBase
     public CategoryTreeEditorView(CategoryTreeEditorViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
     }

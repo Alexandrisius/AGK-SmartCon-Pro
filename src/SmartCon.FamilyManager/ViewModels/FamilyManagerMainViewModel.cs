@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services;
@@ -39,6 +40,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly ICategoryAttributeBindingService _bindingService;
     private readonly IFamilyMetadataPackageService _packageService;
     private CancellationTokenSource? _searchCts;
+    private CategoryNodeViewModel? _noCategoryNode;
 
     [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private FamilyCatalogItemRow? _selectedItem;
@@ -94,6 +96,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _packageService = packageService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
+        LocalizationService.LanguageChanged += OnLanguageChanged;
 
         DetectRevitVersion();
         _ = InitializeAsync();
@@ -112,6 +115,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         catch (Exception ex)
         {
             SmartConLogger.Warn($"DetectRevitVersion failed: {ex.Message}");
+        }
+    }
+
+    private void OnLanguageChanged()
+    {
+        var newLabel = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
+        if (_noCategoryNode is not null)
+        {
+            _noCategoryNode.DisplayName = newLabel;
+            _noCategoryNode.FullPath = newLabel;
         }
     }
 
@@ -317,14 +330,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             var uncategorized = results.Where(r => string.IsNullOrEmpty(r.CategoryId)).ToList();
             var noCatLabel = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
-            var noCatNode = new CategoryNodeViewModel(
+            _noCategoryNode = new CategoryNodeViewModel(
                 categoryId: "__no_category__",
                 name: noCatLabel,
                 parentId: null,
                 fullPath: noCatLabel);
             foreach (var item in uncategorized)
             {
-                noCatNode.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
+                _noCategoryNode.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
                 {
                     Id = item.Id,
                     Name = item.Name,
@@ -339,9 +352,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     Description = item.Description,
                 }));
             }
-            noCatNode.FamilyCount = uncategorized.Count;
-            if (!expandAll && expandedIds.Contains("__no_category__")) noCatNode.IsExpanded = true;
-            rootNodes.Add(noCatNode);
+            _noCategoryNode.FamilyCount = uncategorized.Count;
+            if (!expandAll && expandedIds.Contains("__no_category__")) _noCategoryNode.IsExpanded = true;
+            rootNodes.Add(_noCategoryNode);
 
             try
             {

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.ProjectManagement.ViewModels;
@@ -24,13 +25,24 @@ public sealed partial class FieldLibraryViewModel : ObservableObject, IObservabl
     public FieldLibraryViewModel(IDialogPresenter dialogPresenter)
     {
         _dialogPresenter = dialogPresenter;
+        LocalizationService.LanguageChanged += OnLanguageChanged;
+    }
+
+    private void OnLanguageChanged()
+    {
+        foreach (var field in Fields)
+            field.RefreshValidationModeDisplay();
+    }
+
+    private void Unsubscribe()
+    {
+        LocalizationService.LanguageChanged -= OnLanguageChanged;
     }
 
     [RelayCommand]
     private void AddField()
     {
         var item = new FieldDefinitionItem { Name = "new_field", DisplayName = "New Field" };
-        item.UpdateValidationModeDisplay();
         Fields.Add(item);
         SelectedIndex = Fields.Count - 1;
     }
@@ -58,7 +70,6 @@ public sealed partial class FieldLibraryViewModel : ObservableObject, IObservabl
             MinLength = source.MinLength,
             MaxLength = source.MaxLength
         };
-        copy.UpdateValidationModeDisplay();
         Fields.Insert(SelectedIndex + 1, copy);
         SelectedIndex = SelectedIndex + 1;
     }
@@ -91,19 +102,20 @@ public sealed partial class FieldLibraryViewModel : ObservableObject, IObservabl
             fieldItem.MinLength = originalMin;
             fieldItem.MaxLength = originalMax;
             fieldItem.AllowedValues = originalValues;
-            fieldItem.UpdateValidationModeDisplay();
         }
     }
 
     [RelayCommand]
     private void Save()
     {
+        Unsubscribe();
         RequestClose?.Invoke(true);
     }
 
     [RelayCommand]
     private void Cancel()
     {
+        Unsubscribe();
         RequestClose?.Invoke(false);
     }
 }

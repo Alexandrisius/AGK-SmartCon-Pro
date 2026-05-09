@@ -9,7 +9,6 @@ public sealed partial class AttributeLibraryView : DialogWindowBase
     public AttributeLibraryView(AttributeLibraryViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
 

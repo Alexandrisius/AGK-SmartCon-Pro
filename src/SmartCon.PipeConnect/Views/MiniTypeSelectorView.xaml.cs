@@ -12,7 +12,6 @@ public partial class MiniTypeSelectorView : DialogWindowBase
     public MiniTypeSelectorView(MiniTypeSelectorViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
         var pos = CursorHelper.GetCursorPosition();

@@ -13,7 +13,6 @@ public partial class PipeConnectEditorView : DialogWindowBase
     public PipeConnectEditorView(PipeConnectEditorViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
         PositionNearCursor();

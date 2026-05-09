@@ -6,8 +6,8 @@
         xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        Background="{DynamicResource BackgroundBrush}">
+         behaviors:LocalizationBehavior.AutoRefresh="True"
+         Background="{DynamicResource BackgroundBrush}">
 
     <UserControl.Resources>
         <ResourceDictionary>
@@ -261,8 +261,7 @@
                           Stretch="Uniform"/>
                 </ToggleButton>
 
-                <Popup behaviors:LocalizationBehavior.AutoRefresh="True"
-                       IsOpen="{Binding IsChecked, ElementName=ImportSplitToggle, Mode=OneWay}"
+                <Popup IsOpen="{Binding IsChecked, ElementName=ImportSplitToggle, Mode=OneWay}"
                        StaysOpen="False"
                        PlacementTarget="{Binding ElementName=ImportSplitToggle}"
                        Placement="Bottom"
@@ -347,11 +346,10 @@
                                    VerticalAlignment="Center"
                                    Margin="4,0,0,0"/>
                         <StackPanel.ContextMenu>
-                            <ContextMenu behaviors:LocalizationBehavior.AutoRefresh="True"
-                                         Style="{StaticResource ModernContextMenu}"
+                            <ContextMenu Style="{StaticResource ModernContextMenu}"
                                          Focusable="False"
                                          DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                                <MenuItem Header="{DynamicResource FM_LoadAndPlace}"
+                                 <MenuItem Header="{DynamicResource FM_LoadAndPlace}"
                                           Command="{Binding LoadAndPlaceCommand}"
                                           Style="{StaticResource ModernMenuItem}"></MenuItem>
                                 <MenuItem Header="{DynamicResource FM_LoadToProject}"
@@ -379,8 +377,7 @@
                                VerticalAlignment="Center"
                                Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
                         <TextBlock.ContextMenu>
-                            <ContextMenu behaviors:LocalizationBehavior.AutoRefresh="True"
-                                         Style="{StaticResource ModernContextMenu}"
+                            <ContextMenu Style="{StaticResource ModernContextMenu}"
                                          Focusable="False"
                                          DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
                                 <MenuItem Header="{DynamicResource FM_PlaceType}"
