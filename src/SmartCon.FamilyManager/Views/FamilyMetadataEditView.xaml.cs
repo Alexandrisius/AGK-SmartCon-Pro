@@ -9,7 +9,6 @@ public partial class FamilyMetadataEditView : DialogWindowBase
     public FamilyMetadataEditView(FamilyMetadataEditViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
     }

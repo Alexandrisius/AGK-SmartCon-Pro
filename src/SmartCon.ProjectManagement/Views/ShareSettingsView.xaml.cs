@@ -10,7 +10,6 @@ public partial class ShareSettingsView : DialogWindowBase
     public ShareSettingsView(ShareSettingsViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
 
         ColIndex.Header = LocalizationService.GetString("PM_Col_Index");

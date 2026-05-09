@@ -5,6 +5,7 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        behaviors:LocalizationBehavior.AutoRefresh="True"
         Title="{DynamicResource FM_CTE_CategoriesAndAttrs}"
         Width="850" Height="580" MinWidth="700" MinHeight="450"
         WindowStartupLocation="CenterScreen"
@@ -148,8 +149,7 @@
                             </i:EventTrigger>
                         </i:Interaction.Triggers>
                         <TreeView.ContextMenu>
-                            <ContextMenu behaviors:LocalizationBehavior.AutoRefresh="True"
-                                         Style="{StaticResource ModernContextMenu}">
+                            <ContextMenu Style="{StaticResource ModernContextMenu}">
                                 <MenuItem Header="{DynamicResource FM_CTE_NewCategory}" Command="{Binding AddRootCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
                             </ContextMenu>
                         </TreeView.ContextMenu>
@@ -158,8 +158,7 @@
                                 <StackPanel Orientation="Horizontal"
                                             Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
                                     <StackPanel.ContextMenu>
-                                        <ContextMenu behaviors:LocalizationBehavior.AutoRefresh="True"
-                                                     Style="{StaticResource ModernContextMenu}"
+                                        <ContextMenu Style="{StaticResource ModernContextMenu}"
                                                      DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
                                             <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
                                             <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
@@ -394,8 +393,7 @@
                           Stretch="Uniform"/>
                 </ToggleButton>
 
-                <Popup behaviors:LocalizationBehavior.AutoRefresh="True"
-                       IsOpen="{Binding IsChecked, ElementName=ExportSplitToggle, Mode=OneWay}"
+                <Popup IsOpen="{Binding IsChecked, ElementName=ExportSplitToggle, Mode=OneWay}"
                        StaysOpen="False"
                        PlacementTarget="{Binding ElementName=ExportSplitToggle}"
                        Placement="Bottom"

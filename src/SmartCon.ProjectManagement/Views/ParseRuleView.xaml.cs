@@ -10,7 +10,6 @@ public partial class ParseRuleView : DialogWindowBase
     public ParseRuleView(ParseRuleViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
 
         BindCloseRequest(viewModel);

@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        behaviors:LocalizationBehavior.AutoRefresh="True"
         Title="{DynamicResource PM_Title_Settings}"
         Width="750" Height="620" MinWidth="650" MinHeight="520"
         WindowStartupLocation="CenterScreen"

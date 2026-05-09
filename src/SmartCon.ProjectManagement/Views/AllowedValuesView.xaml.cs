@@ -10,7 +10,6 @@ public partial class AllowedValuesView : DialogWindowBase
     public AllowedValuesView(AllowedValuesViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
 
         BindCloseRequest(viewModel);

@@ -11,7 +11,6 @@ public partial class FamilySelectorView : DialogWindowBase
     public FamilySelectorView(FamilySelectorViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
     }

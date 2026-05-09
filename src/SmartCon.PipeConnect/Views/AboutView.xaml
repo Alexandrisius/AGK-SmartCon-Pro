@@ -4,6 +4,8 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:conv="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        behaviors:LocalizationBehavior.AutoRefresh="True"
         Title="{DynamicResource Title_About}"
         Width="520" Height="520" MinHeight="400"
         WindowStartupLocation="CenterScreen"

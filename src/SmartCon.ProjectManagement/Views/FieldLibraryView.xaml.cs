@@ -11,7 +11,6 @@ public partial class FieldLibraryView : DialogWindowBase
     public FieldLibraryView(FieldLibraryViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
 
         ColFieldName.Header = LocalizationService.GetString("PM_Col_FieldName");
