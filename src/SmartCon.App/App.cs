@@ -34,13 +34,13 @@ public sealed class App : IExternalApplication
             ApplyUpdaterSelfUpdate();
             CleanupStalePendingUpdate();
             ServiceLocator.Initialize(application);
+            LanguageManager.Initialize();
 
             var fmProvider = ServiceHost.GetService<FamilyManagerPaneProvider>();
             var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
             application.RegisterDockablePane(fmPaneId, "Family Manager", fmProvider);
 
             RibbonBuilder.CreateRibbon(application);
-            LanguageManager.Initialize();
 
             return Result.Succeeded;
         }
