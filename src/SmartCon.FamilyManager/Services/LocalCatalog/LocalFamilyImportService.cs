@@ -211,7 +211,8 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
                     RevitMajorVersion: detectedVersion,
                     Category: request.Category,
                     Tags: request.Tags,
-                    Description: request.Description);
+                    Description: request.Description,
+                    CategoryId: request.CategoryId);
 
                 var result = await ImportFileAsync(importRequest, ct);
                 results.Add(result);
@@ -488,14 +489,15 @@ internal sealed class LocalFamilyImportService : IFamilyImportService
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, manufacturer, content_status, current_version_label, published_by, created_at_utc, updated_at_utc)
-            VALUES (@id, @name, @normalizedName, @description, @categoryName, @manufacturer, @status, @versionLabel, @publishedBy, @createdAtUtc, @updatedAtUtc)
+            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, category_id, manufacturer, content_status, current_version_label, published_by, created_at_utc, updated_at_utc)
+            VALUES (@id, @name, @normalizedName, @description, @categoryName, @categoryId, @manufacturer, @status, @versionLabel, @publishedBy, @createdAtUtc, @updatedAtUtc)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@name", Path.GetFileNameWithoutExtension(request.FilePath)));
         cmd.Parameters.Add(new SqliteParameter("@normalizedName", normalizedName));
         cmd.Parameters.Add(new SqliteParameter("@description", request.Description ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@categoryName", request.Category ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@categoryId", request.CategoryId ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@manufacturer", DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@status", ContentStatus.Active.ToString()));
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));

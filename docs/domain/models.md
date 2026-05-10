@@ -1174,7 +1174,8 @@ public sealed record FamilyImportRequest(
     int RevitMajorVersion,
     string? Category,
     IReadOnlyList<string>? Tags,
-    string? Description);
+    string? Description,
+    string? CategoryId = null);
 ```
 
 ---
@@ -1230,7 +1231,8 @@ public sealed record FamilyFolderImportRequest(
     bool Recursive,
     string? Category,
     IReadOnlyList<string>? Tags,
-    string? Description);
+    string? Description,
+    string? CategoryId = null);
 ```
 
 ---

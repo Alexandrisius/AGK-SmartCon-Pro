@@ -9,9 +9,11 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Category">User-assigned category.</param>
 /// <param name="Tags">User-assigned tags.</param>
 /// <param name="Description">User-assigned description.</param>
+/// <param name="CategoryId">User-assigned category identifier (from categories table).</param>
 public sealed record FamilyImportRequest(
     string FilePath,
     int RevitMajorVersion,
     string? Category,
     IReadOnlyList<string>? Tags,
-    string? Description);
+    string? Description,
+    string? CategoryId = null);
