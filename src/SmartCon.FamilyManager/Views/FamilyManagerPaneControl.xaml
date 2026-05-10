@@ -391,12 +391,30 @@
 
             <TreeView.ItemContainerStyle>
                 <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
+                    <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}" />
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
                     <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
                     <Setter Property="AllowDrop" Value="False"></Setter>
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding IsCategory}" Value="True">
                             <Setter Property="AllowDrop" Value="True"></Setter>
+                            <Setter Property="ContextMenu">
+                                <Setter.Value>
+                                    <ContextMenu Style="{StaticResource ModernContextMenu}"
+                                                 DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                                        <MenuItem Header="{DynamicResource FM_ImportFileToCategory}"
+                                                  Command="{Binding ImportFileToCategoryCommand}"
+                                                  Style="{StaticResource ModernMenuItem}" />
+                                        <MenuItem Header="{DynamicResource FM_ImportFolderToCategory}"
+                                                  Command="{Binding ImportFolderToCategoryCommand}"
+                                                  Style="{StaticResource ModernMenuItem}" />
+                                        <Separator />
+                                        <MenuItem Header="{DynamicResource FM_ImportDataForCategory}"
+                                                  Command="{Binding ImportDataForCategoryCommand}"
+                                                  Style="{StaticResource ModernMenuItem}" />
+                                    </ContextMenu>
+                                </Setter.Value>
+                            </Setter>
                         </DataTrigger>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>

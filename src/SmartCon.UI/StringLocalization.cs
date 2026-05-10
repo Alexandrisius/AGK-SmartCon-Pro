@@ -222,6 +222,11 @@ public static class StringLocalization
         d[Keys.FM_FamilyFileNotFound] = "Файл семейства не найден";
         d[Keys.FM_ImportResultFormat] = "Импортировано: {0} типоразмеров, {1} значений найдено";
         d[Keys.FM_ImportDataError] = "Ошибка импорта: {0}";
+        d[Keys.FM_ImportFileToCategory] = "Импорт файла";
+        d[Keys.FM_ImportFolderToCategory] = "Импорт папки";
+        d[Keys.FM_ImportDataForCategory] = "Импорт данных";
+        d[Keys.FM_ImportDataProgress] = "Обработка {0} из {1}: {2}";
+        d[Keys.FM_NoFamiliesInCategory] = "В категории нет семейств";
         d[Keys.FM_LoadSuccess] = "Семейство \"{0}\" загружено в проект";
         d[Keys.FM_LoadAndPlaceSuccess] = "Семейство \"{0}\" — нажмите для размещения";
         d[Keys.FM_LoadError] = "Ошибка загрузки: {0}";
@@ -599,6 +604,11 @@ public static class StringLocalization
         d[Keys.FM_FamilyFileNotFound] = "Family file not found";
         d[Keys.FM_ImportResultFormat] = "Imported: {0} types, {1} values found";
         d[Keys.FM_ImportDataError] = "Import error: {0}";
+        d[Keys.FM_ImportFileToCategory] = "Import file";
+        d[Keys.FM_ImportFolderToCategory] = "Import folder";
+        d[Keys.FM_ImportDataForCategory] = "Import data";
+        d[Keys.FM_ImportDataProgress] = "Processing {0} of {1}: {2}";
+        d[Keys.FM_NoFamiliesInCategory] = "No families in category";
         d[Keys.FM_LoadSuccess] = "Family \"{0}\" loaded into project";
         d[Keys.FM_LoadAndPlaceSuccess] = "Family \"{0}\" — click to place";
         d[Keys.FM_LoadError] = "Load error: {0}";
@@ -984,6 +994,11 @@ public static class StringLocalization
         public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
         public const string FM_ImportResultFormat = "FM_ImportResultFormat";
         public const string FM_ImportDataError = "FM_ImportDataError";
+        public const string FM_ImportFileToCategory = "FM_ImportFileToCategory";
+        public const string FM_ImportFolderToCategory = "FM_ImportFolderToCategory";
+        public const string FM_ImportDataForCategory = "FM_ImportDataForCategory";
+        public const string FM_ImportDataProgress = "FM_ImportDataProgress";
+        public const string FM_NoFamiliesInCategory = "FM_NoFamiliesInCategory";
         public const string FM_LoadSuccess = "FM_LoadSuccess";
         public const string FM_LoadAndPlaceSuccess = "FM_LoadAndPlaceSuccess";
         public const string FM_LoadError = "FM_LoadError";
