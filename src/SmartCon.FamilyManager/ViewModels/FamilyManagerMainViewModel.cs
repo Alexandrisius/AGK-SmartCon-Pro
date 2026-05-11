@@ -1602,7 +1602,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             if (node is FamilyLeafNodeViewModel leaf && batch.TryGetValue(leaf.CatalogItemId, out var types))
             {
                 foreach (var t in types)
-                    leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                {
+                    if (!string.IsNullOrWhiteSpace(t.Name))
+                        leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                }
 
                 if (expandedFamilyIds.Contains(leaf.CatalogItemId))
                     leaf.IsExpanded = true;
