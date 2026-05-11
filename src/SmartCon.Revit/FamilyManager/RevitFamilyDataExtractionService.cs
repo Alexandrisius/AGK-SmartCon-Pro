@@ -54,11 +54,9 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             SmartConLogger.Freeze($"Extract: Found {paramMap.Count} parameters");
 
             var types = new List<FamilyExtractionTypeValues>();
+            var typeIndex = 0;
             foreach (FamilyType familyType in fm.Types)
             {
-                if (string.IsNullOrWhiteSpace(familyType.Name))
-                    continue;
-
                 var values = new List<FamilyExtractionValueResult>();
 
                 foreach (var expectedName in expectedParameterNames)
@@ -68,13 +66,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 }
 
                 types.Add(new FamilyExtractionTypeValues(
-                    familyType.Name, 0, values));
-            }
-
-            types.Sort((a, b) => string.Compare(a.TypeName, b.TypeName, StringComparison.OrdinalIgnoreCase));
-            for (var i = 0; i < types.Count; i++)
-            {
-                types[i] = types[i] with { SortOrder = i };
+                    familyType.Name, typeIndex++, values));
             }
 
             SmartConLogger.Freeze($"Extract: Extracted {types.Count} types");
