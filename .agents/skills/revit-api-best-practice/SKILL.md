@@ -147,3 +147,10 @@ private void OpenDialog()
 **Symptoms:** UI freeze after loading old-version families, process hangs on exit  
 **Fix:** `Marshal.ReleaseComObject(doc)` after `OpenDocumentFile` + `Close(false)`  
 **Details:** [Async & Threading → Family Upgrade Freeze Bug](references/async-threading-patterns.md#family-upgrade-freeze-bug)
+
+### C# Record `with` Expression Freeze (STA Thread)
+
+**Affected:** Any Revit plugin using `record with` inside loops on UI thread  
+**Symptoms:** UI freezes after `for`/`while` loop with `record with`, no exception  
+**Fix:** Use LINQ `Select` or constructor instead of `with` in loops  
+**Details:** [Record `with` Freeze Bug](references/record-with-freeze.md)
