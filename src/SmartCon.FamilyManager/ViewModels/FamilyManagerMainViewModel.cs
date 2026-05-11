@@ -759,6 +759,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             {
                 try
                 {
+                    SmartConLogger.FreezeThreadPool("ImportDataForCategory.ExternalEvent.Start");
                     var successCount = 0;
                     var errorCount = 0;
 
@@ -771,17 +772,20 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Processing {0} of {1}: {2}",
                                 i + 1, preparedItems.Count, item.Name);
 
-                            var extractionResult = _extractionService.Extract(item.FilePath!, item.ParamNames);
+                            var extractionResult = SmartConLogger.FreezeTimer($"ImportDataForCategory.Extract[{item.Name}]", () =>
+                                _extractionService.Extract(item.FilePath!, item.ParamNames));
 
-                            _dataImportService.SaveExtractionResultAsync(
-                                item.CatalogItemId, extractionResult, item.VersionId, null, CancellationToken.None)
-                                .ConfigureAwait(false).GetAwaiter().GetResult();
+                            SmartConLogger.FreezeTimer($"ImportDataForCategory.SaveResult[{item.Name}]", () =>
+                                _dataImportService.SaveExtractionResultAsync(
+                                    item.CatalogItemId, extractionResult, item.VersionId, null, CancellationToken.None)
+                                    .ConfigureAwait(false).GetAwaiter().GetResult());
 
                             successCount++;
                         }
                         catch (Exception ex)
                         {
                             errorCount++;
+                            SmartConLogger.Freeze($"ImportDataForCategory: Failed for {item.Name} - {ex.Message}");
                             SmartConLogger.Warn($"ImportData failed for {item.Name}: {ex.Message}");
                         }
                     }
@@ -790,10 +794,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                         LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0} types, {1} values found",
                         $"{successCount}/{preparedItems.Count} families", "see log");
 
+                    SmartConLogger.Freeze($"ImportDataForCategory: Completed {successCount}/{preparedItems.Count}");
+
                     FireAndForget(async () => await LoadTreeAsync());
                 }
                 catch (Exception ex)
                 {
+                    SmartConLogger.Freeze($"ImportDataForCategory: Exception - {ex.GetType().Name}: {ex.Message}");
                     SmartConLogger.Warn($"ImportDataForCategory failed: {ex.Message}");
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
@@ -902,24 +909,32 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             try
             {
-                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                SmartConLogger.FreezeThreadPool("LoadAndPlace.Start");
+
+                var resolved = SmartConLogger.FreezeTimer("LoadAndPlace.ResolveFile", () =>
+                    Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult());
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
                     StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoVersionSelected) ?? "No version available";
+                    SmartConLogger.Freeze("LoadAndPlace: No version available");
                     return;
                 }
 
                 var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName };
-                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
+                var result = SmartConLogger.FreezeTimer("LoadAndPlace.LoadFamily", () =>
+                    _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult());
 
                 if (!result.Success)
                 {
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                         result.ErrorMessage);
+                    SmartConLogger.Freeze($"LoadAndPlace: Load failed - {result.ErrorMessage}");
                     return;
                 }
+
+                SmartConLogger.Freeze($"LoadAndPlace: Family '{result.FamilyName}' loaded successfully");
 
                 var familyName = result.FamilyName ?? selectedName;
 
@@ -969,12 +984,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     CreatedAtUtc: DateTimeOffset.UtcNow);
 
                 FireAndForget(() => _usageRepo.RecordUsageAsync(usage, CancellationToken.None));
+                SmartConLogger.Freeze("LoadAndPlace: Completed successfully");
             }
             catch (Exception ex)
             {
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                     ex.Message);
+                SmartConLogger.Freeze($"LoadAndPlace: Exception - {ex.GetType().Name}: {ex.Message}");
             }
         });
     }
@@ -1333,31 +1350,46 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             try
             {
+                SmartConLogger.FreezeThreadPool("ExtractTypes.Start");
+
                 var family = FindLoadedFamily(doc, selectedName);
 
                 if (family is not null)
                 {
                     var names = ReadFamilyTypeNames(doc, family);
+                    SmartConLogger.Freeze($"ExtractTypes: Family already loaded, found {names.Count} types");
                     if (names.Count > 0)
                         FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, names));
                     return;
                 }
 
-                var resolved = _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).GetAwaiter().GetResult();
-                if (string.IsNullOrEmpty(resolved.AbsolutePath)) return;
+                var resolved = SmartConLogger.FreezeTimer("ExtractTypes.ResolveFile", () =>
+                    _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).GetAwaiter().GetResult());
+
+                if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                {
+                    SmartConLogger.Freeze("ExtractTypes: No file resolved");
+                    return;
+                }
 
                 List<string>? typeNames = null;
-                _transactionService.RunAndRollback("Extract Types", d =>
+                SmartConLogger.FreezeTimer("ExtractTypes.LoadFamily", () =>
                 {
-                    if (!d.LoadFamily(resolved.AbsolutePath, new SimpleFamilyLoadOptions(), out var loaded) || loaded is null) return;
-                    typeNames = ReadFamilyTypeNames(d, loaded);
+                    _transactionService.RunAndRollback("Extract Types", d =>
+                    {
+                        if (!d.LoadFamily(resolved.AbsolutePath, new SimpleFamilyLoadOptions(), out var loaded) || loaded is null) return;
+                        typeNames = ReadFamilyTypeNames(d, loaded);
+                    });
                 });
+
+                SmartConLogger.Freeze($"ExtractTypes: Extracted {typeNames?.Count ?? 0} types");
 
                 if (typeNames is not null && typeNames.Count > 0)
                     FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames));
             }
             catch (Exception ex)
             {
+                SmartConLogger.Freeze($"ExtractTypes: Exception - {ex.GetType().Name}: {ex.Message}");
                 SmartConLogger.Warn($"ExtractTypes failed: {ex.Message}");
             }
         });
@@ -1400,21 +1432,30 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
             {
                 try
                 {
-                    var extractionResult = _extractionService.Extract(rfaPath!, paramNames);
+                    SmartConLogger.FreezeThreadPool("ImportData.ExternalEvent.Start");
 
-                    var saveResult = _dataImportService.SaveExtractionResultAsync(
-                        selectedId, extractionResult, versionId, null, CancellationToken.None).GetAwaiter().GetResult();
+                    var extractionResult = SmartConLogger.FreezeTimer("ImportData.Extract", () =>
+                        _extractionService.Extract(rfaPath!, paramNames));
+
+                    var saveResult = SmartConLogger.FreezeTimer("ImportData.SaveResult", () =>
+                        _dataImportService.SaveExtractionResultAsync(
+                            selectedId, extractionResult, versionId, null, CancellationToken.None).GetAwaiter().GetResult());
 
                     StatusMessage = saveResult.Success
                         ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0} types, {1} values found", saveResult.TypesCount, saveResult.AttributesFoundCount)
                         : string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataError) ?? "Import error: {0}", saveResult.ErrorMessage);
 
+                    SmartConLogger.Freeze($"ImportData: Success={saveResult.Success}, Types={saveResult.TypesCount}");
+
                     FireAndForget(async () => await LoadTreeAsync());
                 }
                 catch (Exception ex)
                 {
+                    SmartConLogger.Freeze($"ImportData: Exception - {ex.GetType().Name}: {ex.Message}");
                     SmartConLogger.Warn($"ImportData failed: {ex.Message}");
-                    StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
+                        ex.Message);
                 }
                 finally
                 {
@@ -1445,17 +1486,30 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
             try
             {
+                SmartConLogger.FreezeThreadPool("PlaceType.Start");
+
                 var family = FindLoadedFamily(doc, familyName);
 
                 if (family is null)
                 {
-                    var resolved = _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None).GetAwaiter().GetResult();
-                    if (string.IsNullOrEmpty(resolved.AbsolutePath)) return;
+                    var resolved = SmartConLogger.FreezeTimer("PlaceType.ResolveFile", () =>
+                        _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None).GetAwaiter().GetResult());
+
+                    if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                    {
+                        SmartConLogger.Freeze("PlaceType: No file resolved");
+                        return;
+                    }
 
                     var loadOptions = FamilyLoadOptions.Default with { PreferredName = familyName };
-                    _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
+                    SmartConLogger.FreezeTimer("PlaceType.LoadFamily", () =>
+                        _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult());
 
                     family = FindLoadedFamily(doc, familyName);
+                }
+                else
+                {
+                    SmartConLogger.Freeze("PlaceType: Family already loaded");
                 }
 
                 if (family is null) return;

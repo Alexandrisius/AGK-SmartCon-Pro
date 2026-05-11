@@ -136,5 +136,14 @@ private void OpenDialog()
 ## Resources
 
 - [Core API Patterns](references/core-patterns.md) - 11 essential code patterns
-- [Async & Threading](references/async-threading-patterns.md) - Deadlock prevention
+- [Async & Threading](references/async-threading-patterns.md) - Deadlock prevention and COM cleanup
 - [SmartCon Invariants](docs/invariants.md) - Project-specific rules (I-01..I-13)
+
+## Known Bugs & Workarounds
+
+### Revit Family Upgrade Freeze (REVIT-237190)
+
+**Affected:** Revit 2023 < 2023.1.8, Revit 2025 < 2025.4.3  
+**Symptoms:** UI freeze after loading old-version families, process hangs on exit  
+**Fix:** `Marshal.ReleaseComObject(doc)` after `OpenDocumentFile` + `Close(false)`  
+**Details:** [Async & Threading → Family Upgrade Freeze Bug](references/async-threading-patterns.md#family-upgrade-freeze-bug)

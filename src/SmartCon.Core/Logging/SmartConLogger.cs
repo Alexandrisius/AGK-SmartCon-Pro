@@ -11,6 +11,7 @@ public static class SmartConLogger
     private static readonly string LogPath = Path.Combine(LogDir, "smartcon.log");
     private static readonly string LookupLogPath = Path.Combine(LogDir, "lookup-diagnostic.log");
     private static readonly string FormulaLogPath = Path.Combine(LogDir, "formula-diagnostic.log");
+    private static readonly string FreezeLogPath = Path.Combine(LogDir, "freeze-diagnostic.log");
 
     private static readonly object _lock = new();
 
@@ -22,6 +23,7 @@ public static class SmartConLogger
     private static StreamWriter? _mainWriterField;
     private static StreamWriter? _lookupWriterField;
     private static StreamWriter? _formulaWriterField;
+    private static StreamWriter? _freezeWriterField;
 
     static SmartConLogger()
     {
@@ -104,6 +106,48 @@ public static class SmartConLogger
     public static void FormulaOk(string operation, string formula, string detail)
     {
         WriteFormula(" OK", $"[{operation}] '{formula}' → {detail}");
+    }
+
+    public static void Freeze(string message) => WriteFreeze("FRZ", message);
+
+    public static void FreezeThreadPool(string operation)
+    {
+        ThreadPool.GetMaxThreads(out var maxWorker, out var maxIo);
+        ThreadPool.GetAvailableThreads(out var availWorker, out var availIo);
+        ThreadPool.GetMinThreads(out var minWorker, out var minIo);
+
+        WriteFreeze("THR", $"[{operation}] ThreadPool — Available: {availWorker}/{maxWorker} workers, {availIo}/{maxIo} IO | Min: {minWorker}/{minIo}");
+    }
+
+    public static void FreezeTimer(string operation, Action action)
+    {
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            action();
+            WriteFreeze("TIM", $"[{operation}] Completed in {sw.Elapsed.TotalMilliseconds:F1}ms");
+        }
+        catch (Exception ex)
+        {
+            WriteFreeze("ERR", $"[{operation}] Failed after {sw.Elapsed.TotalMilliseconds:F1}ms: {ex.Message}");
+            throw;
+        }
+    }
+
+    public static T FreezeTimer<T>(string operation, Func<T> func)
+    {
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var result = func();
+            WriteFreeze("TIM", $"[{operation}] Completed in {sw.Elapsed.TotalMilliseconds:F1}ms");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            WriteFreeze("ERR", $"[{operation}] Failed after {sw.Elapsed.TotalMilliseconds:F1}ms: {ex.Message}");
+            throw;
+        }
     }
 
     public static void FormulaFail(string operation, string formula, string reason)
@@ -189,6 +233,19 @@ public static class SmartConLogger
             {
                 _formulaWriterField ??= CreateWriter(FormulaLogPath);
                 _formulaWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
+            }
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
+    }
+
+    private static void WriteFreeze(string level, string message)
+    {
+        try
+        {
+            lock (_lock)
+            {
+                _freezeWriterField ??= CreateWriter(FreezeLogPath);
+                _freezeWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
             }
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
