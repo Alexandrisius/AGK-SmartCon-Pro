@@ -302,3 +302,218 @@ var result = Task.Run(() =>
 - [ ] Post-operations → Use `FireAndForget()`
 - [ ] Never use `.Result` or `.GetResult()` on async without `Task.Run()`
 - [ ] Never wrap Revit API in `Task.Run()`
+
+---
+
+## The #3 Fatal Bug: Family Upgrade Freeze (COM/Finalizer Deadlock)
+
+### Overview
+
+**Bug ID:** Autodesk REVIT-237190, REVIT-236376  
+**Affected Versions:** Revit 2023 < 2023.1.8, Revit 2025 < 2025.4.3, Revit 2026 < 2026.3  
+**Fixed In:** Revit 2023.1.8+, Revit 2025.4.3+, Revit 2026.3+  
+**Platform:** Windows 11 (primary), Windows 10 (less frequent)
+
+### Root Cause
+
+When `Application.OpenDocumentFile()` or `Document.LoadFamily()` triggers a **family upgrade dialog** (old .rfa version → current Revit version), Revit's COM message pump enters a corrupted state. The finalizer thread becomes permanently blocked trying to cleanup the RCW (Runtime Callable Wrapper) for the `Document` COM object.
+
+**Why it accumulates:**
+- Single upgrade dialog → COM cleanup queued to finalizer → usually succeeds
+- 5+ consecutive upgrades → finalizer queue overwhelmed → possible freeze
+- 10+ consecutive upgrades → **guaranteed freeze**
+
+**Symptoms:**
+1. Revit UI stutters (2-3 sec delays on every click/selection)
+2. WPF render thread dies — UI controls don't redraw until mouse hover/resize (see StackOverflow #68688249)
+3. Process remains in Task Manager after window close
+4. Frequency: ~0.1% for single `LoadFamily`, 100% for batch `OpenDocumentFile` × 10+
+
+**Note:** The freeze is NOT classic async deadlock (UI thread is not blocked). Revit's COM message pump is corrupted, affecting both the finalizer thread and WPF render thread. Moving the mouse or resizing the window temporarily "wakes up" the render thread, but the underlying COM corruption remains.
+
+**Relationship to #2 Fatal Bug:** Both bugs cause UI freeze, but through different mechanisms. #2 is a classic sync-over-async deadlock (UI thread blocked waiting for Task). #3 is COM corruption in RevitMFC.dll (UI thread is free but finalizer/render threads are dead). The same family upgrade dialog can trigger EITHER symptom depending on your code pattern.
+
+### Fix 1: Marshal.ReleaseComObject (OpenDocumentFile)
+
+**Applies to:** `RevitFamilyDataExtractionService.Extract()` — temporary documents
+
+```csharp
+Document? familyDoc = null;
+try
+{
+    familyDoc = app.OpenDocumentFile(rfaFilePath);
+    // ... extract data ...
+}
+finally
+{
+    if (familyDoc != null)
+    {
+        familyDoc.Close(false);
+        // FORCE immediate COM cleanup, bypass finalizer
+        Marshal.ReleaseComObject(familyDoc);
+    }
+}
+```
+
+**Why this works:**
+- `ReleaseComObject` decrements COM reference count synchronously in current thread
+- COM object destroyed immediately, before finalizer ever sees it
+- Prevents finalizer thread from touching corrupted RCW
+
+**Important:** Even without explicit `GC.WaitForPendingFinalizers`, many .NET operations internally wait for the finalizer thread (e.g., `Thread.Join()`, certain lock operations, memory allocations under pressure). Once the finalizer is blocked, any such operation on the main thread will also hang Revit. `ReleaseComObject` bypasses the finalizer entirely, eliminating the root cause.
+
+**Why NOT for LoadFamily:**
+- `LoadFamily` loads `Family` into current project — persistent element
+- `ReleaseComObject(family)` would crash Revit (AV) — object lifetime managed by Revit
+- Workarounds for `LoadFamily`:
+  - **User-paced operations** (natural pauses between clicks)
+  - **Pre-converting families** before catalog import (see below)
+  - **Load via temporary Document** (see workaround below)
+  - Upgrading Revit to fixed version
+
+### Workaround: Load Family via Temporary Document
+
+If you need batch `LoadFamily` without upgrade dialog, open the .rfa in a temporary `Document` first, then load it into the target document. The temporary Document uses `ReleaseComObject`, so the upgrade dialog's COM corruption is cleaned up immediately:
+
+```csharp
+Document? famDoc = null;
+try
+{
+    famDoc = app.OpenDocumentFile(rfaFilePath);
+    
+    // Load from temp document into current project
+    // (upgrade dialog happens in temp doc context)
+    famDoc.LoadFamily(doc, new FamilyLoadOptions());
+}
+finally
+{
+    if (famDoc != null)
+    {
+        famDoc.Close(false);
+        Marshal.ReleaseComObject(famDoc); // ← cleanup upgrade dialog COM state
+    }
+}
+```
+
+**Trade-offs:**
+- Slower than direct `LoadFamily` (opens document twice)
+- More memory during operation
+- Eliminates upgrade dialog in target document
+- Must still add natural pauses or pre-convert for very large batches
+
+### Pre-Convert Families (Batch Upgrade)
+
+**When to use:** Catalog import of many old-version families
+
+```csharp
+Document? familyDoc = null;
+try
+{
+    using var basicInfo = BasicFileInfo.Extract(rfaPath);
+    if (!basicInfo.IsSavedInCurrentVersion)
+    {
+        familyDoc = app.OpenDocumentFile(rfaPath);
+        var upgradedPath = Path.Combine(storagePath, $"{name}_{targetVersion}.rfa");
+        familyDoc.SaveAs(upgradedPath);
+        // Store upgradedPath in database
+    }
+}
+finally
+{
+    if (familyDoc != null)
+    {
+        familyDoc.Close(false);
+        Marshal.ReleaseComObject(familyDoc); // ← REQUIRED during batch conversion
+    }
+}
+```
+
+**Alternative:** Use Autodesk Design Automation API to batch-upgrade families server-side, avoiding the bug entirely.
+
+**Benefits:**
+- Eliminates upgrade dialog entirely during normal operations
+- Faster `LoadFamily` (no conversion overhead)
+- Works around bug for ALL Revit versions
+- **Critical:** Must use `ReleaseComObject` during batch conversion, or the converter itself will freeze
+
+### User-Paced Operations
+
+**Applies to:** `LoadAndPlace` — single family selection
+
+**Why LoadAndPlace rarely freezes:**
+1. User selects one family → upgrade dialog → COM cleanup
+2. User thinks, scrolls, selects next family → **natural pause**
+3. During pause, finalizer catches up with queued cleanups
+4. Next upgrade dialog starts with clean COM state
+
+**The problem with ImportData:**
+```csharp
+// WRONG — blocks UI thread immediately after Extract
+_externalEvent.Raise(() =>
+{
+    var result = _extractionService.Extract(rfaPath, paramNames);
+    // Upgrade dialog just closed, COM cleanup pending...
+    _dataImportService.SaveExtractionResultAsync(result)
+        .GetAwaiter().GetResult(); // ← BLOCKS UI thread!
+    // Next Extract starts before previous cleanup finishes
+});
+```
+
+**Solution:** Separate Revit API from blocking work. The key is: **do NOT block UI thread after Extract**. The `Task.Delay` is optional — it gives Revit breathing room, but the real fix is `ReleaseComObject` inside `Extract`:
+
+```csharp
+// CORRECT — Extract only, queue result
+_externalEvent.Raise(() =>
+{
+    var result = _extractionService.Extract(rfaPath, paramNames);
+    _pendingResults.Enqueue((id, result, versionId));
+});
+
+// Process queue asynchronously on current thread (WPF Dispatcher)
+// FireAndForget MUST be async void (see #2 Fatal Bug above)
+FireAndForget(async () =>
+{
+    while (_pendingResults.TryDequeue(out var item))
+    {
+        await _dataImportService.SaveExtractionResultAsync(...);
+    }
+});
+```
+
+**Why this works:**
+1. `Extract` uses `OpenDocumentFile` + `Close(false)` + `ReleaseComObject` → COM cleanup is synchronous
+2. ExternalEvent handler returns immediately after Enqueue → UI thread is free
+3. SQLite save runs in `FireAndForget` (async void) on WPF VM thread → no UI blocking
+4. Even without `Task.Delay`, consecutive `Extract` calls are safe because `ReleaseComObject` forces cleanup
+
+### Diagnostic Log Pattern
+
+```
+[FRZ] Extract: Starting OpenDocumentFile for 'ADSK_xxx.rfa'
+[FRZ] Extract: OpenDocumentFile completed in 1200.5ms
+[FRZ] Extract: Starting Close
+[FRZ] Extract: Close completed in 50.2ms
+[FRZ] Extract: Starting ReleaseComObject
+[FRZ] Extract: ReleaseComObject completed, remaining refs=0, time=2.1ms
+```
+
+If freeze occurs, log stops after `Close` or `ReleaseComObject` never completes.
+
+### COM Interop Cleanup Rules
+
+| Scenario | Pattern | Notes |
+|---|---|---|
+| Temporary `Document` (OpenDocumentFile) | `Close(false)` + `Marshal.ReleaseComObject(doc)` | Force immediate cleanup |
+| `Family` from `LoadFamily` | **NEVER** ReleaseComObject | Managed by Revit, persistent in project |
+| `Element` references | Store `ElementId` only | Re-query via `doc.GetElement(id)` |
+| `UIApplication`/`UIDocument` | Never ReleaseComObject | Owned by Revit framework |
+
+### References
+
+- [Autodesk: Revit 2026 hangs after upgrading a family](https://forums.autodesk.com/t5/revit-api-forum/revit-2026-hangs-after-upgrading-a-family/td-p/13613818) — **Root cause confirmed**: finalizer thread blocked forever cleaning up RCW after upgrade dialog. "The problematic function is located inside RevitMFC.dll."
+- [Autodesk: Revit freezing after upgrading and importing](https://forums.autodesk.com/t5/revit-api-forum/revit-freezing-after-upgrading-and-importing-a-family-symbol/td-p/13816835) — **Windows 11 specific**: affects Revit 2023-2025, cumulative effect
+- [Autodesk: Revit Freezes While Upgrading Programmatically](https://forums.autodesk.com/t5/revit-api-forum/revit-freezes-while-upgrading-programmatically-to-a-newest/td-p/13781378) — Fixed in Revit 2023.1.8+
+- [Autodesk: Loading a rfa file into a document using LoadFamily() freezes Revit UI](https://forums.autodesk.com/t5/revit-api-forum/loading-a-rfa-file-into-a-document-using-loadfamily-freezes/td-p/8955088) — Ribbon freeze, WPF render thread death. "For us the only solution was converting our families in batch"
+- [StackOverflow: Revit addins Window stops responding after family upgrade](https://stackoverflow.com/questions/68688249/revit-addins-window-stops-responding-after-family-upgrade) — WPF render thread freeze, not UI thread
+- [The Building Coder: Upgrading Family Files Silently](https://jeremytammik.github.io/tbc/a/1183_silent_upgrade.htm) — Jeremy Tammik: `BasicFileInfo.Extract()`, ADN file updater, pre-conversion approach
+- [The Building Coder: Modifying, saving and reloading families](https://jeremytammik.github.io/tbc/a/1214_mod_reload_family.htm) — `EditFamily`, `LoadFamily` with `IFamilyLoadOptions`

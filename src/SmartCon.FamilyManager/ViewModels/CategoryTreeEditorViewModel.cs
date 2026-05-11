@@ -67,6 +67,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         if (value is not null)
         {
             SelectedCategoryPath = BuildCategoryPath(value);
+            SmartConLogger.Freeze("CategoryTreeEditor: FireAndForgetAsync.LoadAttributesForCategoryAsync");
+            SmartConLogger.FreezeThreadPool("CategoryTreeEditor.Before.FireAndForgetAsync");
             _ = FireAndForgetAsync(() => LoadAttributesForCategoryAsync(value));
         }
         else

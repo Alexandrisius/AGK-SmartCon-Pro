@@ -113,6 +113,8 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
     partial void OnSearchTextChanged(string value)
     {
+        SmartConLogger.Freeze("CategoryPicker: FireAndForgetAsync.LoadTreeAsync");
+        SmartConLogger.FreezeThreadPool("CategoryPicker.Before.FireAndForgetAsync");
         _ = FireAndForgetAsync(() => LoadTreeAsync());
     }
 
