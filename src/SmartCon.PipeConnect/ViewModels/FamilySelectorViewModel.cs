@@ -10,7 +10,7 @@ namespace SmartCon.PipeConnect.ViewModels;
 /// ViewModel модального окна выбора семейств фитингов для правила маппинга (3C).
 /// Два списка: доступные (отсортированы A→Z) и выбранные (порядок = приоритет).
 /// </summary>
-public sealed partial class FamilySelectorViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class FamilySelectorViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel
 {
     public ObservableCollection<string> AvailableFamilies { get; }
     public ObservableCollection<string> SelectedFamilies { get; } = [];
@@ -119,6 +119,12 @@ public sealed partial class FamilySelectorViewModel : ObservableObject, IObserva
     {
         Confirmed = true;
         RequestClose?.Invoke(null);
+    }
+
+    public void ConfirmClose(CloseConfirmationArgs args)
+    {
+        args.Cancel = true;
+        args.DeferredAction = Cancel;
     }
 
     [RelayCommand]

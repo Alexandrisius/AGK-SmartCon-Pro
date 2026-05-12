@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Windows;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
@@ -16,16 +15,6 @@ public partial class PipeConnectEditorView : DialogWindowBase
         DataContext = viewModel;
         BindCloseRequest(viewModel);
         PositionNearCursor();
-    }
-
-    protected override void OnUserInitiatedClose(CancelEventArgs e)
-    {
-        if (DataContext is PipeConnectEditorViewModel vm && vm.IsSessionActive)
-        {
-            e.Cancel = true;
-            if (!vm.IsBusy && !vm.IsClosing)
-                Dispatcher.BeginInvoke(() => vm.Cancel());
-        }
     }
 
     private void PositionNearCursor()

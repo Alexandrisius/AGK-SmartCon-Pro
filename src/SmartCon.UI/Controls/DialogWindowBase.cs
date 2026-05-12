@@ -57,10 +57,5 @@ public class DialogWindowBase : Window
         {
             CustomDialogResult = false;
         }
-
-    }
-
-    protected virtual void OnUserInitiatedClose(CancelEventArgs e)
-    {
     }
 }

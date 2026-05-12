@@ -5,7 +5,7 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-public sealed partial class MiniTypeSelectorViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class MiniTypeSelectorViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel
 {
     [ObservableProperty]
     private ConnectorTypeDefinition? _selectedType;
@@ -23,6 +23,12 @@ public sealed partial class MiniTypeSelectorViewModel : ObservableObject, IObser
     private void Select()
     {
         RequestClose?.Invoke(null);
+    }
+
+    public void ConfirmClose(CloseConfirmationArgs args)
+    {
+        args.Cancel = true;
+        args.DeferredAction = Cancel;
     }
 
     [RelayCommand]

@@ -336,7 +336,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
     }
 
-    private async Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata)
+    private Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata)
     {
         try
         {
@@ -346,18 +346,18 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
             var relativePath = _pathResolver.GetRelativePath(absolutePath);
             SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
-            return new CopyResult(true, relativePath, null);
+            return Task.FromResult(new CopyResult(true, relativePath, null));
         }
         catch (Exception ex)
         {
             SmartConLogger.Info($"[Import] Copy FAILED: {ex.Message}");
-            return new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}");
+            return Task.FromResult(new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}"));
         }
     }
 
-    private async Task CleanupFileAsync(string? relativePath)
+    private Task CleanupFileAsync(string? relativePath)
     {
-        if (string.IsNullOrEmpty(relativePath)) return;
+        if (string.IsNullOrEmpty(relativePath)) return Task.CompletedTask;
         try
         {
             var absPath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
@@ -368,6 +368,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         {
             // ignored
         }
+        return Task.CompletedTask;
     }
 
     private readonly record struct CopyResult(bool Success, string? RelativePath, string? ErrorMessage);

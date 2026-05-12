@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
 using SmartCon.UI;
@@ -13,14 +12,5 @@ public partial class FamilySelectorView : DialogWindowBase
         InitializeComponent();
         DataContext = viewModel;
         BindCloseRequest(viewModel);
-    }
-
-    protected override void OnUserInitiatedClose(CancelEventArgs e)
-    {
-        if (DataContext is FamilySelectorViewModel vm)
-        {
-            e.Cancel = true;
-            Dispatcher.BeginInvoke(() => vm.CancelCommand.Execute(null));
-        }
     }
 }

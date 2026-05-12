@@ -85,7 +85,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     }
 
     [RelayCommand]
-    private async Task DeleteAsync()
+    private void Delete()
     {
         if (SelectedItem is null) return;
 
@@ -229,7 +229,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     [RelayCommand]
     private void Cancel() => RequestClose?.Invoke(false);
 
-    public async Task HandleInlineRenameAsync(string itemId, string newName)
+    public void HandleInlineRename(string itemId, string newName)
     {
         var draft = Items.FirstOrDefault(d => d.OriginalId == itemId || (d.IsNew && d == SelectedItem));
         if (draft is not null)
@@ -239,7 +239,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         }
     }
 
-    public async Task HandleInlineGroupChangeAsync(string itemId, string? newGroup)
+    public void HandleInlineGroupChange(string itemId, string? newGroup)
     {
         var draft = Items.FirstOrDefault(d => d.OriginalId == itemId || (d.IsNew && d == SelectedItem));
         if (draft is not null)

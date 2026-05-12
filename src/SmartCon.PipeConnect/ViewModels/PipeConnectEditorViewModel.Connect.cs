@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
 using SmartCon.Core.Compatibility;
 
@@ -83,6 +84,14 @@ public sealed partial class PipeConnectEditorViewModel
             IsSessionActive = false;
             RequestClose?.Invoke(null);
         }
+    }
+
+    public void ConfirmClose(CloseConfirmationArgs args)
+    {
+        if (!IsSessionActive) return;
+        args.Cancel = true;
+        if (!IsBusy && !IsClosing)
+            args.DeferredAction = Cancel;
     }
 
     [RelayCommand]
