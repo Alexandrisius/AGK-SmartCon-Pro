@@ -197,6 +197,9 @@ dotnet_diagnostic.CA1863.severity = suggestion
 # CA1869: Cache and reuse JsonSerializerOptions
 dotnet_diagnostic.CA1869.severity = suggestion
 
+# CA1862: Use StringComparison overload — not available in net48, already handled via #if
+dotnet_diagnostic.CA1862.severity = none
+
 # CA2263: Prefer generic Enum.Parse/GetValues — not available in net48
 dotnet_diagnostic.CA2263.severity = none
 
