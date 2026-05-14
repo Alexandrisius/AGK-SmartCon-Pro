@@ -4,7 +4,7 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{Binding Title}"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterScreen"
@@ -27,7 +27,7 @@
         <TextBlock Grid.Row="0"
                    Text="{Binding Prompt}"
                    Margin="0,0,0,8"
-                   Foreground="{DynamicResource TextBrush}"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
                    TextWrapping="Wrap"/>
 
         <TextBox Grid.Row="1"
@@ -41,12 +41,12 @@
         <StackPanel Grid.Row="2"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right">
-            <Button Content="{DynamicResource Btn_OK}"
+            <Button Content="{loc:Loc Btn_OK}"
                     Command="{Binding OkCommand}"
                     MinWidth="70"
                     Margin="0,0,8,0"
                     Style="{DynamicResource PrimaryButton}"/>
-            <Button Content="{DynamicResource Btn_Cancel}"
+            <Button Content="{loc:Loc Btn_Cancel}"
                     Command="{Binding CancelCommand}"
                     MinWidth="70"
                     Style="{DynamicResource SecondaryButton}"/>

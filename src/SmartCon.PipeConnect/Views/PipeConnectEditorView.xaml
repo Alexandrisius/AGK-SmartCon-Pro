@@ -4,9 +4,8 @@
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        Title="{DynamicResource Title_EditorSetup}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc Title_EditorSetup}"
         Width="600" Height="500"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
@@ -41,7 +40,7 @@
 
             <!-- Заголовок -->
             <TextBlock Grid.Row="0"
-                        Text="{DynamicResource Heading_EditorSetup}"
+                        Text="{loc:Loc Heading_EditorSetup}"
                        Style="{DynamicResource HeadingText}"
                        HorizontalAlignment="Center"/>
 
@@ -60,7 +59,7 @@
                         Style="{DynamicResource IconButton}"
                         Width="36" Height="36"
                         Command="{Binding RotateLeftCommand}"
-                         ToolTip="{DynamicResource Tip_RotateCCW}"/>
+                         ToolTip="{loc:Loc Tip_RotateCCW}"/>
 
                 <Border Grid.Column="2"
                         Background="{DynamicResource SurfaceBrush}" CornerRadius="4"
@@ -72,7 +71,7 @@
                              FontSize="15" Foreground="{DynamicResource TextPrimaryBrush}"
                              Background="Transparent" BorderThickness="0"
                              IsEnabled="{Binding IsSessionActive}"
-                             Width="90" ToolTip="{DynamicResource Tip_RotationAngle}"/>
+                             Width="90" ToolTip="{loc:Loc Tip_RotationAngle}"/>
                 </Border>
 
                 <Button Grid.Column="4"
@@ -80,7 +79,7 @@
                         Style="{DynamicResource IconButton}"
                         Width="36" Height="36"
                         Command="{Binding RotateRightCommand}"
-                         ToolTip="{DynamicResource Tip_RotateCW}"/>
+                         ToolTip="{loc:Loc Tip_RotateCW}"/>
             </Grid>
 
             <!-- Изменить соединение -->
@@ -90,9 +89,9 @@
                     HorizontalAlignment="Center"
                     Width="190"
                     Command="{Binding CycleConnectorCommand}"
-                    ToolTip="{DynamicResource Tip_ChangeConnection}"
+                    ToolTip="{loc:Loc Tip_ChangeConnection}"
                     Style="{DynamicResource PrimaryButton}">
-                <TextBlock TextAlignment="Center" FontSize="12" Text="{DynamicResource Btn_ChangeConnection}"/>
+                <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ChangeConnection}"/>
             </Button>
 
             <!-- Размер dynamic -->
@@ -107,7 +106,7 @@
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0"
-                               Text="{DynamicResource Label_Size}"
+                               Text="{loc:Loc Label_Size}"
                                Style="{DynamicResource LabelText}"
                                VerticalAlignment="Center"
                                Width="58"/>
@@ -118,13 +117,13 @@
                               DisplayMemberPath="DisplayName"
                               IsEnabled="{Binding IsSessionActive}"
                               Style="{DynamicResource CompactComboBox}"
-                              ToolTip="{DynamicResource Tip_AvailableSizes}"/>
+                              ToolTip="{loc:Loc Tip_AvailableSizes}"/>
 
                     <Button Grid.Column="4"
-                            Content="{DynamicResource Btn_Change}"
+                            Content="{loc:Loc Btn_Change}"
                             Style="{DynamicResource PrimaryButton}"
                             Command="{Binding ChangeDynamicSizeCommand}"
-                            ToolTip="{DynamicResource Tip_ChangeSize}"/>
+                            ToolTip="{loc:Loc Tip_ChangeSize}"/>
                 </Grid>
             </StackPanel>
 
@@ -141,7 +140,7 @@
                 <Button Grid.Column="0" Content="&#x21C5;" Width="28" Height="28"
                         Command="{Binding ReflectFittingCtcCommand}"
                         Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
-                         ToolTip="{DynamicResource Tip_FittingCtc}"/>
+                         ToolTip="{loc:Loc Tip_FittingCtc}"/>
 
                 <ComboBox Grid.Column="2"
                           ItemsSource="{Binding AvailableFittings}"
@@ -149,13 +148,13 @@
                           DisplayMemberPath="DisplayName"
                           IsEnabled="{Binding IsSessionActive}"
                           Style="{DynamicResource CompactComboBox}"
-                          ToolTip="{DynamicResource Tip_SelectFitting}"/>
+                          ToolTip="{loc:Loc Tip_SelectFitting}"/>
 
                 <Button Grid.Column="4"
-                        Content="{DynamicResource Btn_Insert}"
+                        Content="{loc:Loc Btn_Insert}"
                         Style="{DynamicResource PrimaryButton}"
                         Command="{Binding InsertFittingCommand}"
-                        ToolTip="{DynamicResource Tip_InsertFitting}"/>
+                        ToolTip="{loc:Loc Tip_InsertFitting}"/>
             </Grid>
 
             <!-- Переходник (reducer) -->
@@ -172,7 +171,7 @@
                 <Button Grid.Column="0" Content="&#x21C5;" Width="28" Height="28"
                         Command="{Binding ReflectReducerCtcCommand}"
                         Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
-                        ToolTip="{DynamicResource Tip_ReducerCtc}"/>
+                        ToolTip="{loc:Loc Tip_ReducerCtc}"/>
 
                 <ComboBox Grid.Column="2"
                           ItemsSource="{Binding AvailableReducers}"
@@ -180,13 +179,13 @@
                           DisplayMemberPath="DisplayName"
                           IsEnabled="{Binding IsSessionActive}"
                           Style="{DynamicResource CompactComboBox}"
-                          ToolTip="{DynamicResource Tip_SelectReducer}"/>
+                          ToolTip="{loc:Loc Tip_SelectReducer}"/>
 
                 <Button Grid.Column="4"
-                        Content="{DynamicResource Btn_Insert}"
+                        Content="{loc:Loc Btn_Insert}"
                         Style="{DynamicResource PrimaryButton}"
                         Command="{Binding InsertReducerCommand}"
-                        ToolTip="{DynamicResource Tip_InsertReducer}"/>
+                        ToolTip="{loc:Loc Tip_InsertReducer}"/>
             </Grid>
 
             <!-- Глубина цепочки -->
@@ -201,22 +200,22 @@
                     <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{DynamicResource Label_Network}"
+                <TextBlock Grid.Column="0" Text="{loc:Loc Label_Network}"
                            VerticalAlignment="Center" Foreground="#444" FontSize="12"/>
                 <Button Grid.Column="2" Content="−" Width="28" Height="28"
                         Command="{Binding DecrementChainDepthCommand}"
                         Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
-                         ToolTip="{DynamicResource Tip_ChainDecrement}"/>
+                         ToolTip="{loc:Loc Tip_ChainDecrement}"/>
                 <Button Grid.Column="4" Content="+" Width="28" Height="28"
                         Command="{Binding IncrementChainDepthCommand}"
                         Style="{DynamicResource IconButton}" FontSize="14" Padding="0"
-                         ToolTip="{DynamicResource Tip_ChainIncrement}"/>
+                         ToolTip="{loc:Loc Tip_ChainIncrement}"/>
                 <Button Grid.Column="6"
-                        Content="{DynamicResource Btn_ConnectAll}" Height="28"
+                        Content="{loc:Loc Btn_ConnectAll}" Height="28"
                         Padding="10,0"
                         Command="{Binding ConnectAllChainCommand}"
                         Style="{DynamicResource PrimaryButton}"
-                        ToolTip="{DynamicResource Tip_ConnectAll}"/>
+                        ToolTip="{loc:Loc Tip_ConnectAll}"/>
             </Grid>
 
             <!-- Статус -->
@@ -256,13 +255,13 @@
                     <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="{DynamicResource Status_Active}"/>
+                                <Setter Property="Text" Value="{loc:Loc Status_Active}"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsBusy}" Value="True">
-                                            <Setter Property="Text" Value="{DynamicResource Status_Processing}"/>
+                                            <Setter Property="Text" Value="{loc:Loc Status_Processing}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsSessionActive}" Value="False">
-                                            <Setter Property="Text" Value="{DynamicResource Status_SessionEnded}"/>
+                                            <Setter Property="Text" Value="{loc:Loc Status_SessionEnded}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -271,7 +270,7 @@
                 </StackPanel>
 
                 <Button Grid.Column="1"
-                        Content="{DynamicResource Btn_Cancel}"
+                        Content="{loc:Loc Btn_Cancel}"
                         Width="85" Height="28"
                         Padding="0"
                         Command="{Binding CancelCommand}"
@@ -279,13 +278,13 @@
                         Style="{DynamicResource SecondaryButton}"/>
 
                 <Button Grid.Column="3"
-                        Content="{DynamicResource Btn_Connect}"
+                        Content="{loc:Loc Btn_Connect}"
                         Width="105" Height="28"
                         Padding="0"
                         Command="{Binding ConnectCommand}"
                         IsDefault="True"
                         FontWeight="SemiBold"
-                        ToolTip="{DynamicResource Tip_Connect}"
+                        ToolTip="{loc:Loc Tip_Connect}"
                         Style="{DynamicResource AccentButton}"/>
             </Grid>
         </Grid>

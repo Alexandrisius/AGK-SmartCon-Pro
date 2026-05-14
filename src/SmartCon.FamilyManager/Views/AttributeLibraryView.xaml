@@ -4,8 +4,8 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        Title="{DynamicResource FM_AL_Title}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_AL_Title}"
         Width="700" Height="480" MinWidth="550" MinHeight="350"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -63,9 +63,9 @@
         </DataGrid>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0">
-            <Button Content="{DynamicResource FM_AL_Add}" Command="{Binding AddAttributeCommand}"
+            <Button Content="{loc:Loc FM_AL_Add}" Command="{Binding AddAttributeCommand}"
                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource FM_AL_Delete}" Command="{Binding DeleteCommand}"
+            <Button Content="{loc:Loc FM_AL_Delete}" Command="{Binding DeleteCommand}"
                     Style="{DynamicResource SecondaryButton}"/>
         </StackPanel>
 
@@ -73,9 +73,9 @@
                    Margin="0,6,0,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="{DynamicResource Btn_Save}" Command="{Binding SaveCommand}"
+            <Button Content="{loc:Loc Btn_Save}" Command="{Binding SaveCommand}"
                     Style="{DynamicResource PrimaryButton}" MinWidth="80" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource FM_AL_Close}" Command="{Binding CancelCommand}"
+            <Button Content="{loc:Loc FM_AL_Close}" Command="{Binding CancelCommand}"
                     Style="{DynamicResource SecondaryButton}" MinWidth="80"/>
         </StackPanel>
     </Grid>

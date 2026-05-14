@@ -3,8 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{Binding Title}"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterScreen"
@@ -31,12 +30,12 @@
         <StackPanel Grid.Row="1"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right">
-            <Button Content="{DynamicResource Btn_Yes}"
+            <Button Content="{loc:Loc Btn_Yes}"
                     Command="{Binding YesCommand}"
                     MinWidth="70"
                     Margin="0,0,8,0"
                     Style="{DynamicResource PrimaryButton}"/>
-            <Button Content="{DynamicResource Btn_No}"
+            <Button Content="{loc:Loc Btn_No}"
                     Command="{Binding NoCommand}"
                     MinWidth="70"
                     Style="{DynamicResource SecondaryButton}"/>

@@ -3,9 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        Title="{DynamicResource FM_Title_MetadataEdit}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_Title_MetadataEdit}"
         Width="420" Height="420" MinHeight="340"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -29,14 +28,14 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,8">
-            <TextBlock Text="{DynamicResource FM_Name}" Margin="0,0,0,4"
+            <TextBlock Text="{loc:Loc FM_Name}" Margin="0,0,0,4"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Padding="4,2"
                      Style="{DynamicResource CompactTextBox}"/>
         </StackPanel>
 
         <StackPanel Grid.Row="1" Margin="0,0,0,8">
-            <TextBlock Text="{DynamicResource FM_Description}" Margin="0,0,0,4"
+            <TextBlock Text="{loc:Loc FM_Description}" Margin="0,0,0,4"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
                      AcceptsReturn="True" TextWrapping="Wrap"
@@ -46,7 +45,7 @@
         </StackPanel>
 
         <StackPanel Grid.Row="2" Margin="0,0,0,8">
-            <TextBlock Text="{DynamicResource FM_Category}" Margin="0,0,0,4"
+            <TextBlock Text="{loc:Loc FM_Category}" Margin="0,0,0,4"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -63,14 +62,14 @@
         </StackPanel>
 
         <StackPanel Grid.Row="3" Margin="0,0,0,8">
-            <TextBlock Text="{DynamicResource FM_Tags}" Margin="0,0,0,4"
+            <TextBlock Text="{loc:Loc FM_Tags}" Margin="0,0,0,4"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}" Padding="4,2"
                      Style="{DynamicResource CompactTextBox}"/>
         </StackPanel>
 
         <StackPanel Grid.Row="4" Margin="0,0,0,8">
-            <TextBlock Text="{DynamicResource FM_Status}" Margin="0,0,0,4"
+            <TextBlock Text="{loc:Loc FM_Status}" Margin="0,0,0,4"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
             <ComboBox ItemsSource="{Binding AvailableStatuses}"
                        SelectedItem="{Binding ContentStatus}"
@@ -85,13 +84,13 @@
             </Grid.ColumnDefinitions>
 
             <Button Grid.Column="0"
-                    Content="{DynamicResource FM_Save}"
+                    Content="{loc:Loc FM_Save}"
                     Command="{Binding SaveCommand}"
                     MinWidth="80"
                     Style="{DynamicResource PrimaryButton}"/>
 
             <Button Grid.Column="2"
-                    Content="{DynamicResource FM_Cancel}"
+                    Content="{loc:Loc FM_Cancel}"
                     Command="{Binding CancelCommand}"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"/>

@@ -3,9 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        Title="Share Project"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc PM_Title_Settings}"
         Width="520" SizeToContent="Height" MinWidth="420"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
@@ -32,7 +31,7 @@
         <TextBlock Grid.Row="0" Margin="0,0,0,8"
                    Foreground="{DynamicResource TextPrimaryBrush}"
                    TextWrapping="Wrap">
-            <Run Text="{DynamicResource PM_ExportName_CurrentLabel}" FontWeight="Bold"/>
+            <Run Text="{loc:Loc PM_ExportName_CurrentLabel}" FontWeight="Bold"/>
             <Run Text="{Binding CurrentFileName, Mode=OneWay}"/>
         </TextBlock>
 
@@ -44,7 +43,7 @@
         <TextBlock Grid.Row="2" Margin="0,0,0,8"
                    Foreground="{DynamicResource TextPrimaryBrush}"
                    FontWeight="Bold"
-                   Text="{DynamicResource PM_ExportName_FillFields}"/>
+                   Text="{loc:Loc PM_ExportName_FillFields}"/>
 
         <ItemsControl Grid.Row="3" ItemsSource="{Binding Fields}">
             <ItemsControl.ItemTemplate>
@@ -93,18 +92,18 @@
 
         <StackPanel Grid.Row="5" Margin="0,0,0,12">
             <TextBlock Foreground="{DynamicResource TextPrimaryBrush}" FontWeight="Bold">
-                <Run Text="{DynamicResource PM_ExportName_Preview}"/>
+                <Run Text="{loc:Loc PM_ExportName_Preview}"/>
                 <Run Text="{Binding PreviewFileName, Mode=OneWay}"/>
             </TextBlock>
         </StackPanel>
 
         <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="{DynamicResource Btn_Export}"
+            <Button Content="{loc:Loc Btn_Export}"
                     Command="{Binding ExportCommand}"
                     IsEnabled="{Binding IsValid}"
                     Margin="0,0,8,0"
                     MinWidth="80" MinHeight="28"/>
-            <Button Content="{DynamicResource Btn_Cancel}"
+            <Button Content="{loc:Loc Btn_Cancel}"
                     Command="{Binding CancelCommand}"
                     MinWidth="80" MinHeight="28"/>
         </StackPanel>

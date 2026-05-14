@@ -4,9 +4,9 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        Title="{DynamicResource FM_CTE_CategoriesAndAttrs}"
+        Title="{loc:Loc FM_CTE_CategoriesAndAttrs}"
         Width="850" Height="580" MinWidth="700" MinHeight="450"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -114,7 +114,6 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Рабочая зона -->
         <Border Grid.Row="0"
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource BorderAltBrush}"
@@ -127,10 +126,9 @@
                     <ColumnDefinition Width="*" MinWidth="300"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Левая панель: Дерево -->
                 <DockPanel Grid.Column="0" Margin="12">
                     <TextBlock DockPanel.Dock="Top" 
-                               Text="{DynamicResource FM_CTE_CategoryTree}"
+                               Text="{loc:Loc FM_CTE_CategoryTree}"
                                FontWeight="SemiBold" 
                                FontSize="12"
                                Margin="0,0,0,8"
@@ -150,7 +148,7 @@
                         </i:Interaction.Triggers>
                         <TreeView.ContextMenu>
                             <ContextMenu Style="{StaticResource ModernContextMenu}">
-                                <MenuItem Header="{DynamicResource FM_CTE_NewCategory}" Command="{Binding AddRootCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                                <MenuItem Header="{loc:Loc FM_CTE_NewCategory}" Command="{Binding AddRootCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
                             </ContextMenu>
                         </TreeView.ContextMenu>
                         <TreeView.ItemTemplate>
@@ -160,9 +158,9 @@
                                     <StackPanel.ContextMenu>
                                         <ContextMenu Style="{StaticResource ModernContextMenu}"
                                                      DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
-                                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
-                                            <MenuItem Header="{DynamicResource FM_CTE_ContextMenu_Delete}" Command="{Binding ContextMenuDeleteCommand}" Style="{StaticResource DangerMenuItem}"></MenuItem>
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Delete}" Command="{Binding ContextMenuDeleteCommand}" Style="{StaticResource DangerMenuItem}"></MenuItem>
                                         </ContextMenu>
                                     </StackPanel.ContextMenu>
                                     <Path Data="{StaticResource FolderIconGeometry}"
@@ -189,7 +187,6 @@
                     </TreeView>
                 </DockPanel>
 
-                <!-- Центральный разделитель -->
                 <GridSplitter Grid.Column="1" 
                               Width="2" 
                               HorizontalAlignment="Center"
@@ -197,7 +194,6 @@
                               Background="{DynamicResource BorderAltBrush}"
                               Margin="0,8"/>
 
-                <!-- Правая панель: Атрибуты -->
                 <Grid Grid.Column="2" Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -205,7 +201,6 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Заголовок -->
                     <TextBlock Grid.Row="0" 
                                FontWeight="SemiBold"
                                FontSize="12"
@@ -221,12 +216,11 @@
                                 </Style.Triggers>
                             </Style>
                         </TextBlock.Style>
-                        <Run Text="{DynamicResource FM_CTE_AttributesFor}"/>
+                        <Run Text="{loc:Loc FM_CTE_AttributesFor}"/>
                         <Run Text=" "/>
                         <Run Text="{Binding SelectedCategoryPath, Mode=OneWay}"/>
                     </TextBlock>
 
-                    <!-- Панель фильтров -->
                     <Grid Grid.Row="1" Margin="0,0,0,8"
                           Visibility="{Binding HasSelectedCategory, Converter={StaticResource BoolToVis}}">
                         <Grid.ColumnDefinitions>
@@ -246,7 +240,7 @@
                                      behaviors:TextBoxBehaviors.Placeholder="{Binding ElementName=SearchPlaceholder}"
                                      Style="{DynamicResource CompactTextBox}"/>
                             <TextBlock x:Name="SearchPlaceholder"
-                                       Text="{DynamicResource FM_CTE_SearchAttrs}"
+                                       Text="{loc:Loc FM_CTE_SearchAttrs}"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        Margin="8,0,0,0"
@@ -259,7 +253,7 @@
                                 Margin="4,0,0,0"
                                 Style="{DynamicResource SecondaryButton}"
                                 Padding="0"
-                                ToolTip="{DynamicResource FM_CTE_Attributes}">
+                                ToolTip="{loc:Loc FM_CTE_Attributes}">
                             <Viewbox Width="14" Height="14" Stretch="Uniform">
                                 <Path Data="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.04 4.95,18.95L7.44,17.95C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.95L19.05,18.95C19.27,19.04 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"
                                       Fill="{DynamicResource TextMutedBrush}"/>
@@ -267,7 +261,6 @@
                         </Button>
                     </Grid>
 
-                    <!-- Список атрибутов -->
                     <ScrollViewer Grid.Row="2" 
                                   VerticalScrollBarVisibility="Auto"
                                   Visibility="{Binding HasSelectedCategory, Converter={StaticResource BoolToVis}}">
@@ -327,9 +320,8 @@
                         </ItemsControl>
                     </ScrollViewer>
 
-                    <!-- Пустое состояние -->
                     <TextBlock Grid.Row="2" 
-                               Text="{DynamicResource FM_CTE_SelectCategoryHint}"
+                               Text="{loc:Loc FM_CTE_SelectCategoryHint}"
                                HorizontalAlignment="Center" 
                                VerticalAlignment="Center"
                                Foreground="{DynamicResource TextMutedBrush}"
@@ -349,11 +341,9 @@
             </Grid>
         </Border>
 
-        <!-- Статус -->
         <TextBlock Grid.Row="1" Text="{Binding StatusMessage}"
                    Margin="0,8,0,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
 
-        <!-- Кнопки -->
         <Grid Grid.Row="2" Margin="0,8,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -363,7 +353,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="{DynamicResource FM_CTE_Import}"
+            <Button Grid.Column="0" Content="{loc:Loc FM_CTE_Import}"
                     Command="{Binding ImportFromJsonCommand}"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"
@@ -375,7 +365,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0" Content="{DynamicResource FM_CTE_Export}"
+                <Button Grid.Column="0" Content="{loc:Loc FM_CTE_Export}"
                         Command="{Binding ExportFullCommand}"
                         MinWidth="60"
                         Style="{DynamicResource SecondaryButton}"
@@ -404,7 +394,7 @@
                             CornerRadius="6"
                             Padding="4">
                         <StackPanel>
-                            <Button Content="{DynamicResource FM_CTE_ExportTree}"
+                            <Button Content="{loc:Loc FM_CTE_ExportTree}"
                                     Command="{Binding ExportCategoriesCommand}"
                                     HorizontalContentAlignment="Left"
                                     Padding="12,6"
@@ -412,14 +402,14 @@
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Cursor="Hand"/>
-                            <Button Content="{DynamicResource FM_CTE_ExportAttrs}"
+                            <Button Content="{loc:Loc FM_CTE_ExportAttrs}"
                                     Command="{Binding ExportAttributesCommand}"
                                     HorizontalContentAlignment="Left"
                                     Padding="12,6"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Cursor="Hand"/>
-                            <Button Content="{DynamicResource FM_CTE_ExportFull}"
+                            <Button Content="{loc:Loc FM_CTE_ExportFull}"
                                     Command="{Binding ExportFullCommand}"
                                     HorizontalContentAlignment="Left"
                                     Padding="12,6"
@@ -437,10 +427,10 @@
                     Padding="12,4" Margin="0,0,4,0">
                 <Button.Style>
                     <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
-                        <Setter Property="Content" Value="{DynamicResource Btn_Save}"/>
+                        <Setter Property="Content" Value="{loc:Loc Btn_Save}"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsSaved}" Value="True">
-                                <Setter Property="Content" Value="{DynamicResource Btn_Saved}"/>
+                                <Setter Property="Content" Value="{loc:Loc Btn_Saved}"/>
                                 <Setter Property="Background" Value="{DynamicResource SavedSuccessBrush}"/>
                                 <Setter Property="Foreground" Value="White"/>
                             </DataTrigger>
@@ -449,7 +439,7 @@
                 </Button.Style>
             </Button>
 
-            <Button Grid.Column="4" Content="{DynamicResource FM_CTE_Close}"
+            <Button Grid.Column="4" Content="{loc:Loc FM_CTE_Close}"
                     Command="{Binding CancelCommand}"
                     MinWidth="80"
                     Style="{DynamicResource SecondaryButton}"

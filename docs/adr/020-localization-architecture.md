@@ -1,112 +1,118 @@
-# ADR-020: Единая архитектура локализации через LocalizationBehavior
+# ADR-020: Binding-based локализация через LocExtension + TranslationSource
 
 **Статус:** accepted
-**Дата:** 2026-05-09
+**Дата:** 2026-05-14
+**Supersedes:** ADR-020 (версия от 2026-05-09 — DynamicResource + LocalizationBehavior)
 
 ## Контекст
 
-Локализация в SmartCon работает через `DynamicResource` привязки к словарю ресурсов. При смене языка словарь обновляется, и WPF должен перечитывать все `DynamicResource`.
+Локализация SmartCon ранее использовала `{DynamicResource Key}` в XAML. Это требовало `Application.Current.Resources` для lookup chain. На net48 в Revit `Application.Current == null` — строки были пустыми.
 
-**Проблемы, которые привели к этому ADR:**
+Костыль `new Application()` в `LanguageManager.Initialize()` крашил Revit у тестеров, когда SmartCon загружался ДО других WPF-плагинов (второй `new Application()` → Dispatcher conflict → краш).
 
-1. **net48 vs net8 различия**: В net48 `Application.Current` может быть null (Revit plugin = class library, нет WPF `App`). В net8 `Application.Current` создаётся автоматически. `DynamicResource` fallback chain работает по-разному.
+### Root cause
 
-2. **Живое обновление UI при смене языка**: В net8 `DynamicResource` подписывается на "mentor" (ближайший `FrameworkElement` вверх по дереву), а не на `Application.Current.Resources`. Простое обновление `Application.Current.Resources.MergedDictionaries` не вызывает автоматического перечитывания у элементов, которые получили словарь через `MergedDictionaries` своего UserControl/Window.
+```
+DynamicResource lookup chain:
+  element.Resources → parent.Resources → ... → Application.Current.Resources
+                                                        ↑
+                                          NULL на net48 в Revit
+```
 
-3. **Разные паттерны для dockable panel и диалогов**: Изначально dockable panel использовал `LocalizationBehavior.AutoRefresh` (attached behavior), а диалоги использовали `LanguageManager.EnsureWindowResources(this)` (code-behind вызов). Это создавало два разных механизма для одной задачи.
+На net8 (Revit 2025+) Revit сам создаёт `Application.Current` — проблем нет.
+На net48 (Revit 2019-2024) Revit — нативное Win32 приложение, WPF Application не создаётся.
 
 ## Решение
 
-### 1. Единый механизм: LocalizationBehavior.AutoRefresh
-
-Все View (dockable panel UserControls и dialog Window) используют **один** attached behavior:
+### 1. LocExtension (MarkupExtension → Binding)
 
 ```xml
-<Window xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        ...>
+<!-- Было: -->
+<TextBlock Text="{DynamicResource FM_SearchPlaceholder}"/>
+<!-- Стало: -->
+<TextBlock Text="{loc:Loc FM_SearchPlaceholder}"/>
 ```
 
-`LocalizationBehavior`:
-- Подписывается на `LocalizationService.LanguageChanged` один раз (статически)
-- Ведёт `List<WeakReference<FrameworkElement>>` отслеживаемых элементов
-- При смене языка: заменяет `MergedDictionaries` у элемента + вызывает `element.UpdateLayout()`
-- `WeakReference` предотвращает утечки памяти
-
-### 2. Application.Current — single source of truth
-
-`LanguageManager.Initialize()` создаёт `Application.Current` вручную, если он null (net48 паттерн для Revit plugins):
-
+`LocExtension.ProvideValue()` возвращает `BindingExpression` (не строку):
 ```csharp
-if (Application.Current is null)
+public override object ProvideValue(IServiceProvider serviceProvider)
 {
-    try { _ = new Application(); }
-    catch { /* already exists in another domain */ }
+    return new Binding($"Item[{_key}]")
+    {
+        Source = TranslationSource.Instance,
+        Mode = BindingMode.OneWay
+    }.ProvideValue(serviceProvider);
 }
 ```
 
-Все `DynamicResource` bindings fallback на `Application.Current.Resources`. Нет необходимости дублировать словарь в каждый `ContextMenu`, `Popup` или `UserControl`.
+Ключ: вызов `.ProvideValue(serviceProvider)` на Binding — иначе WPF получит объект `Binding` вместо `BindingExpression` и упадёт при установке string-свойств.
 
-### 3. LanguageManager — только глобальное состояние
-
-`LanguageManager` отвечает только за:
-- Инициализацию языка при старте
-- `SwitchLanguage()` — публичный API
-- `GetString()` / `GetCurrentStrings()` — чтение ресурсов
-- Обновление `Application.Current.Resources.MergedDictionaries`
-
-**Удалены** (устаревшие методы):
-- `EnsureWindowResources(Window)` — заменён на `LocalizationBehavior`
-- `RefreshAllWindows()` — логика перенесена в `LocalizationBehavior`
-- `_registeredWindows` — больше не нужен
-
-### 4. MVVM: ViewModel реагирует на LanguageChanged
-
-Для узлов дерева, которые содержат локализованные строки (например, "Без категории"), ViewModel подписывается на `LocalizationService.LanguageChanged` и обновляет свойства напрямую:
+### 2. TranslationSource (INPC singleton)
 
 ```csharp
-// FamilyManagerMainViewModel — singleton, живёт весь lifetime приложения
-LocalizationService.LanguageChanged += OnLanguageChanged;
-
-private void OnLanguageChanged()
+public sealed class TranslationSource : INotifyPropertyChanged
 {
-    var newLabel = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
-    if (_noCategoryNode is not null)
+    public static TranslationSource Instance { get; } = new();
+    
+    public string this[string key] => StringLocalization.GetString(key, _currentLanguage);
+    
+    public void ChangeLanguage(Language language)
     {
-        _noCategoryNode.DisplayName = newLabel;
-        _noCategoryNode.FullPath = newLabel;
+        _currentLanguage = language;
+        foreach (var key in StringLocalization.GetAllKeys())
+            OnPropertyChanged($"Item[{key}]");
+        OnPropertyChanged(string.Empty);
     }
 }
 ```
 
-Важно: VM хранит прямую ссылку на узел (`_noCategoryNode`), а не ищет его по дереву при каждом изменении языка.
+НЕ зависит от `Application.Current`. Данные в памяти, Binding с явным `Source`.
+
+### 3. Что НЕ меняется
+
+- `{DynamicResource BackgroundBrush}` — кисти и стили остаются на DynamicResource (работают через SingletonResources)
+- `LanguageManager.GetString()` — API для code-behind и ViewModel
+- `LocalizationService` (Core) — строки для Revit API (Tx_, Status_, Error_*)
+- `StringLocalization.Keys` — константы ключей
+
+### 4. Удалённый код
+
+| Файл | Причина |
+|---|---|
+| `LocalizationBehavior.cs` | Мёртвый код — AutoRefresh больше не нужен |
+| `LanguageManager.GetCurrentStrings()` | Использовался только из LocalizationBehavior |
+| `LanguageManager.ApplyLanguage()` | ResourceDictionary больше не мержится в Application.Current |
+| `StringLocalization.BuildResourceDictionary()` | ResourceDictionary больше не нужен |
+| `new Application()` в LanguageManager | Крашил Revit |
 
 ## Последствия
 
 **Плюсы:**
-- Единый паттерн для всех View — никакого code-behind для локализации
-- Никаких утечек памяти (WeakReference в LocalizationBehavior)
-- Чистое разделение: `LanguageManager` = глобальное состояние, `LocalizationBehavior` = UI-адаптация
-- Работает одинаково в net48 и net8
+- Работает на net48 и net8 одинаково — нет зависимости от `Application.Current`
+- Runtime-переключение языка мгновенное — INotifyPropertyChanged обновляет все Bindings
+- Простой XAML: `{loc:Loc Key}` вместо `{DynamicResource Key}`
+- Нет утечек памяти (нет WeakReference tracking)
+- Нет краша от `new Application()`
 
 **Минусы:**
-- Для live-обновления VM-данных нужна подписка на `LanguageChanged` в VM (только для динамических строк, не для DB-данных)
-- `UpdateLayout()` после смены словаря — необходим в net8 из-за изменений в WPF 8
+- Для VM-данных (дерево категорий, статус-строки) нужна подписка на `LanguageChanged` — но это не изменилось
 
-## Альтернативы
+## Альтернативы (отклонённые)
 
-1. **EnsureWindowResources для каждого Window в code-behind**: работает, но нарушает MVVM (I-10) и создаёт два разных паттерна.
-2. **Дублирование словаря в каждый ContextMenu/Popup**: избыточно, `Application.Current.Resources` уже содержит словарь.
-3. **Ручной вызов UpdateLayout() во всех VM**: слишком много работы, `LocalizationBehavior` делает это централизованно.
+1. **`new Application()`** — крашил Revit при загрузке до других WPF-плагинов
+2. **WPFLocalizationExtension (NuGet)** — внешняя зависимость, может конфликтовать в Revit
+3. **Custom ResourceDictionary с INPC** — сложнее, чем Binding-based подход
+4. **Resx + `x:Static`** — не поддерживает runtime-переключение языка
 
 ## Связанные инварианты
 
-- **I-10**: MVVM строго. `.xaml.cs` содержит только `DataContext = viewModel`. Локализация теперь полностью в XAML.
-- **I-01**: Revit API из WPF — только через `IExternalEventHandler`. `LanguageManager` не вызывает Revit API.
+- **I-10**: MVVM строго. Локализация полностью в XAML через MarkupExtension.
+- **I-01**: `LanguageManager` не вызывает Revit API.
 
 ## Связанные файлы
 
+- `src/SmartCon.UI/Localization/TranslationSource.cs`
+- `src/SmartCon.UI/Localization/LocExtension.cs`
 - `src/SmartCon.UI/LanguageManager.cs`
-- `src/SmartCon.UI/Behaviors/LocalizationBehavior.cs`
 - `src/SmartCon.UI/StringLocalization.cs`
 - `src/SmartCon.Core/Services/LocalizationService.cs`

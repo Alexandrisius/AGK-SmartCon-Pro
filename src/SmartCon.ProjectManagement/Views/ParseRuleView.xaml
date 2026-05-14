@@ -3,9 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        Title="{DynamicResource PM_Title_ParseRule}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc PM_Title_ParseRule}"
         Width="480" Height="410" MinWidth="440" MinHeight="370"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
@@ -31,7 +30,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-            <TextBlock Text="{DynamicResource PM_ParseMode}" Width="100"
+            <TextBlock Text="{loc:Loc PM_ParseMode}" Width="100"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <ComboBox ItemsSource="{Binding ParseModeOptions}" SelectedItem="{Binding SelectedParseModeOption}"
                       DisplayMemberPath="Display" Width="210"
@@ -45,15 +44,15 @@
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8"
                      Visibility="{Binding IsDelimiterSegment, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{DynamicResource PM_Delimiter}" Width="100"
+            <TextBlock Text="{loc:Loc PM_Delimiter}" Width="100"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding Delimiter, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
-            <TextBlock Text="{DynamicResource PM_SegmentIndex}" Margin="16,0,0,0"
+            <TextBlock Text="{loc:Loc PM_SegmentIndex}" Margin="16,0,0,0"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding SegmentIndex, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
-            <TextBlock Text="{DynamicResource PM_SegmentCount}" Margin="12,0,0,0"
+            <TextBlock Text="{loc:Loc PM_SegmentCount}" Margin="12,0,0,0"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding SegmentCount, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
@@ -61,11 +60,11 @@
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8"
                      Visibility="{Binding IsFixedWidth, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{DynamicResource PM_CharOffset}" Width="100"
+            <TextBlock Text="{loc:Loc PM_CharOffset}" Width="100"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding CharOffset, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
-            <TextBlock Text="{DynamicResource PM_CharCount}" Margin="16,0,0,0"
+            <TextBlock Text="{loc:Loc PM_CharCount}" Margin="16,0,0,0"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding CharCount, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
@@ -73,11 +72,11 @@
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,4"
                      Visibility="{Binding IsBetweenMarkers, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{DynamicResource PM_OpenMarker}" Width="100"
+            <TextBlock Text="{loc:Loc PM_OpenMarker}" Width="100"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding OpenMarker, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
-            <TextBlock Text="{DynamicResource PM_MarkerIndex}" Margin="8,0,0,0"
+            <TextBlock Text="{loc:Loc PM_MarkerIndex}" Margin="8,0,0,0"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding OpenMarkerIndex, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
@@ -85,11 +84,11 @@
 
         <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,8"
                      Visibility="{Binding IsBetweenMarkers, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{DynamicResource PM_CloseMarker}" Width="100"
+            <TextBlock Text="{loc:Loc PM_CloseMarker}" Width="100"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding CloseMarker, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
-            <TextBlock Text="{DynamicResource PM_MarkerIndex}" Margin="8,0,0,0"
+            <TextBlock Text="{loc:Loc PM_MarkerIndex}" Margin="8,0,0,0"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding CloseMarkerIndex, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
@@ -97,11 +96,11 @@
 
         <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,0,0,0"
                      Visibility="{Binding IsAfterMarker, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{DynamicResource PM_Marker}" Width="100"
+            <TextBlock Text="{loc:Loc PM_Marker}" Width="100"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding Marker, UpdateSourceTrigger=PropertyChanged}" Width="60"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center"/>
-            <TextBlock Text="{DynamicResource PM_MarkerIndex}" Margin="12,0,0,0"
+            <TextBlock Text="{loc:Loc PM_MarkerIndex}" Margin="12,0,0,0"
                        VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
             <TextBox Text="{Binding MarkerIndex, UpdateSourceTrigger=PropertyChanged}" Width="50"
                      Style="{DynamicResource CompactTextBox}" HorizontalContentAlignment="Center" Margin="4,0,0,0"/>
@@ -118,23 +117,23 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="{DynamicResource PM_Preview}" FontWeight="SemiBold"
+            <TextBlock Grid.Row="0" Text="{loc:Loc PM_Preview}" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,6"/>
 
             <TextBlock Grid.Row="1" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4">
-                <Run Text="{DynamicResource PM_FileName}"/>
+                <Run Text="{loc:Loc PM_FileName}"/>
                 <Run Text="{Binding PreviewFileName}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
             </TextBlock>
 
             <TextBlock Grid.Row="2" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4">
-                <Run Text="{DynamicResource PM_Result}"/>
+                <Run Text="{loc:Loc PM_Result}"/>
                 <Run Text="{Binding PreviewValue}" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"/>
             </TextBlock>
 
             <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="{DynamicResource Btn_Save}" Command="{Binding OkCommand}"
+                <Button Content="{loc:Loc Btn_Save}" Command="{Binding OkCommand}"
                         Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
-                <Button Content="{DynamicResource Btn_Cancel}" Command="{Binding CancelCommand}"
+                <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
                         Style="{DynamicResource SecondaryButton}"/>
             </StackPanel>
         </Grid>

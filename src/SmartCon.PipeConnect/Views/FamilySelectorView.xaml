@@ -3,9 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        behaviors:LocalizationBehavior.AutoRefresh="True"
-        Title="{DynamicResource Title_FamilySelector}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc Title_FamilySelector}"
         Width="640" Height="460"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
@@ -33,11 +32,11 @@
             <!-- Левый список: доступные семейства -->
             <DockPanel Grid.Column="0">
                 <TextBlock DockPanel.Dock="Top"
-                           Text="{DynamicResource Label_AvailableFamilies}"
+                           Text="{loc:Loc Label_AvailableFamilies}"
                            FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextPrimaryBrush}"/>
                 <TextBlock DockPanel.Dock="Top"
-                           Text="{DynamicResource Label_FamilyFilter}"
+                           Text="{loc:Loc Label_FamilyFilter}"
                            FontSize="10" Foreground="{DynamicResource TextMutedBrush}"
                            TextWrapping="Wrap" Margin="0,0,0,6"/>
                 <ListBox ItemsSource="{Binding AvailableFamilies}"
@@ -51,11 +50,11 @@
             <StackPanel Grid.Column="1"
                         VerticalAlignment="Center"
                         Margin="10,0">
-                <Button Content="{DynamicResource Btn_AddFamily}"
+                <Button Content="{loc:Loc Btn_AddFamily}"
                         Width="115" Margin="0,0,0,8"
                         Command="{Binding AddCommand}"
                         Style="{DynamicResource PrimaryButton}"/>
-                <Button Content="{DynamicResource Btn_RemoveFamily}"
+                <Button Content="{loc:Loc Btn_RemoveFamily}"
                         Width="115"
                         Command="{Binding RemoveCommand}"
                         Style="{DynamicResource SecondaryButton}"/>
@@ -64,16 +63,16 @@
             <!-- Правый список: выбранные семейства -->
             <DockPanel Grid.Column="2">
                 <TextBlock DockPanel.Dock="Top"
-                           Text="{DynamicResource Label_SelectedFamilies}"
+                           Text="{loc:Loc Label_SelectedFamilies}"
                            FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextPrimaryBrush}"/>
                 <StackPanel DockPanel.Dock="Bottom"
                             Orientation="Horizontal"
                             Margin="0,6,0,0">
-                     <Button Content="{DynamicResource Btn_Up}" Width="85" Margin="0,0,6,0"
+                     <Button Content="{loc:Loc Btn_Up}" Width="85" Margin="0,0,6,0"
                              Command="{Binding MoveUpCommand}"
                              Style="{DynamicResource SecondaryButton}"/>
-                     <Button Content="{DynamicResource Btn_Down}" Width="85"
+                     <Button Content="{loc:Loc Btn_Down}" Width="85"
                             Command="{Binding MoveDownCommand}"
                             Style="{DynamicResource SecondaryButton}"/>
                 </StackPanel>
@@ -103,12 +102,12 @@
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Margin="0,12,0,0">
-            <Button Content="{DynamicResource Btn_Cancel}"
+            <Button Content="{loc:Loc Btn_Cancel}"
                     Width="95" Margin="0,0,10,0"
                     Command="{Binding CancelCommand}"
                     IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>
-            <Button Content="{DynamicResource Btn_Confirm}"
+            <Button Content="{loc:Loc Btn_Confirm}"
                     Width="110"
                     Command="{Binding ConfirmCommand}"
                     Style="{DynamicResource AccentButton}"/>
