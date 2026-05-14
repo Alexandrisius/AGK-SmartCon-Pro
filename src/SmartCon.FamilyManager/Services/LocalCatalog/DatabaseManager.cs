@@ -113,6 +113,21 @@ internal sealed class DatabaseManager : IDatabaseManager
         if (!File.Exists(dbFile))
             throw new FileNotFoundException($"Database not found at: {fullPath}");
 
+        var existingRegistry = LoadRegistry();
+        var existing = existingRegistry.Connections.FirstOrDefault(
+            c => c.Path.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            SmartConLogger.Info($"[DatabaseManager] Database at '{fullPath}' already connected as '{existing.Name}', activating");
+            if (existingRegistry.ActiveConnectionId != existing.Id)
+            {
+                SaveRegistry(new DatabaseConnectionRegistry(existing.Id, existingRegistry.Connections));
+                _catalogDatabase.SwitchToPath(fullPath);
+                ActiveDatabaseChanged?.Invoke(this, existing.Id);
+            }
+            return existing;
+        }
+
         var id = Guid.NewGuid().ToString("N");
         var name = Path.GetFileName(fullPath);
 

@@ -25,6 +25,7 @@ public sealed record FamilyExtractionTypeValues(
 public sealed record FamilyExtractionResult(
     bool Success,
     IReadOnlyList<FamilyExtractionTypeValues> Types,
+    IReadOnlyList<FamilyExtractionValueResult>? UntypedValues,
     string? ErrorMessage,
     int RevitMajorVersion);
 

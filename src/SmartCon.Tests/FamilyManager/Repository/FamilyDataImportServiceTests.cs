@@ -92,6 +92,7 @@ public sealed class FamilyDataImportServiceTests : IDisposable
                 new FamilyExtractionValueResult("Param2", AttributeScope.Instance, "Double", "3.14", null, 3.14, null, AttributeValueStatus.Found, null)
             ])],
             null,
+            null,
             2025);
 
         var result = await _service.SaveExtractionResultAsync(itemId, extractionResult, null, null);
@@ -134,6 +135,7 @@ public sealed class FamilyDataImportServiceTests : IDisposable
                 new FamilyExtractionValueResult("Missing", AttributeScope.Type, null, null, null, null, null, AttributeValueStatus.MissingParameter, "Not found")
             ])],
             null,
+            null,
             2025);
 
         var result = await _service.SaveExtractionResultAsync(itemId, extractionResult, null, null);
@@ -155,6 +157,7 @@ public sealed class FamilyDataImportServiceTests : IDisposable
             [
                 new FamilyExtractionValueResult("Width", AttributeScope.Type, "Double", "100", null, 100.0, null, AttributeValueStatus.Found, null)
             ])],
+            null,
             null,
             2025);
 
@@ -179,6 +182,7 @@ public sealed class FamilyDataImportServiceTests : IDisposable
                 new FamilyExtractionValueResult("WIDTH", AttributeScope.Type, "Double", "50", null, 50.0, null, AttributeValueStatus.Found, null)
             ])],
             null,
+            null,
             2025);
 
         await _service.SaveExtractionResultAsync(itemId, extractionResult, null, null);
@@ -202,6 +206,7 @@ public sealed class FamilyDataImportServiceTests : IDisposable
                 new FamilyExtractionValueResult("P1", AttributeScope.Type, "String", "v", null, null, null, AttributeValueStatus.Found, null)
             ])],
             null,
+            null,
             2025);
 
         var result = await _service.SaveExtractionResultAsync(itemId, extractionResult, "v1", "file1");
@@ -217,6 +222,39 @@ public sealed class FamilyDataImportServiceTests : IDisposable
         Assert.Single(values);
         Assert.Equal("v1", values[0].VersionId);
         Assert.Equal("file1", values[0].FileId);
+    }
+
+    [Fact]
+    public async Task SaveExtractionResultAsync_WithUntypedValues_SavesWithNullTypeId()
+    {
+        var itemId = await SeedCatalogItemAsync("UntypedFamily");
+        await SeedAttributeDefAsync("Diameter");
+        await SeedAttributeDefAsync("Material");
+
+        var extractionResult = new FamilyExtractionResult(
+            true,
+            [],
+            [
+                new FamilyExtractionValueResult("Diameter", AttributeScope.Type, "Double", "200", null, 200.0, null, AttributeValueStatus.Found, null),
+                new FamilyExtractionValueResult("Material", AttributeScope.Type, "String", "Steel", null, null, null, AttributeValueStatus.Found, null)
+            ],
+            null,
+            2025);
+
+        var result = await _service.SaveExtractionResultAsync(itemId, extractionResult, null, null);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.TypesCount);
+        Assert.Equal(2, result.AttributesFoundCount);
+
+        var types = await _typeRepo.GetTypesForItemAsync(itemId);
+        Assert.Empty(types);
+
+        var values = await _valueRepo.GetValuesForItemAsync(itemId, null);
+        Assert.Equal(2, values.Count);
+        Assert.All(values, v => Assert.Null(v.TypeId));
+        Assert.Contains(values, v => v.ParameterName == "Diameter" && v.ValueText == "200");
+        Assert.Contains(values, v => v.ParameterName == "Material" && v.ValueText == "Steel");
     }
 
     private async Task SeedAttributeDefAsync(string name)

@@ -282,6 +282,7 @@ public sealed partial class FamilyManagerMainViewModel
             .Select(id => doc.GetElement(id))
             .OfType<FamilySymbol>()
             .Select(s => s.Name)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

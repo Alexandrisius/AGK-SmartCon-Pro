@@ -149,6 +149,33 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
             }
         }
 
+        if (extractionResult.UntypedValues is not null)
+        {
+            foreach (var val in extractionResult.UntypedValues)
+            {
+                attrByName.TryGetValue(val.ParameterName, out var attrDef);
+                values.Add(new ExtractedAttributeValue(
+                    Guid.NewGuid().ToString(),
+                    catalogItemId,
+                    versionId,
+                    fileId,
+                    null,
+                    attrDef?.Id ?? val.ParameterName,
+                    null,
+                    val.ParameterName,
+                    val.ParameterScope,
+                    val.StorageType,
+                    val.ValueText,
+                    val.ValueRaw,
+                    val.ValueNumber,
+                    val.UnitTypeId,
+                    val.Status,
+                    val.Message,
+                    runId,
+                    DateTimeOffset.UtcNow));
+            }
+        }
+
         if (values.Count > 0)
             await _valueRepository.ReplaceSnapshotAsync(catalogItemId, versionId, runId, values, ct);
 

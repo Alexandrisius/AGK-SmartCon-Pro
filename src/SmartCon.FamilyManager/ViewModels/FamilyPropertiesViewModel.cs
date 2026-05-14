@@ -64,6 +64,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [ObservableProperty] private string _importRunInfo = string.Empty;
     [ObservableProperty] private int _attributesFoundCount;
     [ObservableProperty] private int _attributesMissingCount;
+    [ObservableProperty] private bool _hasTypes;
 
     private IReadOnlyList<EffectiveCategoryAttribute> _effectiveAttributes = [];
     private IReadOnlyList<ExtractedAttributeValue> _allValues = [];
@@ -203,14 +204,15 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
             var types = await _typeRepository.GetTypesForItemAsync(_catalogItemId, ct);
             AvailableTypes = new ObservableCollection<FamilyTypeSelectorItem>(
                 types.Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
+            HasTypes = AvailableTypes.Count > 0;
 
             var allValues = await _valueRepository.GetValuesForItemAsync(_catalogItemId, run.VersionId, ct);
             _allValues = allValues;
 
-            var firstTypeId = AvailableTypes.Count > 0 ? AvailableTypes[0].TypeId : null;
+            var firstTypeId = HasTypes ? AvailableTypes[0].TypeId : null;
             var typeValues = firstTypeId is not null
                 ? allValues.Where(v => v.TypeId == firstTypeId).ToList()
-                : allValues.ToList();
+                : allValues.Where(v => v.TypeId is null).ToList();
             var found = typeValues.Count(v => v.Status == AttributeValueStatus.Found);
             var missing = _effectiveAttributes.Count - found;
             if (missing < 0) missing = 0;
@@ -219,14 +221,42 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
             HasAttributeData = true;
 
-            if (AvailableTypes.Count > 0)
+            if (HasTypes)
+            {
                 SelectedType = AvailableTypes[0];
+            }
+            else
+            {
+                LoadAttributesWithoutType(typeValues);
+            }
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn($"LoadAttributesDataAsync failed: {ex.Message}");
             AttributesStatusMessage = ex.Message;
         }
+    }
+
+    private void LoadAttributesWithoutType(IReadOnlyList<ExtractedAttributeValue> typeValues)
+    {
+        var rows = new List<AttributeValueRow>();
+
+        foreach (var attr in _effectiveAttributes.OrderBy(a => a.SortOrder))
+        {
+            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId);
+            rows.Add(new AttributeValueRow
+            {
+                AttributeName = attr.Name,
+                Value = match?.ValueText,
+                Status = match?.Status.ToString() ?? "MissingParameter",
+                StatusDetail = match?.Message,
+                IsFound = match is not null && match.Status == AttributeValueStatus.Found,
+                IsInherited = attr.IsInherited,
+                Group = attr.Group
+            });
+        }
+
+        AttributeRows = new ObservableCollection<AttributeValueRow>(rows);
     }
 
     partial void OnSelectedTypeChanged(FamilyTypeSelectorItem? value)

@@ -37,7 +37,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             if (!familyDoc.IsFamilyDocument)
             {
                 SmartConLogger.Freeze("Extract: Not a family document");
-                return new FamilyExtractionResult(false, [], "Not a family document", revitMajorVersion);
+                return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion);
             }
 
             var fm = familyDoc.FamilyManager;
@@ -54,6 +54,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             SmartConLogger.Freeze($"Extract: Found {paramMap.Count} parameters");
 
             var allTypes = new List<FamilyExtractionTypeValues>();
+            List<FamilyExtractionValueResult>? untypedValues = null;
             var typeIndex = 0;
             foreach (FamilyType familyType in fm.Types)
             {
@@ -65,8 +66,16 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                     values.Add(value);
                 }
 
-                allTypes.Add(new FamilyExtractionTypeValues(
-                    familyType.Name, typeIndex++, values));
+                if (string.IsNullOrWhiteSpace(familyType.Name))
+                {
+                    untypedValues = values;
+                    SmartConLogger.Freeze("Extract: Found default type with empty name, treating as untyped values");
+                }
+                else
+                {
+                    allTypes.Add(new FamilyExtractionTypeValues(
+                        familyType.Name, typeIndex++, values));
+                }
             }
 
             var types = allTypes
@@ -75,14 +84,14 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values))
                 .ToList();
 
-            SmartConLogger.Freeze($"Extract: Extracted {types.Count} types (filtered {allTypes.Count - types.Count} empty)");
+            SmartConLogger.Freeze($"Extract: Extracted {types.Count} named types, untyped values: {untypedValues?.Count ?? 0}");
 
-            return new FamilyExtractionResult(true, types, null, revitMajorVersion);
+            return new FamilyExtractionResult(true, types, untypedValues, null, revitMajorVersion);
         }
         catch (Exception ex)
         {
             SmartConLogger.Freeze($"Extract: Exception - {ex.GetType().Name}: {ex.Message}");
-            return new FamilyExtractionResult(false, [], ex.Message, revitMajorVersion);
+            return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion);
         }
         finally
         {

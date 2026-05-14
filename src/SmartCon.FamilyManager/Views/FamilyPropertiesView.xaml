@@ -449,7 +449,8 @@
 
                         <StackPanel Visibility="{Binding HasAttributeData, Converter={StaticResource BoolToVisibility}}">
 
-                            <Grid Margin="0,0,0,8">
+                            <Grid Margin="0,0,0,8"
+                                  Visibility="{Binding HasTypes, Converter={StaticResource BoolToVisibility}}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
