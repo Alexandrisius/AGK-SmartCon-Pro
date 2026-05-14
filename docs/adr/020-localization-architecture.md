@@ -68,14 +68,43 @@ public sealed class TranslationSource : INotifyPropertyChanged
 
 НЕ зависит от `Application.Current`. Данные в памяти, Binding с явным `Source`.
 
-### 3. Что НЕ меняется
+### 3. Единый источник правды — LocalizationService (Core)
+
+`LocalizationService` — единственный словарь локализации (~475 ключей × 2 языка). Разложен на partial classes по модулям:
+
+| Файл | Содержимое |
+|---|---|
+| `LocalizationService.cs` | Логика: GetString, SetLanguage, Load/Save, Format |
+| `LocalizationService.Keys.Common.cs` | Общие ключи: Btn_, Label_, Tip_, Col_, Tab_, Status_, Msg_, About_, Mapping_, Fitting_, Warn_ |
+| `LocalizationService.Keys.PipeConnect.cs` | PipeConnect: Tx_, Pick_, Error_, Chain_, Status_* pipeconnect-specific |
+| `LocalizationService.Keys.ProjectManagement.cs` | ProjectManagement: PM_* |
+| `LocalizationService.Keys.FamilyManager.cs` | FamilyManager: FM_* |
+
+`StringLocalization` (UI) — тонкая обёртка, делегирует в `LocalizationService`. Хранит только `Keys` класс (константы для backward compat).
+
+### 4. Цепочка вызовов
+
+```
+XAML: {loc:Loc Key}
+  → LocExtension → Binding("Item[Key]", Source=TranslationSource.Instance)
+  → TranslationSource[key] → StringLocalization.GetString(key, lang)
+  → LocalizationService.GetString(key, lang)
+
+ViewModel: LanguageManager.GetString(key)
+  → StringLocalization.GetString(key, lang)
+  → LocalizationService.GetString(key, lang)
+
+Core: LocalizationService.GetString(key)
+  → _current dictionary lookup
+```
+
+### 5. Что НЕ меняется
 
 - `{DynamicResource BackgroundBrush}` — кисти и стили остаются на DynamicResource (работают через SingletonResources)
 - `LanguageManager.GetString()` — API для code-behind и ViewModel
-- `LocalizationService` (Core) — строки для Revit API (Tx_, Status_, Error_*)
-- `StringLocalization.Keys` — константы ключей
+- `StringLocalization.Keys` — константы ключей (backward compat)
 
-### 4. Удалённый код
+### 6. Удалённый код
 
 | Файл | Причина |
 |---|---|
@@ -84,6 +113,7 @@ public sealed class TranslationSource : INotifyPropertyChanged
 | `LanguageManager.ApplyLanguage()` | ResourceDictionary больше не мержится в Application.Current |
 | `StringLocalization.BuildResourceDictionary()` | ResourceDictionary больше не нужен |
 | `new Application()` в LanguageManager | Крашил Revit |
+| `StringLocalization.Ru/En` словари | Данные перенесены в LocalizationService |
 
 ## Последствия
 
@@ -93,6 +123,8 @@ public sealed class TranslationSource : INotifyPropertyChanged
 - Простой XAML: `{loc:Loc Key}` вместо `{DynamicResource Key}`
 - Нет утечек памяти (нет WeakReference tracking)
 - Нет краша от `new Application()`
+- Единый словарь — нет дублирования ключей между Core и UI
+- Декомпозиция по модулям — легко добавлять новый модуль
 
 **Минусы:**
 - Для VM-данных (дерево категорий, статус-строки) нужна подписка на `LanguageChanged` — но это не изменилось
@@ -108,11 +140,16 @@ public sealed class TranslationSource : INotifyPropertyChanged
 
 - **I-10**: MVVM строго. Локализация полностью в XAML через MarkupExtension.
 - **I-01**: `LanguageManager` не вызывает Revit API.
+- **I-09**: LocalizationService — чистый `Dictionary<string, string>`, без WPF-зависимостей.
 
 ## Связанные файлы
 
-- `src/SmartCon.UI/Localization/TranslationSource.cs`
-- `src/SmartCon.UI/Localization/LocExtension.cs`
-- `src/SmartCon.UI/LanguageManager.cs`
-- `src/SmartCon.UI/StringLocalization.cs`
-- `src/SmartCon.Core/Services/LocalizationService.cs`
+- `src/SmartCon.Core/Services/LocalizationService.cs` — логика
+- `src/SmartCon.Core/Services/LocalizationService.Keys.Common.cs` — общие ключи
+- `src/SmartCon.Core/Services/LocalizationService.Keys.PipeConnect.cs` — PipeConnect ключи
+- `src/SmartCon.Core/Services/LocalizationService.Keys.ProjectManagement.cs` — PM ключи
+- `src/SmartCon.Core/Services/LocalizationService.Keys.FamilyManager.cs` — FM ключи
+- `src/SmartCon.UI/StringLocalization.cs` — обёртка + Keys класс
+- `src/SmartCon.UI/Localization/TranslationSource.cs` — INPC singleton
+- `src/SmartCon.UI/Localization/LocExtension.cs` — MarkupExtension
+- `src/SmartCon.UI/LanguageManager.cs` — фасад для ViewModel
