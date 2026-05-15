@@ -13,7 +13,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     public LocalFamilyImportServiceTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
 
         var hasher = new Sha256FileHasher();
         var metadataService = new FileNameOnlyMetadataExtractionService(hasher);

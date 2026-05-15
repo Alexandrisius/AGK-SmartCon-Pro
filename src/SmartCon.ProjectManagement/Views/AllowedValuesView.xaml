@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        Title="{DynamicResource PM_Title_AllowedValues}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc PM_Title_AllowedValues}"
         Width="420" Height="480" MinWidth="380" MinHeight="420"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
@@ -27,7 +28,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
-            <TextBlock Text="{DynamicResource PM_ValidationMode}" VerticalAlignment="Center"
+            <TextBlock Text="{loc:Loc PM_ValidationMode}" VerticalAlignment="Center"
                        Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,6,0"/>
             <ComboBox ItemsSource="{Binding ValidationModeOptions}" SelectedItem="{Binding SelectedValidationModeOption}"
                       DisplayMemberPath="Display" Width="180"
@@ -43,9 +44,9 @@
                      Visibility="{Binding ShowValuesList, Converter={StaticResource BoolToVis}}">
             <TextBox Text="{Binding NewValue, UpdateSourceTrigger=PropertyChanged}" Width="200"
                      Style="{DynamicResource CompactTextBox}" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource PM_AddValue}" Command="{Binding AddValueCommand}"
+            <Button Content="{loc:Loc PM_AddValue}" Command="{Binding AddValueCommand}"
                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource PM_RemoveValue}" Command="{Binding RemoveValueCommand}"
+            <Button Content="{loc:Loc PM_RemoveValue}" Command="{Binding RemoveValueCommand}"
                     Style="{DynamicResource SecondaryButton}"/>
         </StackPanel>
 
@@ -61,11 +62,11 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="{DynamicResource PM_MinLength}" VerticalAlignment="Center"
+            <TextBlock Grid.Column="0" Text="{loc:Loc PM_MinLength}" VerticalAlignment="Center"
                        Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,4,0"/>
             <TextBox Grid.Column="1" Text="{Binding MinLength}" Width="60" Style="{DynamicResource CompactTextBox}"
                      HorizontalContentAlignment="Center" Margin="0,0,8,0"/>
-            <TextBlock Grid.Column="2" Text="{DynamicResource PM_MaxLength}" VerticalAlignment="Center"
+            <TextBlock Grid.Column="2" Text="{loc:Loc PM_MaxLength}" VerticalAlignment="Center"
                        Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,4,0"/>
             <TextBox Grid.Column="3" Text="{Binding MaxLength}" Width="60" Style="{DynamicResource CompactTextBox}"
                      HorizontalContentAlignment="Center"/>
@@ -74,9 +75,9 @@
         <Border Grid.Row="4" Background="{DynamicResource BorderAltBrush}" Height="1" Margin="0,4"/>
 
         <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="{DynamicResource Btn_Save}" Command="{Binding SaveCommand}"
+            <Button Content="{loc:Loc Btn_Save}" Command="{Binding SaveCommand}"
                     Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource Btn_Cancel}" Command="{Binding CancelCommand}"
+            <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
                     Style="{DynamicResource SecondaryButton}"/>
         </StackPanel>
     </Grid>

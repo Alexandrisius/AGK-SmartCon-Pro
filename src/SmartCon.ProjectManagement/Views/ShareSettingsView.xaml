@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        Title="{DynamicResource PM_Title_Settings}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc PM_Title_Settings}"
         Width="750" Height="620" MinWidth="650" MinHeight="520"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -28,11 +29,11 @@
         <TabControl Grid.Row="0" SelectedIndex="{Binding SelectedTabIndex}" Style="{DynamicResource FlatTabControl}">
             <TabItem Style="{DynamicResource FlatTabItem}">
                 <TabItem.Header>
-                    <TextBlock Text="{DynamicResource PM_Tab_General}"/>
+                    <TextBlock Text="{loc:Loc PM_Tab_General}"/>
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
                     <StackPanel>
-                        <TextBlock Text="{DynamicResource PM_CurrentFile}" FontWeight="SemiBold" Margin="0,0,0,8"
+                        <TextBlock Text="{loc:Loc PM_CurrentFile}" FontWeight="SemiBold" Margin="0,0,0,8"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
 
                         <Grid Margin="0,0,0,12">
@@ -46,17 +47,17 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource PM_FilePath}" Margin="0,2" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc PM_FilePath}" Margin="0,2" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding CurrentFilePath}" Margin="8,2" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextPrimaryBrush}"/>
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource PM_Folder}" Margin="0,2" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc PM_Folder}" Margin="0,2" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CurrentFolder}" Margin="8,2" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextPrimaryBrush}"/>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource PM_FileName}" Margin="0,2" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Loc PM_FileName}" Margin="0,2" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CurrentFileName}" Margin="8,2" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
                         </Grid>
 
-                        <TextBlock Text="{DynamicResource PM_SharedFolder}" FontWeight="SemiBold" Margin="0,0,0,4"
+                        <TextBlock Text="{loc:Loc PM_SharedFolder}" FontWeight="SemiBold" Margin="0,0,0,4"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
@@ -65,11 +66,11 @@
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0" Text="{Binding ShareFolderPath, UpdateSourceTrigger=PropertyChanged}"
                                      Style="{DynamicResource CompactTextBox}"/>
-                            <Button Grid.Column="1" Content="{DynamicResource PM_Browse}" Command="{Binding BrowseSharedFolderCommand}"
+                            <Button Grid.Column="1" Content="{loc:Loc PM_Browse}" Command="{Binding BrowseSharedFolderCommand}"
                                     Style="{DynamicResource SecondaryButton}" Margin="4,0,0,0"/>
                         </Grid>
 
-                        <CheckBox Content="{DynamicResource PM_SyncBefore}" IsChecked="{Binding SyncBeforeShare}"
+                        <CheckBox Content="{loc:Loc PM_SyncBefore}" IsChecked="{Binding SyncBeforeShare}"
                                   Style="{DynamicResource CompactCheckBox}" Margin="0,4"/>
                     </StackPanel>
                 </ScrollViewer>
@@ -77,30 +78,30 @@
 
             <TabItem Style="{DynamicResource FlatTabItem}">
                 <TabItem.Header>
-                    <TextBlock Text="{DynamicResource PM_Tab_Purge}"/>
+                    <TextBlock Text="{loc:Loc PM_Tab_Purge}"/>
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
                     <StackPanel>
-                        <TextBlock Text="{DynamicResource PM_PurgeTitle}" FontWeight="SemiBold" Margin="0,0,0,8"
+                        <TextBlock Text="{loc:Loc PM_PurgeTitle}" FontWeight="SemiBold" Margin="0,0,0,8"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
 
-                        <CheckBox Content="{DynamicResource PM_PurgeRvtLinks}" IsChecked="{Binding PurgeRvtLinks}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeCadImports}" IsChecked="{Binding PurgeCadImports}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeImages}" IsChecked="{Binding PurgeImages}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgePointClouds}" IsChecked="{Binding PurgePointClouds}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeGroups}" IsChecked="{Binding PurgeGroups}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeAssemblies}" IsChecked="{Binding PurgeAssemblies}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeSpaces}" IsChecked="{Binding PurgeSpaces}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeRebar}" IsChecked="{Binding PurgeRebar}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeFabric}" IsChecked="{Binding PurgeFabricReinforcement}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeSheets}" IsChecked="{Binding PurgeSheets}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeSchedules}" IsChecked="{Binding PurgeSchedules}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
-                        <CheckBox Content="{DynamicResource PM_PurgeUnused}" IsChecked="{Binding PurgeUnused}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeRvtLinks}" IsChecked="{Binding PurgeRvtLinks}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeCadImports}" IsChecked="{Binding PurgeCadImports}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeImages}" IsChecked="{Binding PurgeImages}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgePointClouds}" IsChecked="{Binding PurgePointClouds}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeGroups}" IsChecked="{Binding PurgeGroups}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeAssemblies}" IsChecked="{Binding PurgeAssemblies}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeSpaces}" IsChecked="{Binding PurgeSpaces}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeRebar}" IsChecked="{Binding PurgeRebar}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeFabric}" IsChecked="{Binding PurgeFabricReinforcement}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeSheets}" IsChecked="{Binding PurgeSheets}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeSchedules}" IsChecked="{Binding PurgeSchedules}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
+                        <CheckBox Content="{loc:Loc PM_PurgeUnused}" IsChecked="{Binding PurgeUnused}" Style="{DynamicResource CompactCheckBox}" Margin="0,3"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                            <Button Content="{DynamicResource PM_SelectAll}" Command="{Binding SelectAllCommand}"
+                            <Button Content="{loc:Loc PM_SelectAll}" Command="{Binding SelectAllCommand}"
                                     Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0"/>
-                            <Button Content="{DynamicResource PM_DeselectAll}" Command="{Binding DeselectAllCommand}"
+                            <Button Content="{loc:Loc PM_DeselectAll}" Command="{Binding DeselectAllCommand}"
                                     Style="{DynamicResource SecondaryButton}"/>
                         </StackPanel>
                     </StackPanel>
@@ -109,7 +110,7 @@
 
             <TabItem Style="{DynamicResource FlatTabItem}">
                 <TabItem.Header>
-                    <TextBlock Text="{DynamicResource PM_Tab_Views}"/>
+                    <TextBlock Text="{loc:Loc PM_Tab_Views}"/>
                 </TabItem.Header>
                     <Grid Margin="8">
                     <Grid.RowDefinitions>
@@ -119,17 +120,17 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="{DynamicResource PM_ViewsTitle}"
+                    <TextBlock Grid.Row="0" Text="{loc:Loc PM_ViewsTitle}"
                                TextWrapping="Wrap" Margin="0,0,0,6"
                                Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
 
                     <Grid Grid.Row="1" Margin="0,0,0,6">
                         <TextBox x:Name="ViewSearchBox"
                                  Text="{Binding ViewSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                 ToolTip="{DynamicResource PM_SearchViews}"
+                                 ToolTip="{loc:Loc PM_SearchViews}"
                                  Style="{DynamicResource CompactTextBox}"/>
                         <TextBlock x:Name="ViewSearchPlaceholder"
-                                   Text="{DynamicResource PM_SearchViews}"
+                                   Text="{loc:Loc PM_SearchViews}"
                                    VerticalAlignment="Center"
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    Margin="8,0,0,0"
@@ -161,7 +162,7 @@
                     </ListBox>
 
                     <TextBlock Grid.Row="3" Margin="0,4,0,0" Foreground="{DynamicResource TextSecondaryBrush}">
-                        <Run Text="{DynamicResource PM_SelectedCount}"/>
+                        <Run Text="{loc:Loc PM_SelectedCount}"/>
                         <Run Text="{Binding SelectedCount, Mode=OneWay}"/>
                     </TextBlock>
                 </Grid>
@@ -169,11 +170,11 @@
 
             <TabItem Style="{DynamicResource FlatTabItem}">
                 <TabItem.Header>
-                    <TextBlock Text="{DynamicResource PM_Tab_Naming}"/>
+                    <TextBlock Text="{loc:Loc PM_Tab_Naming}"/>
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
                     <StackPanel>
-                        <TextBlock Text="{DynamicResource PM_Blocks}" FontWeight="SemiBold" Margin="0,0,0,4"
+                        <TextBlock Text="{loc:Loc PM_Blocks}" FontWeight="SemiBold" Margin="0,0,0,4"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
                         <DataGrid ItemsSource="{Binding Blocks}" SelectedIndex="{Binding SelectedBlockIndex}"
                                   AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
@@ -223,11 +224,11 @@
                                             <TextBlock FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="{DynamicResource PM_ValidField}"/>
+                                                        <Setter Property="Text" Value="{loc:Loc PM_ValidField}"/>
                                                         <Setter Property="Foreground" Value="Green"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsValid}" Value="False">
-                                                                <Setter Property="Text" Value="{DynamicResource PM_InvalidField}"/>
+                                                                <Setter Property="Text" Value="{loc:Loc PM_InvalidField}"/>
                                                                 <Setter Property="Foreground" Value="Red"/>
                                                                 <Setter Property="ToolTip" Value="{Binding ValidationError}"/>
                                                             </DataTrigger>
@@ -241,19 +242,19 @@
                             </DataGrid.Columns>
                         </DataGrid>
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <Button Content="{DynamicResource PM_AddBlock}" Command="{Binding AddBlockCommand}"
+                            <Button Content="{loc:Loc PM_AddBlock}" Command="{Binding AddBlockCommand}"
                                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-                            <Button Content="{DynamicResource PM_RemoveBlock}" Command="{Binding RemoveBlockCommand}"
+                            <Button Content="{loc:Loc PM_RemoveBlock}" Command="{Binding RemoveBlockCommand}"
                                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
                             <Button Content="▲" Command="{Binding MoveBlockUpCommand}"
-                                    Style="{DynamicResource SecondaryButton}" Margin="0,0,2,0" MinWidth="28" ToolTip="{DynamicResource PM_MoveUp}"/>
+                                    Style="{DynamicResource SecondaryButton}" Margin="0,0,2,0" MinWidth="28" ToolTip="{loc:Loc PM_MoveUp}"/>
                             <Button Content="▼" Command="{Binding MoveBlockDownCommand}"
-                                    Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0" MinWidth="28" ToolTip="{DynamicResource PM_MoveDown}"/>
-                            <Button Content="{DynamicResource PM_FieldLibrary}" Command="{Binding OpenFieldLibraryCommand}"
+                                    Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0" MinWidth="28" ToolTip="{loc:Loc PM_MoveDown}"/>
+                            <Button Content="{loc:Loc PM_FieldLibrary}" Command="{Binding OpenFieldLibraryCommand}"
                                     Style="{DynamicResource SecondaryButton}"/>
                         </StackPanel>
 
-                        <TextBlock Text="{DynamicResource PM_ExportMappings}" FontWeight="SemiBold" Margin="0,12,0,4"
+                        <TextBlock Text="{loc:Loc PM_ExportMappings}" FontWeight="SemiBold" Margin="0,12,0,4"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
                         <DataGrid ItemsSource="{Binding ExportMappings}" SelectedIndex="{Binding SelectedMappingIndex}"
                                   AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
@@ -304,11 +305,11 @@
                                             <TextBlock FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="{DynamicResource PM_ValidField}"/>
+                                                        <Setter Property="Text" Value="{loc:Loc PM_ValidField}"/>
                                                         <Setter Property="Foreground" Value="Green"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsValid}" Value="False">
-                                                                <Setter Property="Text" Value="{DynamicResource PM_InvalidField}"/>
+                                                                <Setter Property="Text" Value="{loc:Loc PM_InvalidField}"/>
                                                                 <Setter Property="Foreground" Value="Red"/>
                                                                 <Setter Property="ToolTip" Value="{Binding ValidationError}"/>
                                                             </DataTrigger>
@@ -322,15 +323,15 @@
                             </DataGrid.Columns>
                         </DataGrid>
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <Button Content="{DynamicResource PM_AddMapping}" Command="{Binding AddExportMappingCommand}"
+                            <Button Content="{loc:Loc PM_AddMapping}" Command="{Binding AddExportMappingCommand}"
                                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-                            <Button Content="{DynamicResource PM_RemoveMapping}" Command="{Binding RemoveExportMappingCommand}"
+                            <Button Content="{loc:Loc PM_RemoveMapping}" Command="{Binding RemoveExportMappingCommand}"
                                     Style="{DynamicResource SecondaryButton}"/>
                         </StackPanel>
 
                         <Border Background="{DynamicResource BorderAltBrush}" Height="1" Margin="0,12"/>
 
-                        <TextBlock Text="{DynamicResource PM_Preview}" FontWeight="SemiBold" Margin="0,0,0,4"
+                        <TextBlock Text="{loc:Loc PM_Preview}" FontWeight="SemiBold" Margin="0,0,0,4"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -341,9 +342,9 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource PM_CurrentName}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2"/>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc PM_CurrentName}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2"/>
                             <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding PreviewCurrent}" Margin="8,2" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource PM_SharedName}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc PM_SharedName}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2"/>
                             <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PreviewShared}" Margin="8,2" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"/>
                         </Grid>
                     </StackPanel>
@@ -360,13 +361,13 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="{DynamicResource Btn_Import}" Command="{Binding ImportSettingsCommand}"
+            <Button Grid.Column="0" Content="{loc:Loc Btn_Import}" Command="{Binding ImportSettingsCommand}"
                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-            <Button Grid.Column="1" Content="{DynamicResource Btn_Export}" Command="{Binding ExportSettingsCommand}"
+            <Button Grid.Column="1" Content="{loc:Loc Btn_Export}" Command="{Binding ExportSettingsCommand}"
                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-            <Button Grid.Column="3" Content="{DynamicResource Btn_Save}" Command="{Binding SaveCommand}"
+            <Button Grid.Column="3" Content="{loc:Loc Btn_Save}" Command="{Binding SaveCommand}"
                     Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
-            <Button Grid.Column="4" Content="{DynamicResource Btn_Cancel}" Command="{Binding CancelCommand}"
+            <Button Grid.Column="4" Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
                     Style="{DynamicResource SecondaryButton}"/>
         </Grid>
     </Grid>

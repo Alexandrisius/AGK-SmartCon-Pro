@@ -14,7 +14,7 @@ public sealed class LocalFamilyAssetServiceTests : IDisposable
     public LocalFamilyAssetServiceTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
 
         _service = new LocalFamilyAssetService(
             _fixture.GetDatabase(),

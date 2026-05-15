@@ -11,7 +11,6 @@ public partial class MappingEditorView : DialogWindowBase
     public MappingEditorView(MappingEditorViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
 

@@ -9,10 +9,12 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Category">User-assigned category for all files.</param>
 /// <param name="Tags">User-assigned tags for all files.</param>
 /// <param name="Description">User-assigned description prefix for all files.</param>
+/// <param name="CategoryId">User-assigned category identifier for all files (from categories table).</param>
 public sealed record FamilyFolderImportRequest(
     string FolderPath,
     int RevitMajorVersion,
     bool Recursive,
     string? Category,
     IReadOnlyList<string>? Tags,
-    string? Description);
+    string? Description,
+    string? CategoryId = null);

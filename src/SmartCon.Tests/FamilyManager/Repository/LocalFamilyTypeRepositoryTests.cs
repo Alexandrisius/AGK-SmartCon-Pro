@@ -13,7 +13,7 @@ public sealed class LocalFamilyTypeRepositoryTests : IDisposable
     public LocalFamilyTypeRepositoryTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
 
         _repository = new LocalFamilyTypeRepository(_fixture.GetDatabase());
 

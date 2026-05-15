@@ -2,6 +2,15 @@ using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.Core.Services.Interfaces;
 
+public enum DialogResult
+{
+    None,
+    OK,
+    Cancel,
+    Yes,
+    No
+}
+
 /// <summary>
 /// UI dialogs for FamilyManager module.
 /// </summary>
@@ -34,6 +43,8 @@ public interface IFamilyManagerDialogService
     /// <summary>Show Yes/No confirmation dialog. Returns true if user clicked Yes.</summary>
     bool ShowConfirmation(string title, string message);
 
+    DialogResult ShowYesNoCancel(string title, string message);
+
     /// <summary>Show category tree editor dialog.</summary>
     bool? ShowCategoryTreeEditor(object viewModel);
 
@@ -51,4 +62,6 @@ public interface IFamilyManagerDialogService
     string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null);
 
     bool? ShowPresetEditor(object viewModel);
+
+    bool? ShowAttributeLibrary(object viewModel);
 }

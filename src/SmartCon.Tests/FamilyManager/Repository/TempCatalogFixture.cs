@@ -27,6 +27,8 @@ internal sealed class TempCatalogFixture : IDisposable
         _migrator = new LocalCatalogMigrator(_database);
         _provider = new LocalCatalogProvider(_database);
         _pathResolver = new StoragePathResolver(_database);
+
+        _migrator.MigrateAsync().GetAwaiter().GetResult();
     }
 
     public LocalCatalogDatabase GetDatabase() => _database;

@@ -14,7 +14,7 @@ public sealed class LocalFamilyFileResolverTests : IDisposable
     public LocalFamilyFileResolverTests()
     {
         _fixture = new TempCatalogFixture();
-        _fixture.MigrateAsync().GetAwaiter().GetResult();
+
 
         _resolver = new LocalFamilyFileResolver(_fixture.GetDatabase());
 

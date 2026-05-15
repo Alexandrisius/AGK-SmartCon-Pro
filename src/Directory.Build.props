@@ -62,7 +62,7 @@
 
   <!-- C# polyfill: позволяет record, init, required на net48 -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
-    <NoWarn>$(NoWarn);CS0436</NoWarn>
+    <NoWarn>$(NoWarn);CS0436;CS1998</NoWarn>
   </PropertyGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="PolySharp">

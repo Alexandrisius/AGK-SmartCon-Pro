@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        Title="{DynamicResource PM_Title_FieldLibrary}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc PM_Title_FieldLibrary}"
         Width="650" Height="420" MinWidth="550" MinHeight="350"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize"
@@ -62,18 +63,18 @@
         </DataGrid>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4">
-            <Button Content="{DynamicResource PM_AddField}" Command="{Binding AddFieldCommand}"
+            <Button Content="{loc:Loc PM_AddField}" Command="{Binding AddFieldCommand}"
                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource PM_RemoveField}" Command="{Binding RemoveFieldCommand}"
+            <Button Content="{loc:Loc PM_RemoveField}" Command="{Binding RemoveFieldCommand}"
                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource PM_DuplicateField}" Command="{Binding DuplicateFieldCommand}"
+            <Button Content="{loc:Loc PM_DuplicateField}" Command="{Binding DuplicateFieldCommand}"
                     Style="{DynamicResource SecondaryButton}"/>
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="{DynamicResource Btn_Save}" Command="{Binding SaveCommand}"
+            <Button Content="{loc:Loc Btn_Save}" Command="{Binding SaveCommand}"
                     Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
-            <Button Content="{DynamicResource Btn_Cancel}" Command="{Binding CancelCommand}"
+            <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
                     Style="{DynamicResource SecondaryButton}"/>
         </StackPanel>
     </Grid>

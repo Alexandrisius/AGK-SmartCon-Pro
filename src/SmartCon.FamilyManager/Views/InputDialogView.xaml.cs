@@ -9,9 +9,7 @@ public partial class InputDialogView : DialogWindowBase
     public InputDialogView(InputDialogViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
         BindCloseRequest(viewModel);
-        Loaded += (_, _) => InputTextBox.Focus();
     }
 }

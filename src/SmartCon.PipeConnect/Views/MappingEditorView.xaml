@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        Title="{DynamicResource Title_Settings}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc Title_Settings}"
         Width="930" Height="420"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -19,7 +20,7 @@
                 SelectionChanged="TabControl_SelectionChanged">
 
         <!-- Вкладка: Типы коннекторов -->
-        <TabItem Header="{DynamicResource Tab_ConnectorTypes}" Style="{DynamicResource FlatTabItem}">
+        <TabItem Header="{loc:Loc Tab_ConnectorTypes}" Style="{DynamicResource FlatTabItem}">
             <Grid Margin="6">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
@@ -94,21 +95,21 @@
 
                 <Grid Grid.Row="1" Margin="0,6,0,0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                        <Button Content="{DynamicResource Btn_Add}" Width="90" Margin="0,0,8,0"
+                        <Button Content="{loc:Loc Btn_Add}" Width="90" Margin="0,0,8,0"
                                 Command="{Binding AddTypeCommand}"
                                 Style="{DynamicResource PrimaryButton}"/>
-                        <Button Content="{DynamicResource Btn_Delete}" Width="80"
+                        <Button Content="{loc:Loc Btn_Delete}" Width="80"
                                 Command="{Binding DeleteTypeCommand}"
                                 Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button Content="{DynamicResource Btn_Import}" Width="100" Margin="0,0,8,0"
+                        <Button Content="{loc:Loc Btn_Import}" Width="100" Margin="0,0,8,0"
                                 Command="{Binding ImportFromFileCommand}"
-                                ToolTip="{DynamicResource Tip_Import}"
+                                ToolTip="{loc:Loc Tip_Import}"
                                 Style="{DynamicResource SecondaryButton}"/>
-                        <Button Content="{DynamicResource Btn_Export}" Width="100"
+                        <Button Content="{loc:Loc Btn_Export}" Width="100"
                                 Command="{Binding ExportToFileCommand}"
-                                ToolTip="{DynamicResource Tip_Export}"
+                                ToolTip="{loc:Loc Tip_Export}"
                                 Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
                     <Button Width="110"
@@ -116,10 +117,10 @@
                             Command="{Binding SaveTypesCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource AccentButton}">
-                                <Setter Property="Content" Value="{DynamicResource Btn_Save}"/>
+                                <Setter Property="Content" Value="{loc:Loc Btn_Save}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsTypesSaved}" Value="True">
-                                        <Setter Property="Content" Value="{DynamicResource Btn_Saved}"/>
+                                        <Setter Property="Content" Value="{loc:Loc Btn_Saved}"/>
                                         <Setter Property="Background" Value="{DynamicResource SavedSuccessBrush}"/>
                                         <Setter Property="Foreground" Value="White"/>
                                     </DataTrigger>
@@ -132,7 +133,7 @@
         </TabItem>
 
         <!-- Вкладка: Правила маппинга -->
-        <TabItem Header="{DynamicResource Tab_MappingRules}" Style="{DynamicResource FlatTabItem}">
+        <TabItem Header="{loc:Loc Tab_MappingRules}" Style="{DynamicResource FlatTabItem}">
             <Grid Margin="6">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
@@ -217,7 +218,7 @@
                                              HorizontalContentAlignment="Left"
                                              Command="{Binding OpenFamilySelectorCommand}"
                                              IsEnabled="{Binding CanSelectFittingFamilies}"
-                                             ToolTip="{DynamicResource Tip_SelectFittingFamilies}"/>
+                                             ToolTip="{loc:Loc Tip_SelectFittingFamilies}"/>
                                  </DataTemplate>
                              </DataGridTemplateColumn.CellTemplate>
                          </DataGridTemplateColumn>
@@ -235,7 +236,7 @@
                                              HorizontalContentAlignment="Left"
                                              Command="{Binding OpenReducerFamilySelectorCommand}"
                                              IsEnabled="{Binding CanSelectReducerFamilies}"
-                                             ToolTip="{DynamicResource Tip_SelectReducerFamilies}"/>
+                                             ToolTip="{loc:Loc Tip_SelectReducerFamilies}"/>
                                  </DataTemplate>
                              </DataGridTemplateColumn.CellTemplate>
                          </DataGridTemplateColumn>
@@ -244,21 +245,21 @@
 
                 <Grid Grid.Row="1" Margin="0,6,0,0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                        <Button Content="{DynamicResource Btn_Add}" Width="90" Margin="0,0,8,0"
+                        <Button Content="{loc:Loc Btn_Add}" Width="90" Margin="0,0,8,0"
                                 Command="{Binding AddRuleCommand}"
                                 Style="{DynamicResource PrimaryButton}"/>
-                        <Button Content="{DynamicResource Btn_Delete}" Width="80"
+                        <Button Content="{loc:Loc Btn_Delete}" Width="80"
                                 Command="{Binding DeleteRuleCommand}"
                                 Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button Content="{DynamicResource Btn_Import}" Width="100" Margin="0,0,8,0"
+                        <Button Content="{loc:Loc Btn_Import}" Width="100" Margin="0,0,8,0"
                                 Command="{Binding ImportFromFileCommand}"
-                                ToolTip="{DynamicResource Tip_Import}"
+                                ToolTip="{loc:Loc Tip_Import}"
                                 Style="{DynamicResource SecondaryButton}"/>
-                        <Button Content="{DynamicResource Btn_Export}" Width="100"
+                        <Button Content="{loc:Loc Btn_Export}" Width="100"
                                 Command="{Binding ExportToFileCommand}"
-                                ToolTip="{DynamicResource Tip_Export}"
+                                ToolTip="{loc:Loc Tip_Export}"
                                 Style="{DynamicResource SecondaryButton}"/>
                     </StackPanel>
                     <Button Width="110"
@@ -266,10 +267,10 @@
                             Command="{Binding SaveRulesCommand}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource AccentButton}">
-                                <Setter Property="Content" Value="{DynamicResource Btn_Save}"/>
+                                <Setter Property="Content" Value="{loc:Loc Btn_Save}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsRulesSaved}" Value="True">
-                                        <Setter Property="Content" Value="{DynamicResource Btn_Saved}"/>
+                                        <Setter Property="Content" Value="{loc:Loc Btn_Saved}"/>
                                         <Setter Property="Background" Value="{DynamicResource SavedSuccessBrush}"/>
                                         <Setter Property="Foreground" Value="White"/>
                                     </DataTrigger>

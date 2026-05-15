@@ -3,85 +3,447 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        Title="{DynamicResource FM_CTE_Title}"
-        Width="460" Height="520" MinWidth="350" MinHeight="300"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        Title="{loc:Loc FM_CTE_CategoriesAndAttrs}"
+        Width="850" Height="580" MinWidth="700" MinHeight="450"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="False"
         Background="{DynamicResource BackgroundBrush}">
 
     <Window.Resources>
-        <ui:SingletonResources/>
+        <ui:SingletonResources>
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+            <Style x:Key="ModernContextMenu" TargetType="ContextMenu">
+                <Setter Property="Background" Value="White"/>
+                <Setter Property="BorderBrush" Value="#FFE0E0E0"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="4"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ContextMenu">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"
+                                    Padding="{TemplateBinding Padding}"
+                                    SnapsToDevicePixels="True">
+                                <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ModernMenuItem" TargetType="MenuItem">
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="12,7,16,7"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="ItemBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}"
+                                    Margin="1">
+                                <ContentPresenter ContentSource="Header"
+                                                  VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="DangerMenuItem" TargetType="MenuItem">
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="12,7,16,7"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="ItemBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}"
+                                    Margin="1">
+                                <ContentPresenter ContentSource="Header"
+                                                  VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="#FFFEECEE"/>
+                                    <Setter Property="Foreground" Value="#FFE53935"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="#FFFDDDDD"/>
+                                    <Setter Property="Foreground" Value="#FFC62828"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ui:SingletonResources>
     </Window.Resources>
 
-    <Grid Margin="12">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-            <Button Content="{DynamicResource FM_CTE_AddRoot}" Command="{Binding AddRootCommand}"
-                    MinWidth="60" Margin="0,0,4,0"
-                    Style="{DynamicResource SecondaryButton}"/>
-            <Button Content="{DynamicResource FM_CTE_AddChild}" Command="{Binding AddChildCommand}"
-                    MinWidth="60" Margin="0,0,4,0"
-                    Style="{DynamicResource SecondaryButton}"/>
-            <Button Content="{DynamicResource FM_CTE_Rename}" Command="{Binding RenameCommand}"
-                    MinWidth="60" Margin="0,0,4,0"
-                    Style="{DynamicResource SecondaryButton}"/>
-            <Button Content="{DynamicResource FM_CTE_Delete}" Command="{Binding DeleteCommand}"
-                    MinWidth="60"
-                    Style="{DynamicResource SecondaryButton}"/>
-        </StackPanel>
+        <Border Grid.Row="0"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderAltBrush}"
+                BorderThickness="1"
+                CornerRadius="6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="280" MinWidth="200"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*" MinWidth="300"/>
+                </Grid.ColumnDefinitions>
 
-        <TreeView Grid.Row="1"
-                  ItemsSource="{Binding RootNodes}"
-                  SelectedItemChanged="TreeView_SelectedItemChanged"
-                  Background="Transparent"
-                  BorderBrush="{DynamicResource BorderAltBrush}"
-                  BorderThickness="1">
-            <TreeView.ItemTemplate>
-                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#x1F4C1;" Margin="0,0,4,0" FontSize="12"/>
-                        <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding FamilyCount, StringFormat='({0})'}"
-                                   Margin="6,0,0,0" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
-                    </StackPanel>
-                </HierarchicalDataTemplate>
-            </TreeView.ItemTemplate>
-            <TreeView.ItemContainerStyle>
-                <Style TargetType="TreeViewItem">
-                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
-                </Style>
-            </TreeView.ItemContainerStyle>
-        </TreeView>
+                <DockPanel Grid.Column="0" Margin="12">
+                    <TextBlock DockPanel.Dock="Top" 
+                               Text="{loc:Loc FM_CTE_CategoryTree}"
+                               FontWeight="SemiBold" 
+                               FontSize="12"
+                               Margin="0,0,0,8"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
 
-        <TextBlock Grid.Row="2" Text="{Binding StatusMessage}"
-                   Margin="0,4,0,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TreeView x:Name="CategoryTree"
+                              ItemsSource="{Binding RootNodes}"
+                              behaviors:TreeViewBehaviors.RightClickSelect="True"
+                              behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
+                              Background="Transparent"
+                              BorderThickness="0">
+                        <i:Interaction.Triggers>
+                            <i:EventTrigger EventName="SelectedItemChanged">
+                                <i:InvokeCommandAction Command="{Binding SelectedItemChangedCommand}"
+                                                       CommandParameter="{Binding SelectedItem, ElementName=CategoryTree}"/>
+                            </i:EventTrigger>
+                        </i:Interaction.Triggers>
+                        <TreeView.ContextMenu>
+                            <ContextMenu Style="{StaticResource ModernContextMenu}">
+                                <MenuItem Header="{loc:Loc FM_CTE_NewCategory}" Command="{Binding AddRootCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                            </ContextMenu>
+                        </TreeView.ContextMenu>
+                        <TreeView.ItemTemplate>
+                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                <StackPanel Orientation="Horizontal"
+                                            Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
+                                    <StackPanel.ContextMenu>
+                                        <ContextMenu Style="{StaticResource ModernContextMenu}"
+                                                     DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Delete}" Command="{Binding ContextMenuDeleteCommand}" Style="{StaticResource DangerMenuItem}"></MenuItem>
+                                        </ContextMenu>
+                                    </StackPanel.ContextMenu>
+                                    <Path Data="{StaticResource FolderIconGeometry}"
+                                           Fill="{DynamicResource TextMutedBrush}"
+                                           Width="13" Height="13"
+                                           Margin="0,0,6,0"
+                                           Stretch="Uniform"
+                                           VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding DisplayName}" 
+                                               VerticalAlignment="Center"
+                                               FontSize="12"/>
+                                    <TextBlock Text="{Binding FamilyCount, StringFormat='({0})'}"
+                                               Margin="4,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
+                                </StackPanel>
+                            </HierarchicalDataTemplate>
+                        </TreeView.ItemTemplate>
+                        <TreeView.ItemContainerStyle>
+                            <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
+                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
+                                <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
+                            </Style>
+                        </TreeView.ItemContainerStyle>
+                    </TreeView>
+                </DockPanel>
 
-        <Grid Grid.Row="3" Margin="0,8,0,0">
+                <GridSplitter Grid.Column="1" 
+                              Width="2" 
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Stretch" 
+                              Background="{DynamicResource BorderAltBrush}"
+                              Margin="0,8"/>
+
+                <Grid Grid.Column="2" Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" 
+                               FontWeight="SemiBold"
+                               FontSize="12"
+                               Margin="0,0,0,8"
+                               Foreground="{DynamicResource TextPrimaryBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelectedCategory}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                        <Run Text="{loc:Loc FM_CTE_AttributesFor}"/>
+                        <Run Text=" "/>
+                        <Run Text="{Binding SelectedCategoryPath, Mode=OneWay}"/>
+                    </TextBlock>
+
+                    <Grid Grid.Row="1" Margin="0,0,0,8"
+                          Visibility="{Binding HasSelectedCategory, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <ComboBox Grid.Column="0" ItemsSource="{Binding AvailableGroups}"
+                                  SelectedItem="{Binding SelectedGroupFilter}"
+                                  MinWidth="140" Margin="0,0,8,0"
+                                  Style="{DynamicResource CompactComboBox}"/>
+
+                        <Grid Grid.Column="1">
+                            <TextBox x:Name="SearchBox"
+                                     Text="{Binding AttributeFilterText, UpdateSourceTrigger=PropertyChanged}"
+                                     behaviors:TextBoxBehaviors.Placeholder="{Binding ElementName=SearchPlaceholder}"
+                                     Style="{DynamicResource CompactTextBox}"/>
+                            <TextBlock x:Name="SearchPlaceholder"
+                                       Text="{loc:Loc FM_CTE_SearchAttrs}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       Margin="8,0,0,0"
+                                       IsHitTestVisible="False"/>
+                        </Grid>
+
+                        <Button Grid.Column="2"
+                                Command="{Binding OpenAttributeLibraryCommand}"
+                                Width="28" Height="26"
+                                Margin="4,0,0,0"
+                                Style="{DynamicResource SecondaryButton}"
+                                Padding="0"
+                                ToolTip="{loc:Loc FM_CTE_Attributes}">
+                            <Viewbox Width="14" Height="14" Stretch="Uniform">
+                                <Path Data="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.04 4.95,18.95L7.44,17.95C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.95L19.05,18.95C19.27,19.04 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"
+                                      Fill="{DynamicResource TextMutedBrush}"/>
+                            </Viewbox>
+                        </Button>
+                    </Grid>
+
+                    <ScrollViewer Grid.Row="2" 
+                                  VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding HasSelectedCategory, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl ItemsSource="{Binding AttributeItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="8,6"
+                                            Background="Transparent"
+                                            CornerRadius="4">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <CheckBox Grid.Column="0" Margin="0,0,8,0">
+                                                <CheckBox.Style>
+                                                    <Style TargetType="CheckBox" BasedOn="{StaticResource CompactCheckBox}">
+                                                        <Setter Property="IsChecked" Value="{Binding IsBound, Mode=OneWay}"/>
+                                                        <Setter Property="IsEnabled" Value="True"/>
+                                                        <Setter Property="Command" Value="{Binding ToggleBindingCommand}"/>
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsInherited}" Value="True"/>
+                                                                    <Condition Binding="{Binding IsBound}" Value="True"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="IsEnabled" Value="False"/>
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </CheckBox.Style>
+                                            </CheckBox>
+
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="12"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+                                            <TextBlock Grid.Column="2" Text="{Binding Group}"
+                                                       Margin="8,0,0,0" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <TextBlock Grid.Row="2" 
+                               Text="{loc:Loc FM_CTE_SelectCategoryHint}"
+                               HorizontalAlignment="Center" 
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="13">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelectedCategory}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <TextBlock Grid.Row="1" Text="{Binding StatusMessage}"
+                   Margin="0,8,0,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+        <Grid Grid.Row="2" Margin="0,8,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="{DynamicResource FM_CTE_Import}" Command="{Binding ImportCommand}"
-                    MinWidth="55" Margin="0,0,4,0"
-                    Style="{DynamicResource SecondaryButton}"/>
-            <Button Grid.Column="1" Content="{DynamicResource FM_CTE_Export}" Command="{Binding ExportCommand}"
-                    MinWidth="55"
-                    Style="{DynamicResource SecondaryButton}"/>
-            <Button Grid.Column="3" Content="{DynamicResource FM_CTE_Close}" Command="{Binding CloseCommand}"
+            <Button Grid.Column="0" Content="{loc:Loc FM_CTE_Import}"
+                    Command="{Binding ImportFromJsonCommand}"
                     MinWidth="80"
-                    Style="{DynamicResource SecondaryButton}"/>
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="12,4" Margin="0,0,4,0"/>
+
+            <Grid Grid.Column="1" Margin="0,0,4,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Content="{loc:Loc FM_CTE_Export}"
+                        Command="{Binding ExportFullCommand}"
+                        MinWidth="60"
+                        Style="{DynamicResource SecondaryButton}"
+                        Padding="12,4"/>
+
+                <ToggleButton Grid.Column="1"
+                              x:Name="ExportSplitToggle"
+                              Width="18"
+                              Margin="1,0,0,0"
+                              Style="{DynamicResource ModernSplitToggle}">
+                    <Path Data="M 0,0 L 4,4 L 8,0"
+                          Stroke="{DynamicResource TextPrimaryBrush}"
+                          StrokeThickness="1.2"
+                          Margin="2,3,2,1"
+                          Stretch="Uniform"/>
+                </ToggleButton>
+
+                <Popup IsOpen="{Binding IsChecked, ElementName=ExportSplitToggle, Mode=OneWay}"
+                       StaysOpen="False"
+                       PlacementTarget="{Binding ElementName=ExportSplitToggle}"
+                       Placement="Bottom"
+                       AllowsTransparency="True">
+                    <Border Background="{DynamicResource BackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderAltBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="4">
+                        <StackPanel>
+                            <Button Content="{loc:Loc FM_CTE_ExportTree}"
+                                    Command="{Binding ExportCategoriesCommand}"
+                                    HorizontalContentAlignment="Left"
+                                    Padding="12,6"
+                                    MinWidth="180"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"/>
+                            <Button Content="{loc:Loc FM_CTE_ExportAttrs}"
+                                    Command="{Binding ExportAttributesCommand}"
+                                    HorizontalContentAlignment="Left"
+                                    Padding="12,6"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"/>
+                            <Button Content="{loc:Loc FM_CTE_ExportFull}"
+                                    Command="{Binding ExportFullCommand}"
+                                    HorizontalContentAlignment="Left"
+                                    Padding="12,6"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"/>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+            </Grid>
+
+            <Button Grid.Column="3"
+                    Command="{Binding SaveCommand}"
+                    MinWidth="80"
+                    Padding="12,4" Margin="0,0,4,0">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                        <Setter Property="Content" Value="{loc:Loc Btn_Save}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSaved}" Value="True">
+                                <Setter Property="Content" Value="{loc:Loc Btn_Saved}"/>
+                                <Setter Property="Background" Value="{DynamicResource SavedSuccessBrush}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+
+            <Button Grid.Column="4" Content="{loc:Loc FM_CTE_Close}"
+                    Command="{Binding CancelCommand}"
+                    MinWidth="80"
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="12,4"/>
         </Grid>
     </Grid>
 </controls:DialogWindowBase>

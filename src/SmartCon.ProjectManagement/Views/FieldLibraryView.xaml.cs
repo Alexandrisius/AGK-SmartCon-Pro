@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using SmartCon.Core.Services;
 using SmartCon.ProjectManagement.ViewModels;
 using SmartCon.UI;
@@ -11,7 +10,6 @@ public partial class FieldLibraryView : DialogWindowBase
     public FieldLibraryView(FieldLibraryViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
 
         ColFieldName.Header = LocalizationService.GetString("PM_Col_FieldName");
@@ -23,10 +21,5 @@ public partial class FieldLibraryView : DialogWindowBase
 
         viewModel.SetOwnerWindow(this);
         BindCloseRequest(viewModel);
-    }
-
-    protected override void OnUserInitiatedClose(CancelEventArgs e)
-    {
-        CustomDialogResult = false;
     }
 }

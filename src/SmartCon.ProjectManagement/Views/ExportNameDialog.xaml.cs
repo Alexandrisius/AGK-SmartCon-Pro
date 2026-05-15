@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using SmartCon.UI;
 using SmartCon.UI.Controls;
 using SmartCon.ProjectManagement.ViewModels;
@@ -10,14 +9,8 @@ public partial class ExportNameDialog : DialogWindowBase
     public ExportNameDialog(ExportNameDialogViewModel viewModel)
     {
         InitializeComponent();
-        LanguageManager.EnsureWindowResources(this);
         DataContext = viewModel;
 
         BindCloseRequest(viewModel);
-    }
-
-    protected override void OnUserInitiatedClose(CancelEventArgs e)
-    {
-        CustomDialogResult = false;
     }
 }

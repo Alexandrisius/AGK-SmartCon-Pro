@@ -14,7 +14,7 @@ using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel
 {
     private readonly ITransactionService _txService;
     private readonly Document _doc;

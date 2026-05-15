@@ -17,4 +17,8 @@ public interface IFamilyManagerViewModelFactory
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? manufacturer, string? versionLabel,
         string? fileSizeText, string? createdAtText, string? updatedAtText);
+
+    CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
+    AttributeLibraryViewModel CreateAttributeLibraryViewModel();
+    CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
 }

@@ -88,12 +88,23 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             SmartConLogger.Info($"[FamilyLoad] File size: {fileInfo.Length} bytes");
 
             using var basicInfo = BasicFileInfo.Extract(normalizedPath);
-            if (basicInfo?.IsSavedInLaterVersion == true)
+            if (basicInfo != null)
             {
                 var fileFormat = basicInfo.Format ?? "unknown";
-                SmartConLogger.Info($"[FamilyLoad] Family saved in newer version: {fileFormat}");
-                return Task.FromResult(new FamilyLoadResult(false, null, null,
-                    $"Family was saved in Revit {fileFormat} and cannot be opened in the current version."));
+                var isCurrentVersion = basicInfo.IsSavedInCurrentVersion;
+                SmartConLogger.Freeze($"FamilyLoad: File version={fileFormat}, IsCurrentVersion={isCurrentVersion}, LaterVersion={basicInfo.IsSavedInLaterVersion}");
+
+                if (basicInfo.IsSavedInLaterVersion)
+                {
+                    SmartConLogger.Info($"[FamilyLoad] Family saved in newer version: {fileFormat}");
+                    return Task.FromResult(new FamilyLoadResult(false, null, null,
+                        $"Family was saved in Revit {fileFormat} and cannot be opened in the current version."));
+                }
+
+                if (!isCurrentVersion)
+                {
+                    SmartConLogger.Freeze($"FamilyLoad: UPGRADE DIALOG EXPECTED for {normalizedPath} (version {fileFormat})");
+                }
             }
 
             var checkName = !string.IsNullOrWhiteSpace(options.PreferredName)

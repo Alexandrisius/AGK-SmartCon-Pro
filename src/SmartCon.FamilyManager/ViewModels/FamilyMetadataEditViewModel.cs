@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -15,6 +16,7 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
     private readonly IWritableFamilyCatalogProvider _writableProvider;
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyManagerDialogService _dialogService;
+    private readonly IFamilyManagerViewModelFactory _viewModelFactory;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -38,12 +40,14 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
         ContentStatus contentStatus,
         IWritableFamilyCatalogProvider writableProvider,
         ICategoryRepository categoryRepository,
-        IFamilyManagerDialogService dialogService)
+        IFamilyManagerDialogService dialogService,
+        IFamilyManagerViewModelFactory viewModelFactory)
     {
         _catalogItemId = catalogItemId;
         _writableProvider = writableProvider;
         _categoryRepository = categoryRepository;
         _dialogService = dialogService;
+        _viewModelFactory = viewModelFactory;
 
         Name = name;
         Description = description;
@@ -56,7 +60,7 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
     [RelayCommand]
     private async Task PickCategory()
     {
-        var pickerVm = new CategoryPickerViewModel(_categoryRepository);
+        var pickerVm = _viewModelFactory.CreateCategoryPickerViewModel();
         await pickerVm.InitializeAsync();
         var result = _dialogService.ShowCategoryPicker(pickerVm);
         if (result is not null)

@@ -168,6 +168,93 @@ internal static class FamilyCatalogSql
         ALTER TABLE family_assets ADD COLUMN is_primary INTEGER DEFAULT 0
         """;
 
+    public const string CreateAttributeDefinitions = """
+        CREATE TABLE IF NOT EXISTS attribute_definitions (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL COLLATE NOCASE,
+            group_name TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at_utc TEXT NOT NULL,
+            UNIQUE(name)
+        )
+        """;
+
+    public const string CreateCategoryAttributeBindings = """
+        CREATE TABLE IF NOT EXISTS category_attribute_bindings (
+            id TEXT PRIMARY KEY,
+            category_id TEXT NOT NULL,
+            attribute_id TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
+            UNIQUE(category_id, attribute_id)
+        )
+        """;
+
+    public const string CreateFamilyDataImportRuns = """
+        CREATE TABLE IF NOT EXISTS family_data_import_runs (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            version_id TEXT,
+            file_id TEXT,
+            source_sha256 TEXT,
+            revit_major_version INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Succeeded',
+            types_count INTEGER NOT NULL DEFAULT 0,
+            started_at_utc TEXT NOT NULL,
+            completed_at_utc TEXT,
+            error_message TEXT,
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateExtractedAttributeValues = """
+        CREATE TABLE IF NOT EXISTS extracted_attribute_values (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            version_id TEXT,
+            file_id TEXT,
+            type_id TEXT,
+            attribute_id TEXT NOT NULL,
+            binding_id TEXT,
+            parameter_name TEXT NOT NULL,
+            parameter_scope TEXT,
+            storage_type TEXT,
+            value_text TEXT,
+            value_raw TEXT,
+            value_number REAL,
+            unit_type_id TEXT,
+            status TEXT NOT NULL DEFAULT 'Found',
+            message TEXT,
+            extraction_run_id TEXT NOT NULL,
+            extracted_at_utc TEXT NOT NULL,
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
+            FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
+            UNIQUE(catalog_item_id, version_id, type_id, attribute_id)
+        )
+        """;
+
+    public const string MigrateV6FamilyTypesAddColumns = """
+        ALTER TABLE family_types ADD COLUMN version_id TEXT;
+        ALTER TABLE family_types ADD COLUMN file_id TEXT;
+        ALTER TABLE family_types ADD COLUMN extraction_run_id TEXT
+        """;
+
+    public const string CreateV6Indexes = """
+        CREATE INDEX IF NOT EXISTS ix_attr_values_item_version ON extracted_attribute_values (catalog_item_id, version_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_type ON extracted_attribute_values (type_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
+        CREATE INDEX IF NOT EXISTS ix_attr_bindings_category ON category_attribute_bindings (category_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_bindings_attribute ON category_attribute_bindings (attribute_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_attr_definitions_name ON attribute_definitions (name COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS ix_import_runs_item ON family_data_import_runs (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_import_runs_started ON family_data_import_runs (started_at_utc)
+        """;
+
     public const string CreateTables = $"""
         {CreateDatabaseMeta};
         {CreateSchemaInfo};
@@ -180,7 +267,11 @@ internal static class FamilyCatalogSql
         {CreateCategories};
         {CreateFamilyTypes};
         {CreateAttributePresets};
-        {CreateAttributePresetParameters}
+        {CreateAttributePresetParameters};
+        {CreateAttributeDefinitions};
+        {CreateCategoryAttributeBindings};
+        {CreateFamilyDataImportRuns};
+        {CreateExtractedAttributeValues}
         """;
 
     public const string CreateIndexes = """

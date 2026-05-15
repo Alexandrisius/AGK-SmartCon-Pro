@@ -20,7 +20,7 @@ public sealed class AllowedValuesViewModelTests
             MinLength = minLength,
             MaxLength = maxLength
         };
-        item.UpdateValidationModeDisplay();
+        item.RefreshValidationModeDisplay();
         return item;
     }
 

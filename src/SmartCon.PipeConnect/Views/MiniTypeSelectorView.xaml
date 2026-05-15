@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        Title="{DynamicResource Title_ConnType}"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc Title_ConnType}"
         Width="340" Height="280"
         WindowStartupLocation="Manual"
         ResizeMode="NoResize"
@@ -39,10 +40,10 @@
 
         <StackPanel Grid.Row="1" Orientation="Horizontal"
                     HorizontalAlignment="Right" Margin="0,10,0,0">
-            <Button Content="{DynamicResource Btn_Cancel}" Width="80" Margin="0,0,8,0"
+            <Button Content="{loc:Loc Btn_Cancel}" Width="80" Margin="0,0,8,0"
                     Command="{Binding CancelCommand}" IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>
-            <Button Content="{DynamicResource Btn_OK}" Width="80"
+            <Button Content="{loc:Loc Btn_OK}" Width="80"
                     Command="{Binding SelectCommand}" IsDefault="True"
                     Style="{DynamicResource AccentButton}"/>
         </StackPanel>
