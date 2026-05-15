@@ -49,7 +49,8 @@
                            Stretch="Uniform" StretchDirection="Both"
                            Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibility}}"/>
                     <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center"
-                                Orientation="Horizontal" Margin="0,0,0,8">
+                                Orientation="Horizontal" Margin="0,0,0,8"
+                                Visibility="{Binding CanWriteProperty, Converter={StaticResource BoolToVisibility}}">
                         <Button Content="{loc:Loc FM_Props_ChangeImage}"
                                 Command="{Binding ChangeAvatarCommand}"
                                 Style="{DynamicResource GhostButton}"
@@ -68,6 +69,7 @@
                 <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
                          FontSize="13" FontWeight="SemiBold" Padding="4,2" Margin="0,0,0,12"
                          Height="Auto" MaxHeight="52" TextWrapping="Wrap" AcceptsReturn="False"
+                         IsReadOnly="{Binding IsReadOnly}"
                          Style="{DynamicResource CompactTextBox}"/>
 
                 <TextBlock Text="{loc:Loc FM_Category}" Margin="0,0,0,4"
@@ -94,18 +96,21 @@
                                Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" Margin="0,0,8,0"/>
                     <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableStatuses}"
                               SelectedItem="{Binding ContentStatus}"
+                              IsEnabled="{Binding CanWriteProperty}"
                               Style="{DynamicResource CompactComboBox}"/>
                 </Grid>
 
                 <TextBlock Text="{loc:Loc FM_Props_Manufacturer}" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
                 <TextBox Text="{Binding Manufacturer, UpdateSourceTrigger=PropertyChanged}"
+                         IsReadOnly="{Binding IsReadOnly}"
                          Padding="4,2" Margin="0,0,0,8"
                          Style="{DynamicResource CompactTextBox}"/>
 
                 <TextBlock Text="{loc:Loc FM_Tags}" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
                 <TextBox Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
+                         IsReadOnly="{Binding IsReadOnly}"
                          Padding="4,2" Margin="0,0,0,8"
                          Style="{DynamicResource CompactTextBox}"/>
 
@@ -136,6 +141,7 @@
                         <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
                                  AcceptsReturn="True" TextWrapping="Wrap"
                                  MinHeight="100" Padding="6,4"
+                                 IsReadOnly="{Binding IsReadOnly}"
                                  VerticalScrollBarVisibility="Auto"
                                  Style="{DynamicResource CompactTextBox}" Margin="0,0,0,16"/>
 

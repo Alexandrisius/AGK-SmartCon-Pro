@@ -195,5 +195,27 @@ public static partial class LocalizationService
         ru["FM_AL_EnterGroup"] = "Имя группы:"; en["FM_AL_EnterGroup"] = "Group name:";
         ru["FM_AL_DeactivateTitle"] = "Деактивация атрибута"; en["FM_AL_DeactivateTitle"] = "Deactivate Attribute";
         ru["FM_AL_DeactivateMessage"] = "Атрибут используется в {0} категориях. При деактивации все привязки будут удалены. Продолжить?"; en["FM_AL_DeactivateMessage"] = "Attribute is used in {0} categories. Deactivating will remove all bindings. Continue?";
+
+        ru["FM_Profile"] = "Профиль"; en["FM_Profile"] = "Profile";
+        ru["FM_ProfileTitle"] = "Профиль пользователя"; en["FM_ProfileTitle"] = "User Profile";
+        ru["FM_ProfileRole"] = "Роль"; en["FM_ProfileRole"] = "Role";
+        ru["FM_ProfileUsers"] = "Пользователи базы"; en["FM_ProfileUsers"] = "Database Users";
+        ru["FM_ProfileUsersCount"] = "пользователей"; en["FM_ProfileUsersCount"] = "users";
+        ru["FM_ProfileClose"] = "Закрыть"; en["FM_ProfileClose"] = "Close";
+        ru["FM_ProfileYourRole"] = "Ваша роль: Инженер"; en["FM_ProfileYourRole"] = "Your role: Engineer";
+        ru["FM_ProfileEngineerInfo"] = "Доступны просмотр и загрузка семейств"; en["FM_ProfileEngineerInfo"] = "Browse and load families available";
+        ru["FM_ProfileDeleteTitle"] = "Удалить пользователя"; en["FM_ProfileDeleteTitle"] = "Remove User";
+        ru["FM_ProfileDeletePrompt"] = "Удалить \"{0}\" из базы данных?\nПользователь сможет подключиться заново как Инженер."; en["FM_ProfileDeletePrompt"] = "Remove \"{0}\" from this database?\nThey will be able to reconnect as Engineer.";
+        ru["FM_TransferOwnership"] = "Передать владение"; en["FM_TransferOwnership"] = "Transfer Ownership";
+        ru["FM_TransferTitle"] = "Передача владения"; en["FM_TransferTitle"] = "Transfer Ownership";
+        ru["FM_TransferNoBimMaster"] = "Нет BIM-Мастеров для передачи владения."; en["FM_TransferNoBimMaster"] = "No BIM Masters to transfer ownership to.";
+        ru["FM_TransferConfirm"] = "Вы станете BIM-Мастером. Продолжить?"; en["FM_TransferConfirm"] = "You will become a BIM Master. Continue?";
+        ru["FM_RoleOwner"] = "Владелец"; en["FM_RoleOwner"] = "Owner";
+        ru["FM_RoleBimMaster"] = "BIM-Мастер"; en["FM_RoleBimMaster"] = "BIM Master";
+        ru["FM_RoleEngineer"] = "Инженер"; en["FM_RoleEngineer"] = "Engineer";
+        ru["FM_AccessDenied"] = "Доступ запрещён"; en["FM_AccessDenied"] = "Access Denied";
+        ru["FM_AccessDeniedMessage"] = "Владелец базы данных \"{0}\" ограничил вам доступ."; en["FM_AccessDeniedMessage"] = "The owner of \"{0}\" has restricted your access.";
+        ru["FM_AccessDeniedContact"] = "Обратитесь к владельцу для получения разрешения."; en["FM_AccessDeniedContact"] = "Contact the owner for permission.";
+        ru["FM_AccessDeniedOwner"] = "Владелец: {0}"; en["FM_AccessDeniedOwner"] = "Owner: {0}";
     }
 }

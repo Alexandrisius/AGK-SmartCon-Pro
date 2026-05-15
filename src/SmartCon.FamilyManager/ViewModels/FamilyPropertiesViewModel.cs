@@ -65,6 +65,18 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [ObservableProperty] private int _attributesFoundCount;
     [ObservableProperty] private int _attributesMissingCount;
     [ObservableProperty] private bool _hasTypes;
+    [ObservableProperty] private bool _isReadOnly;
+
+    partial void OnIsReadOnlyChanged(bool value)
+    {
+        SaveCommand.NotifyCanExecuteChanged();
+        PickCategoryCommand.NotifyCanExecuteChanged();
+        ChangeAvatarCommand.NotifyCanExecuteChanged();
+        RemoveAvatarCommand.NotifyCanExecuteChanged();
+        AddAssetCommand.NotifyCanExecuteChanged();
+        DeleteAssetCommand.NotifyCanExecuteChanged();
+        SetAsPrimaryCommand.NotifyCanExecuteChanged();
+    }
 
     private IReadOnlyList<EffectiveCategoryAttribute> _effectiveAttributes = [];
     private IReadOnlyList<ExtractedAttributeValue> _allValues = [];
@@ -293,7 +305,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         AttributeRows = new ObservableCollection<AttributeValueRow>(rows);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task PickCategory()
     {
         var pickerVm = _viewModelFactory.CreateCategoryPickerViewModel();
@@ -314,7 +326,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task Save()
     {
         var tags = TagsText
@@ -337,6 +349,10 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
     [RelayCommand]
     private void Cancel() => RequestClose?.Invoke(null);
+
+    private bool CanWrite() => !IsReadOnly;
+
+    public bool CanWriteProperty => !IsReadOnly;
 }
 
 public sealed class FamilyTypeSelectorItem

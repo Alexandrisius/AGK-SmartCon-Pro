@@ -12,4 +12,6 @@ public sealed record DatabaseConnection(
     string Id,
     string Name,
     string Path,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    DbUserRole? CurrentUserRole = null,
+    string? OwnerIdentity = null);

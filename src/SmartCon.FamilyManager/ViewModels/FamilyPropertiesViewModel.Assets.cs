@@ -51,7 +51,7 @@ public sealed partial class FamilyPropertiesViewModel
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task ChangeAvatar()
     {
         var path = _dialogService.ShowAssetOpenFileDialog(
@@ -67,7 +67,7 @@ public sealed partial class FamilyPropertiesViewModel
         });
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task RemoveAvatar()
     {
         if (!HasAvatar || ImageAssets.Count == 0) return;
@@ -82,7 +82,7 @@ public sealed partial class FamilyPropertiesViewModel
         });
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task AddAsset(string assetTypeStr)
     {
         if (!Enum.TryParse<FamilyAssetType>(assetTypeStr, out var assetType)) return;
@@ -99,7 +99,7 @@ public sealed partial class FamilyPropertiesViewModel
         });
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task DeleteAsset(FamilyAsset? asset)
     {
         if (asset is null) return;
@@ -129,7 +129,7 @@ public sealed partial class FamilyPropertiesViewModel
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task SetAsPrimary(FamilyAsset? asset)
     {
         if (asset is null || asset.AssetType != FamilyAssetType.Image) return;

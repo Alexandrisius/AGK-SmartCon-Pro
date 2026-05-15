@@ -16,9 +16,11 @@ public interface IFamilyManagerViewModelFactory
         string catalogItemId, string name, string? description,
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? manufacturer, string? versionLabel,
-        string? fileSizeText, string? createdAtText, string? updatedAtText);
+        string? fileSizeText, string? createdAtText, string? updatedAtText,
+        bool isReadOnly = false);
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
     AttributeLibraryViewModel CreateAttributeLibraryViewModel();
     CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
+    ProfileViewModel CreateProfileViewModel();
 }

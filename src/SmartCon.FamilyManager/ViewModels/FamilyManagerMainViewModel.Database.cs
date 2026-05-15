@@ -29,7 +29,7 @@ public sealed partial class FamilyManagerMainViewModel
     private void OnActiveDatabaseChanged(object? sender, string connectionId)
     {
         RefreshConnections();
-        _ = LoadTreeAsync();
+        _ = RefreshAccessAndLoadTreeAsync();
     }
 
     partial void OnSelectedConnectionChanged(DatabaseConnection? value)
@@ -46,18 +46,27 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
-            var success = await _databaseManager.SwitchDatabaseAsync(connectionId);
-            if (success)
+            _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+            try
             {
-                var conn = Connections.FirstOrDefault(c => c.Id == connectionId);
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Switched to: {0}",
-                    conn?.Name ?? connectionId);
+                var success = await _databaseManager.SwitchDatabaseAsync(connectionId);
+                if (success)
+                {
+                    await RefreshAccessAndLoadTreeAsync();
+                    var conn = Connections.FirstOrDefault(c => c.Id == connectionId);
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Switched to: {0}",
+                        conn?.Name ?? connectionId);
+                }
+                else
+                {
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database";
+                    RefreshConnections();
+                }
             }
-            else
+            finally
             {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database";
-                RefreshConnections();
+                _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
             }
         }
         catch (Exception ex)
@@ -87,12 +96,21 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
-            var conn = await _databaseManager.CreateDatabaseAsync(name!.Trim(), path!);
-            RefreshConnections();
-            SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created at {1}",
-                conn.Name, conn.Path);
+            _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+            try
+            {
+                var conn = await _databaseManager.CreateDatabaseAsync(name!.Trim(), path!);
+                await RefreshAccessAndLoadTreeAsync();
+                RefreshConnections();
+                SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created at {1}",
+                    conn.Name, conn.Path);
+            }
+            finally
+            {
+                _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
+            }
         }
         catch (Exception ex)
         {
@@ -116,12 +134,21 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
-            var conn = await _databaseManager.ConnectDatabaseAsync(path!);
-            RefreshConnections();
-            SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Connected to: {0}",
-                conn.Name);
+            _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+            try
+            {
+                var conn = await _databaseManager.ConnectDatabaseAsync(path!);
+                await RefreshAccessAndLoadTreeAsync();
+                RefreshConnections();
+                SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Connected to: {0}",
+                    conn.Name);
+            }
+            finally
+            {
+                _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
+            }
         }
         catch (Exception ex)
         {
@@ -173,7 +200,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanManageUsersCheck))]
     private async Task DeleteDatabaseAsync()
     {
         if (SelectedConnection is null) return;
@@ -220,4 +247,6 @@ public sealed partial class FamilyManagerMainViewModel
             IsLoading = false;
         }
     }
+
+    private bool CanManageUsersCheck() => CanManageUsers;
 }

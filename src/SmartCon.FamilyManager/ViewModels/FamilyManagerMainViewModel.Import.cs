@@ -10,7 +10,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 
 public sealed partial class FamilyManagerMainViewModel
 {
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private async Task ImportFilesAsync()
     {
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import Files";
@@ -56,7 +56,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private async Task ImportFolderAsync()
     {
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFolder) ?? "Import Folder";
@@ -157,7 +157,7 @@ public sealed partial class FamilyManagerMainViewModel
         return result;
     }
 
-    [RelayCommand(CanExecute = nameof(CanImportToCategory))]
+    [RelayCommand(CanExecute = nameof(CanImportToCategoryWithAccess))]
     private async Task ImportFileToCategoryAsync()
     {
         if (SelectedTreeNode is not CategoryNodeViewModel categoryNode) return;
@@ -207,7 +207,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanImportToCategory))]
+    [RelayCommand(CanExecute = nameof(CanImportToCategoryWithAccess))]
     private async Task ImportFolderToCategoryAsync()
     {
         if (SelectedTreeNode is not CategoryNodeViewModel categoryNode) return;
@@ -250,7 +250,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanImportToCategory))]
+    [RelayCommand(CanExecute = nameof(CanImportToCategoryWithAccess))]
     private void ImportDataForCategory()
     {
         if (SelectedTreeNode is not CategoryNodeViewModel categoryNode) return;
@@ -356,7 +356,7 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
-    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private void ExtractTypes()
     {
         if (SelectedItem is null) return;
@@ -417,7 +417,7 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
-    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private void ImportData()
     {
         if (SelectedItem is null) return;
@@ -495,4 +495,8 @@ public sealed partial class FamilyManagerMainViewModel
         await _typeRepository.SaveTypesAsync(catalogItemId, types.AsReadOnly(), CancellationToken.None);
         await LoadTreeAsync();
     }
+
+    private bool CanImportFiles() => CanImport;
+
+    private bool CanImportToCategoryWithAccess() => CanImport && CanImportToCategory();
 }

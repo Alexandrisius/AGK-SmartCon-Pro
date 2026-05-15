@@ -132,6 +132,7 @@ public static class ServiceRegistrar
             presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
+            presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -175,6 +176,9 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
         services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
         services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
+        services.AddSingleton<IUserIdentityService, RevitUserIdentityService>();
+        services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
+        services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
 
         services.AddSingleton<FamilyManagerMainViewModel>();

@@ -175,6 +175,8 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
 
     public bool? ShowAttributeLibrary(object viewModel) => _presenter.ShowDialog(viewModel);
 
+    public bool? ShowProfile(object viewModel) => _presenter.ShowDialog(viewModel);
+
     private static string GetAssetFilter(FamilyAssetType assetType) => assetType switch
     {
         FamilyAssetType.Image => "Image files (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff|All files (*.*)|*.*",

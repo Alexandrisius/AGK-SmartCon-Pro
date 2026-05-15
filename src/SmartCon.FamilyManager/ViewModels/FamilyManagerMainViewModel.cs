@@ -32,6 +32,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly IFamilyTypeRepository _typeRepository;
     private readonly IFamilyDataExtractionService _extractionService;
     private readonly IFamilyDataImportService _dataImportService;
+    private readonly IDbAccessControlService _accessControl;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -47,6 +48,26 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<DatabaseConnection> _connections = new();
     [ObservableProperty] private DatabaseConnection? _selectedConnection;
     [ObservableProperty] private int _currentRevitVersion;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportFolderCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ExtractTypesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportDataCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportDataForCategoryCommand))]
+    private bool _canImport;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditMetadataCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UpdateFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
+    private bool _canEdit;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DeleteDatabaseCommand))]
+    private bool _canManageUsers;
 
     public FamilyManagerMainViewModel(
         IFamilyCatalogProvider catalogProvider,
@@ -64,7 +85,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         ICategoryRepository categoryRepository,
         IFamilyTypeRepository typeRepository,
         IFamilyDataExtractionService extractionService,
-        IFamilyDataImportService dataImportService)
+        IFamilyDataImportService dataImportService,
+        IDbAccessControlService accessControl)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -82,6 +104,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _typeRepository = typeRepository;
         _extractionService = extractionService;
         _dataImportService = dataImportService;
+        _accessControl = accessControl;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -124,7 +147,36 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         SmartConLogger.Info($"======================================================================");
 
         RefreshConnections();
+        await RefreshAccessAndLoadTreeAsync();
+    }
+
+    private async Task RefreshAccessAndLoadTreeAsync()
+    {
+        try
+        {
+            await _accessControl.RefreshCurrentUserAsync();
+            UpdateAccessProperties();
+        }
+        catch (DbAccessDeniedException ex)
+        {
+            CanImport = false;
+            CanEdit = false;
+            CanManageUsers = false;
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
+                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
+            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
+            return;
+        }
         await LoadTreeAsync();
+    }
+
+    private void UpdateAccessProperties()
+    {
+        CanImport = _accessControl.CanImport;
+        CanEdit = _accessControl.CanEdit;
+        CanManageUsers = _accessControl.CanManageUsers;
     }
 
     partial void OnSearchTextChanged(string value)
@@ -136,7 +188,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
-        CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active;
+        CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
         LoadToProjectCommand.NotifyCanExecuteChanged();
         LoadAndPlaceCommand.NotifyCanExecuteChanged();
     }
@@ -265,6 +317,30 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
                     leaf.IsExpanded = true;
             }
             AttachTypesToNodes(node.Children, batch, expandedFamilyIds);
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenProfileAsync(CancellationToken ct)
+    {
+        try
+        {
+            var profileVm = _viewModelFactory.CreateProfileViewModel();
+            await profileVm.InitializeAsync(ct);
+            _dialogService.ShowProfile(profileVm);
+        }
+        catch (SmartCon.Core.Models.FamilyManager.DbAccessDeniedException)
+        {
+            return;
+        }
+
+        try
+        {
+            await _accessControl.RefreshCurrentUserAsync(ct);
+            UpdateAccessProperties();
+        }
+        catch (SmartCon.Core.Models.FamilyManager.DbAccessDeniedException)
+        {
         }
     }
 

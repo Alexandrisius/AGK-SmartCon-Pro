@@ -50,6 +50,7 @@ internal sealed class LocalCatalogMigrator
         await MigrateV4Async(connection, ct);
         await MigrateV5Async(connection, ct);
         await MigrateV6Async(connection, ct);
+        await MigrateV7Async(connection, ct);
 
         await EnsureCriticalColumnsAsync(connection, ct);
     }
@@ -263,6 +264,34 @@ internal sealed class LocalCatalogMigrator
         }
     }
 
+    private static async Task MigrateV7Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 7) return;
+
+        if (!await TableExistsAsync(connection, "db_users", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateDbUsers;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateDbUsersIndexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        if (!await ColumnExistsAsync(connection, "database_meta", "owner_identity", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV7AddOwnerIdentity;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '7' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -310,6 +339,20 @@ internal sealed class LocalCatalogMigrator
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = FamilyCatalogSql.MigrateV6FamilyTypesAddColumns;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "db_users", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.CreateDbUsers;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "database_meta", "owner_identity", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV7AddOwnerIdentity;
             await cmd.ExecuteNonQueryAsync(ct);
         }
     }

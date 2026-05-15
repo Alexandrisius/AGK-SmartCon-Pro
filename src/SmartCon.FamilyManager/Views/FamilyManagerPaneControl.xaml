@@ -6,6 +6,7 @@
         xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
          Background="{DynamicResource BackgroundBrush}">
 
@@ -14,6 +15,8 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:SingletonResources/>
             </ResourceDictionary.MergedDictionaries>
+
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
 
             <Style x:Key="DangerIconButton" TargetType="Button">
                 <Setter Property="Background" Value="Transparent"/>
@@ -163,6 +166,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <ComboBox Grid.Column="0"
@@ -235,7 +239,7 @@
                            IsHitTestVisible="False"/>
             </Grid>
 
-            <Grid Grid.Column="5">
+            <Grid Grid.Column="5" Visibility="{Binding CanImport, Converter={StaticResource BoolToVis}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
@@ -292,6 +296,18 @@
                     </Border>
                 </Popup>
             </Grid>
+
+            <Button Grid.Column="6"
+                    Command="{Binding OpenProfileCommand}"
+                    Width="28" Height="26"
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="0"
+                    ToolTip="{loc:Loc FM_Profile}">
+                <Viewbox Width="12" Height="12" Stretch="Uniform">
+                    <Path Data="M 6,0 C 7.66,0 9,1.34 9,3 C 9,4.66 7.66,6 6,6 C 4.34,6 3,4.66 3,3 C 3,1.34 4.34,0 6,0 Z M 6,7.5 C 9.31,7.5 12,8.84 12,10.5 L 12,12 L 0,12 L 0,10.5 C 0,8.84 2.69,7.5 6,7.5 Z"
+                          Fill="{DynamicResource TextPrimaryBrush}"/>
+                </Viewbox>
+            </Button>
         </Grid>
 
         <TreeView Grid.Row="1"
