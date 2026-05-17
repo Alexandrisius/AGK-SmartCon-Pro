@@ -35,7 +35,7 @@ Write-Host "Current version: $currentVersion" -ForegroundColor White
 
 # Sync local tags with remote (prune deleted tags)
 Write-Step "Syncing tags with remote"
-git fetch --tags --prune 2>$null
+$null = git fetch --tags --prune 2>&1
 if ($LASTEXITCODE -ne 0) { Write-Warn "Could not fetch tags from remote" }
 else { Write-Ok "Tags synced" }
 
