@@ -143,7 +143,10 @@ public sealed class GitHubUpdateService : IUpdateService
 
         var primaryAsset = allAssets.Values.First();
 
-        var changelog = BuildChangelog(candidateReleases, needDowngrade);
+        var changelogReleases = needDowngrade
+            ? new List<(string Version, string TagName, string? Body, DateTime PublishedAt, bool IsPrerelease, JsonElement Assets)> { latest }
+            : candidateReleases;
+        var changelog = BuildChangelog(changelogReleases, needDowngrade);
 
         return new UpdateInfo(
             Version: latest.Version,

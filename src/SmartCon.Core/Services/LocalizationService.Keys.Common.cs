@@ -167,8 +167,8 @@ public static partial class LocalizationService
         en["About_Author"] = "Author:";
         ru["About_Plugin"] = "Плагин:";
         en["About_Plugin"] = "Plugin:";
-        ru["About_PluginDesc"] = "MEP коннектор труб для Revit 2025";
-        en["About_PluginDesc"] = "MEP Pipe Connector for Revit 2025";
+        ru["About_PluginDesc"] = "Решение для автоматизации инженерных задач в Revit";
+        en["About_PluginDesc"] = "Engineering task automation solution for Revit";
         ru["About_Repo"] = "Репозиторий:";
         en["About_Repo"] = "Repo:";
         ru["About_Language"] = "Язык:";
