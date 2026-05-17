@@ -33,11 +33,17 @@ function Write-Err($msg) { Write-Host "  ERROR: $msg" -ForegroundColor Red }
 $currentVersion = (Get-Content $VersionFile -TotalCount 1).Trim()
 Write-Host "Current version: $currentVersion" -ForegroundColor White
 
-# Sync local tags with remote (prune deleted tags)
-Write-Step "Syncing tags with remote"
-$null = git fetch --tags --prune 2>&1
-if ($LASTEXITCODE -ne 0) { Write-Warn "Could not fetch tags from remote" }
-else { Write-Ok "Tags synced" }
+function Get-RemoteTags($pattern) {
+    $output = git ls-remote --tags origin "refs/tags/$pattern" 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($output)) { return @() }
+    $tags = @($output -split "`r?`n" | ForEach-Object {
+        $line = $_.Trim()
+        if ([string]::IsNullOrWhiteSpace($line)) { return }
+        $ref = ($line -split "\s+")[1]
+        if ($ref -match "^refs/tags/(?<tag>.+)$") { $matches["tag"] }
+    } | Where-Object { $_ -ne $null })
+    return @($tags | Sort-Object)
+}
 
 if ($Prerelease) {
     # Prerelease mode: version stays the same, only tag gets prerelease suffix
@@ -47,8 +53,8 @@ if ($Prerelease) {
         if ($baseVersion -match '-') {
             $newVersion = $baseVersion
         } else {
-            # Find next prerelease number (wrap in @() to ensure array even for single tag)
-            $existingTags = @(git tag --list "v$baseVersion-$PrereleaseLabel.*" 2>$null | Sort-Object)
+            # Find next prerelease number from REMOTE tags
+            $existingTags = @(Get-RemoteTags "v$baseVersion-$PrereleaseLabel.*")
             $nextNum = 1
             if ($existingTags.Count -gt 0) {
                 $lastTag = $existingTags[-1]
@@ -64,7 +70,8 @@ if ($Prerelease) {
         $parts = $currentVersion.Split('.')
         $parts[2] = [int]$parts[2] + 1
         $nextVersion = "$($parts[0]).$($parts[1]).$($parts[2])"
-        $existingTags = @(git tag --list "v$nextVersion-$PrereleaseLabel.*" 2>$null | Sort-Object)
+        # Find next prerelease number from REMOTE tags
+        $existingTags = @(Get-RemoteTags "v$nextVersion-$PrereleaseLabel.*")
         $nextNum = 1
         if ($existingTags.Count -gt 0) {
             $lastTag = $existingTags[-1]
@@ -271,6 +278,12 @@ else {
         git add $VersionFile
         git commit -m "release: v$newVersion"
         if ($LASTEXITCODE -ne 0) { Write-Warn "Nothing to commit?" }
+    }
+    # Remove stale local tag if it exists (previous run deleted on remote)
+    $localTagCheck = git tag --list "v$newVersion" 2>$null
+    if ($localTagCheck) {
+        $null = git tag -d "v$newVersion" 2>$null
+        Write-Warn "Removed stale local tag v$newVersion"
     }
     git tag "v$newVersion"
     Write-Ok "Tagged v$newVersion"
