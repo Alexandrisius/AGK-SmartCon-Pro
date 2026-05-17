@@ -138,8 +138,7 @@ if (-not $Changelog -and -not $DryRun) {
     else {
         Write-Host ""
         Write-Host "Enter changelog for v$newVersion" -ForegroundColor Cyan
-        Write-Host "  Tip: Paste multiline text, then press Ctrl+Z and Enter to finish" -ForegroundColor Gray
-        Write-Host "  Or type line by line and press Enter twice to finish:" -ForegroundColor Gray
+        Write-Host "  Type or paste text, then press Enter twice to finish:" -ForegroundColor Gray
         Write-Host ""
         
         $changelogLines = [System.Collections.Generic.List[string]]::new()
