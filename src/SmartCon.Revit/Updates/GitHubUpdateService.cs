@@ -170,7 +170,6 @@ public sealed class GitHubUpdateService : IUpdateService
         {
             sb.AppendLine("⚠️  DOWNGRADE FROM BETA TO STABLE");
             sb.AppendLine("You are switching from a beta version back to the latest stable release.");
-            sb.AppendLine("─────────────────────────────────");
             sb.AppendLine();
         }
 
@@ -178,7 +177,7 @@ public sealed class GitHubUpdateService : IUpdateService
         {
             var r = releases[i];
 
-            if (sb.Length > 0)
+            if (i > 0)
                 sb.AppendLine().AppendLine("─────────────────────────────────").AppendLine();
 
             var label = r.IsPrerelease ? " [PRE-RELEASE]" : "";
