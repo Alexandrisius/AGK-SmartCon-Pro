@@ -67,11 +67,15 @@ if "%CHOICE%"=="4" (
     goto :done
 )
 if "%CHOICE%"=="5" (
-    set /p "BETA_VER=  Enter base version (empty = current v%CURRENT_VER%): "
+    set /p "BETA_VER=  Enter base version (empty = next patch): "
     if "!BETA_VER!"=="" (
+        for /f "tokens=1,2,3 delims=." %%a in ("%CURRENT_VER%") do (
+            set /a NEXT_PATCH=%%c+1
+            set "BETA_VER=%%a.%%b.!NEXT_PATCH!"
+        )
         echo.
-        echo  ==^> Beta release from v%CURRENT_VER%...
-        powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%release.ps1" -Prerelease
+        echo  ==^> Beta release v!BETA_VER!-beta...
+        powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%release.ps1" -Prerelease -Version "!BETA_VER!"
     ) else (
         echo.
         echo  ==^> Beta release v!BETA_VER!...

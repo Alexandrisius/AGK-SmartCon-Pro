@@ -54,8 +54,11 @@ if ($Prerelease) {
         }
     }
     else {
-        # Use current version as base, find next prerelease number
-        $existingTags = git tag --list "v$currentVersion-$PrereleaseLabel.*" 2>$null | Sort-Object
+        # Auto-increment patch from current version, then add prerelease suffix
+        $parts = $currentVersion.Split('.')
+        $parts[2] = [int]$parts[2] + 1
+        $nextVersion = "$($parts[0]).$($parts[1]).$($parts[2])"
+        $existingTags = git tag --list "v$nextVersion-$PrereleaseLabel.*" 2>$null | Sort-Object
         $nextNum = 1
         if ($existingTags) {
             $lastTag = $existingTags[-1]
@@ -63,7 +66,7 @@ if ($Prerelease) {
                 $nextNum = [int]$matches[1] + 1
             }
         }
-        $newVersion = "$currentVersion-$PrereleaseLabel.$nextNum"
+        $newVersion = "$nextVersion-$PrereleaseLabel.$nextNum"
     }
     Write-Host "Pre-release mode enabled" -ForegroundColor Magenta
 }
