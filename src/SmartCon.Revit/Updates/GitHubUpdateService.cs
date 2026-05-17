@@ -82,6 +82,29 @@ public sealed class GitHubUpdateService : IUpdateService
                 throw new InvalidOperationException(
                     $"Repository or releases not found: {settings.GitHubOwner}/{settings.GitHubRepo}. " +
                     "Check UpdateSettings (GitHubOwner / GitHubRepo).");
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                var remaining = response.Headers.TryGetValues("X-RateLimit-Remaining", out var remValues)
+                    ? remValues.FirstOrDefault()
+                    : null;
+                var reset = response.Headers.TryGetValues("X-RateLimit-Reset", out var resetValues)
+                    ? resetValues.FirstOrDefault()
+                    : null;
+
+                if (remaining == "0" && !string.IsNullOrEmpty(reset) && long.TryParse(reset, out var resetUnix))
+                {
+                    var resetTime = DateTimeOffset.FromUnixTimeSeconds(resetUnix).LocalDateTime;
+                    throw new InvalidOperationException(
+                        $"GitHub API rate limit exceeded. Try again after {resetTime:HH:mm}. " +
+                        "Consider adding a GitHub token in settings to increase the limit.");
+                }
+
+                throw new InvalidOperationException(
+                    $"GitHub API access denied ({settings.GitHubOwner}/{settings.GitHubRepo}). " +
+                    "If this happens frequently, add a GitHub token in settings.");
+            }
+
             throw new InvalidOperationException(
                 $"GitHub API returned {response.StatusCode} for {settings.GitHubOwner}/{settings.GitHubRepo}.");
         }
