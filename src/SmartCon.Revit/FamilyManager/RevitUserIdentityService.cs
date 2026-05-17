@@ -21,8 +21,7 @@ public sealed class RevitUserIdentityService : IUserIdentityService
         string displayName;
         try
         {
-            var doc = _revitContext.GetDocument();
-            displayName = doc.Application.Username;
+            displayName = _revitContext.GetUsername();
         }
         catch
         {

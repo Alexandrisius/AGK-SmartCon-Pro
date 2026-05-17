@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -14,7 +15,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 /// <summary>
 /// ViewModel for the FamilyManager dockable panel.
 /// </summary>
-public sealed partial class FamilyManagerMainViewModel : ObservableObject
+public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisposable
 {
     private readonly IFamilyCatalogProvider _catalogProvider;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
@@ -33,6 +34,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly IFamilyDataExtractionService _extractionService;
     private readonly IFamilyDataImportService _dataImportService;
     private readonly IDbAccessControlService _accessControl;
+    private readonly IFamilySearchService _familySearchService;
+    private readonly IFamilyPlacementService _familyPlacementService;
+    private readonly IFamilyTypeExtractor _familyTypeExtractor;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -86,7 +90,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         IFamilyTypeRepository typeRepository,
         IFamilyDataExtractionService extractionService,
         IFamilyDataImportService dataImportService,
-        IDbAccessControlService accessControl)
+        IDbAccessControlService accessControl,
+        IFamilySearchService familySearchService,
+        IFamilyPlacementService familyPlacementService,
+        IFamilyTypeExtractor familyTypeExtractor)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -105,6 +112,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _extractionService = extractionService;
         _dataImportService = dataImportService;
         _accessControl = accessControl;
+        _familySearchService = familySearchService;
+        _familyPlacementService = familyPlacementService;
+        _familyTypeExtractor = familyTypeExtractor;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -141,17 +151,30 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
     private async Task InitializeAsync()
     {
-        SmartConLogger.TruncateMainLog();
-        SmartConLogger.Info($"======================================================================");
-        SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
-        SmartConLogger.Info($"======================================================================");
+        try
+        {
+            SmartConLogger.TruncateMainLog();
+            SmartConLogger.Info($"======================================================================");
+            SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
+            SmartConLogger.Info($"======================================================================");
 
-        RefreshConnections();
-        await RefreshAccessAndLoadTreeAsync();
+            RefreshConnections();
+            await RefreshAccessAndLoadTreeAsync();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"FamilyManager initialization failed: {ex}");
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Initialization error: {0}",
+                ex.Message);
+        }
     }
 
     private async Task RefreshAccessAndLoadTreeAsync()
     {
+        DetectRevitVersion();
+        _accessControl.InvalidateCache();
+
         try
         {
             await _accessControl.RefreshCurrentUserAsync();
@@ -181,9 +204,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
     partial void OnSearchTextChanged(string value)
     {
-        _searchCts?.Cancel();
-        _searchCts = new CancellationTokenSource();
-        _ = LoadTreeAsync(_searchCts.Token);
+        var newCts = new CancellationTokenSource();
+        var oldCts = Interlocked.Exchange(ref _searchCts, newCts);
+        oldCts?.Cancel();
+        oldCts?.Dispose();
+        _ = LoadTreeAsync(newCts.Token);
     }
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
@@ -359,5 +384,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         {
             SmartConLogger.Error($"FireAndForget: {ex}");
         }
+    }
+
+    public void Dispose()
+    {
+        _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+        LocalizationService.LanguageChanged -= OnLanguageChanged;
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
     }
 }

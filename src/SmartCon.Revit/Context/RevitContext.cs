@@ -12,6 +12,8 @@ namespace SmartCon.Revit.Context;
 public sealed class RevitContext : IRevitContext, IRevitContextWriter, IRevitUIContext
 {
     private UIApplication? _uiApplication;
+    private string? _cachedVersionNumber;
+    private string? _cachedUsername;
 
     /// <summary>
     /// IRevitContextWriter.SetContext — принимает object (UIApplication).
@@ -23,6 +25,8 @@ public sealed class RevitContext : IRevitContext, IRevitContextWriter, IRevitUIC
             ?? throw new ArgumentException(
                 $"Expected UIApplication, got {revitUIApplication?.GetType().Name ?? "null"}",
                 nameof(revitUIApplication));
+        _cachedVersionNumber = _uiApplication.Application.VersionNumber;
+        _cachedUsername = _uiApplication.Application.Username;
     }
 
     public Document GetDocument()
@@ -53,8 +57,18 @@ public sealed class RevitContext : IRevitContext, IRevitContextWriter, IRevitUIC
 
     public string GetRevitVersion()
     {
-        EnsureInitialized();
-        return _uiApplication!.Application.VersionNumber;
+        if (_cachedVersionNumber is not null)
+            return _cachedVersionNumber;
+        throw new InvalidOperationException(
+            "RevitContext не инициализирован. Вызовите SetContext() из ExternalEventHandler.Execute().");
+    }
+
+    public string GetUsername()
+    {
+        if (_cachedUsername is not null)
+            return _cachedUsername;
+        throw new InvalidOperationException(
+            "RevitContext не инициализирован. Вызовите SetContext() из ExternalEventHandler.Execute().");
     }
 
     private void EnsureInitialized()

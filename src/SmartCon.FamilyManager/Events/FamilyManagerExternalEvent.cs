@@ -1,13 +1,17 @@
-using System.Threading;
+using System.Collections.Concurrent;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Events;
 
+/// <summary>
+/// ExternalEvent handler с ConcurrentQueue для надежной обработки множественных Raise().
+/// Паттерн: process all actions in one external event context (Autodesk best practice).
+/// </summary>
 public sealed class FamilyManagerExternalEvent : IExternalEventHandler, IFamilyManagerExternalEvent
 {
     private readonly IRevitContextWriter _contextWriter;
-    private Action<UIApplication>? _pendingAction;
+    private readonly ConcurrentQueue<Action<UIApplication>> _actionQueue = new();
     private ExternalEvent? _ownedEvent;
 
     public FamilyManagerExternalEvent(IRevitContextWriter contextWriter)
@@ -22,8 +26,11 @@ public sealed class FamilyManagerExternalEvent : IExternalEventHandler, IFamilyM
 
     public void Raise(Action<UIApplication> action)
     {
-        Interlocked.Exchange(ref _pendingAction, action ?? throw new ArgumentNullException(nameof(action)));
-        _ownedEvent?.Raise();
+        if (_ownedEvent is null)
+            throw new InvalidOperationException("FamilyManagerExternalEvent not initialized. Call Initialize() first.");
+
+        _actionQueue.Enqueue(action ?? throw new ArgumentNullException(nameof(action)));
+        _ownedEvent.Raise();
     }
 
     public void Raise(Action action)
@@ -39,8 +46,10 @@ public sealed class FamilyManagerExternalEvent : IExternalEventHandler, IFamilyM
     public void Execute(UIApplication app)
     {
         _contextWriter.SetContext(app);
-        var action = Interlocked.Exchange(ref _pendingAction, null);
-        action?.Invoke(app);
+        while (_actionQueue.TryDequeue(out var action))
+        {
+            action?.Invoke(app);
+        }
     }
 
     public string GetName() => "SmartCon.FamilyManagerEvent";

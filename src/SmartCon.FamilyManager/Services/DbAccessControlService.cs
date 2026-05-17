@@ -7,6 +7,7 @@ public sealed class DbAccessControlService : IDbAccessControlService
 {
     private readonly IDbUserRepository _userRepo;
     private readonly IUserIdentityService _identityService;
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private volatile DbUser? _cachedUser;
 
     public DbAccessControlService(IDbUserRepository userRepo, IUserIdentityService identityService)
@@ -15,30 +16,111 @@ public sealed class DbAccessControlService : IDbAccessControlService
         _identityService = identityService;
     }
 
-    public bool CanImport => !IsBanned && (_cachedUser?.Role is DbUserRole.Owner or DbUserRole.BimMaster);
-    public bool CanEdit => !IsBanned && (_cachedUser?.Role is DbUserRole.Owner or DbUserRole.BimMaster);
-    public bool CanManageUsers => !IsBanned && (_cachedUser?.Role == DbUserRole.Owner);
-    public bool CanLoadToProject => !IsBanned;
-    public bool IsOwner => _cachedUser?.Role == DbUserRole.Owner;
-    public bool IsBanned => _cachedUser?.Status == DbUserStatus.Banned;
+    public bool CanImport
+    {
+        get
+        {
+            var snapshot = _cachedUser;
+            return snapshot?.Status != DbUserStatus.Banned && snapshot?.Role is DbUserRole.Owner or DbUserRole.BimMaster;
+        }
+    }
+
+    public bool CanEdit
+    {
+        get
+        {
+            var snapshot = _cachedUser;
+            return snapshot?.Status != DbUserStatus.Banned && snapshot?.Role is DbUserRole.Owner or DbUserRole.BimMaster;
+        }
+    }
+
+    public bool CanManageUsers
+    {
+        get
+        {
+            var snapshot = _cachedUser;
+            return snapshot?.Status != DbUserStatus.Banned && snapshot?.Role == DbUserRole.Owner;
+        }
+    }
+
+    public bool CanLoadToProject
+    {
+        get
+        {
+            var snapshot = _cachedUser;
+            return snapshot?.Status != DbUserStatus.Banned;
+        }
+    }
+
+    public bool IsOwner
+    {
+        get
+        {
+            var snapshot = _cachedUser;
+            return snapshot?.Role == DbUserRole.Owner;
+        }
+    }
+
+    public bool IsBanned
+    {
+        get
+        {
+            var snapshot = _cachedUser;
+            return snapshot?.Status == DbUserStatus.Banned;
+        }
+    }
 
     public async Task<DbUserRole> GetCurrentUserRoleAsync(CancellationToken ct = default)
     {
-        if (_cachedUser is null)
-            await RefreshCurrentUserAsync(ct);
-        return _cachedUser?.Role ?? DbUserRole.Engineer;
+        var user = await GetCurrentUserAsync(ct);
+        return user.Role;
     }
 
     public async Task<DbUser> GetCurrentUserAsync(CancellationToken ct = default)
     {
-        if (_cachedUser is null)
-            await RefreshCurrentUserAsync(ct);
-        return _cachedUser!;
+        var current = _cachedUser;
+        if (current is not null)
+            return current;
+
+        // Revit API: должен выполняться на UI-потоке. Не переносить за await!
+        var identity = _identityService.GetCurrentUser();
+
+        await _refreshLock.WaitAsync(ct);
+        try
+        {
+            current = _cachedUser;
+            if (current is not null)
+                return current;
+
+            var user = await _userRepo.GetOrCreateUserAsync(identity, ct);
+            _cachedUser = user;
+            return user;
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
     }
 
     public async Task RefreshCurrentUserAsync(CancellationToken ct = default)
     {
+        // Revit API: должен выполняться на UI-потоке. Не переносить за await!
         var identity = _identityService.GetCurrentUser();
-        _cachedUser = await _userRepo.GetOrCreateUserAsync(identity, ct);
+
+        await _refreshLock.WaitAsync(ct);
+        try
+        {
+            var user = await _userRepo.GetOrCreateUserAsync(identity, ct);
+            _cachedUser = user;
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    public void InvalidateCache()
+    {
+        _cachedUser = null;
     }
 }

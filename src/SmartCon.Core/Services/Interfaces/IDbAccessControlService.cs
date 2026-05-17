@@ -13,4 +13,5 @@ public interface IDbAccessControlService
     bool IsOwner { get; }
     bool IsBanned { get; }
     Task RefreshCurrentUserAsync(CancellationToken ct = default);
+    void InvalidateCache();
 }

@@ -44,6 +44,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
 
+        using var tx = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT user_id, display_name, role, status, joined_at_utc, last_seen_at_utc FROM db_users WHERE user_id = @userId";
         cmd.Parameters.Add(new SqliteParameter("@userId", identity.UserId));
@@ -55,15 +56,18 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
             reader.Close();
 
             if (existing.Status == DbUserStatus.Banned)
+            {
                 throw new DbAccessDeniedException(await GetDbNameAsync(connection, ct), await GetOwnerDisplayNameAsync(connection, ct));
+            }
 
             using var updateCmd = connection.CreateCommand();
-            updateCmd.CommandText = "UPDATE db_users SET last_seen_at_utc = @now, display_name = @displayName WHERE user_id = @userId AND display_name != @displayName";
+            updateCmd.CommandText = "UPDATE db_users SET last_seen_at_utc = @now, display_name = @displayName WHERE user_id = @userId";
             updateCmd.Parameters.Add(new SqliteParameter("@now", DateTimeOffset.UtcNow.ToString("o")));
             updateCmd.Parameters.Add(new SqliteParameter("@displayName", identity.DisplayName));
             updateCmd.Parameters.Add(new SqliteParameter("@userId", identity.UserId));
             await updateCmd.ExecuteNonQueryAsync(ct);
 
+            tx.Commit();
             return existing with { LastSeenAtUtc = DateTimeOffset.UtcNow, DisplayName = identity.DisplayName };
         }
 
@@ -85,6 +89,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
                 ?? throw new InvalidOperationException($"User {identity.UserId} not found after constraint violation.");
         }
 
+        tx.Commit();
         return new DbUser(identity.UserId, identity.DisplayName, DbUserRole.Engineer, DbUserStatus.Active, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
     }
 
@@ -116,30 +121,21 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
         await connection.OpenAsync(ct);
 
         using var tx = connection.BeginTransaction();
-        try
+        using var checkCmd = connection.CreateCommand();
+        checkCmd.CommandText = "SELECT role FROM db_users WHERE user_id = @userId";
+        checkCmd.Parameters.Add(new SqliteParameter("@userId", userId));
+        var role = (await checkCmd.ExecuteScalarAsync(ct))?.ToString();
+        if (role == "Owner")
         {
-            using var checkCmd = connection.CreateCommand();
-            checkCmd.CommandText = "SELECT role FROM db_users WHERE user_id = @userId";
-            checkCmd.Parameters.Add(new SqliteParameter("@userId", userId));
-            var role = (await checkCmd.ExecuteScalarAsync(ct))?.ToString();
-            if (role == "Owner")
-            {
-                tx.Rollback();
-                return false;
-            }
+            return false;
+        }
 
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "DELETE FROM db_users WHERE user_id = @userId";
-            cmd.Parameters.Add(new SqliteParameter("@userId", userId));
-            var deleted = await cmd.ExecuteNonQueryAsync(ct) > 0;
-            tx.Commit();
-            return deleted;
-        }
-        catch
-        {
-            tx.Rollback();
-            throw;
-        }
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM db_users WHERE user_id = @userId";
+        cmd.Parameters.Add(new SqliteParameter("@userId", userId));
+        var deleted = await cmd.ExecuteNonQueryAsync(ct) > 0;
+        tx.Commit();
+        return deleted;
     }
 
     public async Task<int> GetUserCountAsync(CancellationToken ct = default)
@@ -158,51 +154,40 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
         await connection.OpenAsync(ct);
 
         using var tx = connection.BeginTransaction();
-        try
+        using var demoteCmd = connection.CreateCommand();
+        demoteCmd.CommandText = "UPDATE db_users SET role = 'BimMaster' WHERE user_id = @userId AND role = 'Owner'";
+        demoteCmd.Parameters.Add(new SqliteParameter("@userId", currentOwnerUserId));
+        var demoted = await demoteCmd.ExecuteNonQueryAsync(ct);
+        if (demoted == 0)
         {
-            using var demoteCmd = connection.CreateCommand();
-            demoteCmd.CommandText = "UPDATE db_users SET role = 'BimMaster' WHERE user_id = @userId AND role = 'Owner'";
-            demoteCmd.Parameters.Add(new SqliteParameter("@userId", currentOwnerUserId));
-            var demoted = await demoteCmd.ExecuteNonQueryAsync(ct);
-            if (demoted == 0)
-            {
-                tx.Rollback();
-                return false;
-            }
-
-            using var promoteCmd = connection.CreateCommand();
-            promoteCmd.CommandText = "UPDATE db_users SET role = 'Owner' WHERE user_id = @userId";
-            promoteCmd.Parameters.Add(new SqliteParameter("@userId", newOwnerUserId));
-            var promoted = await promoteCmd.ExecuteNonQueryAsync(ct);
-            if (promoted == 0)
-            {
-                tx.Rollback();
-                return false;
-            }
-
-            using var statusCmd = connection.CreateCommand();
-            statusCmd.CommandText = "SELECT status FROM db_users WHERE user_id = @userId AND role = 'Owner'";
-            statusCmd.Parameters.Add(new SqliteParameter("@userId", newOwnerUserId));
-            var newOwnerStatus = (await statusCmd.ExecuteScalarAsync(ct))?.ToString();
-            if (newOwnerStatus != "Active")
-            {
-                tx.Rollback();
-                return false;
-            }
-
-            using var metaCmd = connection.CreateCommand();
-            metaCmd.CommandText = "UPDATE database_meta SET owner_identity = @ownerIdentity";
-            metaCmd.Parameters.Add(new SqliteParameter("@ownerIdentity", newOwnerUserId));
-            await metaCmd.ExecuteNonQueryAsync(ct);
-
-            tx.Commit();
-            return true;
+            return false;
         }
-        catch
+
+        using var promoteCmd = connection.CreateCommand();
+        promoteCmd.CommandText = "UPDATE db_users SET role = 'Owner' WHERE user_id = @userId";
+        promoteCmd.Parameters.Add(new SqliteParameter("@userId", newOwnerUserId));
+        var promoted = await promoteCmd.ExecuteNonQueryAsync(ct);
+        if (promoted == 0)
         {
-            tx.Rollback();
-            throw;
+            return false;
         }
+
+        using var statusCmd = connection.CreateCommand();
+        statusCmd.CommandText = "SELECT status FROM db_users WHERE user_id = @userId AND role = 'Owner'";
+        statusCmd.Parameters.Add(new SqliteParameter("@userId", newOwnerUserId));
+        var newOwnerStatus = (await statusCmd.ExecuteScalarAsync(ct))?.ToString();
+        if (newOwnerStatus != "Active")
+        {
+            return false;
+        }
+
+        using var metaCmd = connection.CreateCommand();
+        metaCmd.CommandText = "UPDATE database_meta SET owner_identity = @ownerIdentity";
+        metaCmd.Parameters.Add(new SqliteParameter("@ownerIdentity", newOwnerUserId));
+        await metaCmd.ExecuteNonQueryAsync(ct);
+
+        tx.Commit();
+        return true;
     }
 
     public async Task<string?> GetOwnerIdentityAsync(CancellationToken ct = default)

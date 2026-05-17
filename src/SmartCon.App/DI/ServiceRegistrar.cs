@@ -176,6 +176,10 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
         services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
         services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
+        services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
+        services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
+        services.AddSingleton<IFamilyLoadOptionsFactory, RevitFamilyLoadOptionsFactory>();
+        services.AddSingleton<IFamilyTypeExtractor, RevitFamilyTypeExtractor>();
         services.AddSingleton<IUserIdentityService, RevitUserIdentityService>();
         services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
