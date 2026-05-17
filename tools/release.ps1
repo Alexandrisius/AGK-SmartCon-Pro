@@ -138,36 +138,30 @@ if (-not $Changelog -and -not $DryRun) {
     else {
         Write-Host ""
         Write-Host "Enter changelog for v$newVersion" -ForegroundColor Cyan
-        Write-Host "  Options:" -ForegroundColor Gray
-        Write-Host "    [1] Type line-by-line (empty line to finish)" -ForegroundColor Gray
-        Write-Host "    [2] Paste from clipboard (Windows only)" -ForegroundColor Gray
-        Write-Host "    [3] Skip changelog" -ForegroundColor Gray
-        $choice = Read-Host "  Your choice (1/2/3)"
+        Write-Host "  Tip: Paste multiline text, then press Ctrl+Z and Enter to finish" -ForegroundColor Gray
+        Write-Host "  Or type line by line and press Enter twice to finish:" -ForegroundColor Gray
+        Write-Host ""
         
-        switch ($choice) {
-            "2" {
-                try {
-                    $Changelog = Get-Clipboard -Raw
-                    Write-Host "Changelog pasted from clipboard (${$Changelog.Length} chars)" -ForegroundColor Green
-                }
-                catch {
-                    Write-Warn "Could not read clipboard. Falling back to line-by-line input."
-                    $choice = "1"
+        $changelogLines = [System.Collections.Generic.List[string]]::new()
+        $blankCount = 0
+        while ($true) {
+            $line = Read-Host "  "
+            if ([string]::IsNullOrWhiteSpace($line)) {
+                $blankCount++
+                if ($blankCount -ge 2) { break }
+                if ($blankCount -eq 1 -and $changelogLines.Count -eq 0) { 
+                    # First line is blank - user wants to skip
+                    $Changelog = ""
+                    break
                 }
             }
-            "3" {
-                $Changelog = ""
+            else {
+                $blankCount = 0
+                $changelogLines.Add($line)
             }
-            default {
-                Write-Host "  Type changelog (empty line to finish):" -ForegroundColor Cyan
-                $changelogLines = [System.Collections.Generic.List[string]]::new()
-                while ($true) {
-                    $line = Read-Host "  "
-                    if ([string]::IsNullOrWhiteSpace($line)) { break }
-                    $changelogLines.Add($line)
-                }
-                $Changelog = $changelogLines -join "`r`n"
-            }
+        }
+        if ($changelogLines.Count -gt 0) {
+            $Changelog = $changelogLines -join "`r`n"
         }
     }
 }
