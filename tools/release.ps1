@@ -41,10 +41,10 @@ if ($Prerelease) {
         if ($baseVersion -match '-') {
             $newVersion = $baseVersion
         } else {
-            # Find next prerelease number
-            $existingTags = git tag --list "v$baseVersion-$PrereleaseLabel.*" 2>$null | Sort-Object
+            # Find next prerelease number (wrap in @() to ensure array even for single tag)
+            $existingTags = @(git tag --list "v$baseVersion-$PrereleaseLabel.*" 2>$null | Sort-Object)
             $nextNum = 1
-            if ($existingTags) {
+            if ($existingTags.Count -gt 0) {
                 $lastTag = $existingTags[-1]
                 if ($lastTag -match "\.(\d+)$") {
                     $nextNum = [int]$matches[1] + 1
@@ -58,9 +58,9 @@ if ($Prerelease) {
         $parts = $currentVersion.Split('.')
         $parts[2] = [int]$parts[2] + 1
         $nextVersion = "$($parts[0]).$($parts[1]).$($parts[2])"
-        $existingTags = git tag --list "v$nextVersion-$PrereleaseLabel.*" 2>$null | Sort-Object
+        $existingTags = @(git tag --list "v$nextVersion-$PrereleaseLabel.*" 2>$null | Sort-Object)
         $nextNum = 1
-        if ($existingTags) {
+        if ($existingTags.Count -gt 0) {
             $lastTag = $existingTags[-1]
             if ($lastTag -match "\.(\d+)$") {
                 $nextNum = [int]$matches[1] + 1
@@ -106,10 +106,12 @@ if ($DryRun) {
 }
 elseif ($Prerelease) {
     # Prerelease: Version.txt stays at stable, but assembly must have the prerelease version
+    # AssemblyVersion/FileVersion must be numeric (no prerelease suffix)
+    $prereleaseBaseVersion = $newVersion -replace '-.*$',''
     $dotnetVersionArgs = @(
         "-p:Version=$newVersion",
-        "-p:AssemblyVersion=$newVersion.0",
-        "-p:FileVersion=$newVersion.0",
+        "-p:AssemblyVersion=$prereleaseBaseVersion.0",
+        "-p:FileVersion=$prereleaseBaseVersion.0",
         "-p:InformationalVersion=$newVersion"
     )
 }
