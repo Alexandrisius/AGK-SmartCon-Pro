@@ -33,6 +33,12 @@ function Write-Err($msg) { Write-Host "  ERROR: $msg" -ForegroundColor Red }
 $currentVersion = (Get-Content $VersionFile -TotalCount 1).Trim()
 Write-Host "Current version: $currentVersion" -ForegroundColor White
 
+# Sync local tags with remote (prune deleted tags)
+Write-Step "Syncing tags with remote"
+git fetch --tags --prune 2>$null
+if ($LASTEXITCODE -ne 0) { Write-Warn "Could not fetch tags from remote" }
+else { Write-Ok "Tags synced" }
+
 if ($Prerelease) {
     # Prerelease mode: version stays the same, only tag gets prerelease suffix
     if ($Version) {
