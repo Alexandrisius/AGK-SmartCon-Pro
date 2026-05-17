@@ -11,12 +11,14 @@ namespace SmartCon.FamilyManager.Events;
 public sealed class FamilyManagerExternalEvent : IExternalEventHandler, IFamilyManagerExternalEvent
 {
     private readonly IRevitContextWriter _contextWriter;
+    private readonly IWindowFocusService? _windowFocusService;
     private readonly ConcurrentQueue<Action<UIApplication>> _actionQueue = new();
     private ExternalEvent? _ownedEvent;
 
-    public FamilyManagerExternalEvent(IRevitContextWriter contextWriter)
+    public FamilyManagerExternalEvent(IRevitContextWriter contextWriter, IWindowFocusService? windowFocusService = null)
     {
         _contextWriter = contextWriter;
+        _windowFocusService = windowFocusService;
     }
 
     public void Initialize(ExternalEvent revitEvent)
@@ -50,6 +52,10 @@ public sealed class FamilyManagerExternalEvent : IExternalEventHandler, IFamilyM
         {
             action?.Invoke(app);
         }
+
+        // Восстанавливаем фокус и обновляем WPF UI после операций,
+        // которые могли вызвать нативные диалоги Revit (например, обновление версии семейства).
+        _windowFocusService?.RestoreFocusAndRefreshUI();
     }
 
     public string GetName() => "SmartCon.FamilyManagerEvent";

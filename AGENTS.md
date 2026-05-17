@@ -166,26 +166,38 @@ RevitAPI NuGet-пакет имеет разные версии для разны
 
 **Правильный порядок сборки при ручной проверке:**
 
+**КРИТИЧЕСКИ ВАЖНО:** `dotnet restore` без указания конфигурации НЕ парсит `RevitVersion` из `Directory.Build.props` (там `$(Configuration)` = Debug по умолчанию). Это приводит к fallback на RevitAPI 2021.* и ложным ошибкам компиляции (CS0618 и др.) при сборке R24/R25.
+
+**Правильный способ — restore + build в ОДНОЙ команде (без `--no-restore`):**
+
 ```bash
 # 1. Сначала net8.0-windows (Revit 2025-2026)
-dotnet restore src/SmartCon.App/SmartCon.App.csproj
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 
-# 2. Затем net48 (Revit 2024) — ОБЯЗАТЕЛЬНО restore!
-dotnet restore src/SmartCon.App/SmartCon.App.csproj
+# 2. Затем net48 (Revit 2024) — restore встроен в build, конфигурация передаётся корректно
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 
-# 3. Затем net48 (Revit 2021-2023) — restore не нужен, тот же TFM
+# 3. Затем net48 (Revit 2021-2023) — тот же TFM, restore не нужен
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
 
-# 4. Затем net48 (Revit 2019-2020) — restore не нужен, тот же TFM
+# 4. Затем net48 (Revit 2019-2020) — тот же TFM, restore не нужен
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19
+```
+
+**Если ТОЧНО нужен отдельный restore** (например, перед несколькими сборками одной конфигурации):
+```bash
+# НЕВЕРНО: dotnet restore без -p:Configuration не знает RevitVersion!
+# dotnet restore src/SmartCon.App/SmartCon.App.csproj  ← НЕ ДЕЛАЙТЕ ТАК
+
+# ВЕРНО: передаём Configuration как MSBuild property
+dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R24
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24 --no-restore
 ```
 
 **Правила сборки:**
 1. Собирай `SmartCon.App.csproj`, а НЕ `SmartCon.sln`
 2. Каждую конфигурацию — отдельной командой
-3. **При переходе между разными TFM (net8 → net48 или net48 → net8) — ВСЕГДА делай `dotnet restore` перед сборкой**
+3. **При переходе между разными TFM (net8 → net48 или net48 → net8) — ВСЕГДА делай `dotnet restore` с `-p:Configuration=...` перед сборкой, ИЛИ используй `dotnet build` без `--no-restore`**
 
 ### Тесты
 

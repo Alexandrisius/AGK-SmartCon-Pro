@@ -29,6 +29,7 @@ using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
 using SmartCon.Revit.Transform;
 using SmartCon.Revit.Updates;
+using SmartCon.App.Services;
 using ShareSettingsView = SmartCon.ProjectManagement.Views.ShareSettingsView;
 using ShareSettingsViewModel = SmartCon.ProjectManagement.ViewModels.ShareSettingsViewModel;
 
@@ -189,7 +190,10 @@ public static class ServiceRegistrar
         services.AddSingleton<FamilyManagerPaneControl>();
         services.AddSingleton<FamilyManagerPaneProvider>();
 
-        var fmHandler = new FamilyManagerExternalEvent(revitContext);
+        var windowFocusService = new RevitWindowFocusService(revitContext);
+        services.AddSingleton<IWindowFocusService>(windowFocusService);
+
+        var fmHandler = new FamilyManagerExternalEvent(revitContext, windowFocusService);
         var fmEvent = ExternalEvent.Create(fmHandler);
         fmHandler.Initialize(fmEvent);
         services.AddSingleton(fmHandler);
