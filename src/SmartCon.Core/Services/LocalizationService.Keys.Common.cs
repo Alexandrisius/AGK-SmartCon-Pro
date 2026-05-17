@@ -55,6 +55,8 @@ public static partial class LocalizationService
         en["Btn_No"] = "No";
         ru["Chk_CheckOnStartup"] = "Проверять при запуске";
         en["Chk_CheckOnStartup"] = "Check on startup";
+        ru["Chk_IncludePrerelease"] = "Включать beta-версии";
+        en["Chk_IncludePrerelease"] = "Include beta versions";
 
         ru["Title_EditorSetup"] = "Настройка соединения элементов";
         en["Title_EditorSetup"] = "Connection Setup";

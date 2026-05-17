@@ -31,3 +31,4 @@
 | [018](018-familymanager-refactoring.md) | FamilyManager Refactoring — DI Patterns, Async Safety, and Performance | accepted | 2026-05-07 |
 | [019](019-drag-drop-visual-feedback.md) | Drag & Drop Visual Feedback — Adorner-based DnD | accepted | 2026-05-09 |
 | [020](020-localization-architecture.md) | Binding-based локализация через LocExtension + TranslationSource | accepted | 2026-05-14 |
+| [021](021-prerelease-versioning.md) | Pre-release Versioning и Beta Release Strategy | accepted | 2026-05-17 |

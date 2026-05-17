@@ -123,8 +123,10 @@
                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                     <CheckBox Content="{loc:Loc Chk_CheckOnStartup}" IsChecked="{Binding CheckOnStartup}"
                               Margin="0,0,12,0" Style="{DynamicResource CompactCheckBox}" VerticalAlignment="Center"/>
+                    <CheckBox Content="{loc:Loc Chk_IncludePrerelease}" IsChecked="{Binding IncludePrerelease}"
+                              Margin="0,0,12,0" Style="{DynamicResource CompactCheckBox}" VerticalAlignment="Center"/>
                      <TextBlock Text="{loc:Loc About_Language}" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                                Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
                     <ComboBox SelectedIndex="{Binding LanguageIndex}"
                               Width="100" Height="22" FontSize="11" VerticalAlignment="Center">
                         <ComboBoxItem Content="🇷🇺 Русский"/>

@@ -4,6 +4,8 @@ param(
     [switch]$AutoIncrement,
     [switch]$MinorIncrement,
     [switch]$MajorIncrement,
+    [switch]$Prerelease,
+    [string]$PrereleaseLabel = "beta",
     [switch]$SkipTests,
     [switch]$SkipInstaller,
     [switch]$DryRun,
@@ -31,7 +33,41 @@ function Write-Err($msg) { Write-Host "  ERROR: $msg" -ForegroundColor Red }
 $currentVersion = (Get-Content $VersionFile -TotalCount 1).Trim()
 Write-Host "Current version: $currentVersion" -ForegroundColor White
 
-if ($Version) {
+if ($Prerelease) {
+    # Prerelease mode: version stays the same, only tag gets prerelease suffix
+    if ($Version) {
+        $baseVersion = $Version.TrimStart('v')
+        # If version already contains prerelease suffix, use as-is
+        if ($baseVersion -match '-') {
+            $newVersion = $baseVersion
+        } else {
+            # Find next prerelease number
+            $existingTags = git tag --list "v$baseVersion-$PrereleaseLabel.*" 2>$null | Sort-Object
+            $nextNum = 1
+            if ($existingTags) {
+                $lastTag = $existingTags[-1]
+                if ($lastTag -match "\.(\d+)$") {
+                    $nextNum = [int]$matches[1] + 1
+                }
+            }
+            $newVersion = "$baseVersion-$PrereleaseLabel.$nextNum"
+        }
+    }
+    else {
+        # Use current version as base, find next prerelease number
+        $existingTags = git tag --list "v$currentVersion-$PrereleaseLabel.*" 2>$null | Sort-Object
+        $nextNum = 1
+        if ($existingTags) {
+            $lastTag = $existingTags[-1]
+            if ($lastTag -match "\.(\d+)$") {
+                $nextNum = [int]$matches[1] + 1
+            }
+        }
+        $newVersion = "$currentVersion-$PrereleaseLabel.$nextNum"
+    }
+    Write-Host "Pre-release mode enabled" -ForegroundColor Magenta
+}
+elseif ($Version) {
     $newVersion = $Version.TrimStart('v')
 }
 elseif ($AutoIncrement -or (-not $Version -and -not $MinorIncrement -and -not $MajorIncrement)) {
@@ -79,7 +115,11 @@ if (-not $Changelog -and -not $DryRun) {
 }
 
 # --- 1. Update Version.txt ---
-if ($DryRun) {
+if ($Prerelease) {
+    Write-Step "Skipping Version.txt update (Prerelease)"
+    Write-Ok "Version.txt preserved at $currentVersion"
+}
+elseif ($DryRun) {
     Write-Step "Skipping Version.txt update (DryRun)"
     Write-Ok "Version.txt preserved"
 }
@@ -207,9 +247,11 @@ if ($DryRun) {
 }
 else {
     Write-Step "Git: commit + tag v$newVersion"
-    git add $VersionFile
-    git commit -m "release: v$newVersion"
-    if ($LASTEXITCODE -ne 0) { Write-Warn "Nothing to commit?" }
+    if (-not $Prerelease) {
+        git add $VersionFile
+        git commit -m "release: v$newVersion"
+        if ($LASTEXITCODE -ne 0) { Write-Warn "Nothing to commit?" }
+    }
     git tag "v$newVersion"
     Write-Ok "Tagged v$newVersion"
 
@@ -235,6 +277,10 @@ else {
         $releaseAssets += $installerPath
     }
     $releaseArgs = @("release", "create", "v$newVersion") + $releaseAssets + @("--title", "SmartCon v$newVersion") + $notesFlag
+    if ($Prerelease) {
+        $releaseArgs += @("--prerelease")
+        Write-Host "  Creating as PRE-RELEASE" -ForegroundColor Magenta
+    }
 
     & gh @releaseArgs
     $ghExit = $LASTEXITCODE

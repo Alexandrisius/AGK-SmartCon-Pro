@@ -92,21 +92,26 @@ public sealed class GitHubUpdateService : IUpdateService
 
         var currentVersion = GetCurrentVersion();
 
-        var newerReleases = new List<(string Version, string TagName, string? Body, DateTime PublishedAt, JsonElement Assets)>();
+        var newerReleases = new List<(string Version, string TagName, string? Body, DateTime PublishedAt, bool IsPrerelease, JsonElement Assets)>();
 
         foreach (var release in releases.EnumerateArray())
         {
             var tagName = release.GetProperty("tag_name").GetString() ?? "";
             var version = tagName.TrimStart('v');
 
-            if (!IsNewer(version, currentVersion)) continue;
-
             if (release.TryGetProperty("draft", out var draft) && draft.GetBoolean()) continue;
+
+            var isPrerelease = release.TryGetProperty("prerelease", out var pre) && pre.GetBoolean();
+
+            // Skip prereleases unless explicitly enabled
+            if (isPrerelease && !settings.IncludePrerelease) continue;
+
+            if (!IsNewer(version, currentVersion)) continue;
 
             var body = release.TryGetProperty("body", out var bodyEl) ? bodyEl.GetString() : null;
             var publishedAt = release.GetProperty("published_at").GetDateTime();
 
-            newerReleases.Add((version, tagName, body, publishedAt, release.GetProperty("assets")));
+            newerReleases.Add((version, tagName, body, publishedAt, isPrerelease, release.GetProperty("assets")));
         }
 
         if (newerReleases.Count == 0)
@@ -114,8 +119,8 @@ public sealed class GitHubUpdateService : IUpdateService
 
         newerReleases.Sort((a, b) =>
         {
-            if (!TryParseVersion(a.Version, out var va)) va = new Version(0, 0, 0);
-            if (!TryParseVersion(b.Version, out var vb)) vb = new Version(0, 0, 0);
+            if (!SemVersion.TryParse(a.Version, out var va)) va = new SemVersion(0, 0, 0);
+            if (!SemVersion.TryParse(b.Version, out var vb)) vb = new SemVersion(0, 0, 0);
             return va.CompareTo(vb);
         });
 
@@ -142,7 +147,7 @@ public sealed class GitHubUpdateService : IUpdateService
     }
 
     private static string BuildChangelog(
-        List<(string Version, string TagName, string? Body, DateTime PublishedAt, JsonElement Assets)> releases)
+        List<(string Version, string TagName, string? Body, DateTime PublishedAt, bool IsPrerelease, JsonElement Assets)> releases)
     {
         var sb = new System.Text.StringBuilder();
 
@@ -153,7 +158,8 @@ public sealed class GitHubUpdateService : IUpdateService
             if (sb.Length > 0)
                 sb.AppendLine().AppendLine("─────────────────────────────────").AppendLine();
 
-            sb.AppendLine($"v{r.Version}");
+            var label = r.IsPrerelease ? " [PRE-RELEASE]" : "";
+            sb.AppendLine($"v{r.Version}{label}");
             sb.AppendLine();
 
             if (!string.IsNullOrWhiteSpace(r.Body))
@@ -435,27 +441,19 @@ public sealed class GitHubUpdateService : IUpdateService
 
     private static bool IsNewer(string remote, string current)
     {
-        if (!TryParseVersion(remote, out var r)) return false;
-        if (!TryParseVersion(current, out var c)) return false;
+        if (!SemVersion.TryParse(remote, out var r)) return false;
+        if (!SemVersion.TryParse(current, out var c)) return false;
         return r > c;
-    }
-
-    private static bool TryParseVersion(string v, out Version version)
-    {
-        var parts = v.Split('.');
-        var normalized = parts.Length switch
-        {
-            2 => $"{parts[0]}.{parts[1]}.0",
-            1 => $"{parts[0]}.0.0",
-            _ => $"{parts[0]}.{parts[1]}.{parts[2]}"
-        };
-        return Version.TryParse(normalized, out version!);
     }
 
     private async Task<Dictionary<string, AssetInfo>> FetchAllAssetsFromLatestRelease(
         Core.Models.UpdateSettings settings)
     {
-        var url = $"https://api.github.com/repos/{settings.GitHubOwner}/{settings.GitHubRepo}/releases/latest";
+        // If prereleases are enabled, fetch all releases and pick the latest (including prereleases)
+        // Otherwise use the /releases/latest endpoint which returns only stable releases
+        var url = settings.IncludePrerelease
+            ? $"https://api.github.com/repos/{settings.GitHubOwner}/{settings.GitHubRepo}/releases?per_page=1"
+            : $"https://api.github.com/repos/{settings.GitHubOwner}/{settings.GitHubRepo}/releases/latest";
 
         if (!string.IsNullOrEmpty(settings.GitHubToken))
             _httpClient.DefaultRequestHeaders.Authorization =
@@ -465,8 +463,20 @@ public sealed class GitHubUpdateService : IUpdateService
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        return ParseAllAssets(doc.RootElement.GetProperty("assets"));
+
+        if (settings.IncludePrerelease)
+        {
+            using var doc = JsonDocument.Parse(json);
+            var releases = doc.RootElement;
+            if (releases.GetArrayLength() == 0)
+                return new Dictionary<string, AssetInfo>(StringComparer.OrdinalIgnoreCase);
+            return ParseAllAssets(releases[0].GetProperty("assets"));
+        }
+        else
+        {
+            using var doc = JsonDocument.Parse(json);
+            return ParseAllAssets(doc.RootElement.GetProperty("assets"));
+        }
     }
 
     private static Dictionary<string, AssetInfo> ParseAllAssets(JsonElement assets)

@@ -22,11 +22,12 @@ echo    [1]  Patch     - auto-increment patch
 echo    [2]  Minor     - increment minor, reset patch
 echo    [3]  Major     - increment major, reset rest
 echo    [4]  Custom    - enter version manually
-echo    [5]  Dry Run   - preflight check without tag/push/release
+echo    [5]  Beta      - prerelease from current branch
+echo    [6]  Dry Run   - preflight check without tag/push/release
 echo    [Q]  Quit
 echo.
 
-set /p "CHOICE=  Your choice (1/2/3/4/5/Q): "
+set /p "CHOICE=  Your choice (1/2/3/4/5/6/Q): "
 
 if /i "%CHOICE%"=="Q" goto :eof
 if /i "%CHOICE%"=="q" goto :eof
@@ -66,6 +67,20 @@ if "%CHOICE%"=="4" (
     goto :done
 )
 if "%CHOICE%"=="5" (
+    set /p "BETA_VER=  Enter base version (empty = current v%CURRENT_VER%): "
+    if "!BETA_VER!"=="" (
+        echo.
+        echo  ==^> Beta release from v%CURRENT_VER%...
+        powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%release.ps1" -Prerelease
+    ) else (
+        echo.
+        echo  ==^> Beta release v!BETA_VER!...
+        powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%release.ps1" -Prerelease -Version "!BETA_VER!"
+    )
+    if errorlevel 1 goto :failed
+    goto :done
+)
+if "%CHOICE%"=="6" (
     echo.
     echo  ==^> Dry run preflight...
     powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%release.ps1" -AutoIncrement -DryRun

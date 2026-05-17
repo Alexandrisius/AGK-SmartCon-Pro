@@ -5,13 +5,15 @@ public sealed record UpdateSettings(
     bool CheckOnStartup,
     string? GitHubToken,
     string GitHubOwner,
-    string GitHubRepo
+    string GitHubRepo,
+    bool IncludePrerelease
 )
 {
     public static UpdateSettings Default => new(
         CheckOnStartup: true,
         GitHubToken: null,
         GitHubOwner: "Alexandrisius",
-        GitHubRepo: "AGK-SmartCon-Pro"
+        GitHubRepo: "AGK-SmartCon-Pro",
+        IncludePrerelease: false
     );
 }
