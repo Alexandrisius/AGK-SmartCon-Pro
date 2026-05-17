@@ -23,7 +23,6 @@ body:
     attributes:
       label: SmartCon version
       description: См. About → Version, или `Version.txt`
-      placeholder: ""
     validations:
       required: true
 
@@ -86,7 +85,6 @@ body:
       description: |
         Содержимое `%APPDATA%\SmartCon\smartcon.log` (или
         `lookup-diagnostic.log` / `formula-diagnostic.log` если релевантно).
-      render: text
 
   - type: textarea
     id: screenshots

@@ -45,7 +45,7 @@ public sealed partial class AboutViewModel : ObservableObject, IObservableReques
     private string _releaseNotes = string.Empty;
 
     [ObservableProperty]
-    private bool _checkOnStartup = true;
+    private bool _includePrerelease;
 
     [ObservableProperty]
     private int _languageIndex;
@@ -64,7 +64,7 @@ public sealed partial class AboutViewModel : ObservableObject, IObservableReques
         CurrentVersion = _updateService.GetCurrentVersion();
 
         var settings = _settingsRepo.Load();
-        CheckOnStartup = settings.CheckOnStartup;
+        IncludePrerelease = settings.IncludePrerelease;
 
         LanguageIndex = LocalizationService.CurrentLanguage == Language.EN ? 1 : 0;
 
@@ -144,10 +144,10 @@ public sealed partial class AboutViewModel : ObservableObject, IObservableReques
         }
     }
 
-    partial void OnCheckOnStartupChanged(bool value)
+    partial void OnIncludePrereleaseChanged(bool value)
     {
         var settings = _settingsRepo.Load();
-        _settingsRepo.Save(settings with { CheckOnStartup = value });
+        _settingsRepo.Save(settings with { IncludePrerelease = value });
     }
 
     partial void OnLanguageIndexChanged(int value)

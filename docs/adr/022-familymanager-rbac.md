@@ -1,4 +1,4 @@
-# ADR-021: FamilyManager RBAC — Role-Based Access Control для локальных каталогов
+# ADR-022: FamilyManager RBAC — Role-Based Access Control для локальных каталогов
 
 **Статус:** accepted
 **Дата:** 2026-05-16

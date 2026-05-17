@@ -4,10 +4,13 @@ param(
     [switch]$AutoIncrement,
     [switch]$MinorIncrement,
     [switch]$MajorIncrement,
+    [switch]$Prerelease,
+    [string]$PrereleaseLabel = "beta",
     [switch]$SkipTests,
     [switch]$SkipInstaller,
     [switch]$DryRun,
     [string]$Changelog,
+    [string]$ChangelogFile,
     [string]$GitHubOwner = "Alexandrisius",
     [string]$GitHubRepo = "AGK-SmartCon-Pro"
 )
@@ -31,7 +34,57 @@ function Write-Err($msg) { Write-Host "  ERROR: $msg" -ForegroundColor Red }
 $currentVersion = (Get-Content $VersionFile -TotalCount 1).Trim()
 Write-Host "Current version: $currentVersion" -ForegroundColor White
 
-if ($Version) {
+function Get-RemoteTags($pattern) {
+    $output = git ls-remote --tags origin "refs/tags/$pattern" 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($output)) { return @() }
+    $tags = @($output -split "`r?`n" | ForEach-Object {
+        $line = $_.Trim()
+        if ([string]::IsNullOrWhiteSpace($line)) { return }
+        $ref = ($line -split "\s+")[1]
+        if ($ref -match "^refs/tags/(?<tag>.+)$") { $matches["tag"] }
+    } | Where-Object { $_ -ne $null })
+    return @($tags | Sort-Object)
+}
+
+if ($Prerelease) {
+    # Prerelease mode: version stays the same, only tag gets prerelease suffix
+    if ($Version) {
+        $baseVersion = $Version.TrimStart('v')
+        # If version already contains prerelease suffix, use as-is
+        if ($baseVersion -match '-') {
+            $newVersion = $baseVersion
+        } else {
+            # Find next prerelease number from REMOTE tags
+            $existingTags = @(Get-RemoteTags "v$baseVersion-$PrereleaseLabel.*")
+            $nextNum = 1
+            if ($existingTags.Count -gt 0) {
+                $lastTag = $existingTags[-1]
+                if ($lastTag -match "\.(\d+)$") {
+                    $nextNum = [int]$matches[1] + 1
+                }
+            }
+            $newVersion = "$baseVersion-$PrereleaseLabel.$nextNum"
+        }
+    }
+    else {
+        # Auto-increment patch from current version, then add prerelease suffix
+        $parts = $currentVersion.Split('.')
+        $parts[2] = [int]$parts[2] + 1
+        $nextVersion = "$($parts[0]).$($parts[1]).$($parts[2])"
+        # Find next prerelease number from REMOTE tags
+        $existingTags = @(Get-RemoteTags "v$nextVersion-$PrereleaseLabel.*")
+        $nextNum = 1
+        if ($existingTags.Count -gt 0) {
+            $lastTag = $existingTags[-1]
+            if ($lastTag -match "\.(\d+)$") {
+                $nextNum = [int]$matches[1] + 1
+            }
+        }
+        $newVersion = "$nextVersion-$PrereleaseLabel.$nextNum"
+    }
+    Write-Host "Pre-release mode enabled" -ForegroundColor Magenta
+}
+elseif ($Version) {
     $newVersion = $Version.TrimStart('v')
 }
 elseif ($AutoIncrement -or (-not $Version -and -not $MinorIncrement -and -not $MajorIncrement)) {
@@ -65,21 +118,59 @@ if ($DryRun) {
         "-p:InformationalVersion=$newVersion"
     )
 }
+elseif ($Prerelease) {
+    # Prerelease: Version.txt stays at stable, but assembly must have the prerelease version
+    # AssemblyVersion/FileVersion must be numeric (no prerelease suffix)
+    $prereleaseBaseVersion = $newVersion -replace '-.*$',''
+    $dotnetVersionArgs = @(
+        "-p:Version=$newVersion",
+        "-p:AssemblyVersion=$prereleaseBaseVersion.0",
+        "-p:FileVersion=$prereleaseBaseVersion.0",
+        "-p:InformationalVersion=$newVersion"
+    )
+}
 
 if (-not $Changelog -and -not $DryRun) {
-    Write-Host ""
-    Write-Host "Enter changelog for v$newVersion (empty line to finish):" -ForegroundColor Cyan
-    $changelogLines = [System.Collections.Generic.List[string]]::new()
-    while ($true) {
-        $line = Read-Host "  "
-        if ([string]::IsNullOrWhiteSpace($line)) { break }
-        $changelogLines.Add($line)
+    if ($ChangelogFile -and (Test-Path $ChangelogFile)) {
+        $Changelog = Get-Content -Path $ChangelogFile -Raw
+        Write-Host "Changelog loaded from $ChangelogFile" -ForegroundColor Green
     }
-    $Changelog = $changelogLines -join "`r`n"
+    else {
+        Write-Host ""
+        Write-Host "Enter changelog for v$newVersion" -ForegroundColor Cyan
+        Write-Host "  Type or paste text, then press Enter twice to finish:" -ForegroundColor Gray
+        Write-Host ""
+        
+        $changelogLines = [System.Collections.Generic.List[string]]::new()
+        $blankCount = 0
+        while ($true) {
+            $line = Read-Host "  "
+            if ([string]::IsNullOrWhiteSpace($line)) {
+                $blankCount++
+                if ($blankCount -ge 2) { break }
+                if ($blankCount -eq 1 -and $changelogLines.Count -eq 0) { 
+                    # First line is blank - user wants to skip
+                    $Changelog = ""
+                    break
+                }
+            }
+            else {
+                $blankCount = 0
+                $changelogLines.Add($line)
+            }
+        }
+        if ($changelogLines.Count -gt 0) {
+            $Changelog = $changelogLines -join "`r`n"
+        }
+    }
 }
 
 # --- 1. Update Version.txt ---
-if ($DryRun) {
+if ($Prerelease) {
+    Write-Step "Skipping Version.txt update (Prerelease)"
+    Write-Ok "Version.txt preserved at $currentVersion"
+}
+elseif ($DryRun) {
     Write-Step "Skipping Version.txt update (DryRun)"
     Write-Ok "Version.txt preserved"
 }
@@ -207,9 +298,17 @@ if ($DryRun) {
 }
 else {
     Write-Step "Git: commit + tag v$newVersion"
-    git add $VersionFile
-    git commit -m "release: v$newVersion"
-    if ($LASTEXITCODE -ne 0) { Write-Warn "Nothing to commit?" }
+    if (-not $Prerelease) {
+        git add $VersionFile
+        git commit -m "release: v$newVersion"
+        if ($LASTEXITCODE -ne 0) { Write-Warn "Nothing to commit?" }
+    }
+    # Remove stale local tag if it exists (previous run deleted on remote)
+    $localTagCheck = git tag --list "v$newVersion" 2>$null
+    if ($localTagCheck) {
+        $null = git tag -d "v$newVersion" 2>$null
+        Write-Warn "Removed stale local tag v$newVersion"
+    }
     git tag "v$newVersion"
     Write-Ok "Tagged v$newVersion"
 
@@ -235,6 +334,10 @@ else {
         $releaseAssets += $installerPath
     }
     $releaseArgs = @("release", "create", "v$newVersion") + $releaseAssets + @("--title", "SmartCon v$newVersion") + $notesFlag
+    if ($Prerelease) {
+        $releaseArgs += @("--prerelease")
+        Write-Host "  Creating as PRE-RELEASE" -ForegroundColor Magenta
+    }
 
     & gh @releaseArgs
     $ghExit = $LASTEXITCODE
