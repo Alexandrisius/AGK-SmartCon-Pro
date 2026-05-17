@@ -104,6 +104,15 @@ if ($DryRun) {
         "-p:InformationalVersion=$newVersion"
     )
 }
+elseif ($Prerelease) {
+    # Prerelease: Version.txt stays at stable, but assembly must have the prerelease version
+    $dotnetVersionArgs = @(
+        "-p:Version=$newVersion",
+        "-p:AssemblyVersion=$newVersion.0",
+        "-p:FileVersion=$newVersion.0",
+        "-p:InformationalVersion=$newVersion"
+    )
+}
 
 if (-not $Changelog -and -not $DryRun) {
     Write-Host ""
