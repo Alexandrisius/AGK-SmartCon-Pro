@@ -54,7 +54,7 @@
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc About_Author}" Style="{DynamicResource BodyText}" Margin="0,2"/>
-                <TextBlock Grid.Row="0" Grid.Column="1" Text="AGK Engineering" Style="{DynamicResource BodyText}" Margin="8,2"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="Klimovich Alexander" Style="{DynamicResource BodyText}" Margin="8,2"/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc About_Plugin}" Style="{DynamicResource BodyText}" Margin="0,2"/>
                 <TextBlock Grid.Row="1" Grid.Column="1" Text="{loc:Loc About_PluginDesc}" Style="{DynamicResource BodyText}" Margin="8,2"/>

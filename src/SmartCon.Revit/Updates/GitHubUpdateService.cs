@@ -91,8 +91,10 @@ public sealed class GitHubUpdateService : IUpdateService
         var releases = doc.RootElement;
 
         var currentVersion = GetCurrentVersion();
+        var currentIsPrerelease = SemVersion.TryParse(currentVersion, out var currentSemVer) && currentSemVer.IsPrerelease;
+        var needDowngrade = currentIsPrerelease && !settings.IncludePrerelease;
 
-        var newerReleases = new List<(string Version, string TagName, string? Body, DateTime PublishedAt, bool IsPrerelease, JsonElement Assets)>();
+        var candidateReleases = new List<(string Version, string TagName, string? Body, DateTime PublishedAt, bool IsPrerelease, JsonElement Assets)>();
 
         foreach (var release in releases.EnumerateArray())
         {
@@ -106,25 +108,34 @@ public sealed class GitHubUpdateService : IUpdateService
             // Skip prereleases unless explicitly enabled
             if (isPrerelease && !settings.IncludePrerelease) continue;
 
-            if (!IsNewer(version, currentVersion)) continue;
+            if (needDowngrade)
+            {
+                // User is on prerelease but wants stable: accept any stable release
+                // (version number may be lower — that's the point of downgrade)
+                if (isPrerelease) continue;
+            }
+            else
+            {
+                if (!IsNewer(version, currentVersion)) continue;
+            }
 
             var body = release.TryGetProperty("body", out var bodyEl) ? bodyEl.GetString() : null;
             var publishedAt = release.GetProperty("published_at").GetDateTime();
 
-            newerReleases.Add((version, tagName, body, publishedAt, isPrerelease, release.GetProperty("assets")));
+            candidateReleases.Add((version, tagName, body, publishedAt, isPrerelease, release.GetProperty("assets")));
         }
 
-        if (newerReleases.Count == 0)
+        if (candidateReleases.Count == 0)
             return null;
 
-        newerReleases.Sort((a, b) =>
+        candidateReleases.Sort((a, b) =>
         {
             if (!SemVersion.TryParse(a.Version, out var va)) va = new SemVersion(0, 0, 0);
             if (!SemVersion.TryParse(b.Version, out var vb)) vb = new SemVersion(0, 0, 0);
             return va.CompareTo(vb);
         });
 
-        var latest = newerReleases[^1];
+        var latest = candidateReleases[^1];
 
         var allAssets = ParseAllAssets(latest.Assets);
         if (allAssets.Count == 0)
@@ -132,7 +143,7 @@ public sealed class GitHubUpdateService : IUpdateService
 
         var primaryAsset = allAssets.Values.First();
 
-        var changelog = BuildChangelog(newerReleases);
+        var changelog = BuildChangelog(candidateReleases, needDowngrade);
 
         return new UpdateInfo(
             Version: latest.Version,
@@ -147,9 +158,18 @@ public sealed class GitHubUpdateService : IUpdateService
     }
 
     private static string BuildChangelog(
-        List<(string Version, string TagName, string? Body, DateTime PublishedAt, bool IsPrerelease, JsonElement Assets)> releases)
+        List<(string Version, string TagName, string? Body, DateTime PublishedAt, bool IsPrerelease, JsonElement Assets)> releases,
+        bool isDowngrade)
     {
         var sb = new System.Text.StringBuilder();
+
+        if (isDowngrade)
+        {
+            sb.AppendLine("⚠️  DOWNGRADE FROM BETA TO STABLE");
+            sb.AppendLine("You are switching from a beta version back to the latest stable release.");
+            sb.AppendLine("─────────────────────────────────");
+            sb.AppendLine();
+        }
 
         for (var i = 0; i < releases.Count; i++)
         {
