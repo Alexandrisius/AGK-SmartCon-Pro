@@ -120,22 +120,21 @@
                 <TextBlock Text="{Binding StatusMessage}"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            Style="{DynamicResource BodyText}" TextWrapping="Wrap"/>
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                    <CheckBox Content="{loc:Loc Chk_CheckOnStartup}" IsChecked="{Binding CheckOnStartup}"
-                              Margin="0,0,12,0" Style="{DynamicResource CompactCheckBox}" VerticalAlignment="Center"/>
-                    <CheckBox Content="{loc:Loc Chk_IncludePrerelease}" IsChecked="{Binding IncludePrerelease}"
-                              Margin="0,0,12,0" Style="{DynamicResource CompactCheckBox}" VerticalAlignment="Center"/>
-                     <TextBlock Text="{loc:Loc About_Language}" VerticalAlignment="Center" FontSize="11"
-                                Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                    <ComboBox SelectedIndex="{Binding LanguageIndex}"
-                              Width="100" Height="22" FontSize="11" VerticalAlignment="Center">
-                        <ComboBoxItem Content="🇷🇺 Русский"/>
-                        <ComboBoxItem Content="🇬🇧 English"/>
-                    </ComboBox>
-                </StackPanel>
+                <CheckBox Content="{loc:Loc Chk_IncludePrerelease}" IsChecked="{Binding IncludePrerelease}"
+                          Margin="0,4,0,0" Style="{DynamicResource CompactCheckBox}" VerticalAlignment="Center"/>
             </StackPanel>
 
-            <Button Grid.Column="1" Content="{loc:Loc Btn_Close}" Width="80"
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <TextBlock Text="{loc:Loc About_Language}" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                <ComboBox SelectedIndex="{Binding LanguageIndex}"
+                          Width="100" Height="22" FontSize="11" VerticalAlignment="Center">
+                    <ComboBoxItem Content="🇷🇺 Русский"/>
+                    <ComboBoxItem Content="🇬🇧 English"/>
+                </ComboBox>
+            </StackPanel>
+
+            <Button Grid.Column="3" Content="{loc:Loc Btn_Close}" Width="80"
                     Command="{Binding CloseCommand}"
                     Style="{DynamicResource SecondaryButton}"
                     VerticalAlignment="Bottom"/>
