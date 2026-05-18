@@ -388,6 +388,7 @@
                   behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
                   behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
                   behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
+                  behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
                   Background="Transparent"
                   BorderBrush="{DynamicResource BorderAltBrush}"
                   BorderThickness="1"
@@ -501,11 +502,8 @@
                     <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}" />
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
                     <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
-                    <Setter Property="AllowDrop" Value="False"></Setter>
+                    <Setter Property="AllowDrop" Value="True"></Setter>
                     <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsCategory}" Value="True">
-                            <Setter Property="AllowDrop" Value="True"></Setter>
-                        </DataTrigger>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>
                                 <Condition Binding="{Binding IsSelected}" Value="False"></Condition>
