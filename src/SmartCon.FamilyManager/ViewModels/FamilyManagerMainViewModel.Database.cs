@@ -69,8 +69,18 @@ public sealed partial class FamilyManagerMainViewModel
                 _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
             }
         }
+        catch (InvalidOperationException ex)
+        {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database",
+                ex.Message);
+            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database"}: {ex.Message}";
+        }
         catch (Exception ex)
         {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database",
+                ex.Message);
             StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database"}: {ex.Message}";
         }
         finally
@@ -150,8 +160,20 @@ public sealed partial class FamilyManagerMainViewModel
                 _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
             }
         }
+        catch (InvalidOperationException ex)
+        {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting",
+                ex.Message);
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting: {0}",
+                ex.Message);
+        }
         catch (Exception ex)
         {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting",
+                ex.Message);
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting: {0}",
                 ex.Message);

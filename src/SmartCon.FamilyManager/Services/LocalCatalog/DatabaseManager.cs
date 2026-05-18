@@ -147,6 +147,8 @@ internal sealed class DatabaseManager : IDatabaseManager
         if (!File.Exists(dbFile))
             throw new FileNotFoundException($"Database not found at: {fullPath}");
 
+        EnsureDatabaseWritable(dbFile);
+
         var existingRegistry = LoadRegistry();
         var existing = existingRegistry.Connections.FirstOrDefault(
             c => c.Path.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
@@ -198,6 +200,9 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         if (registry.ActiveConnectionId == connectionId)
             return Task.FromResult(true);
+
+        var dbFile = Path.Combine(conn.Path, "catalog.db");
+        EnsureDatabaseWritable(dbFile);
 
         SaveRegistry(new DatabaseConnectionRegistry(connectionId, registry.Connections));
         _catalogDatabase.SwitchToPath(conn.Path);
@@ -268,6 +273,29 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         SmartConLogger.Info($"[DatabaseManager] Database at '{conn.Path}' deleted");
         return true;
+    }
+
+    private static void EnsureDatabaseWritable(string dbFile)
+    {
+        if (!File.Exists(dbFile))
+            return;
+
+        try
+        {
+            using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbFile};Pooling=false");
+            connection.Open();
+            using var tx = connection.BeginTransaction();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "PRAGMA user_version = user_version";
+            cmd.ExecuteNonQuery();
+            tx.Rollback();
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 8)
+        {
+            throw new InvalidOperationException(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbReadOnlyError)
+                ?? "Database is read-only. Change file permissions or contact your administrator.");
+        }
     }
 
     private static void DeleteDirectoryWithRetry(string path, int maxRetries = 3)

@@ -70,6 +70,10 @@ public static partial class LocalizationService
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
         ru["FM_UpdateError"] = "Ошибка обновления: {0}"; en["FM_UpdateError"] = "Update error: {0}";
+        ru["FM_Refresh"] = "Обновить"; en["FM_Refresh"] = "Refresh";
+        ru["FM_RefreshTooltip"] = "Обновить дерево категорий"; en["FM_RefreshTooltip"] = "Refresh category tree";
+        ru["FM_ClearSearch"] = "Очистить"; en["FM_ClearSearch"] = "Clear";
+        ru["FM_Refreshed"] = "Обновлено"; en["FM_Refreshed"] = "Refreshed";
 
         ru["FM_CTE_Title"] = "Редактор дерева категорий"; en["FM_CTE_Title"] = "Category Tree Editor";
         ru["FM_CTE_AddRoot"] = "+ Корень"; en["FM_CTE_AddRoot"] = "+ Root";
@@ -202,14 +206,17 @@ public static partial class LocalizationService
         ru["FM_ProfileUsers"] = "Пользователи базы"; en["FM_ProfileUsers"] = "Database Users";
         ru["FM_ProfileUsersCount"] = "пользователей"; en["FM_ProfileUsersCount"] = "users";
         ru["FM_ProfileClose"] = "Закрыть"; en["FM_ProfileClose"] = "Close";
-        ru["FM_ProfileYourRole"] = "Ваша роль: Инженер"; en["FM_ProfileYourRole"] = "Your role: Engineer";
+        ru["FM_ProfileYourRole"] = "Ваша роль: {0}"; en["FM_ProfileYourRole"] = "Your role: {0}";
         ru["FM_ProfileEngineerInfo"] = "Доступны просмотр и загрузка семейств"; en["FM_ProfileEngineerInfo"] = "Browse and load families available";
+        ru["FM_ProfileBimMasterInfo"] = "Управление пользователями и импорт семейств"; en["FM_ProfileBimMasterInfo"] = "User management and family import";
         ru["FM_ProfileDeleteTitle"] = "Удалить пользователя"; en["FM_ProfileDeleteTitle"] = "Remove User";
         ru["FM_ProfileDeletePrompt"] = "Удалить \"{0}\" из базы данных?\nПользователь сможет подключиться заново как Инженер."; en["FM_ProfileDeletePrompt"] = "Remove \"{0}\" from this database?\nThey will be able to reconnect as Engineer.";
         ru["FM_TransferOwnership"] = "Передать владение"; en["FM_TransferOwnership"] = "Transfer Ownership";
         ru["FM_TransferTitle"] = "Передача владения"; en["FM_TransferTitle"] = "Transfer Ownership";
         ru["FM_TransferNoBimMaster"] = "Нет BIM-Мастеров для передачи владения."; en["FM_TransferNoBimMaster"] = "No BIM Masters to transfer ownership to.";
         ru["FM_TransferConfirm"] = "Вы станете BIM-Мастером. Продолжить?"; en["FM_TransferConfirm"] = "You will become a BIM Master. Continue?";
+        ru["FM_RoleChangeConfirmTitle"] = "Подтверждение смены роли"; en["FM_RoleChangeConfirmTitle"] = "Confirm Role Change";
+        ru["FM_RoleChangeConfirmMessage"] = "Вы уверены, что хотите изменить роль этого пользователя?"; en["FM_RoleChangeConfirmMessage"] = "Are you sure you want to change this user's role?";
         ru["FM_RoleOwner"] = "Владелец"; en["FM_RoleOwner"] = "Owner";
         ru["FM_RoleBimMaster"] = "BIM-Мастер"; en["FM_RoleBimMaster"] = "BIM Master";
         ru["FM_RoleEngineer"] = "Инженер"; en["FM_RoleEngineer"] = "Engineer";
@@ -217,5 +224,7 @@ public static partial class LocalizationService
         ru["FM_AccessDeniedMessage"] = "Владелец базы данных \"{0}\" ограничил вам доступ."; en["FM_AccessDeniedMessage"] = "The owner of \"{0}\" has restricted your access.";
         ru["FM_AccessDeniedContact"] = "Обратитесь к владельцу для получения разрешения."; en["FM_AccessDeniedContact"] = "Contact the owner for permission.";
         ru["FM_AccessDeniedOwner"] = "Владелец: {0}"; en["FM_AccessDeniedOwner"] = "Owner: {0}";
+        ru["FM_StatusBanned"] = "Заблокирован"; en["FM_StatusBanned"] = "Banned";
+        ru["FM_DbReadOnlyError"] = "База данных доступна только для чтения. Измените права доступа к файлу или обратитесь к администратору."; en["FM_DbReadOnlyError"] = "Database is read-only. Change file permissions or contact your administrator.";
     }
 }

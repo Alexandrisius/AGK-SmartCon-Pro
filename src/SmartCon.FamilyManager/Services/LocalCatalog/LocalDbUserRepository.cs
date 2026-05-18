@@ -95,13 +95,37 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<bool> UpdateUserRoleAsync(string userId, DbUserRole role, CancellationToken ct = default)
     {
+        if (role == DbUserRole.Owner)
+            throw new InvalidOperationException("Use TransferOwnershipAsync to assign Owner role.");
+
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
+
+        using var tx = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
+        using var checkCmd = connection.CreateCommand();
+        checkCmd.CommandText = "SELECT role FROM db_users WHERE user_id = @userId";
+        checkCmd.Parameters.Add(new SqliteParameter("@userId", userId));
+        var currentRole = (await checkCmd.ExecuteScalarAsync(ct))?.ToString();
+
+        if (currentRole == "Owner")
+        {
+            using var countCmd = connection.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM db_users WHERE role = 'Owner'";
+            var ownerCount = await countCmd.ExecuteScalarAsync(ct);
+            if (ownerCount is long count && count <= 1)
+            {
+                return false;
+            }
+        }
+
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "UPDATE db_users SET role = @role WHERE user_id = @userId";
         cmd.Parameters.Add(new SqliteParameter("@role", role.ToString()));
         cmd.Parameters.Add(new SqliteParameter("@userId", userId));
-        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+        var updated = await cmd.ExecuteNonQueryAsync(ct) > 0;
+        tx.Commit();
+        return updated;
     }
 
     public async Task<bool> UpdateUserStatusAsync(string userId, DbUserStatus status, CancellationToken ct = default)
@@ -150,10 +174,13 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<bool> TransferOwnershipAsync(string currentOwnerUserId, string newOwnerUserId, CancellationToken ct = default)
     {
+        if (currentOwnerUserId == newOwnerUserId)
+            return false;
+
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
 
-        using var tx = connection.BeginTransaction();
+        using var tx = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
         using var demoteCmd = connection.CreateCommand();
         demoteCmd.CommandText = "UPDATE db_users SET role = 'BimMaster' WHERE user_id = @userId AND role = 'Owner'";
         demoteCmd.Parameters.Add(new SqliteParameter("@userId", currentOwnerUserId));

@@ -220,7 +220,8 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 
 Все SQLite-операции идут через `LocalCatalogDatabase`:
 
-- WAL journal mode для конкурентных чтений
+- DELETE journal mode для универсальной совместимости (локальные диски и сетевые SMB)
+- DELETE mode используется universally для любых путей (локальные D:/C: и сетевые UNC)
 - Только один writer одновременно (ограничение SQLite)
 - `LocalCatalogDatabase.SwitchToPath` защищён lock-ом
 - `new SqliteConnection()` вне `LocalCatalogDatabase` **запрещён**

@@ -10,20 +10,18 @@ public sealed class DbUserItem
     public string MachineId { get; init; } = string.Empty;
     public DbUserRole Role { get; set; }
     public DbUserStatus Status { get; set; }
+    public bool IsBanned => Status == DbUserStatus.Banned;
     public bool IsOwnerRow { get; init; }
     public bool CanEditRole { get; init; }
-    public bool CanDelete { get; init; }
-    public IAsyncRelayCommand<DbUserRole> ChangeRoleCommand { get; }
+    public bool CanToggleBan { get; init; }
+    public IAsyncRelayCommand ChangeRoleCommand { get; }
     public IAsyncRelayCommand ToggleBanCommand { get; }
-    public IAsyncRelayCommand DeleteUserCommand { get; }
 
     public DbUserItem(
-        IAsyncRelayCommand<DbUserRole> changeRoleCommand,
-        IAsyncRelayCommand toggleBanCommand,
-        IAsyncRelayCommand deleteUserCommand)
+        IAsyncRelayCommand changeRoleCommand,
+        IAsyncRelayCommand toggleBanCommand)
     {
         ChangeRoleCommand = changeRoleCommand;
         ToggleBanCommand = toggleBanCommand;
-        DeleteUserCommand = deleteUserCommand;
     }
 }

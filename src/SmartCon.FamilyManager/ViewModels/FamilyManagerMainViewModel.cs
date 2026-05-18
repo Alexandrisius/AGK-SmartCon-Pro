@@ -41,7 +41,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
 
-    [ObservableProperty] private string _searchText = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSearchNotEmpty))]
+    private string _searchText = string.Empty;
+
+    public bool IsSearchNotEmpty => !string.IsNullOrEmpty(SearchText);
+
     [ObservableProperty] private FamilyCatalogItemRow? _selectedItem;
     [ObservableProperty] private ObservableCollection<CatalogTreeNodeViewModel> _treeNodes = [];
     [ObservableProperty] private CatalogTreeNodeViewModel? _selectedTreeNode;
@@ -384,6 +389,39 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         {
             SmartConLogger.Error($"FireAndForget: {ex}");
         }
+    }
+
+    [RelayCommand]
+    private async Task RefreshTreeAsync(CancellationToken ct)
+    {
+        try
+        {
+            await RefreshAccessAndLoadTreeAsync();
+        }
+        catch (DbAccessDeniedException ex)
+        {
+            CanImport = false;
+            CanEdit = false;
+            CanManageUsers = false;
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
+                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
+            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"RefreshTreeAsync failed: {ex}");
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
+                ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private void ClearSearch()
+    {
+        SearchText = string.Empty;
     }
 
     public void Dispose()
