@@ -302,6 +302,7 @@
                   behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
                   behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
                   behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
+                  behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
                   Background="Transparent"
                   BorderBrush="{DynamicResource BorderAltBrush}"
                   BorderThickness="1"
