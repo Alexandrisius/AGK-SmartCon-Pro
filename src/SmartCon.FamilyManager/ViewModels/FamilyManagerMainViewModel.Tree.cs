@@ -36,7 +36,7 @@ public sealed partial class FamilyManagerMainViewModel
                 ManufacturerFilter: null,
                 Sort: FamilyCatalogSort.NameAsc,
                 Offset: 0,
-                Limit: 500);
+                Limit: int.MaxValue);
 
             var results = await _catalogProvider.SearchAsync(query, ct);
             TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
@@ -46,7 +46,20 @@ public sealed partial class FamilyManagerMainViewModel
 
             var expandedIds = new HashSet<string>();
             var expandedFamilyIds = new HashSet<string>();
-            if (!expandAll) CollectExpandedIds(TreeNodes, expandedIds, expandedFamilyIds);
+            if (!expandAll)
+            {
+                if (_savedExpandedCategoryIds.Count > 0)
+                {
+                    expandedIds = new HashSet<string>(_savedExpandedCategoryIds);
+                    expandedFamilyIds = new HashSet<string>(_savedExpandedFamilyIds);
+                    _savedExpandedCategoryIds.Clear();
+                    _savedExpandedFamilyIds.Clear();
+                }
+                else
+                {
+                    CollectExpandedIds(TreeNodes, expandedIds, expandedFamilyIds);
+                }
+            }
 
             var itemsByCategory = results
                 .GroupBy(i => i.CategoryId ?? string.Empty)

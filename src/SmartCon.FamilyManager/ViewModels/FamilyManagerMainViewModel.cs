@@ -40,6 +40,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
+    private bool _lastSearchActive;
+    private readonly HashSet<string> _savedExpandedCategoryIds = new();
+    private readonly HashSet<string> _savedExpandedFamilyIds = new();
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSearchNotEmpty))]
@@ -209,11 +212,34 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     partial void OnSearchTextChanged(string value)
     {
+        var isSearchNow = !string.IsNullOrWhiteSpace(value);
+
+        if (isSearchNow && !_lastSearchActive)
+        {
+            _savedExpandedCategoryIds.Clear();
+            _savedExpandedFamilyIds.Clear();
+            CollectExpandedIds(TreeNodes, _savedExpandedCategoryIds, _savedExpandedFamilyIds);
+        }
+
+        _lastSearchActive = isSearchNow;
+
         var newCts = new CancellationTokenSource();
         var oldCts = Interlocked.Exchange(ref _searchCts, newCts);
         oldCts?.Cancel();
         oldCts?.Dispose();
-        _ = LoadTreeAsync(newCts.Token);
+        _ = DebouncedSearchAsync(newCts.Token);
+    }
+
+    private async Task DebouncedSearchAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(300, ct);
+            await LoadTreeAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
