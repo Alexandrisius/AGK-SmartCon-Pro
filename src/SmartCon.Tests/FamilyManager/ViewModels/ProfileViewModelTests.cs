@@ -59,7 +59,7 @@ public sealed class ProfileViewModelTests
     }
 
     [Fact]
-    public async Task InitializeAsync_AsOwner_OwnerRowCannotBeDeleted()
+    public async Task InitializeAsync_AsOwner_OwnerRowCannotBeBanned()
     {
         var (vm, repoMock, _, _, _) = MakeVm();
         var users = new List<DbUser>
@@ -73,11 +73,11 @@ public sealed class ProfileViewModelTests
         await vm.InitializeAsync(CancellationToken.None);
 
         var ownerRow = vm.Users.First(u => u.Role == DbUserRole.Owner);
-        Assert.False(ownerRow.CanDelete);
+        Assert.False(ownerRow.CanToggleBan);
     }
 
     [Fact]
-    public async Task InitializeAsync_AsOwner_NonOwnerCanBeDeleted()
+    public async Task InitializeAsync_AsOwner_NonOwnerCanBeBanned()
     {
         var (vm, repoMock, _, _, _) = MakeVm();
         var users = new List<DbUser>
@@ -91,7 +91,7 @@ public sealed class ProfileViewModelTests
         await vm.InitializeAsync(CancellationToken.None);
 
         var engineerRow = vm.Users.First(u => u.Role == DbUserRole.Engineer);
-        Assert.True(engineerRow.CanDelete);
+        Assert.True(engineerRow.CanToggleBan);
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public sealed class ProfileViewModelTests
     }
 
     [Fact]
-    public async Task DeleteUserAsync_ConfirmsDeletion()
+    public async Task ToggleBanAsync_ConfirmsBan()
     {
         var (vm, repoMock, _, _, dialogMock) = MakeVm();
         var users = new List<DbUser>
@@ -156,58 +156,16 @@ public sealed class ProfileViewModelTests
         await vm.InitializeAsync(CancellationToken.None);
 
         var engineerRow = vm.Users.First(u => u.UserId == "u2");
-        await engineerRow.DeleteUserCommand.ExecuteAsync(null);
+        await engineerRow.ToggleBanCommand.ExecuteAsync(null);
 
-        repoMock.Verify(r => r.RemoveUserAsync("u2", It.IsAny<CancellationToken>()), Times.Once);
+        repoMock.Verify(r => r.UpdateUserStatusAsync("u2", DbUserStatus.Banned, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task DeleteUserAsync_Cancelled_DoesNotDelete()
+    public async Task ChangeRole_ToOwner_ConfirmsTransfer()
     {
         var (vm, repoMock, _, _, dialogMock) = MakeVm();
-        var users = new List<DbUser>
-        {
-            MakeUser("owner1", "Owner", DbUserRole.Owner),
-            MakeUser("u2", "Bob", DbUserRole.Engineer),
-        }.AsReadOnly();
-        repoMock.Setup(r => r.GetAllUsersAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(users);
-        dialogMock.Setup(d => d.ShowConfirmation(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(false);
-
-        await vm.InitializeAsync(CancellationToken.None);
-
-        var engineerRow = vm.Users.First(u => u.UserId == "u2");
-        await engineerRow.DeleteUserCommand.ExecuteAsync(null);
-
-        repoMock.Verify(r => r.RemoveUserAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task TransferOwnershipAsync_NoBimMasters_ShowsWarning()
-    {
-        var (vm, repoMock, _, _, dialogMock) = MakeVm();
-        var users = new List<DbUser>
-        {
-            MakeUser("owner1", "Owner", DbUserRole.Owner),
-            MakeUser("u2", "Engineer", DbUserRole.Engineer),
-        }.AsReadOnly();
-        repoMock.Setup(r => r.GetAllUsersAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(users);
-
-        await vm.InitializeAsync(CancellationToken.None);
-
-        await vm.TransferOwnershipCommand.ExecuteAsync(null);
-
-        dialogMock.Verify(d => d.ShowWarning(It.IsAny<string>(), It.IsAny<string>()), Times.Once);
-        repoMock.Verify(r => r.TransferOwnershipAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task TransferOwnershipAsync_Confirmed_Transfers()
-    {
-        var (vm, repoMock, _, _, dialogMock) = MakeVm();
-        var owner = MakeUser("owner1", "Owner", DbUserRole.Owner);
+        var owner = MakeUser("user1", "Current Owner", DbUserRole.Owner);
         var bm = MakeUser("bm1", "BimMaster", DbUserRole.BimMaster);
         var users = new List<DbUser> { owner, bm }.AsReadOnly();
         repoMock.Setup(r => r.GetAllUsersAsync(It.IsAny<CancellationToken>()))
@@ -219,7 +177,9 @@ public sealed class ProfileViewModelTests
 
         await vm.InitializeAsync(CancellationToken.None);
 
-        await vm.TransferOwnershipCommand.ExecuteAsync(null);
+        var bmRow = vm.Users.First(u => u.UserId == "bm1");
+        bmRow.Role = DbUserRole.Owner;
+        await bmRow.ChangeRoleCommand.ExecuteAsync(null);
 
         repoMock.Verify(r => r.TransferOwnershipAsync("user1", "bm1", It.IsAny<CancellationToken>()), Times.Once);
     }
