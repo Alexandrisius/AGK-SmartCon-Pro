@@ -100,8 +100,8 @@ public sealed partial class ProfileViewModel : ObservableObject, SmartCon.Core.S
             var isOwnerRow = u.Role == DbUserRole.Owner;
 
             items.Add(new DbUserItem(
-                changeRoleCommand: new AsyncRelayCommand(() => ChangeRoleAsync(userId, ct)),
-                toggleBanCommand: new AsyncRelayCommand(() => ToggleBanAsync(userId, u.Status == DbUserStatus.Active, ct)))
+                changeRoleCommand: new AsyncRelayCommand(() => ChangeRoleAsync(userId, default)),
+                toggleBanCommand: new AsyncRelayCommand(() => ToggleBanAsync(userId, u.Status == DbUserStatus.Active, default)))
             {
                 UserId = userId,
                 DisplayName = u.DisplayName,

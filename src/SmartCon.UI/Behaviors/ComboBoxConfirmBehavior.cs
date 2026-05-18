@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using SmartCon.Core.Services;
 
 namespace SmartCon.UI.Behaviors;
 
@@ -59,23 +58,45 @@ public static class ComboBoxConfirmBehavior
     public static void SetConfirmMessage(DependencyObject obj, string value)
         => obj.SetValue(ConfirmMessageProperty, value);
 
+    private static readonly DependencyProperty IsUpdatingTargetProperty =
+        DependencyProperty.RegisterAttached(
+            "IsUpdatingTarget",
+            typeof(bool),
+            typeof(ComboBoxConfirmBehavior),
+            new PropertyMetadata(false));
+
+    private static bool GetIsUpdatingTarget(ComboBox comboBox)
+        => (bool)comboBox.GetValue(IsUpdatingTargetProperty);
+
+    private static void SetIsUpdatingTarget(ComboBox comboBox, bool value)
+        => comboBox.SetValue(IsUpdatingTargetProperty, value);
+
     private static void OnIsConfirmationEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not ComboBox comboBox) return;
 
         comboBox.SelectionChanged -= OnSelectionChanged;
+        comboBox.Unloaded -= OnComboBoxUnloaded;
 
         if ((bool)e.NewValue)
         {
-            comboBox.Tag = false;
             comboBox.SelectionChanged += OnSelectionChanged;
+            comboBox.Unloaded += OnComboBoxUnloaded;
         }
+    }
+
+    private static void OnComboBoxUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ComboBox comboBox) return;
+
+        comboBox.SelectionChanged -= OnSelectionChanged;
+        comboBox.Unloaded -= OnComboBoxUnloaded;
     }
 
     private static void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not ComboBox comboBox) return;
-        if (comboBox.Tag is true) return;
+        if (GetIsUpdatingTarget(comboBox)) return;
         if (e.RemovedItems.Count == 0) return; // ignore initialization
 
         var bindingExpression = comboBox.GetBindingExpression(ComboBox.SelectedItemProperty);
@@ -84,11 +105,10 @@ public static class ComboBoxConfirmBehavior
         var title = GetConfirmTitle(comboBox);
         var message = GetConfirmMessage(comboBox);
 
-        var result = MessageBox.Show(
-            message,
-            title,
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
+        var owner = Window.GetWindow(comboBox);
+        var result = owner is not null
+            ? MessageBox.Show(owner, message, title, MessageBoxButton.YesNo, MessageBoxImage.Question)
+            : MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Question);
 
         if (result == MessageBoxResult.Yes)
         {
@@ -102,9 +122,9 @@ public static class ComboBoxConfirmBehavior
         }
         else
         {
-            comboBox.Tag = true;
+            SetIsUpdatingTarget(comboBox, true);
             bindingExpression.UpdateTarget();
-            comboBox.Tag = false;
+            SetIsUpdatingTarget(comboBox, false);
         }
     }
 }
