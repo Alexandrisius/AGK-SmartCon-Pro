@@ -72,7 +72,7 @@ public sealed class LocalFamilyFileResolverTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDatabaseRoot_ReturnsTempDir()
+    public void GetDatabaseRoot_ReturnsTempDir()
     {
         var root = _resolver.GetDatabaseRoot();
 

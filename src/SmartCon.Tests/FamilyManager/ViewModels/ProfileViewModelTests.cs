@@ -128,7 +128,7 @@ public sealed class ProfileViewModelTests
     }
 
     [Fact]
-    public async Task CloseCommand_RaisesRequestClose()
+    public void CloseCommand_RaisesRequestClose()
     {
         var (vm, _, _, _, _) = MakeVm();
         bool? closeResult = null;
