@@ -1,6 +1,6 @@
-namespace SmartCon.Core.Models.FamilyManager;
-
 using System.Runtime.Serialization;
+
+namespace SmartCon.Core.Models.FamilyManager;
 
 public sealed class DbAccessDeniedException : Exception
 {
