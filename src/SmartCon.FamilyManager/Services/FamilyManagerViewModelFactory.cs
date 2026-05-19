@@ -17,6 +17,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyTypeRepository _typeRepository;
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
     private readonly IFamilyMetadataPackageService _packageService;
+    private readonly IDbUserRepository _userRepo;
+    private readonly IDbAccessControlService _accessControl;
+    private readonly IUserIdentityService _identityService;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -29,7 +32,10 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyDataImportRunRepository runRepository,
         IFamilyTypeRepository typeRepository,
         IAttributeDefinitionRepository attributeDefRepository,
-        IFamilyMetadataPackageService packageService)
+        IFamilyMetadataPackageService packageService,
+        IDbUserRepository userRepo,
+        IDbAccessControlService accessControl,
+        IUserIdentityService identityService)
     {
         _writableProvider = writableProvider;
         _categoryRepository = categoryRepository;
@@ -42,6 +48,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _typeRepository = typeRepository;
         _attributeDefRepository = attributeDefRepository;
         _packageService = packageService;
+        _userRepo = userRepo;
+        _accessControl = accessControl;
+        _identityService = identityService;
     }
 
     public FamilyMetadataEditViewModel CreateMetadataEditViewModel(
@@ -60,14 +69,16 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         string catalogItemId, string name, string? description,
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? manufacturer, string? versionLabel,
-        string? fileSizeText, string? createdAtText, string? updatedAtText)
+        string? fileSizeText, string? createdAtText, string? updatedAtText,
+        bool isReadOnly = false)
     {
         return new FamilyPropertiesViewModel(
             catalogItemId, name, description,
             categoryId, categoryPath, tags, contentStatus,
             manufacturer, versionLabel, fileSizeText, createdAtText, updatedAtText,
             _writableProvider, _categoryRepository, _assetService, _presetService, _dialogService,
-            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this);
+            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this)
+        { IsReadOnly = isReadOnly };
     }
 
     public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
@@ -85,5 +96,10 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true)
     {
         return new CategoryPickerViewModel(_categoryRepository, allowClear);
+    }
+
+    public ProfileViewModel CreateProfileViewModel()
+    {
+        return new ProfileViewModel(_userRepo, _accessControl, _identityService, _dialogService);
     }
 }

@@ -11,7 +11,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 
 public sealed partial class FamilyManagerMainViewModel
 {
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task OpenCategoryEditorAsync()
     {
         var editorVm = _viewModelFactory.CreateCategoryTreeEditorViewModel();
@@ -20,7 +20,7 @@ public sealed partial class FamilyManagerMainViewModel
         _dialogService.ShowCategoryTreeEditor(editorVm);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task EditMetadata()
     {
         if (SelectedItem is null) return;
@@ -64,7 +64,8 @@ public sealed partial class FamilyManagerMainViewModel
             SelectedItem.VersionLabel,
             null,
             null,
-            updatedAt);
+            updatedAt,
+            isReadOnly: !CanEdit);
 
         vm.InitializeCommand.Execute(null);
         var result = _dialogService.ShowProperties(vm);
@@ -74,7 +75,7 @@ public sealed partial class FamilyManagerMainViewModel
         ExpandAndSelectItem(itemId);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task UpdateFamilyAsync()
     {
         if (SelectedTreeNode is not FamilyLeafNodeViewModel leaf) return;
@@ -124,7 +125,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task DeleteFamilyAsync()
     {
         if (SelectedItem is null) return;
@@ -235,4 +236,6 @@ public sealed partial class FamilyManagerMainViewModel
         }
         return false;
     }
+
+    private bool CanEditOps() => CanEdit;
 }

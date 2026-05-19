@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -14,7 +15,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 /// <summary>
 /// ViewModel for the FamilyManager dockable panel.
 /// </summary>
-public sealed partial class FamilyManagerMainViewModel : ObservableObject
+public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisposable
 {
     private readonly IFamilyCatalogProvider _catalogProvider;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
@@ -32,11 +33,23 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     private readonly IFamilyTypeRepository _typeRepository;
     private readonly IFamilyDataExtractionService _extractionService;
     private readonly IFamilyDataImportService _dataImportService;
+    private readonly IDbAccessControlService _accessControl;
+    private readonly IFamilySearchService _familySearchService;
+    private readonly IFamilyPlacementService _familyPlacementService;
+    private readonly IFamilyTypeExtractor _familyTypeExtractor;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
+    private bool _lastSearchActive;
+    private readonly HashSet<string> _savedExpandedCategoryIds = new();
+    private readonly HashSet<string> _savedExpandedFamilyIds = new();
 
-    [ObservableProperty] private string _searchText = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSearchNotEmpty))]
+    private string _searchText = string.Empty;
+
+    public bool IsSearchNotEmpty => !string.IsNullOrEmpty(SearchText);
+
     [ObservableProperty] private FamilyCatalogItemRow? _selectedItem;
     [ObservableProperty] private ObservableCollection<CatalogTreeNodeViewModel> _treeNodes = [];
     [ObservableProperty] private CatalogTreeNodeViewModel? _selectedTreeNode;
@@ -47,6 +60,26 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<DatabaseConnection> _connections = new();
     [ObservableProperty] private DatabaseConnection? _selectedConnection;
     [ObservableProperty] private int _currentRevitVersion;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportFolderCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ExtractTypesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportDataCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportDataForCategoryCommand))]
+    private bool _canImport;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditMetadataCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UpdateFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
+    private bool _canEdit;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DeleteDatabaseCommand))]
+    private bool _canManageUsers;
 
     public FamilyManagerMainViewModel(
         IFamilyCatalogProvider catalogProvider,
@@ -64,7 +97,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         ICategoryRepository categoryRepository,
         IFamilyTypeRepository typeRepository,
         IFamilyDataExtractionService extractionService,
-        IFamilyDataImportService dataImportService)
+        IFamilyDataImportService dataImportService,
+        IDbAccessControlService accessControl,
+        IFamilySearchService familySearchService,
+        IFamilyPlacementService familyPlacementService,
+        IFamilyTypeExtractor familyTypeExtractor)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -82,6 +119,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         _typeRepository = typeRepository;
         _extractionService = extractionService;
         _dataImportService = dataImportService;
+        _accessControl = accessControl;
+        _familySearchService = familySearchService;
+        _familyPlacementService = familyPlacementService;
+        _familyTypeExtractor = familyTypeExtractor;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -118,25 +159,92 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
 
     private async Task InitializeAsync()
     {
-        SmartConLogger.TruncateMainLog();
-        SmartConLogger.Info($"======================================================================");
-        SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
-        SmartConLogger.Info($"======================================================================");
+        try
+        {
+            SmartConLogger.TruncateMainLog();
+            SmartConLogger.Info($"======================================================================");
+            SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
+            SmartConLogger.Info($"======================================================================");
 
-        RefreshConnections();
+            RefreshConnections();
+            await RefreshAccessAndLoadTreeAsync();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"FamilyManager initialization failed: {ex}");
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Initialization error: {0}",
+                ex.Message);
+        }
+    }
+
+    private async Task RefreshAccessAndLoadTreeAsync()
+    {
+        DetectRevitVersion();
+        _accessControl.InvalidateCache();
+
+        try
+        {
+            await _accessControl.RefreshCurrentUserAsync();
+            UpdateAccessProperties();
+        }
+        catch (DbAccessDeniedException ex)
+        {
+            CanImport = false;
+            CanEdit = false;
+            CanManageUsers = false;
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
+                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
+            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
+            return;
+        }
         await LoadTreeAsync();
+    }
+
+    private void UpdateAccessProperties()
+    {
+        CanImport = _accessControl.CanImport;
+        CanEdit = _accessControl.CanEdit;
+        CanManageUsers = _accessControl.CanManageUsers;
     }
 
     partial void OnSearchTextChanged(string value)
     {
-        _searchCts?.Cancel();
-        _searchCts = new CancellationTokenSource();
-        _ = LoadTreeAsync(_searchCts.Token);
+        var isSearchNow = !string.IsNullOrWhiteSpace(value);
+
+        if (isSearchNow && !_lastSearchActive)
+        {
+            _savedExpandedCategoryIds.Clear();
+            _savedExpandedFamilyIds.Clear();
+            CollectExpandedIds(TreeNodes, _savedExpandedCategoryIds, _savedExpandedFamilyIds);
+        }
+
+        _lastSearchActive = isSearchNow;
+
+        var newCts = new CancellationTokenSource();
+        var oldCts = Interlocked.Exchange(ref _searchCts, newCts);
+        oldCts?.Cancel();
+        oldCts?.Dispose();
+        _ = DebouncedSearchAsync(newCts.Token);
+    }
+
+    private async Task DebouncedSearchAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(300, ct);
+            await LoadTreeAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
-        CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active;
+        CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
         LoadToProjectCommand.NotifyCanExecuteChanged();
         LoadAndPlaceCommand.NotifyCanExecuteChanged();
     }
@@ -268,6 +376,30 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task OpenProfileAsync(CancellationToken ct)
+    {
+        try
+        {
+            var profileVm = _viewModelFactory.CreateProfileViewModel();
+            await profileVm.InitializeAsync(ct);
+            _dialogService.ShowProfile(profileVm);
+        }
+        catch (SmartCon.Core.Models.FamilyManager.DbAccessDeniedException)
+        {
+            return;
+        }
+
+        try
+        {
+            await _accessControl.RefreshCurrentUserAsync(ct);
+            UpdateAccessProperties();
+        }
+        catch (SmartCon.Core.Models.FamilyManager.DbAccessDeniedException)
+        {
+        }
+    }
+
     /// <summary>
     /// Fire-and-forget helper for post-operations inside ExternalEvent callbacks.
     /// MUST be async void (not async Task) — ExternalEvent handler runs on Revit UI thread
@@ -283,5 +415,46 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject
         {
             SmartConLogger.Error($"FireAndForget: {ex}");
         }
+    }
+
+    [RelayCommand]
+    private async Task RefreshTreeAsync(CancellationToken ct)
+    {
+        try
+        {
+            await RefreshAccessAndLoadTreeAsync();
+        }
+        catch (DbAccessDeniedException ex)
+        {
+            CanImport = false;
+            CanEdit = false;
+            CanManageUsers = false;
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
+                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
+            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"RefreshTreeAsync failed: {ex}");
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
+                ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private void ClearSearch()
+    {
+        SearchText = string.Empty;
+    }
+
+    public void Dispose()
+    {
+        _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+        LocalizationService.LanguageChanged -= OnLanguageChanged;
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
     }
 }

@@ -64,4 +64,6 @@ public interface IFamilyManagerDialogService
     bool? ShowPresetEditor(object viewModel);
 
     bool? ShowAttributeLibrary(object viewModel);
+
+    bool? ShowProfile(object viewModel);
 }

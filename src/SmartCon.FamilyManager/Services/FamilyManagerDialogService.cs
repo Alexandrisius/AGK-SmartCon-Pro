@@ -1,7 +1,6 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Forms;
-using Autodesk.Revit.UI;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -81,9 +80,11 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
         return dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK ? dialog.SelectedPath : null;
     }
 
-    public void ShowWarning(string title, string message) => Autodesk.Revit.UI.TaskDialog.Show(title, message);
+    public void ShowWarning(string title, string message) =>
+        System.Windows.MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
 
-    public void ShowError(string title, string message) => Autodesk.Revit.UI.TaskDialog.Show(title, message);
+    public void ShowError(string title, string message) =>
+        System.Windows.MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
 
     public bool? ShowMetadataEdit(object viewModel) => _presenter.ShowDialog(viewModel);
 
@@ -174,6 +175,8 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public bool? ShowPresetEditor(object viewModel) => _presenter.ShowDialog(viewModel);
 
     public bool? ShowAttributeLibrary(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public bool? ShowProfile(object viewModel) => _presenter.ShowDialog(viewModel);
 
     private static string GetAssetFilter(FamilyAssetType assetType) => assetType switch
     {

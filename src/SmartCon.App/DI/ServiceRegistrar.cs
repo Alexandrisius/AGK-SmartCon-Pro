@@ -29,6 +29,7 @@ using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
 using SmartCon.Revit.Transform;
 using SmartCon.Revit.Updates;
+using SmartCon.App.Services;
 using ShareSettingsView = SmartCon.ProjectManagement.Views.ShareSettingsView;
 using ShareSettingsViewModel = SmartCon.ProjectManagement.ViewModels.ShareSettingsViewModel;
 
@@ -132,6 +133,7 @@ public static class ServiceRegistrar
             presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
+            presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -175,13 +177,23 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
         services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
         services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
+        services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
+        services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
+        services.AddSingleton<IFamilyLoadOptionsFactory, RevitFamilyLoadOptionsFactory>();
+        services.AddSingleton<IFamilyTypeExtractor, RevitFamilyTypeExtractor>();
+        services.AddSingleton<IUserIdentityService, RevitUserIdentityService>();
+        services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
+        services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
 
         services.AddSingleton<FamilyManagerMainViewModel>();
         services.AddSingleton<FamilyManagerPaneControl>();
         services.AddSingleton<FamilyManagerPaneProvider>();
 
-        var fmHandler = new FamilyManagerExternalEvent(revitContext);
+        var windowFocusService = new RevitWindowFocusService(revitContext);
+        services.AddSingleton<IWindowFocusService>(windowFocusService);
+
+        var fmHandler = new FamilyManagerExternalEvent(revitContext, windowFocusService);
         var fmEvent = ExternalEvent.Create(fmHandler);
         fmHandler.Initialize(fmEvent);
         services.AddSingleton(fmHandler);

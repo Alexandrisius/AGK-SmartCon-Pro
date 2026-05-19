@@ -16,11 +16,13 @@ internal sealed class DatabaseManager : IDatabaseManager
     };
 
     private readonly LocalCatalogDatabase _catalogDatabase;
+    private readonly IUserIdentityService _identityService;
     private readonly string _registryPath;
 
-    public DatabaseManager(LocalCatalogDatabase catalogDatabase)
+    public DatabaseManager(LocalCatalogDatabase catalogDatabase, IUserIdentityService identityService)
     {
         _catalogDatabase = catalogDatabase;
+        _identityService = identityService;
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var fmDir = Path.Combine(appData, "SmartCon", "FamilyManager");
         Directory.CreateDirectory(fmDir);
@@ -33,6 +35,8 @@ internal sealed class DatabaseManager : IDatabaseManager
             if (active is not null)
             {
                 _catalogDatabase.SwitchToPath(active.Path);
+                var migrator = new LocalCatalogMigrator(_catalogDatabase);
+                migrator.MigrateAsync(CancellationToken.None).GetAwaiter().GetResult();
             }
         }
     }
@@ -79,16 +83,46 @@ internal sealed class DatabaseManager : IDatabaseManager
 
             using var dbConn = _catalogDatabase.CreateConnection();
             await dbConn.OpenAsync(ct);
-            using var metaCmd = dbConn.CreateCommand();
-            metaCmd.CommandText = """
-                INSERT INTO database_meta (id, name, description, created_at_utc, schema_version)
-                VALUES (@id, @name, @description, @createdAtUtc, 2)
-                """;
-            metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", id));
-            metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", name.Trim()));
-            metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@description", DBNull.Value));
-            metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
-            await metaCmd.ExecuteNonQueryAsync(ct);
+
+            var identity = _identityService.GetCurrentUser();
+            var now = DateTimeOffset.UtcNow.ToString("o");
+
+            using var tx = dbConn.BeginTransaction();
+            try
+            {
+                using var metaCmd = dbConn.CreateCommand();
+                metaCmd.CommandText = """
+                    INSERT INTO database_meta (id, name, description, created_at_utc, schema_version)
+                    VALUES (@id, @name, @description, @createdAtUtc, 2)
+                    """;
+                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", id));
+                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", name.Trim()));
+                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@description", DBNull.Value));
+                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+                await metaCmd.ExecuteNonQueryAsync(ct);
+
+                using var ownerCmd = dbConn.CreateCommand();
+                ownerCmd.CommandText = """
+                    INSERT INTO db_users (user_id, display_name, role, status, joined_at_utc, last_seen_at_utc)
+                    VALUES (@userId, @displayName, 'Owner', 'Active', @now, @now)
+                    """;
+                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@userId", identity.UserId));
+                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@displayName", identity.DisplayName));
+                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@now", now));
+                await ownerCmd.ExecuteNonQueryAsync(ct);
+
+                using var ownerIdentityCmd = dbConn.CreateCommand();
+                ownerIdentityCmd.CommandText = "UPDATE database_meta SET owner_identity = @ownerIdentity";
+                ownerIdentityCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@ownerIdentity", identity.UserId));
+                await ownerIdentityCmd.ExecuteNonQueryAsync(ct);
+
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
         catch
         {
@@ -112,6 +146,8 @@ internal sealed class DatabaseManager : IDatabaseManager
         var dbFile = Path.Combine(fullPath, "catalog.db");
         if (!File.Exists(dbFile))
             throw new FileNotFoundException($"Database not found at: {fullPath}");
+
+        EnsureDatabaseWritable(dbFile);
 
         var existingRegistry = LoadRegistry();
         var existing = existingRegistry.Connections.FirstOrDefault(
@@ -147,6 +183,10 @@ internal sealed class DatabaseManager : IDatabaseManager
         await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
 
         _catalogDatabase.SwitchToPath(fullPath);
+
+        var migrator = new LocalCatalogMigrator(_catalogDatabase);
+        await migrator.MigrateAsync(ct);
+
         ActiveDatabaseChanged?.Invoke(this, id);
         return connection;
     }
@@ -161,8 +201,14 @@ internal sealed class DatabaseManager : IDatabaseManager
         if (registry.ActiveConnectionId == connectionId)
             return Task.FromResult(true);
 
+        var dbFile = Path.Combine(conn.Path, "catalog.db");
+        EnsureDatabaseWritable(dbFile);
+
         SaveRegistry(new DatabaseConnectionRegistry(connectionId, registry.Connections));
         _catalogDatabase.SwitchToPath(conn.Path);
+
+        var migrator = new LocalCatalogMigrator(_catalogDatabase);
+        migrator.MigrateAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         ActiveDatabaseChanged?.Invoke(this, connectionId);
         return Task.FromResult(true);
@@ -227,6 +273,29 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         SmartConLogger.Info($"[DatabaseManager] Database at '{conn.Path}' deleted");
         return true;
+    }
+
+    private static void EnsureDatabaseWritable(string dbFile)
+    {
+        if (!File.Exists(dbFile))
+            return;
+
+        try
+        {
+            using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbFile};Pooling=false");
+            connection.Open();
+            using var tx = connection.BeginTransaction();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "PRAGMA user_version = user_version";
+            cmd.ExecuteNonQuery();
+            tx.Rollback();
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 8)
+        {
+            throw new InvalidOperationException(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbReadOnlyError)
+                ?? "Database is read-only. Change file permissions or contact your administrator.");
+        }
     }
 
     private static void DeleteDirectoryWithRetry(string path, int maxRetries = 3)

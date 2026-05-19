@@ -1,5 +1,8 @@
 using System.IO;
 using System.Reflection;
+using Moq;
+using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 using Xunit;
 
@@ -21,7 +24,11 @@ public sealed class DatabaseManagerTests
             Database = new LocalCatalogDatabase();
             Database.SwitchToPath(Path.Combine(TempDir, "workspace"));
 
-            Manager = new DatabaseManager(Database);
+            var identityMock = new Mock<IUserIdentityService>();
+            identityMock.Setup(s => s.GetCurrentUser())
+                .Returns(new UserIdentity("test-user", "Test User", "TEST-PC", "test-user"));
+
+            Manager = new DatabaseManager(Database, identityMock.Object);
 
             var field = typeof(DatabaseManager).GetField(
                 "_registryPath",

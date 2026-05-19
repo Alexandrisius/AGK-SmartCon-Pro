@@ -271,6 +271,10 @@ public static class StringLocalization
         public const string FM_UpdateSuccess = "FM_UpdateSuccess";
         public const string FM_UpdateIdentical = "FM_UpdateIdentical";
         public const string FM_UpdateError = "FM_UpdateError";
+        public const string FM_Refresh = "FM_Refresh";
+        public const string FM_RefreshTooltip = "FM_RefreshTooltip";
+        public const string FM_ClearSearch = "FM_ClearSearch";
+        public const string FM_Refreshed = "FM_Refreshed";
 
         public const string FM_CTE_Title = "FM_CTE_Title";
         public const string FM_CTE_AddRoot = "FM_CTE_AddRoot";
@@ -396,5 +400,31 @@ public static class StringLocalization
         public const string FM_AL_DeactivateTitle = "FM_AL_DeactivateTitle";
         public const string FM_AL_DeactivateMessage = "FM_AL_DeactivateMessage";
         public const string FM_Confirm_Title = "FM_Confirm_Title";
+        public const string FM_Profile = "FM_Profile";
+        public const string FM_ProfileTitle = "FM_ProfileTitle";
+        public const string FM_ProfileRole = "FM_ProfileRole";
+        public const string FM_ProfileUsers = "FM_ProfileUsers";
+        public const string FM_ProfileUsersCount = "FM_ProfileUsersCount";
+        public const string FM_ProfileClose = "FM_ProfileClose";
+        public const string FM_ProfileYourRole = "FM_ProfileYourRole";
+        public const string FM_ProfileEngineerInfo = "FM_ProfileEngineerInfo";
+        public const string FM_ProfileBimMasterInfo = "FM_ProfileBimMasterInfo";
+        public const string FM_ProfileDeleteTitle = "FM_ProfileDeleteTitle";
+        public const string FM_ProfileDeletePrompt = "FM_ProfileDeletePrompt";
+        public const string FM_TransferOwnership = "FM_TransferOwnership";
+        public const string FM_TransferTitle = "FM_TransferTitle";
+        public const string FM_TransferNoBimMaster = "FM_TransferNoBimMaster";
+        public const string FM_TransferConfirm = "FM_TransferConfirm";
+        public const string FM_RoleChangeConfirmTitle = "FM_RoleChangeConfirmTitle";
+        public const string FM_RoleChangeConfirmMessage = "FM_RoleChangeConfirmMessage";
+        public const string FM_RoleOwner = "FM_RoleOwner";
+        public const string FM_RoleBimMaster = "FM_RoleBimMaster";
+        public const string FM_RoleEngineer = "FM_RoleEngineer";
+        public const string FM_AccessDenied = "FM_AccessDenied";
+        public const string FM_AccessDeniedMessage = "FM_AccessDeniedMessage";
+        public const string FM_AccessDeniedContact = "FM_AccessDeniedContact";
+        public const string FM_AccessDeniedOwner = "FM_AccessDeniedOwner";
+        public const string FM_StatusBanned = "FM_StatusBanned";
+        public const string FM_DbReadOnlyError = "FM_DbReadOnlyError";
     }
 }

@@ -14,4 +14,7 @@ public interface IRevitContext
 
     /// <summary>Revit version string (e.g. "2025").</summary>
     string GetRevitVersion();
+
+    /// <summary>Revit application username (cached at context initialization).</summary>
+    string GetUsername();
 }

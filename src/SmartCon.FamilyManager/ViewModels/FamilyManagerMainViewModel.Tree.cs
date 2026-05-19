@@ -36,7 +36,7 @@ public sealed partial class FamilyManagerMainViewModel
                 ManufacturerFilter: null,
                 Sort: FamilyCatalogSort.NameAsc,
                 Offset: 0,
-                Limit: 500);
+                Limit: int.MaxValue);
 
             var results = await _catalogProvider.SearchAsync(query, ct);
             TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
@@ -46,7 +46,20 @@ public sealed partial class FamilyManagerMainViewModel
 
             var expandedIds = new HashSet<string>();
             var expandedFamilyIds = new HashSet<string>();
-            if (!expandAll) CollectExpandedIds(TreeNodes, expandedIds, expandedFamilyIds);
+            if (!expandAll)
+            {
+                if (_savedExpandedCategoryIds.Count > 0)
+                {
+                    expandedIds = new HashSet<string>(_savedExpandedCategoryIds);
+                    expandedFamilyIds = new HashSet<string>(_savedExpandedFamilyIds);
+                    _savedExpandedCategoryIds.Clear();
+                    _savedExpandedFamilyIds.Clear();
+                }
+                else
+                {
+                    CollectExpandedIds(TreeNodes, expandedIds, expandedFamilyIds);
+                }
+            }
 
             var itemsByCategory = results
                 .GroupBy(i => i.CategoryId ?? string.Empty)
@@ -55,7 +68,7 @@ public sealed partial class FamilyManagerMainViewModel
             foreach (var catNode in tree.GetRootNodes())
             {
                 var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds);
-                if (catVm is CategoryNodeViewModel { FamilyCount: > 0 }) rootNodes.Add(catVm);
+                if (catVm is CategoryNodeViewModel) rootNodes.Add(catVm);
             }
 
             var uncategorized = results.Where(r => string.IsNullOrEmpty(r.CategoryId)).ToList();
@@ -120,7 +133,7 @@ public sealed partial class FamilyManagerMainViewModel
             var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds);
             if (childVm is CategoryNodeViewModel childCat)
             {
-                if (childCat.FamilyCount > 0) vm.Children.Add(childVm);
+                vm.Children.Add(childVm);
                 familyCount += childCat.FamilyCount;
             }
         }

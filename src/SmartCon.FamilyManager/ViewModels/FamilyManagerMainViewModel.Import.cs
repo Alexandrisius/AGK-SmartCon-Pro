@@ -10,7 +10,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 
 public sealed partial class FamilyManagerMainViewModel
 {
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private async Task ImportFilesAsync()
     {
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import Files";
@@ -56,7 +56,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private async Task ImportFolderAsync()
     {
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFolder) ?? "Import Folder";
@@ -157,7 +157,7 @@ public sealed partial class FamilyManagerMainViewModel
         return result;
     }
 
-    [RelayCommand(CanExecute = nameof(CanImportToCategory))]
+    [RelayCommand(CanExecute = nameof(CanImportToCategoryWithAccess))]
     private async Task ImportFileToCategoryAsync()
     {
         if (SelectedTreeNode is not CategoryNodeViewModel categoryNode) return;
@@ -207,7 +207,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanImportToCategory))]
+    [RelayCommand(CanExecute = nameof(CanImportToCategoryWithAccess))]
     private async Task ImportFolderToCategoryAsync()
     {
         if (SelectedTreeNode is not CategoryNodeViewModel categoryNode) return;
@@ -250,7 +250,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanImportToCategory))]
+    [RelayCommand(CanExecute = nameof(CanImportToCategoryWithAccess))]
     private void ImportDataForCategory()
     {
         if (SelectedTreeNode is not CategoryNodeViewModel categoryNode) return;
@@ -318,9 +318,9 @@ public sealed partial class FamilyManagerMainViewModel
                                 _extractionService.Extract(item.FilePath!, item.ParamNames));
 
                             SmartConLogger.FreezeTimer($"ImportDataForCategory.SaveResult[{item.Name}]", () =>
-                                _dataImportService.SaveExtractionResultAsync(
-                                    item.CatalogItemId, extractionResult, item.VersionId, null, CancellationToken.None)
-                                    .ConfigureAwait(false).GetAwaiter().GetResult());
+                                Task.Run(() => _dataImportService.SaveExtractionResultAsync(
+                                    item.CatalogItemId, extractionResult, item.VersionId, null, CancellationToken.None))
+                                    .GetAwaiter().GetResult());
 
                             successCount++;
                         }
@@ -356,7 +356,7 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
-    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private void ExtractTypes()
     {
         if (SelectedItem is null) return;
@@ -367,26 +367,21 @@ public sealed partial class FamilyManagerMainViewModel
 
         _externalEvent.Raise(() =>
         {
-            var doc = _revitContext.GetDocument();
-            if (doc is null) return;
-
             try
             {
                 SmartConLogger.FreezeThreadPool("ExtractTypes.Start");
 
-                var family = FindLoadedFamily(doc, selectedName);
-
-                if (family is not null)
+                if (_familySearchService.IsFamilyLoaded(selectedName))
                 {
-                    var names = ReadFamilyTypeNames(doc, family);
+                    var names = _familySearchService.GetFamilyTypeNames(selectedName);
                     SmartConLogger.Freeze($"ExtractTypes: Family already loaded, found {names.Count} types");
                     if (names.Count > 0)
-                        FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, names));
+                        FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, names.ToList()));
                     return;
                 }
 
                 var resolved = SmartConLogger.FreezeTimer("ExtractTypes.ResolveFile", () =>
-                    _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).GetAwaiter().GetResult());
+                    Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult());
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
@@ -394,20 +389,13 @@ public sealed partial class FamilyManagerMainViewModel
                     return;
                 }
 
-                List<string>? typeNames = null;
-                SmartConLogger.FreezeTimer("ExtractTypes.LoadFamily", () =>
-                {
-                    _transactionService.RunAndRollback("Extract Types", d =>
-                    {
-                        if (!d.LoadFamily(resolved.AbsolutePath, new SimpleFamilyLoadOptions(), out var loaded) || loaded is null) return;
-                        typeNames = ReadFamilyTypeNames(d, loaded);
-                    });
-                });
+                var typeNames = SmartConLogger.FreezeTimer("ExtractTypes.ExtractFromFile", () =>
+                    _familyTypeExtractor.ExtractTypeNamesFromFile(resolved.AbsolutePath));
 
-                SmartConLogger.Freeze($"ExtractTypes: Extracted {typeNames?.Count ?? 0} types");
+                SmartConLogger.Freeze($"ExtractTypes: Extracted {typeNames.Count} types");
 
-                if (typeNames is not null && typeNames.Count > 0)
-                    FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames));
+                if (typeNames.Count > 0)
+                    FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames.ToList()));
             }
             catch (Exception ex)
             {
@@ -417,7 +405,7 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
-    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private void ImportData()
     {
         if (SelectedItem is null) return;
@@ -460,8 +448,8 @@ public sealed partial class FamilyManagerMainViewModel
                         _extractionService.Extract(rfaPath!, paramNames));
 
                     var saveResult = SmartConLogger.FreezeTimer("ImportData.SaveResult", () =>
-                        _dataImportService.SaveExtractionResultAsync(
-                            selectedId, extractionResult, versionId, null, CancellationToken.None).GetAwaiter().GetResult());
+                        Task.Run(() => _dataImportService.SaveExtractionResultAsync(
+                            selectedId, extractionResult, versionId, null, CancellationToken.None)).GetAwaiter().GetResult());
 
                     StatusMessage = saveResult.Success
                         ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0} types, {1} values found", saveResult.TypesCount, saveResult.AttributesFoundCount)
@@ -495,4 +483,8 @@ public sealed partial class FamilyManagerMainViewModel
         await _typeRepository.SaveTypesAsync(catalogItemId, types.AsReadOnly(), CancellationToken.None);
         await LoadTreeAsync();
     }
+
+    private bool CanImportFiles() => CanImport;
+
+    private bool CanImportToCategoryWithAccess() => CanImport && CanImportToCategory();
 }

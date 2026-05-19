@@ -1,6 +1,4 @@
 using System.IO;
-using Autodesk.Revit.DB;
-using Autodesk.Revit.UI;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -23,13 +21,6 @@ public sealed partial class FamilyManagerMainViewModel
 
         _externalEvent.Raise(() =>
         {
-            var doc = _revitContext.GetDocument();
-            if (doc is null)
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoActiveDocument) ?? "No active document";
-                return;
-            }
-
             try
             {
                 var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
@@ -50,20 +41,16 @@ public sealed partial class FamilyManagerMainViewModel
                         result.FamilyName ?? selectedName);
 
                     var familyName = result.FamilyName ?? selectedName;
-                    var loadedFamily = FindLoadedFamily(doc, familyName);
-                    if (loadedFamily is not null)
-                    {
-                        var typeNames = ReadFamilyTypeNames(doc, loadedFamily);
-                        if (typeNames.Count > 0)
-                            FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames));
-                    }
+                    var typeNames = _familySearchService.GetFamilyTypeNames(familyName);
+                    if (typeNames.Count > 0)
+                        FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames.ToList()));
 
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
                         CatalogItemId: selectedId,
                         VersionId: resolved.VersionId,
-                        ProjectName: Path.GetFileName(doc.PathName),
-                        ProjectPath: doc.PathName,
+                        ProjectName: "Active Project",
+                        ProjectPath: string.Empty,
                         RevitMajorVersion: targetRevit,
                         Action: "Load",
                         CreatedAtUtc: DateTimeOffset.UtcNow);
@@ -95,16 +82,8 @@ public sealed partial class FamilyManagerMainViewModel
         var selectedName = SelectedItem.Name;
         var targetRevit = CurrentRevitVersion;
 
-        _externalEvent.RaiseWithApplication(appObj =>
+        _externalEvent.Raise(() =>
         {
-            var uiApp = (UIApplication)appObj;
-            var doc = _revitContext.GetDocument();
-            if (doc is null)
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_NoActiveDocument) ?? "No active document";
-                return;
-            }
-
             try
             {
                 SmartConLogger.FreezeThreadPool("LoadAndPlace.Start");
@@ -135,48 +114,29 @@ public sealed partial class FamilyManagerMainViewModel
                 SmartConLogger.Freeze($"LoadAndPlace: Family '{result.FamilyName}' loaded successfully");
 
                 var familyName = result.FamilyName ?? selectedName;
+                var typeNames = _familySearchService.GetFamilyTypeNames(familyName);
+                var firstType = typeNames.Count > 0 ? typeNames[0] : null;
 
-                var family = FindLoadedFamily(doc, familyName);
-
-                if (family is null)
+                if (firstType is not null)
+                {
+                    _familyPlacementService.ActivateAndPlaceType(familyName, firstType);
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
+                        familyName);
+                }
+                else
                 {
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
-                        LanguageManager.GetString(StringLocalization.Keys.FM_FamilyNotFoundAfterLoad) ?? "Family not found after loading");
-                    return;
+                        LanguageManager.GetString(StringLocalization.Keys.FM_FamilyNotFoundAfterLoad) ?? "No types found after loading");
                 }
-
-                var symbolId = family.GetFamilySymbolIds().Cast<ElementId>().FirstOrDefault();
-                if (symbolId is null) return;
-
-                var symbol = doc.GetElement(symbolId) as FamilySymbol;
-                if (symbol is null) return;
-
-                if (!symbol.IsActive)
-                {
-                    _transactionService.RunInTransaction("Activate Family Symbol", _ =>
-                    {
-                        if (!symbol.IsActive)
-                            symbol.Activate();
-                    });
-                }
-
-                var uidoc = uiApp.ActiveUIDocument;
-                if (uidoc is not null)
-                {
-                    uidoc.PostRequestForElementTypePlacement(symbol);
-                }
-
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
-                    familyName);
 
                 var usage = new ProjectFamilyUsage(
                     Id: Guid.NewGuid().ToString(),
                     CatalogItemId: selectedId,
                     VersionId: resolved.VersionId,
-                    ProjectName: Path.GetFileName(doc.PathName),
-                    ProjectPath: doc.PathName,
+                    ProjectName: "Active Project",
+                    ProjectPath: string.Empty,
                     RevitMajorVersion: targetRevit,
                     Action: "LoadAndPlace",
                     CreatedAtUtc: DateTimeOffset.UtcNow);
@@ -207,22 +167,16 @@ public sealed partial class FamilyManagerMainViewModel
         var typeName = typeNode.TypeName;
         var targetRevit = CurrentRevitVersion;
 
-        _externalEvent.RaiseWithApplication(appObj =>
+        _externalEvent.Raise(() =>
         {
-            var uiApp = (UIApplication)appObj;
-            var doc = _revitContext.GetDocument();
-            if (doc is null) return;
-
             try
             {
                 SmartConLogger.FreezeThreadPool("PlaceType.Start");
 
-                var family = FindLoadedFamily(doc, familyName);
-
-                if (family is null)
+                if (!_familySearchService.IsFamilyLoaded(familyName))
                 {
                     var resolved = SmartConLogger.FreezeTimer("PlaceType.ResolveFile", () =>
-                        _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None).GetAwaiter().GetResult());
+                        Task.Run(() => _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult());
 
                     if (string.IsNullOrEmpty(resolved.AbsolutePath))
                     {
@@ -233,82 +187,25 @@ public sealed partial class FamilyManagerMainViewModel
                     var loadOptions = FamilyLoadOptions.Default with { PreferredName = familyName };
                     SmartConLogger.FreezeTimer("PlaceType.LoadFamily", () =>
                         _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult());
-
-                    family = FindLoadedFamily(doc, familyName);
                 }
                 else
                 {
                     SmartConLogger.Freeze("PlaceType: Family already loaded");
                 }
 
-                if (family is null) return;
+                _familyPlacementService.ActivateAndPlaceType(familyName, typeName);
 
-                var symbol = FindFamilySymbolByName(doc, family, typeName);
-                if (symbol is null) return;
-
-                if (!symbol.IsActive)
+                // Важно: читаем типы СИНХРОННО в ExternalEvent, передаем готовый список в FireAndForget
+                var typeNames = _familySearchService.GetFamilyTypeNames(familyName).ToList();
+                if (typeNames.Count > 0)
                 {
-                    _transactionService.RunInTransaction("Activate Symbol", _ =>
-                    {
-                        if (!symbol.IsActive) symbol.Activate();
-                    });
+                    FireAndForget(() => SaveTypesAndReloadTreeAsync(catalogItemId, typeNames));
                 }
-
-                uiApp.ActiveUIDocument?.PostRequestForElementTypePlacement(symbol);
-
-                FireAndForget(async () =>
-                {
-                    await SaveTypesAndReloadTreeAsync(catalogItemId, ReadFamilyTypeNames(doc, family));
-                });
             }
             catch (Exception ex)
             {
                 SmartConLogger.Warn($"PlaceType failed: {ex.Message}");
             }
         });
-    }
-
-    private static Autodesk.Revit.DB.Family? FindLoadedFamily(Document doc, string familyName)
-    {
-        return new FilteredElementCollector(doc)
-            .OfClass(typeof(Autodesk.Revit.DB.Family))
-            .Cast<Autodesk.Revit.DB.Family>()
-            .FirstOrDefault(f => f.Name.Equals(familyName, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static List<string> ReadFamilyTypeNames(Document doc, Autodesk.Revit.DB.Family family)
-    {
-        return family.GetFamilySymbolIds()
-            .Select(id => doc.GetElement(id))
-            .OfType<FamilySymbol>()
-            .Select(s => s.Name)
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    private static FamilySymbol? FindFamilySymbolByName(Document doc, Autodesk.Revit.DB.Family family, string typeName)
-    {
-        return family.GetFamilySymbolIds()
-            .Select(id => doc.GetElement(id))
-            .OfType<FamilySymbol>()
-            .FirstOrDefault(s => s.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private sealed class SimpleFamilyLoadOptions : IFamilyLoadOptions
-    {
-        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
-        {
-            overwriteParameterValues = true;
-            return true;
-        }
-
-        public bool OnSharedFamilyFound(Autodesk.Revit.DB.Family sharedFamily, bool familyInUse,
-            out Autodesk.Revit.DB.FamilySource source, out bool overwriteParameterValues)
-        {
-            source = Autodesk.Revit.DB.FamilySource.Family;
-            overwriteParameterValues = true;
-            return true;
-        }
     }
 }

@@ -255,6 +255,26 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_import_runs_started ON family_data_import_runs (started_at_utc)
         """;
 
+    public const string CreateDbUsers = """
+        CREATE TABLE IF NOT EXISTS db_users (
+            user_id TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'Engineer',
+            status TEXT NOT NULL DEFAULT 'Active',
+            joined_at_utc TEXT NOT NULL,
+            last_seen_at_utc TEXT NOT NULL
+        )
+        """;
+
+    public const string CreateDbUsersIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_db_users_role ON db_users (role);
+        CREATE INDEX IF NOT EXISTS ix_db_users_status ON db_users (status)
+        """;
+
+    public const string MigrateV7AddOwnerIdentity = """
+        ALTER TABLE database_meta ADD COLUMN owner_identity TEXT
+        """;
+
     public const string CreateTables = $"""
         {CreateDatabaseMeta};
         {CreateSchemaInfo};
@@ -271,7 +291,8 @@ internal static class FamilyCatalogSql
         {CreateAttributeDefinitions};
         {CreateCategoryAttributeBindings};
         {CreateFamilyDataImportRuns};
-        {CreateExtractedAttributeValues}
+        {CreateExtractedAttributeValues};
+        {CreateDbUsers}
         """;
 
     public const string CreateIndexes = """
