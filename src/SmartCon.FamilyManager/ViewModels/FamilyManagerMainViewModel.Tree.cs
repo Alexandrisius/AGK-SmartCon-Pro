@@ -68,7 +68,7 @@ public sealed partial class FamilyManagerMainViewModel
             foreach (var catNode in tree.GetRootNodes())
             {
                 var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds);
-                if (catVm is CategoryNodeViewModel { FamilyCount: > 0 }) rootNodes.Add(catVm);
+                if (catVm is CategoryNodeViewModel) rootNodes.Add(catVm);
             }
 
             var uncategorized = results.Where(r => string.IsNullOrEmpty(r.CategoryId)).ToList();
@@ -133,7 +133,7 @@ public sealed partial class FamilyManagerMainViewModel
             var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds);
             if (childVm is CategoryNodeViewModel childCat)
             {
-                if (childCat.FamilyCount > 0) vm.Children.Add(childVm);
+                vm.Children.Add(childVm);
                 familyCount += childCat.FamilyCount;
             }
         }
