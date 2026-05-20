@@ -211,6 +211,22 @@ public interface IDialogService
         IReadOnlyList<string> availableFamilies,
         IReadOnlyList<FittingMapping> currentSelection);
 }
+
+---
+
+## IDialogPresenter
+
+Представляет модальные диалоги для ViewModel, разрешая соответствующее WPF представление.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IDialogPresenter.cs`
+**Реализация:** `SmartCon.App/DI/WpfDialogPresenter.cs`
+
+```csharp
+public interface IDialogPresenter
+{
+    bool? ShowDialog<TViewModel>(TViewModel viewModel) where TViewModel : class;
+    bool? ShowDialog(object viewModel);
+}
 ```
 
 ---
@@ -232,6 +248,31 @@ public interface ITransformService
     void MoveElements(Document doc, ICollection<ElementId> elementIds, Vec3 offset);
     void RotateElements(Document doc, ICollection<ElementId> elementIds,
         Vec3 axisOrigin, Vec3 axisDirection, double angleRadians);
+}
+
+---
+
+## IAlignmentService *(Phase 2)*
+
+Выравнивание элемента относительно целевого коннектора по положению и ориентации.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IAlignmentService.cs`
+**Реализация:** `SmartCon.Revit/Transform/RevitAlignmentService.cs`
+
+```csharp
+public interface IAlignmentService
+{
+    void ApplyAlignment(
+        Document doc,
+        ElementId elementId,
+        ConnectorProxy alignTarget,
+        ConnectorProxy currentElement);
+
+    void ApplyAlignment(
+        Document doc,
+        ElementId elementId,
+        AlignmentResult alignResult,
+        int positionCorrectionConnIdx = -1);
 }
 ```
 
@@ -457,12 +498,12 @@ public interface INetworkMover
 
 ---
 
-## IUpdateService / IUpdateSettingsRepository
+## IUpdateService
 
-GitHub-based auto-update система.
+GitHub-based auto-update сервис.
 
-**Файл:** `SmartCon.Core/Services/Interfaces/IUpdateService.cs`, `IUpdateSettingsRepository.cs`
-**Реализация:** `SmartCon.Revit/Updates/GitHubUpdateService.cs`, `SmartCon.Core/Services/Implementation/JsonUpdateSettingsRepository.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IUpdateService.cs`
+**Реализация:** `SmartCon.Revit/Updates/GitHubUpdateService.cs`
 
 ```csharp
 public interface IUpdateService
@@ -473,12 +514,38 @@ public interface IUpdateService
     Task StageUpdateAsync(string zipPath);
     Task<UpdateInfo?> GetPendingUpdateAsync();
 }
+```
 
+---
+
+## IUpdateSettingsRepository
+
+Хранение настроек авто-обновления (JSON).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IUpdateSettingsRepository.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/JsonUpdateSettingsRepository.cs`
+
+```csharp
 public interface IUpdateSettingsRepository
 {
     string SettingsFilePath { get; }
     UpdateSettings Load();
     void Save(UpdateSettings settings);
+}
+
+---
+
+## IWindowFocusService
+
+Восстанавливает фокус окна и обновляет WPF UI thread после операций, которые могут вызывать нативные диалоги Revit (например, обновление версии семейства).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IWindowFocusService.cs`
+**Реализация:** `SmartCon.App/Services/RevitWindowFocusService.cs`
+
+```csharp
+public interface IWindowFocusService
+{
+    void RestoreFocusAndRefreshUI();
 }
 ```
 
@@ -650,6 +717,7 @@ public interface IFamilyImportService
 {
     Task<FamilyImportResult> ImportFileAsync(FamilyImportRequest request, CancellationToken ct = default);
     Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
+    Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default);
 }
 ```
 
@@ -698,7 +766,75 @@ public interface IFamilyLoadService
 {
     Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, CancellationToken ct = default);
 }
+
+---
+
+### IFamilyLoadOptionsFactory
+
+Фабрика для создания `IFamilyLoadOptions` (Revit API). Возвращает `object` чтобы избежать compile-time зависимости от Revit API в Core (I-09).
+
+**Файл:** `IFamilyLoadOptionsFactory.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyLoadOptionsFactory.cs`
+
+```csharp
+public interface IFamilyLoadOptionsFactory
+{
+    object CreateLoadOptions();
+}
 ```
+
+---
+
+### IFamilyPlacementService
+
+Размещение семейств и типоразмеров в проекте Revit. Все операции выполняются в контексте ExternalEvent (I-01).
+
+**Файл:** `IFamilyPlacementService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyPlacementService.cs`
+
+```csharp
+public interface IFamilyPlacementService
+{
+    void ActivateAndPlaceType(string familyName, string typeName);
+    void LoadAndPlaceFamily(string filePath, string familyName, string? preferredTypeName = null);
+}
+```
+
+---
+
+### IFamilySearchService
+
+Поиск семейств и типов в активном документе Revit. Все операции выполняются в контексте ExternalEvent (I-01).
+
+**Файл:** `IFamilySearchService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilySearchService.cs`
+
+```csharp
+public interface IFamilySearchService
+{
+    bool IsFamilyLoaded(string familyName);
+    IReadOnlyList<string> GetFamilyTypeNames(string familyName);
+    bool HasFamilyType(string familyName, string typeName);
+}
+```
+
+---
+
+### IFamilyTypeExtractor
+
+Извлечение списка типоразмеров из `.rfa` файла без постоянной загрузки в проект. Все операции выполняются в контексте ExternalEvent (I-01).
+
+**Файл:** `IFamilyTypeExtractor.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyTypeExtractor.cs`
+
+```csharp
+public interface IFamilyTypeExtractor
+{
+    IReadOnlyList<string> ExtractTypeNamesFromFile(string filePath);
+}
+```
+
+---
 
 ### IFamilyMetadataExtractionService
 
@@ -711,7 +847,117 @@ public interface IFamilyMetadataExtractionService
 {
     Task<FamilyMetadataExtractionResult> ExtractAsync(string filePath, CancellationToken ct = default);
 }
+
+---
+
+### IRevitFileInfoReader
+
+Чтение информации о версии Revit из `.rvt` и `.rfa` файлов (без загрузки в проект).
+
+**Файл:** `IRevitFileInfoReader.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFileInfoReader.cs`
+
+```csharp
+public interface IRevitFileInfoReader
+{
+    int? ReadRevitVersion(string filePath);
+}
 ```
+
+---
+
+### IFamilyDataExtractionService
+
+Извлечение данных (параметров) из `.rfa` файла по заданному списку имён параметров. Возвращает значения по типоразмерам.
+
+**Файл:** `IFamilyDataExtractionService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyDataExtractionService.cs`
+
+```csharp
+public sealed record FamilyExtractionTypeResult(string TypeName, int SortOrder);
+
+public sealed record FamilyExtractionValueResult(
+    string ParameterName,
+    AttributeScope? ParameterScope,
+    string? StorageType,
+    string? ValueText,
+    string? ValueRaw,
+    double? ValueNumber,
+    string? UnitTypeId,
+    AttributeValueStatus Status,
+    string? Message);
+
+public sealed record FamilyExtractionTypeValues(
+    string TypeName,
+    int SortOrder,
+    IReadOnlyList<FamilyExtractionValueResult> Values);
+
+public sealed record FamilyExtractionResult(
+    bool Success,
+    IReadOnlyList<FamilyExtractionTypeValues> Types,
+    IReadOnlyList<FamilyExtractionValueResult>? UntypedValues,
+    string? ErrorMessage,
+    int RevitMajorVersion);
+
+public interface IFamilyDataExtractionService
+{
+    FamilyExtractionResult Extract(string rfaFilePath, IReadOnlyList<string> expectedParameterNames);
+}
+```
+
+---
+
+### IFamilyDataImportRunRepository
+
+CRUD для запусков импорта данных семейств (FamilyDataImportRun).
+
+**Файл:** `IFamilyDataImportRunRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyDataImportRunRepository.cs`
+
+```csharp
+public interface IFamilyDataImportRunRepository
+{
+    Task<FamilyDataImportRun?> GetLatestRunAsync(string catalogItemId, CancellationToken ct = default);
+    Task<IReadOnlyList<FamilyDataImportRun>> GetRunsForItemAsync(string catalogItemId, CancellationToken ct = default);
+    Task<FamilyDataImportRun> CreateRunAsync(FamilyDataImportRun run, CancellationToken ct = default);
+    Task<FamilyDataImportRun> UpdateRunAsync(string runId, FamilyDataImportStatus status, int typesCount, DateTimeOffset completedAtUtc, string? errorMessage, CancellationToken ct = default);
+}
+```
+
+---
+
+### IFamilyDataImportService
+
+Оркестрация импорта данных семейств: подготовка, извлечение, сохранение значений атрибутов.
+
+**Файл:** `IFamilyDataImportService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/FamilyDataImportService.cs`
+
+```csharp
+public sealed record FamilyDataImportResult(
+    bool Success,
+    string? RunId,
+    int TypesCount,
+    int AttributesFoundCount,
+    int AttributesMissingCount,
+    string? ErrorMessage);
+
+public sealed record FamilyExtractionPrepareResult(
+    bool Success,
+    FamilyCatalogItem? Item,
+    string? ResolvedFilePath,
+    IReadOnlyList<string> ParameterNames,
+    string? ErrorMessage);
+
+public interface IFamilyDataImportService
+{
+    Task<FamilyDataImportResult> ImportDataAsync(string catalogItemId, CancellationToken ct = default);
+    Task<FamilyExtractionPrepareResult> PrepareExtractionAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
+    Task<FamilyDataImportResult> SaveExtractionResultAsync(string catalogItemId, FamilyExtractionResult extractionResult, string? versionId, string? fileId, CancellationToken ct = default);
+}
+```
+
+---
 
 ### IProjectFamilyUsageRepository
 
@@ -883,6 +1129,49 @@ public interface ICategoryAttributeBindingService
     Task DeleteBindingsForAttributeAsync(string attributeId, CancellationToken ct = default);
     Task<IReadOnlyDictionary<string, int>> GetBindingCountsAsync(IEnumerable<string> attributeIds, CancellationToken ct = default);
 }
+
+---
+
+### IAttributePresetService
+
+Управление пресетами атрибутов, определяющими какие параметры извлекать для каждой категории. Поддерживает наследование категорий.
+
+**Файл:** `IAttributePresetService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalAttributePresetService.cs`
+
+```csharp
+public interface IAttributePresetService
+{
+    Task<IReadOnlyList<AttributePreset>> GetAllPresetsAsync(CancellationToken ct = default);
+    Task<AttributePreset?> GetPresetForCategoryAsync(string? categoryId, CancellationToken ct = default);
+    Task<IReadOnlyList<AttributePresetParameter>> GetEffectiveParametersAsync(string? categoryId, CancellationToken ct = default);
+    Task<AttributePreset> CreatePresetAsync(string? categoryId, IReadOnlyList<AttributePresetParameter> parameters, CancellationToken ct = default);
+    Task UpdatePresetAsync(string presetId, IReadOnlyList<AttributePresetParameter> parameters, CancellationToken ct = default);
+    Task DeletePresetAsync(string presetId, CancellationToken ct = default);
+}
+```
+
+---
+
+### IAttributeValueRepository
+
+Хранение и чтение извлечённых значений атрибутов (AttributeValue) для элементов каталога, типоразмеров и запусков импорта.
+
+**Файл:** `IAttributeValueRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalAttributeValueRepository.cs`
+
+```csharp
+public interface IAttributeValueRepository
+{
+    Task<IReadOnlyList<ExtractedAttributeValue>> GetValuesForItemAsync(string catalogItemId, string? versionId, CancellationToken ct = default);
+    Task<IReadOnlyList<ExtractedAttributeValue>> GetValuesForTypeAsync(string typeId, CancellationToken ct = default);
+    Task<IReadOnlyList<ExtractedAttributeValue>> GetValuesForRunAsync(string runId, CancellationToken ct = default);
+    Task SaveValuesAsync(IReadOnlyList<ExtractedAttributeValue> values, CancellationToken ct = default);
+    Task ReplaceSnapshotAsync(string catalogItemId, string? versionId, string runId, IReadOnlyList<ExtractedAttributeValue> values, CancellationToken ct = default);
+    Task<int> DeleteValuesForRunAsync(string runId, CancellationToken ct = default);
+    Task<int> GetFoundCountAsync(string catalogItemId, string? versionId, CancellationToken ct = default);
+    Task<int> GetMissingCountAsync(string catalogItemId, string? versionId, CancellationToken ct = default);
+}
 ```
 
 ---
@@ -1032,4 +1321,45 @@ public interface IDropInfo
     object? Payload { get; }
     object? Target { get; }
 }
+
+---
+
+## UI Contracts
+
+Минимальные контракты для WPF UI: закрытие окон и запросы на закрытие из ViewModel.
+
+### IObservableRequestClose
+
+Интерфейс для ViewModel, который уведомляет View о необходимости закрытия окна.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IObservableRequestClose.cs`
+**Реализация:** Реализуется множеством ViewModel (например, `PipeConnectEditorViewModel`, `FamilyMetadataEditViewModel`).
+
+```csharp
+public interface IObservableRequestClose
+{
+    event Action<bool?>? RequestClose;
+}
+```
+
+### ICloseAwareViewModel
+
+Интерфейс для ViewModel, который может перехватывать или подтверждать закрытие окна пользователем.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/ICloseAwareViewModel.cs`
+**Реализация:** Реализуется множеством ViewModel (например, `PipeConnectEditorViewModel`, `CategoryTreeEditorViewModel`).
+
+```csharp
+public sealed class CloseConfirmationArgs
+{
+    public bool Cancel { get; set; }
+    public bool? DialogResult { get; set; }
+    public Action? DeferredAction { get; set; }
+}
+
+public interface ICloseAwareViewModel
+{
+    void ConfirmClose(CloseConfirmationArgs args);
+}
+```
 ```

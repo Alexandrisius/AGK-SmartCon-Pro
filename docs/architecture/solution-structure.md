@@ -144,8 +144,13 @@ SmartCon.UI/
 │   └── Controls.xaml                  <- стили общих контролов
 ├── Controls/
 │   └── (кастомные контролы при необходимости)
-└── Converters/
-    └── BoolToVisibilityConverter.cs
+├── Converters/
+│   └── BoolToVisibilityConverter.cs
+├── Localization/
+│   ├── TranslationSource.cs           <- INPC singleton для локализации (ADR-020)
+│   └── LocExtension.cs                <- MarkupExtension {loc:Loc Key}
+├── LanguageManager.cs                 <- фасад для ViewModel (GetString, ChangeLanguage)
+└── StringLocalization.cs              <- обёртка + Keys класс (backward compat)
 
 Примечание: ViewModelBase и RelayCommand НЕ нужны — используем CommunityToolkit.Mvvm:
 - `ObservableObject` заменяет ViewModelBase
@@ -194,7 +199,6 @@ SmartCon.PipeConnect/
 │   ├── MappingEditorViewModel.cs           <- Settings window VM
 │   ├── MiniTypeSelectorViewModel.cs        <- Type selector VM
 │   ├── FamilySelectorViewModel.cs          <- Family picker VM
-│   ├── FittingCtcSetupViewModel.cs         <- CTC setup VM
 │   ├── FittingCardBuilder.cs               <- Builds FittingCardItem lists
 │   ├── FittingCardItem.cs                  <- Fitting/reducer card for UI
 │   ├── ConnectorItem.cs                    <- Connector display item
@@ -205,7 +209,6 @@ SmartCon.PipeConnect/
 │   ├── MappingEditorView.xaml           <- Settings (tabs: types + rules)
 │   ├── MiniTypeSelectorView.xaml        <- Type selector
 │   ├── FamilySelectorView.xaml          <- Family picker
-│   ├── FittingCtcSetupView.xaml         <- CTC assignment
 │   └── AboutView.xaml                   <- About + updates
 ├── Services/
 │   ├── PipeConnectSessionBuilder.cs     <- S1-S6 session construction
@@ -229,15 +232,9 @@ SmartCon.PipeConnect/
 │   ├── AboutViewModelFactory.cs
 │   ├── ISettingsViewModelFactory.cs
 │   ├── SettingsViewModelFactory.cs
-│   ├── LanguageManager.cs               <- ResourceDictionary swap + WeakReference window tracking
-│   └── StringLocalization.cs            <- программные RU/EN ResourceDictionary
 └── Events/
     └── PipeConnectExternalEvent.cs      <- IExternalEventHandler
 ```
-
-> **Примечание:** `BoolToVisibilityConverter` раньше существовал в двух местах
-> (SmartCon.UI и SmartCon.PipeConnect). После B-6 локальный дубликат в
-> PipeConnect удалён — используется версия из `SmartCon.UI.Converters`.
 
 ---
 
@@ -291,7 +288,6 @@ SmartCon.FamilyManager/
 │   └── FamilyManagerCommand.cs          // IExternalCommand — toggle dockable pane
 ├── Events/
 │   └── FamilyManagerExternalEvent.cs    // IExternalEventHandler — Revit API thread bridge
-├── Diagnostics/                         // (пусто, зарезервировано для будущей диагностики)
 ├── ViewModels/
 │   ├── FamilyManagerMainViewModel.cs    // Main dockable panel VM (11 commands)
 │   ├── FamilyCatalogItemRow.cs          // DataGrid row model
