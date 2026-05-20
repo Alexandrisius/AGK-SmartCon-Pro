@@ -115,10 +115,10 @@ public sealed partial class FamilySelectorViewModel : ObservableObject, IObserva
         SelectedFamilies.IndexOf(SelectedMapping) < SelectedFamilies.Count - 1;
 
     [RelayCommand]
-    private void Confirm()
+    private void Ok()
     {
         Confirmed = true;
-        RequestClose?.Invoke(null);
+        RequestClose?.Invoke(true);
     }
 
     public void ConfirmClose(CloseConfirmationArgs args)

@@ -6,7 +6,8 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{loc:Loc Title_EditorSetup}"
-        Width="600" Height="500"
+        Width="480" Height="Auto" MinHeight="280"
+        SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
         ShowInTaskbar="True"
@@ -20,7 +21,7 @@
     </Window.Resources>
 
     <Border Style="{DynamicResource CardBorder}" Margin="6">
-        <Grid Margin="12">
+        <Grid Margin="10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="10"/>
@@ -34,7 +35,7 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="8"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
@@ -45,13 +46,13 @@
                        HorizontalAlignment="Center"/>
 
             <!-- Поворот -->
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="2" HorizontalAlignment="Center">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="110"/>
                     <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0"
@@ -85,9 +86,8 @@
             <!-- Изменить соединение -->
             <Button Grid.Row="4"
                     Height="28"
-                    Padding="10,3"
+                    Padding="16,3"
                     HorizontalAlignment="Center"
-                    Width="190"
                     Command="{Binding CycleConnectorCommand}"
                     ToolTip="{loc:Loc Tip_ChangeConnection}"
                     Style="{DynamicResource PrimaryButton}">
@@ -99,10 +99,10 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="6"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="10"/>
-                        <ColumnDefinition Width="95"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="80"/>
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0"
@@ -133,8 +133,8 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="4"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="95"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="80"/>
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0" Content="&#x21C5;" Width="28" Height="28"
@@ -164,8 +164,8 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="4"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="95"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="80"/>
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0" Content="&#x21C5;" Width="28" Height="28"
@@ -221,7 +221,7 @@
             <!-- Статус -->
             <Border Grid.Row="12"
                     Style="{DynamicResource StatusBarBorder}"
-                    VerticalAlignment="Bottom" Margin="0,8,0,0">
+                    Margin="0,8,0,0">
                 <TextBlock Text="{Binding StatusMessage}"
                            FontSize="11" Foreground="#444"
                            TextWrapping="Wrap"/>
@@ -270,22 +270,22 @@
                 </StackPanel>
 
                 <Button Grid.Column="1"
-                        Content="{loc:Loc Btn_Cancel}"
-                        Width="85" Height="28"
-                        Padding="0"
-                        Command="{Binding CancelCommand}"
-                        IsCancel="True"
-                        Style="{DynamicResource SecondaryButton}"/>
-
-                <Button Grid.Column="3"
                         Content="{loc:Loc Btn_Connect}"
-                        Width="105" Height="28"
+                        Width="80" Height="28"
                         Padding="0"
                         Command="{Binding ConnectCommand}"
                         IsDefault="True"
                         FontWeight="SemiBold"
                         ToolTip="{loc:Loc Tip_Connect}"
                         Style="{DynamicResource AccentButton}"/>
+
+                <Button Grid.Column="3"
+                        Content="{loc:Loc Btn_Cancel}"
+                        Width="80" Height="28"
+                        Padding="0"
+                        Command="{Binding CancelCommand}"
+                        IsCancel="True"
+                        Style="{DynamicResource SecondaryButton}"/>
             </Grid>
         </Grid>
     </Border>

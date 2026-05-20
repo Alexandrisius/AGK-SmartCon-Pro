@@ -209,20 +209,20 @@ public sealed class FamilySelectorViewModelTests
     // ── Confirm / Cancel ──────────────────────────────────────────────────
 
     [Fact]
-    public void ConfirmCommand_SetsConfirmedTrue()
+    public void OkCommand_SetsConfirmedTrue()
     {
         var vm = MakeVm();
-        vm.ConfirmCommand.Execute(null);
+        vm.OkCommand.Execute(null);
         Assert.True(vm.Confirmed);
     }
 
     [Fact]
-    public void ConfirmCommand_RaisesRequestClose()
+    public void OkCommand_RaisesRequestClose()
     {
         var vm = MakeVm();
         var raised = false;
         vm.RequestClose += _ => raised = true;
-        vm.ConfirmCommand.Execute(null);
+        vm.OkCommand.Execute(null);
         Assert.True(raised);
     }
 
@@ -230,7 +230,7 @@ public sealed class FamilySelectorViewModelTests
     public void CancelCommand_SetsConfirmedFalse()
     {
         var vm = MakeVm();
-        vm.ConfirmCommand.Execute(null);
+        vm.OkCommand.Execute(null);
         vm.CancelCommand.Execute(null);
         Assert.False(vm.Confirmed);
     }
@@ -264,7 +264,7 @@ public sealed class FamilySelectorViewModelTests
                 new FittingMapping { FamilyName = "А", Priority = 1 },
                 new FittingMapping { FamilyName = "Б", Priority = 2 },
             ]);
-        vm.ConfirmCommand.Execute(null);
+        vm.OkCommand.Execute(null);
         var result = vm.GetResult();
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
@@ -285,7 +285,7 @@ public sealed class FamilySelectorViewModelTests
             ]);
         vm.SelectedMapping = "Б";
         vm.MoveUpCommand.Execute(null);
-        vm.ConfirmCommand.Execute(null);
+        vm.OkCommand.Execute(null);
         var result = vm.GetResult()!;
         Assert.Equal("Б", result[0].FamilyName);
         Assert.Equal(1, result[0].Priority);
@@ -297,7 +297,7 @@ public sealed class FamilySelectorViewModelTests
     public void GetResult_EmptySelectedFamilies_ReturnsEmptyList()
     {
         var vm = MakeVm();
-        vm.ConfirmCommand.Execute(null);
+        vm.OkCommand.Execute(null);
         var result = vm.GetResult();
         Assert.NotNull(result);
         Assert.Empty(result!);

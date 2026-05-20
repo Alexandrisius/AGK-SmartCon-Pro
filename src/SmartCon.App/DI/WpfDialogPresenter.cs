@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Windows;
+using System.Windows.Interop;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.App.DI;
@@ -16,7 +18,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
     {
         if (!_mappings.TryGetValue(typeof(TViewModel), out var factory))
             throw new InvalidOperationException($"No view registered for ViewModel type '{typeof(TViewModel).Name}'");
-        return factory(viewModel).ShowDialog();
+        return ShowDialogInternal(factory(viewModel));
     }
 
     public bool? ShowDialog(object viewModel)
@@ -29,6 +31,13 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         var vmType = viewModel.GetType();
         if (!_mappings.TryGetValue(vmType, out var factory))
             throw new InvalidOperationException($"No view registered for ViewModel type '{vmType.Name}'");
-        return factory(viewModel).ShowDialog();
+        return ShowDialogInternal(factory(viewModel));
+    }
+
+    private static bool? ShowDialogInternal(Window window)
+    {
+        var helper = new WindowInteropHelper(window);
+        helper.Owner = Process.GetCurrentProcess().MainWindowHandle;
+        return window.ShowDialog();
     }
 }

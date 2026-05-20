@@ -365,10 +365,12 @@
                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
             <Button Grid.Column="1" Content="{loc:Loc Btn_Export}" Command="{Binding ExportSettingsCommand}"
                     Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-            <Button Grid.Column="3" Content="{loc:Loc Btn_Save}" Command="{Binding SaveCommand}"
-                    Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
+            <Button Grid.Column="3" Content="{loc:Loc Btn_OK}" Command="{Binding OkCommand}"
+                    Width="80" Height="28"
+                    Style="{DynamicResource PrimaryButton}" Margin="0,0,8,0" IsDefault="True"/>
             <Button Grid.Column="4" Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
-                    Style="{DynamicResource SecondaryButton}"/>
+                    Width="80" Height="28"
+                    Style="{DynamicResource SecondaryButton}" IsCancel="True"/>
         </Grid>
     </Grid>
 </controls:DialogWindowBase>

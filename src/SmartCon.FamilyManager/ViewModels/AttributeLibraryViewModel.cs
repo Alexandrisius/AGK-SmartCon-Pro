@@ -149,7 +149,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     }
 
     [RelayCommand]
-    private async Task SaveAsync()
+    private async Task OkAsync()
     {
         try
         {

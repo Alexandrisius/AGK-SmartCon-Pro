@@ -172,9 +172,10 @@
 
         <Button Grid.Row="3"
                 Command="{Binding CloseCommand}"
-                Content="{loc:Loc FM_ProfileClose}"
+                Content="{loc:Loc Btn_Close}"
+                IsCancel="True"
                 Style="{DynamicResource SecondaryButton}"
-                MinWidth="80" HorizontalAlignment="Right"
+                Width="80" Height="28" HorizontalAlignment="Right"
                 Margin="0,12,0,0"/>
     </Grid>
 </controls:DialogWindowBase>

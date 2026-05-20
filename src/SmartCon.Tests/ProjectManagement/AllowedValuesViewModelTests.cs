@@ -165,14 +165,14 @@ public sealed class AllowedValuesViewModelTests
     }
 
     [Fact]
-    public void SaveCommand_InvokesRequestCloseWithTrue()
+    public void OkCommand_InvokesRequestCloseWithTrue()
     {
         var item = CreateItem();
         var vm = new AllowedValuesViewModel(item);
         bool? result = null;
         vm.RequestClose += r => result = r;
 
-        vm.SaveCommand.Execute(null);
+        vm.OkCommand.Execute(null);
 
         Assert.True(result);
     }
