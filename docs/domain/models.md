@@ -1876,7 +1876,39 @@ public sealed record FamilyTypeDescriptor(
     string Id,
     string CatalogItemId,
     string Name,
-    int SortOrder);
+    int SortOrder,
+    string? VersionId = null,
+    string? FileId = null,
+    string? ExtractionRunId = null,
+    string? UniqueId = null);
+```
+
+---
+
+### SystemFamilyImportResult
+
+Результат импорта системного семейства (спайк: трубы).
+
+**Файл:** `SystemFamilyImportResult.cs`
+
+```csharp
+public record SystemFamilyImportResult(
+    bool Success,
+    string? Message,
+    string? CatalogItemId,
+    int TypesCount);
+```
+
+---
+
+### SelectedPipeType
+
+Выбранный тип трубы при импорте системного семейства.
+
+**Файл:** `ISystemFamilyRevitOperations.cs`
+
+```csharp
+public record SelectedPipeType(string UniqueId, string Name);
 ```
 
 ---

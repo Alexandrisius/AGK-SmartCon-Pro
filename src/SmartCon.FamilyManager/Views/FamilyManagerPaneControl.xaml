@@ -216,13 +216,21 @@
                                     BorderThickness="0"
                                     Cursor="Hand"/>
                             <Button Content="{loc:Loc FM_ImportFolder}"
-                                    Command="{Binding ImportFolderCommand}"
-                                    MinWidth="140"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="10,6"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    Cursor="Hand"/>
+                                     Command="{Binding ImportFolderCommand}"
+                                     MinWidth="140"
+                                     HorizontalContentAlignment="Left"
+                                     Padding="10,6"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Cursor="Hand"/>
+                            <Button Content="{loc:Loc FM_ImportSystemFamily}"
+                                     Command="{Binding ImportSystemFamilyCommand}"
+                                     MinWidth="140"
+                                     HorizontalContentAlignment="Left"
+                                     Padding="10,6"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Cursor="Hand"/>
                         </StackPanel>
                     </Border>
                 </Popup>

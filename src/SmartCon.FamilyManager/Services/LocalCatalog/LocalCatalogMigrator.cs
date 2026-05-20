@@ -51,6 +51,7 @@ internal sealed class LocalCatalogMigrator
         await MigrateV5Async(connection, ct);
         await MigrateV6Async(connection, ct);
         await MigrateV7Async(connection, ct);
+        await MigrateV8Async(connection, ct);
 
         await EnsureCriticalColumnsAsync(connection, ct);
     }
@@ -355,6 +356,75 @@ internal sealed class LocalCatalogMigrator
             cmd.CommandText = FamilyCatalogSql.MigrateV7AddOwnerIdentity;
             await cmd.ExecuteNonQueryAsync(ct);
         }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "family_source", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN family_source TEXT NOT NULL DEFAULT 'loadable'";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "revit_category", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN revit_category TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_types", "type_unique_id", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE family_types ADD COLUMN type_unique_id TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "family_source", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.CreateV8Indexes;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task MigrateV8Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 8) return;
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "family_source", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = """
+                ALTER TABLE catalog_items ADD COLUMN family_source TEXT NOT NULL DEFAULT 'loadable'
+                """;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "revit_category", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = """
+                ALTER TABLE catalog_items ADD COLUMN revit_category TEXT
+                """;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_types", "type_unique_id", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = """
+                ALTER TABLE family_types ADD COLUMN type_unique_id TEXT
+                """;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateV8Indexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '8' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
     }
 
     private static async Task<int> GetSchemaVersionAsync(SqliteConnection connection, CancellationToken ct)

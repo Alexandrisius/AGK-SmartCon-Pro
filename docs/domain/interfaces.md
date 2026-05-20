@@ -802,6 +802,55 @@ public interface IFamilyPlacementService
 
 ---
 
+### ISystemFamilyImportService
+
+Импорт системных семейств через выбор элементов в проекте (спайк: трубы).
+
+**Файл:** `ISystemFamilyImportService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/SystemFamilyImportService.cs`
+
+```csharp
+public interface ISystemFamilyImportService
+{
+    SystemFamilyImportResult ImportFromSelection();
+}
+```
+
+---
+
+### ISystemFamilyPlacementService
+
+Размещение системных типов в проекте через CopyElements + PostRequestForElementTypePlacement.
+
+**Файл:** `ISystemFamilyPlacementService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/SystemFamilyPlacementService.cs`
+
+```csharp
+public interface ISystemFamilyPlacementService
+{
+    void LoadAndPlaceSystemType(string catalogItemId, string uniqueId, int targetRevitVersion);
+}
+```
+
+---
+
+### ISystemFamilyRevitOperations
+
+Revit API операции для системных семейств: пикер труб, создание чистого .rvt, CopyElements.
+
+**Файл:** `ISystemFamilyRevitOperations.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/SystemFamilyRevitOperations.cs`
+
+```csharp
+public interface ISystemFamilyRevitOperations
+{
+    IReadOnlyList<SelectedPipeType> PickPipeTypes();
+    CreateCleanProjectResult CreateCleanProjectWithTypes(IReadOnlyList<string> pipeTypeUniqueIds);
+}
+```
+
+---
+
 ### IFamilySearchService
 
 Поиск семейств и типов в активном документе Revit. Все операции выполняются в контексте ExternalEvent (I-01).

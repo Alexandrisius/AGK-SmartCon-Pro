@@ -16,6 +16,7 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     public DateTimeOffset UpdatedAtUtc { get; }
     public IReadOnlyList<string> Tags { get; }
     public string? Description { get; }
+    public string FamilySource { get; }
 
     public FamilyLeafNodeViewModel(FamilyCatalogItemRow row)
     {
@@ -29,5 +30,6 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         UpdatedAtUtc = row.UpdatedAtUtc;
         Tags = row.Tags;
         Description = row.Description;
+        FamilySource = row.FamilySource;
     }
 }

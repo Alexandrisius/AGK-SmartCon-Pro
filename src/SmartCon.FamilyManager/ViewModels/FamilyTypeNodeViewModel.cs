@@ -7,11 +7,13 @@ public sealed class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
 
     public string CatalogItemId { get; }
     public string TypeName { get; }
+    public string? UniqueId { get; }
 
-    public FamilyTypeNodeViewModel(string catalogItemId, string typeName)
+    public FamilyTypeNodeViewModel(string catalogItemId, string typeName, string? uniqueId = null)
     {
         CatalogItemId = catalogItemId;
         TypeName = typeName;
+        UniqueId = uniqueId;
         DisplayName = typeName;
     }
 }

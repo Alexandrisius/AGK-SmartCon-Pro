@@ -86,7 +86,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
 
         var placeholders = string.Join(",", Enumerable.Range(0, idList.Count).Select(i => $"@p{i}"));
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id IN ({placeholders}) ORDER BY sort_order";
+        cmd.CommandText = $"SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id FROM family_types WHERE catalog_item_id IN ({placeholders}) ORDER BY sort_order";
         for (var i = 0; i < idList.Count; i++)
             cmd.Parameters.Add(new SqliteParameter($"@p{i}", idList[i]));
 
@@ -101,7 +101,8 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                 reader.GetInt32(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 reader.IsDBNull(5) ? null : reader.GetString(5),
-                reader.IsDBNull(6) ? null : reader.GetString(6));
+                reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7));
 
             if (!result.TryGetValue(itemId, out var list))
             {

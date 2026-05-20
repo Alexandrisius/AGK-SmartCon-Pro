@@ -37,6 +37,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilySearchService _familySearchService;
     private readonly IFamilyPlacementService _familyPlacementService;
     private readonly IFamilyTypeExtractor _familyTypeExtractor;
+    private readonly ISystemFamilyImportService _systemFamilyImportService;
+    private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -68,6 +70,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportDataForCategoryCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportSystemFamilyCommand))]
     private bool _canImport;
 
     [ObservableProperty]
@@ -101,7 +104,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IDbAccessControlService accessControl,
         IFamilySearchService familySearchService,
         IFamilyPlacementService familyPlacementService,
-        IFamilyTypeExtractor familyTypeExtractor)
+        IFamilyTypeExtractor familyTypeExtractor,
+        ISystemFamilyImportService systemFamilyImportService,
+        ISystemFamilyPlacementService systemFamilyPlacementService)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -123,6 +128,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _familySearchService = familySearchService;
         _familyPlacementService = familyPlacementService;
         _familyTypeExtractor = familyTypeExtractor;
+        _systemFamilyImportService = systemFamilyImportService;
+        _systemFamilyPlacementService = systemFamilyPlacementService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -366,7 +373,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 foreach (var t in types)
                 {
                     if (!string.IsNullOrWhiteSpace(t.Name))
-                        leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                        leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name, t.UniqueId));
                 }
 
                 if (expandedFamilyIds.Contains(leaf.CatalogItemId))

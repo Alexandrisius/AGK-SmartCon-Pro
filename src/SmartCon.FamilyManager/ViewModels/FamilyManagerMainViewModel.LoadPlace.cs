@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -18,6 +19,16 @@ public sealed partial class FamilyManagerMainViewModel
         var selectedId = SelectedItem.Id;
         var selectedName = SelectedItem.Name;
         var targetRevit = CurrentRevitVersion;
+
+        if (IsSystemFamilySelected())
+        {
+            var firstType = GetFirstSystemType();
+            if (firstType is not null)
+            {
+                PlaceSystemType(selectedId, firstType.TypeName, firstType.TypeName, targetRevit);
+                return;
+            }
+        }
 
         _externalEvent.Raise(() =>
         {
@@ -81,6 +92,16 @@ public sealed partial class FamilyManagerMainViewModel
         var selectedId = SelectedItem.Id;
         var selectedName = SelectedItem.Name;
         var targetRevit = CurrentRevitVersion;
+
+        if (IsSystemFamilySelected())
+        {
+            var firstType = GetFirstSystemType();
+            if (firstType is not null)
+            {
+                PlaceSystemType(selectedId, firstType.TypeName, firstType.TypeName, targetRevit);
+                return;
+            }
+        }
 
         _externalEvent.Raise(() =>
         {
@@ -167,6 +188,17 @@ public sealed partial class FamilyManagerMainViewModel
         var typeName = typeNode.TypeName;
         var targetRevit = CurrentRevitVersion;
 
+        SmartConLogger.Freeze($"PlaceType: typeName={typeName}, uniqueId={typeNode.UniqueId ?? "null"}, catalogItemId={catalogItemId}");
+
+        if (typeNode.UniqueId is not null)
+        {
+            SmartConLogger.Freeze("PlaceType: Branching to PlaceSystemType");
+            PlaceSystemType(catalogItemId, typeName, typeName, targetRevit);
+            return;
+        }
+
+        SmartConLogger.Freeze("PlaceType: Branching to loadable family path");
+
         _externalEvent.Raise(() =>
         {
             try
@@ -195,7 +227,6 @@ public sealed partial class FamilyManagerMainViewModel
 
                 _familyPlacementService.ActivateAndPlaceType(familyName, typeName);
 
-                // Важно: читаем типы СИНХРОННО в ExternalEvent, передаем готовый список в FireAndForget
                 var typeNames = _familySearchService.GetFamilyTypeNames(familyName).ToList();
                 if (typeNames.Count > 0)
                 {
@@ -207,5 +238,55 @@ public sealed partial class FamilyManagerMainViewModel
                 SmartConLogger.Warn($"PlaceType failed: {ex.Message}");
             }
         });
+    }
+
+    private void PlaceSystemType(string catalogItemId, string typeName, string displayName, int targetRevit)
+    {
+        SmartConLogger.Freeze($"PlaceSystemType ENTRY: catalogItemId={catalogItemId}, typeName={typeName}, targetRevit={targetRevit}");
+
+        try
+        {
+            _externalEvent.Raise(() =>
+            {
+                try
+                {
+                    SmartConLogger.FreezeThreadPool("PlaceSystemType.ExternalEvent.Start");
+                    SmartConLogger.Freeze($"PlaceSystemType: Inside ExternalEvent, calling LoadAndPlaceSystemType");
+
+                    _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, targetRevit);
+
+                    StatusMessage = string.Format(
+                        "System type \"{0}\" — click to place",
+                        displayName);
+
+                    SmartConLogger.Freeze($"PlaceSystemType: StatusMessage set, returning from ExternalEvent");
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                        ex.Message);
+                    SmartConLogger.Freeze($"PlaceSystemType: Exception - {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                }
+            });
+            SmartConLogger.Freeze("PlaceSystemType: Raise() completed successfully");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Freeze($"PlaceSystemType: Raise() THREW - {ex.GetType().Name}: {ex.Message}");
+            StatusMessage = $"PlaceSystemType Raise failed: {ex.Message}";
+        }
+    }
+
+    private bool IsSystemFamilySelected()
+    {
+        if (SelectedTreeNode is not FamilyLeafNodeViewModel leaf) return false;
+        return leaf.Children.OfType<FamilyTypeNodeViewModel>().Any(t => t.UniqueId is not null);
+    }
+
+    private FamilyTypeNodeViewModel? GetFirstSystemType()
+    {
+        if (SelectedTreeNode is not FamilyLeafNodeViewModel leaf) return null;
+        return leaf.Children.OfType<FamilyTypeNodeViewModel>().FirstOrDefault(t => t.UniqueId is not null);
     }
 }

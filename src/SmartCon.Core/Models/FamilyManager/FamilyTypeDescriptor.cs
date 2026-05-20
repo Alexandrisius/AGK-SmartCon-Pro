@@ -7,4 +7,5 @@ public sealed record FamilyTypeDescriptor(
     int SortOrder,
     string? VersionId = null,
     string? FileId = null,
-    string? ExtractionRunId = null);
+    string? ExtractionRunId = null,
+    string? UniqueId = null);

@@ -486,5 +486,42 @@ public sealed partial class FamilyManagerMainViewModel
 
     private bool CanImportFiles() => CanImport;
 
+    [RelayCommand(CanExecute = nameof(CanImportFiles))]
+    private void ImportSystemFamily()
+    {
+        IsLoading = true;
+        StatusMessage = "Select pipe elements in Revit...";
+
+        _externalEvent.Raise(() =>
+        {
+            try
+            {
+                SmartConLogger.FreezeThreadPool("ImportSystemFamily.Start");
+
+                var result = _systemFamilyImportService.ImportFromSelection();
+
+                StatusMessage = result.Success
+                    ? string.Format("System family imported: {0} types", result.TypesCount)
+                    : result.Message ?? "Import failed";
+
+                SmartConLogger.Freeze($"ImportSystemFamily: {result.Message}, ItemId={result.CatalogItemId}");
+
+                if (result.Success)
+                    FireAndForget(async () => await LoadTreeAsync());
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}",
+                    ex.Message);
+                SmartConLogger.Freeze($"ImportSystemFamily: Exception - {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        });
+    }
+
     private bool CanImportToCategoryWithAccess() => CanImport && CanImportToCategory();
 }
