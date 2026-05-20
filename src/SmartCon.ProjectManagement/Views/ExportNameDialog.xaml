@@ -5,7 +5,8 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{loc:Loc PM_Title_Settings}"
-        Width="520" SizeToContent="Height" MinWidth="420"
+        Width="420" Height="Auto" MinWidth="380"
+        SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
@@ -17,98 +18,143 @@
         </ui:SingletonResources>
     </Window.Resources>
 
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <Border Style="{DynamicResource CardBorder}" Margin="6">
+        <Grid Margin="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="12"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Margin="0,0,0,8"
-                   Foreground="{DynamicResource TextPrimaryBrush}"
-                   TextWrapping="Wrap">
-            <Run Text="{loc:Loc PM_ExportName_CurrentLabel}" FontWeight="Bold"/>
-            <Run Text="{Binding CurrentFileName, Mode=OneWay}"/>
-        </TextBlock>
-
-        <TextBlock Grid.Row="1" Margin="0,0,0,12"
-                   Foreground="{DynamicResource TextSecondaryBrush}"
-                   TextWrapping="Wrap"
-                   Text="{Binding ValidationErrors, Mode=OneWay}"/>
-
-        <TextBlock Grid.Row="2" Margin="0,0,0,8"
-                   Foreground="{DynamicResource TextPrimaryBrush}"
-                   FontWeight="Bold"
-                   Text="{loc:Loc PM_ExportName_FillFields}"/>
-
-        <ItemsControl Grid.Row="3" ItemsSource="{Binding Fields}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Grid Margin="0,0,0,6">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0"
-                                   VerticalAlignment="Center"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   Text="{Binding Field}"/>
-                        <ComboBox Grid.Column="1"
-                                  IsEditable="True"
-                                  Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
-                                  ItemsSource="{Binding AllowedValues}"/>
-                    </Grid>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <TextBox Grid.Row="4" Margin="0,4,0,8"
-                 Foreground="Red"
-                 TextWrapping="Wrap"
-                 IsReadOnly="True"
-                 BorderThickness="0"
-                 Background="Transparent"
-                 MaxHeight="80"
-                 VerticalScrollBarVisibility="Auto"
-                 Text="{Binding FieldErrors, Mode=OneWay}">
-            <TextBox.Style>
-                <Style TargetType="TextBox">
-                    <Setter Property="Visibility" Value="Visible"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding FieldErrors}" Value="">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding FieldErrors}" Value="{x:Null}">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </TextBox.Style>
-        </TextBox>
-
-        <StackPanel Grid.Row="5" Margin="0,0,0,12">
-            <TextBlock Foreground="{DynamicResource TextPrimaryBrush}" FontWeight="Bold">
-                <Run Text="{loc:Loc PM_ExportName_Preview}"/>
-                <Run Text="{Binding PreviewFileName, Mode=OneWay}"/>
+            <!-- Текущее имя -->
+            <TextBlock Grid.Row="0"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       TextWrapping="Wrap">
+                <Run Text="{loc:Loc PM_ExportName_CurrentLabel}" FontWeight="SemiBold"/>
+                <Run Text="{Binding CurrentFileName, Mode=OneWay}"/>
             </TextBlock>
-        </StackPanel>
 
-        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="{loc:Loc Btn_OK}"
-                    Command="{Binding OkCommand}"
-                    IsEnabled="{Binding IsValid}"
-                    Width="80" Height="28"
-                    IsDefault="True"
-                    Style="{DynamicResource PrimaryButton}"/>
-            <Button Content="{loc:Loc Btn_Cancel}"
-                    Command="{Binding CancelCommand}"
-                    Width="80" Height="28" Margin="8,0,0,0"
-                    IsCancel="True"
-                    Style="{DynamicResource SecondaryButton}"/>
-        </StackPanel>
-    </Grid>
+            <!-- Ошибки валидации -->
+            <TextBlock Grid.Row="2"
+                       Foreground="{DynamicResource DangerBrush}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Text="{Binding ValidationErrors, Mode=OneWay}"/>
+
+            <!-- Подсказка -->
+            <TextBlock Grid.Row="3"
+                       Margin="0,4,0,0"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Text="{loc:Loc PM_ExportName_FillFields}"/>
+
+            <!-- Поля -->
+            <ItemsControl Grid.Row="5" ItemsSource="{Binding Fields}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="12"
+                                       Text="{Binding Field}"/>
+                            <ComboBox Grid.Column="2"
+                                      IsEditable="True"
+                                      Height="26"
+                                      FontSize="12"
+                                      Padding="6,2"
+                                      Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                      ItemsSource="{Binding AllowedValues}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Ошибки полей -->
+            <Border Grid.Row="6"
+                    Margin="0,4,0,0"
+                    Padding="8,6"
+                    Background="#FFF5F5"
+                    BorderBrush="{DynamicResource DangerBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding FieldErrors}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding FieldErrors}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock Foreground="{DynamicResource DangerBrush}"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           Text="{Binding FieldErrors, Mode=OneWay}"/>
+            </Border>
+
+            <!-- Предпросмотр -->
+            <Grid Grid.Row="8" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontWeight="SemiBold"
+                           FontSize="12"
+                           Text="{loc:Loc PM_ExportName_Preview}"/>
+                <TextBlock Grid.Column="2"
+                           Foreground="{DynamicResource AccentBrush}"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           Text="{Binding PreviewFileName, Mode=OneWay}"/>
+            </Grid>
+
+            <!-- Кнопки -->
+            <Grid Grid.Row="10" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="1"
+                        Content="{loc:Loc Btn_OK}"
+                        Command="{Binding OkCommand}"
+                        IsEnabled="{Binding IsValid}"
+                        Width="80" Height="28"
+                        IsDefault="True"
+                        Style="{DynamicResource PrimaryButton}"/>
+                <Button Grid.Column="3"
+                        Content="{loc:Loc Btn_Cancel}"
+                        Command="{Binding CancelCommand}"
+                        Width="80" Height="28"
+                        IsCancel="True"
+                        Style="{DynamicResource SecondaryButton}"/>
+            </Grid>
+        </Grid>
+    </Border>
 </controls:DialogWindowBase>
