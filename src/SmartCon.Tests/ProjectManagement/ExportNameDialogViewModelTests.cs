@@ -182,7 +182,7 @@ public sealed class ExportNameDialogViewModelTests
     }
 
     [Fact]
-    public void ExportCommand_WhenValid_InvokesRequestCloseWithTrue()
+    public void OkCommand_WhenValid_InvokesRequestCloseWithTrue()
     {
         var blocks = CreateBlocks((0, "project"));
         var vm = CreateVm("PRJ.rvt", "", blocks, [], []);
@@ -190,13 +190,13 @@ public sealed class ExportNameDialogViewModelTests
 
         bool? result = null;
         vm.RequestClose += r => result = r;
-        vm.ExportCommand.Execute(null);
+        vm.OkCommand.Execute(null);
 
         Assert.True(result);
     }
 
     [Fact]
-    public void ExportCommand_WhenInvalid_DoesNotInvokeRequestClose()
+    public void OkCommand_WhenInvalid_DoesNotInvokeRequestClose()
     {
         var blocks = CreateBlocks((0, "project"));
         var vm = CreateVm("PRJ.rvt", "", blocks, [], []);
@@ -204,7 +204,7 @@ public sealed class ExportNameDialogViewModelTests
 
         bool? result = null;
         vm.RequestClose += r => result = r;
-        vm.ExportCommand.Execute(null);
+        vm.OkCommand.Execute(null);
 
         Assert.Null(result);
     }
