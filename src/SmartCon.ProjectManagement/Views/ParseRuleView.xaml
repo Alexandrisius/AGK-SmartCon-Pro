@@ -131,10 +131,10 @@
             </TextBlock>
 
             <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="{loc:Loc Btn_Save}" Command="{Binding OkCommand}"
-                        Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
+                <Button Content="{loc:Loc Btn_OK}" Command="{Binding OkCommand}"
+                        Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0" IsDefault="True"/>
                 <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
-                        Style="{DynamicResource SecondaryButton}"/>
+                        Style="{DynamicResource SecondaryButton}" IsCancel="True"/>
             </StackPanel>
         </Grid>
     </Grid>

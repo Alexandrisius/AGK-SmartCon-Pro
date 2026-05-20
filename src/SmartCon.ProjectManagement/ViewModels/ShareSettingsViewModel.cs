@@ -586,7 +586,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
     }
 
     [RelayCommand]
-    private void Save()
+    private void Ok()
     {
         try
         {

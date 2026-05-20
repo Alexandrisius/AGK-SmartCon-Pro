@@ -72,10 +72,10 @@
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="{loc:Loc Btn_Save}" Command="{Binding SaveCommand}"
-                    Style="{DynamicResource PrimaryButton}" Margin="0,0,4,0"/>
             <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
-                    Style="{DynamicResource SecondaryButton}"/>
+                    Style="{DynamicResource SecondaryButton}" MinWidth="80" IsCancel="True"/>
+            <Button Content="{loc:Loc Btn_OK}" Command="{Binding OkCommand}"
+                    Style="{DynamicResource PrimaryButton}" MinWidth="80" Margin="4,0,0,0" IsDefault="True"/>
         </StackPanel>
     </Grid>
 </controls:DialogWindowBase>

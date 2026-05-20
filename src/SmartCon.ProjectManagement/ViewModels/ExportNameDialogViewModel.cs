@@ -146,7 +146,7 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
     }
 
     [RelayCommand]
-    private void Export()
+    private void Ok()
     {
         if (!IsValid) return;
         RequestClose?.Invoke(true);

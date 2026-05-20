@@ -136,6 +136,7 @@
 
             <Button Grid.Column="3" Content="{loc:Loc Btn_Close}" Width="80"
                     Command="{Binding CloseCommand}"
+                    IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"
                     VerticalAlignment="Bottom"/>
         </Grid>

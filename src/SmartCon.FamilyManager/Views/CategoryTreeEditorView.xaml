@@ -422,26 +422,17 @@
             </Grid>
 
             <Button Grid.Column="3"
-                    Command="{Binding SaveCommand}"
+                    Content="{loc:Loc Btn_OK}"
+                    Command="{Binding OkCommand}"
                     MinWidth="80"
-                    Padding="12,4" Margin="0,0,4,0">
-                <Button.Style>
-                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
-                        <Setter Property="Content" Value="{loc:Loc Btn_Save}"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsSaved}" Value="True">
-                                <Setter Property="Content" Value="{loc:Loc Btn_Saved}"/>
-                                <Setter Property="Background" Value="{DynamicResource SavedSuccessBrush}"/>
-                                <Setter Property="Foreground" Value="White"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Button.Style>
-            </Button>
+                    Padding="12,4" Margin="0,0,4,0"
+                    IsDefault="True"
+                    Style="{DynamicResource PrimaryButton}"/>
 
-            <Button Grid.Column="4" Content="{loc:Loc FM_CTE_Close}"
+            <Button Grid.Column="4" Content="{loc:Loc Btn_Cancel}"
                     Command="{Binding CancelCommand}"
                     MinWidth="80"
+                    IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="12,4"/>
         </Grid>

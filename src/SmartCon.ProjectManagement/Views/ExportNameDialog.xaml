@@ -98,14 +98,16 @@
         </StackPanel>
 
         <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="{loc:Loc Btn_Export}"
-                    Command="{Binding ExportCommand}"
-                    IsEnabled="{Binding IsValid}"
-                    Margin="0,0,8,0"
-                    MinWidth="80" MinHeight="28"/>
             <Button Content="{loc:Loc Btn_Cancel}"
                     Command="{Binding CancelCommand}"
-                    MinWidth="80" MinHeight="28"/>
+                    MinWidth="80" MinHeight="28"
+                    IsCancel="True"/>
+            <Button Content="{loc:Loc Btn_OK}"
+                    Command="{Binding OkCommand}"
+                    IsEnabled="{Binding IsValid}"
+                    Margin="8,0,0,0"
+                    MinWidth="80" MinHeight="28"
+                    IsDefault="True"/>
         </StackPanel>
     </Grid>
 </controls:DialogWindowBase>

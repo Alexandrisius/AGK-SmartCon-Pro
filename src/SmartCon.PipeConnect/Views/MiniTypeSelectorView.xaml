@@ -44,7 +44,7 @@
                     Command="{Binding CancelCommand}" IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>
             <Button Content="{loc:Loc Btn_OK}" Width="80"
-                    Command="{Binding SelectCommand}" IsDefault="True"
+                    Command="{Binding OkCommand}" IsDefault="True"
                     Style="{DynamicResource AccentButton}"/>
         </StackPanel>
     </Grid>

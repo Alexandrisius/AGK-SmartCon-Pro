@@ -34,10 +34,12 @@
                     Command="{Binding YesCommand}"
                     MinWidth="70"
                     Margin="0,0,8,0"
+                    IsDefault="True"
                     Style="{DynamicResource PrimaryButton}"/>
             <Button Content="{loc:Loc Btn_No}"
                     Command="{Binding NoCommand}"
                     MinWidth="70"
+                    IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>
         </StackPanel>
     </Grid>

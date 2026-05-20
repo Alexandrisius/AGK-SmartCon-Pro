@@ -71,10 +71,10 @@
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="{loc:Loc FM_CP_Clear}" Command="{Binding ClearCommand}" Visibility="Visible"
                     MinWidth="60" Margin="0,0,4,0" Style="{DynamicResource SecondaryButton}"/>
-            <Button Content="OK" Command="{Binding SelectCommand}"
-                    MinWidth="60" Margin="0,0,4,0" Style="{DynamicResource PrimaryButton}"/>
-            <Button Content="{loc:Loc FM_Cancel}" Command="{Binding CancelCommand}"
-                    MinWidth="60" Style="{DynamicResource SecondaryButton}"/>
+            <Button Content="{loc:Loc Btn_OK}" Command="{Binding SelectCommand}"
+                    MinWidth="60" Margin="0,0,4,0" Style="{DynamicResource PrimaryButton}" IsDefault="True"/>
+            <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
+                    MinWidth="60" Style="{DynamicResource SecondaryButton}" IsCancel="True"/>
         </StackPanel>
     </Grid>
 </controls:DialogWindowBase>

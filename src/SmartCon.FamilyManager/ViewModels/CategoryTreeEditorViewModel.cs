@@ -277,7 +277,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     }
 
     [RelayCommand]
-    private async Task SaveAsync()
+    private async Task OkAsync()
     {
         try
         {
@@ -447,7 +447,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
 
         if (result == true)
         {
-            args.DeferredAction = () => SaveCommand.Execute(null);
+            args.DeferredAction = () => OkCommand.Execute(null);
         }
 
         args.DialogResult = false;

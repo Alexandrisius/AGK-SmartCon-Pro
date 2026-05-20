@@ -20,9 +20,9 @@ public sealed partial class MiniTypeSelectorViewModel : ObservableObject, IObser
     }
 
     [RelayCommand]
-    private void Select()
+    private void Ok()
     {
-        RequestClose?.Invoke(null);
+        RequestClose?.Invoke(true);
     }
 
     public void ConfirmClose(CloseConfirmationArgs args)

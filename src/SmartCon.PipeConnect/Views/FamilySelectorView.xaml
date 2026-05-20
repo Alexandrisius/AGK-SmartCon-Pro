@@ -107,9 +107,10 @@
                     Command="{Binding CancelCommand}"
                     IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>
-            <Button Content="{loc:Loc Btn_Confirm}"
+            <Button Content="{loc:Loc Btn_OK}"
                     Width="110"
-                    Command="{Binding ConfirmCommand}"
+                    Command="{Binding OkCommand}"
+                    IsDefault="True"
                     Style="{DynamicResource AccentButton}"/>
         </StackPanel>
     </Grid>
