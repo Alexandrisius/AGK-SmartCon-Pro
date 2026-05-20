@@ -16,6 +16,15 @@ REM $(RevitVersion). A global `dotnet restore` without RevitVersion context
 REM activates the 2021.* fallback, which breaks net48 builds that use API 2022+
 REM (for example, Definition.GetDataType introduced in Revit 2022).
 
+echo [0/10] Validating documentation...
+powershell -ExecutionPolicy Bypass -File "tools\validate-docs.ps1"
+if errorlevel 1 (
+    echo [WARNING] Documentation validation failed! Run: powershell -ExecutionPolicy Bypass -File tools\validate-docs.ps1
+    echo.
+) else (
+    echo [OK] Documentation validation passed
+)
+
 echo [1/10] Building Revit 2025-2026 (Debug.R25, net8.0-windows)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R25 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R25 failed! & pause & exit /b 1 )

@@ -662,6 +662,528 @@ public sealed class ViewInfo
 
 ---
 
+## CtcGuesser
+
+Статические алгоритмы авто-определения CTC (ConnectionTypeCode) для фитингов и редьюсеров. Чистая логика без Revit API — покрыта юнит-тестами.
+
+**Файл:** `SmartCon.Core/Models/CtcGuesser.cs`
+
+```csharp
+public static class CtcGuesser
+{
+    public static bool CanDirectConnect(
+        ConnectionTypeCode left, ConnectionTypeCode right,
+        IReadOnlyList<FittingMappingRule> rules);
+
+    public static ConnectionTypeCode FindDirectConnectCounterpart(
+        ConnectionTypeCode ctc, IReadOnlyList<FittingMappingRule> rules);
+
+    public static (ConnectionTypeCode ForStatic, ConnectionTypeCode ForDynamic) GuessAdapterCtc(
+        ConnectionTypeCode staticCTC, ConnectionTypeCode dynamicCTC,
+        IReadOnlyList<FittingMappingRule> rules);
+
+    public static (ConnectionTypeCode ForStaticSide, ConnectionTypeCode ForDynamicSide) GuessReducerCtc(
+        ConnectionTypeCode staticCTC, ConnectionTypeCode dynamicCTC,
+        IReadOnlyList<FittingMappingRule> rules);
+}
+```
+
+---
+
+## ConnectionRecord
+
+Запись о соединении между двумя коннекторами. Хранится в ConnectionGraph при построении графа для последующего восстановления при откате.
+
+**Файл:** `SmartCon.Core/Models/ConnectionRecord.cs`
+
+```csharp
+public sealed record ConnectionRecord(
+    ElementId ThisElementId,
+    int ThisConnectorIndex,
+    ElementId NeighborElementId,
+    int NeighborConnectorIndex
+);
+```
+
+---
+
+## ElementIdEqualityComparer
+
+Equality comparer для ElementId, использующий стабильное целочисленное значение вместо reference equality. Необходим, потому что в Revit 2025 ElementId — класс.
+
+**Файл:** `SmartCon.Core/Models/ElementIdEqualityComparer.cs`
+
+```csharp
+public sealed class ElementIdEqualityComparer : IEqualityComparer<ElementId>
+{
+    public static readonly ElementIdEqualityComparer Instance = new();
+    public bool Equals(ElementId? x, ElementId? y);
+    public int GetHashCode(ElementId obj);
+}
+```
+
+---
+
+## ExportMapping
+
+Модель маппинга для экспорта: поле → исходное значение → целевое значение.
+
+**Файл:** `SmartCon.Core/Models/ExportMapping.cs`
+
+```csharp
+public sealed record ExportMapping
+{
+    public string Field { get; init; } = string.Empty;
+    public string SourceValue { get; init; } = string.Empty;
+    public string TargetValue { get; init; } = string.Empty;
+}
+```
+
+---
+
+## ExportNameOverride
+
+Переопределение имени файла при экспорте: словарь полей и значений.
+
+**Файл:** `SmartCon.Core/Models/ExportNameOverride.cs`
+
+```csharp
+public sealed record ExportNameOverride
+{
+    public Dictionary<string, string> FieldValues { get; init; } = [];
+}
+```
+
+---
+
+## FamilySizeFormatter
+
+Утилиты форматирования отображаемых имён типоразмеров семейств (DN, multi-DN).
+
+**Файл:** `SmartCon.Core/Models/FamilySizeFormatter.cs`
+
+```csharp
+public static class FamilySizeFormatter
+{
+    public static string BuildDisplayName(
+        IReadOnlyList<double> queryParamRadiiFt, int targetColumnIndex);
+
+    public static string BuildDisplayNameLegacy(
+        IReadOnlyDictionary<int, double> connectorRadiiFt, int targetConnectorIndex);
+
+    public static string BuildAutoSelectDisplayName(
+        IReadOnlyList<double> queryParamRadiiFt, int targetColumnIndex, string? symbolName = null);
+
+    public static int ToDn(double radiusFt);
+    public static double DnToRadiusFt(int dn);
+    public static List<FamilySizeOption> DeduplicateFamilyOptions(List<FamilySizeOption> options);
+    public static List<FamilySizeOption> AppendSymbolNameSuffix(List<FamilySizeOption> sorted);
+}
+```
+
+---
+
+## IFittingCtcSetupItem
+
+Абстракция для данных настройки CTC коннекторов фитинга, используемая UI-слоем. UI предоставляет реализацию с INotifyPropertyChanged.
+
+**Файл:** `SmartCon.Core/Models/IFittingCtcSetupItem.cs`
+
+```csharp
+public interface IFittingCtcSetupItem
+{
+    int ConnectorIndex { get; }
+    string ParameterName { get; }
+    double DiameterMm { get; }
+    ConnectorTypeDefinition? PreSelectedType { get; }
+    ConnectorTypeDefinition? SelectedType { get; set; }
+    string DisplayText { get; }
+}
+```
+
+---
+
+## ParseMode
+
+Режим парсинга сегмента имени файла.
+
+**Файл:** `SmartCon.Core/Models/ParseMode.cs`
+
+```csharp
+public enum ParseMode
+{
+    DelimiterSegment,
+    FixedWidth,
+    BetweenMarkers,
+    AfterMarker,
+    Remainder
+}
+```
+
+---
+
+## ParseRule
+
+Правило парсинга блока имени файла: режим, разделитель, индексы, маркеры.
+
+**Файл:** `SmartCon.Core/Models/ParseRule.cs`
+
+```csharp
+public sealed record ParseRule
+{
+    public ParseMode Mode { get; init; } = ParseMode.DelimiterSegment;
+    public string Delimiter { get; init; } = "-";
+    public int SegmentIndex { get; init; } = 1;
+    public int SegmentCount { get; init; } = 1;
+    public int CharOffset { get; init; }
+    public int CharCount { get; init; }
+    public string OpenMarker { get; init; } = "(";
+    public int OpenMarkerIndex { get; init; } = 1;
+    public string CloseMarker { get; init; } = ")";
+    public int CloseMarkerIndex { get; init; } = 1;
+    public string Marker { get; init; } = "-";
+    public int MarkerIndex { get; init; } = 1;
+
+    public static ParseRule DefaultDelimiter(string delimiter = "-", int segmentIndex = 1);
+}
+```
+
+---
+
+## PendingUpdate / MultiVersionPendingUpdate / StagedArtifact
+
+Описание подготовленного обновления, ожидающего установки при следующем закрытии Revit. MultiVersionPendingUpdate поддерживает несколько версий Revit.
+
+**Файл:** `SmartCon.Core/Models/PendingUpdate.cs`
+
+```csharp
+public sealed record PendingUpdate(
+    string Version,
+    string StagingPath,
+    DateTime StagedAt,
+    string TargetInstallPath
+);
+
+public sealed record MultiVersionPendingUpdate(
+    string Version,
+    DateTime StagedAt,
+    List<StagedArtifact> Artifacts
+);
+
+public sealed record StagedArtifact(
+    string StagingPath,
+    string TargetInstallPath,
+    string ArtifactTag
+);
+```
+
+---
+
+## PipeConnectStateMachine
+
+Статическая state machine для PipeConnect. Определяет допустимые переходы между состояниями PipeConnectState и терминальные состояния.
+
+**Файл:** `SmartCon.Core/Models/PipeConnectStateMachine.cs`
+
+```csharp
+public static class PipeConnectStateMachine
+{
+    public static bool CanTransition(PipeConnectState from, PipeConnectState to);
+    public static bool IsTerminal(PipeConnectState state);
+}
+```
+
+---
+
+## SemVersion
+
+Лёгкий парсер и компаратор семантических версий (SemVer 2.0.0 subset). Без внешних зависимостей. Поддерживает pre-release метки.
+
+**Файл:** `SmartCon.Core/Models/SemVersion.cs`
+
+```csharp
+public sealed class SemVersion : IComparable<SemVersion>, IEquatable<SemVersion>
+{
+    public int Major { get; }
+    public int Minor { get; }
+    public int Patch { get; }
+    public string? Prerelease { get; }
+    public string? Metadata { get; }
+    public bool IsPrerelease => !string.IsNullOrEmpty(Prerelease);
+
+    public SemVersion(int major, int minor, int patch, string? prerelease = null, string? metadata = null);
+    public static SemVersion Parse(string version);
+    public static bool TryParse(string version, [NotNullWhen(true)] out SemVersion? result);
+    public int CompareTo(SemVersion? other);
+    public override string ToString();
+}
+```
+
+---
+
+## SizeOption
+
+Доступный размер динамического семейства для выбора в UI.
+
+**Файл:** `SmartCon.Core/Models/SizeOption.cs`
+
+```csharp
+public sealed record SizeOption
+{
+    public required string DisplayName { get; init; }
+    public required double Radius { get; init; }
+    public string Source { get; init; } = "FamilySymbol";
+    public bool IsAutoSelect { get; init; }
+    public override string ToString() => DisplayName;
+}
+```
+
+---
+
+## SizeTableRow / AllSizeRowsResult
+
+Строка из Revit FamilySizeTable (lookup table) или перечисления FamilySymbol. Содержит радиусы коннекторов, query-параметры и non-size параметры.
+
+**Файл:** `SmartCon.Core/Models/SizeTableRow.cs`
+
+```csharp
+public sealed record AllSizeRowsResult(
+    IReadOnlyList<SizeTableRow> Rows,
+    IEnumerable<string> AllNonSizeParamNames,
+    IReadOnlyList<IReadOnlyList<SizeTableRow>> PerTableRows,
+    IEnumerable<long> ValidDnKeys);
+
+public sealed record SizeTableRow
+{
+    public required int TargetColumnIndex { get; init; }
+    public required double TargetRadiusFt { get; init; }
+    public required IReadOnlyDictionary<int, double> ConnectorRadiiFt { get; init; }
+    public IReadOnlyList<double> QueryParameterRadiiFt { get; init; } = [];
+    public int UniqueQueryParameterCount { get; init; } = 1;
+    public IReadOnlyList<IReadOnlyList<int>> QueryParamConnectorGroups { get; init; } = [];
+    public IReadOnlyDictionary<string, string> NonSizeParameterValues { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyList<string> QueryParamNames { get; init; } = [];
+    public IReadOnlyList<double> QueryParamRawValuesMm { get; init; } = [];
+}
+```
+
+---
+
+## UpdateInfo
+
+Метаданные GitHub Release, который новее текущей версии плагина.
+
+**Файл:** `SmartCon.Core/Models/UpdateInfo.cs`
+
+```csharp
+public sealed record UpdateInfo(
+    string Version,
+    string TagName,
+    string? ReleaseNotes,
+    DateTime PublishedAt,
+    string DownloadUrl,
+    long FileSize,
+    string AssetName,
+    string? Changelog = null
+);
+```
+
+---
+
+## UpdateSettings
+
+Пользовательские настройки системы автообновления через GitHub.
+
+**Файл:** `SmartCon.Core/Models/UpdateSettings.cs`
+
+```csharp
+public sealed record UpdateSettings(
+    bool CheckOnStartup,
+    string? GitHubToken,
+    string GitHubOwner,
+    string GitHubRepo,
+    bool IncludePrerelease
+)
+{
+    public static UpdateSettings Default => new(
+        CheckOnStartup: true,
+        GitHubToken: null,
+        GitHubOwner: "Alexandrisius",
+        GitHubRepo: "AGK-SmartCon-Pro",
+        IncludePrerelease: false
+    );
+}
+```
+
+---
+
+## ValidationMode
+
+Режим валидации значения поля.
+
+**Файл:** `SmartCon.Core/Models/ValidationMode.cs`
+
+```csharp
+public enum ValidationMode
+{
+    None,
+    AllowedValues,
+    CharCount
+}
+```
+
+---
+
+## ValidationResult / BlockValidation
+
+Результат валидации имени файла: общий статус, сводка и список результатов по блокам.
+
+**Файл:** `SmartCon.Core/Models/ValidationResult.cs`
+
+```csharp
+public sealed record BlockValidation(
+    int Index,
+    string Field,
+    string Value,
+    bool IsValid,
+    string? Error
+);
+
+public sealed record ValidationResult(
+    bool IsValid,
+    string Summary,
+    List<BlockValidation> Blocks
+);
+```
+
+---
+
+## FormulaEngine (AST Parser)
+
+AST-парсер и решатель формул Revit (ADR-005). Все типы — internal, живут в `SmartCon.Core/Math/FormulaEngine/`.
+
+### Token / TokenType / Tokenizer
+
+Токен лексера, его тип (number, identifier, operator, etc.) и лексер (разбор строки формулы в список токенов).
+
+**Файлы:** `FormulaEngine/Token.cs`, `TokenType.cs`, `Tokenizer.cs`
+
+### AstNode
+
+Базовый класс узла AST.
+
+**Файл:** `FormulaEngine/Ast/AstNode.cs`
+
+### NumberNode / VariableNode / UnaryOpNode / BinaryOpNode / FunctionCallNode / IfNode / SizeLookupNode
+
+Узлы AST: число, переменная, унарная/бинарная операция, вызов функции, if-выражение, size_lookup.
+
+**Файлы:** `FormulaEngine/Ast/*.cs`
+
+### UnaryOp / BinaryOp
+
+Перечисления операторов (Plus, Minus, Multiply, Divide, And, Or, etc.).
+
+**Файлы:** `FormulaEngine/Ast/UnaryOp.cs`, `BinaryOp.cs`
+
+### Parser
+
+Рекурсивный спуск-парсер формул Revit. Преобразует токены в AST.
+
+**Файл:** `FormulaEngine/Parser.cs`
+
+### Evaluator
+
+Интерпретатор AST — вычисляет значение при заданных параметрах.
+
+**Файл:** `FormulaEngine/Evaluator.cs`
+
+### FormulaSolver
+
+Единая точка входа: Evaluate + SolveFor (ADR-005). Использует IfSimplifier → AlgebraicInverter → BisectionSolver.
+
+**Файл:** `FormulaEngine/Solver/FormulaSolver.cs`
+
+### IfSimplifier
+
+Упрощает if()-ветки при известных условиях.
+
+**Файл:** `FormulaEngine/Solver/IfSimplifier.cs`
+
+### AlgebraicInverter
+
+Алгебраическая инверсия простых формул (a = b + c → b = a - c).
+
+**Файл:** `FormulaEngine/Solver/AlgebraicInverter.cs`
+
+### BisectionSolver
+
+Численное решение методом бисекции для нелинейных формул.
+
+**Файл:** `FormulaEngine/Solver/BisectionSolver.cs`
+
+### VariableExtractor
+
+Извлекает список переменных из формулы.
+
+**Файл:** `FormulaEngine/Solver/VariableExtractor.cs`
+
+### SizeLookupParser
+
+Парсинг size_lookup(...) выражений.
+
+**Файл:** `FormulaEngine/SizeLookupParser.cs`
+
+### UnitStripper
+
+Удаление единиц измерения из строки формулы (mm, m, etc.).
+
+**Файл:** `FormulaEngine/UnitStripper.cs`
+
+### FormulaParseException
+
+Исключение при ошибке парсинга формулы.
+
+**Файл:** `FormulaEngine/FormulaParseException.cs`
+
+---
+
+## Math Utilities
+
+Вспомогательные математические классы в `SmartCon.Core/Math/`.
+
+### ConnectorAligner
+
+Вычисление матриц поворота и смещения для выравнивания коннекторов (ADR-009, Vec3).
+
+**Файл:** `Math/ConnectorAligner.cs`
+
+### VectorUtils
+
+Базовые векторные операции с Vec3.
+
+**Файл:** `Math/VectorUtils.cs`
+
+### BestSizeMatcher
+
+Подбор ближайшего доступного типоразмера из LookupTable.
+
+**Файл:** `Math/BestSizeMatcher.cs`
+
+### SizeRowSymbolMatcher
+
+Сопоставление строки типоразмера с символом DN.
+
+**Файл:** `Math/SizeRowSymbolMatcher.cs`
+
+### LookupTableCsvParser
+
+Парсинг CSV LookupTable семейства Revit.
+
+**Файл:** `Math/LookupTableCsvParser.cs`
+
+---
+
 ## FamilyManager Models
 
 Модели модуля FamilyManager (Phase 13–17: Published Storage → Attribute Extraction). Все модели — immutable records, живут в `SmartCon.Core/Models/FamilyManager/`.
@@ -1140,6 +1662,24 @@ public sealed record FamilyCatalogQuery(
     FamilyCatalogSort Sort,
     int Offset,
     int Limit);
+```
+
+---
+
+### FamilyCatalogSort
+
+Порядок сортировки результатов поиска по каталогу.
+
+**Файл:** `FamilyCatalogSort.cs`
+
+```csharp
+public enum FamilyCatalogSort
+{
+    NameAsc,
+    NameDesc,
+    UpdatedAtDesc,
+    CreatedAtDesc
+}
 ```
 
 ---

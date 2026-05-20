@@ -9,7 +9,7 @@
 | Платформа | .NET | Framework 4.8 + 8.0 | Multi-target: `net48;net8.0-windows` (WPF) |
 | Язык | C# | 12 | Nullable enabled, ImplicitUsings enabled |
 | UI Framework | WPF | встроен в .NET | MVVM, без code-behind |
-| CAD-платформа | Autodesk Revit | 2021-2025 | RevitAPI.dll + RevitAPIUI.dll (multi-version) |
+| CAD-платформа | Autodesk Revit | 2019-2026 | RevitAPI.dll + RevitAPIUI.dll (multi-version) |
 | DI-контейнер | Microsoft.Extensions.DependencyInjection | 8.0.1 | Регистрация в SmartCon.App |
 | MVVM Toolkit | CommunityToolkit.Mvvm | 8.4.0 | ObservableObject, RelayCommand, source generators |
 | Тестирование | xUnit | 2.9.3 | Unit + ViewModel тесты |
