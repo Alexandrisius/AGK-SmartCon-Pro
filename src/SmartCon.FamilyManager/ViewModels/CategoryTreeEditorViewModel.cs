@@ -381,12 +381,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                 _pendingImportPackage = null;
             }
 
-            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Saved) ?? "Saved";
             HasUnsavedChanges = false;
-            IsSaved = true;
-            await Task.Delay(500);
-            IsSaved = false;
-            StatusMessage = string.Empty;
             Saved?.Invoke();
             RequestClose?.Invoke(true);
         }

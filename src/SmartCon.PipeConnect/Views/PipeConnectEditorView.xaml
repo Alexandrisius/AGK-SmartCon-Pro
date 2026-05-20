@@ -34,7 +34,7 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="8"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
@@ -221,7 +221,7 @@
             <!-- Статус -->
             <Border Grid.Row="12"
                     Style="{DynamicResource StatusBarBorder}"
-                    VerticalAlignment="Bottom" Margin="0,8,0,0">
+                    Margin="0,8,0,0">
                 <TextBlock Text="{Binding StatusMessage}"
                            FontSize="11" Foreground="#444"
                            TextWrapping="Wrap"/>
