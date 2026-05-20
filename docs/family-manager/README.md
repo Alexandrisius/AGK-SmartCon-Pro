@@ -78,8 +78,10 @@ ExtensibleStorage остаётся паттерном существующих �
 
 **Phase 13 (FamilyManager Published Storage) — COMPLETED (2026-05-01).**
 
-- ADR-015 принят: `docs/adr/015-familymanager-published-storage.md` — Published Storage, configurable DB location, managed storage, version → Revit-version model, auxiliary assets, schema v2 (8 таблиц)
-- ADR-016 принят: `docs/adr/016-familymanager-readonly-files.md` — ReadOnly-флаг для managed-файлов
-- Схема БД обновлена до v2: `database_meta`, `schema_info`, `catalog_items`, `catalog_versions`, `family_files`, `family_assets`, `catalog_tags`, `project_usage` (8 таблиц)
-- Asset management: изображения, видео, документы, FBX, lookup-таблицы
-- Category tree для навигации по каталогу
+- ADR-015 принят: `docs/adr/015-familymanager-published-storage.md`
+- ADR-016 принят: `docs/adr/016-familymanager-readonly-files.md`
+
+**Spike E-1 (System Families — Pipe Import & Placement) — COMPLETED (2026-05-21).**
+
+- Документация: `02-spikes/01-pipe-import-placement-spike.md`
+- Ветка: `feature/system-families`
