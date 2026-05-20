@@ -5,7 +5,7 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{loc:Loc PM_Title_Settings}"
-        Width="420" Height="Auto" MinWidth="380"
+        Width="420" Height="Auto" MinWidth="380" MaxHeight="520"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
@@ -22,16 +22,12 @@
         <Grid Margin="12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="8"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="12"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="12"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
@@ -43,51 +39,54 @@
                 <Run Text="{Binding CurrentFileName, Mode=OneWay}"/>
             </TextBlock>
 
-            <!-- Ошибки валидации -->
-            <TextBlock Grid.Row="2"
+            <!-- Сообщение об ошибке -->
+            <TextBlock Grid.Row="1"
+                       Margin="0,4,0,0"
                        Foreground="{DynamicResource DangerBrush}"
-                       FontSize="11"
+                       FontSize="12"
                        TextWrapping="Wrap"
-                       Text="{Binding ValidationErrors, Mode=OneWay}"/>
+                       Text="{loc:Loc PM_Result_InvalidName}"/>
 
             <!-- Подсказка -->
-            <TextBlock Grid.Row="3"
-                       Margin="0,4,0,0"
+            <TextBlock Grid.Row="2"
+                       Margin="0,8,0,0"
                        Foreground="{DynamicResource TextSecondaryBrush}"
-                       FontSize="11"
-                       TextWrapping="Wrap"
+                       FontSize="12"
                        Text="{loc:Loc PM_ExportName_FillFields}"/>
 
             <!-- Поля -->
-            <ItemsControl Grid.Row="5" ItemsSource="{Binding Fields}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Grid Margin="0,0,0,6">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="100"/>
-                                <ColumnDefinition Width="8"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                       FontSize="12"
-                                       Text="{Binding Field}"/>
-                            <ComboBox Grid.Column="2"
-                                      IsEditable="True"
-                                      Height="26"
-                                      FontSize="12"
-                                      Padding="6,2"
-                                      Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
-                                      ItemsSource="{Binding AllowedValues}"/>
-                        </Grid>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <ScrollViewer Grid.Row="3"
+                         Margin="0,8,0,0"
+                         MaxHeight="180"
+                         VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Fields}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="12"
+                                           Text="{Binding Field}"/>
+                                <ComboBox Grid.Column="2"
+                                          IsEditable="True"
+                                          Style="{DynamicResource CompactComboBox}"
+                                          Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                          ItemsSource="{Binding AllowedValues}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
 
             <!-- Ошибки полей -->
-            <Border Grid.Row="6"
-                    Margin="0,4,0,0"
+            <Border Grid.Row="4"
+                    Margin="0,8,0,0"
                     Padding="8,6"
                     Background="#FFF5F5"
                     BorderBrush="{DynamicResource DangerBrush}"
@@ -113,7 +112,7 @@
             </Border>
 
             <!-- Предпросмотр -->
-            <Grid Grid.Row="8" Margin="0,8,0,0">
+            <Grid Grid.Row="5" Margin="0,12,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="8"/>
@@ -133,7 +132,7 @@
             </Grid>
 
             <!-- Кнопки -->
-            <Grid Grid.Row="10" Margin="0,8,0,0">
+            <Grid Grid.Row="7" Margin="0,16,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>

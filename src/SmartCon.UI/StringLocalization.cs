@@ -204,6 +204,7 @@ public static class StringLocalization
         public const string PM_Step_Purge = "PM_Step_Purge";
         public const string PM_Step_Save = "PM_Step_Save";
         public const string PM_Step_Finish = "PM_Step_Finish";
+        public const string PM_Result_InvalidName = "PM_Result_InvalidName";
         public const string PM_Result_NoSettings = "PM_Result_NoSettings";
 
         public const string FM_SearchPlaceholder = "FM_SearchPlaceholder";
