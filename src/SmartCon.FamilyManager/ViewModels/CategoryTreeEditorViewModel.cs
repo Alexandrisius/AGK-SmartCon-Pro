@@ -388,6 +388,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             IsSaved = false;
             StatusMessage = string.Empty;
             Saved?.Invoke();
+            RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {

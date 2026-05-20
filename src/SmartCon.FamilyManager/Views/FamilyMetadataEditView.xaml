@@ -86,14 +86,14 @@
             <Button Grid.Column="0"
                     Content="{loc:Loc Btn_OK}"
                     Command="{Binding OkCommand}"
-                    MinWidth="80"
+                    Width="80" Height="28"
                     IsDefault="True"
                     Style="{DynamicResource PrimaryButton}"/>
 
             <Button Grid.Column="2"
                     Content="{loc:Loc Btn_Cancel}"
                     Command="{Binding CancelCommand}"
-                    MinWidth="80"
+                    Width="80" Height="28"
                     IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>
         </Grid>

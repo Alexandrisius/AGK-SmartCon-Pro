@@ -270,22 +270,22 @@
                 </StackPanel>
 
                 <Button Grid.Column="1"
-                        Content="{loc:Loc Btn_Cancel}"
-                        Width="85" Height="28"
-                        Padding="0"
-                        Command="{Binding CancelCommand}"
-                        IsCancel="True"
-                        Style="{DynamicResource SecondaryButton}"/>
-
-                <Button Grid.Column="3"
                         Content="{loc:Loc Btn_Connect}"
-                        Width="105" Height="28"
+                        Width="80" Height="28"
                         Padding="0"
                         Command="{Binding ConnectCommand}"
                         IsDefault="True"
                         FontWeight="SemiBold"
                         ToolTip="{loc:Loc Tip_Connect}"
                         Style="{DynamicResource AccentButton}"/>
+
+                <Button Grid.Column="3"
+                        Content="{loc:Loc Btn_Cancel}"
+                        Width="80" Height="28"
+                        Padding="0"
+                        Command="{Binding CancelCommand}"
+                        IsCancel="True"
+                        Style="{DynamicResource SecondaryButton}"/>
             </Grid>
         </Grid>
     </Border>

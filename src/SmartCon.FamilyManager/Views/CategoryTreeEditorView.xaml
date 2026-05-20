@@ -424,14 +424,14 @@
             <Button Grid.Column="3"
                     Content="{loc:Loc Btn_OK}"
                     Command="{Binding OkCommand}"
-                    MinWidth="80"
-                    Padding="12,4" Margin="0,0,4,0"
+                    Width="80" Height="28"
+                    Padding="12,4" Margin="0,0,8,0"
                     IsDefault="True"
                     Style="{DynamicResource PrimaryButton}"/>
 
             <Button Grid.Column="4" Content="{loc:Loc Btn_Cancel}"
                     Command="{Binding CancelCommand}"
-                    MinWidth="80"
+                    Width="80" Height="28"
                     IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="12,4"/>
