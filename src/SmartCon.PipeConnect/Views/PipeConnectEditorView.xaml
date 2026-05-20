@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{loc:Loc Title_EditorSetup}"
-        Width="600" Height="Auto" MinHeight="320"
+        Width="480" Height="Auto" MinHeight="280"
         SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
@@ -21,7 +21,7 @@
     </Window.Resources>
 
     <Border Style="{DynamicResource CardBorder}" Margin="6">
-        <Grid Margin="12">
+        <Grid Margin="10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="10"/>
@@ -46,13 +46,13 @@
                        HorizontalAlignment="Center"/>
 
             <!-- Поворот -->
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="2" HorizontalAlignment="Center">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="110"/>
                     <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0"
@@ -86,9 +86,8 @@
             <!-- Изменить соединение -->
             <Button Grid.Row="4"
                     Height="28"
-                    Padding="10,3"
+                    Padding="16,3"
                     HorizontalAlignment="Center"
-                    Width="190"
                     Command="{Binding CycleConnectorCommand}"
                     ToolTip="{loc:Loc Tip_ChangeConnection}"
                     Style="{DynamicResource PrimaryButton}">
@@ -100,10 +99,10 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="6"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="10"/>
-                        <ColumnDefinition Width="95"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="80"/>
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0"
@@ -134,8 +133,8 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="4"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="95"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="80"/>
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0" Content="&#x21C5;" Width="28" Height="28"
@@ -165,8 +164,8 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="4"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="95"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="80"/>
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0" Content="&#x21C5;" Width="28" Height="28"
