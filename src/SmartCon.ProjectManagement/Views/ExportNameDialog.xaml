@@ -75,9 +75,10 @@
                                            Text="{Binding Field}"/>
                                 <Grid Grid.Column="2">
                                     <ComboBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
-                                              ItemsSource="{Binding AllowedValues}">
+                                              ItemsSource="{Binding AllowedValues}"
+                                              IsEditable="True">
                                         <ComboBox.Style>
-                                            <Style TargetType="ComboBox" BasedOn="{StaticResource CompactComboBox}">
+                                            <Style TargetType="ComboBox" BasedOn="{DynamicResource CompactComboBox}">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding HasAllowedValues}" Value="True">
@@ -99,6 +100,20 @@
                                                 <Setter Property="BorderThickness" Value="1"/>
                                                 <Setter Property="Background" Value="White"/>
                                                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="TextBox">
+                                                            <Border Background="{TemplateBinding Background}"
+                                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                                    CornerRadius="4">
+                                                                <ScrollViewer x:Name="PART_ContentHost"
+                                                                              Margin="{TemplateBinding Padding}"
+                                                                              VerticalAlignment="Center"/>
+                                                            </Border>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding HasAllowedValues}" Value="True">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
