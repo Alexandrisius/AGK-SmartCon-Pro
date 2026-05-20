@@ -46,7 +46,18 @@
                        Foreground="{DynamicResource DangerBrush}"
                        FontSize="12"
                        TextWrapping="Wrap"
-                       Text="{loc:Loc PM_Result_InvalidName}"/>
+                       Text="{Binding ValidationErrors, Mode=OneWay}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsValid}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
 
             <!-- Подсказка -->
             <TextBlock Grid.Row="2"
