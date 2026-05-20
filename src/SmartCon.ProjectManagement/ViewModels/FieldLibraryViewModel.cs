@@ -106,7 +106,7 @@ public sealed partial class FieldLibraryViewModel : ObservableObject, IObservabl
     }
 
     [RelayCommand]
-    private void Save()
+    private void Ok()
     {
         Unsubscribe();
         RequestClose?.Invoke(true);

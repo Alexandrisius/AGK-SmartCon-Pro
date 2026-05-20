@@ -52,21 +52,17 @@ public sealed class ShareProjectCommand : IExternalCommand
 
             var currentFileName = System.IO.Path.GetFileName(originalDoc.PathName);
             var parser = ServiceHost.GetService<IFileNameParser>();
-            var validation = parser.ValidateDetailed(currentFileName, settings.FileNameTemplate, settings.FieldLibrary);
             var exportValidation = parser.ValidateExportMappings(currentFileName, settings.FileNameTemplate, settings.FieldLibrary);
 
-            var hasAnyError = !validation.IsValid || !exportValidation.IsValid;
+            var hasAnyError = !exportValidation.IsValid;
 
             string sharedFileName;
 
             if (hasAnyError)
             {
-                var allErrors = new List<string>();
-                if (!validation.IsValid) allErrors.Add(validation.Summary);
-                if (!exportValidation.IsValid) allErrors.Add(exportValidation.Summary);
-                var combinedSummary = string.Join("\n\n", allErrors);
+                var combinedSummary = exportValidation.Summary;
 
-                SmartConLogger.Warn($"[PM] Validation failed for '{currentFileName}': {combinedSummary}");
+                SmartConLogger.Warn($"[PM] Export validation failed for '{currentFileName}': {combinedSummary}");
 
                 var existingOverride = settingsRepo.LoadExportNameOverride(originalDoc);
                 if (existingOverride is not null)
@@ -83,15 +79,11 @@ public sealed class ShareProjectCommand : IExternalCommand
                 }
                 else
                 {
-                    var currentDetails = validation.Blocks
-                        .Where(b => !b.IsValid)
-                        .Select(b => $"  \u2022 {b.Field}: '{b.Value}' \u2014 {b.Error}");
-
                     var exportDetails = exportValidation.Blocks
                         .Where(b => !b.IsValid)
                         .Select(b => $"  \u2022 {b.Field}: '{b.Value}' (mapped) \u2014 {b.Error}");
 
-                    var details = string.Join("\n", currentDetails.Concat(exportDetails));
+                    var details = string.Join("\n", exportDetails);
 
                     var dialogVm = new ViewModels.ExportNameDialogViewModel(
                         currentFileName,

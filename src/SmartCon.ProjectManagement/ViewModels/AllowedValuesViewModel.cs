@@ -100,7 +100,7 @@ public sealed partial class AllowedValuesViewModel : ObservableObject, IObservab
     }
 
     [RelayCommand]
-    private void Save()
+    private void Ok()
     {
         RequestClose?.Invoke(true);
     }

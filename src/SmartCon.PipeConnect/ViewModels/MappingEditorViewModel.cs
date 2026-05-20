@@ -32,12 +32,6 @@ public sealed partial class MappingEditorViewModel : ObservableObject, IObservab
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
-    [ObservableProperty]
-    private bool _isTypesSaved;
-
-    [ObservableProperty]
-    private bool _isRulesSaved;
-
     public MappingEditorViewModel(
         IFittingMappingRepository repository,
         IReadOnlyList<string> availableFamilyNames,
@@ -71,21 +65,25 @@ public sealed partial class MappingEditorViewModel : ObservableObject, IObservab
     }
 
     [RelayCommand]
-    private async Task SaveTypes()
+    private void Ok()
     {
         try
         {
             _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
             _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
-            IsTypesSaved = true;
-            await Task.Delay(500);
-            IsTypesSaved = false;
+            RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
             _dialogService.ShowError(LocalizationService.GetString("Mapping_SaveError"), ex.ToString());
         }
+    }
+
+    [RelayCommand]
+    private void Cancel()
+    {
+        RequestClose?.Invoke(false);
     }
 
     [RelayCommand]
@@ -103,23 +101,7 @@ public sealed partial class MappingEditorViewModel : ObservableObject, IObservab
             MappingRules.Remove(SelectedRule);
     }
 
-    [RelayCommand]
-    private async Task SaveRules()
-    {
-        try
-        {
-            _repository.SaveMappingRules(MappingRules.Select(r => r.ToRule()).ToList());
-            _repository.SaveConnectorTypes(ConnectorTypes.Select(t => t.ToDefinition()).ToList());
-            IsRulesSaved = true;
-            await Task.Delay(500);
-            IsRulesSaved = false;
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
-            _dialogService.ShowError(LocalizationService.GetString("Mapping_SaveError"), ex.ToString());
-        }
-    }
+
 
     // ── Import / Export (ADR-012) ─────────────────────────────────────────
 

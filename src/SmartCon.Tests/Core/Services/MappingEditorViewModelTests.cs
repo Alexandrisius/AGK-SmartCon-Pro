@@ -120,30 +120,34 @@ public sealed class MappingEditorViewModelTests
     }
 
     [Fact]
-    public void SaveTypesCommand_CallsRepositorySave()
+    public void OkCommand_SavesTypesAndRules()
     {
         var repoMock = new Mock<IFittingMappingRepository>();
         repoMock.Setup(r => r.GetConnectorTypes()).Returns(SomeTypes());
-        repoMock.Setup(r => r.GetMappingRules()).Returns([]);
+        repoMock.Setup(r => r.GetMappingRules()).Returns(SomeRules());
 
         var vm = new MappingEditorViewModel(repoMock.Object, [], new Mock<IDialogService>().Object);
-        vm.SaveTypesCommand.Execute(null);
+        vm.OkCommand.Execute(null);
 
         repoMock.Verify(r => r.SaveConnectorTypes(It.Is<IReadOnlyList<ConnectorTypeDefinition>>(
             list => list.Count == 2 && list[0].Code == 1)), Times.Once);
+        repoMock.Verify(r => r.SaveMappingRules(It.Is<IReadOnlyList<FittingMappingRule>>(
+            list => list.Count == 1 && list[0].FromType.Value == 1)), Times.Once);
     }
 
     [Fact]
-    public void SaveTypesCommand_EmptyList_CallsRepositoryWithEmpty()
+    public void OkCommand_EmptyList_CallsRepositoryWithEmpty()
     {
         var repoMock = new Mock<IFittingMappingRepository>();
         repoMock.Setup(r => r.GetConnectorTypes()).Returns([]);
         repoMock.Setup(r => r.GetMappingRules()).Returns([]);
 
         var vm = new MappingEditorViewModel(repoMock.Object, [], new Mock<IDialogService>().Object);
-        vm.SaveTypesCommand.Execute(null);
+        vm.OkCommand.Execute(null);
 
         repoMock.Verify(r => r.SaveConnectorTypes(It.Is<IReadOnlyList<ConnectorTypeDefinition>>(
+            list => list.Count == 0)), Times.Once);
+        repoMock.Verify(r => r.SaveMappingRules(It.Is<IReadOnlyList<FittingMappingRule>>(
             list => list.Count == 0)), Times.Once);
     }
 
@@ -173,14 +177,14 @@ public sealed class MappingEditorViewModelTests
     }
 
     [Fact]
-    public void SaveRulesCommand_CallsRepositorySave()
+    public void OkCommand_SavesRules()
     {
         var repoMock = new Mock<IFittingMappingRepository>();
         repoMock.Setup(r => r.GetConnectorTypes()).Returns([]);
         repoMock.Setup(r => r.GetMappingRules()).Returns(SomeRules());
 
         var vm = new MappingEditorViewModel(repoMock.Object, [], new Mock<IDialogService>().Object);
-        vm.SaveRulesCommand.Execute(null);
+        vm.OkCommand.Execute(null);
 
         repoMock.Verify(r => r.SaveMappingRules(It.Is<IReadOnlyList<FittingMappingRule>>(
             list => list.Count == 1 && list[0].FromType.Value == 1)), Times.Once);

@@ -18,7 +18,7 @@ public sealed class AboutCommand : IExternalCommand
 
             var vm = factory.Create();
             var view = new AboutView(vm);
-            view.Show();
+            view.ShowDialog();
 
             return Result.Succeeded;
         }

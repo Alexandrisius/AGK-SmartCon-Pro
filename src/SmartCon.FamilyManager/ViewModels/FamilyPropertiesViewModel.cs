@@ -69,7 +69,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
     partial void OnIsReadOnlyChanged(bool value)
     {
-        SaveCommand.NotifyCanExecuteChanged();
+        OkCommand.NotifyCanExecuteChanged();
         PickCategoryCommand.NotifyCanExecuteChanged();
         ChangeAvatarCommand.NotifyCanExecuteChanged();
         RemoveAvatarCommand.NotifyCanExecuteChanged();
@@ -327,7 +327,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     }
 
     [RelayCommand(CanExecute = nameof(CanWrite))]
-    private async Task Save()
+    private async Task Ok()
     {
         var tags = TagsText
             .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)

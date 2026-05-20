@@ -277,7 +277,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     }
 
     [RelayCommand]
-    private async Task SaveAsync()
+    private async Task OkAsync()
     {
         try
         {
@@ -381,13 +381,9 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                 _pendingImportPackage = null;
             }
 
-            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Saved) ?? "Saved";
             HasUnsavedChanges = false;
-            IsSaved = true;
-            await Task.Delay(500);
-            IsSaved = false;
-            StatusMessage = string.Empty;
             Saved?.Invoke();
+            RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
@@ -447,7 +443,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
 
         if (result == true)
         {
-            args.DeferredAction = () => SaveCommand.Execute(null);
+            args.DeferredAction = () => OkCommand.Execute(null);
         }
 
         args.DialogResult = false;

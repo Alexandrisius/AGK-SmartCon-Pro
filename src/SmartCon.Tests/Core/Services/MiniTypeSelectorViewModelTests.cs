@@ -28,7 +28,7 @@ public sealed class MiniTypeSelectorViewModelTests
     }
 
     [Fact]
-    public void SelectCommand_RaisesRequestClose()
+    public void OkCommand_RaisesRequestClose()
     {
         var vm = new MiniTypeSelectorViewModel(MakeTypes());
         vm.SelectedType = vm.AvailableTypes[0];
@@ -36,18 +36,18 @@ public sealed class MiniTypeSelectorViewModelTests
         var closed = false;
         vm.RequestClose += _ => closed = true;
 
-        vm.SelectCommand.Execute(null);
+        vm.OkCommand.Execute(null);
 
         Assert.True(closed);
     }
 
     [Fact]
-    public void SelectCommand_KeepsSelectedType()
+    public void OkCommand_KeepsSelectedType()
     {
         var vm = new MiniTypeSelectorViewModel(MakeTypes());
         vm.SelectedType = vm.AvailableTypes[1];
 
-        vm.SelectCommand.Execute(null);
+        vm.OkCommand.Execute(null);
 
         Assert.NotNull(vm.SelectedType);
         Assert.Equal(2, vm.SelectedType.Code);
@@ -96,7 +96,7 @@ public sealed class MiniTypeSelectorViewModelTests
     {
         var vm = new MiniTypeSelectorViewModel([]);
         Assert.Empty(vm.AvailableTypes);
-        vm.SelectCommand.Execute(null);
+        vm.OkCommand.Execute(null);
         vm.CancelCommand.Execute(null);
     }
 }

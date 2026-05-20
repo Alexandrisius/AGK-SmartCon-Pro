@@ -46,17 +46,20 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
         _exportMappings = exportMappings;
 
         var parser = ServiceHost.GetService<IFileNameParser>();
-        var template = new FileNameTemplate { Blocks = blocks, ExportMappings = exportMappings };
 
         var parsed = parser.ParseBlocks(currentFileName, new FileNameTemplate { Blocks = blocks });
 
-        var transformed = parser.TransformForExport(currentFileName, template, fieldLibrary);
-        var transformedParsed = parser.ParseBlocks(transformed ?? currentFileName, new FileNameTemplate { Blocks = blocks });
+        var mapped = new Dictionary<string, string>(parsed);
+        foreach (var mapping in exportMappings)
+        {
+            if (mapped.TryGetValue(mapping.Field, out var val)
+                && string.Equals(val, mapping.SourceValue, StringComparison.OrdinalIgnoreCase))
+                mapped[mapping.Field] = mapping.TargetValue;
+        }
 
         foreach (var block in blocks.OrderBy(b => b.Index))
         {
-            var parsedValue = parsed.TryGetValue(block.Field, out var v) ? v : string.Empty;
-            var mappedValue = transformedParsed.TryGetValue(block.Field, out var mv) ? mv : parsedValue;
+            var value = mapped.TryGetValue(block.Field, out var v) ? v : string.Empty;
 
             var fieldDef = fieldLibrary.FirstOrDefault(fd =>
                 string.Equals(fd.Name, block.Field, StringComparison.OrdinalIgnoreCase));
@@ -64,7 +67,7 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
             var item = new ExportNameFieldItem
             {
                 Field = block.Field,
-                Value = mappedValue,
+                Value = value,
                 AllowedValues = fieldDef?.AllowedValues.ToList() ?? [],
                 HasAllowedValues = fieldDef is not null && fieldDef.AllowedValues.Count > 0,
                 MinLength = fieldDef?.MinLength,
@@ -146,7 +149,7 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
     }
 
     [RelayCommand]
-    private void Export()
+    private void Ok()
     {
         if (!IsValid) return;
         RequestClose?.Invoke(true);

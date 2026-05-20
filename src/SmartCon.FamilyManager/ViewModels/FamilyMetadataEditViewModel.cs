@@ -79,7 +79,7 @@ public sealed partial class FamilyMetadataEditViewModel : ObservableObject, IObs
     }
 
     [RelayCommand]
-    private async Task Save()
+    private async Task Ok()
     {
         var tags = TagsText
             .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
