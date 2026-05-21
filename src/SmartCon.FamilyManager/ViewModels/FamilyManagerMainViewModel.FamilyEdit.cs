@@ -20,28 +20,6 @@ public sealed partial class FamilyManagerMainViewModel
         _dialogService.ShowCategoryTreeEditor(editorVm);
     }
 
-    [RelayCommand(CanExecute = nameof(CanEditOps))]
-    private async Task EditMetadata()
-    {
-        if (SelectedItem is null) return;
-
-        var itemId = SelectedItem.Id;
-        var vm = _viewModelFactory.CreateMetadataEditViewModel(
-            SelectedItem.Id,
-            SelectedItem.Name,
-            SelectedItem.Description,
-            SelectedItem.CategoryId,
-            SelectedItem.CategoryName,
-            SelectedItem.Tags,
-            SelectedItem.ContentStatus);
-
-        var result = _dialogService.ShowMetadataEdit(vm);
-        if (result != true) return;
-
-        await LoadTreeAsync();
-        ExpandAndSelectItem(itemId);
-    }
-
     [RelayCommand]
     private async Task OpenProperties()
     {
