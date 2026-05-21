@@ -43,8 +43,6 @@ public static partial class LocalizationService
         ru["FM_LoadAndPlaceSuccess"] = "Семейство \"{0}\" — нажмите для размещения"; en["FM_LoadAndPlaceSuccess"] = "Family \"{0}\" — click to place";
         ru["FM_LoadError"] = "Ошибка загрузки: {0}"; en["FM_LoadError"] = "Load error: {0}";
         ru["FM_DuplicateSkipped"] = "Дубликат пропущен: {0}"; en["FM_DuplicateSkipped"] = "Duplicate skipped: {0}";
-        ru["FM_Title_MetadataEdit"] = "Редактирование метаданных"; en["FM_Title_MetadataEdit"] = "Edit Metadata";
-
         ru["FM_DbSwitched"] = "База данных переключена на: {0}"; en["FM_DbSwitched"] = "Database switched to: {0}";
         ru["FM_DbSwitchError"] = "Ошибка переключения базы данных"; en["FM_DbSwitchError"] = "Error switching database";
         ru["FM_DbCreated"] = "База данных \"{0}\" создана"; en["FM_DbCreated"] = "Database \"{0}\" created";

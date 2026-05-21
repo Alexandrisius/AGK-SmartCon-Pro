@@ -1,3 +1,4 @@
+using System.Text;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
@@ -6,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Events;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.ProjectManagement.ViewModels;
@@ -69,11 +71,20 @@ public sealed class ShareProjectCommand : IExternalCommand
                 {
                     SmartConLogger.Info("[PM] Using saved ExportNameOverride.");
                     var values = existingOverride.FieldValues;
-                    var orderedValues = settings.FileNameTemplate.Blocks
-                        .OrderBy(b => b.Index)
-                        .Select(b => values.TryGetValue(b.Field, out var v) ? v : string.Empty);
+                    var orderedBlocks = settings.FileNameTemplate.Blocks.OrderBy(b => b.Index).ToList();
+                    var sb = new StringBuilder();
+                    for (int i = 0; i < orderedBlocks.Count; i++)
+                    {
+                        var block = orderedBlocks[i];
+                        sb.Append(values.TryGetValue(block.Field, out var v) ? v : string.Empty);
+                        if (i < orderedBlocks.Count - 1)
+                        {
+                            var delimiter = block.ParseRule?.Delimiter;
+                            sb.Append(!string.IsNullOrEmpty(delimiter) ? delimiter : "-");
+                        }
+                    }
                     var ext = System.IO.Path.GetExtension(originalDoc.PathName);
-                    sharedFileName = string.Join("-", orderedValues);
+                    sharedFileName = sb.ToString();
                     if (!string.IsNullOrEmpty(ext) && !System.IO.Path.HasExtension(sharedFileName))
                         sharedFileName += ext;
                 }

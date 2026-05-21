@@ -128,7 +128,6 @@ public static class ServiceRegistrar
             presenter.Register<ParseRuleViewModel>(vm => new ParseRuleView(vm));
             presenter.Register<FieldLibraryViewModel>(vm => new FieldLibraryView(vm));
             presenter.Register<AllowedValuesViewModel>(vm => new AllowedValuesView(vm));
-            presenter.Register<FamilyMetadataEditViewModel>(vm => new FamilyMetadataEditView(vm));
             presenter.Register<CategoryTreeEditorViewModel>(vm => new CategoryTreeEditorView(vm));
             presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
@@ -202,6 +201,7 @@ public static class ServiceRegistrar
         services.AddSingleton(fmHandler);
         services.AddSingleton<IFamilyManagerExternalEvent>(fmHandler);
 
+        services.AddSingleton<IFamilyStorageRenameService, LocalFamilyStorageRenameService>();
         services.AddSingleton<IFamilyManagerViewModelFactory, FamilyManagerViewModelFactory>();
         services.AddSingleton<IDatabaseManager, DatabaseManager>();
     }

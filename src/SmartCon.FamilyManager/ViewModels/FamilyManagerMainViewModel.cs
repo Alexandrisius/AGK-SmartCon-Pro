@@ -75,7 +75,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
-    [NotifyCanExecuteChangedFor(nameof(EditMetadataCommand))]
     [NotifyCanExecuteChangedFor(nameof(UpdateFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     private bool _canEdit;
