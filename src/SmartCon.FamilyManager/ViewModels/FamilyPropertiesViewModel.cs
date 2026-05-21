@@ -24,6 +24,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IFamilyTypeRepository _typeRepository;
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
+    private readonly IFamilyStorageRenameService _renameService;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -109,7 +110,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IFamilyDataImportRunRepository runRepository,
         IFamilyTypeRepository typeRepository,
         IAttributeDefinitionRepository attributeDefRepository,
-        IFamilyManagerViewModelFactory viewModelFactory)
+        IFamilyManagerViewModelFactory viewModelFactory,
+        IFamilyStorageRenameService renameService)
     {
         _catalogItemId = catalogItemId;
         _writableProvider = writableProvider;
@@ -123,6 +125,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _typeRepository = typeRepository;
         _attributeDefRepository = attributeDefRepository;
         _viewModelFactory = viewModelFactory;
+        _renameService = renameService;
 
         Name = name;
         Description = description;
@@ -329,22 +332,36 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task Ok()
     {
-        var tags = TagsText
-            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => s.Trim())
-            .Where(s => s.Length > 0)
-            .ToList();
+        try
+        {
+            SmartConLogger.Info($"[FM Properties] Saving for {_catalogItemId}, new name='{Name}'");
 
-        await _writableProvider.UpdateItemAsync(
-            _catalogItemId,
-            Name,
-            Description,
-            CategoryId,
-            tags,
-            ContentStatus,
-            Manufacturer);
+            var tags = TagsText
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => s.Length > 0)
+                .ToList();
 
-        RequestClose?.Invoke(true);
+            await _writableProvider.UpdateItemAsync(
+                _catalogItemId,
+                Name,
+                Description,
+                CategoryId,
+                tags,
+                ContentStatus,
+                Manufacturer);
+
+            SmartConLogger.Info($"[FM Properties] DB updated, renaming files...");
+            await _renameService.RenameFamilyFilesAsync(_catalogItemId, Name);
+            SmartConLogger.Info($"[FM Properties] Rename completed");
+
+            RequestClose?.Invoke(true);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[FM Properties] FAILED: {ex.Message}\n{ex.StackTrace}");
+            _dialogService.ShowError("Family Manager", $"Failed to save: {ex.Message}");
+        }
     }
 
     [RelayCommand]

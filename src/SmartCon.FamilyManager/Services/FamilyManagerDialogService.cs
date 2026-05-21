@@ -86,8 +86,6 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public void ShowError(string title, string message) =>
         System.Windows.MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
 
-    public bool? ShowMetadataEdit(object viewModel) => _presenter.ShowDialog(viewModel);
-
     public string? ShowInputDialog(string title, string prompt, string defaultText = "")
     {
         var vm = new ViewModels.InputDialogViewModel

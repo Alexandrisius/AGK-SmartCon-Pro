@@ -736,6 +736,20 @@ public interface IFamilyFileResolver
 }
 ```
 
+### IFamilyStorageRenameService
+
+Переименование физических `.rfa` файлов в managed storage при изменении отображаемого имени семейства. Переименовывает только файлы **текущей версии** (`current_version_label`) во **всех подпапках Revit-версий** (`r24/`, `r25/`...). Исторические версии (`v1`, `v2`...) остаются нетронутыми. Обновляет `family_files.file_name` и `family_files.relative_path` в БД.
+
+**Файл:** `IFamilyStorageRenameService.cs`  
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyStorageRenameService.cs`
+
+```csharp
+public interface IFamilyStorageRenameService
+{
+    Task RenameFamilyFilesAsync(string catalogItemId, string newName, CancellationToken ct = default);
+}
+```
+
 ### IFamilyAssetService
 
 Управление вспомогательными ассетами (изображения, документы, lookup tables) семейств.

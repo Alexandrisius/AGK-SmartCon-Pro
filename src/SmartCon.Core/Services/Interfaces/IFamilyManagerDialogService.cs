@@ -34,9 +34,6 @@ public interface IFamilyManagerDialogService
     /// <summary>Show error message.</summary>
     void ShowError(string title, string message);
 
-    /// <summary>Show metadata edit dialog for a catalog item.</summary>
-    bool? ShowMetadataEdit(object viewModel);
-
     /// <summary>Show simple input dialog and return entered text, or null if cancelled.</summary>
     string? ShowInputDialog(string title, string prompt, string defaultText = "");
 

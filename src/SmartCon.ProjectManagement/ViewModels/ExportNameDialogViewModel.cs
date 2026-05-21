@@ -30,6 +30,7 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
 
     private readonly List<FieldDefinition> _fieldLibrary;
     private readonly List<ExportMapping> _exportMappings;
+    private readonly List<FileBlockDefinition> _blocks;
 
     public event Action<bool?>? RequestClose;
 
@@ -44,6 +45,7 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
         _validationErrors = validationErrors;
         _fieldLibrary = fieldLibrary;
         _exportMappings = exportMappings;
+        _blocks = blocks;
 
         var parser = ServiceHost.GetService<IFileNameParser>();
 
@@ -88,8 +90,19 @@ public sealed partial class ExportNameDialogViewModel : ObservableObject, IObser
 
     private void RefreshPreview()
     {
-        var values = Fields.Select(f => f.Value).ToList();
-        PreviewFileName = string.Join("-", values);
+        var orderedBlocks = _blocks.OrderBy(b => b.Index).ToList();
+        var sb = new StringBuilder();
+        for (int i = 0; i < orderedBlocks.Count; i++)
+        {
+            var field = Fields.FirstOrDefault(f => f.Field == orderedBlocks[i].Field);
+            sb.Append(field?.Value ?? string.Empty);
+            if (i < orderedBlocks.Count - 1)
+            {
+                var delimiter = orderedBlocks[i].ParseRule?.Delimiter;
+                sb.Append(!string.IsNullOrEmpty(delimiter) ? delimiter : "-");
+            }
+        }
+        PreviewFileName = sb.ToString();
 
         var errors = new StringBuilder();
         var allValid = true;

@@ -1,3 +1,4 @@
+using System.Text;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 
@@ -13,11 +14,22 @@ public sealed class FileNameParser : IFileNameParser
         var mapped = GetMappedValues(fileName, template);
         var extension = Path.GetExtension(fileName);
 
-        var orderedValues = template.Blocks
-            .OrderBy(b => b.Index)
-            .Select(b => mapped.TryGetValue(b.Field, out var v) ? v : string.Empty);
+        var orderedBlocks = template.Blocks.OrderBy(b => b.Index).ToList();
+        var sb = new StringBuilder();
 
-        return string.Join("-", orderedValues) + extension;
+        for (int i = 0; i < orderedBlocks.Count; i++)
+        {
+            var block = orderedBlocks[i];
+            sb.Append(mapped.TryGetValue(block.Field, out var v) ? v : string.Empty);
+
+            if (i < orderedBlocks.Count - 1)
+            {
+                var delimiter = block.ParseRule?.Delimiter;
+                sb.Append(!string.IsNullOrEmpty(delimiter) ? delimiter : "-");
+            }
+        }
+
+        return sb.ToString() + extension;
     }
 
     public Dictionary<string, string> GetMappedValues(string fileName, FileNameTemplate template)
