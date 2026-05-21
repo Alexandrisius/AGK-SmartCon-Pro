@@ -8,10 +8,6 @@ namespace SmartCon.FamilyManager.Services;
 /// </summary>
 public interface IFamilyManagerViewModelFactory
 {
-    FamilyMetadataEditViewModel CreateMetadataEditViewModel(
-        string catalogItemId, string name, string? description,
-        string? categoryId, string? categoryPath, IReadOnlyList<string> tags, ContentStatus contentStatus);
-
     FamilyPropertiesViewModel CreatePropertiesViewModel(
         string catalogItemId, string name, string? description,
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,

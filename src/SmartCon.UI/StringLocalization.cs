@@ -245,7 +245,6 @@ public static class StringLocalization
         public const string FM_LoadAndPlaceSuccess = "FM_LoadAndPlaceSuccess";
         public const string FM_LoadError = "FM_LoadError";
         public const string FM_DuplicateSkipped = "FM_DuplicateSkipped";
-        public const string FM_Title_MetadataEdit = "FM_Title_MetadataEdit";
         public const string FM_DbSwitched = "FM_DbSwitched";
         public const string FM_DbSwitchError = "FM_DbSwitchError";
         public const string FM_DbCreated = "FM_DbCreated";

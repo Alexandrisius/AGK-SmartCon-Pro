@@ -20,6 +20,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IDbUserRepository _userRepo;
     private readonly IDbAccessControlService _accessControl;
     private readonly IUserIdentityService _identityService;
+    private readonly IFamilyStorageRenameService _renameService;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -35,7 +36,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyMetadataPackageService packageService,
         IDbUserRepository userRepo,
         IDbAccessControlService accessControl,
-        IUserIdentityService identityService)
+        IUserIdentityService identityService,
+        IFamilyStorageRenameService renameService)
     {
         _writableProvider = writableProvider;
         _categoryRepository = categoryRepository;
@@ -51,18 +53,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _userRepo = userRepo;
         _accessControl = accessControl;
         _identityService = identityService;
-    }
-
-    public FamilyMetadataEditViewModel CreateMetadataEditViewModel(
-        string catalogItemId, string name, string? description,
-        string? categoryId, string? categoryPath, IReadOnlyList<string> tags, ContentStatus contentStatus)
-    {
-        return new FamilyMetadataEditViewModel(
-            catalogItemId, name, description,
-            categoryId: categoryId,
-            categoryPath: categoryPath,
-            tags, contentStatus,
-            _writableProvider, _categoryRepository, _dialogService, this);
+        _renameService = renameService;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -77,7 +68,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             categoryId, categoryPath, tags, contentStatus,
             manufacturer, versionLabel, fileSizeText, createdAtText, updatedAtText,
             _writableProvider, _categoryRepository, _assetService, _presetService, _dialogService,
-            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this)
+            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService)
         { IsReadOnly = isReadOnly };
     }
 

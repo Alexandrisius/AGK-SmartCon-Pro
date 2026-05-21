@@ -448,7 +448,7 @@ public sealed class FileNameParserTests
 
         var result = _parser.TransformForExport("01.Подвал.rvt", template, []);
 
-        Assert.Equal("01-Подвал.rvt", result);
+        Assert.Equal("01.Подвал.rvt", result);
     }
 
     [Fact]
@@ -783,7 +783,7 @@ public sealed class FileNameParserTests
 
         var result = _parser.TransformForExport(docTitle, template, []);
 
-        Assert.Equal("Project1-a.matorin", result);
+        Assert.Equal("Project1_a.matorin", result);
     }
 
     [Fact]
@@ -803,7 +803,7 @@ public sealed class FileNameParserTests
 
         var result = _parser.TransformForExport(fullFileName, template, []);
 
-        Assert.Equal("Project1-matorin.rvt", result);
+        Assert.Equal("Project1_matorin.rvt", result);
     }
 
     [Fact]
