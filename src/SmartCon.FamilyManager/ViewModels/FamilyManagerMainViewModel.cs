@@ -66,7 +66,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFolderCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ExtractTypesCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportDataCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]

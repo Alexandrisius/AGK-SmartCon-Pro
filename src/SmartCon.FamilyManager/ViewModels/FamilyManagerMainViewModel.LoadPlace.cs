@@ -40,11 +40,6 @@ public sealed partial class FamilyManagerMainViewModel
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadSuccess) ?? "Family \"{0}\" loaded",
                         result.FamilyName ?? selectedName);
 
-                    var familyName = result.FamilyName ?? selectedName;
-                    var typeNames = _familySearchService.GetFamilyTypeNames(familyName);
-                    if (typeNames.Count > 0)
-                        FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames.ToList()));
-
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
                         CatalogItemId: selectedId,
@@ -194,13 +189,6 @@ public sealed partial class FamilyManagerMainViewModel
                 }
 
                 _familyPlacementService.ActivateAndPlaceType(familyName, typeName);
-
-                // Важно: читаем типы СИНХРОННО в ExternalEvent, передаем готовый список в FireAndForget
-                var typeNames = _familySearchService.GetFamilyTypeNames(familyName).ToList();
-                if (typeNames.Count > 0)
-                {
-                    FireAndForget(() => SaveTypesAndReloadTreeAsync(catalogItemId, typeNames));
-                }
             }
             catch (Exception ex)
             {

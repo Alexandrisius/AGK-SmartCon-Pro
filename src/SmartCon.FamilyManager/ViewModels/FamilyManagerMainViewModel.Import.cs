@@ -350,55 +350,6 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     [RelayCommand(CanExecute = nameof(CanImportFiles))]
-    private void ExtractTypes()
-    {
-        if (SelectedItem is null) return;
-
-        var selectedId = SelectedItem.Id;
-        var selectedName = SelectedItem.Name;
-        var targetRevit = CurrentRevitVersion;
-
-        _externalEvent.Raise(() =>
-        {
-            try
-            {
-                SmartConLogger.FreezeThreadPool("ExtractTypes.Start");
-
-                if (_familySearchService.IsFamilyLoaded(selectedName))
-                {
-                    var names = _familySearchService.GetFamilyTypeNames(selectedName);
-                    SmartConLogger.Freeze($"ExtractTypes: Family already loaded, found {names.Count} types");
-                    if (names.Count > 0)
-                        FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, names.ToList()));
-                    return;
-                }
-
-                var resolved = SmartConLogger.FreezeTimer("ExtractTypes.ResolveFile", () =>
-                    Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult());
-
-                if (string.IsNullOrEmpty(resolved.AbsolutePath))
-                {
-                    SmartConLogger.Freeze("ExtractTypes: No file resolved");
-                    return;
-                }
-
-                var typeNames = SmartConLogger.FreezeTimer("ExtractTypes.ExtractFromFile", () =>
-                    _familyTypeExtractor.ExtractTypeNamesFromFile(resolved.AbsolutePath));
-
-                SmartConLogger.Freeze($"ExtractTypes: Extracted {typeNames.Count} types");
-
-                if (typeNames.Count > 0)
-                    FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames.ToList()));
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Freeze($"ExtractTypes: Exception - {ex.GetType().Name}: {ex.Message}");
-                SmartConLogger.Warn($"ExtractTypes failed: {ex.Message}");
-            }
-        });
-    }
-
-    [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private void ImportData()
     {
         if (SelectedItem is null) return;

@@ -137,7 +137,7 @@ private void OpenDialog()
 
 - [Core API Patterns](references/core-patterns.md) - 11 essential code patterns
 - [Async & Threading](references/async-threading-patterns.md) - Deadlock prevention and COM cleanup
-- [SmartCon Invariants](docs/invariants.md) - Project-specific rules (I-01..I-13)
+- [Known Bugs](references/transaction-callback-freeze.md) - WPF freeze from transaction callback logging
 
 ## Known Bugs & Workarounds
 
@@ -146,7 +146,7 @@ private void OpenDialog()
 **Affected:** Revit 2023 < 2023.1.8, Revit 2025 < 2025.4.3  
 **Symptoms:** UI freeze after loading old-version families, process hangs on exit  
 **Fix:** `Marshal.ReleaseComObject(doc)` after `OpenDocumentFile` + `Close(false)`  
-**Details:** [Async & Threading → Family Upgrade Freeze Bug](references/async-threading-patterns.md#family-upgrade-freeze-bug)
+**Details:** [Async & Threading → Family Upgrade Freeze Bug](references/async-threading-patterns.md)
 
 ### C# Record `with` Expression Freeze (STA Thread)
 
@@ -154,3 +154,10 @@ private void OpenDialog()
 **Symptoms:** UI freezes after `for`/`while` loop with `record with`, no exception  
 **Fix:** Use LINQ `Select` or constructor instead of `with` in loops  
 **Details:** [Record `with` Freeze Bug](references/record-with-freeze.md)
+
+### WPF Dockable Panel Freeze from Transaction Callback Logging
+
+**Affected:** WPF DockablePane using `ITransactionService` callbacks  
+**Symptoms:** UI freezes after button click, unfreezes on next interaction  
+**Fix:** Never log or do I/O inside `RunInTransaction`/`RunAndRollback` callbacks. Log before/after only.  
+**Details:** [Transaction Callback Freeze](references/transaction-callback-freeze.md)

@@ -305,6 +305,8 @@ var result = Task.Run(() =>
 
 ---
 
+<a name="family-upgrade-freeze-bug"></a>
+
 ## The #3 Fatal Bug: Family Upgrade Freeze (COM/Finalizer Deadlock)
 
 ### Overview
