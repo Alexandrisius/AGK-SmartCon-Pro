@@ -258,7 +258,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
         foreach (var attr in _effectiveAttributes.OrderBy(a => a.SortOrder))
         {
-            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId);
+            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId)
+                ?? typeValues.FirstOrDefault(v => v.ParameterName == attr.Name);
             rows.Add(new AttributeValueRow
             {
                 AttributeName = attr.Name,
@@ -292,7 +293,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
         foreach (var attr in _effectiveAttributes.OrderBy(a => a.SortOrder))
         {
-            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId);
+            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId)
+                ?? typeValues.FirstOrDefault(v => v.ParameterName == attr.Name);
             rows.Add(new AttributeValueRow
             {
                 AttributeName = attr.Name,

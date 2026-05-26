@@ -6,7 +6,7 @@ public sealed record ExtractedAttributeValue(
     string? VersionId,
     string? FileId,
     string? TypeId,
-    string AttributeId,
+    string? AttributeId,
     string? BindingId,
     string ParameterName,
     AttributeScope? ParameterScope,

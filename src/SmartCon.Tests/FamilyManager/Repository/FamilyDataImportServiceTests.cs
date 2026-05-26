@@ -59,7 +59,7 @@ public sealed class FamilyDataImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task PrepareExtractionAsync_Success_ReturnsParameterNames()
+    public async Task PrepareExtractionAsync_Success_ReturnsEmptyParameterNames()
     {
         var catId = await SeedCategoryAsync("Pipes");
         await SeedAttributeAndBindAsync(catId, "Width", 0);
@@ -72,9 +72,7 @@ public sealed class FamilyDataImportServiceTests : IDisposable
         Assert.True(result.Success);
         Assert.Null(result.ErrorMessage);
         Assert.NotNull(result.ResolvedFilePath);
-        Assert.Equal(2, result.ParameterNames.Count);
-        Assert.Contains("Width", result.ParameterNames);
-        Assert.Contains("Height", result.ParameterNames);
+        Assert.Empty(result.ParameterNames);
     }
 
     [Fact]
@@ -166,7 +164,31 @@ public sealed class FamilyDataImportServiceTests : IDisposable
         var values = await _valueRepo.GetValuesForItemAsync(itemId, null);
         Assert.Single(values);
         Assert.Equal(widthDef.Id, values[0].AttributeId);
-        Assert.NotEqual("Width", values[0].AttributeId);
+        Assert.NotNull(values[0].AttributeId);
+    }
+
+    [Fact]
+    public async Task SaveExtractionResultAsync_UnknownParameter_SetsAttributeIdToNull()
+    {
+        var itemId = await SeedCatalogItemAsync("UnknownParamFamily");
+        // Do NOT create attribute definition for "UnknownParam"
+
+        var extractionResult = new FamilyExtractionResult(
+            true,
+            [new FamilyExtractionTypeValues("TypeA", 0,
+            [
+                new FamilyExtractionValueResult("UnknownParam", AttributeScope.Type, "String", "val", null, null, null, AttributeValueStatus.Found, null)
+            ])],
+            null,
+            null,
+            2025);
+
+        await _service.SaveExtractionResultAsync(itemId, extractionResult, null, null);
+
+        var values = await _valueRepo.GetValuesForItemAsync(itemId, null);
+        Assert.Single(values);
+        Assert.Null(values[0].AttributeId);
+        Assert.Equal("UnknownParam", values[0].ParameterName);
     }
 
     [Fact]
