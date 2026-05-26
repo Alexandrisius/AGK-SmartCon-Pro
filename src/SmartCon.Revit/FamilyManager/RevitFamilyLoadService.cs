@@ -20,48 +20,80 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
     }
 
     private FamilyLoadResult? TryLoadInTransaction(
-        Document doc, string path, RevitFamilyLoadOptions? loadOptions, FamilyLoadOptions options)
+        Document doc, string path, RevitFamilyLoadOptions? loadOptions, FamilyLoadOptions options, string attemptName)
     {
         Autodesk.Revit.DB.Family? loadedFamily = null;
         bool success = false;
+        string? loadError = null;
+        bool loadedResult = false;
+        string? familyNameAfterLoad = null;
 
-        _transactionService.RunInTransaction("Load Family", _ =>
+        SmartConLogger.Info($"[FamilyLoad][{attemptName}] Starting load from: {path}");
+        SmartConLogger.Info($"[FamilyLoad][{attemptName}] Using IFamilyLoadOptions: {loadOptions is not null}");
+
+        try
         {
-            bool loaded;
-            Autodesk.Revit.DB.Family family;
-            if (loadOptions is not null)
-                loaded = doc.LoadFamily(path, loadOptions, out family);
-            else
-                loaded = doc.LoadFamily(path, out family);
-
-            if (!loaded || family is null)
-                return;
-
-            loadedFamily = family;
-            success = true;
-
-            if (!string.IsNullOrWhiteSpace(options.PreferredName)
-                && !string.Equals(family.Name, options.PreferredName, StringComparison.OrdinalIgnoreCase))
+            _transactionService.RunInTransaction("Load Family", _ =>
             {
-                try
+                bool loaded;
+                Autodesk.Revit.DB.Family family;
+                if (loadOptions is not null)
                 {
-                    family.Name = options.PreferredName;
-                    SmartConLogger.Info($"[FamilyLoad] Renamed family to '{options.PreferredName}'");
+                    SmartConLogger.Info($"[FamilyLoad][{attemptName}] Calling LoadFamily with IFamilyLoadOptions...");
+                    loaded = doc.LoadFamily(path, loadOptions, out family);
                 }
-                catch (Exception ex)
+                else
                 {
-                    SmartConLogger.Info($"[FamilyLoad] Rename failed (non-fatal): {ex.Message}");
+                    SmartConLogger.Info($"[FamilyLoad][{attemptName}] Calling LoadFamily without IFamilyLoadOptions...");
+                    loaded = doc.LoadFamily(path, out family);
                 }
-            }
-        });
+
+                loadedResult = loaded;
+                SmartConLogger.Info($"[FamilyLoad][{attemptName}] LoadFamily returned: loaded={loaded}, family={(family is null ? "null" : "not null")}");
+
+                if (!loaded || family is null)
+                {
+                    loadError = $"LoadFamily returned loaded={loaded}, family={((family is null) ? "null" : "not null")}";
+                    SmartConLogger.Info($"[FamilyLoad][{attemptName}] {loadError}");
+                    return;
+                }
+
+                loadedFamily = family;
+                familyNameAfterLoad = family.Name;
+                success = true;
+
+                SmartConLogger.Info($"[FamilyLoad][{attemptName}] Family loaded successfully. Name='{family.Name}', Id={family.Id}");
+
+                if (!string.IsNullOrWhiteSpace(options.PreferredName)
+                    && !string.Equals(family.Name, options.PreferredName, StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        var oldName = family.Name;
+                        family.Name = options.PreferredName;
+                        SmartConLogger.Info($"[FamilyLoad][{attemptName}] Renamed family from '{oldName}' to '{options.PreferredName}'");
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Info($"[FamilyLoad][{attemptName}] Rename failed (non-fatal): {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Info($"[FamilyLoad][{attemptName}] EXCEPTION during transaction: {ex.GetType().Name}: {ex.Message}");
+            loadError = $"Exception: {ex.GetType().Name}: {ex.Message}";
+        }
 
         if (success && loadedFamily is not null)
         {
             var displayName = loadedFamily.Name;
-            SmartConLogger.Info($"[FamilyLoad] Successfully loaded family: {displayName}");
+            SmartConLogger.Info($"[FamilyLoad][{attemptName}] SUCCESS: Family='{displayName}', OriginalName='{familyNameAfterLoad}'");
             return new FamilyLoadResult(true, displayName, $"Family '{displayName}' loaded successfully", null);
         }
 
+        SmartConLogger.Info($"[FamilyLoad][{attemptName}] FAILED: {loadError ?? "Unknown reason"}");
         return null;
     }
 
@@ -126,13 +158,13 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             var loadOptions = new RevitFamilyLoadOptions();
 
             SmartConLogger.Info("[FamilyLoad] Attempt 1: LoadFamily with options in transaction...");
-            var result1 = TryLoadInTransaction(doc, normalizedPath, loadOptions, options);
+            var result1 = TryLoadInTransaction(doc, normalizedPath, loadOptions, options, "Attempt1");
             if (result1 is not null)
                 return Task.FromResult(result1);
             SmartConLogger.Info("[FamilyLoad] Attempt 1 failed");
 
             SmartConLogger.Info("[FamilyLoad] Attempt 2: LoadFamily without IFamilyLoadOptions...");
-            var result2 = TryLoadInTransaction(doc, normalizedPath, null, options);
+            var result2 = TryLoadInTransaction(doc, normalizedPath, null, options, "Attempt2");
             if (result2 is not null)
                 return Task.FromResult(result2);
             SmartConLogger.Info("[FamilyLoad] Attempt 2 failed");
@@ -143,7 +175,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 File.Copy(normalizedPath, tempPath, overwrite: true);
                 SmartConLogger.Info($"[FamilyLoad] Attempt 3: Loading from temp: {tempPath}");
 
-                var result3 = TryLoadInTransaction(doc, tempPath, loadOptions, options);
+                var result3 = TryLoadInTransaction(doc, tempPath, loadOptions, options, "Attempt3");
                 if (result3 is not null)
                     return Task.FromResult(result3);
             }
