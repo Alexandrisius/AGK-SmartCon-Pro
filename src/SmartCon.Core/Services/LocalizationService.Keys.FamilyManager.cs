@@ -31,6 +31,10 @@ public static partial class LocalizationService
         ru["FM_ImportError"] = "Ошибка импорта: {0}"; en["FM_ImportError"] = "Import error: {0}";
         ru["FM_ImportPrepareError"] = "Ошибка подготовки"; en["FM_ImportPrepareError"] = "Preparation error";
         ru["FM_ImportResultFormat"] = "Импортировано: {0}, пропущено: {1}, ошибок: {2} / {3}"; en["FM_ImportResultFormat"] = "Imported: {0}, skipped: {1}, errors: {2} / {3}";
+        ru["FM_ImportStatusImport"] = "Импорт: {0}/{1}"; en["FM_ImportStatusImport"] = "Import: {0}/{1}";
+        ru["FM_ImportStatusSkipped"] = "Пропущено: {0}"; en["FM_ImportStatusSkipped"] = "Skipped: {0}";
+        ru["FM_ImportStatusSkippedIdentical"] = " (идентично)"; en["FM_ImportStatusSkippedIdentical"] = " (identical)";
+        ru["FM_ImportStatusErrors"] = "Ошибок: {0}"; en["FM_ImportStatusErrors"] = "Errors: {0}";
         ru["FM_FamilyFileNotFound"] = "Файл семейства не найден"; en["FM_FamilyFileNotFound"] = "Family file not found";
         ru["FM_ImportDataResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportDataResultFormat"] = "Imported: {0} types, {1} values found";
         ru["FM_ImportDataError"] = "Ошибка импорта: {0}"; en["FM_ImportDataError"] = "Import error: {0}";

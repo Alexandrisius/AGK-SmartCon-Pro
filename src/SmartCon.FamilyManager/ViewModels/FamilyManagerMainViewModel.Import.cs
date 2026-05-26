@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -38,9 +39,7 @@ public sealed partial class FamilyManagerMainViewModel
                 else errorCount++;
             }
 
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0}, skipped: {1}, errors: {2} / {3}",
-                successCount, skipCount, errorCount, paths.Length);
+            StatusMessage = BuildImportStatusMessage(successCount, skipCount, errorCount, paths.Length);
 
             await LoadTreeAsync();
         }
@@ -123,9 +122,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             var result = await _importService.ImportFolderAsync(request, progress);
 
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0}, skipped: {1}, errors: {2} / {3}",
-                result.SuccessCount, result.SkippedCount, result.ErrorCount, result.TotalFiles);
+            StatusMessage = BuildImportStatusMessage(result.SuccessCount, result.SkippedCount, result.ErrorCount, result.TotalFiles);
 
             await LoadTreeAsync();
         }
@@ -189,9 +186,7 @@ public sealed partial class FamilyManagerMainViewModel
                 else errorCount++;
             }
 
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0}, skipped: {1}, errors: {2} / {3}",
-                successCount, skipCount, errorCount, paths.Length);
+            StatusMessage = BuildImportStatusMessage(successCount, skipCount, errorCount, paths.Length);
 
             await LoadTreeAsync();
         }
@@ -232,9 +227,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             var result = await _importService.ImportFolderAsync(request, progress);
 
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0}, skipped: {1}, errors: {2} / {3}",
-                result.SuccessCount, result.SkippedCount, result.ErrorCount, result.TotalFiles);
+            StatusMessage = BuildImportStatusMessage(result.SuccessCount, result.SkippedCount, result.ErrorCount, result.TotalFiles);
 
             await LoadTreeAsync();
         }
@@ -482,6 +475,35 @@ public sealed partial class FamilyManagerMainViewModel
 
         await _typeRepository.SaveTypesAsync(catalogItemId, types.AsReadOnly(), CancellationToken.None);
         await LoadTreeAsync();
+    }
+
+    private string BuildImportStatusMessage(int successCount, int skipCount, int errorCount, int total)
+    {
+        var parts = new List<string>();
+
+        var importPart = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusImport) ?? "импорт: {0}/{1}",
+            successCount, total);
+        parts.Add(importPart);
+
+        if (skipCount > 0)
+        {
+            var skipPart = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusSkipped) ?? "пропущено: {0}",
+                skipCount);
+            skipPart += LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusSkippedIdentical) ?? " (идентично)";
+            parts.Add(skipPart);
+        }
+
+        if (errorCount > 0)
+        {
+            var errorPart = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusErrors) ?? "ошибок: {0}",
+                errorCount);
+            parts.Add(errorPart);
+        }
+
+        return string.Join(", ", parts);
     }
 
     private bool CanImportFiles() => CanImport;

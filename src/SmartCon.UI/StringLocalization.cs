@@ -234,6 +234,10 @@ public static class StringLocalization
         public const string FM_ImportError = "FM_ImportError";
         public const string FM_ImportPrepareError = "FM_ImportPrepareError";
         public const string FM_ImportResultFormat = "FM_ImportResultFormat";
+        public const string FM_ImportStatusImport = "FM_ImportStatusImport";
+        public const string FM_ImportStatusSkipped = "FM_ImportStatusSkipped";
+        public const string FM_ImportStatusSkippedIdentical = "FM_ImportStatusSkippedIdentical";
+        public const string FM_ImportStatusErrors = "FM_ImportStatusErrors";
         public const string FM_ImportDataResultFormat = "FM_ImportDataResultFormat";
         public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
         public const string FM_ImportDataError = "FM_ImportDataError";
