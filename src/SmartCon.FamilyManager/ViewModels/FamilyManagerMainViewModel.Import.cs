@@ -39,8 +39,8 @@ public sealed partial class FamilyManagerMainViewModel
             }
 
             StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
-                $"{successCount} / {paths.Length}");
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0}, skipped: {1}, errors: {2} / {3}",
+                successCount, skipCount, errorCount, paths.Length);
 
             await LoadTreeAsync();
         }
@@ -124,8 +124,8 @@ public sealed partial class FamilyManagerMainViewModel
             var result = await _importService.ImportFolderAsync(request, progress);
 
             StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
-                $"{result.SuccessCount} / {result.TotalFiles}");
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0}, skipped: {1}, errors: {2} / {3}",
+                result.SuccessCount, result.SkippedCount, result.ErrorCount, result.TotalFiles);
 
             await LoadTreeAsync();
         }
@@ -190,8 +190,8 @@ public sealed partial class FamilyManagerMainViewModel
             }
 
             StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
-                $"{successCount} / {paths.Length}");
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0}, skipped: {1}, errors: {2} / {3}",
+                successCount, skipCount, errorCount, paths.Length);
 
             await LoadTreeAsync();
         }
@@ -233,8 +233,8 @@ public sealed partial class FamilyManagerMainViewModel
             var result = await _importService.ImportFolderAsync(request, progress);
 
             StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
-                $"{result.SuccessCount} / {result.TotalFiles}");
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0}, skipped: {1}, errors: {2} / {3}",
+                result.SuccessCount, result.SkippedCount, result.ErrorCount, result.TotalFiles);
 
             await LoadTreeAsync();
         }
@@ -333,7 +333,7 @@ public sealed partial class FamilyManagerMainViewModel
                     }
 
                     StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0} types, {1} values found",
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataResultFormat) ?? "Imported: {0} types, {1} values found",
                         $"{successCount}/{preparedItems.Count} families", "see log");
 
                     SmartConLogger.Freeze($"ImportDataForCategory: Completed {successCount}/{preparedItems.Count}");
@@ -452,7 +452,7 @@ public sealed partial class FamilyManagerMainViewModel
                             selectedId, extractionResult, versionId, null, CancellationToken.None)).GetAwaiter().GetResult());
 
                     StatusMessage = saveResult.Success
-                        ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0} types, {1} values found", saveResult.TypesCount, saveResult.AttributesFoundCount)
+                        ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataResultFormat) ?? "Imported: {0} types, {1} values found", saveResult.TypesCount, saveResult.AttributesFoundCount)
                         : string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataError) ?? "Import error: {0}", saveResult.ErrorMessage);
 
                     SmartConLogger.Freeze($"ImportData: Success={saveResult.Success}, Types={saveResult.TypesCount}");

@@ -233,8 +233,9 @@ public static class StringLocalization
         public const string FM_ImportSuccess = "FM_ImportSuccess";
         public const string FM_ImportError = "FM_ImportError";
         public const string FM_ImportPrepareError = "FM_ImportPrepareError";
-        public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
         public const string FM_ImportResultFormat = "FM_ImportResultFormat";
+        public const string FM_ImportDataResultFormat = "FM_ImportDataResultFormat";
+        public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
         public const string FM_ImportDataError = "FM_ImportDataError";
         public const string FM_ImportFileToCategory = "FM_ImportFileToCategory";
         public const string FM_ImportFolderToCategory = "FM_ImportFolderToCategory";
@@ -270,6 +271,7 @@ public static class StringLocalization
         public const string FM_Update = "FM_Update";
         public const string FM_UpdateSuccess = "FM_UpdateSuccess";
         public const string FM_UpdateIdentical = "FM_UpdateIdentical";
+        public const string FM_UpdateIdenticalCurrent = "FM_UpdateIdenticalCurrent";
         public const string FM_UpdateError = "FM_UpdateError";
         public const string FM_Refresh = "FM_Refresh";
         public const string FM_RefreshTooltip = "FM_RefreshTooltip";

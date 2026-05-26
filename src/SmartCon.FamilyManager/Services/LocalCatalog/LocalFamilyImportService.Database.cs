@@ -58,6 +58,45 @@ internal sealed partial class LocalFamilyImportService
             PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
     }
 
+    /// <summary>
+    /// Checks whether the given SHA256 matches the current (active) version of the specified catalog item.
+    /// Used by UpdateFamilyAsync to prevent re-uploading the same file that is already current.
+    /// </summary>
+    private async Task<FamilyCatalogVersion?> FindCurrentVersionByHashAsync(string catalogItemId, string sha256, CancellationToken ct)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT cv.* FROM catalog_versions cv
+            INNER JOIN catalog_items ci ON ci.id = cv.catalog_item_id AND ci.current_version_label = cv.version_label
+            INNER JOIN family_files ff ON ff.id = cv.file_id
+            WHERE cv.catalog_item_id = @itemId AND ff.sha256 = @sha256
+            LIMIT 1
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        cmd.Parameters.Add(new SqliteParameter("@sha256", sha256));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+            return null;
+
+        return new FamilyCatalogVersion(
+            Id: reader.GetString(reader.GetOrdinal("id")),
+            CatalogItemId: reader.GetString(reader.GetOrdinal("catalog_item_id")),
+            FileId: reader.GetString(reader.GetOrdinal("file_id")),
+            VersionLabel: reader.GetString(reader.GetOrdinal("version_label")),
+            Sha256: reader.GetString(reader.GetOrdinal("sha256")),
+            RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
+            TypesCount: reader.IsDBNull(reader.GetOrdinal("types_count"))
+                ? null
+                : reader.GetInt32(reader.GetOrdinal("types_count")),
+            ParametersCount: reader.IsDBNull(reader.GetOrdinal("parameters_count"))
+                ? null
+                : reader.GetInt32(reader.GetOrdinal("parameters_count")),
+            PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
+    }
+
     private async Task<string> GetNextVersionLabelAsync(string catalogItemId, CancellationToken ct)
     {
         using var connection = _database.CreateConnection();

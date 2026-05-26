@@ -30,8 +30,9 @@ public static partial class LocalizationService
         ru["FM_ImportSuccess"] = "Импортировано: {0}"; en["FM_ImportSuccess"] = "Imported: {0}";
         ru["FM_ImportError"] = "Ошибка импорта: {0}"; en["FM_ImportError"] = "Import error: {0}";
         ru["FM_ImportPrepareError"] = "Ошибка подготовки"; en["FM_ImportPrepareError"] = "Preparation error";
+        ru["FM_ImportResultFormat"] = "Импортировано: {0}, пропущено: {1}, ошибок: {2} / {3}"; en["FM_ImportResultFormat"] = "Imported: {0}, skipped: {1}, errors: {2} / {3}";
         ru["FM_FamilyFileNotFound"] = "Файл семейства не найден"; en["FM_FamilyFileNotFound"] = "Family file not found";
-        ru["FM_ImportResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportResultFormat"] = "Imported: {0} types, {1} values found";
+        ru["FM_ImportDataResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportDataResultFormat"] = "Imported: {0} types, {1} values found";
         ru["FM_ImportDataError"] = "Ошибка импорта: {0}"; en["FM_ImportDataError"] = "Import error: {0}";
         ru["FM_ImportFileToCategory"] = "Импорт файла"; en["FM_ImportFileToCategory"] = "Import file";
         ru["FM_ImportFolderToCategory"] = "Импорт папки"; en["FM_ImportFolderToCategory"] = "Import folder";
@@ -67,6 +68,7 @@ public static partial class LocalizationService
         ru["FM_Update"] = "Обновить"; en["FM_Update"] = "Update";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
+        ru["FM_UpdateIdenticalCurrent"] = "Этот файл уже является текущей версией семейства"; en["FM_UpdateIdenticalCurrent"] = "This file is already the current version of this family";
         ru["FM_UpdateError"] = "Ошибка обновления: {0}"; en["FM_UpdateError"] = "Update error: {0}";
         ru["FM_Refresh"] = "Обновить"; en["FM_Refresh"] = "Refresh";
         ru["FM_RefreshTooltip"] = "Обновить дерево категорий"; en["FM_RefreshTooltip"] = "Refresh category tree";

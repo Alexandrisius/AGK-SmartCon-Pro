@@ -259,16 +259,16 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
         SmartConLogger.Info($"[Update] File: {Path.GetFileName(filePath)}, SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
 
-        var existingVersion = await FindVersionByHashAndRevitAsync(request.CatalogItemId, sha256, revitVersion, ct);
-        if (existingVersion is not null)
+        var currentVersion = await FindCurrentVersionByHashAsync(request.CatalogItemId, sha256, ct);
+        if (currentVersion is not null)
         {
             return new FamilyImportResult(
                 Success: true,
                 CatalogItemId: request.CatalogItemId,
-                VersionId: existingVersion.Id,
-                FileId: existingVersion.FileId,
+                VersionId: currentVersion.Id,
+                FileId: currentVersion.FileId,
                 FileName: metadata.FileName,
-                VersionLabel: existingVersion.VersionLabel,
+                VersionLabel: currentVersion.VersionLabel,
                 ErrorMessage: null,
                 WasSkippedAsDuplicate: true);
         }
