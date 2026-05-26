@@ -68,37 +68,30 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
         var uiApp = GetUIApplication();
         if (doc is null || uiApp is null) return;
 
-        SmartConLogger.Info($"[Placement] LoadAndPlaceFamily starting. filePath='{filePath}', familyName='{familyName}', preferredTypeName='{preferredTypeName ?? "null"}'");
-
         var resolved = new SmartCon.Core.Models.FamilyManager.FamilyResolvedFile(filePath, null, null);
         var options = SmartCon.Core.Models.FamilyManager.FamilyLoadOptions.Default with { PreferredName = familyName };
         var result = _loadService.LoadFamilyAsync(resolved, options).GetAwaiter().GetResult();
 
-        SmartConLogger.Info($"[Placement] LoadFamily result: Success={result.Success}, FamilyName='{result.FamilyName ?? "null"}', Error='{result.ErrorMessage ?? "null"}'");
-
         if (!result.Success)
         {
-            SmartConLogger.Warn($"[Placement] Failed to load {familyName} - {result.ErrorMessage}");
+            SmartConLogger.Warn($"LoadAndPlaceFamily: Failed to load {familyName} - {result.ErrorMessage}");
             return;
         }
 
         var family = FindFamily(doc, familyName);
         if (family is null)
         {
-            SmartConLogger.Warn($"[Placement] Family '{familyName}' not found after loading");
+            SmartConLogger.Warn($"LoadAndPlaceFamily: Family '{familyName}' not found after loading");
             return;
         }
-
-        SmartConLogger.Info($"[Placement] Family found: '{family.Name}', Id={family.Id}, SymbolCount={family.GetFamilySymbolIds().Count}");
 
         var typeName = preferredTypeName ?? GetFirstTypeName(doc, family);
         if (typeName is null)
         {
-            SmartConLogger.Warn($"[Placement] No types found in family '{familyName}'");
+            SmartConLogger.Warn($"LoadAndPlaceFamily: No types found in family '{familyName}'");
             return;
         }
 
-        SmartConLogger.Info($"[Placement] Using type: '{typeName}'");
         ActivateAndPlaceType(familyName, typeName);
     }
 
