@@ -19,6 +19,7 @@ public sealed partial class FamilyManagerMainViewModel
             Connections = new ObservableCollection<DatabaseConnection>(list);
             var active = _databaseManager.GetActiveConnection();
             SelectedConnection = Connections.FirstOrDefault(c => c.Id == active?.Id);
+            HasActiveDatabase = active is not null;
         }
         finally
         {
@@ -52,6 +53,7 @@ public sealed partial class FamilyManagerMainViewModel
                 var success = await _databaseManager.SwitchDatabaseAsync(connectionId);
                 if (success)
                 {
+                    RefreshConnections();
                     await RefreshAccessAndLoadTreeAsync();
                     var conn = Connections.FirstOrDefault(c => c.Id == connectionId);
                     StatusMessage = string.Format(
@@ -110,8 +112,8 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var conn = await _databaseManager.CreateDatabaseAsync(name!.Trim(), path!);
-                await RefreshAccessAndLoadTreeAsync();
                 RefreshConnections();
+                await RefreshAccessAndLoadTreeAsync();
                 SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created at {1}",
@@ -148,8 +150,8 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var conn = await _databaseManager.ConnectDatabaseAsync(path!);
-                await RefreshAccessAndLoadTreeAsync();
                 RefreshConnections();
+                await RefreshAccessAndLoadTreeAsync();
                 SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Connected to: {0}",

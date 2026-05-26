@@ -233,9 +233,18 @@
                     Command="{Binding OpenProfileCommand}"
                     Width="28" Height="28"
                     HorizontalAlignment="Center"
-                    Style="{DynamicResource SecondaryButton}"
                     Padding="0"
-                    ToolTip="{loc:Loc FM_Profile}">
+                    ToolTipService.ShowOnDisabled="True">
+                <Button.Style>
+                    <Style BasedOn="{StaticResource SecondaryButton}" TargetType="Button">
+                        <Setter Property="ToolTip" Value="{loc:Loc FM_Profile}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasActiveDatabase}" Value="False">
+                                <Setter Property="ToolTip" Value="{loc:Loc FM_ProfileDisabledTooltip}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
                 <Viewbox Width="12" Height="12" Stretch="Uniform">
                     <Path Data="M 6,0 C 7.66,0 9,1.34 9,3 C 9,4.66 7.66,6 6,6 C 4.34,6 3,4.66 3,3 C 3,1.34 4.34,0 6,0 Z M 6,7.5 C 9.31,7.5 12,8.84 12,10.5 L 12,12 L 0,12 L 0,10.5 C 0,8.84 2.69,7.5 6,7.5 Z"
                           Fill="{DynamicResource TextPrimaryBrush}"/>

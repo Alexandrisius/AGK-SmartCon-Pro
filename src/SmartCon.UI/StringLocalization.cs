@@ -426,5 +426,7 @@ public static class StringLocalization
         public const string FM_AccessDeniedOwner = "FM_AccessDeniedOwner";
         public const string FM_StatusBanned = "FM_StatusBanned";
         public const string FM_DbReadOnlyError = "FM_DbReadOnlyError";
+        public const string FM_ProfileDisabledTooltip = "FM_ProfileDisabledTooltip";
+        public const string FM_StatusNoDatabase = "FM_StatusNoDatabase";
     }
 }

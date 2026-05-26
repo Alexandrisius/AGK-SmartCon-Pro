@@ -224,5 +224,7 @@ public static partial class LocalizationService
         ru["FM_AccessDeniedOwner"] = "Владелец: {0}"; en["FM_AccessDeniedOwner"] = "Owner: {0}";
         ru["FM_StatusBanned"] = "Заблокирован"; en["FM_StatusBanned"] = "Banned";
         ru["FM_DbReadOnlyError"] = "База данных доступна только для чтения. Измените права доступа к файлу или обратитесь к администратору."; en["FM_DbReadOnlyError"] = "Database is read-only. Change file permissions or contact your administrator.";
+        ru["FM_ProfileDisabledTooltip"] = "Подключите базу данных для просмотра профиля"; en["FM_ProfileDisabledTooltip"] = "Connect a database to view profile";
+        ru["FM_StatusNoDatabase"] = "База данных не подключена"; en["FM_StatusNoDatabase"] = "No database connected";
     }
 }

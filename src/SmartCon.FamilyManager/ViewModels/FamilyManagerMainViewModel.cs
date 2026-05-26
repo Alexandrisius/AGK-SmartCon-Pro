@@ -59,6 +59,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private bool _canLoadToProject;
     [ObservableProperty] private ObservableCollection<DatabaseConnection> _connections = new();
     [ObservableProperty] private DatabaseConnection? _selectedConnection;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenProfileCommand))]
+    private bool _hasActiveDatabase;
     [ObservableProperty] private int _currentRevitVersion;
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
@@ -166,6 +169,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             SmartConLogger.Info($"======================================================================");
 
             RefreshConnections();
+            if (!HasActiveDatabase)
+            {
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
+                return;
+            }
             await RefreshAccessAndLoadTreeAsync();
         }
         catch (Exception ex)
@@ -179,6 +187,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private async Task RefreshAccessAndLoadTreeAsync()
     {
+        if (!HasActiveDatabase)
+        {
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
+            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+            CanImport = false;
+            CanEdit = false;
+            CanManageUsers = false;
+            return;
+        }
+
         DetectRevitVersion();
         _accessControl.InvalidateCache();
 
@@ -375,7 +393,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasActiveDatabase))]
     private async Task OpenProfileAsync(CancellationToken ct)
     {
         try
