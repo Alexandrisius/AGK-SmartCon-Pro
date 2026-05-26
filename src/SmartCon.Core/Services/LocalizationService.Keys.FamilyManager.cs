@@ -226,5 +226,6 @@ public static partial class LocalizationService
         ru["FM_DbReadOnlyError"] = "База данных доступна только для чтения. Измените права доступа к файлу или обратитесь к администратору."; en["FM_DbReadOnlyError"] = "Database is read-only. Change file permissions or contact your administrator.";
         ru["FM_ProfileDisabledTooltip"] = "Подключите базу данных для просмотра профиля"; en["FM_ProfileDisabledTooltip"] = "Connect a database to view profile";
         ru["FM_StatusNoDatabase"] = "База данных не подключена"; en["FM_StatusNoDatabase"] = "No database connected";
+        ru["FM_FamilyDeleteInUse"] = "Не удалось удалить файлы семейства. Возможно, файл открыт в Revit или другом приложении. Закройте файл и попробуйте снова."; en["FM_FamilyDeleteInUse"] = "Failed to delete family files. The file may be open in Revit or another application. Close the file and try again.";
     }
 }

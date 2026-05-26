@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -106,50 +107,80 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
 
+        using (var pragmaCmd = connection.CreateCommand())
+        {
+            pragmaCmd.CommandText = "PRAGMA foreign_keys = ON";
+            await pragmaCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        int rowsAffected;
         using var tx = connection.BeginTransaction();
         try
         {
-            var relativePaths = new List<string>();
-            using (var selectCmd = connection.CreateCommand())
-            {
-                selectCmd.CommandText = "SELECT relative_path FROM family_files WHERE id IN (SELECT file_id FROM catalog_versions WHERE catalog_item_id = @id)";
-                selectCmd.Parameters.Add(new SqliteParameter("@id", id));
-                using var reader = await selectCmd.ExecuteReaderAsync(ct);
-                while (await reader.ReadAsync(ct))
-                {
-                    relativePaths.Add(reader.GetString(0));
-                }
-            }
-
             using var delItem = connection.CreateCommand();
             delItem.CommandText = "DELETE FROM catalog_items WHERE id = @id";
             delItem.Parameters.Add(new SqliteParameter("@id", id));
-            var rowsAffected = await delItem.ExecuteNonQueryAsync(ct);
-
+            rowsAffected = await delItem.ExecuteNonQueryAsync(ct);
             tx.Commit();
-
-            if (rowsAffected > 0)
-            {
-                var dbRoot = _database.GetDatabaseRoot();
-                var familyDir = Path.Combine(dbRoot, "files", id);
-                if (Directory.Exists(familyDir))
-                {
-                    try
-                    {
-                        Directory.Delete(familyDir, recursive: true);
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-
-            return rowsAffected > 0;
         }
         catch
         {
             tx.Rollback();
             throw;
+        }
+
+        // File deletion happens AFTER transaction commit.
+        // If this fails, DB is already clean but user gets an error dialog.
+        if (rowsAffected > 0)
+        {
+            var dbRoot = _database.GetDatabaseRoot();
+            var familyDir = Path.Combine(dbRoot, "files", id);
+            if (Directory.Exists(familyDir))
+            {
+                DeleteDirectoryWithRetry(familyDir);
+            }
+        }
+
+        return rowsAffected > 0;
+    }
+
+    private static void DeleteDirectoryWithRetry(string path, int maxRetries = 3)
+    {
+        for (var i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    RemoveReadOnlyAttributes(path);
+                    Directory.Delete(path, recursive: true);
+                }
+                return;
+            }
+            catch (IOException ex) when (i < maxRetries - 1)
+            {
+                SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed to delete directory '{path}': {ex.Message}. Retrying...");
+                Thread.Sleep(200 * (i + 1));
+            }
+            catch (UnauthorizedAccessException ex) when (i < maxRetries - 1)
+            {
+                SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed (access denied) for '{path}': {ex.Message}. Retrying...");
+                Thread.Sleep(200 * (i + 1));
+            }
+        }
+
+        throw new IOException($"Failed to delete family directory after {maxRetries} attempts: {path}. The file may be open in Revit or another application.");
+    }
+
+    private static void RemoveReadOnlyAttributes(string path)
+    {
+        foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+        {
+            var attr = File.GetAttributes(file);
+            if ((attr & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+            {
+                File.SetAttributes(file, attr & ~FileAttributes.ReadOnly);
+            }
         }
     }
 

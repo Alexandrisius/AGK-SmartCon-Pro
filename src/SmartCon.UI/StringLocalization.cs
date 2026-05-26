@@ -428,5 +428,6 @@ public static class StringLocalization
         public const string FM_DbReadOnlyError = "FM_DbReadOnlyError";
         public const string FM_ProfileDisabledTooltip = "FM_ProfileDisabledTooltip";
         public const string FM_StatusNoDatabase = "FM_StatusNoDatabase";
+        public const string FM_FamilyDeleteInUse = "FM_FamilyDeleteInUse";
     }
 }
