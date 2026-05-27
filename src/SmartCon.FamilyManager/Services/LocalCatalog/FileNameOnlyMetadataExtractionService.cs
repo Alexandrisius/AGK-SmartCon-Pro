@@ -19,7 +19,7 @@ internal sealed class FileNameOnlyMetadataExtractionService : IFamilyMetadataExt
         var sha256 = await _hasher.ComputeHashAsync(filePath, ct);
 
         return new FamilyMetadataExtractionResult(
-            FileName: fileInfo.Name,
+            FileName: fileInfo.Name.Trim(),
             FileSizeBytes: fileInfo.Length,
             Sha256: sha256,
             LastWriteTimeUtc: fileInfo.LastWriteTimeUtc,

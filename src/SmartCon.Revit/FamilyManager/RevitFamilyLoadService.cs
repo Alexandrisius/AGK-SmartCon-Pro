@@ -48,13 +48,14 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             loadedFamily = family;
             success = true;
 
-            if (!string.IsNullOrWhiteSpace(options.PreferredName)
-                && !string.Equals(family.Name, options.PreferredName, StringComparison.OrdinalIgnoreCase))
+            var preferredName = options.PreferredName?.Trim();
+            if (!string.IsNullOrWhiteSpace(preferredName)
+                && !string.Equals(family.Name, preferredName, StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
-                    family.Name = options.PreferredName;
-                    SmartConLogger.Info($"[FamilyLoad] Renamed family to '{options.PreferredName}'");
+                    family.Name = preferredName;
+                    SmartConLogger.Info($"[FamilyLoad] Renamed family to '{preferredName}'");
                 }
                 catch (Exception ex)
                 {
@@ -90,6 +91,24 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
 
         SmartConLogger.Info($"[FamilyLoad][{attemptName}] Failed: loadedFamily is null or success=false");
         return null;
+    }
+
+    private static string BuildErrorMessage(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        var nameWithoutExt = Path.GetFileNameWithoutExtension(path);
+
+        if (nameWithoutExt.Length > 0 && nameWithoutExt[nameWithoutExt.Length - 1] == ' ')
+        {
+            return $"File name has a trailing space before extension: '{fileName}'. Rename the file and re-import.";
+        }
+
+        if (path.Length > 240)
+        {
+            return $"File path is too long ({path.Length} chars). Move the file to a shorter path.";
+        }
+
+        return "Unable to load family. The file may be from a newer Revit version or incompatible with this project.";
     }
 
     public Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, CancellationToken ct = default)
@@ -134,9 +153,10 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 }
             }
 
-            var checkName = !string.IsNullOrWhiteSpace(options.PreferredName)
-                ? options.PreferredName
-                : Path.GetFileNameWithoutExtension(normalizedPath);
+            var preferredName = options.PreferredName?.Trim();
+            var checkName = !string.IsNullOrWhiteSpace(preferredName)
+                ? preferredName
+                : Path.GetFileNameWithoutExtension(normalizedPath).Trim();
 
             SmartConLogger.Info($"[FamilyLoad] Checking for existing family by name: '{checkName}'");
 
@@ -168,24 +188,9 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 return Task.FromResult(result2);
             SmartConLogger.Info("[FamilyLoad] Attempt 2 failed (returned null)");
 
-            var tempPath = Path.Combine(Path.GetTempPath(), $"SmartCon_Family_{Guid.NewGuid()}.rfa");
-            try
-            {
-                File.Copy(normalizedPath, tempPath, overwrite: true);
-                SmartConLogger.Info($"[FamilyLoad] Attempt 3: Loading from temp: {tempPath}");
-
-                var result3 = TryLoadInTransaction(doc, tempPath, loadOptions, options, "Attempt3", existingFamily);
-                if (result3 is not null)
-                    return Task.FromResult(result3);
-            }
-            finally
-            {
-                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
-            }
-
-            SmartConLogger.Info("[FamilyLoad] All 3 attempts failed - returning error");
-            return Task.FromResult(new FamilyLoadResult(false, null, null,
-                "Unable to load family. The file may be from a newer Revit version or incompatible with this project.", FamilyLoadStatus.Failed));
+            var errorMessage = BuildErrorMessage(normalizedPath);
+            SmartConLogger.Info($"[FamilyLoad] Both attempts failed - returning error: {errorMessage}");
+            return Task.FromResult(new FamilyLoadResult(false, null, null, errorMessage, FamilyLoadStatus.Failed));
         }
         catch (Exception ex)
         {

@@ -143,7 +143,7 @@ internal sealed partial class LocalFamilyImportService
             VALUES (@id, @name, @normalizedName, @description, @categoryName, @categoryId, @manufacturer, @status, @versionLabel, @publishedBy, @createdAtUtc, @updatedAtUtc)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
-        cmd.Parameters.Add(new SqliteParameter("@name", Path.GetFileNameWithoutExtension(request.FilePath)));
+        cmd.Parameters.Add(new SqliteParameter("@name", Path.GetFileNameWithoutExtension(request.FilePath).Trim()));
         cmd.Parameters.Add(new SqliteParameter("@normalizedName", normalizedName));
         cmd.Parameters.Add(new SqliteParameter("@description", request.Description ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@categoryName", request.Category ?? (object)DBNull.Value));
