@@ -10,6 +10,7 @@ public static partial class LocalizationService
         ru["FM_ImportFolder"] = "Импорт папки"; en["FM_ImportFolder"] = "Import Folder";
         ru["FM_LoadToProject"] = "Загрузить в проект"; en["FM_LoadToProject"] = "Load to Project";
         ru["FM_LoadAndPlace"] = "Загрузить и разместить"; en["FM_LoadAndPlace"] = "Load and Place";
+        ru["FM_Place"] = "Разместить"; en["FM_Place"] = "Place";
         ru["FM_ExtractTypes"] = "Извлечь типоразмеры"; en["FM_ExtractTypes"] = "Extract Types";
         ru["FM_ImportData"] = "Импорт данных"; en["FM_ImportData"] = "Import Data";
         ru["FM_PlaceType"] = "Разместить тип"; en["FM_PlaceType"] = "Place Type";
@@ -184,6 +185,7 @@ public static partial class LocalizationService
         ru["FM_PE_RemoveParameter"] = "- Удалить"; en["FM_PE_RemoveParameter"] = "- Remove";
 
         ru["FM_FamilyNotFoundAfterLoad"] = "Семейство не найдено после загрузки"; en["FM_FamilyNotFoundAfterLoad"] = "Family not found after loading";
+        ru["FM_FamilyNotLoaded"] = "Семейство \"{0}\" не загружено в проект. Используйте \"Загрузить в проект\"."; en["FM_FamilyNotLoaded"] = "Family \"{0}\" not loaded in project. Use 'Load to Project'.";
         ru["FM_CannotDisconnectOnlyDatabase"] = "Нельзя отключить единственную базу данных."; en["FM_CannotDisconnectOnlyDatabase"] = "Cannot disconnect the only database.";
 
         ru["FM_AL_Title"] = "Библиотека атрибутов"; en["FM_AL_Title"] = "Attribute Library";

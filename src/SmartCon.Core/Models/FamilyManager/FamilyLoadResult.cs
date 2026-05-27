@@ -7,8 +7,10 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="FamilyName">Loaded family name.</param>
 /// <param name="Message">Informational message.</param>
 /// <param name="ErrorMessage">Error message if failed.</param>
+/// <param name="Status">Detailed status of the load operation.</param>
 public sealed record FamilyLoadResult(
     bool Success,
     string? FamilyName,
     string? Message,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    FamilyLoadStatus Status = FamilyLoadStatus.Failed);

@@ -57,6 +57,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
+    [ObservableProperty] private bool _canPlace;
     [ObservableProperty] private ObservableCollection<DatabaseConnection> _connections = new();
     [ObservableProperty] private DatabaseConnection? _selectedConnection;
     [ObservableProperty]
@@ -261,8 +262,27 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
         CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
+        CanPlace = false;
         LoadToProjectCommand.NotifyCanExecuteChanged();
-        LoadAndPlaceCommand.NotifyCanExecuteChanged();
+        PlaceCommand.NotifyCanExecuteChanged();
+
+        if (value is not null)
+        {
+            var familyName = value.Name;
+            _externalEvent.Raise(() =>
+            {
+                try
+                {
+                    var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
+                    CanPlace = isLoaded;
+                    PlaceCommand.NotifyCanExecuteChanged();
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Place check failed: {ex.Message}");
+                }
+            });
+        }
     }
 
     partial void OnSelectedTreeNodeChanged(CatalogTreeNodeViewModel? value)
@@ -313,7 +333,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
 
         LoadToProjectCommand.NotifyCanExecuteChanged();
-        LoadAndPlaceCommand.NotifyCanExecuteChanged();
+        PlaceCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
         ImportFolderToCategoryCommand.NotifyCanExecuteChanged();
         ImportDataForCategoryCommand.NotifyCanExecuteChanged();

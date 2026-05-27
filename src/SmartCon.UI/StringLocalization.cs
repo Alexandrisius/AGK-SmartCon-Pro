@@ -213,6 +213,7 @@ public static class StringLocalization
         public const string FM_ImportFolder = "FM_ImportFolder";
         public const string FM_LoadToProject = "FM_LoadToProject";
         public const string FM_LoadAndPlace = "FM_LoadAndPlace";
+        public const string FM_Place = "FM_Place";
         public const string FM_ExtractTypes = "FM_ExtractTypes";
         public const string FM_ImportData = "FM_ImportData";
         public const string FM_PlaceType = "FM_PlaceType";
@@ -373,6 +374,7 @@ public static class StringLocalization
         public const string FM_PE_RemoveParameter = "FM_PE_RemoveParameter";
         public const string FM_Props_XlsNote = "FM_Props_XlsNote";
         public const string FM_FamilyNotFoundAfterLoad = "FM_FamilyNotFoundAfterLoad";
+        public const string FM_FamilyNotLoaded = "FM_FamilyNotLoaded";
         public const string FM_CannotDisconnectOnlyDatabase = "FM_CannotDisconnectOnlyDatabase";
         public const string FM_ErrorFormat = "FM_ErrorFormat";
         public const string FM_AL_Title = "FM_AL_Title";

@@ -465,9 +465,9 @@
                             <ContextMenu Style="{StaticResource ModernContextMenu}"
                                          Focusable="False"
                                          DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                                 <MenuItem Header="{loc:Loc FM_LoadAndPlace}"
-                                          Command="{Binding LoadAndPlaceCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
+                                 <MenuItem Header="{loc:Loc FM_Place}"
+                                           Command="{Binding PlaceCommand}"
+                                           Style="{StaticResource ModernMenuItem}" />
                                 <MenuItem Header="{loc:Loc FM_LoadToProject}"
                                           Command="{Binding LoadToProjectCommand}"
                                           Style="{StaticResource ModernMenuItem}" />
