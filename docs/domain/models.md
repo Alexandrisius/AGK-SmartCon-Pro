@@ -1829,6 +1829,24 @@ public sealed record FamilyLoadResult(
 
 ---
 
+### FamilyLoadStatus
+
+Статус загрузки семейства в проект Revit.
+
+**Файл:** `FamilyLoadStatus.cs`
+
+```csharp
+public enum FamilyLoadStatus
+{
+    Failed,
+    Loaded,
+    Updated,
+    Current
+}
+```
+
+---
+
 ### FamilyResolvedFile
 
 Разрешённый путь к файлу `.rfa` — готов для загрузки в Revit.
