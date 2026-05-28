@@ -7,6 +7,7 @@
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:selectors="clr-namespace:SmartCon.FamilyManager.Selectors"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
          Background="{DynamicResource BackgroundBrush}">
 
@@ -411,10 +412,88 @@
             </i:Interaction.Triggers>
 
             <TreeView.Resources>
+                <ContextMenu x:Key="CategoryNodeContextMenu" Style="{StaticResource ModernContextMenu}"
+                             DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                    <MenuItem Header="{loc:Loc FM_ImportFileToCategory}"
+                              Command="{Binding ImportFileToCategoryCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                    <MenuItem Header="{loc:Loc FM_ImportFolderToCategory}"
+                              Command="{Binding ImportFolderToCategoryCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                    <Separator />
+                    <MenuItem Header="{loc:Loc FM_ImportDataForCategory}"
+                              Command="{Binding ImportDataForCategoryCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                </ContextMenu>
+
+                <ContextMenu x:Key="FamilyLeafNodeContextMenu" Style="{StaticResource ModernContextMenu}"
+                             Focusable="False"
+                             DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                    <MenuItem Header="{loc:Loc FM_Place}"
+                              Command="{Binding PlaceCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                    <MenuItem Header="{loc:Loc FM_LoadToProject}"
+                              Command="{Binding LoadToProjectCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                    <MenuItem Header="{loc:Loc FM_ImportData}"
+                              Command="{Binding ImportDataCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                    <MenuItem Header="{loc:Loc FM_Update}"
+                              Command="{Binding UpdateFamilyCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                    <MenuItem Header="{loc:Loc FM_Properties}"
+                              Command="{Binding OpenPropertiesCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                    <MenuItem Header="{loc:Loc FM_DeleteFromCatalog}"
+                              Command="{Binding DeleteFamilyCommand}"
+                              Style="{StaticResource DangerMenuItem}" />
+                </ContextMenu>
+
+                <ContextMenu x:Key="FamilyTypeNodeContextMenu" Style="{StaticResource ModernContextMenu}"
+                             Focusable="False"
+                             DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                    <MenuItem Header="{loc:Loc FM_PlaceType}"
+                              Command="{Binding PlaceTypeCommand}"
+                              Style="{StaticResource ModernMenuItem}" />
+                </ContextMenu>
+
+                <Style x:Key="FamilyTreeItemBaseStyle" TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}" />
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                    <Setter Property="AllowDrop" Value="True"/>
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsSelected}" Value="False"/>
+                                <Condition Binding="{Binding IsType}" Value="True"/>
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                        </MultiDataTrigger>
+                    </Style.Triggers>
+                </Style>
+
+                <Style x:Key="CategoryNodeItemStyle" TargetType="TreeViewItem" BasedOn="{StaticResource FamilyTreeItemBaseStyle}">
+                    <Setter Property="ContextMenu" Value="{StaticResource CategoryNodeContextMenu}"/>
+                </Style>
+
+                <Style x:Key="FamilyLeafNodeItemStyle" TargetType="TreeViewItem" BasedOn="{StaticResource FamilyTreeItemBaseStyle}">
+                    <Setter Property="ContextMenu" Value="{StaticResource FamilyLeafNodeContextMenu}"/>
+                </Style>
+
+                <Style x:Key="FamilyTypeNodeItemStyle" TargetType="TreeViewItem" BasedOn="{StaticResource FamilyTreeItemBaseStyle}">
+                    <Setter Property="ContextMenu" Value="{StaticResource FamilyTypeNodeContextMenu}"/>
+                </Style>
+
+                <selectors:FamilyTreeItemStyleSelector x:Key="FamilyTreeItemStyleSelector"
+                    CategoryStyle="{StaticResource CategoryNodeItemStyle}"
+                    FamilyStyle="{StaticResource FamilyLeafNodeItemStyle}"
+                    TypeStyle="{StaticResource FamilyTypeNodeItemStyle}"/>
+
                 <HierarchicalDataTemplate DataType="{x:Type vm:CategoryNodeViewModel}"
                                            ItemsSource="{Binding Children}">
-                    <Grid Background="Transparent" HorizontalAlignment="Stretch"
-                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
+                    <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
                             <Path Data="{StaticResource FolderIconGeometry}"
                                    Fill="{DynamicResource TextMutedBrush}"
@@ -430,28 +509,12 @@
                                        FontSize="11" VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
                         </StackPanel>
-                        <Grid.ContextMenu>
-                            <ContextMenu Style="{StaticResource ModernContextMenu}"
-                                         DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                                <MenuItem Header="{loc:Loc FM_ImportFileToCategory}"
-                                          Command="{Binding ImportFileToCategoryCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
-                                <MenuItem Header="{loc:Loc FM_ImportFolderToCategory}"
-                                          Command="{Binding ImportFolderToCategoryCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
-                                <Separator />
-                                <MenuItem Header="{loc:Loc FM_ImportDataForCategory}"
-                                          Command="{Binding ImportDataForCategoryCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
-                            </ContextMenu>
-                        </Grid.ContextMenu>
                     </Grid>
                 </HierarchicalDataTemplate>
 
                 <HierarchicalDataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}"
                                              ItemsSource="{Binding Children}">
-                    <Grid Background="Transparent" HorizontalAlignment="Stretch"
-                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
+                    <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding DisplayName}"
                                        VerticalAlignment="Center"/>
@@ -461,68 +524,20 @@
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
                         </StackPanel>
-                        <Grid.ContextMenu>
-                            <ContextMenu Style="{StaticResource ModernContextMenu}"
-                                         Focusable="False"
-                                         DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                                 <MenuItem Header="{loc:Loc FM_Place}"
-                                           Command="{Binding PlaceCommand}"
-                                           Style="{StaticResource ModernMenuItem}" />
-                                <MenuItem Header="{loc:Loc FM_LoadToProject}"
-                                          Command="{Binding LoadToProjectCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
-                                <MenuItem Header="{loc:Loc FM_ImportData}"
-                                          Command="{Binding ImportDataCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
-                                <MenuItem Header="{loc:Loc FM_Update}"
-                                          Command="{Binding UpdateFamilyCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
-                                <MenuItem Header="{loc:Loc FM_Properties}"
-                                          Command="{Binding OpenPropertiesCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
-                                <MenuItem Header="{loc:Loc FM_DeleteFromCatalog}"
-                                          Command="{Binding DeleteFamilyCommand}"
-                                          Style="{StaticResource DangerMenuItem}" />
-                            </ContextMenu>
-                        </Grid.ContextMenu>
                     </Grid>
                 </HierarchicalDataTemplate>
 
                 <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
-                    <Grid Background="Transparent" HorizontalAlignment="Stretch"
-                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
+                    <Grid HorizontalAlignment="Stretch">
                         <TextBlock Text="{Binding DisplayName}"
                                    VerticalAlignment="Center" />
-                        <Grid.ContextMenu>
-                            <ContextMenu Style="{StaticResource ModernContextMenu}"
-                                         Focusable="False"
-                                         DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                                <MenuItem Header="{loc:Loc FM_PlaceType}"
-                                          Command="{Binding PlaceTypeCommand}"
-                                          Style="{StaticResource ModernMenuItem}" />
-                            </ContextMenu>
-                        </Grid.ContextMenu>
                     </Grid>
                 </DataTemplate>
             </TreeView.Resources>
 
-            <TreeView.ItemContainerStyle>
-                <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
-                    <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}" />
-                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
-                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
-                    <Setter Property="AllowDrop" Value="True"></Setter>
-                    <Style.Triggers>
-                        <MultiDataTrigger>
-                            <MultiDataTrigger.Conditions>
-                                <Condition Binding="{Binding IsSelected}" Value="False"></Condition>
-                                <Condition Binding="{Binding IsType}" Value="True"></Condition>
-                            </MultiDataTrigger.Conditions>
-                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"></Setter>
-                        </MultiDataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </TreeView.ItemContainerStyle>
+            <TreeView.ItemContainerStyleSelector>
+                <StaticResourceExtension ResourceKey="FamilyTreeItemStyleSelector"/>
+            </TreeView.ItemContainerStyleSelector>
         </TreeView>
 
         <Grid Grid.Row="4" Margin="0,4,0,0">
