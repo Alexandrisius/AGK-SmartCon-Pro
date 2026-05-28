@@ -206,23 +206,12 @@
                                FontSize="12"
                                Margin="0,0,0,8"
                                Foreground="{DynamicResource TextPrimaryBrush}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasSelectedCategory}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
                         <Run Text="{loc:Loc FM_CTE_AttributesFor}"/>
                         <Run Text=" "/>
                         <Run Text="{Binding SelectedCategoryPath, Mode=OneWay}"/>
                     </TextBlock>
 
-                    <Grid Grid.Row="1" Margin="0,0,0,8"
-                          Visibility="{Binding HasSelectedCategory, Converter={StaticResource BoolToVis}}">
+                    <Grid Grid.Row="1" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
@@ -430,7 +419,7 @@
                     Style="{DynamicResource PrimaryButton}"/>
 
             <Button Grid.Column="4" Content="{loc:Loc Btn_Cancel}"
-                    Command="{Binding CancelCommand}"
+                    Command="{Binding CancelAsyncCommand}"
                     Width="80" Height="28"
                     IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"

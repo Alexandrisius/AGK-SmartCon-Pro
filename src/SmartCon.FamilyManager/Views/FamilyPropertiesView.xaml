@@ -556,7 +556,7 @@
                     Style="{DynamicResource PrimaryButton}"/>
             <Button Grid.Column="2"
                     Content="{loc:Loc Btn_Cancel}"
-                    Command="{Binding CancelCommand}"
+                    Command="{Binding CancelAsyncCommand}"
                     Width="80" Height="28"
                     IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>

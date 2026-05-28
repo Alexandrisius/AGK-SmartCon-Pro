@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,6 +11,7 @@ namespace SmartCon.UI.Controls;
 public class DialogWindowBase : Window
 {
     private bool _closeFromViewModel;
+    private bool _forceClose;
     private ICloseAwareViewModel? _closeAwareViewModel;
 
     public bool? CustomDialogResult { get; protected set; }
@@ -79,6 +81,7 @@ public class DialogWindowBase : Window
     {
         CustomDialogResult = result;
         _closeFromViewModel = true;
+        _forceClose = true;
         try { DialogResult = result; } catch (InvalidOperationException) { }
         Close();
         _closeFromViewModel = false;
@@ -86,7 +89,7 @@ public class DialogWindowBase : Window
 
     private void HandleClosing(object? sender, CancelEventArgs e)
     {
-        if (_closeFromViewModel) return;
+        if (_closeFromViewModel || _forceClose) return;
 
         if (_closeAwareViewModel is not null)
         {
@@ -96,8 +99,34 @@ public class DialogWindowBase : Window
             if (args.Cancel)
             {
                 e.Cancel = true;
-                if (args.DeferredAction is not null)
-                    Dispatcher.BeginInvoke(args.DeferredAction);
+                if (args.AsyncDeferredAction is not null)
+                {
+                    Dispatcher.BeginInvoke(async () =>
+                    {
+                        try
+                        {
+                            await args.AsyncDeferredAction();
+                        }
+                        finally
+                        {
+                            _forceClose = false;
+                        }
+                    });
+                }
+                else if (args.DeferredAction is not null)
+                {
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        try
+                        {
+                            args.DeferredAction();
+                        }
+                        finally
+                        {
+                            _forceClose = false;
+                        }
+                    });
+                }
                 return;
             }
 

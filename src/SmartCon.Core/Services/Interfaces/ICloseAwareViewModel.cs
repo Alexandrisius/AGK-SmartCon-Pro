@@ -22,6 +22,13 @@ public sealed class CloseConfirmationArgs
     /// that itself requests close, which would otherwise recurse into the Closing handler.
     /// </summary>
     public Action? DeferredAction { get; set; }
+
+    /// <summary>
+    /// An async action to execute after the Closing event has been processed.
+    /// Use this when the ViewModel needs to perform an asynchronous save operation
+    /// before closing. Takes precedence over <see cref="DeferredAction"/>.
+    /// </summary>
+    public Func<Task>? AsyncDeferredAction { get; set; }
 }
 
 /// <summary>

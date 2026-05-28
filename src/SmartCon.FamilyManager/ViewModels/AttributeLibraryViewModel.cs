@@ -3,13 +3,14 @@ using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Services.Helpers;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
 using SmartCon.UI.Behaviors;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed partial class AttributeLibraryViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class AttributeLibraryViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, ISaveableViewModel
 {
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
     private readonly ICategoryAttributeBindingService _bindingService;
@@ -20,6 +21,9 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     [ObservableProperty] private ObservableCollection<AttributeDefinitionDraft> _items = [];
     [ObservableProperty] private AttributeDefinitionDraft? _selectedItem;
     [ObservableProperty] private string _statusMessage = string.Empty;
+
+    public bool HasUnsavedChanges => _pendingDeletions.Count > 0
+        || Items.Any(i => i.IsNew || i.IsDirty);
 
     public event Action<bool?>? RequestClose;
 
@@ -148,8 +152,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         }
     }
 
-    [RelayCommand]
-    private async Task OkAsync()
+    public async Task SaveAsync()
     {
         try
         {
@@ -227,7 +230,36 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     }
 
     [RelayCommand]
-    private void Cancel() => RequestClose?.Invoke(false);
+    private async Task OkAsync() => await SaveAsync();
+
+    public void ConfirmClose(CloseConfirmationArgs args) =>
+        this.ConfirmUnsavedChanges(
+            args,
+            _dialogService.ShowYesNoCancel,
+            LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
+            LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
+
+    [RelayCommand]
+    private async Task CancelAsync()
+    {
+        if (HasUnsavedChanges)
+        {
+            var result = _dialogService.ShowYesNoCancel(
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
+
+            if (result == Core.Services.Interfaces.DialogResult.Yes)
+            {
+                await SaveAsync();
+                return;
+            }
+
+            if (result == Core.Services.Interfaces.DialogResult.Cancel)
+                return;
+        }
+
+        RequestClose?.Invoke(false);
+    }
 
     public void HandleInlineRename(string itemId, string newName)
     {

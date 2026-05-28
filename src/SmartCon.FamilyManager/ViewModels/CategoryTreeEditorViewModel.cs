@@ -4,13 +4,14 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Helpers;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel
+public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, ISaveableViewModel
 {
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyManagerDialogService _dialogService;
@@ -391,6 +392,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
     }
 
+    public async Task SaveAsync() => await OkAsync();
+
     private static List<CategoryNodeViewModel> FlattenNodes(ObservableCollection<CategoryNodeViewModel> nodes)
     {
         var result = new List<CategoryNodeViewModel>();
@@ -416,41 +419,34 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         return result;
     }
 
-    public bool? ConfirmUnsavedChanges()
-    {
-        var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes";
-        var message = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?";
-        var result = _dialogService.ShowYesNoCancel(title, message);
-        return result switch
-        {
-            Core.Services.Interfaces.DialogResult.Yes => true,
-            Core.Services.Interfaces.DialogResult.No => false,
-            _ => null
-        };
-    }
-
-    public void ConfirmClose(CloseConfirmationArgs args)
-    {
-        if (!HasUnsavedChanges)
-            return;
-
-        var result = ConfirmUnsavedChanges();
-        if (result is null)
-        {
-            args.Cancel = true;
-            return;
-        }
-
-        if (result == true)
-        {
-            args.DeferredAction = () => OkCommand.Execute(null);
-        }
-
-        args.DialogResult = false;
-    }
+    public void ConfirmClose(CloseConfirmationArgs args) =>
+        this.ConfirmUnsavedChanges(
+            args,
+            _dialogService.ShowYesNoCancel,
+            LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
+            LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
 
     [RelayCommand]
-    private void Cancel() => RequestClose?.Invoke(false);
+    private async Task CancelAsync()
+    {
+        if (HasUnsavedChanges)
+        {
+            var result = _dialogService.ShowYesNoCancel(
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
+
+            if (result == Core.Services.Interfaces.DialogResult.Yes)
+            {
+                await OkAsync();
+                return;
+            }
+
+            if (result == Core.Services.Interfaces.DialogResult.Cancel)
+                return;
+        }
+
+        RequestClose?.Invoke(false);
+    }
 
     private static async Task FireAndForgetAsync(Func<Task> taskFactory)
     {
