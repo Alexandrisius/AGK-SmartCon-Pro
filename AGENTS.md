@@ -7,6 +7,14 @@
 
 Исходный код расположен в `src/`. Solution: `src/SmartCon.sln`.
 
+## GitHub Repository
+
+| Параметр | Значение |
+|---|---|
+| Owner | `Alexandrisius` |
+| Repo | `AGK-SmartCon-Pro` |
+| Full | `Alexandrisius/AGK-SmartCon-Pro` |
+
 ## Quick Reference
 
 | Действие | Команда |
