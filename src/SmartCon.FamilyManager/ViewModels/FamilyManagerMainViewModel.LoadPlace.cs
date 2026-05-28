@@ -41,6 +41,16 @@ public sealed partial class FamilyManagerMainViewModel
                     CanPlace = isLoaded;
                     PlaceCommand.NotifyCanExecuteChanged();
 
+                    if (SelectedTreeNode is FamilyTypeNodeViewModel typeNode)
+                    {
+                        var parent = FindParentOf(TreeNodes, typeNode);
+                        if (parent is FamilyLeafNodeViewModel leaf && leaf.DisplayName == loadedName)
+                        {
+                            CanPlaceType = isLoaded;
+                            PlaceTypeCommand.NotifyCanExecuteChanged();
+                        }
+                    }
+
                     var msg = result.Status switch
                     {
                         FamilyLoadStatus.Loaded => string.Format(
@@ -133,7 +143,7 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanPlaceType))]
     private void PlaceType()
     {
         if (SelectedTreeNode is not FamilyTypeNodeViewModel typeNode) return;
@@ -148,6 +158,16 @@ public sealed partial class FamilyManagerMainViewModel
         {
             try
             {
+                if (!_familySearchService.IsFamilyLoaded(familyName))
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_FamilyNotLoaded) ?? "Family \"{0}\" not loaded in project. Use 'Load to Project'.",
+                        familyName);
+                    CanPlaceType = false;
+                    PlaceTypeCommand.NotifyCanExecuteChanged();
+                    return;
+                }
+
                 _familyPlacementService.ActivateAndPlaceType(familyName, typeName);
             }
             catch (Exception ex)

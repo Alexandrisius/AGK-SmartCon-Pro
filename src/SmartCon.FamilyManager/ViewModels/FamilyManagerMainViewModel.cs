@@ -58,6 +58,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
     [ObservableProperty] private bool _canPlace;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PlaceTypeCommand))]
+    private bool _canPlaceType;
+
     [ObservableProperty] private ObservableCollection<DatabaseConnection> _connections = new();
     [ObservableProperty] private DatabaseConnection? _selectedConnection;
     [ObservableProperty]
@@ -304,6 +309,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Tags = leaf.Tags,
                 Description = leaf.Description,
             };
+            CanPlaceType = false;
         }
         else if (value is FamilyTypeNodeViewModel typeNode)
         {
@@ -323,19 +329,39 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
                 };
+                CanPlaceType = false;
+                PlaceTypeCommand.NotifyCanExecuteChanged();
+
+                var familyName = parentLeaf.DisplayName;
+                _externalEvent.Raise(() =>
+                {
+                    try
+                    {
+                        var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
+                        CanPlaceType = isLoaded;
+                        PlaceTypeCommand.NotifyCanExecuteChanged();
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Warn($"PlaceType check failed: {ex.Message}");
+                    }
+                });
             }
             else
             {
                 SelectedItem = null;
+                CanPlaceType = false;
             }
         }
         else
         {
             SelectedItem = null;
+            CanPlaceType = false;
         }
 
         LoadToProjectCommand.NotifyCanExecuteChanged();
         PlaceCommand.NotifyCanExecuteChanged();
+        PlaceTypeCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
         ImportFolderToCategoryCommand.NotifyCanExecuteChanged();
         ImportDataForCategoryCommand.NotifyCanExecuteChanged();
