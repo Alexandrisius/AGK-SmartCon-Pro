@@ -44,8 +44,7 @@
      * «Autodesk Revit API forum [проблема]»
      * «Revit [версия] [метод] best practice»
    - Проверь **каждую гипотезу** в Exa прежде чем её высказать
-   - Если `revit-api` skill не даёт результата — **обязательно** ищи в Exa
-   - **Цель:** собрать 3-5 авторитетных источников (Autodesk docs, Jeremy Tammik, StackOverflow с accepted answer, GitHub open source plugins) прежде чем писать код
+    - **Цель:** собрать 3-5 авторитетных источников (Autodesk docs, Jeremy Tammik, StackOverflow с accepted answer, GitHub open source plugins) прежде чем писать код
 
 3. **Проанализировать код** через субагентов:
    - Запусти Task-агента для анализа нужного участка кода
@@ -110,7 +109,7 @@
 - Написание нового кода и сложная логика
 - Архитектурные решения и интеграция изменений
 - Исправление багов (любой сложности)
-- Использование поиска (Exa, revit-api skill) для сбора контекста
+- Использование поиска (Exa, MCP Revit API docs) для сбора контекста
 - Приём и валидация результатов субагентов
 - Изменения в конфигурационных файлах
 
@@ -122,7 +121,7 @@
 
 **Область применения субагентов:**
 - Исследование кодовой базы (поиск файлов, чтение, анализ структуры)
-- Изучение документации и внешних источников (Exa, revit-api skill)
+- Изучение документации и внешних источников (Exa, MCP Revit API docs)
 - Поиск паттернов и анализ зависимостей между модулями
 - Монотонный рефакторинг с чётко заданным scope (переименование, замена паттернов)
 - Параллельный поиск в нескольких направлениях
@@ -235,17 +234,60 @@
 
 ## Инструменты поиска
 
-| Нужно | Первый выбор | Fallback |
-|---|---|---|
-| Сигнатура метода Revit API | `revit-api` skill | Exa |
-| Пример кода с Revit API (форумы) | Exa (`exa_web_search_exa`) | — |
-| Версия NuGet-пакета | REF (`ref_search_documentation`) | — |
-| .NET/WPF/DI паттерн | REF | Exa |
-| Любой поиск в интернете | Exa | — |
+### Иерархия (от простого к сложному)
+
+```
+1. MCP Revit API docs — быстрая проверка сигнатуры, свойств, методов
+   ↓ (если нужен контекст, примеры, best practices)
+2. Exa — поиск примеров кода, форумов, Jeremy Tammik, GitHub
+   ↓ (если нужны .NET/WPF/DI паттерны)
+3. REF — документация .NET/NuGet
+```
+
+### MCP Revit API docs (быстрый справочник)
+
+**Когда использовать:**
+- Проверить сигнатуру метода/конструктора
+- Посмотреть список свойств/методов класса
+- Уточнить Exceptions и Remarks
+- Проверить версию API (2025/2026)
+
+**Доступные tools:**
+- `revit-api-docs_search-docs` — поиск классов/методов по ключевым словам
+- `revit-api-docs_retrieve-docs` — полная документация по запросу
+- `revit-api-docs_retrieve-doc` — документация по точному URL
+
+**Пример workflow:**
+```
+1. search-docs "ElementTransformUtils.MoveElement" → находим метод
+2. retrieve-doc по URL → получаем полную документацию с параметрами и Exceptions
+3. Если нужны примеры использования → Exa: "Jeremy Tammik MoveElement example"
+```
+
+**Важно:** MCP даёт **справочную информацию** (сигнатуры, Remarks, Exceptions).  
+**Exa даёт контекст** (примеры кода, best practices, известные проблемы).  
+**НЕ заменяй Exa MCP-ом** — для написания кода нужны оба инструмента.
+
+### Exa (глубокий поиск)
+
+**Когда использовать:**
+- Примеры кода с Revit API
+- Jeremy Tammik blog (thebuildingcoder.com)
+- StackOverflow с accepted answer
+- GitHub open source plugins
+- Autodesk Community forums
+- Известные проблемы и краши
+- Best practices и паттерны
+
+| Нужно | Инструмент |
+|---|---|
+| Сигнатура + Remarks Revit API | MCP Revit API docs |
+| Примеры кода, форумы, best practices | Exa |
+| Версия NuGet-пакета | REF |
+| .NET/WPF/DI паттерны | REF → Exa |
+| Любой веб-поиск | Exa |
 
 **REF — НЕ поисковик. Для любого веб-поиска используй Exa.**
-
-Подробности: `revit-api` skill — `.agents/skills/revit-api/scripts/` (Python-скрипты).
 
 ## Сборка и CI/CD
 
