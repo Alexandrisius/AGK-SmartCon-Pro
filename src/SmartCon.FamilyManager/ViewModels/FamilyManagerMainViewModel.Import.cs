@@ -257,85 +257,95 @@ public sealed partial class FamilyManagerMainViewModel
         }
 
         IsLoading = true;
-        StatusMessage = string.Empty;
 
-        FireAndForget(async () =>
+        _externalEvent.Raise(() =>
         {
-            var preparedItems = new List<(string CatalogItemId, string Name, string? FilePath, IReadOnlyList<string> ParamNames, string? VersionId)>();
-            var targetRevit = CurrentRevitVersion;
-
-            for (var i = 0; i < families.Count; i++)
+            try
             {
-                var family = families[i];
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Preparing {0} of {1}: {2}",
-                    i + 1, families.Count, family.DisplayName);
+                StatusMessage = string.Empty;
+                
+                var preparedItems = new List<(string CatalogItemId, string Name, string? FilePath, IReadOnlyList<string> ParamNames, string? VersionId)>();
+                var targetRevit = CurrentRevitVersion;
 
-                var prepareResult = await _dataImportService.PrepareExtractionAsync(family.CatalogItemId, targetRevit, CancellationToken.None);
-                if (!prepareResult.Success || string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
-                    continue;
-
-                preparedItems.Add((
-                    family.CatalogItemId,
-                    family.DisplayName,
-                    prepareResult.ResolvedFilePath,
-                    prepareResult.ParameterNames,
-                    prepareResult.Item?.CurrentVersionLabel));
-            }
-
-            if (preparedItems.Count == 0)
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
-                IsLoading = false;
-                return;
-            }
-
-            var successCount = 0;
-            var errorCount = 0;
-
-            for (var i = 0; i < preparedItems.Count; i++)
-            {
-                var item = preparedItems[i];
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Processing {0} of {1}: {2}",
-                    i + 1, preparedItems.Count, item.Name);
-
-                var tcs = new TaskCompletionSource<FamilyExtractionResult>(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
-
-                _externalEvent.Raise(() =>
+                for (var i = 0; i < families.Count; i++)
                 {
+                    var family = families[i];
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Preparing {0} of {1}: {2}",
+                        i + 1, families.Count, family.DisplayName);
+
+                    var prepareResult = Task.Run(() => _dataImportService.PrepareExtractionAsync(
+                        family.CatalogItemId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                    
+                    if (!prepareResult.Success || string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
+                        continue;
+
+                    preparedItems.Add((
+                        family.CatalogItemId,
+                        family.DisplayName,
+                        prepareResult.ResolvedFilePath,
+                        prepareResult.ParameterNames,
+                        prepareResult.Item?.CurrentVersionLabel));
+                }
+
+                if (preparedItems.Count == 0)
+                {
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
+                    IsLoading = false;
+                    return;
+                }
+
+                var successCount = 0;
+                var errorCount = 0;
+
+                for (var i = 0; i < preparedItems.Count; i++)
+                {
+                    var item = preparedItems[i];
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Processing {0} of {1}: {2}",
+                        i + 1, preparedItems.Count, item.Name);
+
                     try
                     {
                         var result = _extractionService.Extract(item.FilePath!, item.ParamNames);
-                        tcs.SetResult(result);
+                        
+                        if (result.Success)
+                        {
+                            var saveResult = Task.Run(() => _dataImportService.SaveExtractionResultAsync(
+                                item.CatalogItemId, result, item.VersionId, null, CancellationToken.None)).GetAwaiter().GetResult();
+                            
+                            if (saveResult.Success)
+                                successCount++;
+                            else
+                                errorCount++;
+                        }
+                        else
+                        {
+                            errorCount++;
+                        }
                     }
                     catch (Exception ex)
                     {
-                        tcs.SetException(ex);
+                        errorCount++;
+                        SmartConLogger.Warn($"ImportData failed for {item.Name}: {ex.Message}");
                     }
-                });
+                }
 
-                try
-                {
-                    var extractionResult = await tcs.Task;
-                    await _dataImportService.SaveExtractionResultAsync(
-                        item.CatalogItemId, extractionResult, item.VersionId, null, CancellationToken.None);
-                    successCount++;
-                }
-                catch (Exception ex)
-                {
-                    errorCount++;
-                    SmartConLogger.Warn($"ImportData failed for {item.Name}: {ex.Message}");
-                }
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataResultFormat) ?? "Imported: {0} types, {1} values found",
+                    $"{successCount}/{preparedItems.Count} families", "see log");
+
+                IsLoading = false;
+                
+                // Refresh tree in background
+                FireAndForget(() => LoadTreeAsync());
             }
-
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataResultFormat) ?? "Imported: {0} types, {1} values found",
-                $"{successCount}/{preparedItems.Count} families", "see log");
-
-            IsLoading = false;
-            await LoadTreeAsync();
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"ImportDataForCategory failed: {ex.Message}");
+                StatusMessage = ex.Message;
+                IsLoading = false;
+            }
         });
     }
 
@@ -348,67 +358,68 @@ public sealed partial class FamilyManagerMainViewModel
         var targetRevit = CurrentRevitVersion;
 
         IsLoading = true;
-        StatusMessage = string.Empty;
 
-        FireAndForget(async () =>
+        _externalEvent.Raise(() =>
         {
-            var prepareResult = await _dataImportService.PrepareExtractionAsync(selectedId, targetRevit, CancellationToken.None);
-
-            if (!prepareResult.Success)
-            {
-                StatusMessage = prepareResult.ErrorMessage ?? LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
-                IsLoading = false;
-                return;
-            }
-
-            if (string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FamilyFileNotFound) ?? "Family file not found";
-                IsLoading = false;
-                return;
-            }
-
-            var rfaPath = prepareResult.ResolvedFilePath;
-            var paramNames = prepareResult.ParameterNames;
-            var versionId = prepareResult.Item?.CurrentVersionLabel;
-
-            var tcs = new TaskCompletionSource<FamilyExtractionResult>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-
-            _externalEvent.Raise(() =>
-            {
-                try
-                {
-                    var result = _extractionService.Extract(rfaPath!, paramNames);
-                    tcs.SetResult(result);
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                }
-            });
-
             try
             {
-                var extractionResult = await tcs.Task;
-                var saveResult = await _dataImportService.SaveExtractionResultAsync(
-                    selectedId, extractionResult, versionId, null, CancellationToken.None);
+                StatusMessage = string.Empty;
+                
+                SmartConLogger.Info("[ImportData] Sync mode - preparing...");
+                var prepareResult = Task.Run(() => _dataImportService.PrepareExtractionAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
 
-                StatusMessage = saveResult.Success
-                    ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataResultFormat) ?? "Imported: {0} types, {1} values found", saveResult.TypesCount, saveResult.AttributesFoundCount)
-                    : string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataError) ?? "Import error: {0}", saveResult.ErrorMessage);
+                if (!prepareResult.Success)
+                {
+                    StatusMessage = prepareResult.ErrorMessage ?? LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
+                    IsLoading = false;
+                    return;
+                }
 
-                await LoadTreeAsync();
+                if (string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
+                {
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FamilyFileNotFound) ?? "Family file not found";
+                    IsLoading = false;
+                    return;
+                }
+
+                var rfaPath = prepareResult.ResolvedFilePath;
+                var paramNames = prepareResult.ParameterNames;
+                var versionId = prepareResult.Item?.CurrentVersionLabel;
+
+                SmartConLogger.Info("[ImportData] Sync mode - extracting...");
+                var result = _extractionService.Extract(rfaPath!, paramNames);
+                SmartConLogger.Info($"[ImportData] Sync mode - Extract done: Success={result.Success}, Types={result.Types.Count}");
+
+                if (result.Success)
+                {
+                    SmartConLogger.Info("[ImportData] Sync mode - saving...");
+                    var saveResult = Task.Run(() => _dataImportService.SaveExtractionResultAsync(
+                        selectedId, result, versionId, null, CancellationToken.None)).GetAwaiter().GetResult();
+                    
+                    StatusMessage = saveResult.Success
+                        ? string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataResultFormat) ?? "Imported: {0} types, {1} values found",
+                            saveResult.TypesCount, saveResult.AttributesFoundCount)
+                        : string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataError) ?? "Import error: {0}",
+                            saveResult.ErrorMessage);
+                }
+                else
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
+                        result.ErrorMessage);
+                }
+                
+                IsLoading = false;
+                
+                // Refresh tree in background (like LoadToProject does with RecordUsageAsync)
+                FireAndForget(() => LoadTreeAsync());
             }
             catch (Exception ex)
             {
                 SmartConLogger.Warn($"ImportData failed: {ex.Message}");
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
-                    ex.Message);
-            }
-            finally
-            {
+                StatusMessage = ex.Message;
                 IsLoading = false;
             }
         });

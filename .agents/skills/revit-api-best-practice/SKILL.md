@@ -21,6 +21,7 @@ Practical guide for building robust Revit plugins with .NET/C# and WPF.
 | SQLite/async in ExternalEvent | `Task.Run(() => ...).GetResult()` | [async-threading](references/async-threading-patterns.md) |
 | WPF dialog shows Revit data | Dialog `DataContext` + `ExternalEvent` | [async-threading](references/async-threading-patterns.md) |
 | Family load + type placement | `LoadFamily` + `PostRequestForElementTypePlacement` | [core-patterns](references/core-patterns.md) |
+| WPF freeze after family upgrade | Move PropertyChanged inside ExternalEvent | [wpf-mfc-render-freeze](references/wpf-mfc-render-freeze.md) |
 
 ## Critical Rules
 
@@ -83,16 +84,21 @@ private void DoSomething()
 [RelayCommand]
 private void LoadAndPlace()
 {
+    // WARNING: If LoadFamily triggers MFC upgrade dialog, do NOT set
+    // StatusMessage/IsLoading (with XAML binding) BEFORE _externalEvent.Raise().
+    // Move ALL PropertyChanged inside the ExternalEvent handler.
+    // See: [WPF MFC Render Freeze](references/wpf-mfc-render-freeze.md)
+
     _externalEvent.Raise(() =>
     {
         // ThreadPool: file resolution, SQLite
         var resolved = Task.Run(() => _resolver.ResolveAsync(id))
                           .GetAwaiter().GetResult();
         
-        // UI thread: Revit API
+        // UI thread: Revit API (may show MFC family upgrade dialog)
         var result = _loadService.LoadFamily(resolved, options);
         
-        // FireAndForget: non-critical post-processing
+        // FireAndForget: non-critical post-processing (ONLY after Revit API)
         FireAndForget(() => SaveMetadataAsync(result));
     });
 }
@@ -137,6 +143,7 @@ private void OpenDialog()
 
 - [Core API Patterns](references/core-patterns.md) - 11 essential code patterns
 - [Async & Threading](references/async-threading-patterns.md) - Deadlock prevention and COM cleanup
+- [WPF MFC Render Freeze](references/wpf-mfc-render-freeze.md) - WPF render thread zombie from PropertyChanged before MFC dialog
 - [Known Bugs](references/transaction-callback-freeze.md) - WPF freeze from transaction callback logging
 
 ## Known Bugs & Workarounds
@@ -161,3 +168,10 @@ private void OpenDialog()
 **Symptoms:** UI freezes after button click, unfreezes on next interaction  
 **Fix:** Never log or do I/O inside `RunInTransaction`/`RunAndRollback` callbacks. Log before/after only.  
 **Details:** [Transaction Callback Freeze](references/transaction-callback-freeze.md)
+
+### WPF Render Thread Freeze from PropertyChanged Before MFC Dialog
+
+**Affected:** WPF DockablePane with `PropertyChanged` before `ExternalEvent.Raise()` that triggers MFC family upgrade dialog  
+**Symptoms:** UI "alive" (clicks work, window moves) but doesn't redraw after family upgrade dialog. Process closes normally.  
+**Fix:** Move ALL `PropertyChanged` (StatusMessage, IsLoading with XAML binding) inside `ExternalEvent` handler. Never use `FireAndForget(async)` before `ExternalEvent` with MFC dialog.  
+**Details:** [WPF MFC Render Freeze](references/wpf-mfc-render-freeze.md)
