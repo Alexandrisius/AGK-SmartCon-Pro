@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
 using Xunit;
@@ -176,5 +177,47 @@ public sealed class LocalCatalogProviderTests
 
         var item = await fixture.GetProvider().GetItemAsync("del1");
         Assert.Null(item);
+    }
+
+    [Fact]
+    public async Task DeleteItemAsync_RemovesFilesBeforeDb()
+    {
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "del2", "Delete With Files", "delete with files");
+
+        var familyDir = Path.Combine(fixture.GetDatabaseRoot(), "files", "del2");
+        Directory.CreateDirectory(familyDir);
+        var filePath = Path.Combine(familyDir, "preview.png");
+        await File.WriteAllTextAsync(filePath, "fake image content");
+
+        var deleted = await fixture.GetProvider().DeleteItemAsync("del2");
+        Assert.True(deleted);
+
+        var item = await fixture.GetProvider().GetItemAsync("del2");
+        Assert.Null(item);
+        Assert.False(Directory.Exists(familyDir), "Family directory should be deleted");
+    }
+
+    [Fact]
+    public async Task DeleteItemAsync_LockedFiles_ThrowsBeforeDbDelete()
+    {
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "del3", "Locked Files", "locked files");
+
+        var familyDir = Path.Combine(fixture.GetDatabaseRoot(), "files", "del3");
+        Directory.CreateDirectory(familyDir);
+        var filePath = Path.Combine(familyDir, "preview.png");
+        await File.WriteAllTextAsync(filePath, "fake image content");
+
+        // Lock the file by opening it for read
+        using var fs = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+            await fixture.GetProvider().DeleteItemAsync("del3"));
+
+        // Verify DB record still exists
+        var item = await fixture.GetProvider().GetItemAsync("del3");
+        Assert.NotNull(item);
+        Assert.Equal("Locked Files", item.Name);
     }
 }

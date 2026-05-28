@@ -171,6 +171,12 @@ public sealed partial class FamilyManagerMainViewModel
 
     public async Task MoveFamilyToCategoryAsync(string familyId, string? targetCategoryId)
     {
+        if (!CanEdit)
+        {
+            SmartConLogger.Warn($"[FM] MoveFamilyToCategoryAsync blocked: user lacks edit permissions.");
+            return;
+        }
+
         IsLoading = true;
         try
         {
@@ -195,7 +201,7 @@ public sealed partial class FamilyManagerMainViewModel
         // Drag permission gate. Behavior handles the actual DoDragDrop.
     }
 
-    private bool CanStartDrag(object? item) => item is FamilyLeafNodeViewModel;
+    private bool CanStartDrag(object? item) => item is FamilyLeafNodeViewModel && CanEdit;
 
     [RelayCommand(CanExecute = nameof(CanDropFamily))]
     private async Task DropFamilyAsync(TreeViewDropInfo? info)
@@ -214,7 +220,8 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (info is null) return false;
         return info.Payload is FamilyLeafNodeViewModel
-            && info.Target is CategoryNodeViewModel;
+            && info.Target is CategoryNodeViewModel
+            && CanEdit;
     }
 
     private void ExpandAndSelectItem(string catalogItemId)

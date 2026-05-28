@@ -104,6 +104,17 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
     public async Task<bool> DeleteItemAsync(string id, CancellationToken ct = default)
     {
+        var dbRoot = _database.GetDatabaseRoot();
+        var familyDir = Path.Combine(dbRoot, "files", id);
+        var dirExists = Directory.Exists(familyDir);
+
+        // Attempt file deletion BEFORE database transaction.
+        // If files are locked, exception surfaces here and DB record remains intact.
+        if (dirExists)
+        {
+            await DeleteDirectoryWithRetryAsync(familyDir, ct).ConfigureAwait(false);
+        }
+
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
 
@@ -129,22 +140,10 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             throw;
         }
 
-        // File deletion happens AFTER transaction commit.
-        // If this fails, DB is already clean but user gets an error dialog.
-        if (rowsAffected > 0)
-        {
-            var dbRoot = _database.GetDatabaseRoot();
-            var familyDir = Path.Combine(dbRoot, "files", id);
-            if (Directory.Exists(familyDir))
-            {
-                DeleteDirectoryWithRetry(familyDir);
-            }
-        }
-
         return rowsAffected > 0;
     }
 
-    private static void DeleteDirectoryWithRetry(string path, int maxRetries = 3)
+    private static async Task DeleteDirectoryWithRetryAsync(string path, CancellationToken ct, int maxRetries = 5)
     {
         for (var i = 0; i < maxRetries; i++)
         {
@@ -160,16 +159,32 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             catch (IOException ex) when (i < maxRetries - 1)
             {
                 SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed to delete directory '{path}': {ex.Message}. Retrying...");
-                Thread.Sleep(200 * (i + 1));
+                await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException ex) when (i < maxRetries - 1)
             {
                 SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed (access denied) for '{path}': {ex.Message}. Retrying...");
-                Thread.Sleep(200 * (i + 1));
+                await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
             }
         }
 
-        throw new IOException($"Failed to delete family directory after {maxRetries} attempts: {path}. The file may be open in Revit or another application.");
+        // Final attempt: force GC to release any lingering WPF image handles before last try
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                RemoveReadOnlyAttributes(path);
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new IOException($"Failed to delete family directory after {maxRetries} attempts: {path}. The file may be open in Revit or another application. {ex.Message}");
+        }
     }
 
     private static void RemoveReadOnlyAttributes(string path)
