@@ -109,8 +109,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
                 runId));
         }
 
-        if (types.Count > 0)
-            await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, fileId, runId, types, ct);
+        await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, fileId, runId, types, ct);
 
         var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
         var attrByName = allAttrs.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
