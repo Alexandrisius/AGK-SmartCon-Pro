@@ -18,6 +18,7 @@
             </ResourceDictionary.MergedDictionaries>
 
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <converters:BoolToStaleForegroundConverter x:Key="StaleForegroundConverter"/>
 
             <Style x:Key="DangerIconButton" TargetType="Button">
                 <Setter Property="Background" Value="Transparent"/>
@@ -506,39 +507,21 @@
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding DisplayName}"
-                                       VerticalAlignment="Center">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsStale}" Value="True">
-                                                <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                            <TextBlock Text="{Binding VersionLabel, StringFormat=' {}({0})'}"
+                                       Foreground="{Binding IsStale, Converter={StaticResource StaleForegroundConverter}}"
+                                       VerticalAlignment="Center"/>
+                            
+                            <TextBlock Text="{Binding VersionLabel, StringFormat='{}({0})'}"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="10"
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
+                            
                             <TextBlock Text=" [Устарело]"
                                        Foreground="{DynamicResource WarningBrush}"
                                        FontSize="10"
                                        VerticalAlignment="Center"
-                                       Margin="4,0,0,0">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsStale}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                                       Margin="4,0,0,0"
+                                       Visibility="{Binding IsStale, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
                     </Grid>
                 </HierarchicalDataTemplate>

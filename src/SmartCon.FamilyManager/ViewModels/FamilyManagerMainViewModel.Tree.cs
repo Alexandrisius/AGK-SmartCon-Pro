@@ -66,11 +66,17 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var projectPath = _revitContext.GetDocument().PathName;
+                SmartConLogger.Info($"[StaleDebug] ProjectPath: {projectPath}");
                 if (!string.IsNullOrEmpty(projectPath))
                 {
                     var familyIds = results.Select(r => r.Id).ToList();
                     loadedVersionLabels = (Dictionary<string, string?>)
                         await _usageRepo.GetLoadedVersionLabelsAsync(projectPath, familyIds, ct);
+                    SmartConLogger.Info($"[StaleDebug] Loaded {loadedVersionLabels.Count} version labels for {familyIds.Count} families");
+                    foreach (var kvp in loadedVersionLabels)
+                    {
+                        SmartConLogger.Info($"[StaleDebug]   Family {kvp.Key} -> loaded version: {kvp.Value ?? "null"}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -95,15 +101,23 @@ public sealed partial class FamilyManagerMainViewModel
                 name: noCatLabel,
                 parentId: null,
                 fullPath: noCatLabel);
+            int uncategorizedLogCount = 0;
             foreach (var item in uncategorized)
             {
                 bool isStale = false;
+                string? loadedVersionLabel = null;
                 if (loadedVersionLabels is not null &&
-                    loadedVersionLabels.TryGetValue(item.Id, out var loadedVersionLabel) &&
+                    loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
                     loadedVersionLabel is not null &&
                     loadedVersionLabel != item.CurrentVersionLabel)
                 {
                     isStale = true;
+                }
+
+                if (uncategorizedLogCount < 3)
+                {
+                    SmartConLogger.Info($"[StaleDebug] Uncategorized '{item.Name}' (ID:{item.Id}) - CurrentVersion: {item.CurrentVersionLabel ?? "null"}, LoadedVersion: {loadedVersionLabel ?? "null"}, IsStale: {isStale}");
+                    uncategorizedLogCount++;
                 }
 
                 _noCategoryNode.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
@@ -167,15 +181,23 @@ public sealed partial class FamilyManagerMainViewModel
         if (itemsByCategory.TryGetValue(catNode.Id, out var items))
         {
             familyCount += items.Count;
+            int logCount = 0;
                 foreach (var item in items)
                 {
                     bool isStale = false;
+                    string? loadedVersionLabel = null;
                     if (loadedVersionLabels is not null &&
-                        loadedVersionLabels.TryGetValue(item.Id, out var loadedVersionLabel) &&
+                        loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
                         loadedVersionLabel is not null &&
                         loadedVersionLabel != item.CurrentVersionLabel)
                     {
                         isStale = true;
+                    }
+
+                    if (logCount < 3)
+                    {
+                        SmartConLogger.Info($"[StaleDebug] Family '{item.Name}' (ID:{item.Id}) - CurrentVersion: {item.CurrentVersionLabel ?? "null"}, LoadedVersion: {loadedVersionLabel ?? "null"}, IsStale: {isStale}");
+                        logCount++;
                     }
 
                     vm.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
