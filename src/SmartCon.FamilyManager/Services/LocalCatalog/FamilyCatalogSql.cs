@@ -344,6 +344,10 @@ internal static class FamilyCatalogSql
         {CreateDbUsers}
         """;
 
+    public const string MigrateV9AddLoadedVersionLabel = """
+        ALTER TABLE project_usage ADD COLUMN loaded_version_label TEXT
+        """;
+
     public const string CreateIndexes = """
         CREATE INDEX IF NOT EXISTS ix_catalog_items_normalized_name ON catalog_items (normalized_name);
         CREATE INDEX IF NOT EXISTS ix_catalog_items_category ON catalog_items (category_name);

@@ -36,6 +36,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IDbAccessControlService _accessControl;
     private readonly IFamilySearchService _familySearchService;
     private readonly IFamilyPlacementService _familyPlacementService;
+    private readonly IRevitFileInfoReader _fileInfoReader;
+    private readonly IFamilyMetadataExtractionService _metadataService;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -70,8 +72,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private int _currentRevitVersion;
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportFolderCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportDataCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportDataForCategoryCommand))]
@@ -108,7 +108,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IFamilyDataImportService dataImportService,
         IDbAccessControlService accessControl,
         IFamilySearchService familySearchService,
-        IFamilyPlacementService familyPlacementService)
+        IFamilyPlacementService familyPlacementService,
+        IRevitFileInfoReader fileInfoReader,
+        IFamilyMetadataExtractionService metadataService)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -129,6 +131,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _accessControl = accessControl;
         _familySearchService = familySearchService;
         _familyPlacementService = familyPlacementService;
+        _fileInfoReader = fileInfoReader;
+        _metadataService = metadataService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;

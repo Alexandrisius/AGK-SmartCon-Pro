@@ -33,6 +33,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         Autodesk.Revit.DB.Family? loadedFamily = null;
         bool success = false;
 
+        string? renameResult = null;
         _transactionService.RunInTransaction("Load Family", _ =>
         {
             bool loaded;
@@ -55,14 +56,17 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 try
                 {
                     family.Name = preferredName;
-                    SmartConLogger.Info($"[FamilyLoad] Renamed family to '{preferredName}'");
+                    renameResult = $"[FamilyLoad] Renamed family to '{preferredName}'";
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Info($"[FamilyLoad] Rename failed (non-fatal): {ex.Message}");
+                    renameResult = $"[FamilyLoad] Rename failed (non-fatal): {ex.Message}";
                 }
             }
         });
+
+        if (renameResult is not null)
+            SmartConLogger.Info(renameResult);
 
         if (success && loadedFamily is not null)
         {

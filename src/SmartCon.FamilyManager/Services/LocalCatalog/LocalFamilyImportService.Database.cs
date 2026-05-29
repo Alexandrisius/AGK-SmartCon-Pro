@@ -224,4 +224,131 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@normalizedTag", normalizedTag));
         await cmd.ExecuteNonQueryAsync(ct);
     }
+
+    /// <summary>
+    /// Finds the current version for a catalog item (by current_version_label).
+    /// </summary>
+    private async Task<FamilyCatalogVersion?> FindCurrentVersionAsync(string catalogItemId, CancellationToken ct)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT cv.* FROM catalog_versions cv
+            INNER JOIN catalog_items ci ON ci.id = cv.catalog_item_id AND ci.current_version_label = cv.version_label
+            WHERE cv.catalog_item_id = @itemId
+            LIMIT 1
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+            return null;
+
+        return new FamilyCatalogVersion(
+            Id: reader.GetString(reader.GetOrdinal("id")),
+            CatalogItemId: reader.GetString(reader.GetOrdinal("catalog_item_id")),
+            FileId: reader.GetString(reader.GetOrdinal("file_id")),
+            VersionLabel: reader.GetString(reader.GetOrdinal("version_label")),
+            Sha256: reader.GetString(reader.GetOrdinal("sha256")),
+            RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
+            TypesCount: reader.IsDBNull(reader.GetOrdinal("types_count"))
+                ? null
+                : reader.GetInt32(reader.GetOrdinal("types_count")),
+            ParametersCount: reader.IsDBNull(reader.GetOrdinal("parameters_count"))
+                ? null
+                : reader.GetInt32(reader.GetOrdinal("parameters_count")),
+            PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
+    }
+
+    /// <summary>
+    /// Overwrites the file for the current version without changing current_version_label.
+    /// Updates family_files.sha256 and size_bytes.
+    /// </summary>
+    private async Task<FamilyImportResult> OverwriteCurrentAsync(FamilyBatchImportItem item, CancellationToken ct)
+    {
+        var currentVersion = await FindCurrentVersionAsync(item.ExistingCatalogItemId!, ct);
+        if (currentVersion is null)
+        {
+            return new FamilyImportResult(
+                Success: false,
+                CatalogItemId: item.ExistingCatalogItemId,
+                VersionId: null,
+                FileId: null,
+                FileName: item.FileName,
+                VersionLabel: null,
+                ErrorMessage: "Current version not found");
+        }
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var tx = connection.BeginTransaction();
+
+        // Get current file path
+        using var pathCmd = connection.CreateCommand();
+        pathCmd.CommandText = "SELECT relative_path FROM family_files WHERE id = @fileId";
+        pathCmd.Parameters.Add(new SqliteParameter("@fileId", currentVersion.FileId));
+        var relativePath = await pathCmd.ExecuteScalarAsync(ct) as string;
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            tx.Rollback();
+            return new FamilyImportResult(
+                Success: false,
+                CatalogItemId: item.ExistingCatalogItemId,
+                VersionId: null,
+                FileId: null,
+                FileName: item.FileName,
+                VersionLabel: null,
+                ErrorMessage: "Current file path not found");
+        }
+
+        var absolutePath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
+        var metadata = await _metadataService.ExtractAsync(item.FilePath, ct);
+
+        try
+        {
+            // Copy file over existing
+            File.Copy(item.FilePath, absolutePath, overwrite: true);
+            File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+
+            // Update family_files
+            using var updateFileCmd = connection.CreateCommand();
+            updateFileCmd.CommandText = """
+                UPDATE family_files
+                SET sha256 = @sha256, size_bytes = @sizeBytes, file_name = @fileName, imported_at_utc = @importedAtUtc
+                WHERE id = @fileId
+                """;
+            updateFileCmd.Parameters.Add(new SqliteParameter("@fileId", currentVersion.FileId));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@sha256", metadata.Sha256));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@sizeBytes", metadata.FileSizeBytes));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", metadata.FileName));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@importedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+            await updateFileCmd.ExecuteNonQueryAsync(ct);
+
+            // Update catalog_items.updated_at_utc (current_version_label stays the same)
+            using var updateItemCmd = connection.CreateCommand();
+            updateItemCmd.CommandText = "UPDATE catalog_items SET updated_at_utc = @updatedAtUtc WHERE id = @itemId";
+            updateItemCmd.Parameters.Add(new SqliteParameter("@itemId", item.ExistingCatalogItemId));
+            updateItemCmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+            await updateItemCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            _database.Checkpoint();
+
+            return new FamilyImportResult(
+                Success: true,
+                CatalogItemId: item.ExistingCatalogItemId,
+                VersionId: currentVersion.Id,
+                FileId: currentVersion.FileId,
+                FileName: metadata.FileName,
+                VersionLabel: currentVersion.VersionLabel,
+                ErrorMessage: null,
+                WasNewVersion: false);
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
 }

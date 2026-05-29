@@ -68,12 +68,14 @@ public sealed partial class FamilyManagerMainViewModel
                     };
                     StatusMessage = msg;
 
+                    var projectPath = _revitContext.GetDocument().PathName;
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
                         CatalogItemId: selectedId,
                         VersionId: resolved.VersionId,
+                        LoadedVersionLabel: SelectedItem?.VersionLabel,
                         ProjectName: "Active Project",
-                        ProjectPath: string.Empty,
+                        ProjectPath: projectPath,
                         RevitMajorVersion: targetRevit,
                         Action: "Load",
                         CreatedAtUtc: DateTimeOffset.UtcNow);

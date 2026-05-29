@@ -216,14 +216,6 @@
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Cursor="Hand"/>
-                            <Button Content="{loc:Loc FM_ImportFolder}"
-                                    Command="{Binding ImportFolderCommand}"
-                                    MinWidth="140"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="10,6"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    Cursor="Hand"/>
                         </StackPanel>
                     </Border>
                 </Popup>
@@ -435,9 +427,6 @@
                     <MenuItem Header="{loc:Loc FM_LoadToProject}"
                               Command="{Binding LoadToProjectCommand}"
                               Style="{StaticResource ModernMenuItem}" />
-                    <MenuItem Header="{loc:Loc FM_ImportData}"
-                              Command="{Binding ImportDataCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
                     <MenuItem Header="{loc:Loc FM_Update}"
                               Command="{Binding UpdateFamilyCommand}"
                               Style="{StaticResource ModernMenuItem}" />
@@ -517,12 +506,39 @@
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding DisplayName}"
-                                       VerticalAlignment="Center"/>
+                                       VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsStale}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                             <TextBlock Text="{Binding VersionLabel, StringFormat=' {}({0})'}"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="10"
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
+                            <TextBlock Text=" [Устарело]"
+                                       Foreground="{DynamicResource WarningBrush}"
+                                       FontSize="10"
+                                       VerticalAlignment="Center"
+                                       Margin="4,0,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsStale}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </StackPanel>
                     </Grid>
                 </HierarchicalDataTemplate>

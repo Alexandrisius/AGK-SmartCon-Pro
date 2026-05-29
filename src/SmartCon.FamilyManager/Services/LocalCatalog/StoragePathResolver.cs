@@ -42,6 +42,12 @@ internal sealed class StoragePathResolver
         return Path.Combine(GetRevitFileDirectory(catalogItemId, versionLabel, revitMajorVersion), fileName);
     }
 
+    /// <summary>New flat path without r{revit} subfolder. Used for all new imports.</summary>
+    public string GetRfaFilePath(string catalogItemId, string versionLabel, string fileName)
+    {
+        return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), fileName);
+    }
+
     public string GetAssetsDirectory(string catalogItemId, string versionLabel)
     {
         return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), "assets");
@@ -74,10 +80,18 @@ internal sealed class StoragePathResolver
         _ => "other"
     };
 
+    /// <summary>Legacy path with r{revit} subfolder. Kept for backward compat when reading old files.</summary>
     public void EnsureFamilyDirectories(string catalogItemId, string versionLabel, int revitMajorVersion)
     {
         var revitDir = GetRevitFileDirectory(catalogItemId, versionLabel, revitMajorVersion);
         Directory.CreateDirectory(revitDir);
+    }
+
+    /// <summary>New flat path without r{revit} subfolder. Used for all new imports.</summary>
+    public void EnsureFamilyDirectories(string catalogItemId, string versionLabel)
+    {
+        var dir = GetVersionDirectory(catalogItemId, versionLabel);
+        Directory.CreateDirectory(dir);
     }
 
     public void EnsureAssetDirectory(string catalogItemId, string versionLabel, string assetTypeFolder)

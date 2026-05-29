@@ -31,7 +31,7 @@ public sealed class LocalProjectFamilyUsageRepositoryTests
         var (fixture, repo, itemId) = await CreateSeeded();
         using var _ = fixture;
 
-        var usage = new ProjectFamilyUsage("u1", itemId, null, "project.rvt", @"C:\proj.rvt", 2025, "Load", DateTimeOffset.UtcNow);
+        var usage = new ProjectFamilyUsage("u1", itemId, null, null, "project.rvt", @"C:\proj.rvt", 2025, "Load", DateTimeOffset.UtcNow);
         await repo.RecordUsageAsync(usage);
 
         var results = await repo.GetUsageForItemAsync(itemId);
@@ -45,8 +45,8 @@ public sealed class LocalProjectFamilyUsageRepositoryTests
         var (fixture, repo, itemId) = await CreateSeeded();
         using var _ = fixture;
 
-        await repo.RecordUsageAsync(new ProjectFamilyUsage("u1", itemId, null, "p", "p", 2025, "Load", DateTimeOffset.UtcNow));
-        await repo.RecordUsageAsync(new ProjectFamilyUsage("u2", itemId, null, "p", "p", 2025, "LoadAndPlace", DateTimeOffset.UtcNow));
+        await repo.RecordUsageAsync(new ProjectFamilyUsage("u1", itemId, null, null, "p", "p", 2025, "Load", DateTimeOffset.UtcNow));
+        await repo.RecordUsageAsync(new ProjectFamilyUsage("u2", itemId, null, null, "p", "p", 2025, "LoadAndPlace", DateTimeOffset.UtcNow));
 
         var results = await repo.GetUsageForItemAsync(itemId);
         Assert.Equal(2, results.Count);
@@ -59,8 +59,8 @@ public sealed class LocalProjectFamilyUsageRepositoryTests
         using var _ = fixture;
 
         var projPath = @"C:\Projects\ProjectA.rvt";
-        await repo.RecordUsageAsync(new ProjectFamilyUsage("u1", itemId, null, "ProjectA.rvt", projPath, 2025, "Load", DateTimeOffset.UtcNow));
-        await repo.RecordUsageAsync(new ProjectFamilyUsage("u2", itemId, null, "ProjectA.rvt", projPath, 2025, "Load", DateTimeOffset.UtcNow));
+        await repo.RecordUsageAsync(new ProjectFamilyUsage("u1", itemId, null, null, "ProjectA.rvt", projPath, 2025, "Load", DateTimeOffset.UtcNow));
+        await repo.RecordUsageAsync(new ProjectFamilyUsage("u2", itemId, null, null, "ProjectA.rvt", projPath, 2025, "Load", DateTimeOffset.UtcNow));
 
         var results = await repo.GetUsageForProjectAsync(projPath);
         Assert.Equal(2, results.Count);
@@ -84,7 +84,7 @@ public sealed class LocalProjectFamilyUsageRepositoryTests
 
         for (int i = 0; i < 5; i++)
         {
-            await repo.RecordUsageAsync(new ProjectFamilyUsage($"u{i}", itemId, null, "p", "p", 2025, "Load", DateTimeOffset.UtcNow));
+            await repo.RecordUsageAsync(new ProjectFamilyUsage($"u{i}", itemId, null, null, "p", "p", 2025, "Load", DateTimeOffset.UtcNow));
         }
 
         var results = await repo.GetUsageForItemAsync(itemId);

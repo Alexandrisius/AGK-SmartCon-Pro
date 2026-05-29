@@ -6,6 +6,7 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Id">Unique identifier.</param>
 /// <param name="CatalogItemId">Catalog item that was loaded.</param>
 /// <param name="VersionId">Version that was loaded.</param>
+/// <param name="LoadedVersionLabel">Version label (e.g. "v1") that was loaded, for stale detection.</param>
 /// <param name="ProjectName">Revit project file name.</param>
 /// <param name="ProjectPath">Revit project file path.</param>
 /// <param name="RevitMajorVersion">Revit version used for loading.</param>
@@ -15,6 +16,7 @@ public sealed record ProjectFamilyUsage(
     string Id,
     string CatalogItemId,
     string? VersionId,
+    string? LoadedVersionLabel,
     string? ProjectName,
     string? ProjectPath,
     int? RevitMajorVersion,

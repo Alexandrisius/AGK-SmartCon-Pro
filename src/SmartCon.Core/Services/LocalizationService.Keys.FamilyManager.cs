@@ -235,5 +235,24 @@ public static partial class LocalizationService
         ru["FM_ProfileDisabledTooltip"] = "Подключите базу данных для просмотра профиля"; en["FM_ProfileDisabledTooltip"] = "Connect a database to view profile";
         ru["FM_StatusNoDatabase"] = "База данных не подключена"; en["FM_StatusNoDatabase"] = "No database connected";
         ru["FM_FamilyDeleteInUse"] = "Не удалось удалить файлы семейства. Возможно, файл открыт в Revit или другом приложении. Закройте файл и попробуйте снова."; en["FM_FamilyDeleteInUse"] = "Failed to delete family files. The file may be open in Revit or another application. Close the file and try again.";
+
+        // Batch Import Dialog
+        ru["FM_BatchImport_Title"] = "Импорт семейств"; en["FM_BatchImport_Title"] = "Import Families";
+        ru["FM_BatchImport_FileName"] = "Имя файла"; en["FM_BatchImport_FileName"] = "File Name";
+        ru["FM_BatchImport_RevitVersion"] = "Версия Revit"; en["FM_BatchImport_RevitVersion"] = "Revit Version";
+        ru["FM_BatchImport_Size"] = "Размер"; en["FM_BatchImport_Size"] = "Size";
+        ru["FM_BatchImport_Status"] = "Статус"; en["FM_BatchImport_Status"] = "Status";
+        ru["FM_BatchImport_Action"] = "Действие"; en["FM_BatchImport_Action"] = "Action";
+        ru["FM_BatchImport_StatusNew"] = "Новое"; en["FM_BatchImport_StatusNew"] = "New";
+        ru["FM_BatchImport_StatusExisting"] = "Существующее"; en["FM_BatchImport_StatusExisting"] = "Existing";
+        ru["FM_BatchImport_StatusDuplicate"] = "Дубликат"; en["FM_BatchImport_StatusDuplicate"] = "Duplicate";
+        ru["FM_BatchImport_StatusError"] = "Ошибка"; en["FM_BatchImport_StatusError"] = "Error";
+        ru["FM_BatchImport_ActionIncrement"] = "Инкремент версии"; en["FM_BatchImport_ActionIncrement"] = "Increment Version";
+        ru["FM_BatchImport_ActionOverwrite"] = "Перезаписать текущую"; en["FM_BatchImport_ActionOverwrite"] = "Overwrite Current";
+        ru["FM_BatchImport_ActionSkip"] = "Пропустить"; en["FM_BatchImport_ActionSkip"] = "Skip";
+        ru["FM_BatchImport_Load"] = "Загрузить"; en["FM_BatchImport_Load"] = "Load";
+        ru["FM_BatchImport_Cancel"] = "Отмена"; en["FM_BatchImport_Cancel"] = "Cancel";
+        ru["FM_BatchImport_SelectAll"] = "Выбрать все"; en["FM_BatchImport_SelectAll"] = "Select All";
+        ru["FM_BatchImport_Stale"] = "Устарело"; en["FM_BatchImport_Stale"] = "Stale";
     }
 }

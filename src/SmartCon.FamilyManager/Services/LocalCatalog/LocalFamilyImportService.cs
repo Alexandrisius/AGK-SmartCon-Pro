@@ -236,6 +236,110 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ErrorCount: errorCount);
     }
 
+    public async Task<FamilyBatchImportResult> ImportBatchAsync(
+        IReadOnlyList<FamilyBatchImportItem> items,
+        string? categoryId,
+        IProgress<FamilyImportProgress>? progress,
+        CancellationToken ct = default)
+    {
+        await _migrator.MigrateAsync(ct);
+
+        var results = new List<FamilyImportResult>();
+        var successCount = 0;
+        var skippedCount = 0;
+        var errorCount = 0;
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var item = items[i];
+            
+            SmartConLogger.Info($"[BatchImport] File: {item.FileName}, Status: {item.Status}, Action: {item.Action}");
+
+            progress?.Report(new FamilyImportProgress(
+                CurrentFileIndex: i,
+                TotalFiles: items.Count,
+                CurrentFileName: item.FileName,
+                SuccessCount: successCount,
+                SkippedCount: skippedCount,
+                ErrorCount: errorCount));
+
+            if (item.Action == FamilyBatchImportAction.Skip)
+            {
+                skippedCount++;
+                results.Add(new FamilyImportResult(
+                    Success: true,
+                    CatalogItemId: item.ExistingCatalogItemId,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: item.FileName,
+                    VersionLabel: item.ExistingVersionLabel,
+                    ErrorMessage: null,
+                    WasSkippedAsDuplicate: true));
+                continue;
+            }
+
+            try
+            {
+                FamilyImportResult result;
+                if (item.Status == FamilyBatchImportStatus.New)
+                {
+                    var request = new FamilyImportRequest(
+                        item.FilePath,
+                        item.RevitMajorVersion,
+                        null, null, null, item.TargetCategoryId ?? categoryId);
+                    result = await ImportFileAsync(request, ct);
+                }
+                else
+                {
+                    if (item.Action == FamilyBatchImportAction.IncrementVersion)
+                    {
+                        var request = new FamilyUpdateRequest(
+                            item.ExistingCatalogItemId!,
+                            item.FilePath,
+                            item.RevitMajorVersion);
+                        result = await UpdateFamilyAsync(request, ct);
+                    }
+                    else
+                    {
+                        result = await OverwriteCurrentAsync(item, ct);
+                    }
+                }
+
+                results.Add(result);
+                if (result.Success) successCount++;
+                else errorCount++;
+            }
+            catch (Exception ex)
+            {
+                errorCount++;
+                results.Add(new FamilyImportResult(
+                    Success: false,
+                    CatalogItemId: null,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: item.FileName,
+                    VersionLabel: null,
+                    ErrorMessage: ex.Message));
+            }
+        }
+
+        progress?.Report(new FamilyImportProgress(
+            CurrentFileIndex: items.Count - 1,
+            TotalFiles: items.Count,
+            CurrentFileName: string.Empty,
+            SuccessCount: successCount,
+            SkippedCount: skippedCount,
+            ErrorCount: errorCount));
+
+        return new FamilyBatchImportResult(
+            Results: results,
+            TotalFiles: items.Count,
+            SuccessCount: successCount,
+            SkippedCount: skippedCount,
+            ErrorCount: errorCount);
+    }
+
     public async Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default)
     {
         await _migrator.MigrateAsync(ct);
@@ -340,8 +444,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
     {
         try
         {
-            _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel, revitVersion);
-            var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, revitVersion, metadata.FileName);
+            _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel);
+            var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, metadata.FileName);
             File.Copy(sourcePath, absolutePath, overwrite: true);
             File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
             var relativePath = _pathResolver.GetRelativePath(absolutePath);

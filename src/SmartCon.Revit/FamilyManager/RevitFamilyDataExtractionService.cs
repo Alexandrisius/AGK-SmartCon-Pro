@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -91,6 +92,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 try
                 {
                     familyDoc.Close(false);
+                    Marshal.ReleaseComObject(familyDoc);
                 }
                 catch (Exception ex)
                 {

@@ -16,4 +16,7 @@ public interface IProjectFamilyUsageRepository
 
     /// <summary>Get usage history for a project.</summary>
     Task<IReadOnlyList<ProjectFamilyUsage>> GetUsageForProjectAsync(string projectFingerprint, CancellationToken ct = default);
+
+    /// <summary>Get the latest loaded version label for each catalog item in the given project.</summary>
+    Task<IReadOnlyDictionary<string, string?>> GetLoadedVersionLabelsAsync(string projectFingerprint, IEnumerable<string> catalogItemIds, CancellationToken ct = default);
 }

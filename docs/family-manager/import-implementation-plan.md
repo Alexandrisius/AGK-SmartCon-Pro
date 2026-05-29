@@ -1,235 +1,412 @@
-# FamilyManager Import Implementation Plan v3
+# FamilyManager Import Implementation Plan v4 (Detailed)
 
-> **Статус:** Концепция  
+> **Статус:** Детализация завершена, готов к реализации  
 > **Дата:** 2026-05-29  
-> **Фокус:** Batch Import без Deep Scan, Stale marker, инкремент/перезапись
+> **База:** main @ 550f553 (v1.9.3)  
+> **Фокус:** Batch Import без Deep Scan, Stale marker, инкремент/перезапись, обратная совместимость путей
 
 ---
 
-## 1. Концепция
+## 1. Архитектурные ограничения (из ADR + инвариантов)
 
-**Простота:** Нет ES GUID, нет Deep Scanner, нет версионирования Revit в путях.
+**I-01:** Весь Revit API только через `IExternalEventHandler.Execute`. Batch Dialog UI — WPF thread. **OpenDocumentFile + Extract** — ExternalEvent. `BasicFileInfo.Extract` — статический метод, НЕ требует Revit runtime, можно вызывать из любого потока.
 
-**Идентификация:**
-- Семейство = имя файла (normalized_name в БД)
-- Версия = SHA256 (уникальный хэш содержимого файла)
+**I-09:** Core не вызывает Revit API. `BasicFileInfo.Extract` допустим в Core как чистый парсер файла (читается заголовок .rfa с диска, не требует Revit runtime).
 
-**Batch Dialog:**
-- Показывает ТОЛЬКО быстрые данные без открытия семейства (BasicFileInfo: версия Revit, имя файла, SHA256)
-- НЕ сканирует типы/параметры/категорию через OpenDocumentFile
-- После кнопки "Загрузить" → открываем семейство и извлекаем типы + атрибуты в БД через существующий экстрактор
+**I-10:** MVVM строго. `.xaml.cs` только `DataContext = viewModel`.
 
-**Stale Marker:**
-- В БД хранится `current_version_label` для каждого семейства
-- При импорте новой версии (инкремент) — автоматически обновляется `current_version_label`
-- Пользователи видят статус "Устарело" если загруженная версия != current_version_label
-- При перезаписи текущей версии (без инкремента) — stale НЕ приходит
+**ADR-015:** `current_version_label` в `catalog_items` — единственный источник текущей версии.
+
+**ADR-017:** `RevitFamilyDataExtractionService` использует `OpenDocumentFile`. **Критично:** добавить `Marshal.ReleaseComObject` после `Close(false)` (память не освобождается при batch >32 файлов).
+
+**ADR-018:** `async void FireAndForget` внутри `ExternalEvent.Raise()`. Не `async Task`.
+
+**ADR-022:** RBAC — `CanImport` проверяется перед открытием Batch Dialog.
 
 ---
 
-## 2. Матрица бизнес-кейсов
+## 2. Обратная совместимость путей хранения
 
-| # | Сценарий | SHA256 | Имя | В БД? | Статус | Действие по умолчанию |
-|---|----------|--------|-----|-------|--------|----------------------|
-| 1 | **Новое семейство** | Новый | Не найдено | Нет | Новое | Инкремент версии (создать v1) |
-| 2 | **Дубликат** | Совпадает | Любое | Да | Дубликат | Пропустить (авто) |
-| 3 | **Обновление** | Другой | Найдено | Да | Существующее | Инкремент версии (по умолчанию) |
-| 4 | **Мелкая правка** | Другой | Найдено | Да | Существующее | Перезаписать текущую (вручную) |
-| 5 | **Ошибка файла** | — | — | — | Ошибка | Пропустить |
+### Текущая ситуация
+- Старые файлы: `files/{catalogItemId}/{versionLabel}/r{revitMajorVersion}/{fileName}.rfa`
+- Новые файлы должны быть: `files/{catalogItemId}/{versionLabel}/{fileName}.rfa`
 
-**Правила:**
-1. SHA256 exact match → Дубликат (авто-skip, не показываем в диалоге или показываем серым)
-2. Имя не найдено в БД → Новое
-3. Имя найдено + SHA256 другой → Существующее (по умолчанию Инкремент)
+### Решение: двухпутевой резолвер (read-compatible, write-new)
 
----
+**Write-path (новые файлы):**
+- `StoragePathResolver.GetRfaFilePath` — убрать `r{revitMajorVersion}` сегмент
+- `StoragePathResolver.EnsureFamilyDirectories` — создавать только `{versionLabel}`, без `r{revit}`
+- `StoragePathResolver.GetRevitFileDirectory` — **deprecated**, оставить для чтения старых файлов
 
-## 3. Режимы импорта в Batch Dialog
+**Read-path (обратная совместимость):**
+- `LocalFamilyFileResolver.ResolveForLoadAsync` — сначала искать по новому пути, если не найден — fallback на старый путь с `r{revitMajorVersion}`
+- SQL запрос JOIN `family_files` → `relative_path` содержит путь; файл может лежать по старому или новому пути
+- `File.Exists` проверка делает fallback прозрачным
 
-| Режим | Что делает | Когда использовать |
-|-------|-----------|-------------------|
-| **Инкремент версии** (default) | Создаёт vN+1, новый файл, обновляет current_version_label | Любое обновление семейства |
-| **Перезаписать текущую** | Заменяет файл в текущей версии (v1), НЕ меняет current_version_label | Мелкая правка, не требует stale у пользователей |
-| **Пропустить** | Ничего | Авто для дубликатов |
+**Миграция:** не нужна. Старые файлы остаются на месте. При следующем `UpdateFamily` (Increment или Overwrite) файл будет записан по новому пути.
 
 ---
 
-## 4. Stale Marker (маркер устаревания)
+## 3. Batch Dialog — архитектура
+
+### Данные ДО диалога (WPF thread, async I/O)
+
+**Быстрый анализ файлов (без Revit API):**
+1. `OpenFileDialog.Multiselect = true` → массив путей
+2. Для каждого файла:
+   - `Sha256FileHasher.ComputeHashAsync` — SHA256
+   - `FileInfo.Length` — размер
+   - **Revit версия:** `BasicFileInfo.Extract(filePath).Format` — статический метод, не требует ExternalEvent, можно вызывать из WPF thread напрямую. Уже используется в `RevitFileInfoReader` без ExternalEvent.
+   
+   **Сбор данных:** WPF thread → SHA256 + FileInfo + BasicFileInfo.Extract → Batch Dialog с полными данными.
+
+**Дедупликация (SQLite, WPF thread):**
+- SHA256 exact match → `Skip` (авто, не показываем в диалоге или показываем серым)
+- `normalized_name` not in DB → `New` (default: Increment)
+- `normalized_name` in DB + SHA256 different → `Existing` (default: Increment)
+
+### Модели Core (новые файлы)
+
+**Файлы:**
+- `src/SmartCon.Core/Models/FamilyManager/FamilyBatchImportItem.cs` — row data: `FilePath`, `FileName`, `Sha256`, `RevitMajorVersion`, `FileSizeBytes`, `Status`, `ExistingCatalogItemId`, `ExistingVersionLabel`
+- `src/SmartCon.Core/Models/FamilyManager/FamilyBatchImportAction.cs` — enum: `IncrementVersion`, `OverwriteCurrent`, `Skip`
+- `src/SmartCon.Core/Models/FamilyManager/FamilyBatchImportStatus.cs` — enum: `New`, `Existing`, `Duplicate`, `Error`
+
+### UI (стиль Settings/ShareProject)
+
+**Файлы:**
+- `src/SmartCon.FamilyManager/Views/FamilyBatchImportView.xaml` — DialogWindowBase, таблица с колонками: Имя, Версия Revit, Размер, Статус, Действие (ComboBox)
+- `src/SmartCon.FamilyManager/ViewModels/FamilyBatchImportViewModel.cs` — команды: `ImportCommand`, `CancelCommand`, `SelectAllCommand`
+- `src/SmartCon.FamilyManager/ViewModels/FamilyBatchImportRow.cs` — per-row VM: `Action` (двусторонний биндинг), `AvailableActions` (зависит от статуса)
+
+**Поведение:**
+- `Duplicate` → только `Skip`, disabled
+- `New` → `IncrementVersion` (default), `Skip`
+- `Existing` → `IncrementVersion` (default), `OverwriteCurrent`, `Skip`
+- Кнопка "Загрузить" активна если есть хотя бы один элемент не-Skip
+
+### Диалоговый сервис
+
+Добавить в `IFamilyManagerDialogService`:
+```csharp
+bool? ShowBatchImportDialog(object viewModel);
+```
+
+Реализация через `IDialogPresenter` (как остальные MVVM-диалоги).
+
+---
+
+## 4. Pipeline импорта (после нажатия "Загрузить")
+
+### 4.1 ExternalEvent — подготовка данных
+
+```
+[Кнопка "Загрузить" в Batch Dialog]
+  ↓
+[Закрыть Dialog с Result=OK]
+  ↓
+[FamilyManagerMainViewModel.Import.cs]
+  ↓
+[ExternalEvent.Raise] — Revit UI thread
+```
+
+**Внутри ExternalEvent:**
+1. Для каждого файла с действием != Skip:
+   - `CopyToManagedStorageAsync` — новый путь (без `r{version}`)
+   - SQLite транзакция:
+     - `IncrementVersion` → `GetNextVersionLabelAsync` → `InsertVersionAsync` → `UpdateCatalogItemVersionAsync` (обновляет `current_version_label`)
+     - `OverwriteCurrent` → `UpdateFamilyFileAsync` (заменяет `family_files` запись для текущей версии) → `current_version_label` НЕ трогаем
+   - `_database.Checkpoint()`
+   - **Экстракция:** `app.OpenDocumentFile(rfaPath)` → `FamilyManager.Types/Parameters` → `familyDoc.Close(false)` + `Marshal.ReleaseComObject(familyDoc)`
+   - `FamilyDataImportService.SaveExtractionResultAsync` — сохраняет типы + атрибуты
+
+2. Обновить дерево: `FireAndForget(() => LoadTreeAsync())`
+
+### 4.2 Критичные изменения в существующих сервисах
+
+**`RevitFamilyDataExtractionService.cs` (строка 87-100):**
+- Добавить `Marshal.ReleaseComObject(familyDoc)` после `familyDoc.Close(false)`
+- Это предотвращает memory corruption при batch >32 файлов (см. Autodesk forum, Jeremy Tammik)
+
+**`LocalFamilyImportService.cs`:**
+- Новый публичный метод: `ImportBatchAsync(FamilyBatchImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct)`
+- `FamilyBatchImportRequest` содержит список `FamilyBatchImportItem` с выбранным `Action`
+- `ImportFileAsync` остаётся для backward compat, но внутри вызывает `ImportBatchAsync` с одним элементом
+
+---
+
+## 5. Stale Marker (маркер устаревания)
 
 ### Механизм
 
-```
-При импорте семейства (Инкремент версии):
-  1. Создаётся новая версия vN+1
-  2. Обновляется catalog_items.current_version_label = "vN+1"
-  3. У всех пользователей при Refresh — статус "Устарело" если их версия != current_version_label
+**При загрузке семейства в проект** (`LoadToProjectCommand` в `FamilyManagerMainViewModel.LoadPlace.cs`):
+- Записывать `loaded_version_label` в `project_usage`
+- Добавить поле `LoadedVersionLabel` в `ProjectFamilyUsage` (модель Core)
+- Миграция БД V9: `ALTER TABLE project_usage ADD COLUMN loaded_version_label TEXT`
 
-При импорте семейства (Перезаписать текущую):
-  1. Файл в текущей версии заменяется
-  2. current_version_label НЕ меняется
-  3. У пользователей статус НЕ меняется (так как версия та же)
-```
+**При Refresh / LoadTreeAsync:**
+- Для каждого семейства в дереве:
+  - Получить `current_version_label` из `catalog_items` (уже есть в `FamilyCatalogItemRow`)
+  - Получить последний `loaded_version_label` из `project_usage` для текущего проекта (`project_path = doc.PathName` fingerprint)
+  - Если `loaded_version_label != current_version_label` → `IsStale = true`
 
 ### Отображение в UI
-- Дерево семейств: иконка/цвет "Устарело" рядом с именем
-- Статус обновляется по кнопке Refresh или при любом действии в FM
-- Нет необходимости сканировать файлы в проекте — только сравнение версий в БД
+
+**`FamilyLeafNodeViewModel.cs`:**
+- Добавить свойство `IsStale` (вычисляемое при создании в `BuildCategoryNode`)
+- Добавить свойство `LoadedVersionLabel`
+
+**`FamilyManagerPaneControl.xaml` (строка 515-528):**
+- `HierarchicalDataTemplate` для `FamilyLeafNodeViewModel`:
+  - Если `IsStale` → добавить иконку (например, оранжевый круг/треугольник) или изменить цвет текста на оранжевый
+  - Текст: `"{DisplayName} (v{VersionLabel})"` → если stale добавить `" [Устарело]"`
+
+**`FamilyManagerMainViewModel.Tree.cs` (строка 126-170):**
+- `BuildCategoryNode` → при создании `FamilyLeafNodeViewModel` заполнять `IsStale`
+- Для получения stale-статуса batch-ом: добавить метод `GetLoadedVersionLabelsAsync(List<string> catalogItemIds)` в `IProjectFamilyUsageRepository`
 
 ---
 
-## 5. Хранение файлов
+## 6. Удаление команд из UI
 
-```
-files/{catalogItemId}/{versionLabel}/{fileName}
-```
+### Удалить
 
-- Нет подпапки `r{revitVersion}`
-- `revit_major_version` в БД только для информации
+**`FamilyManagerPaneControl.xaml` (строка 219-226):**
+- Удалить кнопку `FM_ImportFolder` из Popup
+- Popup остаётся с одной кнопкой `FM_ImportFile` (пока placeholder для будущих команд: системные семейства, активное семейство)
 
----
+**`FamilyManagerPaneControl.xaml` (строка 438-440):**
+- Удалить пункт `FM_ImportData` из `FamilyLeafNodeContextMenu`
 
-## 6. Pipeline импорта
+**`FamilyManagerMainViewModel.Import.cs`:**
+- Удалить метод `ImportFolderAsync()` (команда `ImportFolderCommand`)
+- Удалить метод `ImportData()` (команда `ImportDataCommand`)
+- Удалить приватные хелперы `ImportFolder`, `ImportFile` (если не используются)
 
-```
-[Кнопка "Импорт файлов"]
-  ↓
-[OpenFileDialog — Multiselect .rfa]
-  ↓
-[Быстрый анализ файлов] (async I/O, без Revit API)
-  • SHA256
-  • Имя файла
-  • Версия Revit (BasicFileInfo.Extract)
-  • Размер файла
-  ↓
-[Batch Dialog]
-  • Показывает файлы со статусом (Новое / Существующее / Дубликат)
-  • Пользователь выбирает категорию и режим (Инкремент / Перезапись / Пропустить)
-  • По умолчанию: Инкремент для новых и существующих
-  ↓
-[Кнопка "Загрузить"]
-  ↓
-[ExternalEvent — импорт]
-  Для каждого файла:
-    • CopyToStorage (без r{version})
-    • Обновить БД (новая версия или перезапись)
-    • Если Инкремент → обновить current_version_label (trigger stale для пользователей)
-    • Открыть семейство через OpenDocumentFile()
-    • Извлечь типоразмеры + атрибуты через существующий экстрактор
-    • Сохранить в БД (family_types, extracted_attribute_values)
-  ↓
-[Закрыть диалог, обновить дерево]
-```
+**`FamilyManagerMainViewModel.cs` (строка 73-74):**
+- Убрать `NotifyCanExecuteChangedFor` для `ImportFolderCommand` и `ImportDataCommand`
+
+### Оставить
+
+- `ImportFilesCommand` — теперь открывает Batch Dialog
+- `ImportFileToCategoryCommand` — остаётся, тоже через Batch Dialog
+- `ImportFolderToCategoryCommand` — остаётся в контексте категории (другой сценарий)
+- `ImportDataForCategoryCommand` — остаётся, но будет переименован/переделан позже
+- `UpdateFamilyCommand` — теперь тоже открывает Batch Dialog (forced Existing mode)
 
 ---
 
-## 7. Что УДАЛЯЕМ
+## 7. Изменённые файлы (список)
 
-```
-❌ FamilyCatalogSchema/Storage        — ES GUID не нужен
-❌ IFamilyDeepScanner / RevitFamilyDeepScanner  — не нужен (нет сканирования перед диалогом)
-❌ family_stable_guid в БД            — не нужен
-❌ r{revitVersion} в путях            — не нужен
-❌ ImportFolderAsync                  — заменён на мультиселект
-❌ "Импорт данных" команда            — переносится в загрузку семейства
-❌ AddRevitVersion действие           — не нужно
-```
+### Core (модели)
+| Файл | Изменение |
+|------|-----------|
+| `src/SmartCon.Core/Models/FamilyManager/FamilyBatchImportItem.cs` | **Новый** — row data для Batch Dialog |
+| `src/SmartCon.Core/Models/FamilyManager/FamilyBatchImportAction.cs` | **Новый** — enum: Increment, Overwrite, Skip |
+| `src/SmartCon.Core/Models/FamilyManager/FamilyBatchImportStatus.cs` | **Новый** — enum: New, Existing, Duplicate, Error |
+| `src/SmartCon.Core/Models/FamilyManager/ProjectFamilyUsage.cs` | Добавить `LoadedVersionLabel` |
+| `src/SmartCon.Core/Models/FamilyManager/FamilyImportRequest.cs` | Добавить `BatchAction`? (опционально) |
+
+### Core (интерфейсы)
+| Файл | Изменение |
+|------|-----------|
+| `src/SmartCon.Core/Services/Interfaces/IFamilyImportService.cs` | Добавить `ImportBatchAsync` |
+| `src/SmartCon.Core/Services/Interfaces/IFamilyManagerDialogService.cs` | Добавить `ShowBatchImportDialog` |
+| `src/SmartCon.Core/Services/Interfaces/IProjectFamilyUsageRepository.cs` | Добавить `GetLoadedVersionLabelsAsync` |
+
+### FamilyManager (сервисы)
+| Файл | Изменение |
+|------|-----------|
+| `src/SmartCon.FamilyManager/Services/LocalCatalog/StoragePathResolver.cs` | Убрать `r{version}` из write-путей |
+| `src/SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFileResolver.cs` | Fallback на старые пути при чтении |
+| `src/SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportService.cs` | Добавить `ImportBatchAsync` с Increment/Overwrite/Skip |
+| `src/SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportService.Database.cs` | Добавить `OverwriteCurrentAsync` (UPDATE family_files для текущей версии) |
+| `src/SmartCon.FamilyManager/Services/LocalCatalog/LocalProjectFamilyUsageRepository.cs` | Добавить `GetLoadedVersionLabelsAsync`, обновить `RecordUsageAsync` |
+| `src/SmartCon.FamilyManager/Services/LocalCatalog/FamilyCatalogSql.cs` | Миграция V9: `project_usage.loaded_version_label` |
+| `src/SmartCon.FamilyManager/Services/LocalCatalog/LocalCatalogMigrator.cs` | Добавить V9 миграцию |
+| `src/SmartCon.FamilyManager/Services/FamilyManagerDialogService.cs` | Реализовать `ShowBatchImportDialog` |
+
+### FamilyManager (ViewModels)
+| Файл | Изменение |
+|------|-----------|
+| `src/SmartCon.FamilyManager/ViewModels/FamilyBatchImportViewModel.cs` | **Новый** |
+| `src/SmartCon.FamilyManager/ViewModels/FamilyBatchImportRow.cs` | **Новый** |
+| `src/SmartCon.FamilyManager/ViewModels/FamilyManagerMainViewModel.cs` | Добавить `IRevitFileInfoReader` в конструктор для сбора Revit-версий файлов |
+| `src/SmartCon.FamilyManager/ViewModels/FamilyManagerMainViewModel.Import.cs` | Batch Dialog для ImportFiles + UpdateFamily; удалить ImportFolder, ImportData |
+| `src/SmartCon.FamilyManager/ViewModels/FamilyManagerMainViewModel.Tree.cs` | Добавить IsStale в FamilyLeafNodeViewModel |
+| `src/SmartCon.FamilyManager/ViewModels/FamilyLeafNodeViewModel.cs` | Добавить `IsStale`, `LoadedVersionLabel` |
+
+### FamilyManager (Views)
+| Файл | Изменение |
+|------|-----------|
+| `src/SmartCon.FamilyManager/Views/FamilyBatchImportView.xaml` | **Новый** |
+| `src/SmartCon.FamilyManager/Views/FamilyBatchImportView.xaml.cs` | **Новый** (только `DataContext = viewModel`) |
+| `src/SmartCon.FamilyManager/Views/FamilyManagerPaneControl.xaml` | Удалить ImportFolder из Popup, удалить ImportData из FamilyLeafNodeContextMenu |
+
+### Revit (экстрактор)
+| Файл | Изменение |
+|------|-----------|
+| `src/SmartCon.Revit/FamilyManager/RevitFamilyDataExtractionService.cs` | Добавить `Marshal.ReleaseComObject(familyDoc)` |
+
+### Локализация
+| Файл | Изменение |
+|------|-----------|
+| `src/SmartCon.Core/Services/LocalizationService.Keys.FamilyManager.cs` | Добавить строки Batch Dialog (~20 ключей) |
+
+### DI
+| Файл | Изменение |
+|------|-----------|
+| `src/SmartCon.App/DI/ServiceRegistrar.cs` | Зарегистрировать BatchImport VM + View |
 
 ---
 
-## 8. Что СОЗДАЁМ / МЕНЯЕМ
+## 8. Миграция БД
 
-### Новые файлы
-```
-SmartCon.Core/Models/FamilyManager/FamilyBatchImportItem.cs      # Row data
-SmartCon.Core/Models/FamilyManager/FamilyBatchImportAction.cs    # Enum: Increment, Overwrite, Skip
-SmartCon.Core/Models/FamilyManager/FamilyBatchImportStatus.cs    # Enum: New, Existing, Duplicate, Error
-SmartCon.Core/Models/FamilyManager/FamilyBatchImportActionOption.cs  # Display wrapper
-SmartCon.FamilyManager/ViewModels/FamilyBatchImportViewModel.cs  # Dialog VM
-SmartCon.FamilyManager/ViewModels/FamilyBatchImportRow.cs        # Row VM
-SmartCon.FamilyManager/Views/FamilyBatchImportView.xaml          # Dialog UI (стиль Settings/ShareProject)
+### Schema V9
+
+```sql
+ALTER TABLE project_usage ADD COLUMN loaded_version_label TEXT;
 ```
 
-### Изменённые файлы
-```
-StoragePathResolver.cs             # Убрать r{version}
-FamilyCatalogSql.cs                # Убрать revit_version из UNIQUE
-LocalFamilyImportService.cs        # Инкремент / Перезапись, без ES
-LocalFamilyImportService.Database.cs # UpdateVersion, FindByName
-FamilyManagerMainViewModel.Import.cs # BatchDialog для Import + UpdateFamily
-FamilyManagerMainViewModel.Tree.cs   # Stale marker отображение
-ServiceRegistrar.cs                # +BatchImport dialog
-StringLocalization.cs              # Локализация Batch Dialog
-LocalizationService.Keys.FamilyManager.cs  # RU/EN строки
-```
+**Мотивация:** stale marker требует знать какая версия была загружена в проект. `version_id` (UUID) нечитаем для сравнения. `version_label` ("v1", "v2") — human-readable и сравнимый.
 
 ---
 
-## 9. Дедупликация
+## 9. Дедупликация — точный алгоритм
 
-```csharp
-1. Вычислить SHA256
-2. Поискать SHA256 в БД (family_files.sha256)
-   → Найден? → Дубликат (Skip)
-3. Нормализовать имя файла
-4. Поискать normalized_name в catalog_items
-   → Найдено? → Существующее (по умолчанию Инкремент)
-   → Не найдено? → Новое (по умолчанию Инкремент)
 ```
+Для каждого выбранного файла:
+  1. sha256 = Sha256FileHasher.ComputeHash(filePath)
+  2. existingByHash = SELECT cv.* FROM catalog_versions cv
+                      INNER JOIN family_files ff ON ff.id = cv.file_id
+                      WHERE ff.sha256 = @sha256
+                      LIMIT 1
+     → Если найден → Status = Duplicate, Action = Skip (forced)
+  
+  3. normalizedName = FamilyNameNormalizer.Normalize(Path.GetFileNameWithoutExtension(filePath))
+  4. existingByName = SELECT * FROM catalog_items WHERE normalized_name = @normalizedName LIMIT 1
+     → Если найден → Status = Existing, Action = IncrementVersion (default)
+     → Если не найден → Status = New, Action = IncrementVersion (default)
+```
+
+**Важно:** Дедупликация по SHA256 — **глобальная**, не per-family. Если тот же файл был импортирован под другим именем — это дубликат.
 
 ---
 
-## 10. Этапы реализации
+## 10. Stale Marker — точный алгоритм
 
-### Этап 1: Убрать r{version} из путей (0.5 ч)
-- [ ] StoragePathResolver — убрать revitMajorVersion
+```
+При загрузке семейства в проект (LoadToProject / LoadAndPlace):
+  1. Получить current_version_label из catalog_items
+  2. INSERT INTO project_usage (... loaded_version_label) VALUES (... 'v2')
 
-### Этап 2: Batch Dialog UI (2 ч)
-- [ ] FamilyBatchImportView — стиль Settings/ShareProject (таблица, кнопки, прогресс)
-- [ ] FamilyBatchImportViewModel / Row — данные, команды
-- [ ] Локализация всех строк
+При RefreshTreeAsync / LoadTreeAsync:
+  1. Получить projectFingerprint = doc.PathName (или hash)
+  2. Получить все записи project_usage для текущего проекта:
+     SELECT catalog_item_id, loaded_version_label FROM project_usage
+     WHERE project_path = @fingerprint
+     ORDER BY created_at_utc DESC
+  3. Для каждого FamilyLeafNodeViewModel:
+     loaded = map[catalogItemId]
+     current = row.CurrentVersionLabel
+     IsStale = loaded is not null && loaded != current
+```
 
-### Этап 3: ImportService — Инкремент и Перезапись (2 ч)
-- [ ] ImportBatchAsync — switch по режимам
-- [ ] IncrementVersionAsync — новая версия, обновление current_version_label
-- [ ] OverwriteCurrentAsync — замена файла, БЕЗ изменения current_version_label
-- [ ] Дедупликация по SHA256
+**Оптимизация:** Batch-запрос `GetLoadedVersionLabelsAsync(List<string> itemIds)` вместо N+1.
 
-### Этап 4: Интеграция экстрактора (1.5 ч)
-- [ ] При импорте: после CopyToStorage → открыть семейство → извлечь типы + атрибуты
-- [ ] Использовать существующий сервис экстракции (IFamilyDataExtractionService)
-- [ ] Удалить старую команду "Импорт данных"
+---
 
-### Этап 5: Stale Marker (1 ч)
-- [ ] Добавить поле/логику для current_version_label
-- [ ] Обновлять при Инкременте, НЕ обновлять при Перезаписи
-- [ ] Отображать в дереве (иконка/цвет)
-- [ ] Обновление по Refresh
+## 11. Этапы реализации (обновлённые оценки)
 
-### Этап 6: ViewModel + DI (1 ч)
-- [ ] ImportFilesAsync → BatchDialog (multiselect)
-- [ ] UpdateFamilyAsync → BatchDialog (forced Existing)
+### Этап 1: Обратная совместимость путей + ReleaseComObject (0.5 ч)
+- [ ] `StoragePathResolver` — убрать `r{version}` из write-путей, оставить read-fallback
+- [ ] `LocalFamilyFileResolver` — fallback на старые пути
+- [ ] `RevitFamilyDataExtractionService` — добавить `Marshal.ReleaseComObject`
+
+### Этап 2: Миграция БД V9 (0.5 ч)
+- [ ] `FamilyCatalogSql` — добавить `loaded_version_label`
+- [ ] `LocalCatalogMigrator` — V9 миграция
+- [ ] `ProjectFamilyUsage` — добавить поле
+- [ ] `LocalProjectFamilyUsageRepository` — обновить методы
+
+### Этап 3: Модели Core + Локализация (0.5 ч)
+- [ ] `FamilyBatchImportItem`, `FamilyBatchImportAction`, `FamilyBatchImportStatus`
+- [ ] Обновить `IFamilyImportService`, `IFamilyManagerDialogService`, `IProjectFamilyUsageRepository`
+- [ ] Локализация Batch Dialog (~20 ключей)
+
+### Этап 4: Batch Dialog UI (2 ч)
+- [ ] `FamilyBatchImportView.xaml` (стиль Settings/ShareProject)
+- [ ] `FamilyBatchImportViewModel` + `FamilyBatchImportRow`
+- [ ] `FamilyManagerDialogService.ShowBatchImportDialog`
 - [ ] DI регистрация
 
-### Этап 7: Тесты (1 ч)
+### Этап 5: ImportService — Batch с Increment/Overwrite (2 ч)
+- [ ] `LocalFamilyImportService.ImportBatchAsync`
+- [ ] `OverwriteCurrentAsync` — замена файла без смены current_version_label
+- [ ] Интеграция экстрактора внутри ExternalEvent
+
+### Этап 6: ViewModel — Batch Dialog в Import + Update (1 ч)
+- [ ] `ImportFilesAsync` → открыть Batch Dialog → ExternalEvent импорт
+- [ ] `UpdateFamilyCommand` → открыть Batch Dialog (forced Existing mode)
+- [ ] Удалить `ImportFolderAsync`, `ImportData` из VM
+
+### Этап 7: Stale Marker (1 ч)
+- [ ] `FamilyLeafNodeViewModel.IsStale`
+- [ ] `FamilyManagerMainViewModel.Tree.cs` — batch-запрос loaded_version_label
+- [ ] `FamilyManagerPaneControl.xaml` — визуальная индикация stale
+
+### Этап 8: UI cleanup — удаление команд (0.5 ч)
+- [ ] Удалить ImportFolder из Popup
+- [ ] Удалить ImportData из FamilyLeafNodeContextMenu
+- [ ] Убрать CanExecute для удалённых команд
+
+### Этап 9: Тесты (1 ч)
 - [ ] Инкремент версии
 - [ ] Перезапись текущей
 - [ ] Дедупликация SHA256
 - [ ] Stale marker
+- [ ] Обратная совместимость путей
 
 **Итого: ~9 часов**
 
 ---
 
-## 11. Критерии готовности
+## 12. Критерии готовности
 
 - [ ] Batch Dialog в стиле Settings/ShareProject (таблица, кнопки, локализация)
-- [ ] Данные в Batch Dialog без OpenDocumentFile (только BasicFileInfo)
+- [ ] Данные в Batch Dialog без OpenDocumentFile (BasicFileInfo + SHA256 в WPF thread, OpenDocumentFile только после "Загрузить")
 - [ ] Режимы: Инкремент версии (default), Перезаписать текущую, Пропустить
-- [ ] Дедупликация по SHA256 (авто-skip)
+- [ ] Дедупликация по SHA256 (авто-skip, глобальная)
 - [ ] Инкремент создаёт vN+1 и обновляет current_version_label
 - [ ] Перезапись заменяет файл, НЕ меняет current_version_label
 - [ ] Stale marker отображается в дереве при устаревшей версии
-- [ ] Типы и атрибуты извлекаются при импорте (через существующий экстрактор)
-- [ ] Команда "Импорт данных" удалена
-- [ ] Импорт папки удалён, мультиселект работает
-- [ ] Все unit-тесты проходят
+- [ ] Типы и атрибуты извлекаются при импорте (через существующий экстрактор + ReleaseComObject)
+- [ ] Команда "Импорт данных" удалена из контекстного меню
+- [ ] Команда "Импорт папки" удалена из выпадающего меню (стрелочка остаётся)
+- [ ] Обратная совместимость: старые файлы в `r{version}` читаются, новые пишутся без `r{version}`
+- [ ] Все unit-тесты проходят (1105/1105)
+- [ ] Сборка R24 + R25 = 0 errors, 0 warnings
+
+---
+
+## 13. Риски и mitigation
+
+| Риск | Вероятность | Mitigation |
+|------|-------------|------------|
+| BasicFileInfo.Extract падает на файлах из будущей версии Revit | Средняя | Оборачивать в try/catch, показывать "Unknown version" |
+| Batch import >32 файлов → замедление OpenDocumentFile | Средняя | Разбивать на батчи по 25 файлов с `Task.Delay(100)` между ними |
+| Memory leak при batch extraction без ReleaseComObject | Высокая | **Уже добавлено в план** — Marshal.ReleaseComObject |
+| Старые пути `r{version}` не находятся после изменения резолвера | Низкая | Fallback в `LocalFamilyFileResolver` + тесты |
+| Stale marker тормозит LoadTreeAsync (N+1 запросов) | Средняя | Batch-метод `GetLoadedVersionLabelsAsync` |
+
+---
+
+## 14. Связанная документация
+
+- `docs/adr/015-familymanager-published-storage.md` — Version → Revit-Version Model
+- `docs/adr/017-familymanager-attribute-extraction.md` — OpenDocumentFile pattern
+- `docs/adr/018-familymanager-refactoring.md` — async void FireAndForget, DI patterns
+- `docs/adr/022-familymanager-rbac.md` — CanImport / CanEdit matrix
+- `docs/invariants.md` — I-01 (ExternalEvent), I-09 (Core purity), I-10 (MVVM)
+- `.agents/skills/revit-api-best-practice` — Transaction patterns, memory leaks
+- `.agents/skills/revit-wpf-compat` — Application.Current is null

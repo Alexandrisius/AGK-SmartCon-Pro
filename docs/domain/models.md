@@ -1756,6 +1756,64 @@ public sealed record FamilyBatchImportResult(
     int ErrorCount);
 ```
 
+### FamilyBatchImportItem
+
+Одна строка (файл) в диалоге пакетного импорта. Содержит метаданные файла, статус и выбранное пользователем действие.
+
+**Файл:** `FamilyBatchImportItem.cs`
+
+```csharp
+public sealed record FamilyBatchImportItem(
+    string FilePath,
+    string FileName,
+    string Sha256,
+    int RevitMajorVersion,
+    long FileSizeBytes,
+    FamilyBatchImportStatus Status,
+    string? ExistingCatalogItemId = null,
+    string? ExistingVersionLabel = null,
+    string? TargetCategoryId = null)
+{
+    public FamilyBatchImportAction Action { get; set; }
+    public string? TargetCategoryId { get; set; }
+}
+```
+
+---
+
+### FamilyBatchImportStatus
+
+Статус файла в диалоге пакетного импорта. Определяется на основе сравнения SHA256 с каталогом.
+
+**Файл:** `FamilyBatchImportStatus.cs`
+
+```csharp
+public enum FamilyBatchImportStatus
+{
+    New,        // Новое семейство, отсутствует в каталоге
+    Existing,   // Семейство есть в каталоге, но SHA256 отличается
+    Duplicate,  // Точное совпадение SHA256 — пропускается автоматически
+    Error       // Ошибка чтения файла
+}
+```
+
+---
+
+### FamilyBatchImportAction
+
+Действие, выбранное пользователем для файла в пакетном импорте.
+
+**Файл:** `FamilyBatchImportAction.cs`
+
+```csharp
+public enum FamilyBatchImportAction
+{
+    IncrementVersion,  // Создать новую версию (vN+1), обновить current_version_label
+    OverwriteCurrent,  // Заменить файл текущей версии без изменения current_version_label
+    Skip               // Пропустить файл
+}
+```
+
 ---
 
 ### FamilyFolderImportRequest
