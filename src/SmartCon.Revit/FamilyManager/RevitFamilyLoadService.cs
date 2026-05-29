@@ -138,7 +138,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             {
                 var fileFormat = basicInfo.Format ?? "unknown";
                 var isCurrentVersion = basicInfo.IsSavedInCurrentVersion;
-                SmartConLogger.Freeze($"FamilyLoad: File version={fileFormat}, IsCurrentVersion={isCurrentVersion}, LaterVersion={basicInfo.IsSavedInLaterVersion}");
+                SmartConLogger.Info($"[FamilyLoad] File version={fileFormat}, IsCurrentVersion={isCurrentVersion}, LaterVersion={basicInfo.IsSavedInLaterVersion}");
 
                 if (basicInfo.IsSavedInLaterVersion)
                 {
@@ -149,7 +149,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
 
                 if (!isCurrentVersion)
                 {
-                    SmartConLogger.Freeze($"FamilyLoad: UPGRADE DIALOG EXPECTED for {normalizedPath} (version {fileFormat})");
+                    SmartConLogger.Info($"[FamilyLoad] UPGRADE DIALOG EXPECTED for {normalizedPath} (version {fileFormat})");
                 }
             }
 
