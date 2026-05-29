@@ -52,6 +52,22 @@ internal sealed class LocalCatalogMigrator
         await MigrateV6Async(connection, ct);
         await MigrateV7Async(connection, ct);
 
+        // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
+        try
+        {
+            using var fkOff = connection.CreateCommand();
+            fkOff.CommandText = "PRAGMA foreign_keys=OFF;";
+            await fkOff.ExecuteNonQueryAsync(ct);
+
+            await MigrateV8Async(connection, ct);
+        }
+        finally
+        {
+            using var fkOn = connection.CreateCommand();
+            fkOn.CommandText = "PRAGMA foreign_keys=ON;";
+            await fkOn.ExecuteNonQueryAsync(ct);
+        }
+
         await EnsureCriticalColumnsAsync(connection, ct);
     }
 
@@ -292,6 +308,23 @@ internal sealed class LocalCatalogMigrator
         await versionCmd.ExecuteNonQueryAsync(ct);
     }
 
+    private static async Task MigrateV8Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 8) return;
+
+        if (await IsColumnNotNullAsync(connection, "extracted_attribute_values", "attribute_id", ct))
+        {
+            using var recreateCmd = connection.CreateCommand();
+            recreateCmd.CommandText = FamilyCatalogSql.MigrateV8RecreateExtractedAttributeValues;
+            await recreateCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '8' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -333,6 +366,12 @@ internal sealed class LocalCatalogMigrator
             using var cmd = connection.CreateCommand();
             cmd.CommandText = FamilyCatalogSql.CreateExtractedAttributeValues;
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+        else if (await IsColumnNotNullAsync(connection, "extracted_attribute_values", "attribute_id", ct))
+        {
+            using var recreateCmd = connection.CreateCommand();
+            recreateCmd.CommandText = FamilyCatalogSql.MigrateV8RecreateExtractedAttributeValues;
+            await recreateCmd.ExecuteNonQueryAsync(ct);
         }
 
         if (!await ColumnExistsAsync(connection, "family_types", "version_id", ct))
@@ -382,5 +421,19 @@ internal sealed class LocalCatalogMigrator
         cmd.Parameters.Add(new SqliteParameter("@name", tableName));
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is long l && l > 0;
+    }
+
+    private static async Task<bool> IsColumnNotNullAsync(SqliteConnection connection, string tableName, string columnName, CancellationToken ct)
+    {
+        if (!await TableExistsAsync(connection, tableName, ct))
+            return false;
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"SELECT \"notnull\" FROM pragma_table_info('{tableName}') WHERE name = '{columnName}'";
+        var result = await cmd.ExecuteScalarAsync(ct);
+
+        if (result is long l) return l == 1;
+        if (result is int i) return i == 1;
+        return false;
     }
 }

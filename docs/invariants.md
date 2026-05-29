@@ -254,7 +254,7 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 **Запрещено:**
 - Использовать REF (`ref_search_documentation`) для поиска в интернете, форумов, блогов, StackOverflow
 - Использовать REF для примеров кода, если нет конкретной библиотеки/NuGet-пакета
-- Использовать REF для Revit API — только skill `revit-api`
+- Использовать REF для Revit API — только MCP `revit-api-docs`
 
 **Разрешено (REF):**
 - Версии NuGet-пакетов: `"CommunityToolkit.Mvvm NuGet latest version C#"`
@@ -269,4 +269,4 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 **Pipeline:**
 1. Нужен пример кода → `get_code_context_exa` (если доступен) → `exa_web_search_exa`
 2. Нужна версия пакета → `ref_search_documentation`
-3. Нужна сигнатура Revit API → `revit-api` skill
+3. Нужна сигнатура Revit API → MCP `revit-api-docs`

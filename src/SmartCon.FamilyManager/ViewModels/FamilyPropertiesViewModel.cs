@@ -4,13 +4,14 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Helpers;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, ISaveableViewModel
 {
     private readonly string _catalogItemId;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
@@ -82,6 +83,22 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private IReadOnlyList<EffectiveCategoryAttribute> _effectiveAttributes = [];
     private IReadOnlyList<ExtractedAttributeValue> _allValues = [];
 
+    // Original values for dirty tracking (primary tab only)
+    private readonly string _originalName;
+    private readonly string? _originalDescription;
+    private readonly string? _originalCategoryId;
+    private readonly string _originalTagsText;
+    private readonly ContentStatus _originalContentStatus;
+    private readonly string? _originalManufacturer;
+
+    public bool HasUnsavedChanges => !IsReadOnly && (
+        Name != _originalName
+        || Description != _originalDescription
+        || CategoryId != _originalCategoryId
+        || TagsText != _originalTagsText
+        || ContentStatus != _originalContentStatus
+        || Manufacturer != _originalManufacturer);
+
     public IReadOnlyList<ContentStatus> AvailableStatuses { get; } =
         Enum.GetValues(typeof(ContentStatus)).Cast<ContentStatus>().ToArray();
 
@@ -138,6 +155,13 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         FileSizeText = fileSizeText;
         CreatedAtText = createdAtText;
         UpdatedAtText = updatedAtText;
+
+        _originalName = name;
+        _originalDescription = description;
+        _originalCategoryId = categoryId;
+        _originalTagsText = TagsText;
+        _originalContentStatus = contentStatus;
+        _originalManufacturer = manufacturer;
     }
 
     [RelayCommand]
@@ -218,7 +242,9 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
             var types = await _typeRepository.GetTypesForItemAsync(_catalogItemId, ct);
             AvailableTypes = new ObservableCollection<FamilyTypeSelectorItem>(
-                types.Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
+                types
+                    .Where(t => !string.IsNullOrWhiteSpace(t.Name))
+                    .Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
             HasTypes = AvailableTypes.Count > 0;
 
             var allValues = await _valueRepository.GetValuesForItemAsync(_catalogItemId, run.VersionId, ct);
@@ -258,7 +284,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
         foreach (var attr in _effectiveAttributes.OrderBy(a => a.SortOrder))
         {
-            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId);
+            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId)
+                ?? typeValues.FirstOrDefault(v => v.ParameterName == attr.Name);
             rows.Add(new AttributeValueRow
             {
                 AttributeName = attr.Name,
@@ -292,7 +319,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
         foreach (var attr in _effectiveAttributes.OrderBy(a => a.SortOrder))
         {
-            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId);
+            var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId)
+                ?? typeValues.FirstOrDefault(v => v.ParameterName == attr.Name);
             rows.Add(new AttributeValueRow
             {
                 AttributeName = attr.Name,
@@ -329,8 +357,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanWrite))]
-    private async Task Ok()
+    public async Task SaveAsync()
     {
         try
         {
@@ -364,8 +391,37 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanWrite))]
+    private async Task Ok() => await SaveAsync();
+
+    public void ConfirmClose(CloseConfirmationArgs args) =>
+        this.ConfirmUnsavedChanges(
+            args,
+            _dialogService.ShowYesNoCancel,
+            LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
+            LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
+
     [RelayCommand]
-    private void Cancel() => RequestClose?.Invoke(null);
+    private async Task CancelAsync()
+    {
+        if (HasUnsavedChanges)
+        {
+            var result = _dialogService.ShowYesNoCancel(
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
+
+            if (result == Core.Services.Interfaces.DialogResult.Yes)
+            {
+                await SaveAsync();
+                return;
+            }
+
+            if (result == Core.Services.Interfaces.DialogResult.Cancel)
+                return;
+        }
+
+        RequestClose?.Invoke(null);
+    }
 
     private bool CanWrite() => !IsReadOnly;
 

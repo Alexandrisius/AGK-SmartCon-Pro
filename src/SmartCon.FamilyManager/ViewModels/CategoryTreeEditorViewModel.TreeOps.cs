@@ -87,11 +87,31 @@ public sealed partial class CategoryTreeEditorViewModel
         var delTitle = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_DeleteCategory) ?? "Delete Category";
         if (!_dialogService.ShowConfirmation(delTitle, message)) return;
 
+        // Remove binding changes for this category and all descendants to prevent FK errors on save
+        var allIds = GetCategoryAndDescendantIds(node);
+        foreach (var id in allIds)
+        {
+            var keysToRemove = _bindingChanges.Keys.Where(k => k.StartsWith(id + ":", StringComparison.Ordinal)).ToList();
+            foreach (var key in keysToRemove)
+                _bindingChanges.Remove(key);
+        }
+
         node.IsDeleted = true;
         _pendingCategoryDeletions.Add(node);
         RemoveNodeFromTree(node.CategoryId);
         SelectedNode = null;
         UpdateHasUnsavedChanges();
+    }
+
+    private static List<string> GetCategoryAndDescendantIds(CategoryNodeViewModel node)
+    {
+        var result = new List<string> { node.CategoryId };
+        foreach (var child in node.Children)
+        {
+            if (child is CategoryNodeViewModel cat)
+                result.AddRange(GetCategoryAndDescendantIds(cat));
+        }
+        return result;
     }
 
     private void RemoveNodeFromTree(string categoryId)

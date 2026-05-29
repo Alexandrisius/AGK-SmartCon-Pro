@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -22,15 +22,15 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
     {
         var currentPath = _database.GetDatabaseRoot();
         if (_migratedDbPath == currentPath) return;
-        await _migrator.MigrateAsync(ct);
+        await _migrator.MigrateAsync(ct).ConfigureAwait(false);
         _migratedDbPath = currentPath;
     }
 
     public async Task<IReadOnlyList<AttributePreset>> GetAllPresetsAsync(CancellationToken ct = default)
     {
-        await EnsureMigratedAsync(ct);
+        await EnsureMigratedAsync(ct).ConfigureAwait(false);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         var presets = await ReadAllPresetsAsync(connection, ct);
         return presets.AsReadOnly();
@@ -38,16 +38,16 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
 
     public async Task<AttributePreset?> GetPresetForCategoryAsync(string? categoryId, CancellationToken ct = default)
     {
-        await EnsureMigratedAsync(ct);
+        await EnsureMigratedAsync(ct).ConfigureAwait(false);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT id, category_id, created_at_utc, updated_at_utc FROM attribute_presets WHERE category_id IS @categoryId";
         cmd.Parameters.Add(new SqliteParameter("@categoryId", (object?)categoryId ?? DBNull.Value));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
             return null;
 
         var id = reader.GetString(0);
@@ -61,8 +61,8 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
 
     public async Task<IReadOnlyList<AttributePresetParameter>> GetEffectiveParametersAsync(string? categoryId, CancellationToken ct = default)
     {
-        await EnsureMigratedAsync(ct);
-        var allCategories = await _categoryRepository.GetAllAsync(ct);
+        await EnsureMigratedAsync(ct).ConfigureAwait(false);
+        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(false);
         var byId = allCategories.ToDictionary(c => c.Id);
 
         var ancestorIds = new List<string?>();
@@ -83,7 +83,7 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
         ancestorIds.Add(null);
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         var merged = new Dictionary<string, AttributePresetParameter>();
         foreach (var ancestorId in ancestorIds)
@@ -101,12 +101,12 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
 
     public async Task<AttributePreset> CreatePresetAsync(string? categoryId, IReadOnlyList<AttributePresetParameter> parameters, CancellationToken ct = default)
     {
-        await EnsureMigratedAsync(ct);
+        await EnsureMigratedAsync(ct).ConfigureAwait(false);
         var id = Guid.NewGuid().ToString();
         var now = DateTimeOffset.UtcNow;
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var tx = connection.BeginTransaction();
 
         try
@@ -118,7 +118,7 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
                 cmd.Parameters.Add(new SqliteParameter("@categoryId", (object?)categoryId ?? DBNull.Value));
                 cmd.Parameters.Add(new SqliteParameter("@createdAt", now.ToString("o")));
                 cmd.Parameters.Add(new SqliteParameter("@updatedAt", now.ToString("o")));
-                await cmd.ExecuteNonQueryAsync(ct);
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
             await InsertParametersAsync(connection, id, parameters, ct);
@@ -135,11 +135,11 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
 
     public async Task UpdatePresetAsync(string presetId, IReadOnlyList<AttributePresetParameter> parameters, CancellationToken ct = default)
     {
-        await EnsureMigratedAsync(ct);
+        await EnsureMigratedAsync(ct).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var tx = connection.BeginTransaction();
 
         try
@@ -149,14 +149,14 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
                 cmd.CommandText = "UPDATE attribute_presets SET updated_at_utc = @updatedAt WHERE id = @id";
                 cmd.Parameters.Add(new SqliteParameter("@updatedAt", now.ToString("o")));
                 cmd.Parameters.Add(new SqliteParameter("@id", presetId));
-                await cmd.ExecuteNonQueryAsync(ct);
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
             using (var delCmd = connection.CreateCommand())
             {
                 delCmd.CommandText = "DELETE FROM attribute_preset_parameters WHERE preset_id = @presetId";
                 delCmd.Parameters.Add(new SqliteParameter("@presetId", presetId));
-                await delCmd.ExecuteNonQueryAsync(ct);
+                await delCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
             await InsertParametersAsync(connection, presetId, parameters, ct);
@@ -171,13 +171,13 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
 
     public async Task DeletePresetAsync(string presetId, CancellationToken ct = default)
     {
-        await EnsureMigratedAsync(ct);
+        await EnsureMigratedAsync(ct).ConfigureAwait(false);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "DELETE FROM attribute_presets WHERE id = @id";
         cmd.Parameters.Add(new SqliteParameter("@id", presetId));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task<AttributePreset?> ReadPresetByCategoryIdAsync(SqliteConnection connection, string? categoryId, CancellationToken ct)
@@ -186,8 +186,8 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
         cmd.CommandText = "SELECT id, category_id, created_at_utc, updated_at_utc FROM attribute_presets WHERE category_id IS @categoryId";
         cmd.Parameters.Add(new SqliteParameter("@categoryId", (object?)categoryId ?? DBNull.Value));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
             return null;
 
         var id = reader.GetString(0);
@@ -205,8 +205,8 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
         cmd.CommandText = "SELECT id, category_id, created_at_utc, updated_at_utc FROM attribute_presets ORDER BY created_at_utc";
 
         var presets = new List<AttributePreset>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var id = reader.GetString(0);
             var catId = reader.IsDBNull(1) ? null : reader.GetString(1);
@@ -220,7 +220,12 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
         foreach (var preset in presets)
         {
             var parameters = await ReadParametersAsync(connection, preset.Id, ct);
-            result.Add(preset with { Parameters = parameters });
+            result.Add(new AttributePreset(
+                preset.Id,
+                preset.CategoryId,
+                parameters,
+                preset.CreatedAtUtc,
+                preset.UpdatedAtUtc));
         }
 
         return result;
@@ -233,8 +238,8 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
         cmd.Parameters.Add(new SqliteParameter("@presetId", presetId));
 
         var result = new List<AttributePresetParameter>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             result.Add(new AttributePresetParameter(
                 reader.GetString(0),
@@ -255,7 +260,8 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
             cmd.Parameters.Add(new SqliteParameter("@paramName", param.ParameterName));
             cmd.Parameters.Add(new SqliteParameter("@displayName", (object?)param.DisplayName ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@sortOrder", param.SortOrder));
-            await cmd.ExecuteNonQueryAsync(ct);
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
     }
 }
+

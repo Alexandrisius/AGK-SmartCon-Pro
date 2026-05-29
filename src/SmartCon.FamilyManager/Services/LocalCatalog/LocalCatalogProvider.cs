@@ -1,5 +1,6 @@
-using System.IO;
+﻿using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -27,7 +28,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
     public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, string? manufacturer = null, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var tx = connection.BeginTransaction();
 
         try
@@ -69,14 +70,14 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             cmd.Parameters.Add(new SqliteParameter("@id", id));
 
             cmd.CommandText = $"UPDATE catalog_items SET {string.Join(", ", setClauses)} WHERE id = @id";
-            await cmd.ExecuteNonQueryAsync(ct);
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
             if (tags is not null)
             {
                 using var delCmd = connection.CreateCommand();
                 delCmd.CommandText = "DELETE FROM catalog_tags WHERE catalog_item_id = @id";
                 delCmd.Parameters.Add(new SqliteParameter("@id", id));
-                await delCmd.ExecuteNonQueryAsync(ct);
+                await delCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 foreach (var tag in tags)
                 {
@@ -86,7 +87,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                     tagCmd.Parameters.Add(new SqliteParameter("@id", id));
                     tagCmd.Parameters.Add(new SqliteParameter("@tag", tag));
                     tagCmd.Parameters.Add(new SqliteParameter("@normalizedTag", normalizedTag));
-                    await tagCmd.ExecuteNonQueryAsync(ct);
+                    await tagCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
             }
 
@@ -98,58 +99,103 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             throw;
         }
 
-        return (await GetItemAsync(id, ct))!;
+        return (await GetItemAsync(id, ct).ConfigureAwait(false))!;
     }
 
     public async Task<bool> DeleteItemAsync(string id, CancellationToken ct = default)
     {
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        var dbRoot = _database.GetDatabaseRoot();
+        var familyDir = Path.Combine(dbRoot, "files", id);
+        var dirExists = Directory.Exists(familyDir);
 
+        // Attempt file deletion BEFORE database transaction.
+        // If files are locked, exception surfaces here and DB record remains intact.
+        if (dirExists)
+        {
+            await DeleteDirectoryWithRetryAsync(familyDir, ct).ConfigureAwait(false);
+        }
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+
+        using (var pragmaCmd = connection.CreateCommand())
+        {
+            pragmaCmd.CommandText = "PRAGMA foreign_keys = ON";
+            await pragmaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        int rowsAffected;
         using var tx = connection.BeginTransaction();
         try
         {
-            var relativePaths = new List<string>();
-            using (var selectCmd = connection.CreateCommand())
-            {
-                selectCmd.CommandText = "SELECT relative_path FROM family_files WHERE id IN (SELECT file_id FROM catalog_versions WHERE catalog_item_id = @id)";
-                selectCmd.Parameters.Add(new SqliteParameter("@id", id));
-                using var reader = await selectCmd.ExecuteReaderAsync(ct);
-                while (await reader.ReadAsync(ct))
-                {
-                    relativePaths.Add(reader.GetString(0));
-                }
-            }
-
             using var delItem = connection.CreateCommand();
             delItem.CommandText = "DELETE FROM catalog_items WHERE id = @id";
             delItem.Parameters.Add(new SqliteParameter("@id", id));
-            var rowsAffected = await delItem.ExecuteNonQueryAsync(ct);
-
+            rowsAffected = await delItem.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             tx.Commit();
-
-            if (rowsAffected > 0)
-            {
-                var dbRoot = _database.GetDatabaseRoot();
-                var familyDir = Path.Combine(dbRoot, "files", id);
-                if (Directory.Exists(familyDir))
-                {
-                    try
-                    {
-                        Directory.Delete(familyDir, recursive: true);
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-
-            return rowsAffected > 0;
         }
         catch
         {
             tx.Rollback();
             throw;
+        }
+
+        return rowsAffected > 0;
+    }
+
+    private static async Task DeleteDirectoryWithRetryAsync(string path, CancellationToken ct, int maxRetries = 5)
+    {
+        for (var i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    RemoveReadOnlyAttributes(path);
+                    Directory.Delete(path, recursive: true);
+                }
+                return;
+            }
+            catch (IOException ex) when (i < maxRetries - 1)
+            {
+                SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed to delete directory '{path}': {ex.Message}. Retrying...");
+                await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
+            }
+            catch (UnauthorizedAccessException ex) when (i < maxRetries - 1)
+            {
+                SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed (access denied) for '{path}': {ex.Message}. Retrying...");
+                await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
+            }
+        }
+
+        // Final attempt: force GC to release any lingering WPF image handles before last try
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                RemoveReadOnlyAttributes(path);
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new IOException($"Failed to delete family directory after {maxRetries} attempts: {path}. The file may be open in Revit or another application. {ex.Message}");
+        }
+    }
+
+    private static void RemoveReadOnlyAttributes(string path)
+    {
+        foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+        {
+            var attr = File.GetAttributes(file);
+            if ((attr & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+            {
+                File.SetAttributes(file, attr & ~FileAttributes.ReadOnly);
+            }
         }
     }
 
@@ -175,7 +221,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             """;
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
 
@@ -185,8 +231,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         cmd.Parameters.Add(limitOffsetParams[1]);
 
         var items = new List<FamilyCatalogItem>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var item = ReadCatalogItem(reader);
             items.Add(item);
@@ -194,12 +240,26 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
         if (items.Count > 0)
         {
-            var tagsMap = await LoadAllTagsBatchAsync(connection, items.Select(i => i.Id).ToList(), ct);
+            var tagsMap = await LoadAllTagsBatchAsync(connection, items.Select(i => i.Id).ToList(), ct).ConfigureAwait(false);
             for (var i = 0; i < items.Count; i++)
             {
                 tagsMap.TryGetValue(items[i].Id, out var tags);
                 tags ??= [];
-                items[i] = items[i] with { Tags = tags };
+                var old = items[i];
+                items[i] = new FamilyCatalogItem(
+                    old.Id,
+                    old.Name,
+                    old.NormalizedName,
+                    old.Description,
+                    old.CategoryPath,
+                    old.CategoryId,
+                    old.Manufacturer,
+                    old.ContentStatus,
+                    old.CurrentVersionLabel,
+                    tags,
+                    old.PublishedBy,
+                    old.CreatedAtUtc,
+                    old.UpdatedAtUtc);
             }
         }
 
@@ -209,31 +269,44 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
     public async Task<FamilyCatalogItem?> GetItemAsync(string id, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT * FROM catalog_items WHERE id = @id";
         cmd.Parameters.Add(new SqliteParameter("@id", id));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
             return null;
 
         var item = ReadCatalogItem(reader);
-        var tags = await LoadTagsAsync(connection, id, ct);
-        return item with { Tags = tags };
+        var tags = await LoadTagsAsync(connection, id, ct).ConfigureAwait(false);
+        return new FamilyCatalogItem(
+            item.Id,
+            item.Name,
+            item.NormalizedName,
+            item.Description,
+            item.CategoryPath,
+            item.CategoryId,
+            item.Manufacturer,
+            item.ContentStatus,
+            item.CurrentVersionLabel,
+            tags,
+            item.PublishedBy,
+            item.CreatedAtUtc,
+            item.UpdatedAtUtc);
     }
 
     public async Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT * FROM catalog_versions WHERE catalog_item_id = @itemId ORDER BY published_at_utc DESC";
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
         var versions = new List<FamilyCatalogVersion>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             versions.Add(ReadCatalogVersion(reader));
         }
@@ -244,13 +317,13 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
     public async Task<FamilyFileRecord?> GetFileAsync(string fileId, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT * FROM family_files WHERE id = @id";
         cmd.Parameters.Add(new SqliteParameter("@id", fileId));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
             return null;
 
         return ReadFileRecord(reader);
@@ -259,18 +332,18 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
     public async Task<int> GetItemCountAsync(CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM catalog_items";
 
-        var result = await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result is long l ? (int)l : 0;
     }
 
     public async Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT DISTINCT cv.revit_major_version
@@ -282,8 +355,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         cmd.Parameters.Add(new SqliteParameter("@id", catalogItemId));
 
         var versions = new List<int>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             versions.Add(reader.GetInt32(0));
         }
@@ -298,8 +371,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
         var tags = new List<string>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             tags.Add(reader.GetString(0));
         }
@@ -326,8 +399,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             result[itemIds[i]] = [];
         }
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var itemId = reader.GetString(0);
             var tag = reader.GetString(1);
@@ -403,3 +476,6 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         return null;
     }
 }
+
+
+

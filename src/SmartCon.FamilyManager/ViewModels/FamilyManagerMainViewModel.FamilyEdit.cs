@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -76,10 +77,69 @@ public sealed partial class FamilyManagerMainViewModel
             }
             else if (result.Success)
             {
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_UpdateSuccess) ?? "Updated: {0} → {1}",
-                    result.FileName,
-                    result.VersionLabel);
+                // CRITICAL: All UI updates (StatusMessage) MUST be inside ExternalEvent handler
+                // to prevent WPF render thread deadlock with MFC family upgrade dialog.
+                // See: revit-api-best-practice/references/wpf-mfc-render-freeze.md
+                _externalEvent.Raise(() =>
+                {
+                    try
+                    {
+                        StatusMessage = string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_UpdateSuccess) ?? "Updated: {0} → {1}",
+                            result.FileName,
+                            result.VersionLabel);
+
+                        SmartConLogger.Info($"[UpdateFamily] Resolving file path for {leaf.CatalogItemId}...");
+                        var resolved = Task.Run(() =>
+                            _fileResolver.ResolveForLoadAsync(leaf.CatalogItemId, CurrentRevitVersion, CancellationToken.None))
+                            .GetAwaiter().GetResult();
+
+                        if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                        {
+                            SmartConLogger.Warn($"[UpdateFamily] Empty path resolved for {leaf.CatalogItemId}");
+                            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_UpdateError) ?? "Update error";
+                            IsLoading = false;
+                            return;
+                        }
+
+                        SmartConLogger.Info($"[UpdateFamily] Extracting from: {resolved.AbsolutePath}");
+                        var extractionResult = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());
+                        SmartConLogger.Info($"[UpdateFamily] Extract done: Success={extractionResult.Success}, Types={extractionResult.Types.Count}");
+
+                        if (extractionResult.Success)
+                        {
+                            var saveResult = Task.Run(() =>
+                                _dataImportService.SaveExtractionResultAsync(
+                                    leaf.CatalogItemId, extractionResult, result.VersionId, result.FileId, CancellationToken.None))
+                                .GetAwaiter().GetResult();
+
+                            StatusMessage = saveResult.Success
+                                ? string.Format(
+                                    LanguageManager.GetString(StringLocalization.Keys.FM_UpdateSuccess) ?? "Updated: {0}",
+                                    result.FileName)
+                                : string.Format(
+                                    LanguageManager.GetString(StringLocalization.Keys.FM_UpdateError) ?? "Update error: {0}",
+                                    saveResult.ErrorMessage);
+                        }
+                        else
+                        {
+                            StatusMessage = string.Format(
+                                LanguageManager.GetString(StringLocalization.Keys.FM_UpdateError) ?? "Update error: {0}",
+                                extractionResult.ErrorMessage ?? "Extraction failed");
+                        }
+
+                        IsLoading = false;
+                        FireAndForget(() => LoadTreeAsync());
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Warn($"[UpdateFamily] Failed: {ex.Message}");
+                        StatusMessage = string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_UpdateError) ?? "Update error: {0}",
+                            ex.Message);
+                        IsLoading = false;
+                    }
+                });
             }
             else
             {
@@ -87,9 +147,6 @@ public sealed partial class FamilyManagerMainViewModel
                     LanguageManager.GetString(StringLocalization.Keys.FM_UpdateError) ?? "Update error: {0}",
                     result.ErrorMessage);
             }
-
-            await LoadTreeAsync();
-            ExpandAndSelectItem(leaf.CatalogItemId);
         }
         catch (Exception ex)
         {
@@ -128,9 +185,18 @@ public sealed partial class FamilyManagerMainViewModel
                 await LoadTreeAsync();
             }
         }
+        catch (IOException ex)
+        {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error",
+                LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteInUse) ?? "Failed to delete family files. The file may be open in Revit or another application. Close the file and try again.");
+            StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error"}: {ex.Message}";
+            await LoadTreeAsync();
+        }
         catch (Exception ex)
         {
             StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error"}: {ex.Message}";
+            await LoadTreeAsync();
         }
         finally
         {
@@ -140,6 +206,12 @@ public sealed partial class FamilyManagerMainViewModel
 
     public async Task MoveFamilyToCategoryAsync(string familyId, string? targetCategoryId)
     {
+        if (!CanEdit)
+        {
+            SmartConLogger.Warn($"[FM] MoveFamilyToCategoryAsync blocked: user lacks edit permissions.");
+            return;
+        }
+
         IsLoading = true;
         try
         {
@@ -164,7 +236,7 @@ public sealed partial class FamilyManagerMainViewModel
         // Drag permission gate. Behavior handles the actual DoDragDrop.
     }
 
-    private bool CanStartDrag(object? item) => item is FamilyLeafNodeViewModel;
+    private bool CanStartDrag(object? item) => item is FamilyLeafNodeViewModel && CanEdit;
 
     [RelayCommand(CanExecute = nameof(CanDropFamily))]
     private async Task DropFamilyAsync(TreeViewDropInfo? info)
@@ -183,7 +255,8 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (info is null) return false;
         return info.Payload is FamilyLeafNodeViewModel
-            && info.Target is CategoryNodeViewModel;
+            && info.Target is CategoryNodeViewModel
+            && CanEdit;
     }
 
     private void ExpandAndSelectItem(string catalogItemId)

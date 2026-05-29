@@ -75,7 +75,7 @@
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="{loc:Loc Btn_OK}" Command="{Binding OkCommand}"
                     Style="{DynamicResource PrimaryButton}" Width="80" Height="28" IsDefault="True"/>
-            <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
+            <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelAsyncCommand}"
                     Style="{DynamicResource SecondaryButton}" Width="80" Height="28" Margin="8,0,0,0" IsCancel="True"/>
         </StackPanel>
     </Grid>

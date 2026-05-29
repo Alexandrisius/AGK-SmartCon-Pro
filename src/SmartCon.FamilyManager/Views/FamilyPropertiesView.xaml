@@ -4,6 +4,7 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         Title="{loc:Loc FM_Props_Title}"
         Width="950" Height="700" MinWidth="800" MinHeight="600"
         WindowStartupLocation="CenterScreen"
@@ -15,6 +16,7 @@
     <Window.Resources>
         <ui:SingletonResources>
             <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+            <converters:PathToBitmapImageConverter x:Key="PathToBitmapImageConverter"/>
         </ui:SingletonResources>
     </Window.Resources>
 
@@ -45,7 +47,7 @@
                             <Binding Path="HasAvatar" Converter="{StaticResource BoolToVisibility}" ConverterParameter="Invert"/>
                         </TextBlock.Visibility>
                     </TextBlock>
-                    <Image Source="{Binding AvatarImagePath}"
+                    <Image Source="{Binding AvatarImagePath, Converter={StaticResource PathToBitmapImageConverter}}"
                            Stretch="Uniform" StretchDirection="Both"
                            Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibility}}"/>
                     <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center"
@@ -554,7 +556,7 @@
                     Style="{DynamicResource PrimaryButton}"/>
             <Button Grid.Column="2"
                     Content="{loc:Loc Btn_Cancel}"
-                    Command="{Binding CancelCommand}"
+                    Command="{Binding CancelAsyncCommand}"
                     Width="80" Height="28"
                     IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"/>

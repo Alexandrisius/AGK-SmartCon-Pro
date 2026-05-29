@@ -1,6 +1,3 @@
-using System.Diagnostics;
-using System.Globalization;
-using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -28,15 +25,10 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
         Document? familyDoc = null;
         try
         {
-            SmartConLogger.Freeze($"Extract: Starting OpenDocumentFile for '{System.IO.Path.GetFileName(rfaFilePath)}'");
-            var swOpen = Stopwatch.StartNew();
             familyDoc = app.OpenDocumentFile(rfaFilePath);
-            swOpen.Stop();
-            SmartConLogger.Freeze($"Extract: OpenDocumentFile completed in {swOpen.Elapsed.TotalMilliseconds:F1}ms");
 
             if (!familyDoc.IsFamilyDocument)
             {
-                SmartConLogger.Freeze("Extract: Not a family document");
                 return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion);
             }
 
@@ -51,7 +43,9 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 }
             }
 
-            SmartConLogger.Freeze($"Extract: Found {paramMap.Count} parameters");
+            var parametersToExtract = expectedParameterNames.Count > 0
+                ? expectedParameterNames
+                : paramMap.Keys.ToList();
 
             var allTypes = new List<FamilyExtractionTypeValues>();
             List<FamilyExtractionValueResult>? untypedValues = null;
@@ -60,16 +54,15 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             {
                 var values = new List<FamilyExtractionValueResult>();
 
-                foreach (var expectedName in expectedParameterNames)
+                foreach (var paramName in parametersToExtract)
                 {
-                    var value = ExtractValueForParameter(familyType, expectedName, paramMap);
+                    var value = ExtractValueForParameter(familyType, paramName, paramMap);
                     values.Add(value);
                 }
 
                 if (string.IsNullOrWhiteSpace(familyType.Name))
                 {
                     untypedValues = values;
-                    SmartConLogger.Freeze("Extract: Found default type with empty name, treating as untyped values");
                 }
                 else
                 {
@@ -84,13 +77,11 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values))
                 .ToList();
 
-            SmartConLogger.Freeze($"Extract: Extracted {types.Count} named types, untyped values: {untypedValues?.Count ?? 0}");
-
             return new FamilyExtractionResult(true, types, untypedValues, null, revitMajorVersion);
         }
         catch (Exception ex)
         {
-            SmartConLogger.Freeze($"Extract: Exception - {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Warn($"Extract failed for '{rfaFilePath}': {ex.Message}");
             return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion);
         }
         finally
@@ -99,22 +90,11 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             {
                 try
                 {
-                    SmartConLogger.Freeze("Extract: Starting Close");
-                    var swClose = Stopwatch.StartNew();
                     familyDoc.Close(false);
-                    swClose.Stop();
-                    SmartConLogger.Freeze($"Extract: Close completed in {swClose.Elapsed.TotalMilliseconds:F1}ms");
-
-                    // Явное освобождение COM-объекта для форсирования cleanup
-                    SmartConLogger.Freeze("Extract: Starting ReleaseComObject");
-                    var swRelease = Stopwatch.StartNew();
-                    var count = Marshal.ReleaseComObject(familyDoc);
-                    swRelease.Stop();
-                    SmartConLogger.Freeze($"Extract: ReleaseComObject completed, remaining refs={count}, time={swRelease.Elapsed.TotalMilliseconds:F1}ms");
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Freeze($"Extract: Close/Release failed - {ex.GetType().Name}: {ex.Message}");
+                    SmartConLogger.Warn($"Failed to close family document '{rfaFilePath}': {ex.Message}");
                 }
             }
         }
@@ -126,7 +106,6 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
     {
         if (!paramMap.TryGetValue(parameterName, out var param))
         {
-            SmartConLogger.Info($"[FamilyExtract] Parameter '{parameterName}' NOT FOUND in paramMap (checked {paramMap.Count} params)");
             return new FamilyExtractionValueResult(
                 parameterName, null, null, null, null, null, null,
                 AttributeValueStatus.MissingParameter,
@@ -135,7 +114,6 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
 
         if (!familyType.HasValue(param))
         {
-            SmartConLogger.Info($"[FamilyExtract] Parameter '{parameterName}' FOUND but has no value for type '{familyType.Name}'");
             return new FamilyExtractionValueResult(
                 parameterName,
                 param.IsInstance ? AttributeScope.Instance : AttributeScope.Type,
@@ -190,7 +168,6 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             try { unitTypeId = param.GetUnitTypeId()?.TypeId; } catch { }
 #endif
 
-            SmartConLogger.Info($"[FamilyExtract] Parameter '{parameterName}' FOUND: valueText='{valueText}', storageType={param.StorageType}");
             return new FamilyExtractionValueResult(
                 parameterName,
                 param.IsInstance ? AttributeScope.Instance : AttributeScope.Type,

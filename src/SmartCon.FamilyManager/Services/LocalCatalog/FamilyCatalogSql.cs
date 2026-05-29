@@ -216,7 +216,7 @@ internal static class FamilyCatalogSql
             version_id TEXT,
             file_id TEXT,
             type_id TEXT,
-            attribute_id TEXT NOT NULL,
+            attribute_id TEXT,
             binding_id TEXT,
             parameter_name TEXT NOT NULL,
             parameter_scope TEXT,
@@ -230,9 +230,8 @@ internal static class FamilyCatalogSql
             extraction_run_id TEXT NOT NULL,
             extracted_at_utc TEXT NOT NULL,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
-            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
             FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
-            UNIQUE(catalog_item_id, version_id, type_id, attribute_id)
+            UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
         )
         """;
 
@@ -273,6 +272,56 @@ internal static class FamilyCatalogSql
 
     public const string MigrateV7AddOwnerIdentity = """
         ALTER TABLE database_meta ADD COLUMN owner_identity TEXT
+        """;
+
+    public const string MigrateV8RecreateExtractedAttributeValues = """
+        -- Clean up any leftover from a previous failed migration
+        DROP TABLE IF EXISTS extracted_attribute_values_new;
+        -- Create temporary table with new schema
+        CREATE TABLE extracted_attribute_values_new (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            version_id TEXT,
+            file_id TEXT,
+            type_id TEXT,
+            attribute_id TEXT,
+            binding_id TEXT,
+            parameter_name TEXT NOT NULL,
+            parameter_scope TEXT,
+            storage_type TEXT,
+            value_text TEXT,
+            value_raw TEXT,
+            value_number REAL,
+            unit_type_id TEXT,
+            status TEXT NOT NULL DEFAULT 'Found',
+            message TEXT,
+            extraction_run_id TEXT NOT NULL,
+            extracted_at_utc TEXT NOT NULL,
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
+            UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
+        );
+        -- Copy data from old table
+        INSERT INTO extracted_attribute_values_new (
+            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
+            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
+            unit_type_id, status, message, extraction_run_id, extracted_at_utc
+        )
+        SELECT
+            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
+            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
+            unit_type_id, status, message, extraction_run_id, extracted_at_utc
+        FROM extracted_attribute_values;
+        -- Drop old table
+        DROP TABLE extracted_attribute_values;
+        -- Rename new table
+        ALTER TABLE extracted_attribute_values_new RENAME TO extracted_attribute_values;
+        -- Recreate indexes
+        CREATE INDEX IF NOT EXISTS ix_attr_values_item_version ON extracted_attribute_values (catalog_item_id, version_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_type ON extracted_attribute_values (type_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
         """;
 
     public const string CreateTables = $"""

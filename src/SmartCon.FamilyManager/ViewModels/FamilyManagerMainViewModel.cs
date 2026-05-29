@@ -36,7 +36,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IDbAccessControlService _accessControl;
     private readonly IFamilySearchService _familySearchService;
     private readonly IFamilyPlacementService _familyPlacementService;
-    private readonly IFamilyTypeExtractor _familyTypeExtractor;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -57,13 +56,21 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
+    [ObservableProperty] private bool _canPlace;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PlaceTypeCommand))]
+    private bool _canPlaceType;
+
     [ObservableProperty] private ObservableCollection<DatabaseConnection> _connections = new();
     [ObservableProperty] private DatabaseConnection? _selectedConnection;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenProfileCommand))]
+    private bool _hasActiveDatabase;
     [ObservableProperty] private int _currentRevitVersion;
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFolderCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ExtractTypesCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportDataCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]
@@ -74,6 +81,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
     [NotifyCanExecuteChangedFor(nameof(UpdateFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DropFamilyCommand))]
     private bool _canEdit;
 
     [ObservableProperty]
@@ -99,8 +108,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IFamilyDataImportService dataImportService,
         IDbAccessControlService accessControl,
         IFamilySearchService familySearchService,
-        IFamilyPlacementService familyPlacementService,
-        IFamilyTypeExtractor familyTypeExtractor)
+        IFamilyPlacementService familyPlacementService)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -121,7 +129,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _accessControl = accessControl;
         _familySearchService = familySearchService;
         _familyPlacementService = familyPlacementService;
-        _familyTypeExtractor = familyTypeExtractor;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -166,6 +173,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             SmartConLogger.Info($"======================================================================");
 
             RefreshConnections();
+            if (!HasActiveDatabase)
+            {
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
+                return;
+            }
             await RefreshAccessAndLoadTreeAsync();
         }
         catch (Exception ex)
@@ -179,6 +191,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private async Task RefreshAccessAndLoadTreeAsync()
     {
+        if (!HasActiveDatabase)
+        {
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
+            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+            CanImport = false;
+            CanEdit = false;
+            CanManageUsers = false;
+            return;
+        }
+
         DetectRevitVersion();
         _accessControl.InvalidateCache();
 
@@ -244,8 +266,27 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
         CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
+        CanPlace = false;
         LoadToProjectCommand.NotifyCanExecuteChanged();
-        LoadAndPlaceCommand.NotifyCanExecuteChanged();
+        PlaceCommand.NotifyCanExecuteChanged();
+
+        if (value is not null)
+        {
+            var familyName = value.Name;
+            _externalEvent.Raise(() =>
+            {
+                try
+                {
+                    var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
+                    CanPlace = isLoaded;
+                    PlaceCommand.NotifyCanExecuteChanged();
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Place check failed: {ex.Message}");
+                }
+            });
+        }
     }
 
     partial void OnSelectedTreeNodeChanged(CatalogTreeNodeViewModel? value)
@@ -265,6 +306,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Tags = leaf.Tags,
                 Description = leaf.Description,
             };
+            CanPlaceType = false;
         }
         else if (value is FamilyTypeNodeViewModel typeNode)
         {
@@ -284,19 +326,39 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
                 };
+                CanPlaceType = false;
+                PlaceTypeCommand.NotifyCanExecuteChanged();
+
+                var familyName = parentLeaf.DisplayName;
+                _externalEvent.Raise(() =>
+                {
+                    try
+                    {
+                        var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
+                        CanPlaceType = isLoaded;
+                        PlaceTypeCommand.NotifyCanExecuteChanged();
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Warn($"PlaceType check failed: {ex.Message}");
+                    }
+                });
             }
             else
             {
                 SelectedItem = null;
+                CanPlaceType = false;
             }
         }
         else
         {
             SelectedItem = null;
+            CanPlaceType = false;
         }
 
         LoadToProjectCommand.NotifyCanExecuteChanged();
-        LoadAndPlaceCommand.NotifyCanExecuteChanged();
+        PlaceCommand.NotifyCanExecuteChanged();
+        PlaceTypeCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
         ImportFolderToCategoryCommand.NotifyCanExecuteChanged();
         ImportDataForCategoryCommand.NotifyCanExecuteChanged();
@@ -375,7 +437,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasActiveDatabase))]
     private async Task OpenProfileAsync(CancellationToken ct)
     {
         try

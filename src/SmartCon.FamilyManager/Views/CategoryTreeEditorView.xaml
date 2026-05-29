@@ -153,16 +153,7 @@
                         </TreeView.ContextMenu>
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <StackPanel Orientation="Horizontal"
-                                            Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}">
-                                    <StackPanel.ContextMenu>
-                                        <ContextMenu Style="{StaticResource ModernContextMenu}"
-                                                     DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
-                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
-                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Delete}" Command="{Binding ContextMenuDeleteCommand}" Style="{StaticResource DangerMenuItem}"></MenuItem>
-                                        </ContextMenu>
-                                    </StackPanel.ContextMenu>
+                                <StackPanel Orientation="Horizontal">
                                     <Path Data="{StaticResource FolderIconGeometry}"
                                            Fill="{DynamicResource TextMutedBrush}"
                                            Width="13" Height="13"
@@ -180,8 +171,20 @@
                         </TreeView.ItemTemplate>
                         <TreeView.ItemContainerStyle>
                             <Style TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=TreeView}}" />
                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"></Setter>
                                 <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"></Setter>
+                                <Setter Property="ContextMenu">
+                                    <Setter.Value>
+                                        <ContextMenu Style="{StaticResource ModernContextMenu}"
+                                                     DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Delete}" Command="{Binding ContextMenuDeleteCommand}" Style="{StaticResource DangerMenuItem}"></MenuItem>
+                                        </ContextMenu>
+                                    </Setter.Value>
+                                </Setter>
                             </Style>
                         </TreeView.ItemContainerStyle>
                     </TreeView>
@@ -206,23 +209,12 @@
                                FontSize="12"
                                Margin="0,0,0,8"
                                Foreground="{DynamicResource TextPrimaryBrush}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasSelectedCategory}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
                         <Run Text="{loc:Loc FM_CTE_AttributesFor}"/>
                         <Run Text=" "/>
                         <Run Text="{Binding SelectedCategoryPath, Mode=OneWay}"/>
                     </TextBlock>
 
-                    <Grid Grid.Row="1" Margin="0,0,0,8"
-                          Visibility="{Binding HasSelectedCategory, Converter={StaticResource BoolToVis}}">
+                    <Grid Grid.Row="1" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
@@ -430,7 +422,7 @@
                     Style="{DynamicResource PrimaryButton}"/>
 
             <Button Grid.Column="4" Content="{loc:Loc Btn_Cancel}"
-                    Command="{Binding CancelCommand}"
+                    Command="{Binding CancelAsyncCommand}"
                     Width="80" Height="28"
                     IsCancel="True"
                     Style="{DynamicResource SecondaryButton}"

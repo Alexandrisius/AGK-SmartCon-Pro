@@ -204,7 +204,7 @@ internal sealed class LocalAttributeValueRepository : IAttributeValueRepository
             reader.IsDBNull(2) ? null : reader.GetString(2),
             reader.IsDBNull(3) ? null : reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4),
-            reader.GetString(5),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.IsDBNull(6) ? null : reader.GetString(6),
             reader.GetString(7),
             reader.IsDBNull(8) ? null : (AttributeScope?)Enum.Parse(typeof(AttributeScope), reader.GetString(8)),
@@ -226,7 +226,7 @@ internal sealed class LocalAttributeValueRepository : IAttributeValueRepository
         cmd.Parameters.Add(new SqliteParameter("@versionId", (object?)v.VersionId ?? DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@fileId", (object?)v.FileId ?? DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@typeId", (object?)v.TypeId ?? DBNull.Value));
-        cmd.Parameters.Add(new SqliteParameter("@attributeId", v.AttributeId));
+        cmd.Parameters.Add(new SqliteParameter("@attributeId", (object?)v.AttributeId ?? DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@bindingId", (object?)v.BindingId ?? DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@paramName", v.ParameterName));
         cmd.Parameters.Add(new SqliteParameter("@paramScope", v.ParameterScope.HasValue ? v.ParameterScope.Value.ToString() : DBNull.Value));

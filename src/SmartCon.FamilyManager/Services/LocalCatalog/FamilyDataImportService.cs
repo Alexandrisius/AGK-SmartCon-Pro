@@ -63,14 +63,9 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
         if (string.IsNullOrEmpty(resolved.AbsolutePath))
             return new FamilyExtractionPrepareResult(false, item, null, [], "Family file not found");
 
-        var effectiveAttrs = await _bindingService.GetEffectiveAttributesAsync(item.CategoryId, ct);
-        var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
-        var activeAttrIds = allAttrs.Where(a => a.IsActive).Select(a => a.Id).ToHashSet();
-        var paramNames = effectiveAttrs
-            .Where(a => a.IsEnabled && activeAttrIds.Contains(a.AttributeId))
-            .Select(a => a.Name)
-            .ToList()
-            .AsReadOnly();
+        // Extract ALL family parameters, not just category-bound ones.
+        // Display filtering happens in the UI layer (FamilyPropertiesViewModel).
+        var paramNames = Array.Empty<string>();
 
         return new FamilyExtractionPrepareResult(true, item, resolved.AbsolutePath, paramNames, null);
     }
@@ -114,8 +109,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
                 runId));
         }
 
-        if (types.Count > 0)
-            await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, fileId, runId, types, ct);
+        await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, fileId, runId, types, ct);
 
         var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
         var attrByName = allAttrs.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
@@ -133,7 +127,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
                     versionId,
                     fileId,
                     typeRecord?.Id,
-                    attrDef?.Id ?? val.ParameterName,
+                    attrDef?.Id,
                     null,
                     val.ParameterName,
                     val.ParameterScope,
@@ -160,7 +154,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
                     versionId,
                     fileId,
                     null,
-                    attrDef?.Id ?? val.ParameterName,
+                    attrDef?.Id,
                     null,
                     val.ParameterName,
                     val.ParameterScope,

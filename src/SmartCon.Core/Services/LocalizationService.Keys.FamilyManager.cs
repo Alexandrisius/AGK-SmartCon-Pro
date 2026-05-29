@@ -10,6 +10,7 @@ public static partial class LocalizationService
         ru["FM_ImportFolder"] = "Импорт папки"; en["FM_ImportFolder"] = "Import Folder";
         ru["FM_LoadToProject"] = "Загрузить в проект"; en["FM_LoadToProject"] = "Load to Project";
         ru["FM_LoadAndPlace"] = "Загрузить и разместить"; en["FM_LoadAndPlace"] = "Load and Place";
+        ru["FM_Place"] = "Разместить"; en["FM_Place"] = "Place";
         ru["FM_ExtractTypes"] = "Извлечь типоразмеры"; en["FM_ExtractTypes"] = "Extract Types";
         ru["FM_ImportData"] = "Импорт данных"; en["FM_ImportData"] = "Import Data";
         ru["FM_PlaceType"] = "Разместить тип"; en["FM_PlaceType"] = "Place Type";
@@ -30,8 +31,13 @@ public static partial class LocalizationService
         ru["FM_ImportSuccess"] = "Импортировано: {0}"; en["FM_ImportSuccess"] = "Imported: {0}";
         ru["FM_ImportError"] = "Ошибка импорта: {0}"; en["FM_ImportError"] = "Import error: {0}";
         ru["FM_ImportPrepareError"] = "Ошибка подготовки"; en["FM_ImportPrepareError"] = "Preparation error";
+        ru["FM_ImportResultFormat"] = "Импортировано: {0}, пропущено: {1}, ошибок: {2} / {3}"; en["FM_ImportResultFormat"] = "Imported: {0}, skipped: {1}, errors: {2} / {3}";
+        ru["FM_ImportStatusImport"] = "Импорт: {0}/{1}"; en["FM_ImportStatusImport"] = "Import: {0}/{1}";
+        ru["FM_ImportStatusSkipped"] = "Пропущено: {0}"; en["FM_ImportStatusSkipped"] = "Skipped: {0}";
+        ru["FM_ImportStatusSkippedIdentical"] = " (идентично)"; en["FM_ImportStatusSkippedIdentical"] = " (identical)";
+        ru["FM_ImportStatusErrors"] = "Ошибок: {0}"; en["FM_ImportStatusErrors"] = "Errors: {0}";
         ru["FM_FamilyFileNotFound"] = "Файл семейства не найден"; en["FM_FamilyFileNotFound"] = "Family file not found";
-        ru["FM_ImportResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportResultFormat"] = "Imported: {0} types, {1} values found";
+        ru["FM_ImportDataResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportDataResultFormat"] = "Imported: {0} types, {1} values found";
         ru["FM_ImportDataError"] = "Ошибка импорта: {0}"; en["FM_ImportDataError"] = "Import error: {0}";
         ru["FM_ImportFileToCategory"] = "Импорт файла"; en["FM_ImportFileToCategory"] = "Import file";
         ru["FM_ImportFolderToCategory"] = "Импорт папки"; en["FM_ImportFolderToCategory"] = "Import folder";
@@ -67,6 +73,7 @@ public static partial class LocalizationService
         ru["FM_Update"] = "Обновить"; en["FM_Update"] = "Update";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
+        ru["FM_UpdateIdenticalCurrent"] = "Этот файл уже является текущей версией семейства"; en["FM_UpdateIdenticalCurrent"] = "This file is already the current version of this family";
         ru["FM_UpdateError"] = "Ошибка обновления: {0}"; en["FM_UpdateError"] = "Update error: {0}";
         ru["FM_Refresh"] = "Обновить"; en["FM_Refresh"] = "Refresh";
         ru["FM_RefreshTooltip"] = "Обновить дерево категорий"; en["FM_RefreshTooltip"] = "Refresh category tree";
@@ -178,6 +185,7 @@ public static partial class LocalizationService
         ru["FM_PE_RemoveParameter"] = "- Удалить"; en["FM_PE_RemoveParameter"] = "- Remove";
 
         ru["FM_FamilyNotFoundAfterLoad"] = "Семейство не найдено после загрузки"; en["FM_FamilyNotFoundAfterLoad"] = "Family not found after loading";
+        ru["FM_FamilyNotLoaded"] = "Семейство \"{0}\" не загружено в проект. Используйте \"Загрузить в проект\"."; en["FM_FamilyNotLoaded"] = "Family \"{0}\" not loaded in project. Use 'Load to Project'.";
         ru["FM_CannotDisconnectOnlyDatabase"] = "Нельзя отключить единственную базу данных."; en["FM_CannotDisconnectOnlyDatabase"] = "Cannot disconnect the only database.";
 
         ru["FM_AL_Title"] = "Библиотека атрибутов"; en["FM_AL_Title"] = "Attribute Library";
@@ -224,5 +232,8 @@ public static partial class LocalizationService
         ru["FM_AccessDeniedOwner"] = "Владелец: {0}"; en["FM_AccessDeniedOwner"] = "Owner: {0}";
         ru["FM_StatusBanned"] = "Заблокирован"; en["FM_StatusBanned"] = "Banned";
         ru["FM_DbReadOnlyError"] = "База данных доступна только для чтения. Измените права доступа к файлу или обратитесь к администратору."; en["FM_DbReadOnlyError"] = "Database is read-only. Change file permissions or contact your administrator.";
+        ru["FM_ProfileDisabledTooltip"] = "Подключите базу данных для просмотра профиля"; en["FM_ProfileDisabledTooltip"] = "Connect a database to view profile";
+        ru["FM_StatusNoDatabase"] = "База данных не подключена"; en["FM_StatusNoDatabase"] = "No database connected";
+        ru["FM_FamilyDeleteInUse"] = "Не удалось удалить файлы семейства. Возможно, файл открыт в Revit или другом приложении. Закройте файл и попробуйте снова."; en["FM_FamilyDeleteInUse"] = "Failed to delete family files. The file may be open in Revit or another application. Close the file and try again.";
     }
 }

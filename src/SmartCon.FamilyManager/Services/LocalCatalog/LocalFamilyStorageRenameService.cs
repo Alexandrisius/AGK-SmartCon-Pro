@@ -18,7 +18,8 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
 
     public async Task RenameFamilyFilesAsync(string catalogItemId, string newName, CancellationToken ct = default)
     {
-        SmartConLogger.Info($"[FM Rename] Starting rename for item {catalogItemId} to '{newName}'");
+        var trimmedNewName = newName?.Trim() ?? string.Empty;
+        SmartConLogger.Info($"[FM Rename] Starting rename for item {catalogItemId} to '{trimmedNewName}'");
 
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
@@ -38,11 +39,11 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
 
             SmartConLogger.Info($"[FM Rename] current_version_label = '{currentVersionLabel}'");
 
-            if (string.IsNullOrEmpty(currentVersionLabel))
-            {
-                SmartConLogger.Warn($"[FM Rename] current_version_label is empty — aborting");
-                return;
-            }
+        if (string.IsNullOrEmpty(currentVersionLabel) || string.IsNullOrWhiteSpace(trimmedNewName))
+        {
+            SmartConLogger.Warn($"[FM Rename] current_version_label is empty or newName is whitespace — aborting");
+            return;
+        }
 
             // 2. Find all family_files for the current version
             var filesToRename = new List<(FileRecord Record, string OldAbsolutePath)>();
@@ -76,7 +77,7 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
             foreach (var (record, oldAbsolutePath) in filesToRename)
             {
                 var oldExtension = Path.GetExtension(record.FileName);
-                var newFileName = newName + oldExtension;
+                var newFileName = trimmedNewName + oldExtension;
 
                 var oldRelativeDir = Path.GetDirectoryName(record.RelativePath) ?? string.Empty;
                 var newRelativePath = Path.Combine(oldRelativeDir, newFileName).Replace('/', Path.DirectorySeparatorChar);

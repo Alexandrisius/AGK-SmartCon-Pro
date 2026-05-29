@@ -783,20 +783,6 @@ public interface IFamilyLoadService
 
 ---
 
-### IFamilyLoadOptionsFactory
-
-Фабрика для создания `IFamilyLoadOptions` (Revit API). Возвращает `object` чтобы избежать compile-time зависимости от Revit API в Core (I-09).
-
-**Файл:** `IFamilyLoadOptionsFactory.cs`
-**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyLoadOptionsFactory.cs`
-
-```csharp
-public interface IFamilyLoadOptionsFactory
-{
-    object CreateLoadOptions();
-}
-```
-
 ---
 
 ### IFamilyPlacementService
@@ -829,22 +815,6 @@ public interface IFamilySearchService
     bool IsFamilyLoaded(string familyName);
     IReadOnlyList<string> GetFamilyTypeNames(string familyName);
     bool HasFamilyType(string familyName, string typeName);
-}
-```
-
----
-
-### IFamilyTypeExtractor
-
-Извлечение списка типоразмеров из `.rfa` файла без постоянной загрузки в проект. Все операции выполняются в контексте ExternalEvent (I-01).
-
-**Файл:** `IFamilyTypeExtractor.cs`
-**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyTypeExtractor.cs`
-
-```csharp
-public interface IFamilyTypeExtractor
-{
-    IReadOnlyList<string> ExtractTypeNamesFromFile(string filePath);
 }
 ```
 
@@ -1374,6 +1344,21 @@ public sealed class CloseConfirmationArgs
 public interface ICloseAwareViewModel
 {
     void ConfirmClose(CloseConfirmationArgs args);
+}
+```
+
+### ISaveableViewModel
+
+Enterprise pattern: интерфейс для диалоговых ViewModel, которые модифицируют данные и должны показывать диалог подтверждения "Сохранить / Сбросить / Отмена" при закрытии окна.
+
+**Файл:** `SmartCon.Core/Services/Interfaces/ISaveableViewModel.cs`
+**Реализация:** Реализуется ViewModel с редактируемыми данными (например, `CategoryTreeEditorViewModel`, `AttributeLibraryViewModel`, `FamilyPropertiesViewModel`).
+
+```csharp
+public interface ISaveableViewModel
+{
+    bool HasUnsavedChanges { get; }
+    Task SaveAsync();
 }
 ```
 ```

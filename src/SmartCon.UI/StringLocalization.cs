@@ -213,6 +213,7 @@ public static class StringLocalization
         public const string FM_ImportFolder = "FM_ImportFolder";
         public const string FM_LoadToProject = "FM_LoadToProject";
         public const string FM_LoadAndPlace = "FM_LoadAndPlace";
+        public const string FM_Place = "FM_Place";
         public const string FM_ExtractTypes = "FM_ExtractTypes";
         public const string FM_ImportData = "FM_ImportData";
         public const string FM_PlaceType = "FM_PlaceType";
@@ -233,8 +234,13 @@ public static class StringLocalization
         public const string FM_ImportSuccess = "FM_ImportSuccess";
         public const string FM_ImportError = "FM_ImportError";
         public const string FM_ImportPrepareError = "FM_ImportPrepareError";
-        public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
         public const string FM_ImportResultFormat = "FM_ImportResultFormat";
+        public const string FM_ImportStatusImport = "FM_ImportStatusImport";
+        public const string FM_ImportStatusSkipped = "FM_ImportStatusSkipped";
+        public const string FM_ImportStatusSkippedIdentical = "FM_ImportStatusSkippedIdentical";
+        public const string FM_ImportStatusErrors = "FM_ImportStatusErrors";
+        public const string FM_ImportDataResultFormat = "FM_ImportDataResultFormat";
+        public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
         public const string FM_ImportDataError = "FM_ImportDataError";
         public const string FM_ImportFileToCategory = "FM_ImportFileToCategory";
         public const string FM_ImportFolderToCategory = "FM_ImportFolderToCategory";
@@ -270,6 +276,7 @@ public static class StringLocalization
         public const string FM_Update = "FM_Update";
         public const string FM_UpdateSuccess = "FM_UpdateSuccess";
         public const string FM_UpdateIdentical = "FM_UpdateIdentical";
+        public const string FM_UpdateIdenticalCurrent = "FM_UpdateIdenticalCurrent";
         public const string FM_UpdateError = "FM_UpdateError";
         public const string FM_Refresh = "FM_Refresh";
         public const string FM_RefreshTooltip = "FM_RefreshTooltip";
@@ -367,6 +374,7 @@ public static class StringLocalization
         public const string FM_PE_RemoveParameter = "FM_PE_RemoveParameter";
         public const string FM_Props_XlsNote = "FM_Props_XlsNote";
         public const string FM_FamilyNotFoundAfterLoad = "FM_FamilyNotFoundAfterLoad";
+        public const string FM_FamilyNotLoaded = "FM_FamilyNotLoaded";
         public const string FM_CannotDisconnectOnlyDatabase = "FM_CannotDisconnectOnlyDatabase";
         public const string FM_ErrorFormat = "FM_ErrorFormat";
         public const string FM_AL_Title = "FM_AL_Title";
@@ -426,5 +434,8 @@ public static class StringLocalization
         public const string FM_AccessDeniedOwner = "FM_AccessDeniedOwner";
         public const string FM_StatusBanned = "FM_StatusBanned";
         public const string FM_DbReadOnlyError = "FM_DbReadOnlyError";
+        public const string FM_ProfileDisabledTooltip = "FM_ProfileDisabledTooltip";
+        public const string FM_StatusNoDatabase = "FM_StatusNoDatabase";
+        public const string FM_FamilyDeleteInUse = "FM_FamilyDeleteInUse";
     }
 }

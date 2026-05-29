@@ -33,7 +33,14 @@ public sealed partial class CategoryTreeEditorViewModel
                 var parentEffective = await GetDraftEffectiveAttributesAsync(parent, categoryNameById);
                 foreach (var attr in parentEffective)
                 {
-                    result[attr.AttributeId] = attr with { IsInherited = true };
+                    result[attr.AttributeId] = new EffectiveCategoryAttribute(
+                        attr.AttributeId,
+                        attr.Name,
+                        attr.Group,
+                        attr.SortOrder,
+                        attr.IsEnabled,
+                        true,
+                        attr.SourceCategoryId);
                 }
             }
             else
@@ -41,7 +48,14 @@ public sealed partial class CategoryTreeEditorViewModel
                 var dbEffective = await _bindingService.GetEffectiveAttributesAsync(node.ParentId);
                 foreach (var attr in dbEffective)
                 {
-                    result[attr.AttributeId] = attr with { IsInherited = true };
+                    result[attr.AttributeId] = new EffectiveCategoryAttribute(
+                        attr.AttributeId,
+                        attr.Name,
+                        attr.Group,
+                        attr.SortOrder,
+                        attr.IsEnabled,
+                        true,
+                        attr.SourceCategoryId);
                 }
             }
         }

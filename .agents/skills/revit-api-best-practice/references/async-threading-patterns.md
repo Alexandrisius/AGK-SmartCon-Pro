@@ -305,6 +305,8 @@ var result = Task.Run(() =>
 
 ---
 
+<a name="family-upgrade-freeze-bug"></a>
+
 ## The #3 Fatal Bug: Family Upgrade Freeze (COM/Finalizer Deadlock)
 
 ### Overview
@@ -517,3 +519,11 @@ If freeze occurs, log stops after `Close` or `ReleaseComObject` never completes.
 - [StackOverflow: Revit addins Window stops responding after family upgrade](https://stackoverflow.com/questions/68688249/revit-addins-window-stops-responding-after-family-upgrade) — WPF render thread freeze, not UI thread
 - [The Building Coder: Upgrading Family Files Silently](https://jeremytammik.github.io/tbc/a/1183_silent_upgrade.htm) — Jeremy Tammik: `BasicFileInfo.Extract()`, ADN file updater, pre-conversion approach
 - [The Building Coder: Modifying, saving and reloading families](https://jeremytammik.github.io/tbc/a/1214_mod_reload_family.htm) — `EditFamily`, `LoadFamily` with `IFamilyLoadOptions`
+
+### Related: WPF Render Thread Freeze
+
+A different freeze occurs when WPF `PropertyChanged` fires **before** `ExternalEvent.Raise()` that triggers an MFC family upgrade dialog. This is a **WPF render thread zombie state**, not a COM/finalizer deadlock.
+
+**Symptom:** UI "alive" (clicks work, window moves) but doesn't redraw after dialog closes. Process closes normally.
+
+**Fix:** Move ALL `PropertyChanged` inside `ExternalEvent` handler. See [WPF MFC Render Freeze](wpf-mfc-render-freeze.md).

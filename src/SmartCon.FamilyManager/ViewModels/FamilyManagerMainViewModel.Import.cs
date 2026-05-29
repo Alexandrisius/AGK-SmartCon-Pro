@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -38,9 +39,7 @@ public sealed partial class FamilyManagerMainViewModel
                 else errorCount++;
             }
 
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
-                $"{successCount} / {paths.Length}");
+            StatusMessage = BuildImportStatusMessage(successCount, skipCount, errorCount, paths.Length);
 
             await LoadTreeAsync();
         }
@@ -123,9 +122,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             var result = await _importService.ImportFolderAsync(request, progress);
 
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
-                $"{result.SuccessCount} / {result.TotalFiles}");
+            StatusMessage = BuildImportStatusMessage(result.SuccessCount, result.SkippedCount, result.ErrorCount, result.TotalFiles);
 
             await LoadTreeAsync();
         }
@@ -189,9 +186,7 @@ public sealed partial class FamilyManagerMainViewModel
                 else errorCount++;
             }
 
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
-                $"{successCount} / {paths.Length}");
+            StatusMessage = BuildImportStatusMessage(successCount, skipCount, errorCount, paths.Length);
 
             await LoadTreeAsync();
         }
@@ -232,9 +227,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             var result = await _importService.ImportFolderAsync(request, progress);
 
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSuccess) ?? "Imported: {0}",
-                $"{result.SuccessCount} / {result.TotalFiles}");
+            StatusMessage = BuildImportStatusMessage(result.SuccessCount, result.SkippedCount, result.ErrorCount, result.TotalFiles);
 
             await LoadTreeAsync();
         }
@@ -264,143 +257,94 @@ public sealed partial class FamilyManagerMainViewModel
         }
 
         IsLoading = true;
-        StatusMessage = string.Empty;
-
-        FireAndForget(async () =>
-        {
-            var preparedItems = new List<(string CatalogItemId, string Name, string? FilePath, IReadOnlyList<string> ParamNames, string? VersionId)>();
-            var targetRevit = CurrentRevitVersion;
-
-            for (var i = 0; i < families.Count; i++)
-            {
-                var family = families[i];
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Preparing {0} of {1}: {2}",
-                    i + 1, families.Count, family.DisplayName);
-
-                var prepareResult = await _dataImportService.PrepareExtractionAsync(family.CatalogItemId, targetRevit, CancellationToken.None);
-                if (!prepareResult.Success || string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
-                    continue;
-
-                preparedItems.Add((
-                    family.CatalogItemId,
-                    family.DisplayName,
-                    prepareResult.ResolvedFilePath,
-                    prepareResult.ParameterNames,
-                    prepareResult.Item?.CurrentVersionLabel));
-            }
-
-            if (preparedItems.Count == 0)
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
-                IsLoading = false;
-                return;
-            }
-
-            _externalEvent.Raise(() =>
-            {
-                try
-                {
-                    SmartConLogger.FreezeThreadPool("ImportDataForCategory.ExternalEvent.Start");
-                    var successCount = 0;
-                    var errorCount = 0;
-
-                    for (var i = 0; i < preparedItems.Count; i++)
-                    {
-                        var item = preparedItems[i];
-                        try
-                        {
-                            StatusMessage = string.Format(
-                                LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Processing {0} of {1}: {2}",
-                                i + 1, preparedItems.Count, item.Name);
-
-                            var extractionResult = SmartConLogger.FreezeTimer($"ImportDataForCategory.Extract[{item.Name}]", () =>
-                                _extractionService.Extract(item.FilePath!, item.ParamNames));
-
-                            SmartConLogger.FreezeTimer($"ImportDataForCategory.SaveResult[{item.Name}]", () =>
-                                Task.Run(() => _dataImportService.SaveExtractionResultAsync(
-                                    item.CatalogItemId, extractionResult, item.VersionId, null, CancellationToken.None))
-                                    .GetAwaiter().GetResult());
-
-                            successCount++;
-                        }
-                        catch (Exception ex)
-                        {
-                            errorCount++;
-                            SmartConLogger.Freeze($"ImportDataForCategory: Failed for {item.Name} - {ex.Message}");
-                            SmartConLogger.Warn($"ImportData failed for {item.Name}: {ex.Message}");
-                        }
-                    }
-
-                    StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0} types, {1} values found",
-                        $"{successCount}/{preparedItems.Count} families", "see log");
-
-                    SmartConLogger.Freeze($"ImportDataForCategory: Completed {successCount}/{preparedItems.Count}");
-
-                    FireAndForget(async () => await LoadTreeAsync());
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Freeze($"ImportDataForCategory: Exception - {ex.GetType().Name}: {ex.Message}");
-                    SmartConLogger.Warn($"ImportDataForCategory failed: {ex.Message}");
-                    StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
-                        ex.Message);
-                }
-                finally
-                {
-                    IsLoading = false;
-                }
-            });
-        });
-    }
-
-    [RelayCommand(CanExecute = nameof(CanImportFiles))]
-    private void ExtractTypes()
-    {
-        if (SelectedItem is null) return;
-
-        var selectedId = SelectedItem.Id;
-        var selectedName = SelectedItem.Name;
-        var targetRevit = CurrentRevitVersion;
 
         _externalEvent.Raise(() =>
         {
             try
             {
-                SmartConLogger.FreezeThreadPool("ExtractTypes.Start");
+                StatusMessage = string.Empty;
+                
+                var preparedItems = new List<(string CatalogItemId, string Name, string? FilePath, IReadOnlyList<string> ParamNames, string? VersionId)>();
+                var targetRevit = CurrentRevitVersion;
 
-                if (_familySearchService.IsFamilyLoaded(selectedName))
+                for (var i = 0; i < families.Count; i++)
                 {
-                    var names = _familySearchService.GetFamilyTypeNames(selectedName);
-                    SmartConLogger.Freeze($"ExtractTypes: Family already loaded, found {names.Count} types");
-                    if (names.Count > 0)
-                        FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, names.ToList()));
+                    var family = families[i];
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Preparing {0} of {1}: {2}",
+                        i + 1, families.Count, family.DisplayName);
+
+                    var prepareResult = Task.Run(() => _dataImportService.PrepareExtractionAsync(
+                        family.CatalogItemId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                    
+                    if (!prepareResult.Success || string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
+                        continue;
+
+                    preparedItems.Add((
+                        family.CatalogItemId,
+                        family.DisplayName,
+                        prepareResult.ResolvedFilePath,
+                        prepareResult.ParameterNames,
+                        prepareResult.Item?.CurrentVersionLabel));
+                }
+
+                if (preparedItems.Count == 0)
+                {
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
+                    IsLoading = false;
                     return;
                 }
 
-                var resolved = SmartConLogger.FreezeTimer("ExtractTypes.ResolveFile", () =>
-                    Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult());
+                var successCount = 0;
+                var errorCount = 0;
 
-                if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                for (var i = 0; i < preparedItems.Count; i++)
                 {
-                    SmartConLogger.Freeze("ExtractTypes: No file resolved");
-                    return;
+                    var item = preparedItems[i];
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataProgress) ?? "Processing {0} of {1}: {2}",
+                        i + 1, preparedItems.Count, item.Name);
+
+                    try
+                    {
+                        var result = _extractionService.Extract(item.FilePath!, item.ParamNames);
+                        
+                        if (result.Success)
+                        {
+                            var saveResult = Task.Run(() => _dataImportService.SaveExtractionResultAsync(
+                                item.CatalogItemId, result, item.VersionId, null, CancellationToken.None)).GetAwaiter().GetResult();
+                            
+                            if (saveResult.Success)
+                                successCount++;
+                            else
+                                errorCount++;
+                        }
+                        else
+                        {
+                            errorCount++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        SmartConLogger.Warn($"ImportData failed for {item.Name}: {ex.Message}");
+                    }
                 }
 
-                var typeNames = SmartConLogger.FreezeTimer("ExtractTypes.ExtractFromFile", () =>
-                    _familyTypeExtractor.ExtractTypeNamesFromFile(resolved.AbsolutePath));
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataResultFormat) ?? "Imported: {0} types, {1} values found",
+                    $"{successCount}/{preparedItems.Count} families", "see log");
 
-                SmartConLogger.Freeze($"ExtractTypes: Extracted {typeNames.Count} types");
-
-                if (typeNames.Count > 0)
-                    FireAndForget(() => SaveTypesAndReloadTreeAsync(selectedId, typeNames.ToList()));
+                IsLoading = false;
+                
+                // Refresh tree in background
+                FireAndForget(() => LoadTreeAsync());
             }
             catch (Exception ex)
             {
-                SmartConLogger.Freeze($"ExtractTypes: Exception - {ex.GetType().Name}: {ex.Message}");
-                SmartConLogger.Warn($"ExtractTypes failed: {ex.Message}");
+                SmartConLogger.Warn($"ImportDataForCategory failed: {ex.Message}");
+                StatusMessage = ex.Message;
+                IsLoading = false;
             }
         });
     }
@@ -414,74 +358,100 @@ public sealed partial class FamilyManagerMainViewModel
         var targetRevit = CurrentRevitVersion;
 
         IsLoading = true;
-        StatusMessage = string.Empty;
 
-        FireAndForget(async () =>
+        _externalEvent.Raise(() =>
         {
-            var prepareResult = await _dataImportService.PrepareExtractionAsync(selectedId, targetRevit, CancellationToken.None);
-
-            if (!prepareResult.Success)
+            try
             {
-                StatusMessage = prepareResult.ErrorMessage ?? LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
-                IsLoading = false;
-                return;
-            }
+                StatusMessage = string.Empty;
+                
+                SmartConLogger.Info("[ImportData] Sync mode - preparing...");
+                var prepareResult = Task.Run(() => _dataImportService.PrepareExtractionAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
 
-            if (string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FamilyFileNotFound) ?? "Family file not found";
-                IsLoading = false;
-                return;
-            }
-
-            var rfaPath = prepareResult.ResolvedFilePath;
-            var paramNames = prepareResult.ParameterNames;
-            var versionId = prepareResult.Item?.CurrentVersionLabel;
-
-            _externalEvent.Raise(() =>
-            {
-                try
+                if (!prepareResult.Success)
                 {
-                    SmartConLogger.FreezeThreadPool("ImportData.ExternalEvent.Start");
-
-                    var extractionResult = SmartConLogger.FreezeTimer("ImportData.Extract", () =>
-                        _extractionService.Extract(rfaPath!, paramNames));
-
-                    var saveResult = SmartConLogger.FreezeTimer("ImportData.SaveResult", () =>
-                        Task.Run(() => _dataImportService.SaveExtractionResultAsync(
-                            selectedId, extractionResult, versionId, null, CancellationToken.None)).GetAwaiter().GetResult());
-
-                    StatusMessage = saveResult.Success
-                        ? string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportResultFormat) ?? "Imported: {0} types, {1} values found", saveResult.TypesCount, saveResult.AttributesFoundCount)
-                        : string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataError) ?? "Import error: {0}", saveResult.ErrorMessage);
-
-                    SmartConLogger.Freeze($"ImportData: Success={saveResult.Success}, Types={saveResult.TypesCount}");
-
-                    FireAndForget(async () => await LoadTreeAsync());
+                    StatusMessage = prepareResult.ErrorMessage ?? LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Preparation error";
+                    IsLoading = false;
+                    return;
                 }
-                catch (Exception ex)
+
+                if (string.IsNullOrEmpty(prepareResult.ResolvedFilePath))
                 {
-                    SmartConLogger.Freeze($"ImportData: Exception - {ex.GetType().Name}: {ex.Message}");
-                    SmartConLogger.Warn($"ImportData failed: {ex.Message}");
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FamilyFileNotFound) ?? "Family file not found";
+                    IsLoading = false;
+                    return;
+                }
+
+                var rfaPath = prepareResult.ResolvedFilePath;
+                var paramNames = prepareResult.ParameterNames;
+                var versionId = prepareResult.Item?.CurrentVersionLabel;
+
+                SmartConLogger.Info("[ImportData] Sync mode - extracting...");
+                var result = _extractionService.Extract(rfaPath!, paramNames);
+                SmartConLogger.Info($"[ImportData] Sync mode - Extract done: Success={result.Success}, Types={result.Types.Count}");
+
+                if (result.Success)
+                {
+                    SmartConLogger.Info("[ImportData] Sync mode - saving...");
+                    var saveResult = Task.Run(() => _dataImportService.SaveExtractionResultAsync(
+                        selectedId, result, versionId, null, CancellationToken.None)).GetAwaiter().GetResult();
+                    
+                    StatusMessage = saveResult.Success
+                        ? string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataResultFormat) ?? "Imported: {0} types, {1} values found",
+                            saveResult.TypesCount, saveResult.AttributesFoundCount)
+                        : string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_ImportDataError) ?? "Import error: {0}",
+                            saveResult.ErrorMessage);
+                }
+                else
+                {
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
-                        ex.Message);
+                        result.ErrorMessage);
                 }
-                finally
-                {
-                    IsLoading = false;
-                }
-            });
+                
+                IsLoading = false;
+                
+                // Refresh tree in background (like LoadToProject does with RecordUsageAsync)
+                FireAndForget(() => LoadTreeAsync());
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"ImportData failed: {ex.Message}");
+                StatusMessage = ex.Message;
+                IsLoading = false;
+            }
         });
     }
 
-    private async Task SaveTypesAndReloadTreeAsync(string catalogItemId, List<string> typeNames)
+    private string BuildImportStatusMessage(int successCount, int skipCount, int errorCount, int total)
     {
-        var types = typeNames.Select((name, i) => new FamilyTypeDescriptor(
-            Guid.NewGuid().ToString(), catalogItemId, name, i)).ToList();
+        var parts = new List<string>();
 
-        await _typeRepository.SaveTypesAsync(catalogItemId, types.AsReadOnly(), CancellationToken.None);
-        await LoadTreeAsync();
+        var importPart = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusImport) ?? "импорт: {0}/{1}",
+            successCount, total);
+        parts.Add(importPart);
+
+        if (skipCount > 0)
+        {
+            var skipPart = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusSkipped) ?? "пропущено: {0}",
+                skipCount);
+            skipPart += LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusSkippedIdentical) ?? " (идентично)";
+            parts.Add(skipPart);
+        }
+
+        if (errorCount > 0)
+        {
+            var errorPart = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusErrors) ?? "ошибок: {0}",
+                errorCount);
+            parts.Add(errorPart);
+        }
+
+        return string.Join(", ", parts);
     }
 
     private bool CanImportFiles() => CanImport;
