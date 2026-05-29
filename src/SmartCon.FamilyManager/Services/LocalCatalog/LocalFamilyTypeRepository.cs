@@ -20,7 +20,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId ORDER BY sort_order";
+        cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId AND type_name <> '' ORDER BY sort_order";
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -48,12 +48,12 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
 
         if (versionId is null)
         {
-            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId AND version_id IS NULL ORDER BY sort_order";
+            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId AND version_id IS NULL AND type_name <> '' ORDER BY sort_order";
             cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
         }
         else
         {
-            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId AND version_id = @versionId ORDER BY sort_order";
+            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id = @itemId AND version_id = @versionId AND type_name <> '' ORDER BY sort_order";
             cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
             cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
         }
@@ -86,7 +86,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
 
         var placeholders = string.Join(",", Enumerable.Range(0, idList.Count).Select(i => $"@p{i}"));
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id IN ({placeholders}) ORDER BY sort_order";
+        cmd.CommandText = $"SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id FROM family_types WHERE catalog_item_id IN ({placeholders}) AND type_name <> '' ORDER BY sort_order";
         for (var i = 0; i < idList.Count; i++)
             cmd.Parameters.Add(new SqliteParameter($"@p{i}", idList[i]));
 

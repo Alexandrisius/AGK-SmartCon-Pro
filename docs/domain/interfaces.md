@@ -783,20 +783,6 @@ public interface IFamilyLoadService
 
 ---
 
-### IFamilyLoadOptionsFactory
-
-Фабрика для создания `IFamilyLoadOptions` (Revit API). Возвращает `object` чтобы избежать compile-time зависимости от Revit API в Core (I-09).
-
-**Файл:** `IFamilyLoadOptionsFactory.cs`
-**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyLoadOptionsFactory.cs`
-
-```csharp
-public interface IFamilyLoadOptionsFactory
-{
-    object CreateLoadOptions();
-}
-```
-
 ---
 
 ### IFamilyPlacementService

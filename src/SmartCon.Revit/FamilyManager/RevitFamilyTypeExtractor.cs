@@ -1,26 +1,21 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.FamilyManager;
 
 /// <summary>
 /// Реализация IFamilyTypeExtractor через Revit API.
-/// Использует LoadFamily внутри RunAndRollback для временной загрузки.
+/// Открывает .rfa как отдельный family document и читает FamilyManager.Types.
+/// Не использует LoadFamily — исключает генерацию фантомных типов проектом.
 /// </summary>
 public sealed class RevitFamilyTypeExtractor : IFamilyTypeExtractor
 {
     private readonly IRevitContext _revitContext;
-    private readonly ITransactionService _transactionService;
-    private readonly IFamilyLoadOptionsFactory _loadOptionsFactory;
 
-    public RevitFamilyTypeExtractor(
-        IRevitContext revitContext,
-        ITransactionService transactionService,
-        IFamilyLoadOptionsFactory loadOptionsFactory)
+    public RevitFamilyTypeExtractor(IRevitContext revitContext)
     {
         _revitContext = revitContext;
-        _transactionService = transactionService;
-        _loadOptionsFactory = loadOptionsFactory;
     }
 
     public IReadOnlyList<string> ExtractTypeNamesFromFile(string filePath)
@@ -28,26 +23,48 @@ public sealed class RevitFamilyTypeExtractor : IFamilyTypeExtractor
         var doc = _revitContext.GetDocument();
         if (doc is null) return Array.Empty<string>();
 
-        List<string>? typeNames = null;
+        var app = doc.Application;
+        Document? familyDoc = null;
 
-        _transactionService.RunAndRollback("Extract Types", d =>
+        try
         {
-            var loadOptions = _loadOptionsFactory.CreateLoadOptions();
-            if (loadOptions is not Autodesk.Revit.DB.IFamilyLoadOptions familyLoadOptions)
-                return;
+            familyDoc = app.OpenDocumentFile(filePath);
+            if (!familyDoc.IsFamilyDocument)
+                return Array.Empty<string>();
 
-            if (!d.LoadFamily(filePath, familyLoadOptions, out var loaded) || loaded is null)
-                return;
+            var fm = familyDoc.FamilyManager;
+            var typeNames = new List<string>();
 
-            typeNames = loaded.GetFamilySymbolIds()
-                .Select(id => d.GetElement(id))
-                .OfType<FamilySymbol>()
-                .Select(s => s.Name)
-                .Where(n => !string.IsNullOrWhiteSpace(n))
+            foreach (FamilyType familyType in fm.Types)
+            {
+                if (!string.IsNullOrWhiteSpace(familyType.Name))
+                {
+                    typeNames.Add(familyType.Name);
+                }
+            }
+
+            return typeNames
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-        });
-
-        return typeNames ?? new List<string>();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"ExtractTypeNamesFromFile failed for '{filePath}': {ex.Message}");
+            return Array.Empty<string>();
+        }
+        finally
+        {
+            if (familyDoc != null)
+            {
+                try
+                {
+                    familyDoc.Close(false);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Failed to close family document '{filePath}': {ex.Message}");
+                }
+            }
+        }
     }
 }

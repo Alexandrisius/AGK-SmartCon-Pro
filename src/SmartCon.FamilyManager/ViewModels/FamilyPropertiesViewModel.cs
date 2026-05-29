@@ -242,7 +242,9 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
             var types = await _typeRepository.GetTypesForItemAsync(_catalogItemId, ct);
             AvailableTypes = new ObservableCollection<FamilyTypeSelectorItem>(
-                types.Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
+                types
+                    .Where(t => !string.IsNullOrWhiteSpace(t.Name))
+                    .Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
             HasTypes = AvailableTypes.Count > 0;
 
             var allValues = await _valueRepository.GetValuesForItemAsync(_catalogItemId, run.VersionId, ct);

@@ -8,7 +8,7 @@ public interface IFamilyTypeExtractor
 {
     /// <summary>
     /// Извлечь имена типоразмеров из файла семейства.
-    /// Использует временную транзакцию (RunAndRollback) — семейство не остается в проекте.
+    /// Открывает .rfa как family document — семейство не остается в проекте.
     /// Возвращает пустой список при ошибке.
     /// </summary>
     IReadOnlyList<string> ExtractTypeNamesFromFile(string filePath);
