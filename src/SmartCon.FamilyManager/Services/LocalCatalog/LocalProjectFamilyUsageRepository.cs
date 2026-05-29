@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -103,6 +104,17 @@ internal sealed class LocalProjectFamilyUsageRepository : IProjectFamilyUsageRep
                 result[itemId] = label;
         }
         return result;
+    }
+
+    public async Task<int> DeleteOldUsagesAsync(TimeSpan maxAge, CancellationToken ct = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow.Subtract(maxAge);
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM project_usage WHERE created_at_utc < @cutoff";
+        cmd.Parameters.Add(new SqliteParameter("@cutoff", cutoff.ToString("o")));
+        return await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private static ProjectFamilyUsage ReadUsage(SqliteDataReader reader) => new(

@@ -45,7 +45,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         ExistingVersionLabel = item.ExistingVersionLabel;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
-        _targetCategoryPath = item.TargetCategoryId ?? "Без категории";
+        _targetCategoryPath = item.TargetCategoryName ?? item.TargetCategoryId ?? "Без категории";
 
         AvailableActions = Status switch
         {

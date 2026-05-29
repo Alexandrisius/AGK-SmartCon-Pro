@@ -168,6 +168,19 @@ public sealed partial class FamilyManagerMainViewModel
         try
         {
             var items = new List<FamilyBatchImportItem>();
+            string? categoryName = null;
+            if (!string.IsNullOrEmpty(categoryId))
+            {
+                try
+                {
+                    var cat = await _categoryRepository.GetByIdAsync(categoryId!, CancellationToken.None);
+                    categoryName = cat?.Name;
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Failed to resolve category name for '{categoryId}': {ex.Message}");
+                }
+            }
 
             foreach (var path in paths)
             {
@@ -196,13 +209,15 @@ public sealed partial class FamilyManagerMainViewModel
                         items.Add(new FamilyBatchImportItem(
                             path, Path.GetFileName(path), sha256.Sha256, revitVersion, fileInfo.Length,
                             FamilyBatchImportStatus.Existing,
-                            forcedExistingItemId ?? existingByName!.Id, existingByName?.CurrentVersionLabel));
+                            forcedExistingItemId ?? existingByName!.Id, existingByName?.CurrentVersionLabel,
+                            categoryId, categoryName));
                     }
                     else
                     {
                         items.Add(new FamilyBatchImportItem(
                             path, Path.GetFileName(path), sha256.Sha256, revitVersion, fileInfo.Length,
-                            FamilyBatchImportStatus.New));
+                            FamilyBatchImportStatus.New,
+                            null, null, categoryId, categoryName));
                     }
                 }
                 catch (Exception ex)
@@ -214,7 +229,7 @@ public sealed partial class FamilyManagerMainViewModel
                 }
             }
 
-            var vm = new FamilyBatchImportViewModel(items, _dialogService, _viewModelFactory);
+            using var vm = new FamilyBatchImportViewModel(items, _dialogService, _viewModelFactory, categoryId);
             var result = _dialogService.ShowBatchImportDialog(vm);
             if (result != true) return;
 
@@ -226,16 +241,18 @@ public sealed partial class FamilyManagerMainViewModel
                     p.CurrentFileIndex + 1, p.TotalFiles);
             });
 
-            var importResult = await _importService.ImportBatchAsync(selectedItems, null, progress, CancellationToken.None);
-
-            StatusMessage = BuildImportStatusMessage(
-                importResult.SuccessCount, importResult.SkippedCount, importResult.ErrorCount, importResult.TotalFiles);
+            var importResult = await _importService.ImportBatchAsync(selectedItems, categoryId, progress, CancellationToken.None);
 
             // Extract types/attributes for successfully imported families
             var successfulItems = importResult.Results.Where(r => r.Success && !r.WasSkippedAsDuplicate).ToList();
             if (successfulItems.Count > 0)
             {
-                ExtractTypesForImportedFamilies(successfulItems);
+                ExtractTypesForImportedFamilies(successfulItems, importResult.SuccessCount, importResult.SkippedCount, importResult.ErrorCount, importResult.TotalFiles);
+            }
+            else
+            {
+                StatusMessage = BuildImportStatusMessage(
+                    importResult.SuccessCount, importResult.SkippedCount, importResult.ErrorCount, importResult.TotalFiles);
             }
 
             await LoadTreeAsync();
@@ -262,10 +279,18 @@ public sealed partial class FamilyManagerMainViewModel
     /// <summary>
     /// Extracts types and attributes for successfully imported families via ExternalEvent.
     /// </summary>
-    private void ExtractTypesForImportedFamilies(List<FamilyImportResult> importedItems)
+    private void ExtractTypesForImportedFamilies(
+        List<FamilyImportResult> importedItems,
+        int successCount, int skippedCount, int errorCount, int total)
     {
         _externalEvent.Raise(() =>
         {
+            // Update status inside ExternalEvent to avoid WPF render thread freeze
+            // when OpenDocumentFile triggers MFC family upgrade dialog
+            StatusMessage = BuildImportStatusMessage(successCount, skippedCount, errorCount, total);
+
+            var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionLabel, string? FileId)>();
+
             try
             {
                 foreach (var item in importedItems)
@@ -273,27 +298,44 @@ public sealed partial class FamilyManagerMainViewModel
                     if (string.IsNullOrEmpty(item.CatalogItemId)) continue;
                     var catalogItemId = item.CatalogItemId!;
 
+                    // ThreadPool: file resolution (SQLite/async)
                     var resolved = Task.Run(() =>
                         _fileResolver.ResolveForLoadAsync(catalogItemId, CurrentRevitVersion, CancellationToken.None))
                         .GetAwaiter().GetResult();
 
                     if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
 
+                    // UI thread: Revit API (OpenDocumentFile + Extract)
                     var extractionResult = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());
                     if (extractionResult.Success)
                     {
-                        Task.Run(() => _dataImportService.SaveExtractionResultAsync(
-                            catalogItemId, extractionResult, item.VersionLabel, item.FileId, CancellationToken.None))
-                            .GetAwaiter().GetResult();
+                        extractionResults.Add((catalogItemId, extractionResult, item.VersionLabel, item.FileId));
                     }
                 }
-
-                FireAndForget(() => LoadTreeAsync());
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"ExtractTypesForImportedFamilies failed: {ex.Message}");
+                SmartConLogger.Warn($"ExtractTypesForImportedFamilies extraction failed: {ex.Message}");
             }
+
+            // FireAndForget: SQLite save + tree reload (non-critical post-processing)
+            FireAndForget(async () =>
+            {
+                try
+                {
+                    foreach (var (catalogItemId, result, versionLabel, fileId) in extractionResults)
+                    {
+                        await _dataImportService.SaveExtractionResultAsync(
+                            catalogItemId, result, versionLabel, fileId, CancellationToken.None);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"ExtractTypesForImportedFamilies save failed: {ex.Message}");
+                }
+
+                await LoadTreeAsync();
+            });
         });
     }
 

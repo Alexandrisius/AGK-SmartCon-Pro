@@ -178,7 +178,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 SmartConLogger.Info($"[FamilyLoad] No existing family found with name '{checkName}'");
             }
 
-            var loadOptions = new RevitFamilyLoadOptions();
+            var loadOptions = new RevitFamilyLoadOptions(options.OverwriteParameterValues);
 
             SmartConLogger.Info("[FamilyLoad] Attempt 1: LoadFamily with options in transaction...");
             var result1 = TryLoadInTransaction(doc, normalizedPath, loadOptions, options, "Attempt1", existingFamily);

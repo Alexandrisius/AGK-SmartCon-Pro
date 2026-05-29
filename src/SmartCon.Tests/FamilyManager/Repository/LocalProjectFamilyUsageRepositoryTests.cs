@@ -176,4 +176,43 @@ public sealed class LocalProjectFamilyUsageRepositoryTests
         Assert.Equal("v1", resultsA[itemId]);
         Assert.Empty(resultsB);
     }
+
+    [Fact]
+    public async Task DeleteOldUsagesAsync_RemovesOldRecords()
+    {
+        var (fixture, repo, itemId) = await CreateSeeded();
+        using var _ = fixture;
+
+        var oldDate = DateTimeOffset.UtcNow.AddDays(-100);
+        var recentDate = DateTimeOffset.UtcNow.AddDays(-1);
+        
+        await repo.RecordUsageAsync(new ProjectFamilyUsage("u1", itemId, null, null, "p", "p", 2025, "Load", oldDate));
+        await repo.RecordUsageAsync(new ProjectFamilyUsage("u2", itemId, null, null, "p", "p", 2025, "Load", recentDate));
+
+        var allBefore = await repo.GetUsageForItemAsync(itemId);
+        Assert.Equal(2, allBefore.Count);
+
+        var deleted = await repo.DeleteOldUsagesAsync(TimeSpan.FromDays(90));
+        Assert.Equal(1, deleted);
+
+        var allAfter = await repo.GetUsageForItemAsync(itemId);
+        Assert.Single(allAfter);
+        Assert.Equal("u2", allAfter[0].Id);
+    }
+
+    [Fact]
+    public async Task DeleteOldUsagesAsync_NoOldRecords_DeletesNothing()
+    {
+        var (fixture, repo, itemId) = await CreateSeeded();
+        using var _ = fixture;
+
+        var recentDate = DateTimeOffset.UtcNow.AddDays(-1);
+        await repo.RecordUsageAsync(new ProjectFamilyUsage("u1", itemId, null, null, "p", "p", 2025, "Load", recentDate));
+
+        var deleted = await repo.DeleteOldUsagesAsync(TimeSpan.FromDays(90));
+        Assert.Equal(0, deleted);
+
+        var allAfter = await repo.GetUsageForItemAsync(itemId);
+        Assert.Single(allAfter);
+    }
 }

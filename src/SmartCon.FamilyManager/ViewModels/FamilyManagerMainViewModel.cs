@@ -54,7 +54,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private FamilyCatalogItemRow? _selectedItem;
     [ObservableProperty] private ObservableCollection<CatalogTreeNodeViewModel> _treeNodes = [];
     [ObservableProperty] private CatalogTreeNodeViewModel? _selectedTreeNode;
+    [ObservableProperty] private bool _isSelectedFamilyStale;
     [ObservableProperty] private bool _isLoading;
+    private string? _cachedProjectPath;
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
@@ -272,6 +274,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
         CanPlace = false;
         LoadToProjectCommand.NotifyCanExecuteChanged();
+        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         PlaceCommand.NotifyCanExecuteChanged();
 
         if (value is not null)
@@ -282,8 +285,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 try
                 {
                     var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
-                    CanPlace = isLoaded;
-                    PlaceCommand.NotifyCanExecuteChanged();
+                    if (SelectedItem?.Name == familyName)
+                    {
+                        CanPlace = isLoaded;
+                        PlaceCommand.NotifyCanExecuteChanged();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -310,28 +316,32 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Tags = leaf.Tags,
                 Description = leaf.Description,
             };
-            CanPlaceType = false;
-        }
-        else if (value is FamilyTypeNodeViewModel typeNode)
-        {
-            var parent = FindParentOf(TreeNodes, typeNode);
-            if (parent is FamilyLeafNodeViewModel parentLeaf)
-            {
-                SelectedItem = new FamilyCatalogItemRow
-                {
-                    Id = parentLeaf.CatalogItemId,
-                    Name = parentLeaf.DisplayName,
-                    CategoryId = parentLeaf.CategoryId,
-                    CategoryName = parentLeaf.CategoryPath,
-                    Manufacturer = parentLeaf.Manufacturer,
-                    ContentStatus = parentLeaf.ContentStatus,
-                    VersionLabel = parentLeaf.VersionLabel,
-                    UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
-                    Tags = parentLeaf.Tags,
-                    Description = parentLeaf.Description,
-                };
+                IsSelectedFamilyStale = leaf.IsStale;
                 CanPlaceType = false;
-                PlaceTypeCommand.NotifyCanExecuteChanged();
+                LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
+            }
+            else if (value is FamilyTypeNodeViewModel typeNode)
+            {
+                var parent = FindParentOf(TreeNodes, typeNode);
+                if (parent is FamilyLeafNodeViewModel parentLeaf)
+                {
+                    SelectedItem = new FamilyCatalogItemRow
+                    {
+                        Id = parentLeaf.CatalogItemId,
+                        Name = parentLeaf.DisplayName,
+                        CategoryId = parentLeaf.CategoryId,
+                        CategoryName = parentLeaf.CategoryPath,
+                        Manufacturer = parentLeaf.Manufacturer,
+                        ContentStatus = parentLeaf.ContentStatus,
+                        VersionLabel = parentLeaf.VersionLabel,
+                        UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
+                        Tags = parentLeaf.Tags,
+                        Description = parentLeaf.Description,
+                    };
+                    IsSelectedFamilyStale = parentLeaf.IsStale;
+                    CanPlaceType = false;
+                    PlaceTypeCommand.NotifyCanExecuteChanged();
+                    LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
 
                 var familyName = parentLeaf.DisplayName;
                 _externalEvent.Raise(() =>
@@ -339,8 +349,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     try
                     {
                         var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
-                        CanPlaceType = isLoaded;
-                        PlaceTypeCommand.NotifyCanExecuteChanged();
+                        if (SelectedTreeNode is FamilyTypeNodeViewModel currentTypeNode)
+                        {
+                            var currentParent = FindParentOf(TreeNodes, currentTypeNode);
+                            if (currentParent is FamilyLeafNodeViewModel currentLeaf &&
+                                currentLeaf.DisplayName == familyName)
+                            {
+                                CanPlaceType = isLoaded;
+                                PlaceTypeCommand.NotifyCanExecuteChanged();
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -351,16 +369,19 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             else
             {
                 SelectedItem = null;
+                IsSelectedFamilyStale = false;
                 CanPlaceType = false;
             }
         }
         else
         {
             SelectedItem = null;
+            IsSelectedFamilyStale = false;
             CanPlaceType = false;
         }
 
         LoadToProjectCommand.NotifyCanExecuteChanged();
+        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         PlaceCommand.NotifyCanExecuteChanged();
         PlaceTypeCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();

@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -16,7 +17,8 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     public DateTimeOffset UpdatedAtUtc { get; }
     public IReadOnlyList<string> Tags { get; }
     public string? Description { get; }
-    public bool IsStale { get; init; }
+    [ObservableProperty]
+    private bool _isStale;
 
     public FamilyLeafNodeViewModel(FamilyCatalogItemRow row, bool isStale = false)
     {
@@ -30,5 +32,6 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         UpdatedAtUtc = row.UpdatedAtUtc;
         Tags = row.Tags;
         Description = row.Description;
+        _isStale = isStale;
     }
 }

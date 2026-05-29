@@ -16,6 +16,36 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
+            // Refresh cached project path via ExternalEvent (I-01 compliance)
+            _externalEvent.Raise(() =>
+            {
+                try
+                {
+                    _cachedProjectPath = _revitContext.GetDocument().PathName;
+                }
+                catch
+                {
+                    _cachedProjectPath = null;
+                }
+            });
+
+            // Cleanup old usage records (older than 90 days)
+            FireAndForget(async () =>
+            {
+                try
+                {
+                    var deleted = await _usageRepo.DeleteOldUsagesAsync(TimeSpan.FromDays(90), CancellationToken.None);
+                    if (deleted > 0)
+                    {
+                        SmartConLogger.Info($"[Cleanup] Deleted {deleted} old project_usage records");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Cleanup old usages failed: {ex.Message}");
+                }
+            });
+
             IReadOnlyList<Core.Models.FamilyManager.CategoryNode> categories = [];
             try
             {
@@ -65,18 +95,11 @@ public sealed partial class FamilyManagerMainViewModel
             Dictionary<string, string?> loadedVersionLabels = new();
             try
             {
-                var projectPath = _revitContext.GetDocument().PathName;
-                SmartConLogger.Info($"[StaleDebug] ProjectPath: {projectPath}");
-                if (!string.IsNullOrEmpty(projectPath))
+                if (!string.IsNullOrEmpty(_cachedProjectPath))
                 {
                     var familyIds = results.Select(r => r.Id).ToList();
                     loadedVersionLabels = (Dictionary<string, string?>)
-                        await _usageRepo.GetLoadedVersionLabelsAsync(projectPath, familyIds, ct);
-                    SmartConLogger.Info($"[StaleDebug] Loaded {loadedVersionLabels.Count} version labels for {familyIds.Count} families");
-                    foreach (var kvp in loadedVersionLabels)
-                    {
-                        SmartConLogger.Info($"[StaleDebug]   Family {kvp.Key} -> loaded version: {kvp.Value ?? "null"}");
-                    }
+                        await _usageRepo.GetLoadedVersionLabelsAsync(_cachedProjectPath!, familyIds, ct);
                 }
             }
             catch (Exception ex)

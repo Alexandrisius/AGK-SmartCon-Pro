@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
@@ -12,7 +13,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 /// <summary>
 /// ViewModel for the batch import dialog.
 /// </summary>
-public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObservableRequestClose, IDisposable
 {
     public event Action<bool?>? RequestClose;
 
@@ -25,6 +26,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
 
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
+    private bool _disposed;
 
     public FamilyBatchImportViewModel(
         IReadOnlyList<FamilyBatchImportItem> items,
@@ -37,6 +39,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
 
         foreach (var item in items)
         {
+            if (string.IsNullOrEmpty(item.TargetCategoryId) && !string.IsNullOrEmpty(defaultCategoryId))
+            {
+                item.TargetCategoryId = defaultCategoryId;
+            }
             var row = new FamilyBatchImportRow(item);
             row.PropertyChanged += OnRowPropertyChanged;
             row.PickCategoryRequested += OnRowPickCategoryRequested;
@@ -47,21 +53,28 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
 
     private async void OnRowPickCategoryRequested(FamilyBatchImportRow row)
     {
-        var pickerVm = _viewModelFactory.CreateCategoryPickerViewModel();
-        await pickerVm.InitializeAsync();
-        var result = _dialogService.ShowCategoryPicker(pickerVm);
-        if (result is not null)
+        try
         {
-            if (string.IsNullOrEmpty(result))
+            var pickerVm = _viewModelFactory.CreateCategoryPickerViewModel();
+            await pickerVm.InitializeAsync();
+            var result = _dialogService.ShowCategoryPicker(pickerVm);
+            if (result is not null)
             {
-                row.TargetCategoryId = null;
-                row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
+                if (string.IsNullOrEmpty(result))
+                {
+                    row.TargetCategoryId = null;
+                    row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
+                }
+                else
+                {
+                    row.TargetCategoryId = result;
+                    row.TargetCategoryPath = pickerVm.SelectedPath;
+                }
             }
-            else
-            {
-                row.TargetCategoryId = result;
-                row.TargetCategoryPath = pickerVm.SelectedPath;
-            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[BatchImport] Category picker failed: {ex.Message}");
         }
     }
 
@@ -70,6 +83,18 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         if (e.PropertyName == nameof(FamilyBatchImportRow.CanImport))
         {
             UpdateCanImport();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        foreach (var row in Items)
+        {
+            row.PropertyChanged -= OnRowPropertyChanged;
+            row.PickCategoryRequested -= OnRowPickCategoryRequested;
         }
     }
 
@@ -105,7 +130,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             r.Status,
             r.ExistingCatalogItemId,
             r.ExistingVersionLabel,
-            r.TargetCategoryId)
+            r.TargetCategoryId,
+            r.TargetCategoryPath)
         {
             Action = r.Action
         }).ToList();

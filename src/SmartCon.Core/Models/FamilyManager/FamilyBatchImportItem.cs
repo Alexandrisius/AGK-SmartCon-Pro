@@ -12,7 +12,8 @@ public sealed record FamilyBatchImportItem(
     FamilyBatchImportStatus Status,
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
-    string? TargetCategoryId = null)
+    string? TargetCategoryId = null,
+    string? TargetCategoryName = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =
@@ -22,4 +23,7 @@ public sealed record FamilyBatchImportItem(
 
     /// <summary>User-selected target category for this file (overrides dialog-level category).</summary>
     public string? TargetCategoryId { get; set; } = TargetCategoryId;
+
+    /// <summary>Human-readable name of the target category.</summary>
+    public string? TargetCategoryName { get; set; } = TargetCategoryName;
 }

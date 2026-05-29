@@ -89,15 +89,49 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="MenuItem">
-                            <Border x:Name="ItemBorder"
-                                    Background="{TemplateBinding Background}"
-                                    CornerRadius="4"
-                                    Padding="{TemplateBinding Padding}"
-                                    Margin="1">
-                                <ContentPresenter ContentSource="Header"
-                                                  VerticalAlignment="Center"
-                                                  RecognizesAccessKey="True"/>
-                            </Border>
+                            <Grid>
+                                <Border x:Name="ItemBorder"
+                                        Background="{TemplateBinding Background}"
+                                        CornerRadius="4"
+                                        Padding="{TemplateBinding Padding}"
+                                        Margin="1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ContentPresenter ContentSource="Header"
+                                                          VerticalAlignment="Center"
+                                                          RecognizesAccessKey="True"
+                                                          Grid.Column="0"/>
+                                        <Path x:Name="Arrow"
+                                              Grid.Column="1"
+                                              Data="M 0 0 L 4 4 L 0 8 Z"
+                                              Fill="{TemplateBinding Foreground}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="8,0,0,0"
+                                              Visibility="Collapsed"/>
+                                    </Grid>
+                                </Border>
+                                <Popup x:Name="SubMenuPopup"
+                                       IsOpen="{TemplateBinding IsSubmenuOpen}"
+                                       Placement="Right"
+                                       HorizontalOffset="-4"
+                                       AllowsTransparency="True"
+                                       Focusable="False"
+                                       PopupAnimation="Fade">
+                                    <Border x:Name="SubMenuBorder"
+                                            Background="{DynamicResource SurfaceBrush}"
+                                            BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="4"
+                                            SnapsToDevicePixels="True">
+                                        <ItemsPresenter/>
+                                    </Border>
+                                </Popup>
+                            </Grid>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
@@ -107,6 +141,9 @@
                                 </Trigger>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                                </Trigger>
+                                <Trigger Property="HasItems" Value="True">
+                                    <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -426,8 +463,36 @@
                               Command="{Binding PlaceCommand}"
                               Style="{StaticResource ModernMenuItem}" />
                     <MenuItem Header="{loc:Loc FM_LoadToProject}"
-                              Command="{Binding LoadToProjectCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
+                              Command="{Binding LoadToProjectCommand}">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelectedFamilyStale}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                    </MenuItem>
+                    <MenuItem Header="{loc:Loc FM_Update}">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelectedFamilyStale}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                        <MenuItem Header="{loc:Loc FM_UpdateKeepParams}"
+                                  Command="{Binding LoadToProjectKeepParamsCommand}"
+                                  Style="{StaticResource ModernMenuItem}" />
+                        <MenuItem Header="{loc:Loc FM_UpdateOverwriteParams}"
+                                  Command="{Binding LoadToProjectCommand}"
+                                  Style="{StaticResource ModernMenuItem}" />
+                    </MenuItem>
                     <MenuItem Header="{loc:Loc FM_Update}"
                               Command="{Binding UpdateFamilyCommand}"
                               Style="{StaticResource ModernMenuItem}" />
@@ -507,7 +572,7 @@
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding DisplayName}"
-                                       Foreground="{Binding IsStale, Converter={StaticResource StaleForegroundConverter}}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
                                        VerticalAlignment="Center"/>
                             
                             <TextBlock Text="{Binding VersionLabel, StringFormat='{}({0})'}"

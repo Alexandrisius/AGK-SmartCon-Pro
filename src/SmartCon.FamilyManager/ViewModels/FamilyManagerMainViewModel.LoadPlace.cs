@@ -13,6 +13,17 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]
     private void LoadToProject()
     {
+        ExecuteLoadOrUpdate(overwriteParameterValues: true);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    private void LoadToProjectKeepParams()
+    {
+        ExecuteLoadOrUpdate(overwriteParameterValues: false);
+    }
+
+    private void ExecuteLoadOrUpdate(bool overwriteParameterValues)
+    {
         if (SelectedItem is null) return;
 
         var selectedId = SelectedItem.Id;
@@ -31,7 +42,7 @@ public sealed partial class FamilyManagerMainViewModel
                     return;
                 }
 
-                var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName };
+                var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName, OverwriteParameterValues = overwriteParameterValues };
                 var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
 
                 if (result.Success)
@@ -69,18 +80,24 @@ public sealed partial class FamilyManagerMainViewModel
                     StatusMessage = msg;
 
                     var projectPath = _revitContext.GetDocument().PathName;
+                    var loadedVersionLabel = SelectedItem?.VersionLabel;
+                    
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
                         CatalogItemId: selectedId,
                         VersionId: resolved.VersionId,
-                        LoadedVersionLabel: SelectedItem?.VersionLabel,
+                        LoadedVersionLabel: loadedVersionLabel,
                         ProjectName: "Active Project",
                         ProjectPath: projectPath,
                         RevitMajorVersion: targetRevit,
                         Action: "Load",
                         CreatedAtUtc: DateTimeOffset.UtcNow);
 
-                    FireAndForget(() => _usageRepo.RecordUsageAsync(usage, CancellationToken.None));
+                    FireAndForget(async () =>
+                    {
+                        await _usageRepo.RecordUsageAsync(usage, CancellationToken.None);
+                        await LoadTreeAsync();
+                    });
                 }
                 else
                 {

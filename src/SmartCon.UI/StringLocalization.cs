@@ -290,6 +290,8 @@ public static class StringLocalization
         public const string FM_Disconnect = "FM_Disconnect";
 
         public const string FM_Update = "FM_Update";
+        public const string FM_UpdateKeepParams = "FM_UpdateKeepParams";
+        public const string FM_UpdateOverwriteParams = "FM_UpdateOverwriteParams";
         public const string FM_UpdateSuccess = "FM_UpdateSuccess";
         public const string FM_UpdateIdentical = "FM_UpdateIdentical";
         public const string FM_UpdateIdenticalCurrent = "FM_UpdateIdenticalCurrent";

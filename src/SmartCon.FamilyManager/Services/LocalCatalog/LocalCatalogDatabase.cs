@@ -57,6 +57,6 @@ internal sealed class LocalCatalogDatabase
 
     private static string BuildConnectionString(string dbPath)
     {
-        return $"Data Source={dbPath};Pooling=false";
+        return $"Data Source={dbPath};Pooling=false;Foreign Keys=True";
     }
 }

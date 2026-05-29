@@ -71,6 +71,8 @@ public static partial class LocalizationService
         ru["FM_Disconnect"] = "Отключить базу данных"; en["FM_Disconnect"] = "Disconnect database";
 
         ru["FM_Update"] = "Обновить"; en["FM_Update"] = "Update";
+        ru["FM_UpdateKeepParams"] = "Сохранить параметры"; en["FM_UpdateKeepParams"] = "Keep instance parameters";
+        ru["FM_UpdateOverwriteParams"] = "Перезаписать параметры"; en["FM_UpdateOverwriteParams"] = "Overwrite parameters";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
         ru["FM_UpdateIdenticalCurrent"] = "Этот файл уже является текущей версией семейства"; en["FM_UpdateIdenticalCurrent"] = "This file is already the current version of this family";

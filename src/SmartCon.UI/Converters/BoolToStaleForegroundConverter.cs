@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Media;
+using SmartCon.Core.Logging;
 
 namespace SmartCon.UI.Converters;
 
@@ -12,7 +13,8 @@ public sealed class BoolToStaleForegroundConverter : IValueConverter
 {
     public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        if (value is bool isStale && isStale)
+        var isStale = value is bool b && b;
+        if (isStale)
         {
             // WarningBrush - orange color for stale families
             return new SolidColorBrush(Color.FromRgb(255, 152, 0)); // #FF9800

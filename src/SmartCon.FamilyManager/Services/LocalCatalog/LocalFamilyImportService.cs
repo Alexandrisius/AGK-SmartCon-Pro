@@ -100,12 +100,6 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             await connection.OpenAsync(ct);
             using var tx = connection.BeginTransaction();
 
-            using (var fkCmd = connection.CreateCommand())
-            {
-                fkCmd.CommandText = "PRAGMA foreign_keys=ON;";
-                await fkCmd.ExecuteNonQueryAsync(ct);
-            }
-
             try
             {
                 await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct);
@@ -400,12 +394,6 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             using var connection = _database.CreateConnection();
             await connection.OpenAsync(ct);
             using var tx = connection.BeginTransaction();
-
-            using (var fkCmd = connection.CreateCommand())
-            {
-                fkCmd.CommandText = "PRAGMA foreign_keys=ON;";
-                await fkCmd.ExecuteNonQueryAsync(ct);
-            }
 
             try
             {

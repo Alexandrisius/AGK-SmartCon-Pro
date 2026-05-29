@@ -17,7 +17,8 @@ namespace SmartCon.Core.Models.FamilyManager;
 public sealed record FamilyLoadOptions(
     bool OverwriteExisting = false,
     bool UpdateFamilyIfChanged = false,
-    string? PreferredName = null)
+    string? PreferredName = null,
+    bool OverwriteParameterValues = true)
 {
     /// <summary>Default options for MVP.</summary>
     public static FamilyLoadOptions Default { get; } = new();
