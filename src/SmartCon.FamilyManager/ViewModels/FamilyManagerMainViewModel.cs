@@ -36,7 +36,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IDbAccessControlService _accessControl;
     private readonly IFamilySearchService _familySearchService;
     private readonly IFamilyPlacementService _familyPlacementService;
-    private readonly IFamilyTypeExtractor _familyTypeExtractor;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -109,8 +108,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IFamilyDataImportService dataImportService,
         IDbAccessControlService accessControl,
         IFamilySearchService familySearchService,
-        IFamilyPlacementService familyPlacementService,
-        IFamilyTypeExtractor familyTypeExtractor)
+        IFamilyPlacementService familyPlacementService)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -131,7 +129,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _accessControl = accessControl;
         _familySearchService = familySearchService;
         _familyPlacementService = familyPlacementService;
-        _familyTypeExtractor = familyTypeExtractor;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;

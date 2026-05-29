@@ -82,23 +82,26 @@ public sealed partial class FamilyManagerMainViewModel
                     result.FileName,
                     result.VersionLabel);
 
-                // Extract types from the updated file via ExternalEvent (Revit API required)
+                // Extract types and parameters from the updated file via ExternalEvent
                 var resolved = await _fileResolver.ResolveForLoadAsync(leaf.CatalogItemId, CurrentRevitVersion, CancellationToken.None);
+                var versionId = result.VersionId;
+                var fileId = result.FileId;
                 if (!string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
                     _externalEvent.Raise(() =>
                     {
                         try
                         {
-                            var typeNames = _familyTypeExtractor.ExtractTypeNamesFromFile(resolved.AbsolutePath);
-                            if (typeNames.Count > 0)
+                            var extractionResult = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());
+                            if (extractionResult.Success)
                             {
-                                FireAndForget(() => SaveTypesAndReloadTreeAsync(leaf.CatalogItemId, typeNames.ToList()));
+                                FireAndForget(() => _dataImportService.SaveExtractionResultAsync(
+                                    leaf.CatalogItemId, extractionResult, versionId, fileId, CancellationToken.None));
                             }
                         }
                         catch (Exception ex)
                         {
-                            SmartConLogger.Warn($"UpdateFamilyAsync: Type extraction failed: {ex.Message}");
+                            SmartConLogger.Warn($"UpdateFamilyAsync: Extraction failed: {ex.Message}");
                         }
                     });
                 }

@@ -425,15 +425,6 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
-    private async Task SaveTypesAndReloadTreeAsync(string catalogItemId, List<string> typeNames)
-    {
-        var types = typeNames.Select((name, i) => new FamilyTypeDescriptor(
-            Guid.NewGuid().ToString(), catalogItemId, name, i)).ToList();
-
-        await _typeRepository.SaveTypesAsync(catalogItemId, types.AsReadOnly(), CancellationToken.None);
-        await LoadTreeAsync();
-    }
-
     private string BuildImportStatusMessage(int successCount, int skipCount, int errorCount, int total)
     {
         var parts = new List<string>();

@@ -820,22 +820,6 @@ public interface IFamilySearchService
 
 ---
 
-### IFamilyTypeExtractor
-
-Извлечение списка типоразмеров из `.rfa` файла без постоянной загрузки в проект. Все операции выполняются в контексте ExternalEvent (I-01).
-
-**Файл:** `IFamilyTypeExtractor.cs`
-**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyTypeExtractor.cs`
-
-```csharp
-public interface IFamilyTypeExtractor
-{
-    IReadOnlyList<string> ExtractTypeNamesFromFile(string filePath);
-}
-```
-
----
-
 ### IFamilyMetadataExtractionService
 
 Извлечение метаданных из `.rfa`. MVP: метаданные файлового уровня (имя, размер, хеш, timestamps). Post-MVP: глубокое извлечение через Revit API.
