@@ -55,6 +55,21 @@ internal sealed class LocalCatalogDatabase
         }
     }
 
+    public async Task CheckpointAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var connection = CreateConnection();
+            await connection.OpenAsync(ct);
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch
+        {
+        }
+    }
+
     private static string BuildConnectionString(string dbPath)
     {
         return $"Data Source={dbPath};Pooling=false;Foreign Keys=True";

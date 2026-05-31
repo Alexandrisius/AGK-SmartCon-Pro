@@ -83,7 +83,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ? await GetNextVersionLabelAsync(existingItem.Id, ct)
             : "v1";
 
-        var copyResult = await CopyToManagedStorageAsync(filePath, catalogItemId, versionLabel, revitVersion, metadata);
+        var copyResult = await CopyToManagedStorageAsync(filePath, catalogItemId, versionLabel, revitVersion, metadata, ct);
         if (!copyResult.Success)
             return new FamilyImportResult(
                 Success: false,
@@ -131,7 +131,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 throw;
             }
 
-            _database.Checkpoint();
+            await _database.CheckpointAsync(ct);
 
             return new FamilyImportResult(
                 Success: true,
@@ -378,7 +378,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var fileRecordId = Guid.NewGuid().ToString();
         var versionId = Guid.NewGuid().ToString();
 
-        var copyResult = await CopyToManagedStorageAsync(filePath, request.CatalogItemId, versionLabel, revitVersion, metadata);
+        var copyResult = await CopyToManagedStorageAsync(filePath, request.CatalogItemId, versionLabel, revitVersion, metadata, ct);
         if (!copyResult.Success)
             return new FamilyImportResult(
                 Success: false,
@@ -409,7 +409,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 throw;
             }
 
-            _database.Checkpoint();
+            await _database.CheckpointAsync(ct);
 
             return new FamilyImportResult(
                 Success: true,
@@ -428,22 +428,25 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
     }
 
-    private Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata)
+    private async Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata, CancellationToken ct)
     {
         try
         {
             _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel);
             var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, metadata.FileName);
-            File.Copy(sourcePath, absolutePath, overwrite: true);
-            File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+            await Task.Run(() =>
+            {
+                File.Copy(sourcePath, absolutePath, overwrite: true);
+                File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+            }, ct);
             var relativePath = _pathResolver.GetRelativePath(absolutePath);
             SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
-            return Task.FromResult(new CopyResult(true, relativePath, null));
+            return new CopyResult(true, relativePath, null);
         }
         catch (Exception ex)
         {
             SmartConLogger.Info($"[Import] Copy FAILED: {ex.Message}");
-            return Task.FromResult(new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}"));
+            return new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}");
         }
     }
 

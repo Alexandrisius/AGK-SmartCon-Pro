@@ -9,6 +9,9 @@ namespace SmartCon.Core.Services.Interfaces;
 /// </summary>
 public interface IDatabaseManager
 {
+    /// <summary>Asynchronously initialize the manager after construction.</summary>
+    Task InitializeAsync(CancellationToken ct = default);
+
     /// <summary>List all registered database connections.</summary>
     IReadOnlyList<DatabaseConnection> ListConnections();
 

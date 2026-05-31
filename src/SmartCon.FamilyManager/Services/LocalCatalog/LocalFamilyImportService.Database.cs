@@ -308,8 +308,11 @@ internal sealed partial class LocalFamilyImportService
         try
         {
             // Copy file over existing
-            File.Copy(item.FilePath, absolutePath, overwrite: true);
-            File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+            await Task.Run(() =>
+            {
+                File.Copy(item.FilePath, absolutePath, overwrite: true);
+                File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+            }, ct);
 
             // Update family_files
             using var updateFileCmd = connection.CreateCommand();
@@ -333,22 +336,23 @@ internal sealed partial class LocalFamilyImportService
             await updateItemCmd.ExecuteNonQueryAsync(ct);
 
             tx.Commit();
-            _database.Checkpoint();
-
-            return new FamilyImportResult(
-                Success: true,
-                CatalogItemId: item.ExistingCatalogItemId,
-                VersionId: currentVersion.Id,
-                FileId: currentVersion.FileId,
-                FileName: metadata.FileName,
-                VersionLabel: currentVersion.VersionLabel,
-                ErrorMessage: null,
-                WasNewVersion: false);
         }
         catch
         {
             tx.Rollback();
             throw;
         }
+
+        await _database.CheckpointAsync(ct);
+
+        return new FamilyImportResult(
+            Success: true,
+            CatalogItemId: item.ExistingCatalogItemId,
+            VersionId: currentVersion.Id,
+            FileId: currentVersion.FileId,
+            FileName: metadata.FileName,
+            VersionLabel: currentVersion.VersionLabel,
+            ErrorMessage: null,
+            WasNewVersion: false);
     }
 }

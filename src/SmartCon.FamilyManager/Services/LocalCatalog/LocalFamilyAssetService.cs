@@ -53,7 +53,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
             counter++;
         }
 
-        File.Copy(sourceFilePath, destPath);
+        await Task.Run(() => File.Copy(sourceFilePath, destPath), ct);
 
         var relativePath = _pathResolver.GetRelativePath(destPath);
         var now = DateTimeOffset.UtcNow;
@@ -137,8 +137,11 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
                 var absolutePath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
                 try
                 {
-                    if (File.Exists(absolutePath))
-                        File.Delete(absolutePath);
+                    await Task.Run(() =>
+                    {
+                        if (File.Exists(absolutePath))
+                            File.Delete(absolutePath);
+                    }, ct);
                 }
                 catch
                 {

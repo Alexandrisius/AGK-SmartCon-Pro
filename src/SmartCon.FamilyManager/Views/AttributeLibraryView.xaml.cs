@@ -11,8 +11,7 @@ public sealed partial class AttributeLibraryView : DialogWindowBase
         InitializeComponent();
         DataContext = viewModel;
         BindCloseRequest(viewModel);
-
-        Loaded += (_, _) => SetColumnHeaders();
+        SetColumnHeaders();
     }
 
     private void SetColumnHeaders()

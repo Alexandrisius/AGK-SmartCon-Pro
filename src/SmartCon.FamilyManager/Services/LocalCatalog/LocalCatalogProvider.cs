@@ -151,8 +151,11 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             {
                 if (Directory.Exists(path))
                 {
-                    RemoveReadOnlyAttributes(path);
-                    Directory.Delete(path, recursive: true);
+                    await Task.Run(() =>
+                    {
+                        RemoveReadOnlyAttributes(path);
+                        Directory.Delete(path, recursive: true);
+                    }, ct);
                 }
                 return;
             }
@@ -177,8 +180,11 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         {
             if (Directory.Exists(path))
             {
-                RemoveReadOnlyAttributes(path);
-                Directory.Delete(path, recursive: true);
+                await Task.Run(() =>
+                {
+                    RemoveReadOnlyAttributes(path);
+                    Directory.Delete(path, recursive: true);
+                }, ct);
             }
         }
         catch (Exception ex)

@@ -87,11 +87,14 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
 
                 if (File.Exists(oldAbsolutePath) && !File.Exists(newAbsolutePath))
                 {
-                    var newDir = Path.GetDirectoryName(newAbsolutePath);
-                    if (!string.IsNullOrEmpty(newDir) && !Directory.Exists(newDir))
-                        Directory.CreateDirectory(newDir);
+                    await Task.Run(() =>
+                    {
+                        var newDir = Path.GetDirectoryName(newAbsolutePath);
+                        if (!string.IsNullOrEmpty(newDir) && !Directory.Exists(newDir))
+                            Directory.CreateDirectory(newDir);
 
-                    File.Move(oldAbsolutePath, newAbsolutePath);
+                        File.Move(oldAbsolutePath, newAbsolutePath);
+                    }, ct);
                     SmartConLogger.Info($"[FM Rename] File moved successfully");
                 }
                 else

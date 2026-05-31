@@ -9,12 +9,20 @@ public sealed class FamilyManagerCommand : IExternalCommand
 {
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
-        var paneId = FamilyManagerPaneIds.FamilyManagerPane;
-        var dockablePane = commandData.Application.GetDockablePane(paneId);
-        if (dockablePane.IsShown())
-            dockablePane.Hide();
-        else
-            dockablePane.Show();
-        return Result.Succeeded;
+        try
+        {
+            var paneId = FamilyManagerPaneIds.FamilyManagerPane;
+            var dockablePane = commandData.Application.GetDockablePane(paneId);
+            if (dockablePane.IsShown())
+                dockablePane.Hide();
+            else
+                dockablePane.Show();
+            return Result.Succeeded;
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            return Result.Failed;
+        }
     }
 }

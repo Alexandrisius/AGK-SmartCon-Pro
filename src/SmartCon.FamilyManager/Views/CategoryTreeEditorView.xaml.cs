@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.UI;
 using SmartCon.UI.Controls;

@@ -14,11 +14,11 @@ public partial class FamilyBatchImportView : DialogWindowBase
         DataContext = viewModel;
         BindCloseRequest(viewModel);
 
-        ColFileName.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_FileName) ?? "File Name";
-        ColRevitVersion.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_RevitVersion) ?? "Revit Version";
-        ColSize.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Size) ?? "Size";
-        ColStatus.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Status) ?? "Status";
-        ColCategory.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Category) ?? "Category";
-        ColAction.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Action) ?? "Action";
+        ColFileName.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_FileName);
+        ColRevitVersion.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_RevitVersion);
+        ColSize.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Size);
+        ColStatus.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Status);
+        ColCategory.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Category);
+        ColAction.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Action);
     }
 }

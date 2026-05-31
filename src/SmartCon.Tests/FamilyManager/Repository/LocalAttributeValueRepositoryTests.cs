@@ -21,7 +21,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
 
     private async Task SeedCatalogItemAsync(string id)
     {
-        using var connection = new SqliteConnection(_fixture.ConnectionString);
+        using var connection = _fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -37,7 +37,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
 
     private async Task SeedAttributeDefinitionAsync(string id)
     {
-        using var connection = new SqliteConnection(_fixture.ConnectionString);
+        using var connection = _fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -52,7 +52,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
 
     private async Task SeedImportRunAsync(string runId, string catalogItemId)
     {
-        using var connection = new SqliteConnection(_fixture.ConnectionString);
+        using var connection = _fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """

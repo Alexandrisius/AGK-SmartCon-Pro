@@ -98,13 +98,23 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         var content1 = "CONTENT_R2024"u8.ToArray();
         var content2 = "CONTENT_R2025"u8.ToArray();
         _fixture.CreateFakeRfaFileWithContent("SameName.rfa", content1);
-        var path2 = _fixture.CreateFakeRfaFileWithContent("SameName2.rfa", content2);
+
+        var subDir = Path.Combine(_fixture.TempDir, "sub");
+        Directory.CreateDirectory(subDir);
+        var path2 = Path.Combine(subDir, "SameName.rfa");
+        File.WriteAllBytes(path2, content2);
 
         var result1 = await _importService.ImportFileAsync(
             new FamilyImportRequest(Path.Combine(_fixture.TempDir, "SameName.rfa"), 2024, null, null, null));
 
         Assert.True(result1.Success);
         Assert.Equal("v1", result1.VersionLabel);
+
+        var result2 = await _importService.ImportFileAsync(
+            new FamilyImportRequest(path2, 2025, null, null, null));
+
+        Assert.True(result2.Success);
+        Assert.Equal("v2", result2.VersionLabel);
     }
 
     [Fact]

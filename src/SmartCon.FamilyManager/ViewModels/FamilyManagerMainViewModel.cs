@@ -178,6 +178,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
             SmartConLogger.Info($"======================================================================");
 
+            await _databaseManager.InitializeAsync();
             RefreshConnections();
             if (!HasActiveDatabase)
             {
