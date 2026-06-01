@@ -36,6 +36,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IDbAccessControlService _accessControl;
     private readonly IFamilySearchService _familySearchService;
     private readonly IFamilyPlacementService _familyPlacementService;
+    private readonly IFamilyPlacementDragService _placementDragService;
     private readonly IRevitFileInfoReader _fileInfoReader;
     private readonly IFamilyMetadataExtractionService _metadataService;
     private CancellationTokenSource? _searchCts;
@@ -44,6 +45,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private bool _lastSearchActive;
     private readonly HashSet<string> _savedExpandedCategoryIds = new();
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
+    private HashSet<string>? _loadedFamilyNamesCache;
+    private string? _loadedFamilyNamesCacheProjectPath;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSearchNotEmpty))]
@@ -110,6 +113,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IDbAccessControlService accessControl,
         IFamilySearchService familySearchService,
         IFamilyPlacementService familyPlacementService,
+        IFamilyPlacementDragService placementDragService,
         IRevitFileInfoReader fileInfoReader,
         IFamilyMetadataExtractionService metadataService)
     {
@@ -132,14 +136,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _accessControl = accessControl;
         _familySearchService = familySearchService;
         _familyPlacementService = familyPlacementService;
+        _placementDragService = placementDragService;
         _fileInfoReader = fileInfoReader;
         _metadataService = metadataService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
+        _placementDragService.PlacementCompleted += OnPlacementCompleted;
 
         DetectRevitVersion();
-        _ = InitializeAsync();
+        InitializeAsync();
     }
 
     private void DetectRevitVersion()
@@ -168,7 +174,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
-    private async Task InitializeAsync()
+    private void InitializeAsync()
     {
         try
         {
@@ -177,14 +183,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
             SmartConLogger.Info($"======================================================================");
 
-            await _databaseManager.InitializeAsync();
+            _databaseManager.InitializeAsync().GetAwaiter().GetResult();
             RefreshConnections();
             if (!HasActiveDatabase)
             {
                 StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
                 return;
             }
-            await RefreshAccessAndLoadTreeAsync();
+            RefreshTreeViaExternalEvent();
         }
         catch (Exception ex)
         {
@@ -227,7 +233,33 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
             return;
         }
+
         await LoadTreeAsync();
+    }
+
+    /// <summary>
+    /// Returns the set of family names currently loaded in the Revit document.
+    /// The result is cached per project path and invalidated after family load/place operations.
+    /// </summary>
+    private HashSet<string> GetLoadedFamilyNamesCached()
+    {
+        var currentPath = _cachedProjectPath;
+        if (_loadedFamilyNamesCache is not null &&
+            _loadedFamilyNamesCacheProjectPath == currentPath)
+        {
+            return _loadedFamilyNamesCache;
+        }
+
+        var names = new HashSet<string>(_familySearchService.GetAllLoadedFamilyNames());
+        _loadedFamilyNamesCache = names;
+        _loadedFamilyNamesCacheProjectPath = currentPath;
+        return names;
+    }
+
+    private void InvalidateLoadedFamilyNamesCache()
+    {
+        _loadedFamilyNamesCache = null;
+        _loadedFamilyNamesCacheProjectPath = null;
     }
 
     private void UpdateAccessProperties()
@@ -384,6 +416,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         PlaceCommand.NotifyCanExecuteChanged();
         PlaceTypeCommand.NotifyCanExecuteChanged();
+        StartPlacementDragCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
     }
 
@@ -501,31 +534,64 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
-    [RelayCommand]
-    private async Task RefreshTreeAsync(CancellationToken ct)
+    /// <summary>
+    /// Triggers tree refresh via ExternalEvent so that Revit API (FilteredElementCollector)
+    /// runs in the correct thread context before LoadTreeAsync builds the UI.
+    /// </summary>
+    private void RefreshTreeViaExternalEvent()
     {
-        try
+        _externalEvent.Raise(() =>
         {
-            await RefreshAccessAndLoadTreeAsync();
-        }
-        catch (DbAccessDeniedException ex)
-        {
-            CanImport = false;
-            CanEdit = false;
-            CanManageUsers = false;
-            _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
-                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
-            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
-            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"RefreshTreeAsync failed: {ex}");
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
-                ex.Message);
-        }
+            try
+            {
+                _cachedProjectPath = _revitContext.GetDocument().PathName;
+            }
+            catch
+            {
+                _cachedProjectPath = null;
+            }
+
+            try
+            {
+                GetLoadedFamilyNamesCached();
+            }
+            catch { }
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher
+                ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
+
+            dispatcher?.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    await RefreshAccessAndLoadTreeAsync();
+                }
+                catch (DbAccessDeniedException ex)
+                {
+                    CanImport = false;
+                    CanEdit = false;
+                    CanManageUsers = false;
+                    _dialogService.ShowError(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
+                        string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
+                    TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Error($"RefreshTreeAsync failed: {ex}");
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
+                        ex.Message);
+                }
+            }));
+        });
+    }
+
+    [RelayCommand]
+    private void RefreshTree()
+    {
+        RefreshTreeViaExternalEvent();
     }
 
     [RelayCommand]
@@ -534,10 +600,34 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         SearchText = string.Empty;
     }
 
+    private void OnPlacementCompleted()
+    {
+        try
+        {
+            InvalidateLoadedFamilyNamesCache();
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher
+                ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
+
+            if (dispatcher != null && !dispatcher.HasShutdownStarted)
+            {
+                dispatcher.BeginInvoke(new Action(() =>
+                {
+                    FireAndForget(async () => await LoadTreeAsync());
+                }));
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"OnPlacementCompleted dispatcher invoke failed: {ex.Message}");
+        }
+    }
+
     public void Dispose()
     {
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
+        _placementDragService.PlacementCompleted -= OnPlacementCompleted;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
     }

@@ -68,7 +68,7 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
         var uiApp = GetUIApplication();
         if (doc is null || uiApp is null) return;
 
-        var resolved = new SmartCon.Core.Models.FamilyManager.FamilyResolvedFile(filePath, null, null);
+        var resolved = new SmartCon.Core.Models.FamilyManager.FamilyResolvedFile(filePath, null, null, null);
         var options = SmartCon.Core.Models.FamilyManager.FamilyLoadOptions.Default with { PreferredName = familyName };
         var result = _loadService.LoadFamilyAsync(resolved, options).GetAwaiter().GetResult();
 

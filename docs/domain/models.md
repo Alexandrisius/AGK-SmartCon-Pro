@@ -1915,7 +1915,24 @@ public enum FamilyLoadStatus
 public sealed record FamilyResolvedFile(
     string AbsolutePath,
     string? CatalogItemId,
-    string? VersionId);
+    string? VersionId,
+    string? VersionLabel = null);
+```
+
+---
+
+### FamilyPlacementDragData
+
+Payload для drag-and-drop размещения типоразмера семейства из FamilyManager в canvas Revit.
+
+**Файл:** `FamilyPlacementDragData.cs`
+
+```csharp
+public sealed record FamilyPlacementDragData(
+    string CatalogItemId,
+    string FamilyName,
+    string TypeName,
+    int TargetRevitVersion);
 ```
 
 ---

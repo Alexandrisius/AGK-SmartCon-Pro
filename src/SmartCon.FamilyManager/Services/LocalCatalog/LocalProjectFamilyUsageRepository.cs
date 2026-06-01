@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -79,7 +81,7 @@ internal sealed class LocalProjectFamilyUsageRepository : IProjectFamilyUsageRep
         cmd.CommandText = """
             SELECT catalog_item_id, loaded_version_label
             FROM project_usage
-            WHERE project_path = @fingerprint AND catalog_item_id IN (@itemIds)
+            WHERE project_path = @fingerprint AND catalog_item_id IN (@itemIds) AND loaded_version_label IS NOT NULL
             ORDER BY created_at_utc DESC
             """;
         cmd.Parameters.Add(new SqliteParameter("@fingerprint", projectFingerprint));

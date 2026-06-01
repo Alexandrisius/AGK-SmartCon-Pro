@@ -10,6 +10,33 @@ namespace SmartCon.FamilyManager.ViewModels;
 
 public sealed partial class FamilyManagerMainViewModel
 {
+    [RelayCommand(CanExecute = nameof(CanStartPlacementDrag))]
+    private void StartPlacementDrag(object? item)
+    {
+        if (item is not FamilyTypeNodeViewModel typeNode) return;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return;
+
+        var data = new FamilyPlacementDragData(
+            leaf.CatalogItemId,
+            leaf.DisplayName,
+            typeNode.TypeName,
+            CurrentRevitVersion);
+
+        _placementDragService.StartPlacementDrag(data);
+    }
+
+    private bool CanStartPlacementDrag(object? item)
+    {
+        if (item is not FamilyTypeNodeViewModel typeNode) return false;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return false;
+
+        return leaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
+    }
+
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]
     private void LoadToProject()
     {
@@ -92,6 +119,8 @@ public sealed partial class FamilyManagerMainViewModel
                         RevitMajorVersion: targetRevit,
                         Action: "Load",
                         CreatedAtUtc: DateTimeOffset.UtcNow);
+
+                    InvalidateLoadedFamilyNamesCache();
 
                     FireAndForget(async () =>
                     {

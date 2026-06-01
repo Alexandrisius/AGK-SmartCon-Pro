@@ -444,6 +444,7 @@
                   behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
                   behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
                   behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
+                  behaviors:TreeViewDragDropBehavior.PlacementDragCommand="{Binding StartPlacementDragCommand}"
                   behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
                   behaviors:TreeViewBehaviors.AutoScrollToSelectedItem="True"
                   behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"

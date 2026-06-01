@@ -9,4 +9,5 @@ namespace SmartCon.Core.Models.FamilyManager;
 public sealed record FamilyResolvedFile(
     string AbsolutePath,
     string? CatalogItemId,
-    string? VersionId);
+    string? VersionId,
+    string? VersionLabel = null);

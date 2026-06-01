@@ -1,4 +1,6 @@
+using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -16,19 +18,6 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
-            // Refresh cached project path via ExternalEvent (I-01 compliance)
-            _externalEvent.Raise(() =>
-            {
-                try
-                {
-                    _cachedProjectPath = _revitContext.GetDocument().PathName;
-                }
-                catch
-                {
-                    _cachedProjectPath = null;
-                }
-            });
-
             // Cleanup old usage records (older than 90 days)
             FireAndForget(async () =>
             {
@@ -91,8 +80,9 @@ public sealed partial class FamilyManagerMainViewModel
                 }
             }
 
-            // Stale marker: get loaded version labels for current project
+            // Stale marker: use pre-loaded family names cache (filled via ExternalEvent on Refresh)
             Dictionary<string, string?> loadedVersionLabels = new();
+            HashSet<string> loadedFamilyNames = _loadedFamilyNamesCache ?? new HashSet<string>();
             try
             {
                 if (!string.IsNullOrEmpty(_cachedProjectPath))
@@ -104,7 +94,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"LoadTreeAsync GetLoadedVersionLabelsAsync failed: {ex.Message}");
+                SmartConLogger.Warn($"LoadTreeAsync stale check failed: {ex.Message}");
             }
 
             var itemsByCategory = results
@@ -113,7 +103,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             foreach (var catNode in tree.GetRootNodes())
             {
-                var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds, loadedVersionLabels);
+                var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds, loadedVersionLabels, loadedFamilyNames);
                 if (catVm is CategoryNodeViewModel) rootNodes.Add(catVm);
             }
 
@@ -124,23 +114,18 @@ public sealed partial class FamilyManagerMainViewModel
                 name: noCatLabel,
                 parentId: null,
                 fullPath: noCatLabel);
-            int uncategorizedLogCount = 0;
             foreach (var item in uncategorized)
             {
                 bool isStale = false;
                 string? loadedVersionLabel = null;
+                bool isActuallyLoaded = loadedFamilyNames.Contains(item.Name);
                 if (loadedVersionLabels is not null &&
                     loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
                     loadedVersionLabel is not null &&
-                    loadedVersionLabel != item.CurrentVersionLabel)
+                    loadedVersionLabel != item.CurrentVersionLabel &&
+                    isActuallyLoaded)
                 {
                     isStale = true;
-                }
-
-                if (uncategorizedLogCount < 3)
-                {
-                    SmartConLogger.Info($"[StaleDebug] Uncategorized '{item.Name}' (ID:{item.Id}) - CurrentVersion: {item.CurrentVersionLabel ?? "null"}, LoadedVersion: {loadedVersionLabel ?? "null"}, IsStale: {isStale}");
-                    uncategorizedLogCount++;
                 }
 
                 _noCategoryNode.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
@@ -186,14 +171,14 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyDictionary<string, List<FamilyCatalogItem>> itemsByCategory, bool expandAll, HashSet<string>? expandedIds = null, IReadOnlyDictionary<string, string?>? loadedVersionLabels = null)
+    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyDictionary<string, List<FamilyCatalogItem>> itemsByCategory, bool expandAll, HashSet<string>? expandedIds = null, IReadOnlyDictionary<string, string?>? loadedVersionLabels = null, HashSet<string>? loadedFamilyNames = null)
     {
         var vm = new CategoryNodeViewModel(catNode);
         var familyCount = 0;
 
         foreach (var child in tree.GetChildren(catNode.Id))
         {
-            var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds, loadedVersionLabels);
+            var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds, loadedVersionLabels, loadedFamilyNames);
             if (childVm is CategoryNodeViewModel childCat)
             {
                 vm.Children.Add(childVm);
@@ -204,40 +189,35 @@ public sealed partial class FamilyManagerMainViewModel
         if (itemsByCategory.TryGetValue(catNode.Id, out var items))
         {
             familyCount += items.Count;
-            int logCount = 0;
-                foreach (var item in items)
+            foreach (var item in items)
+            {
+                bool isStale = false;
+                string? loadedVersionLabel = null;
+                bool isActuallyLoaded = loadedFamilyNames?.Contains(item.Name) ?? false;
+                if (loadedVersionLabels is not null &&
+                    loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
+                    loadedVersionLabel is not null &&
+                    loadedVersionLabel != item.CurrentVersionLabel &&
+                    isActuallyLoaded)
                 {
-                    bool isStale = false;
-                    string? loadedVersionLabel = null;
-                    if (loadedVersionLabels is not null &&
-                        loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
-                        loadedVersionLabel is not null &&
-                        loadedVersionLabel != item.CurrentVersionLabel)
-                    {
-                        isStale = true;
-                    }
-
-                    if (logCount < 3)
-                    {
-                        SmartConLogger.Info($"[StaleDebug] Family '{item.Name}' (ID:{item.Id}) - CurrentVersion: {item.CurrentVersionLabel ?? "null"}, LoadedVersion: {loadedVersionLabel ?? "null"}, IsStale: {isStale}");
-                        logCount++;
-                    }
-
-                    vm.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
-                    {
-                        Id = item.Id,
-                        Name = item.Name,
-                        CategoryId = item.CategoryId,
-                        CategoryName = catNode.FullPath,
-                        Manufacturer = item.Manufacturer,
-                        ContentStatus = item.ContentStatus,
-                        CurrentVersionLabel = item.CurrentVersionLabel,
-                        VersionLabel = item.CurrentVersionLabel,
-                        UpdatedAtUtc = item.UpdatedAtUtc,
-                        Tags = item.Tags,
-                        Description = item.Description,
-                    }, isStale: isStale));
+                    isStale = true;
                 }
+
+                vm.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
+                {
+                    Id = item.Id,
+                    Name = item.Name,
+                    CategoryId = item.CategoryId,
+                    CategoryName = catNode.FullPath,
+                    Manufacturer = item.Manufacturer,
+                    ContentStatus = item.ContentStatus,
+                    CurrentVersionLabel = item.CurrentVersionLabel,
+                    VersionLabel = item.CurrentVersionLabel,
+                    UpdatedAtUtc = item.UpdatedAtUtc,
+                    Tags = item.Tags,
+                    Description = item.Description,
+                }, isStale: isStale));
+            }
         }
 
         vm.FamilyCount = familyCount;

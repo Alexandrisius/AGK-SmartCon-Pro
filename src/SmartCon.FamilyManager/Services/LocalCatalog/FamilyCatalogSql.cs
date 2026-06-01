@@ -363,6 +363,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_project_usage_item ON project_usage (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_project_usage_path ON project_usage (project_path);
         CREATE INDEX IF NOT EXISTS ix_project_usage_created ON project_usage (created_at_utc);
+        CREATE INDEX IF NOT EXISTS ix_project_usage_lookup ON project_usage (project_path, catalog_item_id, created_at_utc DESC);
         CREATE INDEX IF NOT EXISTS ix_family_assets_item ON family_assets (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_family_assets_type ON family_assets (asset_type);
         CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id);
