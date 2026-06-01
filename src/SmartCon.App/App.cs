@@ -54,8 +54,26 @@ public sealed class App : IExternalApplication
     public Result OnShutdown(UIControlledApplication application)
     {
         TryLaunchUpdater();
+        CleanupFamilyManagerTemp();
         ServiceLocator.Dispose();
         return Result.Succeeded;
+    }
+
+    private static void CleanupFamilyManagerTemp()
+    {
+        try
+        {
+            var tempRoot = Path.Combine(Path.GetTempPath(), "SmartCon");
+            if (!Directory.Exists(tempRoot)) return;
+
+            var dir = Path.Combine(tempRoot, "FMLoad");
+            if (!Directory.Exists(dir)) return;
+            foreach (var childDir in Directory.GetDirectories(dir))
+            {
+                try { Directory.Delete(childDir, true); } catch { }
+            }
+        }
+        catch { }
     }
 
     private static void ApplyUpdaterSelfUpdate()

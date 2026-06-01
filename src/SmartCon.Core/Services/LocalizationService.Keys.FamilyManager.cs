@@ -14,6 +14,9 @@ public static partial class LocalizationService
         ru["FM_ExtractTypes"] = "Извлечь типоразмеры"; en["FM_ExtractTypes"] = "Extract Types";
         ru["FM_ImportData"] = "Импорт данных"; en["FM_ImportData"] = "Import Data";
         ru["FM_PlaceType"] = "Разместить тип"; en["FM_PlaceType"] = "Place Type";
+        ru["FM_Edit"] = "Редактировать"; en["FM_Edit"] = "Edit";
+        ru["FM_LoadActiveFamily"] = "Загрузить активное семейство"; en["FM_LoadActiveFamily"] = "Load Active Family";
+        ru["FM_ActiveDocNotFamily"] = "Активный документ не является семейством"; en["FM_ActiveDocNotFamily"] = "Active document is not a family";
         ru["FM_EditMetadata"] = "Редактировать"; en["FM_EditMetadata"] = "Edit";
         ru["FM_NoActiveDocument"] = "Нет активного документа"; en["FM_NoActiveDocument"] = "No active document";
         ru["FM_ImportProgress"] = "Импорт {0} из {1}..."; en["FM_ImportProgress"] = "Importing {0} of {1}...";

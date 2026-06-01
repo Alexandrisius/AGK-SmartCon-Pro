@@ -217,6 +217,9 @@ public static class StringLocalization
         public const string FM_ExtractTypes = "FM_ExtractTypes";
         public const string FM_ImportData = "FM_ImportData";
         public const string FM_PlaceType = "FM_PlaceType";
+        public const string FM_Edit = "FM_Edit";
+        public const string FM_LoadActiveFamily = "FM_LoadActiveFamily";
+        public const string FM_ActiveDocNotFamily = "FM_ActiveDocNotFamily";
         public const string FM_EditMetadata = "FM_EditMetadata";
         public const string FM_NoActiveDocument = "FM_NoActiveDocument";
         public const string FM_ImportProgress = "FM_ImportProgress";

@@ -310,8 +310,28 @@ internal sealed partial class LocalFamilyImportService
             // Copy file over existing
             await Task.Run(() =>
             {
-                File.Copy(item.FilePath, absolutePath, overwrite: true);
-                File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+                var existingAttributes = File.GetAttributes(absolutePath);
+                var wasReadOnly = (existingAttributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly;
+                try
+                {
+                    if (wasReadOnly)
+                    {
+                        File.SetAttributes(absolutePath, existingAttributes & ~FileAttributes.ReadOnly);
+                    }
+                    File.Copy(item.FilePath, absolutePath, overwrite: true);
+                }
+                finally
+                {
+                    var currentAttributes = File.GetAttributes(absolutePath);
+                    if (wasReadOnly)
+                    {
+                        File.SetAttributes(absolutePath, currentAttributes | FileAttributes.ReadOnly);
+                    }
+                    else
+                    {
+                        File.SetAttributes(absolutePath, currentAttributes & ~FileAttributes.ReadOnly);
+                    }
+                }
             }, ct);
 
             // Update family_files

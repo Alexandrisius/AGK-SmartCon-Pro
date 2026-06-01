@@ -262,8 +262,8 @@
                             CornerRadius="6"
                             Padding="4">
                         <StackPanel>
-                            <Button Content="{loc:Loc FM_ImportFile}"
-                                    Command="{Binding ImportFilesCommand}"
+                            <Button Content="{loc:Loc FM_LoadActiveFamily}"
+                                    Command="{Binding LoadActiveFamilyCommand}"
                                     MinWidth="140"
                                     HorizontalContentAlignment="Left"
                                     Padding="10,6"
@@ -510,8 +510,8 @@
                                   Command="{Binding LoadToProjectCommand}"
                                   Style="{StaticResource ModernMenuItem}" />
                     </MenuItem>
-                    <MenuItem Header="{loc:Loc FM_Update}"
-                              Command="{Binding UpdateFamilyCommand}"
+                    <MenuItem Header="{loc:Loc FM_Edit}"
+                              Command="{Binding EditFamilyCommand}"
                               Style="{StaticResource ModernMenuItem}" />
                     <MenuItem Header="{loc:Loc FM_Properties}"
                               Command="{Binding OpenPropertiesCommand}"

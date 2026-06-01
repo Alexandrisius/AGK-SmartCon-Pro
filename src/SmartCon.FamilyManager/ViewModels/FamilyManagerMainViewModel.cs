@@ -81,7 +81,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
-    [NotifyCanExecuteChangedFor(nameof(UpdateFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(LoadActiveFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
     [NotifyCanExecuteChangedFor(nameof(DropFamilyCommand))]
