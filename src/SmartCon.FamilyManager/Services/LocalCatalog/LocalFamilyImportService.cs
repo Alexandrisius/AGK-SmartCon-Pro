@@ -291,7 +291,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         var request = new FamilyUpdateRequest(
                             item.ExistingCatalogItemId!,
                             item.FilePath,
-                            item.RevitMajorVersion);
+                            item.RevitMajorVersion,
+                            item.TargetCategoryId);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -399,6 +400,10 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             {
                 await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct);
                 await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct);
+                if (!string.IsNullOrEmpty(request.CategoryId))
+                {
+                    await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, now, ct);
+                }
                 await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct);
 
                 tx.Commit();

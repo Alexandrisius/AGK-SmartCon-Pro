@@ -206,11 +206,13 @@ public sealed partial class FamilyManagerMainViewModel
                     var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
                     if (existingByName is not null || forcedExistingItemId is not null)
                     {
+                        var existingCategoryId = existingByName?.CategoryId;
+                        var existingCategoryName = existingByName?.CategoryPath;
                         items.Add(new FamilyBatchImportItem(
                             path, Path.GetFileName(path), sha256.Sha256, revitVersion, fileInfo.Length,
                             FamilyBatchImportStatus.Existing,
                             forcedExistingItemId ?? existingByName!.Id, existingByName?.CurrentVersionLabel,
-                            categoryId, categoryName));
+                            existingCategoryId ?? categoryId, existingCategoryName ?? categoryName));
                     }
                     else
                     {

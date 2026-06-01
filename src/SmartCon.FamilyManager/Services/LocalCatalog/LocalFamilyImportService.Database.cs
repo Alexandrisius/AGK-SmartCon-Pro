@@ -174,6 +174,21 @@ internal sealed partial class LocalFamilyImportService
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    private static async Task UpdateCatalogItemCategoryAsync(SqliteConnection connection, string id,
+        string? categoryId, DateTimeOffset now, CancellationToken ct)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE catalog_items
+            SET category_id = @categoryId, updated_at_utc = @updatedAtUtc
+            WHERE id = @id
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@id", id));
+        cmd.Parameters.Add(new SqliteParameter("@categoryId", categoryId ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static async Task UpdateCatalogItemVersionAsync(SqliteConnection connection, string id,
         string versionLabel, DateTimeOffset now, CancellationToken ct)
     {
@@ -348,12 +363,19 @@ internal sealed partial class LocalFamilyImportService
             updateFileCmd.Parameters.Add(new SqliteParameter("@importedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
             await updateFileCmd.ExecuteNonQueryAsync(ct);
 
-            // Update catalog_items.updated_at_utc (current_version_label stays the same)
-            using var updateItemCmd = connection.CreateCommand();
-            updateItemCmd.CommandText = "UPDATE catalog_items SET updated_at_utc = @updatedAtUtc WHERE id = @itemId";
-            updateItemCmd.Parameters.Add(new SqliteParameter("@itemId", item.ExistingCatalogItemId));
-            updateItemCmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
-            await updateItemCmd.ExecuteNonQueryAsync(ct);
+            // Update catalog_items.updated_at_utc and optionally category_id
+            if (!string.IsNullOrEmpty(item.TargetCategoryId))
+            {
+                await UpdateCatalogItemCategoryAsync(connection, item.ExistingCatalogItemId!, item.TargetCategoryId, DateTimeOffset.UtcNow, ct);
+            }
+            else
+            {
+                using var updateItemCmd = connection.CreateCommand();
+                updateItemCmd.CommandText = "UPDATE catalog_items SET updated_at_utc = @updatedAtUtc WHERE id = @itemId";
+                updateItemCmd.Parameters.Add(new SqliteParameter("@itemId", item.ExistingCatalogItemId));
+                updateItemCmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+                await updateItemCmd.ExecuteNonQueryAsync(ct);
+            }
 
             tx.Commit();
         }
