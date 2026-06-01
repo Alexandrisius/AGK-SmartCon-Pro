@@ -126,6 +126,22 @@ public sealed partial class FamilyManagerMainViewModel
             var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(Path.GetFileNameWithoutExtension(familyPath));
             var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
 
+            // Resolve category name if missing (category_name can be NULL while category_id is set)
+            var existingCategoryId = existingByName?.CategoryId;
+            var existingCategoryName = existingByName?.CategoryPath;
+            if (existingCategoryId is not null && existingCategoryName is null)
+            {
+                try
+                {
+                    var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
+                    existingCategoryName = cat?.Name;
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"[LoadActiveFamily] Failed to resolve category name: {ex.Message}");
+                }
+            }
+
             var item = new FamilyBatchImportItem(
                 familyPath,
                 Path.GetFileName(familyPath),
@@ -134,7 +150,9 @@ public sealed partial class FamilyManagerMainViewModel
                 new FileInfo(familyPath).Length,
                 existingByName is not null ? FamilyBatchImportStatus.Existing : FamilyBatchImportStatus.New,
                 existingByName?.Id,
-                existingByName?.CurrentVersionLabel);
+                existingByName?.CurrentVersionLabel,
+                existingCategoryId,
+                existingCategoryName);
 
             using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory);
             if (_dialogService.ShowBatchImportDialog(vm) != true)

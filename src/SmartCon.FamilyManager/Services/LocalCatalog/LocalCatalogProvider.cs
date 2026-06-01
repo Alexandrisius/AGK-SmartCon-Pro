@@ -418,6 +418,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
     internal static FamilyCatalogItem ReadCatalogItem(SqliteDataReader reader)
     {
+        var id = reader.GetString(reader.GetOrdinal("id"));
+        var name = reader.GetString(reader.GetOrdinal("name"));
         var categoryPath = !reader.IsDBNull(reader.GetOrdinal("category_name"))
             ? reader.GetString(reader.GetOrdinal("category_name"))
             : null;

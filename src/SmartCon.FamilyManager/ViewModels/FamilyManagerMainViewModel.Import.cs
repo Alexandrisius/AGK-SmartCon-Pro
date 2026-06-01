@@ -197,7 +197,8 @@ public sealed partial class FamilyManagerMainViewModel
                         items.Add(new FamilyBatchImportItem(
                             path, Path.GetFileName(path), sha256.Sha256, revitVersion, fileInfo.Length,
                             FamilyBatchImportStatus.Duplicate,
-                            existingByHash.CatalogItemId, existingByHash.VersionLabel));
+                            existingByHash.CatalogItemId, existingByHash.VersionLabel,
+                            categoryId, categoryName));
                         continue;
                     }
 
@@ -208,6 +209,19 @@ public sealed partial class FamilyManagerMainViewModel
                     {
                         var existingCategoryId = existingByName?.CategoryId;
                         var existingCategoryName = existingByName?.CategoryPath;
+                        // category_name in DB can be NULL while category_id is set — resolve name from repository
+                        if (existingCategoryId is not null && existingCategoryName is null)
+                        {
+                            try
+                            {
+                                var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
+                                existingCategoryName = cat?.Name;
+                            }
+                            catch (Exception ex)
+                            {
+                                SmartConLogger.Warn($"[BatchImport] Failed to resolve category name for '{existingCategoryId}': {ex.Message}");
+                            }
+                        }
                         items.Add(new FamilyBatchImportItem(
                             path, Path.GetFileName(path), sha256.Sha256, revitVersion, fileInfo.Length,
                             FamilyBatchImportStatus.Existing,

@@ -175,16 +175,17 @@ internal sealed partial class LocalFamilyImportService
     }
 
     private static async Task UpdateCatalogItemCategoryAsync(SqliteConnection connection, string id,
-        string? categoryId, DateTimeOffset now, CancellationToken ct)
+        string? categoryId, string? categoryName, DateTimeOffset now, CancellationToken ct)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             UPDATE catalog_items
-            SET category_id = @categoryId, updated_at_utc = @updatedAtUtc
+            SET category_id = @categoryId, category_name = @categoryName, updated_at_utc = @updatedAtUtc
             WHERE id = @id
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@categoryId", categoryId ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@categoryName", categoryName ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -363,10 +364,10 @@ internal sealed partial class LocalFamilyImportService
             updateFileCmd.Parameters.Add(new SqliteParameter("@importedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
             await updateFileCmd.ExecuteNonQueryAsync(ct);
 
-            // Update catalog_items.updated_at_utc and optionally category_id
+            // Update catalog_items.updated_at_utc and optionally category_id + category_name
             if (!string.IsNullOrEmpty(item.TargetCategoryId))
             {
-                await UpdateCatalogItemCategoryAsync(connection, item.ExistingCatalogItemId!, item.TargetCategoryId, DateTimeOffset.UtcNow, ct);
+                await UpdateCatalogItemCategoryAsync(connection, item.ExistingCatalogItemId!, item.TargetCategoryId, item.TargetCategoryName, DateTimeOffset.UtcNow, ct);
             }
             else
             {

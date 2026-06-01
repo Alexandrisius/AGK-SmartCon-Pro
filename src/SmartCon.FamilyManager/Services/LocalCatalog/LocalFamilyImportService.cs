@@ -292,7 +292,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             item.ExistingCatalogItemId!,
                             item.FilePath,
                             item.RevitMajorVersion,
-                            item.TargetCategoryId);
+                            item.TargetCategoryId,
+                            item.TargetCategoryName);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -402,7 +403,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct);
                 if (!string.IsNullOrEmpty(request.CategoryId))
                 {
-                    await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, now, ct);
+                    await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct);
                 }
                 await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct);
 
