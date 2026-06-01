@@ -42,9 +42,7 @@ public static partial class LocalizationService
         ru["FM_FamilyFileNotFound"] = "Файл семейства не найден"; en["FM_FamilyFileNotFound"] = "Family file not found";
         ru["FM_ImportDataResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportDataResultFormat"] = "Imported: {0} types, {1} values found";
         ru["FM_ImportDataError"] = "Ошибка импорта: {0}"; en["FM_ImportDataError"] = "Import error: {0}";
-        ru["FM_ImportFileToCategory"] = "Импорт файла"; en["FM_ImportFileToCategory"] = "Import file";
-        ru["FM_ImportFolderToCategory"] = "Импорт папки"; en["FM_ImportFolderToCategory"] = "Import folder";
-        ru["FM_ImportDataForCategory"] = "Импорт данных"; en["FM_ImportDataForCategory"] = "Import data";
+        ru["FM_ImportToCategory"] = "Импорт в категорию"; en["FM_ImportToCategory"] = "Import to category";
         ru["FM_ImportDataProgress"] = "Обработка {0} из {1}: {2}"; en["FM_ImportDataProgress"] = "Processing {0} of {1}: {2}";
         ru["FM_NoFamiliesInCategory"] = "В категории нет семейств"; en["FM_NoFamiliesInCategory"] = "No families in category";
         ru["FM_LoadSuccess"] = "Семейство \"{0}\" загружено в проект"; en["FM_LoadSuccess"] = "Family \"{0}\" loaded into project";

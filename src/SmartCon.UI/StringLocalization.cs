@@ -245,9 +245,7 @@ public static class StringLocalization
         public const string FM_ImportDataResultFormat = "FM_ImportDataResultFormat";
         public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
         public const string FM_ImportDataError = "FM_ImportDataError";
-        public const string FM_ImportFileToCategory = "FM_ImportFileToCategory";
-        public const string FM_ImportFolderToCategory = "FM_ImportFolderToCategory";
-        public const string FM_ImportDataForCategory = "FM_ImportDataForCategory";
+        public const string FM_ImportToCategory = "FM_ImportToCategory";
         public const string FM_ImportDataProgress = "FM_ImportDataProgress";
         public const string FM_BatchImport_Title = "FM_BatchImport_Title";
         public const string FM_BatchImport_FileName = "FM_BatchImport_FileName";

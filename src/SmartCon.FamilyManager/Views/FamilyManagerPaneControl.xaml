@@ -462,15 +462,8 @@
             <TreeView.Resources>
                 <ContextMenu x:Key="CategoryNodeContextMenu" Style="{StaticResource ModernContextMenu}"
                              DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                    <MenuItem Header="{loc:Loc FM_ImportFileToCategory}"
+                    <MenuItem Header="{loc:Loc FM_ImportToCategory}"
                               Command="{Binding ImportFileToCategoryCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
-                    <MenuItem Header="{loc:Loc FM_ImportFolderToCategory}"
-                              Command="{Binding ImportFolderToCategoryCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
-                    <Separator />
-                    <MenuItem Header="{loc:Loc FM_ImportDataForCategory}"
-                              Command="{Binding ImportDataForCategoryCommand}"
                               Style="{StaticResource ModernMenuItem}" />
                 </ContextMenu>
 

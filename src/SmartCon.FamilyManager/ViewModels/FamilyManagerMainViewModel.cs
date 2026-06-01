@@ -75,8 +75,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportDataForCategoryCommand))]
     private bool _canImport;
 
     [ObservableProperty]
@@ -387,8 +385,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         PlaceCommand.NotifyCanExecuteChanged();
         PlaceTypeCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
-        ImportFolderToCategoryCommand.NotifyCanExecuteChanged();
-        ImportDataForCategoryCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
