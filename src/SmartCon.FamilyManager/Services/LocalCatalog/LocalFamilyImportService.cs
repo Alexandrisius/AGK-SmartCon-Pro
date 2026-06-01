@@ -428,26 +428,55 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
     }
 
+    private const int CopyMaxRetries = 3;
+    private static readonly int[] CopyRetryDelaysMs = [100, 300, 900];
+
     private async Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata, CancellationToken ct)
     {
-        try
+        _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel);
+        var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, metadata.FileName);
+        var fileName = Path.GetFileName(sourcePath);
+
+        for (var attempt = 0; attempt < CopyMaxRetries; attempt++)
         {
-            _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel);
-            var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, metadata.FileName);
-            await Task.Run(() =>
+            ct.ThrowIfCancellationRequested();
+
+            try
             {
-                File.Copy(sourcePath, absolutePath, overwrite: true);
+                await Task.Run(() =>
+                {
+                    // Copy with FileShare.ReadWrite to handle files opened by Revit
+                    using var sourceStream = new FileStream(
+                        sourcePath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.ReadWrite);
+                    using var destStream = new FileStream(
+                        absolutePath,
+                        FileMode.Create,
+                        FileAccess.Write,
+                        FileShare.None);
+                    sourceStream.CopyTo(destStream);
+                    destStream.Flush();
+                }, ct);
+
                 File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
-            }, ct);
-            var relativePath = _pathResolver.GetRelativePath(absolutePath);
-            SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
-            return new CopyResult(true, relativePath, null);
+                var relativePath = _pathResolver.GetRelativePath(absolutePath);
+                SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
+                return new CopyResult(true, relativePath, null);
+            }
+            catch (IOException) when (attempt < CopyMaxRetries - 1)
+            {
+                await Task.Delay(CopyRetryDelaysMs[attempt], ct);
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Info($"[Import] Copy FAILED for '{fileName}': {ex.Message}");
+                return new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}");
+            }
         }
-        catch (Exception ex)
-        {
-            SmartConLogger.Info($"[Import] Copy FAILED: {ex.Message}");
-            return new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}");
-        }
+
+        return new CopyResult(false, null, $"Failed to copy file to managed storage after {CopyMaxRetries} attempts");
     }
 
     private Task CleanupFileAsync(string? relativePath)
