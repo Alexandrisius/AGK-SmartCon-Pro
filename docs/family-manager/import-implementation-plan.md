@@ -361,7 +361,7 @@ ALTER TABLE project_usage ADD COLUMN loaded_version_label TEXT;
 - [ ] Убрать CanExecute для удалённых команд
 
 ### Этап 9: Тесты (1 ч)
-- [ ] Инкремент версии
+- [ ] Новая версия
 - [ ] Перезапись текущей
 - [ ] Дедупликация SHA256
 - [ ] Stale marker
@@ -375,9 +375,9 @@ ALTER TABLE project_usage ADD COLUMN loaded_version_label TEXT;
 
 - [ ] Batch Dialog в стиле Settings/ShareProject (таблица, кнопки, локализация)
 - [ ] Данные в Batch Dialog без OpenDocumentFile (BasicFileInfo + SHA256 в WPF thread, OpenDocumentFile только после "Загрузить")
-- [ ] Режимы: Инкремент версии (default), Перезаписать текущую, Пропустить
+- [ ] Режимы: Новая версия (default), Перезаписать текущую, Пропустить
 - [ ] Дедупликация по SHA256 (авто-skip, глобальная)
-- [ ] Инкремент создаёт vN+1 и обновляет current_version_label
+- [ ] Новая версия создаёт vN+1 и обновляет current_version_label
 - [ ] Перезапись заменяет файл, НЕ меняет current_version_label
 - [ ] Stale marker отображается в дереве при устаревшей версии
 - [ ] Типы и атрибуты извлекаются при импорте (через существующий экстрактор + ReleaseComObject)

@@ -16,7 +16,7 @@ public sealed class FamilyBatchImportActionConverter : IValueConverter
 
         return action switch
         {
-            FamilyBatchImportAction.IncrementVersion => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_ActionIncrement) ?? "Increment Version",
+            FamilyBatchImportAction.IncrementVersion => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_ActionIncrement) ?? "New Version",
             FamilyBatchImportAction.OverwriteCurrent => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_ActionOverwrite) ?? "Overwrite Current",
             FamilyBatchImportAction.Skip => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_ActionSkip) ?? "Skip",
             _ => action.ToString()
