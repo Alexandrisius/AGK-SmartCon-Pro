@@ -199,16 +199,32 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Toolbar (Import left, Profile center, Settings right) -->
+        <!-- Row 0: Toolbar (FindInCatalog | Import | Profile | Settings) -->
         <Grid Grid.Row="0" Margin="0,0,0,4">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
+            <!-- Left: Find in Catalog -->
+            <Button Grid.Column="0"
+                    Command="{Binding FindInCatalogCommand}"
+                    Margin="0,0,2,0"
+                    Width="28"
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="0"
+                    ToolTip="{loc:Loc FM_Tip_FindInCatalog}"
+                    Visibility="{Binding HasActiveDatabase, Converter={StaticResource BoolToVis}}">
+                <Viewbox Width="12" Height="12" Stretch="Uniform">
+                    <Path Data="M15.5,14L20.5,19L19,20.5L14,15.5C12.7,16.5 11.2,17 9.5,17C5.4,17 2,13.6 2,9.5C2,5.4 5.4,2 9.5,2C13.6,2 17,5.4 17,9.5C17,11.2 16.5,12.7 15.5,14ZM9.5,14C11.9,14 14,11.9 14,9.5C14,7.1 11.9,5 9.5,5C7.1,5 5,7.1 5,9.5C5,11.9 7.1,14 9.5,14Z"
+                          Fill="{DynamicResource TextPrimaryBrush}"/>
+                </Viewbox>
+            </Button>
+
             <!-- Left: Import -->
-            <Grid Grid.Column="0" Visibility="{Binding CanImport, Converter={StaticResource BoolToVis}}"
+            <Grid Grid.Column="1" Visibility="{Binding CanImport, Converter={StaticResource BoolToVis}}"
                   Margin="0,0,4,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -216,9 +232,9 @@
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0"
-                        Content="{loc:Loc FM_ImportFile}"
+                        Content="{loc:Loc FM_Import}"
                         Command="{Binding ImportFilesCommand}"
-                        MinWidth="80"
+                        MinWidth="52"
                         Style="{DynamicResource SecondaryButton}"
                         Margin="0,0,0,0"
                         Padding="8,4"/>
@@ -260,9 +276,9 @@
             </Grid>
 
             <!-- Center: Profile -->
-            <Button Grid.Column="1"
+            <Button Grid.Column="2"
                     Command="{Binding OpenProfileCommand}"
-                    Width="28" Height="28"
+                    Width="28"
                     HorizontalAlignment="Center"
                     Padding="0"
                     ToolTipService.ShowOnDisabled="True">
@@ -283,9 +299,9 @@
             </Button>
 
             <!-- Right: Settings -->
-            <Button Grid.Column="2"
+            <Button Grid.Column="3"
                     Command="{Binding OpenCategoryEditorCommand}"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_Tip_EditCategories}">
@@ -308,7 +324,7 @@
             <Button Grid.Column="0"
                     Command="{Binding CreateDatabaseCommand}"
                     Margin="0,0,2,0"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_Tip_CreateDb}">
@@ -332,7 +348,7 @@
             <Button Grid.Column="2"
                     Command="{Binding ConnectDatabaseCommand}"
                     Margin="0,0,2,0"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_Tip_ConnectDb}">
@@ -348,7 +364,7 @@
             <Button Grid.Column="3"
                     Command="{Binding DisconnectDatabaseCommand}"
                     Margin="0,0,0,0"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_Disconnect}">
@@ -372,7 +388,7 @@
             <Button Grid.Column="0"
                     Command="{Binding RefreshTreeCommand}"
                     Margin="0,0,2,0"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_RefreshTooltip}">
@@ -428,6 +444,7 @@
                   behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
                   behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
                   behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
+                  behaviors:TreeViewBehaviors.AutoScrollToSelectedItem="True"
                   behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
                   Background="Transparent"
                   BorderBrush="{DynamicResource BorderAltBrush}"
@@ -605,20 +622,13 @@
         </TreeView>
 
         <Grid Grid.Row="4" Margin="0,4,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-
-            <TextBlock Grid.Column="0"
-                       Text="{Binding StatusMessage}"
+            <TextBlock Text="{Binding StatusMessage}"
                        VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-
-            <TextBlock Grid.Column="1"
-                       Text="{Binding TotalItemCount}"
-                       VerticalAlignment="Center"
-                       Margin="8,0,0,0"/>
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding StatusMessage}"
+                       MaxHeight="36"/>
         </Grid>
     </Grid>
 </UserControl>

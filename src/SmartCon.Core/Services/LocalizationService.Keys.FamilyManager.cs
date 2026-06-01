@@ -237,6 +237,10 @@ public static partial class LocalizationService
         ru["FM_ProfileDisabledTooltip"] = "Подключите базу данных для просмотра профиля"; en["FM_ProfileDisabledTooltip"] = "Connect a database to view profile";
         ru["FM_StatusNoDatabase"] = "База данных не подключена"; en["FM_StatusNoDatabase"] = "No database connected";
         ru["FM_FamilyDeleteInUse"] = "Не удалось удалить файлы семейства. Возможно, файл открыт в Revit или другом приложении. Закройте файл и попробуйте снова."; en["FM_FamilyDeleteInUse"] = "Failed to delete family files. The file may be open in Revit or another application. Close the file and try again.";
+        ru["FM_Tip_FindInCatalog"] = "Найти выделенное семейство в каталоге"; en["FM_Tip_FindInCatalog"] = "Find selected family in catalog";
+        ru["FM_FindInCatalog_NoSelection"] = "В модели не выделено ни одного элемента"; en["FM_FindInCatalog_NoSelection"] = "No element selected in the model";
+        ru["FM_FindInCatalog_NotFound"] = "Семейство '{0}' не найдено в каталоге"; en["FM_FindInCatalog_NotFound"] = "Family '{0}' not found in catalog";
+        ru["FM_FindInCatalog_Found"] = "Найдено семейство: {0}"; en["FM_FindInCatalog_Found"] = "Family found: {0}";
 
         // Batch Import Dialog
         ru["FM_BatchImport_Title"] = "Импорт семейств"; en["FM_BatchImport_Title"] = "Import Families";

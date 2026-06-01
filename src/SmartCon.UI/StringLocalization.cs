@@ -455,5 +455,9 @@ public static class StringLocalization
         public const string FM_ProfileDisabledTooltip = "FM_ProfileDisabledTooltip";
         public const string FM_StatusNoDatabase = "FM_StatusNoDatabase";
         public const string FM_FamilyDeleteInUse = "FM_FamilyDeleteInUse";
+        public const string FM_Tip_FindInCatalog = "FM_Tip_FindInCatalog";
+        public const string FM_FindInCatalog_NoSelection = "FM_FindInCatalog_NoSelection";
+        public const string FM_FindInCatalog_NotFound = "FM_FindInCatalog_NotFound";
+        public const string FM_FindInCatalog_Found = "FM_FindInCatalog_Found";
     }
 }
