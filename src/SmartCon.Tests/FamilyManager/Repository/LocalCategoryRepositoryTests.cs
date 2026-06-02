@@ -175,7 +175,7 @@ public sealed class LocalCategoryRepositoryTests
 
         var category = await repo.AddAsync("Pipes", null, 0);
 
-        using (var connection = new SqliteConnection(fixture.ConnectionString))
+        using (var connection = fixture.GetDatabase().CreateConnection())
         {
             await connection.OpenAsync();
             using var cmd = connection.CreateCommand();
@@ -190,7 +190,7 @@ public sealed class LocalCategoryRepositoryTests
 
         await repo.DeleteAsync(category.Id);
 
-        using (var connection = new SqliteConnection(fixture.ConnectionString))
+        using (var connection = fixture.GetDatabase().CreateConnection())
         {
             await connection.OpenAsync();
             using var cmd = connection.CreateCommand();
@@ -315,7 +315,7 @@ public sealed class LocalCategoryRepositoryTests
 
         var category = await repo.AddAsync("Pipes", null, 0);
 
-        using var connection = new SqliteConnection(fixture.ConnectionString);
+        using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
         for (var i = 0; i < 3; i++)
         {
@@ -345,7 +345,7 @@ public sealed class LocalCategoryRepositoryTests
         var cat1 = await repo.AddAsync("Pipes", null, 0);
         var cat2 = await repo.AddAsync("Fittings", null, 1);
 
-        using var connection = new SqliteConnection(fixture.ConnectionString);
+        using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
 
         for (var i = 0; i < 2; i++)

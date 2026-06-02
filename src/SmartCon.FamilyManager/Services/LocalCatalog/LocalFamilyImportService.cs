@@ -83,7 +83,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ? await GetNextVersionLabelAsync(existingItem.Id, ct)
             : "v1";
 
-        var copyResult = await CopyToManagedStorageAsync(filePath, catalogItemId, versionLabel, revitVersion, metadata);
+        var copyResult = await CopyToManagedStorageAsync(filePath, catalogItemId, versionLabel, revitVersion, metadata, ct);
         if (!copyResult.Success)
             return new FamilyImportResult(
                 Success: false,
@@ -97,35 +97,29 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         try
         {
             using var connection = _database.CreateConnection();
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
             using var tx = connection.BeginTransaction();
-
-            using (var fkCmd = connection.CreateCommand())
-            {
-                fkCmd.CommandText = "PRAGMA foreign_keys=ON;";
-                await fkCmd.ExecuteNonQueryAsync(ct);
-            }
 
             try
             {
-                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct);
+                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 if (existingItem is null)
                 {
-                    await InsertCatalogItemAsync(connection, catalogItemId, normalizedName, request, now, versionLabel, ct);
+                    await InsertCatalogItemAsync(connection, catalogItemId, normalizedName, request, now, versionLabel, ct).ConfigureAwait(false);
                 }
                 else
                 {
-                    await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct);
+                    await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct).ConfigureAwait(false);
                 }
 
-                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct);
+                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 if (existingItem is null && request.Tags is not null)
                 {
                     foreach (var tag in request.Tags)
                     {
-                        await InsertTagAsync(connection, catalogItemId, tag, ct);
+                        await InsertTagAsync(connection, catalogItemId, tag, ct).ConfigureAwait(false);
                     }
                 }
 
@@ -136,8 +130,6 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 tx.Rollback();
                 throw;
             }
-
-            _database.Checkpoint();
 
             return new FamilyImportResult(
                 Success: true,
@@ -236,6 +228,112 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ErrorCount: errorCount);
     }
 
+    public async Task<FamilyBatchImportResult> ImportBatchAsync(
+        IReadOnlyList<FamilyBatchImportItem> items,
+        string? categoryId,
+        IProgress<FamilyImportProgress>? progress,
+        CancellationToken ct = default)
+    {
+        await _migrator.MigrateAsync(ct);
+
+        var results = new List<FamilyImportResult>();
+        var successCount = 0;
+        var skippedCount = 0;
+        var errorCount = 0;
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var item = items[i];
+            
+            SmartConLogger.Info($"[BatchImport] File: {item.FileName}, Status: {item.Status}, Action: {item.Action}");
+
+            progress?.Report(new FamilyImportProgress(
+                CurrentFileIndex: i,
+                TotalFiles: items.Count,
+                CurrentFileName: item.FileName,
+                SuccessCount: successCount,
+                SkippedCount: skippedCount,
+                ErrorCount: errorCount));
+
+            if (item.Action == FamilyBatchImportAction.Skip)
+            {
+                skippedCount++;
+                results.Add(new FamilyImportResult(
+                    Success: true,
+                    CatalogItemId: item.ExistingCatalogItemId,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: item.FileName,
+                    VersionLabel: item.ExistingVersionLabel,
+                    ErrorMessage: null,
+                    WasSkippedAsDuplicate: true));
+                continue;
+            }
+
+            try
+            {
+                FamilyImportResult result;
+                if (item.Status == FamilyBatchImportStatus.New)
+                {
+                    var request = new FamilyImportRequest(
+                        item.FilePath,
+                        item.RevitMajorVersion,
+                        null, null, null, item.TargetCategoryId ?? categoryId);
+                    result = await ImportFileAsync(request, ct);
+                }
+                else
+                {
+                    if (item.Action == FamilyBatchImportAction.IncrementVersion)
+                    {
+                        var request = new FamilyUpdateRequest(
+                            item.ExistingCatalogItemId!,
+                            item.FilePath,
+                            item.RevitMajorVersion,
+                            item.TargetCategoryId,
+                            item.TargetCategoryName);
+                        result = await UpdateFamilyAsync(request, ct);
+                    }
+                    else
+                    {
+                        result = await OverwriteCurrentAsync(item, ct);
+                    }
+                }
+
+                results.Add(result);
+                if (result.Success) successCount++;
+                else errorCount++;
+            }
+            catch (Exception ex)
+            {
+                errorCount++;
+                results.Add(new FamilyImportResult(
+                    Success: false,
+                    CatalogItemId: null,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: item.FileName,
+                    VersionLabel: null,
+                    ErrorMessage: ex.Message));
+            }
+        }
+
+        progress?.Report(new FamilyImportProgress(
+            CurrentFileIndex: items.Count - 1,
+            TotalFiles: items.Count,
+            CurrentFileName: string.Empty,
+            SuccessCount: successCount,
+            SkippedCount: skippedCount,
+            ErrorCount: errorCount));
+
+        return new FamilyBatchImportResult(
+            Results: results,
+            TotalFiles: items.Count,
+            SuccessCount: successCount,
+            SkippedCount: skippedCount,
+            ErrorCount: errorCount);
+    }
+
     public async Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default)
     {
         await _migrator.MigrateAsync(ct);
@@ -280,7 +378,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var fileRecordId = Guid.NewGuid().ToString();
         var versionId = Guid.NewGuid().ToString();
 
-        var copyResult = await CopyToManagedStorageAsync(filePath, request.CatalogItemId, versionLabel, revitVersion, metadata);
+        var copyResult = await CopyToManagedStorageAsync(filePath, request.CatalogItemId, versionLabel, revitVersion, metadata, ct);
         if (!copyResult.Success)
             return new FamilyImportResult(
                 Success: false,
@@ -294,20 +392,18 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         try
         {
             using var connection = _database.CreateConnection();
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
             using var tx = connection.BeginTransaction();
-
-            using (var fkCmd = connection.CreateCommand())
-            {
-                fkCmd.CommandText = "PRAGMA foreign_keys=ON;";
-                await fkCmd.ExecuteNonQueryAsync(ct);
-            }
 
             try
             {
-                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct);
-                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct);
-                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct);
+                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct).ConfigureAwait(false);
+                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(request.CategoryId))
+                {
+                    await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);
+                }
+                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 tx.Commit();
             }
@@ -316,8 +412,6 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 tx.Rollback();
                 throw;
             }
-
-            _database.Checkpoint();
 
             return new FamilyImportResult(
                 Success: true,
@@ -336,23 +430,55 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
     }
 
-    private Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata)
+    private const int CopyMaxRetries = 3;
+    private static readonly int[] CopyRetryDelaysMs = [100, 300, 900];
+
+    private async Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata, CancellationToken ct)
     {
-        try
+        _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel);
+        var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, metadata.FileName);
+        var fileName = Path.GetFileName(sourcePath);
+
+        for (var attempt = 0; attempt < CopyMaxRetries; attempt++)
         {
-            _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel, revitVersion);
-            var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, revitVersion, metadata.FileName);
-            File.Copy(sourcePath, absolutePath, overwrite: true);
-            File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
-            var relativePath = _pathResolver.GetRelativePath(absolutePath);
-            SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
-            return Task.FromResult(new CopyResult(true, relativePath, null));
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                await Task.Run(() =>
+                {
+                    // Copy with FileShare.ReadWrite to handle files opened by Revit
+                    using var sourceStream = new FileStream(
+                        sourcePath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.ReadWrite);
+                    using var destStream = new FileStream(
+                        absolutePath,
+                        FileMode.Create,
+                        FileAccess.Write,
+                        FileShare.None);
+                    sourceStream.CopyTo(destStream);
+                    destStream.Flush();
+                }, ct);
+
+                File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+                var relativePath = _pathResolver.GetRelativePath(absolutePath);
+                SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
+                return new CopyResult(true, relativePath, null);
+            }
+            catch (IOException) when (attempt < CopyMaxRetries - 1)
+            {
+                await Task.Delay(CopyRetryDelaysMs[attempt], ct);
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Info($"[Import] Copy FAILED for '{fileName}': {ex.Message}");
+                return new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}");
+            }
         }
-        catch (Exception ex)
-        {
-            SmartConLogger.Info($"[Import] Copy FAILED: {ex.Message}");
-            return Task.FromResult(new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}"));
-        }
+
+        return new CopyResult(false, null, $"Failed to copy file to managed storage after {CopyMaxRetries} attempts");
     }
 
     private Task CleanupFileAsync(string? relativePath)

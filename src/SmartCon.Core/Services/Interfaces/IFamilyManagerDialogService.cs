@@ -63,4 +63,7 @@ public interface IFamilyManagerDialogService
     bool? ShowAttributeLibrary(object viewModel);
 
     bool? ShowProfile(object viewModel);
+
+    /// <summary>Show batch import dialog with file list and action selection.</summary>
+    bool? ShowBatchImportDialog(object viewModel);
 }

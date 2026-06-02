@@ -365,6 +365,7 @@
 
                 <ToggleButton Grid.Column="1"
                               x:Name="ExportSplitToggle"
+                              IsChecked="{Binding IsOpen, ElementName=ExportSplitPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                               Width="18"
                               Margin="1,0,0,0"
                               Style="{DynamicResource ModernSplitToggle}">
@@ -375,7 +376,7 @@
                           Stretch="Uniform"/>
                 </ToggleButton>
 
-                <Popup IsOpen="{Binding IsChecked, ElementName=ExportSplitToggle, Mode=OneWay}"
+                <Popup x:Name="ExportSplitPopup"
                        StaysOpen="False"
                        PlacementTarget="{Binding ElementName=ExportSplitToggle}"
                        Placement="Bottom"

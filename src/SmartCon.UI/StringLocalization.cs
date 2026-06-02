@@ -217,6 +217,9 @@ public static class StringLocalization
         public const string FM_ExtractTypes = "FM_ExtractTypes";
         public const string FM_ImportData = "FM_ImportData";
         public const string FM_PlaceType = "FM_PlaceType";
+        public const string FM_Edit = "FM_Edit";
+        public const string FM_LoadActiveFamily = "FM_LoadActiveFamily";
+        public const string FM_ActiveDocNotFamily = "FM_ActiveDocNotFamily";
         public const string FM_EditMetadata = "FM_EditMetadata";
         public const string FM_NoActiveDocument = "FM_NoActiveDocument";
         public const string FM_ImportProgress = "FM_ImportProgress";
@@ -242,10 +245,24 @@ public static class StringLocalization
         public const string FM_ImportDataResultFormat = "FM_ImportDataResultFormat";
         public const string FM_FamilyFileNotFound = "FM_FamilyFileNotFound";
         public const string FM_ImportDataError = "FM_ImportDataError";
-        public const string FM_ImportFileToCategory = "FM_ImportFileToCategory";
-        public const string FM_ImportFolderToCategory = "FM_ImportFolderToCategory";
-        public const string FM_ImportDataForCategory = "FM_ImportDataForCategory";
+        public const string FM_ImportToCategory = "FM_ImportToCategory";
         public const string FM_ImportDataProgress = "FM_ImportDataProgress";
+        public const string FM_BatchImport_Title = "FM_BatchImport_Title";
+        public const string FM_BatchImport_FileName = "FM_BatchImport_FileName";
+        public const string FM_BatchImport_RevitVersion = "FM_BatchImport_RevitVersion";
+        public const string FM_BatchImport_Size = "FM_BatchImport_Size";
+        public const string FM_BatchImport_Status = "FM_BatchImport_Status";
+        public const string FM_BatchImport_Action = "FM_BatchImport_Action";
+        public const string FM_BatchImport_SelectAll = "FM_BatchImport_SelectAll";
+        public const string FM_BatchImport_Load = "FM_BatchImport_Load";
+        public const string FM_BatchImport_StatusNew = "FM_BatchImport_StatusNew";
+        public const string FM_BatchImport_StatusExisting = "FM_BatchImport_StatusExisting";
+        public const string FM_BatchImport_StatusDuplicate = "FM_BatchImport_StatusDuplicate";
+        public const string FM_BatchImport_StatusError = "FM_BatchImport_StatusError";
+        public const string FM_BatchImport_ActionIncrement = "FM_BatchImport_ActionIncrement";
+        public const string FM_BatchImport_ActionOverwrite = "FM_BatchImport_ActionOverwrite";
+        public const string FM_BatchImport_ActionSkip = "FM_BatchImport_ActionSkip";
+        public const string FM_BatchImport_Stale = "FM_BatchImport_Stale";
         public const string FM_NoFamiliesInCategory = "FM_NoFamiliesInCategory";
         public const string FM_LoadSuccess = "FM_LoadSuccess";
         public const string FM_LoadAndPlaceSuccess = "FM_LoadAndPlaceSuccess";
@@ -274,6 +291,8 @@ public static class StringLocalization
         public const string FM_Disconnect = "FM_Disconnect";
 
         public const string FM_Update = "FM_Update";
+        public const string FM_UpdateKeepParams = "FM_UpdateKeepParams";
+        public const string FM_UpdateOverwriteParams = "FM_UpdateOverwriteParams";
         public const string FM_UpdateSuccess = "FM_UpdateSuccess";
         public const string FM_UpdateIdentical = "FM_UpdateIdentical";
         public const string FM_UpdateIdenticalCurrent = "FM_UpdateIdenticalCurrent";
@@ -437,5 +456,9 @@ public static class StringLocalization
         public const string FM_ProfileDisabledTooltip = "FM_ProfileDisabledTooltip";
         public const string FM_StatusNoDatabase = "FM_StatusNoDatabase";
         public const string FM_FamilyDeleteInUse = "FM_FamilyDeleteInUse";
+        public const string FM_Tip_FindInCatalog = "FM_Tip_FindInCatalog";
+        public const string FM_FindInCatalog_NoSelection = "FM_FindInCatalog_NoSelection";
+        public const string FM_FindInCatalog_NotFound = "FM_FindInCatalog_NotFound";
+        public const string FM_FindInCatalog_Found = "FM_FindInCatalog_Found";
     }
 }

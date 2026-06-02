@@ -17,7 +17,7 @@ public sealed class LocalCatalogProviderTests
     private static async Task SeedItemAsync(TempCatalogFixture fixture, string id, string name, string normalizedName,
         string? category = null, string? status = "Active", string[]? tags = null)
     {
-        using var connection = new SqliteConnection(fixture.ConnectionString);
+        using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
 
         using var cmd = connection.CreateCommand();
@@ -110,7 +110,7 @@ public sealed class LocalCatalogProviderTests
         await SeedItemAsync(fixture, "c1", "Pipe A", "pipe a");
         await SeedItemAsync(fixture, "c2", "Valve B", "valve b");
 
-        using var conn = new SqliteConnection(fixture.ConnectionString);
+        using var conn = fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var catCmd = conn.CreateCommand();
         catCmd.CommandText = "INSERT INTO categories (id, name, sort_order, created_at_utc) VALUES ('cat1', 'Pipes', 0, @t)";

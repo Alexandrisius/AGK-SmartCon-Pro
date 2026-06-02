@@ -32,4 +32,10 @@ public sealed record FamilyExtractionResult(
 public interface IFamilyDataExtractionService
 {
     FamilyExtractionResult Extract(string rfaFilePath, IReadOnlyList<string> expectedParameterNames);
+
+    /// <summary>
+    /// Extracts types and parameters from an already-open family document.
+    /// The caller is responsible for closing the document.
+    /// </summary>
+    FamilyExtractionResult Extract(Autodesk.Revit.DB.Document familyDocument, IReadOnlyList<string> expectedParameterNames);
 }

@@ -67,4 +67,16 @@ public sealed class RevitFamilySearchService : IFamilySearchService
             .OfType<FamilySymbol>()
             .Any(s => s.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
     }
+
+    public IReadOnlyCollection<string> GetAllLoadedFamilyNames()
+    {
+        var doc = _revitContext.GetDocument();
+        if (doc is null) return Array.Empty<string>();
+
+        return new FilteredElementCollector(doc)
+            .OfClass(typeof(Autodesk.Revit.DB.Family))
+            .Cast<Autodesk.Revit.DB.Family>()
+            .Select(f => f.Name)
+            .ToHashSet();
+    }
 }

@@ -42,6 +42,13 @@ public static class TreeViewDragDropBehavior
             typeof(TreeViewDragDropBehavior),
             new PropertyMetadata(false));
 
+    public static readonly DependencyProperty PlacementDragCommandProperty =
+        DependencyProperty.RegisterAttached(
+            "PlacementDragCommand",
+            typeof(ICommand),
+            typeof(TreeViewDragDropBehavior),
+            new PropertyMetadata(null, OnCommandPropertyChanged));
+
     private static readonly DependencyProperty DragDropStateProperty =
         DependencyProperty.RegisterAttached(
             "DragDropState",
@@ -76,6 +83,12 @@ public static class TreeViewDragDropBehavior
 
     public static void SetResolveParentDropTarget(DependencyObject obj, bool value)
         => obj.SetValue(ResolveParentDropTargetProperty, value);
+
+    public static ICommand? GetPlacementDragCommand(DependencyObject obj)
+        => (ICommand?)obj.GetValue(PlacementDragCommandProperty);
+
+    public static void SetPlacementDragCommand(DependencyObject obj, ICommand? value)
+        => obj.SetValue(PlacementDragCommandProperty, value);
 
     private static DragDropState? GetDragDropState(DependencyObject obj)
         => (DragDropState?)obj.GetValue(DragDropStateProperty);
@@ -112,8 +125,9 @@ public static class TreeViewDragDropBehavior
 
         var hasStart = GetStartDragCommand(treeView) is not null;
         var hasDrop = GetDropCommand(treeView) is not null;
+        var hasPlacement = GetPlacementDragCommand(treeView) is not null;
 
-        if (hasStart || hasDrop)
+        if (hasStart || hasDrop || hasPlacement)
             Attach(treeView);
         else
             Detach(treeView);
@@ -173,11 +187,27 @@ public static class TreeViewDragDropBehavior
             Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
 
-        var command = GetStartDragCommand(treeView);
         var draggedItem = treeView.SelectedItem;
-
-        if (command?.CanExecute(draggedItem) != true) return;
         if (IsMouseOverScrollbar(treeView, e.GetPosition(treeView))) return;
+
+        var placementCommand = GetPlacementDragCommand(treeView);
+        if (placementCommand?.CanExecute(draggedItem) == true)
+        {
+            state.IsDragging = true;
+            try
+            {
+                placementCommand.Execute(draggedItem);
+            }
+            finally
+            {
+                state.IsDragging = false;
+                Cleanup(state);
+            }
+            return;
+        }
+
+        var command = GetStartDragCommand(treeView);
+        if (command?.CanExecute(draggedItem) != true) return;
 
         state.IsDragging = true;
 

@@ -154,6 +154,10 @@ public partial class SomeView : Window
 - Все биндинги — через `{Binding}` в XAML
 - Открытие окон — через `IDialogService`, не `new Window().ShowDialog()`
 
+**Исключение:** `BindCloseRequest(viewModel)` в конструкторах диалоговых окон (`DialogWindowBase`) — допустимый паттерн для поддержки закрытия окна из ViewModel через `IObservableRequestClose`.
+
+**Исключение:** Программная установка заголовков `DataGridColumn.Header` через `x:Name` в code-behind (см. I-12).
+
 ---
 
 ## I-11: ElementIdCompat — единственный RevitAPI-зависимый класс в Core

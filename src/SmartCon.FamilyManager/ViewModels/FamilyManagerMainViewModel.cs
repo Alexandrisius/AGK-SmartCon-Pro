@@ -36,12 +36,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IDbAccessControlService _accessControl;
     private readonly IFamilySearchService _familySearchService;
     private readonly IFamilyPlacementService _familyPlacementService;
+    private readonly IFamilyPlacementDragService _placementDragService;
+    private readonly IRevitFileInfoReader _fileInfoReader;
+    private readonly IFamilyMetadataExtractionService _metadataService;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
     private bool _lastSearchActive;
     private readonly HashSet<string> _savedExpandedCategoryIds = new();
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
+    private HashSet<string>? _loadedFamilyNamesCache;
+    private string? _loadedFamilyNamesCacheProjectPath;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSearchNotEmpty))]
@@ -52,7 +57,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private FamilyCatalogItemRow? _selectedItem;
     [ObservableProperty] private ObservableCollection<CatalogTreeNodeViewModel> _treeNodes = [];
     [ObservableProperty] private CatalogTreeNodeViewModel? _selectedTreeNode;
+    [ObservableProperty] private bool _isSelectedFamilyStale;
     [ObservableProperty] private bool _isLoading;
+    private string? _cachedProjectPath;
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
@@ -70,16 +77,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private int _currentRevitVersion;
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportFolderCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportDataCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportDataForCategoryCommand))]
     private bool _canImport;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
-    [NotifyCanExecuteChangedFor(nameof(UpdateFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(LoadActiveFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
     [NotifyCanExecuteChangedFor(nameof(DropFamilyCommand))]
@@ -108,7 +112,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IFamilyDataImportService dataImportService,
         IDbAccessControlService accessControl,
         IFamilySearchService familySearchService,
-        IFamilyPlacementService familyPlacementService)
+        IFamilyPlacementService familyPlacementService,
+        IFamilyPlacementDragService placementDragService,
+        IRevitFileInfoReader fileInfoReader,
+        IFamilyMetadataExtractionService metadataService)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -129,12 +136,19 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _accessControl = accessControl;
         _familySearchService = familySearchService;
         _familyPlacementService = familyPlacementService;
+        _placementDragService = placementDragService;
+        _fileInfoReader = fileInfoReader;
+        _metadataService = metadataService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
+        _placementDragService.PlacementCompleted += OnPlacementCompleted;
+        _placementDragService.PlacementFailed += OnPlacementFailed;
+        _placementDragService.PlacementSucceeded += OnPlacementSucceeded;
+        _placementDragService.PlacementStatusMessage += OnPlacementStatusMessage;
 
         DetectRevitVersion();
-        _ = InitializeAsync();
+        InitializeAsync();
     }
 
     private void DetectRevitVersion()
@@ -163,7 +177,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
-    private async Task InitializeAsync()
+    private void InitializeAsync()
     {
         try
         {
@@ -172,13 +186,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
             SmartConLogger.Info($"======================================================================");
 
+            _databaseManager.InitializeAsync().GetAwaiter().GetResult();
             RefreshConnections();
             if (!HasActiveDatabase)
             {
                 StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
                 return;
             }
-            await RefreshAccessAndLoadTreeAsync();
+            RefreshTreeViaExternalEvent();
         }
         catch (Exception ex)
         {
@@ -221,7 +236,33 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
             return;
         }
+
         await LoadTreeAsync();
+    }
+
+    /// <summary>
+    /// Returns the set of family names currently loaded in the Revit document.
+    /// The result is cached per project path and invalidated after family load/place operations.
+    /// </summary>
+    private HashSet<string> GetLoadedFamilyNamesCached()
+    {
+        var currentPath = _cachedProjectPath;
+        if (_loadedFamilyNamesCache is not null &&
+            _loadedFamilyNamesCacheProjectPath == currentPath)
+        {
+            return _loadedFamilyNamesCache;
+        }
+
+        var names = new HashSet<string>(_familySearchService.GetAllLoadedFamilyNames());
+        _loadedFamilyNamesCache = names;
+        _loadedFamilyNamesCacheProjectPath = currentPath;
+        return names;
+    }
+
+    private void InvalidateLoadedFamilyNamesCache()
+    {
+        _loadedFamilyNamesCache = null;
+        _loadedFamilyNamesCacheProjectPath = null;
     }
 
     private void UpdateAccessProperties()
@@ -268,6 +309,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
         CanPlace = false;
         LoadToProjectCommand.NotifyCanExecuteChanged();
+        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         PlaceCommand.NotifyCanExecuteChanged();
 
         if (value is not null)
@@ -278,8 +320,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 try
                 {
                     var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
-                    CanPlace = isLoaded;
-                    PlaceCommand.NotifyCanExecuteChanged();
+                    if (SelectedItem?.Name == familyName)
+                    {
+                        CanPlace = isLoaded;
+                        PlaceCommand.NotifyCanExecuteChanged();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -306,28 +351,32 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Tags = leaf.Tags,
                 Description = leaf.Description,
             };
-            CanPlaceType = false;
-        }
-        else if (value is FamilyTypeNodeViewModel typeNode)
-        {
-            var parent = FindParentOf(TreeNodes, typeNode);
-            if (parent is FamilyLeafNodeViewModel parentLeaf)
-            {
-                SelectedItem = new FamilyCatalogItemRow
-                {
-                    Id = parentLeaf.CatalogItemId,
-                    Name = parentLeaf.DisplayName,
-                    CategoryId = parentLeaf.CategoryId,
-                    CategoryName = parentLeaf.CategoryPath,
-                    Manufacturer = parentLeaf.Manufacturer,
-                    ContentStatus = parentLeaf.ContentStatus,
-                    VersionLabel = parentLeaf.VersionLabel,
-                    UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
-                    Tags = parentLeaf.Tags,
-                    Description = parentLeaf.Description,
-                };
+                IsSelectedFamilyStale = leaf.IsStale;
                 CanPlaceType = false;
-                PlaceTypeCommand.NotifyCanExecuteChanged();
+                LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
+            }
+            else if (value is FamilyTypeNodeViewModel typeNode)
+            {
+                var parent = FindParentOf(TreeNodes, typeNode);
+                if (parent is FamilyLeafNodeViewModel parentLeaf)
+                {
+                    SelectedItem = new FamilyCatalogItemRow
+                    {
+                        Id = parentLeaf.CatalogItemId,
+                        Name = parentLeaf.DisplayName,
+                        CategoryId = parentLeaf.CategoryId,
+                        CategoryName = parentLeaf.CategoryPath,
+                        Manufacturer = parentLeaf.Manufacturer,
+                        ContentStatus = parentLeaf.ContentStatus,
+                        VersionLabel = parentLeaf.VersionLabel,
+                        UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
+                        Tags = parentLeaf.Tags,
+                        Description = parentLeaf.Description,
+                    };
+                    IsSelectedFamilyStale = parentLeaf.IsStale;
+                    CanPlaceType = false;
+                    PlaceTypeCommand.NotifyCanExecuteChanged();
+                    LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
 
                 var familyName = parentLeaf.DisplayName;
                 _externalEvent.Raise(() =>
@@ -335,8 +384,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     try
                     {
                         var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
-                        CanPlaceType = isLoaded;
-                        PlaceTypeCommand.NotifyCanExecuteChanged();
+                        if (SelectedTreeNode is FamilyTypeNodeViewModel currentTypeNode)
+                        {
+                            var currentParent = FindParentOf(TreeNodes, currentTypeNode);
+                            if (currentParent is FamilyLeafNodeViewModel currentLeaf &&
+                                currentLeaf.DisplayName == familyName)
+                            {
+                                CanPlaceType = isLoaded;
+                                PlaceTypeCommand.NotifyCanExecuteChanged();
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -347,21 +404,23 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             else
             {
                 SelectedItem = null;
+                IsSelectedFamilyStale = false;
                 CanPlaceType = false;
             }
         }
         else
         {
             SelectedItem = null;
+            IsSelectedFamilyStale = false;
             CanPlaceType = false;
         }
 
         LoadToProjectCommand.NotifyCanExecuteChanged();
+        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         PlaceCommand.NotifyCanExecuteChanged();
         PlaceTypeCommand.NotifyCanExecuteChanged();
+        StartPlacementDragCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
-        ImportFolderToCategoryCommand.NotifyCanExecuteChanged();
-        ImportDataForCategoryCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -478,31 +537,64 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
-    [RelayCommand]
-    private async Task RefreshTreeAsync(CancellationToken ct)
+    /// <summary>
+    /// Triggers tree refresh via ExternalEvent so that Revit API (FilteredElementCollector)
+    /// runs in the correct thread context before LoadTreeAsync builds the UI.
+    /// </summary>
+    private void RefreshTreeViaExternalEvent()
     {
-        try
+        _externalEvent.Raise(() =>
         {
-            await RefreshAccessAndLoadTreeAsync();
-        }
-        catch (DbAccessDeniedException ex)
-        {
-            CanImport = false;
-            CanEdit = false;
-            CanManageUsers = false;
-            _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
-                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
-            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
-            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"RefreshTreeAsync failed: {ex}");
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
-                ex.Message);
-        }
+            try
+            {
+                _cachedProjectPath = _revitContext.GetDocument().PathName;
+            }
+            catch
+            {
+                _cachedProjectPath = null;
+            }
+
+            try
+            {
+                GetLoadedFamilyNamesCached();
+            }
+            catch { }
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher
+                ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
+
+            dispatcher?.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    await RefreshAccessAndLoadTreeAsync();
+                }
+                catch (DbAccessDeniedException ex)
+                {
+                    CanImport = false;
+                    CanEdit = false;
+                    CanManageUsers = false;
+                    _dialogService.ShowError(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
+                        string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
+                    TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Error($"RefreshTreeAsync failed: {ex}");
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
+                        ex.Message);
+                }
+            }));
+        });
+    }
+
+    [RelayCommand]
+    private void RefreshTree()
+    {
+        RefreshTreeViaExternalEvent();
     }
 
     [RelayCommand]
@@ -511,10 +603,55 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         SearchText = string.Empty;
     }
 
+    private void OnPlacementCompleted()
+    {
+        try
+        {
+            InvalidateLoadedFamilyNamesCache();
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher
+                ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
+
+            if (dispatcher != null && !dispatcher.HasShutdownStarted)
+            {
+                dispatcher.BeginInvoke(new Action(() =>
+                {
+                    FireAndForget(async () => await LoadTreeAsync());
+                }));
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"OnPlacementCompleted dispatcher invoke failed: {ex.Message}");
+        }
+    }
+
+    private void OnPlacementFailed(string errorMessage)
+    {
+        StatusMessage = errorMessage;
+        SmartConLogger.Warn($"[PlacementFailed] {errorMessage}");
+    }
+
+    private void OnPlacementSucceeded(string successMessage)
+    {
+        StatusMessage = successMessage;
+        SmartConLogger.Info($"[PlacementSucceeded] {successMessage}");
+    }
+
+    private void OnPlacementStatusMessage(string statusMessage)
+    {
+        StatusMessage = statusMessage;
+        SmartConLogger.Info($"[PlacementStatus] {statusMessage}");
+    }
+
     public void Dispose()
     {
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
+        _placementDragService.PlacementCompleted -= OnPlacementCompleted;
+        _placementDragService.PlacementFailed -= OnPlacementFailed;
+        _placementDragService.PlacementSucceeded -= OnPlacementSucceeded;
+        _placementDragService.PlacementStatusMessage -= OnPlacementStatusMessage;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
     }

@@ -27,4 +27,10 @@ public interface IFamilyCatalogProvider
 
     /// <summary>Get available Revit major versions for a catalog item's current version.</summary>
     Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default);
+
+    /// <summary>Find a catalog item by normalized name (exact match).</summary>
+    Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default);
+
+    /// <summary>Find a catalog version by SHA256 hash (exact match).</summary>
+    Task<FamilyCatalogVersion?> FindByHashAsync(string sha256, CancellationToken ct = default);
 }

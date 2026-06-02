@@ -151,8 +151,11 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             {
                 if (Directory.Exists(path))
                 {
-                    RemoveReadOnlyAttributes(path);
-                    Directory.Delete(path, recursive: true);
+                    await Task.Run(() =>
+                    {
+                        RemoveReadOnlyAttributes(path);
+                        Directory.Delete(path, recursive: true);
+                    }, ct);
                 }
                 return;
             }
@@ -177,8 +180,11 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         {
             if (Directory.Exists(path))
             {
-                RemoveReadOnlyAttributes(path);
-                Directory.Delete(path, recursive: true);
+                await Task.Run(() =>
+                {
+                    RemoveReadOnlyAttributes(path);
+                    Directory.Delete(path, recursive: true);
+                }, ct);
             }
         }
         catch (Exception ex)
@@ -412,6 +418,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
     internal static FamilyCatalogItem ReadCatalogItem(SqliteDataReader reader)
     {
+        var id = reader.GetString(reader.GetOrdinal("id"));
+        var name = reader.GetString(reader.GetOrdinal("name"));
         var categoryPath = !reader.IsDBNull(reader.GetOrdinal("category_name"))
             ? reader.GetString(reader.GetOrdinal("category_name"))
             : null;
@@ -465,6 +473,54 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         Sha256: reader.GetString(reader.GetOrdinal("sha256")),
         RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
         ImportedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("imported_at_utc"))));
+
+    public async Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT * FROM catalog_items WHERE normalized_name = @name LIMIT 1";
+        cmd.Parameters.Add(new SqliteParameter("@name", normalizedName));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            return null;
+
+        return ReadCatalogItem(reader);
+    }
+
+    public async Task<FamilyCatalogVersion?> FindByHashAsync(string sha256, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT cv.* FROM catalog_versions cv
+            INNER JOIN family_files ff ON ff.id = cv.file_id
+            WHERE ff.sha256 = @sha256
+            LIMIT 1
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@sha256", sha256));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            return null;
+
+        return new FamilyCatalogVersion(
+            Id: reader.GetString(reader.GetOrdinal("id")),
+            CatalogItemId: reader.GetString(reader.GetOrdinal("catalog_item_id")),
+            FileId: reader.GetString(reader.GetOrdinal("file_id")),
+            VersionLabel: reader.GetString(reader.GetOrdinal("version_label")),
+            Sha256: reader.GetString(reader.GetOrdinal("sha256")),
+            RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
+            TypesCount: reader.IsDBNull(reader.GetOrdinal("types_count"))
+                ? null
+                : reader.GetInt32(reader.GetOrdinal("types_count")),
+            ParametersCount: reader.IsDBNull(reader.GetOrdinal("parameters_count"))
+                ? null
+                : reader.GetInt32(reader.GetOrdinal("parameters_count")),
+            PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
+    }
 
     private static string? TryGetString(SqliteDataReader reader, string columnName)
     {

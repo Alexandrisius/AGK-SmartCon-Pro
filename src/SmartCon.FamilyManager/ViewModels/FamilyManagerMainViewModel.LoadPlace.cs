@@ -10,8 +10,46 @@ namespace SmartCon.FamilyManager.ViewModels;
 
 public sealed partial class FamilyManagerMainViewModel
 {
+    [RelayCommand(CanExecute = nameof(CanStartPlacementDrag))]
+    private void StartPlacementDrag(object? item)
+    {
+        if (item is not FamilyTypeNodeViewModel typeNode) return;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return;
+
+        var data = new FamilyPlacementDragData(
+            leaf.CatalogItemId,
+            leaf.DisplayName,
+            typeNode.TypeName,
+            CurrentRevitVersion);
+
+        _placementDragService.StartPlacementDrag(data);
+    }
+
+    private bool CanStartPlacementDrag(object? item)
+    {
+        if (item is not FamilyTypeNodeViewModel typeNode) return false;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return false;
+
+        return leaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
+    }
+
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]
     private void LoadToProject()
+    {
+        ExecuteLoadOrUpdate(overwriteParameterValues: true);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    private void LoadToProjectKeepParams()
+    {
+        ExecuteLoadOrUpdate(overwriteParameterValues: false);
+    }
+
+    private void ExecuteLoadOrUpdate(bool overwriteParameterValues)
     {
         if (SelectedItem is null) return;
 
@@ -31,8 +69,8 @@ public sealed partial class FamilyManagerMainViewModel
                     return;
                 }
 
-                var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName };
-                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
+                var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName, OverwriteParameterValues = overwriteParameterValues };
+                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, ct: CancellationToken.None).GetAwaiter().GetResult();
 
                 if (result.Success)
                 {
@@ -68,17 +106,27 @@ public sealed partial class FamilyManagerMainViewModel
                     };
                     StatusMessage = msg;
 
+                    var projectPath = _revitContext.GetDocument().PathName;
+                    var loadedVersionLabel = SelectedItem?.VersionLabel;
+                    
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
                         CatalogItemId: selectedId,
                         VersionId: resolved.VersionId,
+                        LoadedVersionLabel: loadedVersionLabel,
                         ProjectName: "Active Project",
-                        ProjectPath: string.Empty,
+                        ProjectPath: projectPath,
                         RevitMajorVersion: targetRevit,
                         Action: "Load",
                         CreatedAtUtc: DateTimeOffset.UtcNow);
 
-                    FireAndForget(() => _usageRepo.RecordUsageAsync(usage, CancellationToken.None));
+                    InvalidateLoadedFamilyNamesCache();
+
+                    FireAndForget(async () =>
+                    {
+                        await _usageRepo.RecordUsageAsync(usage, CancellationToken.None);
+                        await LoadTreeAsync();
+                    });
                 }
                 else
                 {

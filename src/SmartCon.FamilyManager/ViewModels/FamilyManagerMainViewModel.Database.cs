@@ -30,7 +30,7 @@ public sealed partial class FamilyManagerMainViewModel
     private void OnActiveDatabaseChanged(object? sender, string connectionId)
     {
         RefreshConnections();
-        _ = RefreshAccessAndLoadTreeAsync();
+        RefreshTreeViaExternalEvent();
     }
 
     partial void OnSelectedConnectionChanged(DatabaseConnection? value)

@@ -11,7 +11,7 @@ public sealed class LocalCatalogMigratorTests
         using var fixture = new TempCatalogFixture();
         await fixture.MigrateAsync();
 
-        using var connection = new SqliteConnection(fixture.ConnectionString);
+        using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
 
         var tables = new List<string>();
@@ -47,7 +47,7 @@ public sealed class LocalCatalogMigratorTests
         await fixture.MigrateAsync();
         await fixture.MigrateAsync();
 
-        using var connection = new SqliteConnection(fixture.ConnectionString);
+        using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM catalog_items";
@@ -62,11 +62,11 @@ public sealed class LocalCatalogMigratorTests
         using var fixture = new TempCatalogFixture();
         await fixture.MigrateAsync();
 
-        using var connection = new SqliteConnection(fixture.ConnectionString);
+        using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("8", version);
+        Assert.Equal("9", version);
     }
 }

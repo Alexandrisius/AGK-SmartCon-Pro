@@ -18,6 +18,7 @@
             </ResourceDictionary.MergedDictionaries>
 
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <converters:BoolToStaleForegroundConverter x:Key="StaleForegroundConverter"/>
 
             <Style x:Key="DangerIconButton" TargetType="Button">
                 <Setter Property="Background" Value="Transparent"/>
@@ -88,15 +89,49 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="MenuItem">
-                            <Border x:Name="ItemBorder"
-                                    Background="{TemplateBinding Background}"
-                                    CornerRadius="4"
-                                    Padding="{TemplateBinding Padding}"
-                                    Margin="1">
-                                <ContentPresenter ContentSource="Header"
-                                                  VerticalAlignment="Center"
-                                                  RecognizesAccessKey="True"/>
-                            </Border>
+                            <Grid>
+                                <Border x:Name="ItemBorder"
+                                        Background="{TemplateBinding Background}"
+                                        CornerRadius="4"
+                                        Padding="{TemplateBinding Padding}"
+                                        Margin="1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ContentPresenter ContentSource="Header"
+                                                          VerticalAlignment="Center"
+                                                          RecognizesAccessKey="True"
+                                                          Grid.Column="0"/>
+                                        <Path x:Name="Arrow"
+                                              Grid.Column="1"
+                                              Data="M 0 0 L 4 4 L 0 8 Z"
+                                              Fill="{TemplateBinding Foreground}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="8,0,0,0"
+                                              Visibility="Collapsed"/>
+                                    </Grid>
+                                </Border>
+                                <Popup x:Name="SubMenuPopup"
+                                       IsOpen="{TemplateBinding IsSubmenuOpen}"
+                                       Placement="Right"
+                                       HorizontalOffset="-4"
+                                       AllowsTransparency="True"
+                                       Focusable="False"
+                                       PopupAnimation="Fade">
+                                    <Border x:Name="SubMenuBorder"
+                                            Background="{DynamicResource SurfaceBrush}"
+                                            BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="4"
+                                            SnapsToDevicePixels="True">
+                                        <ItemsPresenter/>
+                                    </Border>
+                                </Popup>
+                            </Grid>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
@@ -106,6 +141,9 @@
                                 </Trigger>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                                </Trigger>
+                                <Trigger Property="HasItems" Value="True">
+                                    <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -161,16 +199,32 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Toolbar (Import left, Profile center, Settings right) -->
+        <!-- Row 0: Toolbar (FindInCatalog | Import | Profile | Settings) -->
         <Grid Grid.Row="0" Margin="0,0,0,4">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
+            <!-- Left: Find in Catalog -->
+            <Button Grid.Column="0"
+                    Command="{Binding FindInCatalogCommand}"
+                    Margin="0,0,2,0"
+                    Width="28"
+                    Style="{DynamicResource SecondaryButton}"
+                    Padding="0"
+                    ToolTip="{loc:Loc FM_Tip_FindInCatalog}"
+                    Visibility="{Binding HasActiveDatabase, Converter={StaticResource BoolToVis}}">
+                <Viewbox Width="12" Height="12" Stretch="Uniform">
+                    <Path Data="M15.5,14L20.5,19L19,20.5L14,15.5C12.7,16.5 11.2,17 9.5,17C5.4,17 2,13.6 2,9.5C2,5.4 5.4,2 9.5,2C13.6,2 17,5.4 17,9.5C17,11.2 16.5,12.7 15.5,14ZM9.5,14C11.9,14 14,11.9 14,9.5C14,7.1 11.9,5 9.5,5C7.1,5 5,7.1 5,9.5C5,11.9 7.1,14 9.5,14Z"
+                          Fill="{DynamicResource TextPrimaryBrush}"/>
+                </Viewbox>
+            </Button>
+
             <!-- Left: Import -->
-            <Grid Grid.Column="0" Visibility="{Binding CanImport, Converter={StaticResource BoolToVis}}"
+            <Grid Grid.Column="1" Visibility="{Binding CanImport, Converter={StaticResource BoolToVis}}"
                   Margin="0,0,4,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -178,15 +232,16 @@
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0"
-                        Content="{loc:Loc FM_ImportFile}"
+                        Content="{loc:Loc FM_Import}"
                         Command="{Binding ImportFilesCommand}"
-                        MinWidth="80"
+                        MinWidth="52"
                         Style="{DynamicResource SecondaryButton}"
                         Margin="0,0,0,0"
                         Padding="8,4"/>
 
                 <ToggleButton Grid.Column="1"
                               x:Name="ImportSplitToggle"
+                              IsChecked="{Binding IsOpen, ElementName=ImportSplitPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                               Width="18"
                               Margin="1,0,0,0"
                               Style="{DynamicResource ModernSplitToggle}">
@@ -197,7 +252,7 @@
                           Stretch="Uniform"/>
                 </ToggleButton>
 
-                <Popup IsOpen="{Binding IsChecked, ElementName=ImportSplitToggle, Mode=OneWay}"
+                <Popup x:Name="ImportSplitPopup"
                        StaysOpen="False"
                        PlacementTarget="{Binding ElementName=ImportSplitToggle}"
                        Placement="Bottom"
@@ -208,16 +263,8 @@
                             CornerRadius="6"
                             Padding="4">
                         <StackPanel>
-                            <Button Content="{loc:Loc FM_ImportFile}"
-                                    Command="{Binding ImportFilesCommand}"
-                                    MinWidth="140"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="10,6"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    Cursor="Hand"/>
-                            <Button Content="{loc:Loc FM_ImportFolder}"
-                                    Command="{Binding ImportFolderCommand}"
+                            <Button Content="{loc:Loc FM_LoadActiveFamily}"
+                                    Command="{Binding LoadActiveFamilyCommand}"
                                     MinWidth="140"
                                     HorizontalContentAlignment="Left"
                                     Padding="10,6"
@@ -230,9 +277,9 @@
             </Grid>
 
             <!-- Center: Profile -->
-            <Button Grid.Column="1"
+            <Button Grid.Column="2"
                     Command="{Binding OpenProfileCommand}"
-                    Width="28" Height="28"
+                    Width="28"
                     HorizontalAlignment="Center"
                     Padding="0"
                     ToolTipService.ShowOnDisabled="True">
@@ -253,9 +300,9 @@
             </Button>
 
             <!-- Right: Settings -->
-            <Button Grid.Column="2"
+            <Button Grid.Column="3"
                     Command="{Binding OpenCategoryEditorCommand}"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_Tip_EditCategories}">
@@ -278,7 +325,7 @@
             <Button Grid.Column="0"
                     Command="{Binding CreateDatabaseCommand}"
                     Margin="0,0,2,0"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_Tip_CreateDb}">
@@ -302,7 +349,7 @@
             <Button Grid.Column="2"
                     Command="{Binding ConnectDatabaseCommand}"
                     Margin="0,0,2,0"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_Tip_ConnectDb}">
@@ -318,7 +365,7 @@
             <Button Grid.Column="3"
                     Command="{Binding DisconnectDatabaseCommand}"
                     Margin="0,0,0,0"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_Disconnect}">
@@ -342,7 +389,7 @@
             <Button Grid.Column="0"
                     Command="{Binding RefreshTreeCommand}"
                     Margin="0,0,2,0"
-                    Width="28" Height="28"
+                    Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
                     ToolTip="{loc:Loc FM_RefreshTooltip}">
@@ -397,7 +444,9 @@
                   behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
                   behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
                   behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
+                  behaviors:TreeViewDragDropBehavior.PlacementDragCommand="{Binding StartPlacementDragCommand}"
                   behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
+                  behaviors:TreeViewBehaviors.AutoScrollToSelectedItem="True"
                   behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
                   Background="Transparent"
                   BorderBrush="{DynamicResource BorderAltBrush}"
@@ -414,15 +463,8 @@
             <TreeView.Resources>
                 <ContextMenu x:Key="CategoryNodeContextMenu" Style="{StaticResource ModernContextMenu}"
                              DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
-                    <MenuItem Header="{loc:Loc FM_ImportFileToCategory}"
+                    <MenuItem Header="{loc:Loc FM_ImportToCategory}"
                               Command="{Binding ImportFileToCategoryCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
-                    <MenuItem Header="{loc:Loc FM_ImportFolderToCategory}"
-                              Command="{Binding ImportFolderToCategoryCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
-                    <Separator />
-                    <MenuItem Header="{loc:Loc FM_ImportDataForCategory}"
-                              Command="{Binding ImportDataForCategoryCommand}"
                               Style="{StaticResource ModernMenuItem}" />
                 </ContextMenu>
 
@@ -433,13 +475,38 @@
                               Command="{Binding PlaceCommand}"
                               Style="{StaticResource ModernMenuItem}" />
                     <MenuItem Header="{loc:Loc FM_LoadToProject}"
-                              Command="{Binding LoadToProjectCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
-                    <MenuItem Header="{loc:Loc FM_ImportData}"
-                              Command="{Binding ImportDataCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
-                    <MenuItem Header="{loc:Loc FM_Update}"
-                              Command="{Binding UpdateFamilyCommand}"
+                              Command="{Binding LoadToProjectCommand}">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelectedFamilyStale}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                    </MenuItem>
+                    <MenuItem Header="{loc:Loc FM_Update}">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelectedFamilyStale}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                        <MenuItem Header="{loc:Loc FM_UpdateKeepParams}"
+                                  Command="{Binding LoadToProjectKeepParamsCommand}"
+                                  Style="{StaticResource ModernMenuItem}" />
+                        <MenuItem Header="{loc:Loc FM_UpdateOverwriteParams}"
+                                  Command="{Binding LoadToProjectCommand}"
+                                  Style="{StaticResource ModernMenuItem}" />
+                    </MenuItem>
+                    <MenuItem Header="{loc:Loc FM_Edit}"
+                              Command="{Binding EditFamilyCommand}"
                               Style="{StaticResource ModernMenuItem}" />
                     <MenuItem Header="{loc:Loc FM_Properties}"
                               Command="{Binding OpenPropertiesCommand}"
@@ -517,12 +584,21 @@
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding DisplayName}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
                                        VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding VersionLabel, StringFormat=' {}({0})'}"
+                            
+                            <TextBlock Text="{Binding VersionLabel, StringFormat='{}({0})'}"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="10"
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
+                            
+                            <TextBlock Text=" [Устарело]"
+                                       Foreground="{DynamicResource WarningBrush}"
+                                       FontSize="10"
+                                       VerticalAlignment="Center"
+                                       Margin="4,0,0,0"
+                                       Visibility="{Binding IsStale, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
                     </Grid>
                 </HierarchicalDataTemplate>
@@ -541,20 +617,13 @@
         </TreeView>
 
         <Grid Grid.Row="4" Margin="0,4,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-
-            <TextBlock Grid.Column="0"
-                       Text="{Binding StatusMessage}"
+            <TextBlock Text="{Binding StatusMessage}"
                        VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-
-            <TextBlock Grid.Column="1"
-                       Text="{Binding TotalItemCount}"
-                       VerticalAlignment="Center"
-                       Margin="8,0,0,0"/>
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding StatusMessage}"
+                       MaxHeight="36"/>
         </Grid>
     </Grid>
 </UserControl>

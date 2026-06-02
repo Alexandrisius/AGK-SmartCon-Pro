@@ -1,4 +1,6 @@
+using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -16,6 +18,23 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
+            // Cleanup old usage records (older than 90 days)
+            FireAndForget(async () =>
+            {
+                try
+                {
+                    var deleted = await _usageRepo.DeleteOldUsagesAsync(TimeSpan.FromDays(90), CancellationToken.None);
+                    if (deleted > 0)
+                    {
+                        SmartConLogger.Info($"[Cleanup] Deleted {deleted} old project_usage records");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Cleanup old usages failed: {ex.Message}");
+                }
+            });
+
             IReadOnlyList<Core.Models.FamilyManager.CategoryNode> categories = [];
             try
             {
@@ -61,13 +80,30 @@ public sealed partial class FamilyManagerMainViewModel
                 }
             }
 
+            // Stale marker: use pre-loaded family names cache (filled via ExternalEvent on Refresh)
+            Dictionary<string, string?> loadedVersionLabels = new();
+            HashSet<string> loadedFamilyNames = _loadedFamilyNamesCache ?? new HashSet<string>();
+            try
+            {
+                if (!string.IsNullOrEmpty(_cachedProjectPath))
+                {
+                    var familyIds = results.Select(r => r.Id).ToList();
+                    loadedVersionLabels = (Dictionary<string, string?>)
+                        await _usageRepo.GetLoadedVersionLabelsAsync(_cachedProjectPath!, familyIds, ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"LoadTreeAsync stale check failed: {ex.Message}");
+            }
+
             var itemsByCategory = results
                 .GroupBy(i => i.CategoryId ?? string.Empty)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
             foreach (var catNode in tree.GetRootNodes())
             {
-                var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds);
+                var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds, loadedVersionLabels, loadedFamilyNames);
                 if (catVm is CategoryNodeViewModel) rootNodes.Add(catVm);
             }
 
@@ -80,12 +116,24 @@ public sealed partial class FamilyManagerMainViewModel
                 fullPath: noCatLabel);
             foreach (var item in uncategorized)
             {
+                bool isStale = false;
+                string? loadedVersionLabel = null;
+                bool isActuallyLoaded = loadedFamilyNames.Contains(item.Name);
+                if (loadedVersionLabels is not null &&
+                    loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
+                    loadedVersionLabel is not null &&
+                    loadedVersionLabel != item.CurrentVersionLabel &&
+                    isActuallyLoaded)
+                {
+                    isStale = true;
+                }
+
                 _noCategoryNode.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
                 {
                     Id = item.Id,
                     Name = item.Name,
                     CategoryId = item.CategoryId,
-                    CategoryName = null,
+                    CategoryName = noCatLabel,
                     Manufacturer = item.Manufacturer,
                     ContentStatus = item.ContentStatus,
                     CurrentVersionLabel = item.CurrentVersionLabel,
@@ -93,7 +141,7 @@ public sealed partial class FamilyManagerMainViewModel
                     UpdatedAtUtc = item.UpdatedAtUtc,
                     Tags = item.Tags,
                     Description = item.Description,
-                }));
+                }, isStale: isStale));
             }
             _noCategoryNode.FamilyCount = uncategorized.Count;
             if (!expandAll && expandedIds.Contains("__no_category__")) _noCategoryNode.IsExpanded = true;
@@ -123,14 +171,14 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyDictionary<string, List<FamilyCatalogItem>> itemsByCategory, bool expandAll, HashSet<string>? expandedIds = null)
+    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyDictionary<string, List<FamilyCatalogItem>> itemsByCategory, bool expandAll, HashSet<string>? expandedIds = null, IReadOnlyDictionary<string, string?>? loadedVersionLabels = null, HashSet<string>? loadedFamilyNames = null)
     {
         var vm = new CategoryNodeViewModel(catNode);
         var familyCount = 0;
 
         foreach (var child in tree.GetChildren(catNode.Id))
         {
-            var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds);
+            var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds, loadedVersionLabels, loadedFamilyNames);
             if (childVm is CategoryNodeViewModel childCat)
             {
                 vm.Children.Add(childVm);
@@ -143,6 +191,18 @@ public sealed partial class FamilyManagerMainViewModel
             familyCount += items.Count;
             foreach (var item in items)
             {
+                bool isStale = false;
+                string? loadedVersionLabel = null;
+                bool isActuallyLoaded = loadedFamilyNames?.Contains(item.Name) ?? false;
+                if (loadedVersionLabels is not null &&
+                    loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
+                    loadedVersionLabel is not null &&
+                    loadedVersionLabel != item.CurrentVersionLabel &&
+                    isActuallyLoaded)
+                {
+                    isStale = true;
+                }
+
                 vm.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
                 {
                     Id = item.Id,
@@ -156,7 +216,7 @@ public sealed partial class FamilyManagerMainViewModel
                     UpdatedAtUtc = item.UpdatedAtUtc,
                     Tags = item.Tags,
                     Description = item.Description,
-                }));
+                }, isStale: isStale));
             }
         }
 

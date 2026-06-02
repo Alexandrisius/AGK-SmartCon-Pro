@@ -29,11 +29,11 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         }
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT ff.relative_path, cv.id AS version_id
+            SELECT ff.relative_path, cv.id AS version_id, ci.current_version_label
             FROM catalog_items ci
             INNER JOIN catalog_versions cv ON cv.catalog_item_id = ci.id AND cv.version_label = ci.current_version_label
             INNER JOIN family_files ff ON ff.id = cv.file_id
@@ -44,24 +44,25 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
         cmd.Parameters.Add(new SqliteParameter("@targetRevit", targetRevitVersion));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             SmartConLogger.Info($"[FileResolver] No version found for item={catalogItemId}, targetRevit={targetRevitVersion}");
-            return new FamilyResolvedFile("", catalogItemId, null);
+            return new FamilyResolvedFile("", catalogItemId, null, null);
         }
 
         var relativePath = reader.GetString(0);
         var versionId = reader.GetString(1);
+        var versionLabel = reader.IsDBNull(2) ? null : reader.GetString(2);
         var absolutePath = Path.Combine(dbRoot, relativePath);
 
         if (!File.Exists(absolutePath))
         {
             SmartConLogger.Info($"[FileResolver] File not found: {absolutePath}");
-            return new FamilyResolvedFile("", catalogItemId, versionId);
+            return new FamilyResolvedFile("", catalogItemId, versionId, versionLabel);
         }
 
         SmartConLogger.Info($"[FileResolver] Resolved: {absolutePath}");
-        return new FamilyResolvedFile(absolutePath, catalogItemId, versionId);
+        return new FamilyResolvedFile(absolutePath, catalogItemId, versionId, versionLabel);
     }
 }

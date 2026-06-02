@@ -19,4 +19,13 @@ public interface IFamilyImportService
     /// Increments version label, copies file to managed storage, updates name from file.
     /// </summary>
     Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Import a batch of family files with user-selected actions (Increment/Overwrite/Skip).
+    /// </summary>
+    Task<FamilyBatchImportResult> ImportBatchAsync(
+        IReadOnlyList<FamilyBatchImportItem> items,
+        string? categoryId,
+        IProgress<FamilyImportProgress>? progress,
+        CancellationToken ct = default);
 }

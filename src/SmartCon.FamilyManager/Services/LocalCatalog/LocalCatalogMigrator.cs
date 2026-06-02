@@ -51,6 +51,7 @@ internal sealed class LocalCatalogMigrator
         await MigrateV5Async(connection, ct);
         await MigrateV6Async(connection, ct);
         await MigrateV7Async(connection, ct);
+        await MigrateV9Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -305,6 +306,23 @@ internal sealed class LocalCatalogMigrator
 
         using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = "UPDATE schema_info SET value = '7' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV9Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 9) return;
+
+        if (!await ColumnExistsAsync(connection, "project_usage", "loaded_version_label", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV9AddLoadedVersionLabel;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '9' WHERE key = 'schema_version'";
         await versionCmd.ExecuteNonQueryAsync(ct);
     }
 

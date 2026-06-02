@@ -26,58 +26,17 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
         try
         {
             familyDoc = app.OpenDocumentFile(rfaFilePath);
+            if (familyDoc is null)
+            {
+                return new FamilyExtractionResult(false, [], null, "Failed to open family document", revitMajorVersion);
+            }
 
             if (!familyDoc.IsFamilyDocument)
             {
                 return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion);
             }
 
-            var fm = familyDoc.FamilyManager;
-
-            var paramMap = new Dictionary<string, FamilyParameter>(StringComparer.Ordinal);
-            foreach (FamilyParameter param in fm.Parameters)
-            {
-                if (param.Definition?.Name is string name)
-                {
-                    paramMap[name] = param;
-                }
-            }
-
-            var parametersToExtract = expectedParameterNames.Count > 0
-                ? expectedParameterNames
-                : paramMap.Keys.ToList();
-
-            var allTypes = new List<FamilyExtractionTypeValues>();
-            List<FamilyExtractionValueResult>? untypedValues = null;
-            var typeIndex = 0;
-            foreach (FamilyType familyType in fm.Types)
-            {
-                var values = new List<FamilyExtractionValueResult>();
-
-                foreach (var paramName in parametersToExtract)
-                {
-                    var value = ExtractValueForParameter(familyType, paramName, paramMap);
-                    values.Add(value);
-                }
-
-                if (string.IsNullOrWhiteSpace(familyType.Name))
-                {
-                    untypedValues = values;
-                }
-                else
-                {
-                    allTypes.Add(new FamilyExtractionTypeValues(
-                        familyType.Name, typeIndex++, values));
-                }
-            }
-
-            var types = allTypes
-                .Where(t => !string.IsNullOrWhiteSpace(t.TypeName))
-                .OrderBy(t => t.TypeName, StringComparer.OrdinalIgnoreCase)
-                .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values))
-                .ToList();
-
-            return new FamilyExtractionResult(true, types, untypedValues, null, revitMajorVersion);
+            return ExtractCore(familyDoc, expectedParameterNames, revitMajorVersion);
         }
         catch (Exception ex)
         {
@@ -98,6 +57,80 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 }
             }
         }
+    }
+
+    public FamilyExtractionResult Extract(Document familyDocument, IReadOnlyList<string> expectedParameterNames)
+    {
+#pragma warning disable CA1510
+        if (familyDocument is null)
+            throw new ArgumentNullException(nameof(familyDocument));
+#pragma warning restore CA1510
+
+        var versionString = _revitContext.GetRevitVersion();
+        var revitMajorVersion = int.TryParse(versionString, out var v) ? v : 0;
+
+        if (!familyDocument.IsFamilyDocument)
+        {
+            return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion);
+        }
+
+        try
+        {
+            return ExtractCore(familyDocument, expectedParameterNames, revitMajorVersion);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"Extract failed for document '{familyDocument.Title}': {ex.Message}");
+            return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion);
+        }
+    }
+
+    private static FamilyExtractionResult ExtractCore(Document familyDoc, IReadOnlyList<string> expectedParameterNames, int revitMajorVersion)
+    {
+        var fm = familyDoc.FamilyManager;
+
+        var paramMap = new Dictionary<string, FamilyParameter>(StringComparer.Ordinal);
+        foreach (FamilyParameter param in fm.Parameters)
+        {
+            if (param.Definition?.Name is string name)
+            {
+                paramMap[name] = param;
+            }
+        }
+
+        var parametersToExtract = expectedParameterNames.Count > 0
+            ? expectedParameterNames
+            : paramMap.Keys.ToList();
+
+        var allTypes = new List<FamilyExtractionTypeValues>();
+        List<FamilyExtractionValueResult>? untypedValues = null;
+        foreach (FamilyType familyType in fm.Types)
+        {
+            var values = new List<FamilyExtractionValueResult>();
+
+            foreach (var paramName in parametersToExtract)
+            {
+                var value = ExtractValueForParameter(familyType, paramName, paramMap);
+                values.Add(value);
+            }
+
+            if (string.IsNullOrWhiteSpace(familyType.Name))
+            {
+                untypedValues = values;
+            }
+            else
+            {
+                allTypes.Add(new FamilyExtractionTypeValues(
+                    familyType.Name, 0, values));
+            }
+        }
+
+        var types = allTypes
+            .OrderBy(t => t.TypeName, StringComparer.OrdinalIgnoreCase)
+            .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values))
+            .ToList();
+
+        return new FamilyExtractionResult(true, types, untypedValues, null, revitMajorVersion);
     }
 
     private static FamilyExtractionValueResult ExtractValueForParameter(

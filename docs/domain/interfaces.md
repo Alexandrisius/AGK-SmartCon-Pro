@@ -802,6 +802,23 @@ public interface IFamilyPlacementService
 
 ---
 
+### IFamilyPlacementDragService
+
+Инициирует нативную Revit drag-and-drop операцию для размещения типоразмера семейства. Реализация вызывает `UIApplication.DoDragDrop` с кастомным `IDropHandler`.
+
+**Файл:** `IFamilyPlacementDragService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyPlacementDragService.cs`
+
+```csharp
+public interface IFamilyPlacementDragService
+{
+    void StartPlacementDrag(FamilyPlacementDragData data);
+    event Action? PlacementCompleted;
+}
+```
+
+---
+
 ### IFamilySearchService
 
 Поиск семейств и типов в активном документе Revit. Все операции выполняются в контексте ExternalEvent (I-01).

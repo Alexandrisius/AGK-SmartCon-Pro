@@ -14,6 +14,9 @@ public static partial class LocalizationService
         ru["FM_ExtractTypes"] = "Извлечь типоразмеры"; en["FM_ExtractTypes"] = "Extract Types";
         ru["FM_ImportData"] = "Импорт данных"; en["FM_ImportData"] = "Import Data";
         ru["FM_PlaceType"] = "Разместить тип"; en["FM_PlaceType"] = "Place Type";
+        ru["FM_Edit"] = "Редактировать"; en["FM_Edit"] = "Edit";
+        ru["FM_LoadActiveFamily"] = "Загрузить активное семейство"; en["FM_LoadActiveFamily"] = "Load Active Family";
+        ru["FM_ActiveDocNotFamily"] = "Активный документ не является семейством"; en["FM_ActiveDocNotFamily"] = "Active document is not a family";
         ru["FM_EditMetadata"] = "Редактировать"; en["FM_EditMetadata"] = "Edit";
         ru["FM_NoActiveDocument"] = "Нет активного документа"; en["FM_NoActiveDocument"] = "No active document";
         ru["FM_ImportProgress"] = "Импорт {0} из {1}..."; en["FM_ImportProgress"] = "Importing {0} of {1}...";
@@ -39,9 +42,7 @@ public static partial class LocalizationService
         ru["FM_FamilyFileNotFound"] = "Файл семейства не найден"; en["FM_FamilyFileNotFound"] = "Family file not found";
         ru["FM_ImportDataResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportDataResultFormat"] = "Imported: {0} types, {1} values found";
         ru["FM_ImportDataError"] = "Ошибка импорта: {0}"; en["FM_ImportDataError"] = "Import error: {0}";
-        ru["FM_ImportFileToCategory"] = "Импорт файла"; en["FM_ImportFileToCategory"] = "Import file";
-        ru["FM_ImportFolderToCategory"] = "Импорт папки"; en["FM_ImportFolderToCategory"] = "Import folder";
-        ru["FM_ImportDataForCategory"] = "Импорт данных"; en["FM_ImportDataForCategory"] = "Import data";
+        ru["FM_ImportToCategory"] = "Импорт в категорию"; en["FM_ImportToCategory"] = "Import to category";
         ru["FM_ImportDataProgress"] = "Обработка {0} из {1}: {2}"; en["FM_ImportDataProgress"] = "Processing {0} of {1}: {2}";
         ru["FM_NoFamiliesInCategory"] = "В категории нет семейств"; en["FM_NoFamiliesInCategory"] = "No families in category";
         ru["FM_LoadSuccess"] = "Семейство \"{0}\" загружено в проект"; en["FM_LoadSuccess"] = "Family \"{0}\" loaded into project";
@@ -71,6 +72,8 @@ public static partial class LocalizationService
         ru["FM_Disconnect"] = "Отключить базу данных"; en["FM_Disconnect"] = "Disconnect database";
 
         ru["FM_Update"] = "Обновить"; en["FM_Update"] = "Update";
+        ru["FM_UpdateKeepParams"] = "Сохранить параметры"; en["FM_UpdateKeepParams"] = "Keep instance parameters";
+        ru["FM_UpdateOverwriteParams"] = "Перезаписать параметры"; en["FM_UpdateOverwriteParams"] = "Overwrite parameters";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
         ru["FM_UpdateIdenticalCurrent"] = "Этот файл уже является текущей версией семейства"; en["FM_UpdateIdenticalCurrent"] = "This file is already the current version of this family";
@@ -235,5 +238,28 @@ public static partial class LocalizationService
         ru["FM_ProfileDisabledTooltip"] = "Подключите базу данных для просмотра профиля"; en["FM_ProfileDisabledTooltip"] = "Connect a database to view profile";
         ru["FM_StatusNoDatabase"] = "База данных не подключена"; en["FM_StatusNoDatabase"] = "No database connected";
         ru["FM_FamilyDeleteInUse"] = "Не удалось удалить файлы семейства. Возможно, файл открыт в Revit или другом приложении. Закройте файл и попробуйте снова."; en["FM_FamilyDeleteInUse"] = "Failed to delete family files. The file may be open in Revit or another application. Close the file and try again.";
+        ru["FM_Tip_FindInCatalog"] = "Найти выделенное семейство в каталоге"; en["FM_Tip_FindInCatalog"] = "Find selected family in catalog";
+        ru["FM_FindInCatalog_NoSelection"] = "В модели не выделено ни одного элемента"; en["FM_FindInCatalog_NoSelection"] = "No element selected in the model";
+        ru["FM_FindInCatalog_NotFound"] = "Семейство '{0}' не найдено в каталоге"; en["FM_FindInCatalog_NotFound"] = "Family '{0}' not found in catalog";
+        ru["FM_FindInCatalog_Found"] = "Найдено семейство: {0}"; en["FM_FindInCatalog_Found"] = "Family found: {0}";
+
+        // Batch Import Dialog
+        ru["FM_BatchImport_Title"] = "Импорт семейств"; en["FM_BatchImport_Title"] = "Import Families";
+        ru["FM_BatchImport_FileName"] = "Имя файла"; en["FM_BatchImport_FileName"] = "File Name";
+        ru["FM_BatchImport_RevitVersion"] = "Версия Revit"; en["FM_BatchImport_RevitVersion"] = "Revit Version";
+        ru["FM_BatchImport_Size"] = "Размер"; en["FM_BatchImport_Size"] = "Size";
+        ru["FM_BatchImport_Status"] = "Статус"; en["FM_BatchImport_Status"] = "Status";
+        ru["FM_BatchImport_Action"] = "Действие"; en["FM_BatchImport_Action"] = "Action";
+        ru["FM_BatchImport_StatusNew"] = "Новое"; en["FM_BatchImport_StatusNew"] = "New";
+        ru["FM_BatchImport_StatusExisting"] = "Существующее"; en["FM_BatchImport_StatusExisting"] = "Existing";
+        ru["FM_BatchImport_StatusDuplicate"] = "Дубликат"; en["FM_BatchImport_StatusDuplicate"] = "Duplicate";
+        ru["FM_BatchImport_StatusError"] = "Ошибка"; en["FM_BatchImport_StatusError"] = "Error";
+        ru["FM_BatchImport_ActionIncrement"] = "Новая версия"; en["FM_BatchImport_ActionIncrement"] = "New Version";
+        ru["FM_BatchImport_ActionOverwrite"] = "Перезаписать текущую"; en["FM_BatchImport_ActionOverwrite"] = "Overwrite Current";
+        ru["FM_BatchImport_ActionSkip"] = "Пропустить"; en["FM_BatchImport_ActionSkip"] = "Skip";
+        ru["FM_BatchImport_Load"] = "Загрузить"; en["FM_BatchImport_Load"] = "Load";
+        ru["FM_BatchImport_Cancel"] = "Отмена"; en["FM_BatchImport_Cancel"] = "Cancel";
+        ru["FM_BatchImport_SelectAll"] = "Выбрать все"; en["FM_BatchImport_SelectAll"] = "Select All";
+        ru["FM_BatchImport_Stale"] = "Устарело"; en["FM_BatchImport_Stale"] = "Stale";
     }
 }
