@@ -19,7 +19,7 @@ internal sealed class LocalProjectFamilyUsageRepository : IProjectFamilyUsageRep
     public async Task RecordUsageAsync(ProjectFamilyUsage usage, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO project_usage (id, catalog_item_id, version_id, loaded_version_label, project_name, project_path, revit_major_version, action, created_at_utc)
@@ -34,7 +34,7 @@ internal sealed class LocalProjectFamilyUsageRepository : IProjectFamilyUsageRep
         cmd.Parameters.Add(new SqliteParameter("@revitVersion", (object?)usage.RevitMajorVersion ?? DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@action", usage.Action));
         cmd.Parameters.Add(new SqliteParameter("@createdAtUtc", usage.CreatedAtUtc.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<ProjectFamilyUsage>> GetUsageForItemAsync(string catalogItemId, CancellationToken ct = default)
@@ -46,8 +46,8 @@ internal sealed class LocalProjectFamilyUsageRepository : IProjectFamilyUsageRep
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
         var results = new List<ProjectFamilyUsage>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             results.Add(ReadUsage(reader));
         }
@@ -58,7 +58,7 @@ internal sealed class LocalProjectFamilyUsageRepository : IProjectFamilyUsageRep
     public async Task<IReadOnlyList<ProjectFamilyUsage>> GetUsageForProjectAsync(string projectFingerprint, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT * FROM project_usage WHERE project_path = @fingerprint ORDER BY created_at_utc DESC";
         cmd.Parameters.Add(new SqliteParameter("@fingerprint", projectFingerprint));
@@ -97,8 +97,8 @@ internal sealed class LocalProjectFamilyUsageRepository : IProjectFamilyUsageRep
         }
 
         var result = new Dictionary<string, string?>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var itemId = reader.GetString(0);
             var label = reader.IsDBNull(1) ? null : reader.GetString(1);
@@ -112,11 +112,11 @@ internal sealed class LocalProjectFamilyUsageRepository : IProjectFamilyUsageRep
     {
         var cutoff = DateTimeOffset.UtcNow.Subtract(maxAge);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "DELETE FROM project_usage WHERE created_at_utc < @cutoff";
         cmd.Parameters.Add(new SqliteParameter("@cutoff", cutoff.ToString("o")));
-        return await cmd.ExecuteNonQueryAsync(ct);
+        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static ProjectFamilyUsage ReadUsage(SqliteDataReader reader) => new(

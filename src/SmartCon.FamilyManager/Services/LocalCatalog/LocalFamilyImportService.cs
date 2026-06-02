@@ -97,29 +97,29 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         try
         {
             using var connection = _database.CreateConnection();
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
             using var tx = connection.BeginTransaction();
 
             try
             {
-                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct);
+                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 if (existingItem is null)
                 {
-                    await InsertCatalogItemAsync(connection, catalogItemId, normalizedName, request, now, versionLabel, ct);
+                    await InsertCatalogItemAsync(connection, catalogItemId, normalizedName, request, now, versionLabel, ct).ConfigureAwait(false);
                 }
                 else
                 {
-                    await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct);
+                    await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct).ConfigureAwait(false);
                 }
 
-                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct);
+                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 if (existingItem is null && request.Tags is not null)
                 {
                     foreach (var tag in request.Tags)
                     {
-                        await InsertTagAsync(connection, catalogItemId, tag, ct);
+                        await InsertTagAsync(connection, catalogItemId, tag, ct).ConfigureAwait(false);
                     }
                 }
 
@@ -130,8 +130,6 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 tx.Rollback();
                 throw;
             }
-
-            await _database.CheckpointAsync(ct);
 
             return new FamilyImportResult(
                 Success: true,
@@ -394,18 +392,18 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         try
         {
             using var connection = _database.CreateConnection();
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
             using var tx = connection.BeginTransaction();
 
             try
             {
-                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct);
-                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct);
+                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct).ConfigureAwait(false);
+                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(request.CategoryId))
                 {
-                    await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct);
+                    await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);
                 }
-                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct);
+                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 tx.Commit();
             }
@@ -414,8 +412,6 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 tx.Rollback();
                 throw;
             }
-
-            await _database.CheckpointAsync(ct);
 
             return new FamilyImportResult(
                 Success: true,

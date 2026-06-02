@@ -29,7 +29,7 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         }
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -44,8 +44,8 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
         cmd.Parameters.Add(new SqliteParameter("@targetRevit", targetRevitVersion));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             SmartConLogger.Info($"[FileResolver] No version found for item={catalogItemId}, targetRevit={targetRevitVersion}");
             return new FamilyResolvedFile("", catalogItemId, null, null);

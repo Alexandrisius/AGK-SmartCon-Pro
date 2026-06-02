@@ -11,12 +11,12 @@ internal sealed partial class LocalFamilyImportService
     {
         var normalizedName = FamilyNameNormalizer.Normalize(name);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT * FROM catalog_items WHERE normalized_name = @name LIMIT 1";
         cmd.Parameters.Add(new SqliteParameter("@name", normalizedName));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct))
             return null;
 
@@ -26,7 +26,7 @@ internal sealed partial class LocalFamilyImportService
     private async Task<FamilyCatalogVersion?> FindVersionByHashAndRevitAsync(string catalogItemId, string sha256, int revitVersion, CancellationToken ct)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT cv.* FROM catalog_versions cv
@@ -38,7 +38,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@sha256", sha256));
         cmd.Parameters.Add(new SqliteParameter("@revitVersion", revitVersion));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct))
             return null;
 
@@ -65,7 +65,7 @@ internal sealed partial class LocalFamilyImportService
     private async Task<FamilyCatalogVersion?> FindCurrentVersionByHashAsync(string catalogItemId, string sha256, CancellationToken ct)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT cv.* FROM catalog_versions cv
@@ -77,7 +77,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
         cmd.Parameters.Add(new SqliteParameter("@sha256", sha256));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct))
             return null;
 
@@ -100,12 +100,12 @@ internal sealed partial class LocalFamilyImportService
     private async Task<string> GetNextVersionLabelAsync(string catalogItemId, CancellationToken ct)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT version_label FROM catalog_versions WHERE catalog_item_id = @itemId ORDER BY published_at_utc DESC LIMIT 1";
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
-        var result = await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         if (result is string label && label.StartsWith("v") && int.TryParse(label[1..], out var num))
         {
             return $"v{num + 1}";
@@ -130,7 +130,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@sha256", metadata.Sha256));
         cmd.Parameters.Add(new SqliteParameter("@revitVersion", revitVersion));
         cmd.Parameters.Add(new SqliteParameter("@importedAtUtc", now.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task InsertCatalogItemAsync(SqliteConnection connection, string id,
@@ -154,7 +154,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@publishedBy", DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@createdAtUtc", now.ToString("o")));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task UpdateCatalogItemWithNameAsync(SqliteConnection connection, string id,
@@ -171,7 +171,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@normalizedName", normalizedName));
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task UpdateCatalogItemCategoryAsync(SqliteConnection connection, string id,
@@ -187,7 +187,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@categoryId", categoryId ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@categoryName", categoryName ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task UpdateCatalogItemVersionAsync(SqliteConnection connection, string id,
@@ -200,7 +200,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task InsertVersionAsync(SqliteConnection connection, string versionId,
@@ -224,7 +224,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@parametersCount",
             metadata.Parameters is not null ? (object)metadata.Parameters.Count : DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@publishedAtUtc", now.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task InsertTagAsync(SqliteConnection connection, string catalogItemId, string tag, CancellationToken ct)
@@ -238,7 +238,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@catalogItemId", catalogItemId));
         cmd.Parameters.Add(new SqliteParameter("@tag", tag));
         cmd.Parameters.Add(new SqliteParameter("@normalizedTag", normalizedTag));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -247,7 +247,7 @@ internal sealed partial class LocalFamilyImportService
     private async Task<FamilyCatalogVersion?> FindCurrentVersionAsync(string catalogItemId, CancellationToken ct)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT cv.* FROM catalog_versions cv
@@ -257,7 +257,7 @@ internal sealed partial class LocalFamilyImportService
             """;
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct))
             return null;
 
@@ -297,7 +297,7 @@ internal sealed partial class LocalFamilyImportService
         }
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var tx = connection.BeginTransaction();
 
         // Get current file path
@@ -385,8 +385,6 @@ internal sealed partial class LocalFamilyImportService
             tx.Rollback();
             throw;
         }
-
-        await _database.CheckpointAsync(ct);
 
         return new FamilyImportResult(
             Success: true,

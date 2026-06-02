@@ -118,7 +118,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                 Action: "Place",
                 CreatedAtUtc: DateTimeOffset.UtcNow);
 
-            Task.Run(() => _usageRepo.RecordUsageAsync(usage, CancellationToken.None)).GetAwaiter().GetResult();
+            _ = Task.Run(() => _usageRepo.RecordUsageAsync(usage, CancellationToken.None));
         }
         catch (Exception ex)
         {

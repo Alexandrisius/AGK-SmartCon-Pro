@@ -59,7 +59,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         var now = DateTimeOffset.UtcNow;
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO family_assets (id, catalog_item_id, version_label, asset_type, file_name, relative_path, size_bytes, description, created_at_utc, is_primary)
@@ -74,7 +74,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         cmd.Parameters.Add(new SqliteParameter("@sizeBytes", fileInfo.Length));
         cmd.Parameters.Add(new SqliteParameter("@description", (object?)description ?? DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@createdAtUtc", now.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
         return new FamilyAsset(id, catalogItemId, versionLabel, assetType, Path.GetFileName(destPath), relativePath, fileInfo.Length, description, now, false);
     }
@@ -83,7 +83,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     {
         await EnsureMigratedAsync(ct);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
 
         if (versionLabel is not null)
@@ -99,7 +99,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         }
 
         var assets = new List<FamilyAsset>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct))
         {
             assets.Add(ReadAsset(reader));
@@ -113,7 +113,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         await EnsureMigratedAsync(ct);
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         string? relativePath;
         using (var selectCmd = connection.CreateCommand())
@@ -156,12 +156,12 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     {
         await EnsureMigratedAsync(ct);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT relative_path FROM family_assets WHERE id = @id";
         cmd.Parameters.Add(new SqliteParameter("@id", assetId));
 
-        var relativePath = await cmd.ExecuteScalarAsync(ct) as string;
+        var relativePath = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
         if (relativePath is null)
             return null;
 
@@ -174,7 +174,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         await EnsureMigratedAsync(ct);
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         string? catalogItemId;
         using (var readCmd = connection.CreateCommand())
@@ -216,11 +216,11 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     {
         await EnsureMigratedAsync(ct);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT * FROM family_assets WHERE catalog_item_id = @itemId AND asset_type = 'Image' AND is_primary = 1 LIMIT 1";
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (await reader.ReadAsync(ct))
             return ReadAsset(reader);
         return null;

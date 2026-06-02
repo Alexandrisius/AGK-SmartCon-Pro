@@ -95,7 +95,7 @@ internal sealed class DatabaseManager : IDatabaseManager
             await migrator.MigrateAsync(ct);
 
             using var dbConn = _catalogDatabase.CreateConnection();
-            await dbConn.OpenAsync(ct);
+            await dbConn.OpenAsync(ct).ConfigureAwait(false);
 
             var identity = _identityService.GetCurrentUser();
             var now = DateTimeOffset.UtcNow.ToString("o");
@@ -112,7 +112,7 @@ internal sealed class DatabaseManager : IDatabaseManager
                 metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", name.Trim()));
                 metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@description", DBNull.Value));
                 metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
-                await metaCmd.ExecuteNonQueryAsync(ct);
+                await metaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerCmd = dbConn.CreateCommand();
                 ownerCmd.CommandText = """
@@ -122,12 +122,12 @@ internal sealed class DatabaseManager : IDatabaseManager
                 ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@userId", identity.UserId));
                 ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@displayName", identity.DisplayName));
                 ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@now", now));
-                await ownerCmd.ExecuteNonQueryAsync(ct);
+                await ownerCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerIdentityCmd = dbConn.CreateCommand();
                 ownerIdentityCmd.CommandText = "UPDATE database_meta SET owner_identity = @ownerIdentity";
                 ownerIdentityCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@ownerIdentity", identity.UserId));
-                await ownerIdentityCmd.ExecuteNonQueryAsync(ct);
+                await ownerIdentityCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 tx.Commit();
             }
@@ -185,10 +185,10 @@ internal sealed class DatabaseManager : IDatabaseManager
         try
         {
             using var conn = _catalogDatabase.CreateConnection();
-            await conn.OpenAsync(ct);
+            await conn.OpenAsync(ct).ConfigureAwait(false);
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT name FROM database_meta LIMIT 1";
-            var dbName = await cmd.ExecuteScalarAsync(ct) as string;
+            var dbName = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
             if (dbName is not null)
                 name = dbName;
 
