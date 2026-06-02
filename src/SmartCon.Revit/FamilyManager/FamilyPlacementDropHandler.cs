@@ -20,6 +20,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly Action? _onCompleted;
     private readonly Action<string>? _onError;
     private readonly Action<string>? _onSuccess;
+    private readonly Action<string>? _onStatusMessage;
 
     public FamilyPlacementDropHandler(
         IFamilySearchService searchService,
@@ -30,7 +31,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         int targetRevitVersion,
         Action? onCompleted = null,
         Action<string>? onError = null,
-        Action<string>? onSuccess = null)
+        Action<string>? onSuccess = null,
+        Action<string>? onStatusMessage = null)
     {
         _searchService = searchService;
         _fileResolver = fileResolver;
@@ -41,6 +43,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _onCompleted = onCompleted;
         _onError = onError;
         _onSuccess = onSuccess;
+        _onStatusMessage = onStatusMessage;
     }
 
     public void Execute(UIDocument document, object data)
@@ -67,7 +70,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                 }
 
                 var options = FamilyLoadOptions.Default with { PreferredName = familyName };
-                var result = _loadService.LoadFamilyAsync(resolved, options, CancellationToken.None).GetAwaiter().GetResult();
+                var result = _loadService.LoadFamilyAsync(resolved, options, _onStatusMessage, CancellationToken.None).GetAwaiter().GetResult();
 
                 if (!result.Success)
                 {

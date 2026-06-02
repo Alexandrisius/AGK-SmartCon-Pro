@@ -115,7 +115,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         return "Unable to load family. The file may be from a newer Revit version or incompatible with this project.";
     }
 
-    public Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, CancellationToken ct = default)
+    public Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, Action<string>? onStatusMessage = null, CancellationToken ct = default)
     {
         var doc = _revitContext.GetDocument();
         if (doc is null)
@@ -178,7 +178,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 SmartConLogger.Info($"[FamilyLoad] No existing family found with name '{checkName}'");
             }
 
-            var loadOptions = new RevitFamilyLoadOptions(options.OverwriteParameterValues);
+            var loadOptions = new RevitFamilyLoadOptions(options.OverwriteParameterValues, onStatusMessage);
 
             SmartConLogger.Info("[FamilyLoad] Attempt 1: LoadFamily with options in transaction...");
             var result1 = TryLoadInTransaction(doc, normalizedPath, loadOptions, options, "Attempt1", existingFamily);

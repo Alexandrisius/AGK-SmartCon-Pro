@@ -27,4 +27,10 @@ public interface IFamilyPlacementDragService
     /// The argument is the success message. Subscribe to show status in UI.
     /// </summary>
     event Action<string>? PlacementSucceeded;
+
+    /// <summary>
+    /// Fired for intermediate status messages during load (e.g. shared family replacement).
+    /// The argument is the status message. Subscribe to show status in UI.
+    /// </summary>
+    event Action<string>? PlacementStatusMessage;
 }

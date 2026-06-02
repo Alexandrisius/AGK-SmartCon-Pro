@@ -70,7 +70,7 @@ public sealed partial class FamilyManagerMainViewModel
                 }
 
                 var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName, OverwriteParameterValues = overwriteParameterValues };
-                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, CancellationToken.None).GetAwaiter().GetResult();
+                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, ct: CancellationToken.None).GetAwaiter().GetResult();
 
                 if (result.Success)
                 {

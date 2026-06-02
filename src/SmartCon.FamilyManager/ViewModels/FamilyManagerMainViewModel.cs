@@ -145,6 +145,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _placementDragService.PlacementCompleted += OnPlacementCompleted;
         _placementDragService.PlacementFailed += OnPlacementFailed;
         _placementDragService.PlacementSucceeded += OnPlacementSucceeded;
+        _placementDragService.PlacementStatusMessage += OnPlacementStatusMessage;
 
         DetectRevitVersion();
         InitializeAsync();
@@ -637,6 +638,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         SmartConLogger.Info($"[PlacementSucceeded] {successMessage}");
     }
 
+    private void OnPlacementStatusMessage(string statusMessage)
+    {
+        StatusMessage = statusMessage;
+        SmartConLogger.Info($"[PlacementStatus] {statusMessage}");
+    }
+
     public void Dispose()
     {
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
@@ -644,6 +651,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _placementDragService.PlacementCompleted -= OnPlacementCompleted;
         _placementDragService.PlacementFailed -= OnPlacementFailed;
         _placementDragService.PlacementSucceeded -= OnPlacementSucceeded;
+        _placementDragService.PlacementStatusMessage -= OnPlacementStatusMessage;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
     }

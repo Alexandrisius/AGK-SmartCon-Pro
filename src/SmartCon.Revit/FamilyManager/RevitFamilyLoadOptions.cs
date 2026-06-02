@@ -10,10 +10,12 @@ namespace SmartCon.Revit.FamilyManager;
 public sealed class RevitFamilyLoadOptions : IFamilyLoadOptions
 {
     private readonly bool _overwriteParameterValues;
+    private readonly Action<string>? _onStatusMessage;
 
-    public RevitFamilyLoadOptions(bool overwriteParameterValues = true)
+    public RevitFamilyLoadOptions(bool overwriteParameterValues = true, Action<string>? onStatusMessage = null)
     {
         _overwriteParameterValues = overwriteParameterValues;
+        _onStatusMessage = onStatusMessage;
     }
 
     public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
@@ -29,6 +31,12 @@ public sealed class RevitFamilyLoadOptions : IFamilyLoadOptions
         SmartConLogger.Info($"[FamilyLoadOptions] OnSharedFamilyFound called: sharedFamily='{familyName}', familyInUse={familyInUse}, overwrite={_overwriteParameterValues}");
         source = Autodesk.Revit.DB.FamilySource.Family;
         overwriteParameterValues = _overwriteParameterValues;
+
+        if (sharedFamily is not null)
+        {
+            _onStatusMessage?.Invoke($"Обновлено вложенное семейство: {sharedFamily.Name}");
+        }
+
         return true;
     }
 }

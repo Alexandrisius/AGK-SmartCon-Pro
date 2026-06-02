@@ -11,5 +11,6 @@ namespace SmartCon.Core.Services.Interfaces;
 public interface IFamilyLoadService
 {
     /// <summary>Load a family file into the active project.</summary>
-    Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, CancellationToken ct = default);
+    /// <param name="onStatusMessage">Optional callback for status messages during load (e.g. shared family replacement).</param>
+    Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, Action<string>? onStatusMessage = null, CancellationToken ct = default);
 }
