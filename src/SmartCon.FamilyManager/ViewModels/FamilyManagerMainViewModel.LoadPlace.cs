@@ -22,7 +22,8 @@ public sealed partial class FamilyManagerMainViewModel
             leaf.CatalogItemId,
             leaf.DisplayName,
             typeNode.TypeName,
-            CurrentRevitVersion);
+            CurrentRevitVersion,
+            typeNode.IsVirtual);
 
         _placementDragService.StartPlacementDrag(data);
     }
@@ -75,19 +76,6 @@ public sealed partial class FamilyManagerMainViewModel
                 if (result.Success)
                 {
                     var loadedName = result.FamilyName ?? selectedName;
-                    var isLoaded = _familySearchService.IsFamilyLoaded(loadedName);
-                    CanPlace = isLoaded;
-                    PlaceCommand.NotifyCanExecuteChanged();
-
-                    if (SelectedTreeNode is FamilyTypeNodeViewModel typeNode)
-                    {
-                        var parent = FindParentOf(TreeNodes, typeNode);
-                        if (parent is FamilyLeafNodeViewModel leaf && leaf.DisplayName == loadedName)
-                        {
-                            CanPlaceType = isLoaded;
-                            PlaceTypeCommand.NotifyCanExecuteChanged();
-                        }
-                    }
 
                     var msg = result.Status switch
                     {
@@ -144,53 +132,6 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
-    [RelayCommand(CanExecute = nameof(CanPlace))]
-    private void Place()
-    {
-        if (SelectedItem is null) return;
-
-        var familyName = SelectedItem.Name;
-
-        _externalEvent.Raise(() =>
-        {
-            try
-            {
-                if (!_familySearchService.IsFamilyLoaded(familyName))
-                {
-                    StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_FamilyNotLoaded) ?? "Family \"{0}\" not loaded in project. Use 'Load to Project'.",
-                        familyName);
-                    CanPlace = false;
-                    PlaceCommand.NotifyCanExecuteChanged();
-                    return;
-                }
-
-                var typeNames = _familySearchService.GetFamilyTypeNames(familyName);
-                var firstType = typeNames.Count > 0 ? typeNames[0] : null;
-
-                if (firstType is not null)
-                {
-                    _familyPlacementService.ActivateAndPlaceType(familyName, firstType);
-                    StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
-                        familyName);
-                }
-                else
-                {
-                    StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
-                        LanguageManager.GetString(StringLocalization.Keys.FM_FamilyNotFoundAfterLoad) ?? "No types found");
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
-                    ex.Message);
-            }
-        });
-    }
-
     [RelayCommand(CanExecute = nameof(CanPlaceType))]
     private void PlaceType()
     {
@@ -199,28 +140,100 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return;
 
+        var catalogItemId = leaf.CatalogItemId;
         var familyName = leaf.DisplayName;
         var typeName = typeNode.TypeName;
+        var isVirtual = typeNode.IsVirtual;
+        var targetRevit = CurrentRevitVersion;
 
         _externalEvent.Raise(() =>
         {
             try
             {
-                if (!_familySearchService.IsFamilyLoaded(familyName))
+                var isFamilyLoaded = _familySearchService.IsFamilyLoaded(familyName);
+                var isTypeLoaded = isFamilyLoaded && _familySearchService.HasFamilyType(familyName, typeName);
+
+                if (!isFamilyLoaded || !isTypeLoaded)
                 {
                     StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_FamilyNotLoaded) ?? "Family \"{0}\" not loaded in project. Use 'Load to Project'.",
-                        familyName);
-                    CanPlaceType = false;
-                    PlaceTypeCommand.NotifyCanExecuteChanged();
-                    return;
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Loading) ?? "Loading {0}...",
+                        typeName);
+                    
+                    var resolved = Task.Run(() => _fileResolver
+                        .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None))
+                        .GetAwaiter().GetResult();
+
+                    if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                    {
+                        StatusMessage = string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_FamilyFileNotFound) ?? "Family file not found",
+                            familyName);
+                        return;
+                    }
+
+                    FamilyLoadResult result;
+                    if (isVirtual)
+                    {
+                        var options = FamilyLoadOptions.Default with { PreferredName = familyName };
+                        result = _loadService.LoadFamilyAsync(resolved, options, msg => StatusMessage = msg, CancellationToken.None).GetAwaiter().GetResult();
+                    }
+                    else
+                    {
+                        result = _loadService.LoadFamilySymbolAsync(resolved.AbsolutePath, typeName, msg => StatusMessage = msg, CancellationToken.None).GetAwaiter().GetResult();
+                    }
+
+                    if (!result.Success)
+                    {
+                        StatusMessage = string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                            result.ErrorMessage ?? $"Failed to load type '{typeName}'");
+                        return;
+                    }
                 }
 
-                _familyPlacementService.ActivateAndPlaceType(familyName, typeName);
+                var placementSuccess = _familyPlacementService.ActivateAndPlaceType(familyName, typeName);
+                if (placementSuccess)
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
+                        familyName);
+                    
+                    // Record usage analytics
+                    var resolvedForUsage = Task.Run(() => _fileResolver
+                        .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None))
+                        .GetAwaiter().GetResult();
+                    
+                    var projectPath = _revitContext.GetDocument().PathName;
+                    var usage = new ProjectFamilyUsage(
+                        Id: Guid.NewGuid().ToString(),
+                        CatalogItemId: catalogItemId,
+                        VersionId: resolvedForUsage.VersionId,
+                        LoadedVersionLabel: resolvedForUsage.VersionLabel,
+                        ProjectName: "Active Project",
+                        ProjectPath: projectPath,
+                        RevitMajorVersion: targetRevit,
+                        Action: "Place",
+                        CreatedAtUtc: DateTimeOffset.UtcNow);
+                    
+                    FireAndForget(async () =>
+                    {
+                        try { await _usageRepo.RecordUsageAsync(usage, CancellationToken.None); }
+                        catch { /* ignored */ }
+                    });
+                }
+                else
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                        $"Type '{typeName}' not found in family '{familyName}' after loading");
+                }
             }
             catch (Exception ex)
             {
                 SmartConLogger.Warn($"PlaceType failed: {ex.Message}");
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                    ex.Message);
             }
         });
     }

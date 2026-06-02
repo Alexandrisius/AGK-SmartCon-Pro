@@ -13,6 +13,11 @@ public interface IFamilyFileResolver
     /// </summary>
     Task<FamilyResolvedFile> ResolveForLoadAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
 
+    /// <summary>
+    /// Resolve the absolute path for a specific version by label.
+    /// </summary>
+    Task<FamilyResolvedFile> ResolveVersionAsync(string catalogItemId, string versionLabel, CancellationToken ct = default);
+
     /// <summary>Get the active database root directory path.</summary>
     string? GetDatabaseRoot();
 }

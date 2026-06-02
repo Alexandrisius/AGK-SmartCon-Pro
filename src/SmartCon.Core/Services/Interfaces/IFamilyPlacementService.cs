@@ -11,7 +11,8 @@ public interface IFamilyPlacementService
     /// Если семейство не загружено — загружает его из файла.
     /// Выполняется синхронно внутри ExternalEvent.
     /// </summary>
-    void ActivateAndPlaceType(string familyName, string typeName);
+    /// <returns>true если размещение инициировано, false если семейство или тип не найдены</returns>
+    bool ActivateAndPlaceType(string familyName, string typeName);
 
     /// <summary>
     /// Загрузить семейство из файла и инициировать размещение.

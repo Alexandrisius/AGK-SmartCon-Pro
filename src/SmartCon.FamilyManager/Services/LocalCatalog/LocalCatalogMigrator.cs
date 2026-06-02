@@ -52,6 +52,7 @@ internal sealed class LocalCatalogMigrator
         await MigrateV6Async(connection, ct);
         await MigrateV7Async(connection, ct);
         await MigrateV9Async(connection, ct);
+        await MigrateV10Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -323,6 +324,20 @@ internal sealed class LocalCatalogMigrator
 
         using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = "UPDATE schema_info SET value = '9' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV10Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 10) return;
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.MigrateV10AddFamilyTypesNameIndex;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '10' WHERE key = 'schema_version'";
         await versionCmd.ExecuteNonQueryAsync(ct);
     }
 

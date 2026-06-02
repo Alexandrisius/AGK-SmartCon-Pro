@@ -15,7 +15,7 @@ public sealed class LocalProjectFamilyUsageRepositoryTests
         var meta = new FileNameOnlyMetadataExtractionService(hasher);
         var importService = new LocalFamilyImportService(
             fixture.GetDatabase(), fixture.GetMigrator(), fixture.GetProvider(),
-            fixture.GetPathResolver(), meta);
+            fixture.GetPathResolver(), meta, fixture.GetTypeRepository(), fixture.GetValueRepository(), fixture.GetRunRepository());
 
         var path = fixture.CreateFakeRfaFile("UsageFamily.rfa");
         var importResult = await importService.ImportFileAsync(new FamilyImportRequest(path, 2025, null, null, null));
@@ -126,7 +126,7 @@ public sealed class LocalProjectFamilyUsageRepositoryTests
         var meta = new FileNameOnlyMetadataExtractionService(hasher);
         var importService = new LocalFamilyImportService(
             fixture.GetDatabase(), fixture.GetMigrator(), fixture.GetProvider(),
-            fixture.GetPathResolver(), meta);
+            fixture.GetPathResolver(), meta, fixture.GetTypeRepository(), fixture.GetValueRepository(), fixture.GetRunRepository());
         var path2 = fixture.CreateFakeRfaFile("SecondFamily.rfa");
         var importResult2 = await importService.ImportFileAsync(new FamilyImportRequest(path2, 2025, null, null, null));
         Assert.True(importResult2.Success);

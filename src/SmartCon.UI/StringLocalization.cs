@@ -213,7 +213,7 @@ public static class StringLocalization
         public const string FM_ImportFolder = "FM_ImportFolder";
         public const string FM_LoadToProject = "FM_LoadToProject";
         public const string FM_LoadAndPlace = "FM_LoadAndPlace";
-        public const string FM_Place = "FM_Place";
+        public const string FM_Loading = "FM_Loading";
         public const string FM_ExtractTypes = "FM_ExtractTypes";
         public const string FM_ImportData = "FM_ImportData";
         public const string FM_PlaceType = "FM_PlaceType";

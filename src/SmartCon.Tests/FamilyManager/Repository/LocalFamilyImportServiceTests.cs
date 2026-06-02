@@ -22,7 +22,10 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
             _fixture.GetMigrator(),
             _fixture.GetProvider(),
             _fixture.GetPathResolver(),
-            metadataService);
+            metadataService,
+            _fixture.GetTypeRepository(),
+            _fixture.GetValueRepository(),
+            _fixture.GetRunRepository());
     }
 
     [Fact]

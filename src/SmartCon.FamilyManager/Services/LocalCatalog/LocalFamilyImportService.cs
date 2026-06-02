@@ -22,6 +22,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         LocalCatalogProvider catalogProvider,
         StoragePathResolver pathResolver,
         IFamilyMetadataExtractionService metadataService,
+        IFamilyTypeRepository typeRepository,
+        IAttributeValueRepository valueRepository,
+        IFamilyDataImportRunRepository runRepository,
         IRevitFileInfoReader? fileInfoReader = null)
     {
         _database = database;
@@ -29,6 +32,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         _catalogProvider = catalogProvider;
         _pathResolver = pathResolver;
         _metadataService = metadataService;
+        _typeRepository = typeRepository;
+        _valueRepository = valueRepository;
+        _runRepository = runRepository;
         _fileInfoReader = fileInfoReader;
     }
 
@@ -131,6 +137,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 throw;
             }
 
+            await ImportTypeCatalogIfPresentAsync(filePath, catalogItemId, versionId, versionLabel, ct);
+
             return new FamilyImportResult(
                 Success: true,
                 CatalogItemId: catalogItemId,
@@ -143,7 +151,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
         catch
         {
-            await CleanupFileAsync(copyResult.RelativePath);
+            CleanupFileAsync(copyResult.RelativePath);
             throw;
         }
     }
@@ -413,6 +421,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 throw;
             }
 
+            await ImportTypeCatalogIfPresentAsync(filePath, request.CatalogItemId, versionId, versionLabel, ct);
+
             return new FamilyImportResult(
                 Success: true,
                 CatalogItemId: request.CatalogItemId,
@@ -425,7 +435,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
         catch
         {
-            await CleanupFileAsync(copyResult.RelativePath);
+            CleanupFileAsync(copyResult.RelativePath);
             throw;
         }
     }
@@ -462,7 +472,17 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     destStream.Flush();
                 }, ct);
 
-                File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+                try
+                {
+                    File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+                }
+                catch (IOException attrEx) when (attempt < CopyMaxRetries - 1)
+                {
+                    SmartConLogger.Info($"[Import] SetAttributes failed (attempt {attempt + 1}), retrying: {attrEx.Message}");
+                    await Task.Delay(CopyRetryDelaysMs[attempt], ct);
+                    continue;
+                }
+
                 var relativePath = _pathResolver.GetRelativePath(absolutePath);
                 SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
                 return new CopyResult(true, relativePath, null);
@@ -481,20 +501,26 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         return new CopyResult(false, null, $"Failed to copy file to managed storage after {CopyMaxRetries} attempts");
     }
 
-    private Task CleanupFileAsync(string? relativePath)
+    private void CleanupFileAsync(string? relativePath)
     {
-        if (string.IsNullOrEmpty(relativePath)) return Task.CompletedTask;
+        if (string.IsNullOrEmpty(relativePath)) return;
         try
         {
             var absPath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
             if (File.Exists(absPath))
                 File.Delete(absPath);
+            
+            // Also cleanup Type Catalog (.txt) sidecar file
+            var txtPath = Path.ChangeExtension(absPath, ".txt");
+            if (File.Exists(txtPath))
+            {
+                try { File.Delete(txtPath); } catch { /* ignored */ }
+            }
         }
         catch
         {
             // ignored
         }
-        return Task.CompletedTask;
     }
 
     private readonly record struct CopyResult(bool Success, string? RelativePath, string? ErrorMessage);

@@ -145,6 +145,7 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 StatusMessage = BuildImportStatusMessage(
                     importResult.SuccessCount, importResult.SkippedCount, importResult.ErrorCount, importResult.TotalFiles);
+                await LoadTreeAsync();
             }
 
             await LoadTreeAsync();
@@ -196,6 +197,14 @@ public sealed partial class FamilyManagerMainViewModel
                         .GetAwaiter().GetResult();
 
                     if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
+
+                    // Skip extraction if Type Catalog (.txt) exists — types already imported from catalog
+                    var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
+                    if (File.Exists(txtPath))
+                    {
+                        SmartConLogger.Info($"[ExtractTypes] Skipping extraction for '{catalogItemId}' — Type Catalog found at {txtPath}");
+                        continue;
+                    }
 
                     // UI thread: Revit API (OpenDocumentFile + Extract)
                     var extractionResult = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());

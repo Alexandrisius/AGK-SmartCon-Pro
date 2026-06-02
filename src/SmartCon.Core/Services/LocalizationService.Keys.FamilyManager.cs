@@ -10,7 +10,7 @@ public static partial class LocalizationService
         ru["FM_ImportFolder"] = "Импорт папки"; en["FM_ImportFolder"] = "Import Folder";
         ru["FM_LoadToProject"] = "Загрузить в проект"; en["FM_LoadToProject"] = "Load to Project";
         ru["FM_LoadAndPlace"] = "Загрузить и разместить"; en["FM_LoadAndPlace"] = "Load and Place";
-        ru["FM_Place"] = "Разместить"; en["FM_Place"] = "Place";
+        ru["FM_Loading"] = "Загрузка {0}..."; en["FM_Loading"] = "Loading {0}...";
         ru["FM_ExtractTypes"] = "Извлечь типоразмеры"; en["FM_ExtractTypes"] = "Extract Types";
         ru["FM_ImportData"] = "Импорт данных"; en["FM_ImportData"] = "Import Data";
         ru["FM_PlaceType"] = "Разместить тип"; en["FM_PlaceType"] = "Place Type";

@@ -7,4 +7,5 @@ public sealed record FamilyPlacementDragData(
     string CatalogItemId,
     string FamilyName,
     string TypeName,
-    int TargetRevitVersion);
+    int TargetRevitVersion,
+    bool IsVirtual = false);

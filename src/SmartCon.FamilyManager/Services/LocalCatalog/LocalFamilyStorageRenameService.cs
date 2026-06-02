@@ -96,6 +96,15 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
                         File.Move(oldAbsolutePath, newAbsolutePath);
                     }, ct);
                     SmartConLogger.Info($"[FM Rename] File moved successfully");
+
+                    // Переименовываем Type Catalog (.txt) если есть
+                    var oldTxtPath = Path.ChangeExtension(oldAbsolutePath, ".txt");
+                    var newTxtPath = Path.ChangeExtension(newAbsolutePath, ".txt");
+                    if (File.Exists(oldTxtPath) && !File.Exists(newTxtPath))
+                    {
+                        await Task.Run(() => File.Move(oldTxtPath, newTxtPath), ct);
+                        SmartConLogger.Info($"[FM Rename] Type Catalog moved: {oldTxtPath} -> {newTxtPath}");
+                    }
                 }
                 else
                 {

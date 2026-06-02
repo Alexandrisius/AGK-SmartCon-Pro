@@ -63,7 +63,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
-    [ObservableProperty] private bool _canPlace;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(PlaceTypeCommand))]
@@ -307,30 +306,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
         CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
-        CanPlace = false;
         LoadToProjectCommand.NotifyCanExecuteChanged();
         LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
-        PlaceCommand.NotifyCanExecuteChanged();
 
         if (value is not null)
         {
-            var familyName = value.Name;
-            _externalEvent.Raise(() =>
-            {
-                try
-                {
-                    var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
-                    if (SelectedItem?.Name == familyName)
-                    {
-                        CanPlace = isLoaded;
-                        PlaceCommand.NotifyCanExecuteChanged();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn($"Place check failed: {ex.Message}");
-                }
-            });
+            // Place command removed - type-centric workflow
         }
     }
 
@@ -374,33 +355,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                         Description = parentLeaf.Description,
                     };
                     IsSelectedFamilyStale = parentLeaf.IsStale;
-                    CanPlaceType = false;
+                    CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
                     PlaceTypeCommand.NotifyCanExecuteChanged();
                     LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
-
-                var familyName = parentLeaf.DisplayName;
-                _externalEvent.Raise(() =>
-                {
-                    try
-                    {
-                        var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
-                        if (SelectedTreeNode is FamilyTypeNodeViewModel currentTypeNode)
-                        {
-                            var currentParent = FindParentOf(TreeNodes, currentTypeNode);
-                            if (currentParent is FamilyLeafNodeViewModel currentLeaf &&
-                                currentLeaf.DisplayName == familyName)
-                            {
-                                CanPlaceType = isLoaded;
-                                PlaceTypeCommand.NotifyCanExecuteChanged();
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        SmartConLogger.Warn($"PlaceType check failed: {ex.Message}");
-                    }
-                });
-            }
+                }
             else
             {
                 SelectedItem = null;
@@ -417,7 +375,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
         LoadToProjectCommand.NotifyCanExecuteChanged();
         LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
-        PlaceCommand.NotifyCanExecuteChanged();
         PlaceTypeCommand.NotifyCanExecuteChanged();
         StartPlacementDragCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
@@ -485,8 +442,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             {
                 foreach (var t in types)
                 {
-                    if (!string.IsNullOrWhiteSpace(t.Name))
-                        leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                    leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                }
+
+                if (leaf.Children.Count == 0)
+                {
+                    leaf.Children.Add(new FamilyTypeNodeViewModel(leaf.CatalogItemId, leaf.DisplayName, isVirtual: true));
                 }
 
                 if (expandedFamilyIds.Contains(leaf.CatalogItemId))

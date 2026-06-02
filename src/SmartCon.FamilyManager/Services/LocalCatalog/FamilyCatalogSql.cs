@@ -348,6 +348,10 @@ internal static class FamilyCatalogSql
         ALTER TABLE project_usage ADD COLUMN loaded_version_label TEXT
         """;
 
+    public const string MigrateV10AddFamilyTypesNameIndex = """
+        CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name)
+        """;
+
     public const string CreateIndexes = """
         CREATE INDEX IF NOT EXISTS ix_catalog_items_normalized_name ON catalog_items (normalized_name);
         CREATE INDEX IF NOT EXISTS ix_catalog_items_category ON catalog_items (category_name);
@@ -368,6 +372,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_assets_type ON family_assets (asset_type);
         CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id);
         CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id)
         """;
 }

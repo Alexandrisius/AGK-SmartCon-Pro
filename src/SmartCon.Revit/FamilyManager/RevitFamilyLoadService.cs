@@ -202,4 +202,69 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             return Task.FromResult(new FamilyLoadResult(false, null, null, ex.Message, FamilyLoadStatus.Failed));
         }
     }
+
+    public Task<FamilyLoadResult> LoadFamilySymbolAsync(string filePath, string typeName, Action<string>? onStatusMessage = null, CancellationToken ct = default)
+    {
+        var doc = _revitContext.GetDocument();
+        if (doc is null)
+            return Task.FromResult(new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed));
+
+        var normalizedPath = Path.GetFullPath(filePath);
+        SmartConLogger.Info($"[FamilyLoadSymbol] Attempting to load symbol '{typeName}' from: {normalizedPath}");
+
+        if (!File.Exists(normalizedPath))
+        {
+            SmartConLogger.Info($"[FamilyLoadSymbol] File not found: {normalizedPath}");
+            return Task.FromResult(new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed));
+        }
+
+        try
+        {
+            var loadOptions = new RevitFamilyLoadOptions(overwriteParameterValues: true, onStatusMessage);
+            bool loaded = false;
+            Autodesk.Revit.DB.FamilySymbol? symbol = null;
+
+            _transactionService.RunInTransaction("Load Family Symbol", _ =>
+            {
+                loaded = doc.LoadFamilySymbol(normalizedPath, typeName, loadOptions, out symbol);
+            });
+
+            if (loaded && symbol is not null)
+            {
+                var familyName = symbol.FamilyName;
+                SmartConLogger.Info($"[FamilyLoadSymbol] Symbol '{typeName}' loaded successfully from family '{familyName}'");
+                return Task.FromResult(new FamilyLoadResult(true, familyName, $"Type '{typeName}' loaded", null, FamilyLoadStatus.Loaded));
+            }
+
+            // If LoadFamilySymbol returns false, it may be because the type already exists.
+            // Try to find the symbol in the existing family.
+            var existingFamily = FindExistingFamily(doc, Path.GetFileNameWithoutExtension(normalizedPath));
+            if (existingFamily is null)
+            {
+                existingFamily = FindExistingFamily(doc, typeName);
+            }
+
+            if (existingFamily is not null)
+            {
+                var existingSymbol = existingFamily.GetFamilySymbolIds()
+                    .Select(id => doc.GetElement(id))
+                    .OfType<Autodesk.Revit.DB.FamilySymbol>()
+                    .FirstOrDefault(s => s.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingSymbol is not null)
+                {
+                    SmartConLogger.Info($"[FamilyLoadSymbol] Symbol '{typeName}' already exists in family '{existingFamily.Name}'");
+                    return Task.FromResult(new FamilyLoadResult(true, existingFamily.Name, $"Type '{typeName}' already exists", null, FamilyLoadStatus.Current));
+                }
+            }
+
+            SmartConLogger.Info($"[FamilyLoadSymbol] Failed to load symbol '{typeName}'");
+            return Task.FromResult(new FamilyLoadResult(false, null, null, $"Failed to load type '{typeName}'", FamilyLoadStatus.Failed));
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Info($"[FamilyLoadSymbol] Exception: {ex.GetType().Name}: {ex.Message}");
+            return Task.FromResult(new FamilyLoadResult(false, null, null, ex.Message, FamilyLoadStatus.Failed));
+        }
+    }
 }

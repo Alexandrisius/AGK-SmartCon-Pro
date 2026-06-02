@@ -26,6 +26,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+    <PackageReference Include="System.Text.Encoding.CodePages" />
+    <PackageReference Include="UTF.Unknown" />
   </ItemGroup>
 
   <ItemGroup>

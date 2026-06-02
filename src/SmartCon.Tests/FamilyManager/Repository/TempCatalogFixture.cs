@@ -14,6 +14,9 @@ internal sealed class TempCatalogFixture : IDisposable
     private readonly LocalCatalogMigrator _migrator;
     private readonly LocalCatalogProvider _provider;
     private readonly StoragePathResolver _pathResolver;
+    private readonly LocalFamilyTypeRepository _typeRepository;
+    private readonly LocalAttributeValueRepository _valueRepository;
+    private readonly LocalFamilyDataImportRunRepository _runRepository;
 
     public TempCatalogFixture()
     {
@@ -27,6 +30,9 @@ internal sealed class TempCatalogFixture : IDisposable
         _migrator = new LocalCatalogMigrator(_database);
         _provider = new LocalCatalogProvider(_database);
         _pathResolver = new StoragePathResolver(_database);
+        _typeRepository = new LocalFamilyTypeRepository(_database);
+        _valueRepository = new LocalAttributeValueRepository(_database);
+        _runRepository = new LocalFamilyDataImportRunRepository(_database);
 
         _migrator.MigrateAsync().GetAwaiter().GetResult();
     }
@@ -36,6 +42,9 @@ internal sealed class TempCatalogFixture : IDisposable
     public LocalCatalogProvider GetProvider() => _provider;
     public StoragePathResolver GetPathResolver() => _pathResolver;
     public string GetDatabaseRoot() => _database.GetDatabaseRoot();
+    public LocalFamilyTypeRepository GetTypeRepository() => _typeRepository;
+    public LocalAttributeValueRepository GetValueRepository() => _valueRepository;
+    public LocalFamilyDataImportRunRepository GetRunRepository() => _runRepository;
 
     public async Task MigrateAsync()
     {

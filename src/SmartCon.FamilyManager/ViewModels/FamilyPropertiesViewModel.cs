@@ -242,10 +242,14 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
             var types = await _typeRepository.GetTypesForItemAsync(_catalogItemId, ct);
             AvailableTypes = new ObservableCollection<FamilyTypeSelectorItem>(
-                types
-                    .Where(t => !string.IsNullOrWhiteSpace(t.Name))
-                    .Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
+                types.Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
             HasTypes = AvailableTypes.Count > 0;
+
+            if (!HasTypes)
+            {
+                AvailableTypes.Add(new FamilyTypeSelectorItem { TypeId = null, TypeName = Name });
+                HasTypes = true;
+            }
 
             var allValues = await _valueRepository.GetValuesForItemAsync(_catalogItemId, run.VersionId, ct);
             _allValues = allValues;
@@ -430,7 +434,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
 public sealed class FamilyTypeSelectorItem
 {
-    public string TypeId { get; init; } = string.Empty;
+    public string? TypeId { get; init; }
     public string TypeName { get; init; } = string.Empty;
     public override string ToString() => TypeName;
 }

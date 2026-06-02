@@ -778,7 +778,9 @@ public interface IFamilyAssetService
 ```csharp
 public interface IFamilyLoadService
 {
-    Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, CancellationToken ct = default);
+    Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, Action<string>? onStatusMessage = null, CancellationToken ct = default);
+
+    Task<FamilyLoadResult> LoadFamilySymbolAsync(string filePath, string typeName, Action<string>? onStatusMessage = null, CancellationToken ct = default);
 }
 
 ---

@@ -57,7 +57,11 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             var typeName = dragData.TypeName;
             FamilyResolvedFile? resolved = null;
 
-            if (!_searchService.IsFamilyLoaded(familyName))
+            var isFamilyLoaded = _searchService.IsFamilyLoaded(familyName);
+            var isTypeLoaded = isFamilyLoaded && _searchService.HasFamilyType(familyName, typeName);
+            SmartConLogger.Info($"[DropHandler] Family '{familyName}' loaded: {isFamilyLoaded}, Type '{typeName}' loaded: {isTypeLoaded}");
+
+            if (!isFamilyLoaded || !isTypeLoaded)
             {
                 resolved = Task.Run(() => _fileResolver
                     .ResolveForLoadAsync(dragData.CatalogItemId, _targetRevitVersion, CancellationToken.None))
@@ -65,23 +69,40 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
-                    SmartConLogger.Warn($"FamilyPlacementDropHandler: No file resolved for '{familyName}'");
+                    SmartConLogger.Warn($"[DropHandler] No file resolved for '{familyName}'");
                     return;
                 }
 
-                var options = FamilyLoadOptions.Default with { PreferredName = familyName };
-                var result = _loadService.LoadFamilyAsync(resolved, options, _onStatusMessage, CancellationToken.None).GetAwaiter().GetResult();
+                FamilyLoadResult result;
+                if (dragData.IsVirtual)
+                {
+                    var options = FamilyLoadOptions.Default with { PreferredName = familyName };
+                    result = _loadService.LoadFamilyAsync(resolved, options, _onStatusMessage, CancellationToken.None).GetAwaiter().GetResult();
+                }
+                else
+                {
+                    result = _loadService.LoadFamilySymbolAsync(resolved.AbsolutePath, typeName, _onStatusMessage, CancellationToken.None).GetAwaiter().GetResult();
+                }
 
                 if (!result.Success)
                 {
                     var errorMsg = $"Failed to load '{familyName}': {result.ErrorMessage}";
-                    SmartConLogger.Warn($"FamilyPlacementDropHandler: {errorMsg}");
+                    SmartConLogger.Warn($"[DropHandler] {errorMsg}");
                     _onError?.Invoke(errorMsg);
                     return;
                 }
+
+                SmartConLogger.Info($"[DropHandler] Loaded successfully: {result.Status} - {result.Message}");
             }
 
-            _placementService.ActivateAndPlaceType(familyName, typeName);
+            var placementSuccess = _placementService.ActivateAndPlaceType(familyName, typeName);
+            if (!placementSuccess)
+            {
+                var errorMsg = $"Failed to activate type '{typeName}' for placement";
+                SmartConLogger.Warn($"[DropHandler] {errorMsg}");
+                _onError?.Invoke(errorMsg);
+                return;
+            }
 
             if (resolved is not null)
             {

@@ -65,4 +65,47 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         SmartConLogger.Info($"[FileResolver] Resolved: {absolutePath}");
         return new FamilyResolvedFile(absolutePath, catalogItemId, versionId, versionLabel);
     }
+
+    public async Task<FamilyResolvedFile> ResolveVersionAsync(string catalogItemId, string versionLabel, CancellationToken ct = default)
+    {
+        var dbRoot = _database.GetDatabaseRoot();
+        if (string.IsNullOrEmpty(dbRoot))
+        {
+            return new FamilyResolvedFile("", catalogItemId, null);
+        }
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT ff.relative_path, cv.id AS version_id
+            FROM catalog_versions cv
+            INNER JOIN family_files ff ON ff.id = cv.file_id
+            WHERE cv.catalog_item_id = @itemId AND cv.version_label = @versionLabel
+            LIMIT 1
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            SmartConLogger.Info($"[FileResolver] No version found for item={catalogItemId}, version={versionLabel}");
+            return new FamilyResolvedFile("", catalogItemId, null, versionLabel);
+        }
+
+        var relativePath = reader.GetString(0);
+        var versionId = reader.GetString(1);
+        var absolutePath = Path.Combine(dbRoot, relativePath);
+
+        if (!File.Exists(absolutePath))
+        {
+            SmartConLogger.Info($"[FileResolver] File not found: {absolutePath}");
+            return new FamilyResolvedFile("", catalogItemId, versionId, versionLabel);
+        }
+
+        SmartConLogger.Info($"[FileResolver] Resolved version {versionLabel}: {absolutePath}");
+        return new FamilyResolvedFile(absolutePath, catalogItemId, versionId, versionLabel);
+    }
 }

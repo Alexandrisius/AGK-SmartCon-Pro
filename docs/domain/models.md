@@ -1932,7 +1932,39 @@ public sealed record FamilyPlacementDragData(
     string CatalogItemId,
     string FamilyName,
     string TypeName,
-    int TargetRevitVersion);
+    int TargetRevitVersion,
+    bool IsVirtual = false);
+```
+
+---
+
+### TypeCatalogEntry
+
+Одна запись (тип) из Type Catalog (.txt) семейства Revit.
+
+**Файл:** `TypeCatalogEntry.cs`
+
+```csharp
+public sealed record TypeCatalogEntry(
+    string TypeName,
+    IReadOnlyDictionary<string, string> ParameterValues);
+```
+
+---
+
+### TypeCatalogParseResult
+
+Результат парсинга Type Catalog (.txt) семейства Revit.
+
+**Файл:** `TypeCatalogParseResult.cs`
+
+```csharp
+public sealed record TypeCatalogParseResult(
+    IReadOnlyList<string> ParameterNames,
+    IReadOnlyList<TypeCatalogEntry> Entries)
+{
+    public bool HasEntries => Entries.Count > 0;
+}
 ```
 
 ---
@@ -1969,7 +2001,10 @@ public sealed record FamilyTypeDescriptor(
     string Id,
     string CatalogItemId,
     string Name,
-    int SortOrder);
+    int SortOrder,
+    string? VersionId = null,
+    string? FileId = null,
+    string? ExtractionRunId = null);
 ```
 
 ---

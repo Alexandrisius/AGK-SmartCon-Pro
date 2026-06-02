@@ -29,24 +29,24 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
         _loadService = loadService;
     }
 
-    public void ActivateAndPlaceType(string familyName, string typeName)
+    public bool ActivateAndPlaceType(string familyName, string typeName)
     {
         var doc = _revitContext.GetDocument();
         var uiApp = GetUIApplication();
-        if (doc is null || uiApp is null) return;
+        if (doc is null || uiApp is null) return false;
 
         var family = FindFamily(doc, familyName);
         if (family is null)
         {
             SmartConLogger.Warn($"ActivateAndPlaceType: Family '{familyName}' not found");
-            return;
+            return false;
         }
 
         var symbol = FindSymbol(doc, family, typeName);
         if (symbol is null)
         {
             SmartConLogger.Warn($"ActivateAndPlaceType: Type '{typeName}' not found in family '{familyName}'");
-            return;
+            return false;
         }
 
         if (!symbol.IsActive)
@@ -60,6 +60,7 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
 
         uiApp.ActiveUIDocument?.PostRequestForElementTypePlacement(symbol);
         SmartConLogger.Info($"ActivateAndPlaceType: Requested placement of {familyName}:{typeName}");
+        return true;
     }
 
     public void LoadAndPlaceFamily(string filePath, string familyName, string? preferredTypeName = null)

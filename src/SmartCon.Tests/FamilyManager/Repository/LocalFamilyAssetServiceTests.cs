@@ -28,7 +28,10 @@ public sealed class LocalFamilyAssetServiceTests : IDisposable
             _fixture.GetMigrator(),
             _fixture.GetProvider(),
             _fixture.GetPathResolver(),
-            metadataService);
+            metadataService,
+            _fixture.GetTypeRepository(),
+            _fixture.GetValueRepository(),
+            _fixture.GetRunRepository());
     }
 
     private async Task<string> SeedItemAsync(string fileName)

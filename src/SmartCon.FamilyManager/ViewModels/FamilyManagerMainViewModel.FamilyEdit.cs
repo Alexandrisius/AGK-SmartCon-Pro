@@ -174,6 +174,29 @@ public sealed partial class FamilyManagerMainViewModel
             var successfulItems = importResult.Results
                 .Where(r => r.Success && !r.WasSkippedAsDuplicate).ToList();
 
+            // Skip Revit API extraction for items that have Type Catalog (.txt)
+            var itemsNeedingExtraction = new List<FamilyImportResult>();
+            foreach (var si in successfulItems)
+            {
+                if (string.IsNullOrEmpty(si.CatalogItemId) || string.IsNullOrEmpty(si.VersionLabel))
+                {
+                    itemsNeedingExtraction.Add(si);
+                    continue;
+                }
+
+                var resolved = await _fileResolver.ResolveVersionAsync(si.CatalogItemId!, si.VersionLabel!, CancellationToken.None);
+                if (!string.IsNullOrEmpty(resolved.AbsolutePath))
+                {
+                    var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
+                    if (File.Exists(txtPath))
+                    {
+                        SmartConLogger.Info($"[LoadActiveFamily] Type Catalog found for {si.CatalogItemId} {si.VersionLabel} - skipping Revit API extraction");
+                        continue;
+                    }
+                }
+                itemsNeedingExtraction.Add(si);
+            }
+
             var extractionTcs = new TaskCompletionSource<FamilyExtractionResult?>();
             _externalEvent.RaiseWithApplication(obj =>
             {
@@ -190,7 +213,7 @@ public sealed partial class FamilyManagerMainViewModel
 
                     string? familyPath = activeDoc.PathName;
 
-                    if (successfulItems.Count > 0)
+                    if (itemsNeedingExtraction.Count > 0)
                     {
                         var extractionResult = _extractionService.Extract(activeDoc, Array.Empty<string>());
                         extractionTcs.SetResult(extractionResult);
@@ -268,12 +291,17 @@ public sealed partial class FamilyManagerMainViewModel
             var extractionResult = await extractionTcs.Task;
             if (extractionResult != null)
             {
-                foreach (var si in successfulItems)
+                foreach (var si in itemsNeedingExtraction)
                 {
                     if (string.IsNullOrEmpty(si.CatalogItemId)) continue;
                     await _dataImportService.SaveExtractionResultAsync(
                         si.CatalogItemId!, extractionResult, si.VersionLabel, si.FileId, CancellationToken.None);
                 }
+            }
+            
+            // Always reload tree if there were successful imports (even if extraction was skipped)
+            if (successfulItems.Count > 0)
+            {
                 await LoadTreeAsync();
             }
 
