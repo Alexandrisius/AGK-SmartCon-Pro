@@ -2,6 +2,7 @@ using Autodesk.Revit.UI;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Services;
 using SmartCon.Revit.Context;
 
 namespace SmartCon.Revit.FamilyManager;
@@ -18,6 +19,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private readonly IFamilyLoadService _loadService;
     private readonly IFamilyPlacementService _placementService;
     private readonly IProjectFamilyUsageRepository _usageRepo;
+    private readonly IWindowFocusService? _windowFocusService;
 
     public event Action? PlacementCompleted;
     public event Action<string>? PlacementFailed;
@@ -28,7 +30,8 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         IFamilyFileResolver fileResolver,
         IFamilyLoadService loadService,
         IFamilyPlacementService placementService,
-        IProjectFamilyUsageRepository usageRepo)
+        IProjectFamilyUsageRepository usageRepo,
+        IWindowFocusService? windowFocusService = null)
     {
         _revitUIContext = revitUIContext;
         _searchService = searchService;
@@ -36,6 +39,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         _loadService = loadService;
         _placementService = placementService;
         _usageRepo = usageRepo;
+        _windowFocusService = windowFocusService;
     }
 
     public void StartPlacementDrag(FamilyPlacementDragData data)
@@ -64,6 +68,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private void OnPlacementCompleted()
     {
         PlacementCompleted?.Invoke();
+        _windowFocusService?.RestoreFocusAndRefreshUI();
     }
 
     private void OnPlacementFailed(string errorMessage)
