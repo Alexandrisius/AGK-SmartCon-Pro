@@ -18,7 +18,7 @@ updates:
       - dependency-name: "coverlet.collector"
         versions: [">= 7.0.0"]
       - dependency-name: "PolySharp"
-        versions: [">= 2.0.0"]
+        versions: [">= 1.16.0"]
       - dependency-name: "Microsoft.Data.Sqlite"
         versions: [">= 9.0.0"]
       - dependency-name: "SQLitePCLRaw.bundle_e_sqlite3"
