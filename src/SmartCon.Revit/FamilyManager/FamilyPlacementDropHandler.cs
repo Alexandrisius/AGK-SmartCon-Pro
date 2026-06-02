@@ -19,6 +19,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly int _targetRevitVersion;
     private readonly Action? _onCompleted;
     private readonly Action<string>? _onError;
+    private readonly Action<string>? _onSuccess;
 
     public FamilyPlacementDropHandler(
         IFamilySearchService searchService,
@@ -28,7 +29,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         IProjectFamilyUsageRepository usageRepo,
         int targetRevitVersion,
         Action? onCompleted = null,
-        Action<string>? onError = null)
+        Action<string>? onError = null,
+        Action<string>? onSuccess = null)
     {
         _searchService = searchService;
         _fileResolver = fileResolver;
@@ -38,6 +40,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _targetRevitVersion = targetRevitVersion;
         _onCompleted = onCompleted;
         _onError = onError;
+        _onSuccess = onSuccess;
     }
 
     public void Execute(UIDocument document, object data)
@@ -80,8 +83,12 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             if (resolved is not null)
             {
                 RecordUsage(document, dragData, resolved);
+                _onSuccess?.Invoke($"Семейство '{familyName}' загружено и активировано для размещения");
             }
-            // Family already loaded — skip recording to avoid overwriting version with null
+            else
+            {
+                _onSuccess?.Invoke($"Тип '{typeName}' активирован (семейство уже загружено)");
+            }
 
             _onCompleted?.Invoke();
         }

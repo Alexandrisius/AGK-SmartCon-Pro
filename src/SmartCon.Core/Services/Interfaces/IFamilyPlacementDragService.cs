@@ -21,4 +21,10 @@ public interface IFamilyPlacementDragService
     /// The argument is the error message. Subscribe to show status in UI.
     /// </summary>
     event Action<string>? PlacementFailed;
+
+    /// <summary>
+    /// Fired when the drop handler successfully loads/activates the family.
+    /// The argument is the success message. Subscribe to show status in UI.
+    /// </summary>
+    event Action<string>? PlacementSucceeded;
 }

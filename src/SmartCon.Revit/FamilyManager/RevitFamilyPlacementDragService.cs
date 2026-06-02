@@ -23,6 +23,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
 
     public event Action? PlacementCompleted;
     public event Action<string>? PlacementFailed;
+    public event Action<string>? PlacementSucceeded;
 
     public RevitFamilyPlacementDragService(
         IRevitUIContext revitUIContext,
@@ -55,7 +56,8 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
                 _usageRepo,
                 data.TargetRevitVersion,
                 OnPlacementCompleted,
-                OnPlacementFailed);
+                OnPlacementFailed,
+                OnPlacementSucceeded);
 
             UIApplication.DoDragDrop(data, handler);
         }
@@ -74,5 +76,10 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private void OnPlacementFailed(string errorMessage)
     {
         PlacementFailed?.Invoke(errorMessage);
+    }
+
+    private void OnPlacementSucceeded(string successMessage)
+    {
+        PlacementSucceeded?.Invoke(successMessage);
     }
 }
