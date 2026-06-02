@@ -18,6 +18,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly IProjectFamilyUsageRepository _usageRepo;
     private readonly int _targetRevitVersion;
     private readonly Action? _onCompleted;
+    private readonly Action<string>? _onError;
 
     public FamilyPlacementDropHandler(
         IFamilySearchService searchService,
@@ -26,7 +27,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         IFamilyPlacementService placementService,
         IProjectFamilyUsageRepository usageRepo,
         int targetRevitVersion,
-        Action? onCompleted = null)
+        Action? onCompleted = null,
+        Action<string>? onError = null)
     {
         _searchService = searchService;
         _fileResolver = fileResolver;
@@ -35,6 +37,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _usageRepo = usageRepo;
         _targetRevitVersion = targetRevitVersion;
         _onCompleted = onCompleted;
+        _onError = onError;
     }
 
     public void Execute(UIDocument document, object data)
@@ -65,7 +68,9 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
 
                 if (!result.Success)
                 {
-                    SmartConLogger.Warn($"FamilyPlacementDropHandler: Failed to load '{familyName}' — {result.ErrorMessage}");
+                    var errorMsg = $"Failed to load '{familyName}': {result.ErrorMessage}";
+                    SmartConLogger.Warn($"FamilyPlacementDropHandler: {errorMsg}");
+                    _onError?.Invoke(errorMsg);
                     return;
                 }
             }

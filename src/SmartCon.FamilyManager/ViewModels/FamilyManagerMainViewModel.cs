@@ -143,6 +143,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
         _placementDragService.PlacementCompleted += OnPlacementCompleted;
+        _placementDragService.PlacementFailed += OnPlacementFailed;
 
         DetectRevitVersion();
         InitializeAsync();
@@ -623,11 +624,18 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
+    private void OnPlacementFailed(string errorMessage)
+    {
+        StatusMessage = errorMessage;
+        SmartConLogger.Warn($"[PlacementFailed] {errorMessage}");
+    }
+
     public void Dispose()
     {
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
         _placementDragService.PlacementCompleted -= OnPlacementCompleted;
+        _placementDragService.PlacementFailed -= OnPlacementFailed;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
     }

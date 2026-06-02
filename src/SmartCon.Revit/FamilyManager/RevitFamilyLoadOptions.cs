@@ -25,7 +25,8 @@ public sealed class RevitFamilyLoadOptions : IFamilyLoadOptions
 
     public bool OnSharedFamilyFound(Autodesk.Revit.DB.Family sharedFamily, bool familyInUse, out Autodesk.Revit.DB.FamilySource source, out bool overwriteParameterValues)
     {
-        SmartConLogger.Info($"[FamilyLoadOptions] OnSharedFamilyFound called: sharedFamily='{sharedFamily.Name}', familyInUse={familyInUse}, overwrite={_overwriteParameterValues}");
+        var familyName = sharedFamily?.Name ?? "<null>";
+        SmartConLogger.Info($"[FamilyLoadOptions] OnSharedFamilyFound called: sharedFamily='{familyName}', familyInUse={familyInUse}, overwrite={_overwriteParameterValues}");
         source = Autodesk.Revit.DB.FamilySource.Family;
         overwriteParameterValues = _overwriteParameterValues;
         return true;
