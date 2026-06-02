@@ -66,9 +66,9 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         if (value is not null)
         {
             SelectedCategoryPath = BuildCategoryPath(value);
-            SmartConLogger.Freeze("CategoryTreeEditor: FireAndForgetAsync.LoadAttributesForCategoryAsync");
-            SmartConLogger.FreezeThreadPool("CategoryTreeEditor.Before.FireAndForgetAsync");
-            _ = FireAndForgetAsync(() => LoadAttributesForCategoryAsync(value));
+            SmartConLogger.Freeze("CategoryTreeEditor: FireAndForget.LoadAttributesForCategoryAsync");
+            SmartConLogger.FreezeThreadPool("CategoryTreeEditor.Before.FireAndForget");
+            FireAndForget(() => LoadAttributesForCategoryAsync(value));
         }
         else
         {
@@ -448,7 +448,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         RequestClose?.Invoke(false);
     }
 
-    private static async Task FireAndForgetAsync(Func<Task> taskFactory)
+    private static async void FireAndForget(Func<Task> taskFactory)
     {
         try
         {

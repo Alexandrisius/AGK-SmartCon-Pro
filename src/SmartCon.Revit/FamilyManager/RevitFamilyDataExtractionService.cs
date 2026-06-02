@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -54,6 +55,15 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn($"Failed to close family document '{rfaFilePath}': {ex.Message}");
+                }
+
+                try
+                {
+                    Marshal.ReleaseComObject(familyDoc);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Marshal.ReleaseComObject failed for '{rfaFilePath}': {ex.Message}");
                 }
             }
         }

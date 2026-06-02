@@ -137,7 +137,14 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 throw;
             }
 
-            await ImportTypeCatalogIfPresentAsync(filePath, catalogItemId, versionId, versionLabel, ct);
+            try
+            {
+                await ImportTypeCatalogIfPresentAsync(filePath, catalogItemId, versionId, versionLabel, ct);
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"[Import] Type Catalog import failed for {catalogItemId}: {ex.Message}");
+            }
 
             return new FamilyImportResult(
                 Success: true,
@@ -421,7 +428,14 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 throw;
             }
 
-            await ImportTypeCatalogIfPresentAsync(filePath, request.CatalogItemId, versionId, versionLabel, ct);
+            try
+            {
+                await ImportTypeCatalogIfPresentAsync(filePath, request.CatalogItemId, versionId, versionLabel, ct);
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"[Update] Type Catalog import failed for {request.CatalogItemId}: {ex.Message}");
+            }
 
             return new FamilyImportResult(
                 Success: true,

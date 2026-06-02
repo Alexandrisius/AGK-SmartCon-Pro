@@ -134,7 +134,8 @@ internal sealed partial class LocalFamilyImportService
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[TypeCatalog] Failed to import type catalog for {catalogItemId}: {ex.Message}");
+            SmartConLogger.Error($"[TypeCatalog] Failed to import type catalog for {catalogItemId}: {ex.Message}");
+            throw;
         }
     }
 

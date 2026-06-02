@@ -386,6 +386,8 @@ internal sealed partial class LocalFamilyImportService
             throw;
         }
 
+        await ImportTypeCatalogIfPresentAsync(item.FilePath, item.ExistingCatalogItemId!, currentVersion.Id, currentVersion.VersionLabel, ct);
+
         return new FamilyImportResult(
             Success: true,
             CatalogItemId: item.ExistingCatalogItemId,

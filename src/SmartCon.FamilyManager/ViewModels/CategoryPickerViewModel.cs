@@ -113,9 +113,9 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
     partial void OnSearchTextChanged(string value)
     {
-        SmartConLogger.Freeze("CategoryPicker: FireAndForgetAsync.LoadTreeAsync");
-        SmartConLogger.FreezeThreadPool("CategoryPicker.Before.FireAndForgetAsync");
-        _ = FireAndForgetAsync(() => LoadTreeAsync());
+        SmartConLogger.Freeze("CategoryPicker: FireAndForget.LoadTreeAsync");
+        SmartConLogger.FreezeThreadPool("CategoryPicker.Before.FireAndForget");
+        FireAndForget(() => LoadTreeAsync());
     }
 
     [RelayCommand]
@@ -141,7 +141,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
     [RelayCommand]
     private void Cancel() => RequestClose?.Invoke(false);
 
-    private static async Task FireAndForgetAsync(Func<Task> taskFactory)
+    private static async void FireAndForget(Func<Task> taskFactory)
     {
         try
         {

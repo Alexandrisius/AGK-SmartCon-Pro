@@ -3,30 +3,20 @@ using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.Core.Services.Implementation;
 
-/// <summary>
-/// Pure C# парсер Type Catalog (.txt) семейств Revit.
-/// Без зависимости от Revit API. Thread-safe.
-/// </summary>
 public static class TypeCatalogParser
 {
-    /// <summary>
-    /// Парсит Type Catalog из строки.
-    /// Первый символ первой строки — разделитель.
-    /// </summary>
     public static TypeCatalogParseResult Parse(string content)
     {
         if (string.IsNullOrWhiteSpace(content))
             return new TypeCatalogParseResult([], []);
 
-        var lines = SplitLines(content);
-        if (lines.Count == 0)
+        var records = ParseCsvRecords(content);
+        if (records.Count == 0)
             return new TypeCatalogParseResult([], []);
 
-        var delimiter = DetectDelimiter(lines[0]);
-        var headerFields = ParseCsvLine(lines[0], delimiter);
+        var delimiter = DetectDelimiter(records[0]);
+        var headerFields = SplitCsvFields(records[0], delimiter);
 
-        // Первый элемент заголовка — имя типа (обычно пустой в .txt),
-        // остальные — параметры формата ParamName##Type##Units
         var parameterNames = headerFields
             .Skip(1)
             .Select(h => h.Split(new[] { "##" }, StringSplitOptions.None)[0].Trim())
@@ -34,13 +24,9 @@ public static class TypeCatalogParser
             .ToList();
 
         var entries = new List<TypeCatalogEntry>();
-        for (var i = 1; i < lines.Count; i++)
+        for (var i = 1; i < records.Count; i++)
         {
-            var line = lines[i];
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            var fields = ParseCsvLine(line, delimiter);
+            var fields = SplitCsvFields(records[i], delimiter);
             if (fields.Count == 0)
                 continue;
 
@@ -62,48 +48,89 @@ public static class TypeCatalogParser
         return new TypeCatalogParseResult(parameterNames, entries);
     }
 
-    private static char DetectDelimiter(string firstLine)
+    private static char DetectDelimiter(string firstRecord)
     {
-        if (string.IsNullOrEmpty(firstLine))
+        if (string.IsNullOrEmpty(firstRecord))
             return ',';
-        return firstLine[0];
+        return firstRecord[0];
     }
 
-    private static List<string> SplitLines(string content)
+    private static List<string> ParseCsvRecords(string content)
     {
-        var lines = new List<string>();
-        var reader = new StringReader(content);
-        string? line;
-        while ((line = reader.ReadLine()) != null)
+        var records = new List<string>();
+        var sb = new System.Text.StringBuilder();
+        var inQuotes = false;
+
+        for (var i = 0; i < content.Length; i++)
         {
-            lines.Add(line);
+            var c = content[i];
+
+            if (inQuotes)
+            {
+                sb.Append(c);
+                if (c == '"')
+                {
+                    if (i + 1 < content.Length && content[i + 1] == '"')
+                    {
+                        sb.Append(content[i + 1]);
+                        i++;
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                    }
+                }
+            }
+            else
+            {
+                if (c == '"')
+                {
+                    inQuotes = true;
+                    sb.Append(c);
+                }
+                else if (c == '\r')
+                {
+                    continue;
+                }
+                else if (c == '\n')
+                {
+                    if (sb.Length > 0)
+                    {
+                        records.Add(sb.ToString());
+                        sb.Clear();
+                    }
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
         }
-        return lines;
+
+        if (sb.Length > 0)
+            records.Add(sb.ToString());
+
+        return records;
     }
 
-    /// <summary>
-    /// Ручной парсинг CSV-строки с поддержкой кавычек.
-    /// Двойные кавычки ("") внутри поля = экранированная кавычка.
-    /// </summary>
-    private static List<string> ParseCsvLine(string line, char delimiter)
+    private static List<string> SplitCsvFields(string record, char delimiter)
     {
         var fields = new List<string>();
         var sb = new System.Text.StringBuilder();
         var inQuotes = false;
 
-        for (var i = 0; i < line.Length; i++)
+        for (var i = 0; i < record.Length; i++)
         {
-            var c = line[i];
+            var c = record[i];
 
             if (inQuotes)
             {
                 if (c == '"')
                 {
-                    // Проверяем следующий символ
-                    if (i + 1 < line.Length && line[i + 1] == '"')
+                    if (i + 1 < record.Length && record[i + 1] == '"')
                     {
                         sb.Append('"');
-                        i++; // Пропускаем вторую кавычку
+                        i++;
                     }
                     else
                     {

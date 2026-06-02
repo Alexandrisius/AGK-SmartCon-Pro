@@ -438,11 +438,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     {
         foreach (var node in nodes)
         {
-            if (node is FamilyLeafNodeViewModel leaf && batch.TryGetValue(leaf.CatalogItemId, out var types))
+            if (node is FamilyLeafNodeViewModel leaf)
             {
-                foreach (var t in types)
+                if (batch.TryGetValue(leaf.CatalogItemId, out var types))
                 {
-                    leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                    foreach (var t in types)
+                    {
+                        leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                    }
                 }
 
                 if (leaf.Children.Count == 0)
