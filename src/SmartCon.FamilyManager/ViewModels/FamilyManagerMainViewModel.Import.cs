@@ -182,7 +182,7 @@ public sealed partial class FamilyManagerMainViewModel
             // when OpenDocumentFile triggers MFC family upgrade dialog
             StatusMessage = BuildImportStatusMessage(successCount, skippedCount, errorCount, total);
 
-            var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionLabel, string? FileId)>();
+            var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionLabel, string? FileId, bool HasTypeCatalog)>();
 
             try
             {
@@ -198,19 +198,13 @@ public sealed partial class FamilyManagerMainViewModel
 
                     if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
 
-                    // Skip extraction if Type Catalog (.txt) exists — types already imported from catalog
                     var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
-                    if (File.Exists(txtPath))
-                    {
-                        SmartConLogger.Info($"[ExtractTypes] Skipping extraction for '{catalogItemId}' — Type Catalog found at {txtPath}");
-                        continue;
-                    }
+                    var hasTypeCatalog = File.Exists(txtPath);
 
-                    // UI thread: Revit API (OpenDocumentFile + Extract)
                     var extractionResult = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());
                     if (extractionResult.Success)
                     {
-                        extractionResults.Add((catalogItemId, extractionResult, item.VersionLabel, item.FileId));
+                        extractionResults.Add((catalogItemId, extractionResult, item.VersionId, item.FileId, hasTypeCatalog));
                     }
                 }
             }
@@ -224,10 +218,18 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 try
                 {
-                    foreach (var (catalogItemId, result, versionLabel, fileId) in extractionResults)
+                    foreach (var (catalogItemId, result, versionId, fileId, hasTypeCatalog) in extractionResults)
                     {
-                        await _dataImportService.SaveExtractionResultAsync(
-                            catalogItemId, result, versionLabel, fileId, CancellationToken.None);
+                        if (hasTypeCatalog)
+                        {
+                            await _dataImportService.MergeMissingValuesAsync(
+                                catalogItemId, result, versionId, fileId, CancellationToken.None);
+                        }
+                        else
+                        {
+                            await _dataImportService.SaveExtractionResultAsync(
+                                catalogItemId, result, versionId, fileId, CancellationToken.None);
+                        }
                     }
                 }
                 catch (Exception ex)

@@ -261,5 +261,12 @@ public static partial class LocalizationService
         ru["FM_BatchImport_Cancel"] = "Отмена"; en["FM_BatchImport_Cancel"] = "Cancel";
         ru["FM_BatchImport_SelectAll"] = "Выбрать все"; en["FM_BatchImport_SelectAll"] = "Select All";
         ru["FM_BatchImport_Stale"] = "Устарело"; en["FM_BatchImport_Stale"] = "Stale";
+
+        ru["FM_AttrStatus_Found"] = "Найдено"; en["FM_AttrStatus_Found"] = "Found";
+        ru["FM_AttrStatus_MissingParameter"] = "Параметр не найден"; en["FM_AttrStatus_MissingParameter"] = "Parameter not found";
+        ru["FM_AttrStatus_EmptyValue"] = "Пустое значение"; en["FM_AttrStatus_EmptyValue"] = "Empty value";
+        ru["FM_AttrStatus_UnsupportedType"] = "Неподдерживаемый тип"; en["FM_AttrStatus_UnsupportedType"] = "Unsupported type";
+        ru["FM_AttrStatus_ReadError"] = "Ошибка чтения"; en["FM_AttrStatus_ReadError"] = "Read error";
+        ru["FM_AttrStatus_NotInFamily"] = "Нет в семействе"; en["FM_AttrStatus_NotInFamily"] = "Not in family";
     }
 }

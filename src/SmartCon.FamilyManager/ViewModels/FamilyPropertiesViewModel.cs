@@ -254,6 +254,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
             var allValues = await _valueRepository.GetValuesForItemAsync(_catalogItemId, run.VersionId, ct);
             _allValues = allValues;
 
+            // Property loading diagnostic logs removed
+
             var firstTypeId = HasTypes ? AvailableTypes[0].TypeId : null;
             var typeValues = firstTypeId is not null
                 ? allValues.Where(v => v.TypeId == firstTypeId).ToList()
@@ -282,19 +284,39 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         }
     }
 
+    private static string LocalizeStatus(AttributeValueStatus status) => status switch
+    {
+        AttributeValueStatus.Found => LanguageManager.GetString(StringLocalization.Keys.FM_AttrStatus_Found) ?? "Найдено",
+        AttributeValueStatus.MissingParameter => LanguageManager.GetString(StringLocalization.Keys.FM_AttrStatus_MissingParameter) ?? "Параметр не найден",
+        AttributeValueStatus.EmptyValue => LanguageManager.GetString(StringLocalization.Keys.FM_AttrStatus_EmptyValue) ?? "Пустое значение",
+        AttributeValueStatus.UnsupportedStorageType => LanguageManager.GetString(StringLocalization.Keys.FM_AttrStatus_UnsupportedType) ?? "Неподдерживаемый тип",
+        AttributeValueStatus.ReadError => LanguageManager.GetString(StringLocalization.Keys.FM_AttrStatus_ReadError) ?? "Ошибка чтения",
+        AttributeValueStatus.NotInFamily => LanguageManager.GetString(StringLocalization.Keys.FM_AttrStatus_NotInFamily) ?? "Нет в семействе",
+        _ => status.ToString()
+    };
+
     private void LoadAttributesWithoutType(IReadOnlyList<ExtractedAttributeValue> typeValues)
     {
         var rows = new List<AttributeValueRow>();
+
+        var extractionParamNames = _allValues
+            .Where(v => v.Status != AttributeValueStatus.NotInFamily)
+            .Select(v => v.ParameterName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var attr in _effectiveAttributes.OrderBy(a => a.SortOrder))
         {
             var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId)
                 ?? typeValues.FirstOrDefault(v => v.ParameterName == attr.Name);
+
+            var isNotInFamily = match is null && !extractionParamNames.Contains(attr.Name);
+            var status = match?.Status ?? (isNotInFamily ? AttributeValueStatus.NotInFamily : AttributeValueStatus.MissingParameter);
+
             rows.Add(new AttributeValueRow
             {
                 AttributeName = attr.Name,
                 Value = match?.ValueText,
-                Status = match?.Status.ToString() ?? "MissingParameter",
+                Status = LocalizeStatus(status),
                 StatusDetail = match?.Message,
                 IsFound = match is not null && match.Status == AttributeValueStatus.Found,
                 IsInherited = attr.IsInherited,
@@ -321,15 +343,24 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         var typeValues = _allValues.Where(v => v.TypeId == selected.TypeId).ToList();
         var rows = new List<AttributeValueRow>();
 
+        var extractionParamNames = _allValues
+            .Where(v => v.Status != AttributeValueStatus.NotInFamily)
+            .Select(v => v.ParameterName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         foreach (var attr in _effectiveAttributes.OrderBy(a => a.SortOrder))
         {
             var match = typeValues.FirstOrDefault(v => v.AttributeId == attr.AttributeId)
                 ?? typeValues.FirstOrDefault(v => v.ParameterName == attr.Name);
+
+            var isNotInFamily = match is null && !extractionParamNames.Contains(attr.Name);
+            var status = match?.Status ?? (isNotInFamily ? AttributeValueStatus.NotInFamily : AttributeValueStatus.MissingParameter);
+
             rows.Add(new AttributeValueRow
             {
                 AttributeName = attr.Name,
                 Value = match?.ValueText,
-                Status = match?.Status.ToString() ?? "MissingParameter",
+                Status = LocalizeStatus(status),
                 StatusDetail = match?.Message,
                 IsFound = match is not null && match.Status == AttributeValueStatus.Found,
                 IsInherited = attr.IsInherited,
@@ -443,7 +474,7 @@ public sealed class AttributeValueRow
 {
     public string AttributeName { get; init; } = string.Empty;
     public string? Value { get; init; }
-    public string Status { get; init; } = "OK";
+    public string Status { get; init; } = LanguageManager.GetString(StringLocalization.Keys.FM_AttrStatus_Found) ?? "Найдено";
     public string? StatusDetail { get; init; }
     public bool IsFound { get; init; }
     public bool IsInherited { get; init; }

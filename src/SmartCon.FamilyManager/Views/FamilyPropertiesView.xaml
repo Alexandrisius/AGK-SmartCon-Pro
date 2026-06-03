@@ -487,11 +487,10 @@
                                             <TextBlock Grid.Column="2" FontSize="11" Margin="8,0,0,0">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="OK"/>
+                                                        <Setter Property="Text" Value="{Binding Status}"/>
                                                         <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsFound}" Value="False">
-                                                                <Setter Property="Text" Value="{Binding Status}"/>
                                                                 <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>

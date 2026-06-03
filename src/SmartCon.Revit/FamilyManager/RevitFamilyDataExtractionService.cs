@@ -99,6 +99,8 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
     {
         var fm = familyDoc.FamilyManager;
 
+        // Extraction summary logging happens at the end (line ~200)
+
         var paramMap = new Dictionary<string, FamilyParameter>(StringComparer.Ordinal);
         foreach (FamilyParameter param in fm.Parameters)
         {
@@ -112,26 +114,67 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             ? expectedParameterNames
             : paramMap.Keys.ToList();
 
+        // Parameter extraction happens silently per-type
+
         var allTypes = new List<FamilyExtractionTypeValues>();
         List<FamilyExtractionValueResult>? untypedValues = null;
-        foreach (FamilyType familyType in fm.Types)
+
+        if (fm.Types.Size > 0)
         {
-            var values = new List<FamilyExtractionValueResult>();
+            foreach (FamilyType familyType in fm.Types)
+            {
+                var values = new List<FamilyExtractionValueResult>();
 
-            foreach (var paramName in parametersToExtract)
-            {
-                var value = ExtractValueForParameter(familyType, paramName, paramMap);
-                values.Add(value);
-            }
+                foreach (var paramName in parametersToExtract)
+                {
+                    var value = ExtractValueForParameter(familyType, paramName, paramMap);
+                    values.Add(value);
+                }
 
-            if (string.IsNullOrWhiteSpace(familyType.Name))
-            {
-                untypedValues = values;
+                if (string.IsNullOrWhiteSpace(familyType.Name))
+                {
+                    untypedValues = values;
+                }
+                else
+                {
+                    allTypes.Add(new FamilyExtractionTypeValues(
+                        familyType.Name, 0, values));
+                }
             }
-            else
+        }
+        else
+        {
+            SmartConLogger.Info($"[Extract] fm.Types.Size=0 — creating temporary type to read parameter values");
+
+            // I-03b: family document — separate Transaction scope, not managed by ITransactionService.
+            // We create a temporary type to force Revit to materialize the hidden default parameter values,
+            // then immediately roll back so the RFA file is never modified.
+            using (Transaction tx = new Transaction(familyDoc, "SmartCon_TempTypeExtraction"))
             {
-                allTypes.Add(new FamilyExtractionTypeValues(
-                    familyType.Name, 0, values));
+                tx.Start();
+                FamilyType? tempType = null;
+                try
+                {
+                    tempType = fm.NewType("_SmartConTemp");
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"[Extract] Failed to create temporary type: {ex.Message}");
+                }
+
+                if (tempType is not null)
+                {
+                    var values = new List<FamilyExtractionValueResult>();
+                    foreach (var paramName in parametersToExtract)
+                    {
+                        var value = ExtractValueForParameter(tempType, paramName, paramMap);
+                        values.Add(value);
+                    }
+
+                    untypedValues = values;
+                }
+
+                tx.RollBack(); // Never save the temporary type — RFA remains untouched
             }
         }
 
@@ -139,6 +182,8 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             .OrderBy(t => t.TypeName, StringComparer.OrdinalIgnoreCase)
             .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values))
             .ToList();
+
+        SmartConLogger.Info($"[Extract] RESULT: {types.Count} named types, UntypedValues={(untypedValues is not null ? untypedValues.Count.ToString() : "null")}");
 
         return new FamilyExtractionResult(true, types, untypedValues, null, revitMajorVersion);
     }
@@ -228,4 +273,6 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 AttributeValueStatus.ReadError, ex.Message);
         }
     }
+
+
 }

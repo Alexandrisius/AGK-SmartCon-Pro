@@ -22,4 +22,5 @@ public interface IFamilyDataImportService
     Task<FamilyDataImportResult> ImportDataAsync(string catalogItemId, CancellationToken ct = default);
     Task<FamilyExtractionPrepareResult> PrepareExtractionAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
     Task<FamilyDataImportResult> SaveExtractionResultAsync(string catalogItemId, FamilyExtractionResult extractionResult, string? versionId, string? fileId, CancellationToken ct = default);
+    Task MergeMissingValuesAsync(string catalogItemId, FamilyExtractionResult extractionResult, string? versionId, string? fileId, CancellationToken ct = default);
 }

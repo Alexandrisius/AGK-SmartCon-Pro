@@ -174,13 +174,13 @@ public sealed partial class FamilyManagerMainViewModel
             var successfulItems = importResult.Results
                 .Where(r => r.Success && !r.WasSkippedAsDuplicate).ToList();
 
-            // Skip Revit API extraction for items that have Type Catalog (.txt)
-            var itemsNeedingExtraction = new List<FamilyImportResult>();
+            var itemsWithTypeCatalog = new List<FamilyImportResult>();
+            var itemsWithoutTypeCatalog = new List<FamilyImportResult>();
             foreach (var si in successfulItems)
             {
                 if (string.IsNullOrEmpty(si.CatalogItemId) || string.IsNullOrEmpty(si.VersionLabel))
                 {
-                    itemsNeedingExtraction.Add(si);
+                    itemsWithoutTypeCatalog.Add(si);
                     continue;
                 }
 
@@ -190,11 +190,12 @@ public sealed partial class FamilyManagerMainViewModel
                     var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
                     if (File.Exists(txtPath))
                     {
-                        SmartConLogger.Info($"[LoadActiveFamily] Type Catalog found for {si.CatalogItemId} {si.VersionLabel} - skipping Revit API extraction");
+                        SmartConLogger.Info($"[LoadActiveFamily] Type Catalog found for {si.CatalogItemId} {si.VersionLabel}");
+                        itemsWithTypeCatalog.Add(si);
                         continue;
                     }
                 }
-                itemsNeedingExtraction.Add(si);
+                itemsWithoutTypeCatalog.Add(si);
             }
 
             var extractionTcs = new TaskCompletionSource<FamilyExtractionResult?>();
@@ -213,7 +214,7 @@ public sealed partial class FamilyManagerMainViewModel
 
                     string? familyPath = activeDoc.PathName;
 
-                    if (itemsNeedingExtraction.Count > 0)
+                    if (successfulItems.Count > 0)
                     {
                         var extractionResult = _extractionService.Extract(activeDoc, Array.Empty<string>());
                         extractionTcs.SetResult(extractionResult);
@@ -291,11 +292,18 @@ public sealed partial class FamilyManagerMainViewModel
             var extractionResult = await extractionTcs.Task;
             if (extractionResult != null)
             {
-                foreach (var si in itemsNeedingExtraction)
+                foreach (var si in itemsWithoutTypeCatalog)
                 {
                     if (string.IsNullOrEmpty(si.CatalogItemId)) continue;
                     await _dataImportService.SaveExtractionResultAsync(
-                        si.CatalogItemId!, extractionResult, si.VersionLabel, si.FileId, CancellationToken.None);
+                        si.CatalogItemId!, extractionResult, si.VersionId, si.FileId, CancellationToken.None);
+                }
+
+                foreach (var si in itemsWithTypeCatalog)
+                {
+                    if (string.IsNullOrEmpty(si.CatalogItemId)) continue;
+                    await _dataImportService.MergeMissingValuesAsync(
+                        si.CatalogItemId!, extractionResult, si.VersionId, si.FileId, CancellationToken.None);
                 }
             }
             

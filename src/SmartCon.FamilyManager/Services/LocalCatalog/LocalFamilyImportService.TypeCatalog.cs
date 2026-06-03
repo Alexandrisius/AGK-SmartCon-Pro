@@ -89,16 +89,25 @@ internal sealed partial class LocalFamilyImportService
 
             var types = new List<FamilyTypeDescriptor>();
             var values = new List<ExtractedAttributeValue>();
+            var seenTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var duplicateCount = 0;
 
             for (var i = 0; i < parseResult.Entries.Count; i++)
             {
                 var entry = parseResult.Entries[i];
+                if (!seenTypeNames.Add(entry.TypeName))
+                {
+                    duplicateCount++;
+                    SmartConLogger.Warn($"[TypeCatalog] Duplicate type name '{entry.TypeName}' at index {i}, skipping (keeping first occurrence)");
+                    continue;
+                }
+
                 var typeId = Guid.NewGuid().ToString();
                 types.Add(new FamilyTypeDescriptor(
                     typeId,
                     catalogItemId,
                     entry.TypeName,
-                    i,
+                    types.Count,
                     versionId,
                     null,
                     runId));
@@ -125,6 +134,11 @@ internal sealed partial class LocalFamilyImportService
                         ExtractionRunId: runId,
                         ExtractedAtUtc: now));
                 }
+            }
+
+            if (duplicateCount > 0)
+            {
+                SmartConLogger.Info($"[TypeCatalog] Skipped {duplicateCount} duplicate type(s), imported {types.Count} unique types");
             }
 
             await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, null, runId, types, ct);
@@ -230,13 +244,11 @@ internal sealed partial class LocalFamilyImportService
                 var result = UtfUnknown.CharsetDetector.DetectFromBytes(utf8Bytes);
                 if (result.Detected?.Confidence > 0.7f && result.Detected.Encoding != null)
                 {
-                    SmartConLogger.Info($"[TypeCatalog] Auto-detected encoding: {result.Detected.EncodingName} (confidence: {result.Detected.Confidence:F2})");
                     return result.Detected.Encoding.GetString(utf8Bytes);
                 }
 
                 // Fallback to system ANSI if detector is not confident enough
                 var ansiCodePage = CultureInfo.CurrentCulture.TextInfo.ANSICodePage;
-                SmartConLogger.Info($"[TypeCatalog] Falling back to system ANSI codepage {ansiCodePage}");
                 return Encoding.GetEncoding(ansiCodePage).GetString(utf8Bytes);
             }
             catch (Exception ex)

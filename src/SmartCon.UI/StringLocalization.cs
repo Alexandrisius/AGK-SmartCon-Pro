@@ -263,6 +263,12 @@ public static class StringLocalization
         public const string FM_BatchImport_ActionOverwrite = "FM_BatchImport_ActionOverwrite";
         public const string FM_BatchImport_ActionSkip = "FM_BatchImport_ActionSkip";
         public const string FM_BatchImport_Stale = "FM_BatchImport_Stale";
+        public const string FM_AttrStatus_Found = "FM_AttrStatus_Found";
+        public const string FM_AttrStatus_MissingParameter = "FM_AttrStatus_MissingParameter";
+        public const string FM_AttrStatus_EmptyValue = "FM_AttrStatus_EmptyValue";
+        public const string FM_AttrStatus_UnsupportedType = "FM_AttrStatus_UnsupportedType";
+        public const string FM_AttrStatus_ReadError = "FM_AttrStatus_ReadError";
+        public const string FM_AttrStatus_NotInFamily = "FM_AttrStatus_NotInFamily";
         public const string FM_NoFamiliesInCategory = "FM_NoFamiliesInCategory";
         public const string FM_LoadSuccess = "FM_LoadSuccess";
         public const string FM_LoadAndPlaceSuccess = "FM_LoadAndPlaceSuccess";
