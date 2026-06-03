@@ -33,3 +33,4 @@
 | [020](020-localization-architecture.md) | Binding-based локализация через LocExtension + TranslationSource | accepted | 2026-05-14 |
 | [021](021-prerelease-versioning.md) | Pre-release Versioning и Beta Release Strategy | accepted | 2026-05-17 |
 | [022](022-familymanager-rbac.md) | FamilyManager RBAC — Role-Based Access Control для локальных каталогов | accepted | 2026-05-16 |
+| [023](023-familymanager-type-centric-workflow.md) | FamilyManager Type-Centric Workflow — Type Catalog, virtual types, per-type loading | accepted | 2026-06-04 |
