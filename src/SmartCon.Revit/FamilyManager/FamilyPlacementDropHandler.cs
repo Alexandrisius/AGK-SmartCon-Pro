@@ -15,6 +15,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IFamilyLoadService _loadService;
     private readonly IFamilyPlacementService _placementService;
+    private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
     private readonly IProjectFamilyUsageRepository _usageRepo;
     private readonly int _targetRevitVersion;
     private readonly Action? _onCompleted;
@@ -27,6 +28,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         IFamilyFileResolver fileResolver,
         IFamilyLoadService loadService,
         IFamilyPlacementService placementService,
+        ISystemFamilyPlacementService systemFamilyPlacementService,
         IProjectFamilyUsageRepository usageRepo,
         int targetRevitVersion,
         Action? onCompleted = null,
@@ -38,6 +40,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _fileResolver = fileResolver;
         _loadService = loadService;
         _placementService = placementService;
+        _systemFamilyPlacementService = systemFamilyPlacementService;
         _usageRepo = usageRepo;
         _targetRevitVersion = targetRevitVersion;
         _onCompleted = onCompleted;
@@ -52,6 +55,19 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         {
             if (data is not FamilyPlacementDragData dragData)
                 return;
+
+            if (dragData.FamilySource == "system" || !string.IsNullOrEmpty(dragData.UniqueId))
+            {
+                SmartConLogger.Info($"[DropHandler] System family: '{dragData.FamilyName}', type: '{dragData.TypeName}' (FamilySource='{dragData.FamilySource}', UniqueId='{dragData.UniqueId}')");
+                _systemFamilyPlacementService.LoadAndPlaceSystemType(
+                    dragData.CatalogItemId,
+                    dragData.TypeName,
+                    dragData.TargetRevitVersion);
+
+                _onSuccess?.Invoke($"Системный тип '{dragData.TypeName}' скопирован и активирован");
+                _onCompleted?.Invoke();
+                return;
+            }
 
             var familyName = dragData.FamilyName;
             var typeName = dragData.TypeName;

@@ -11,16 +11,16 @@ namespace SmartCon.FamilyManager.ViewModels;
 public sealed partial class FamilyBatchImportRow : ObservableObject
 {
     public string FilePath { get; }
-    public string FileName { get; }
     public string Sha256 { get; }
     public int RevitMajorVersion { get; }
     public long FileSizeBytes { get; }
-    public FamilyBatchImportStatus Status { get; }
-    public string? ExistingCatalogItemId { get; }
-    public string? ExistingVersionLabel { get; }
+    public string FamilySource { get; }
+    public int TypeCount { get; }
+    public string? RevitCategory { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanImport))]
+    [NotifyPropertyChangedFor(nameof(AvailableActions))]
     private FamilyBatchImportAction _action;
 
     [ObservableProperty]
@@ -29,9 +29,23 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     [ObservableProperty]
     private string _targetCategoryPath = string.Empty;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AvailableActions))]
+    private string _fileName = string.Empty;
+
+    [ObservableProperty]
+    private FamilyBatchImportStatus _status;
+
+    [ObservableProperty]
+    private string? _existingCatalogItemId;
+
+    [ObservableProperty]
+    private string? _existingVersionLabel;
+
     public bool CanImport => Action != FamilyBatchImportAction.Skip;
 
-    public IReadOnlyList<FamilyBatchImportAction> AvailableActions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<FamilyBatchImportAction> _availableActions;
 
     public FamilyBatchImportRow(FamilyBatchImportItem item)
     {
@@ -40,20 +54,40 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         Sha256 = item.Sha256;
         RevitMajorVersion = item.RevitMajorVersion;
         FileSizeBytes = item.FileSizeBytes;
+        FamilySource = item.FamilySource;
+        TypeCount = item.TypeCount;
+        RevitCategory = item.RevitCategory;
         Status = item.Status;
         ExistingCatalogItemId = item.ExistingCatalogItemId;
         ExistingVersionLabel = item.ExistingVersionLabel;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
         _targetCategoryPath = item.TargetCategoryName ?? item.TargetCategoryId ?? "Без категории";
+        _availableActions = BuildAvailableActions(item.Status);
+    }
 
-        AvailableActions = Status switch
-        {
-            FamilyBatchImportStatus.Duplicate => [FamilyBatchImportAction.Skip],
-            FamilyBatchImportStatus.New => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.Skip],
-            FamilyBatchImportStatus.Existing => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.OverwriteCurrent, FamilyBatchImportAction.Skip],
-            _ => [FamilyBatchImportAction.Skip]
-        };
+    private static IReadOnlyList<FamilyBatchImportAction> BuildAvailableActions(FamilyBatchImportStatus status) => status switch
+    {
+        FamilyBatchImportStatus.Duplicate => [FamilyBatchImportAction.Skip],
+        FamilyBatchImportStatus.New => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.Skip],
+        FamilyBatchImportStatus.Existing => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.OverwriteCurrent, FamilyBatchImportAction.Skip],
+        _ => [FamilyBatchImportAction.Skip]
+    };
+
+    public void SetStatusSilent(FamilyBatchImportStatus status, string? existingItemId, string? existingVersionLabel)
+    {
+        Status = status;
+        ExistingCatalogItemId = existingItemId;
+        ExistingVersionLabel = existingVersionLabel;
+        AvailableActions = BuildAvailableActions(status);
+
+        if (status == FamilyBatchImportStatus.Duplicate)
+            Action = FamilyBatchImportAction.Skip;
+    }
+
+    partial void OnFileNameChanged(string value)
+    {
+        NameChanged?.Invoke(this);
     }
 
     [RelayCommand]
@@ -63,4 +97,5 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     }
 
     public event Action<FamilyBatchImportRow>? PickCategoryRequested;
+    public event Action<FamilyBatchImportRow>? NameChanged;
 }

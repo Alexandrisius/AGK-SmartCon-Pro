@@ -23,7 +23,9 @@ public sealed partial class FamilyManagerMainViewModel
             leaf.DisplayName,
             typeNode.TypeName,
             CurrentRevitVersion,
-            typeNode.IsVirtual);
+            typeNode.IsVirtual,
+            leaf.FamilySource,
+            typeNode.UniqueId);
 
         _placementDragService.StartPlacementDrag(data);
     }
@@ -140,6 +142,12 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return;
 
+        if (leaf.FamilySource == "system")
+        {
+            PlaceSystemType(leaf.CatalogItemId, typeNode.TypeName, CurrentRevitVersion);
+            return;
+        }
+
         var catalogItemId = leaf.CatalogItemId;
         var familyName = leaf.DisplayName;
         var typeName = typeNode.TypeName;
@@ -234,6 +242,22 @@ public sealed partial class FamilyManagerMainViewModel
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                     ex.Message);
+            }
+        });
+    }
+
+    private void PlaceSystemType(string catalogItemId, string typeName, int targetRevit)
+    {
+        _externalEvent.Raise(() =>
+        {
+            try
+            {
+                _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, targetRevit);
+                StatusMessage = $"Системный тип \"{typeName}\" — click to place";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Load error: {ex.Message}";
             }
         });
     }

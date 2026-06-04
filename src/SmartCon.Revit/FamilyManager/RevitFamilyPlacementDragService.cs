@@ -18,6 +18,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IFamilyLoadService _loadService;
     private readonly IFamilyPlacementService _placementService;
+    private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
     private readonly IProjectFamilyUsageRepository _usageRepo;
     private readonly IWindowFocusService? _windowFocusService;
 
@@ -32,6 +33,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         IFamilyFileResolver fileResolver,
         IFamilyLoadService loadService,
         IFamilyPlacementService placementService,
+        ISystemFamilyPlacementService systemFamilyPlacementService,
         IProjectFamilyUsageRepository usageRepo,
         IWindowFocusService? windowFocusService = null)
     {
@@ -40,6 +42,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         _fileResolver = fileResolver;
         _loadService = loadService;
         _placementService = placementService;
+        _systemFamilyPlacementService = systemFamilyPlacementService;
         _usageRepo = usageRepo;
         _windowFocusService = windowFocusService;
     }
@@ -54,6 +57,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
                 _fileResolver,
                 _loadService,
                 _placementService,
+                _systemFamilyPlacementService,
                 _usageRepo,
                 data.TargetRevitVersion,
                 OnPlacementCompleted,

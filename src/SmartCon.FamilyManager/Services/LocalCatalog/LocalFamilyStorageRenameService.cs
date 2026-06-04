@@ -85,7 +85,11 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
 
                 SmartConLogger.Info($"[FM Rename] Processing: old='{oldAbsolutePath}' -> new='{newAbsolutePath}'");
 
-                if (File.Exists(oldAbsolutePath) && !File.Exists(newAbsolutePath))
+                if (string.Equals(oldAbsolutePath, newAbsolutePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    SmartConLogger.Info($"[FM Rename] No-op: same path, skipping");
+                }
+                else if (File.Exists(oldAbsolutePath) && !File.Exists(newAbsolutePath))
                 {
                     await Task.Run(() =>
                     {

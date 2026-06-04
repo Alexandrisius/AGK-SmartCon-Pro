@@ -61,7 +61,6 @@
                 Background="{DynamicResource SurfaceBrush}">
             <DataGrid ItemsSource="{Binding Items}"
                      AutoGenerateColumns="False"
-                     IsReadOnly="True"
                      Style="{DynamicResource CompactDataGrid}"
                      RowStyle="{DynamicResource CompactDataGridRow}"
                      CellStyle="{DynamicResource CompactDataGridCell}"
@@ -87,16 +86,19 @@
                                         Binding="{Binding RevitMajorVersion}"
                                         Width="Auto"
                                         MinWidth="80"
+                                        IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
                     <DataGridTextColumn x:Name="ColSize"
                                         Binding="{Binding FileSizeBytes, Converter={StaticResource FileSizeConverter}}"
                                         Width="Auto"
                                         MinWidth="70"
+                                        IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
                     <DataGridTextColumn x:Name="ColStatus"
                                         Binding="{Binding Status, Converter={StaticResource StatusConverter}}"
                                         Width="Auto"
                                         MinWidth="100"
+                                        IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
                     <DataGridTemplateColumn x:Name="ColCategory"
                                             Width="*"

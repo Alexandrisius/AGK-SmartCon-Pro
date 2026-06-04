@@ -39,6 +39,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyPlacementDragService _placementDragService;
     private readonly IRevitFileInfoReader _fileInfoReader;
     private readonly IFamilyMetadataExtractionService _metadataService;
+    private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
+    private readonly ISystemFamilyImportService _systemFamilyImportService;
+    private readonly ISystemFamilyAttributeExtractionService _systemFamilyAttributeExtraction;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -83,6 +86,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
     [NotifyCanExecuteChangedFor(nameof(EditFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(LoadActiveFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportSystemFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditSystemFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(LoadActiveSystemFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
     [NotifyCanExecuteChangedFor(nameof(DropFamilyCommand))]
@@ -114,7 +120,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IFamilyPlacementService familyPlacementService,
         IFamilyPlacementDragService placementDragService,
         IRevitFileInfoReader fileInfoReader,
-        IFamilyMetadataExtractionService metadataService)
+        IFamilyMetadataExtractionService metadataService,
+        ISystemFamilyPlacementService systemFamilyPlacementService,
+        ISystemFamilyImportService systemFamilyImportService,
+        ISystemFamilyAttributeExtractionService systemFamilyAttributeExtraction)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -138,6 +147,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _placementDragService = placementDragService;
         _fileInfoReader = fileInfoReader;
         _metadataService = metadataService;
+        _systemFamilyPlacementService = systemFamilyPlacementService;
+        _systemFamilyImportService = systemFamilyImportService;
+        _systemFamilyAttributeExtraction = systemFamilyAttributeExtraction;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -444,13 +456,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 {
                     foreach (var t in types)
                     {
-                        leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                        leaf.Children.Add(new FamilyTypeNodeViewModel(
+                            t.CatalogItemId, t.Name, isVirtual: false,
+                            familySource: leaf.FamilySource, uniqueId: t.UniqueId));
                     }
                 }
 
                 if (leaf.Children.Count == 0)
                 {
-                    leaf.Children.Add(new FamilyTypeNodeViewModel(leaf.CatalogItemId, leaf.DisplayName, isVirtual: true));
+                    leaf.Children.Add(new FamilyTypeNodeViewModel(
+                        leaf.CatalogItemId, leaf.DisplayName, isVirtual: true,
+                        familySource: leaf.FamilySource));
                 }
 
                 if (expandedFamilyIds.Contains(leaf.CatalogItemId))

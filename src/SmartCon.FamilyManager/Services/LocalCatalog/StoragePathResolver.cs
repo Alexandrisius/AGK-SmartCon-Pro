@@ -48,6 +48,11 @@ internal sealed class StoragePathResolver
         return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), fileName);
     }
 
+    public string GetRvtFilePath(string catalogItemId, string versionLabel, string fileName)
+    {
+        return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), fileName);
+    }
+
     public string GetAssetsDirectory(string catalogItemId, string versionLabel)
     {
         return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), "assets");

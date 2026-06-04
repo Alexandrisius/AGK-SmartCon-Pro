@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
@@ -26,16 +27,20 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
 
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
+    private readonly IFamilyCatalogProvider _catalogProvider;
+    private int _statusLookupSeq;
     private bool _disposed;
 
     public FamilyBatchImportViewModel(
         IReadOnlyList<FamilyBatchImportItem> items,
         IFamilyManagerDialogService dialogService,
         IFamilyManagerViewModelFactory viewModelFactory,
+        IFamilyCatalogProvider catalogProvider,
         string? defaultCategoryId = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
+        _catalogProvider = catalogProvider;
 
         foreach (var item in items)
         {
@@ -46,6 +51,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             var row = new FamilyBatchImportRow(item);
             row.PropertyChanged += OnRowPropertyChanged;
             row.PickCategoryRequested += OnRowPickCategoryRequested;
+            row.NameChanged += OnRowNameChanged;
             Items.Add(row);
         }
         UpdateCanImport();
@@ -78,6 +84,47 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         }
     }
 
+    private async void OnRowNameChanged(FamilyBatchImportRow row)
+    {
+        var seq = System.Threading.Interlocked.Increment(ref _statusLookupSeq);
+        try
+        {
+            await UpdateStatusForRowAsync(row, seq).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            if (seq == Volatile.Read(ref _statusLookupSeq))
+                SmartConLogger.Warn($"[BatchImport] UpdateStatusForRow failed: {ex.Message}");
+        }
+    }
+
+    private async Task UpdateStatusForRowAsync(FamilyBatchImportRow row, int seq)
+    {
+        if (!string.IsNullOrEmpty(row.Sha256))
+        {
+            var existingByHash = await _catalogProvider.FindByHashAsync(row.Sha256, CancellationToken.None).ConfigureAwait(true);
+            if (seq != Volatile.Read(ref _statusLookupSeq)) return;
+            if (existingByHash is not null)
+            {
+                row.SetStatusSilent(FamilyBatchImportStatus.Duplicate, existingByHash.CatalogItemId, existingByHash.VersionLabel);
+                return;
+            }
+        }
+
+        var normalizedName = FamilyNameNormalizer.Normalize(row.FileName);
+        var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None).ConfigureAwait(true);
+        if (seq != Volatile.Read(ref _statusLookupSeq)) return;
+
+        if (existingByName is not null)
+        {
+            row.SetStatusSilent(FamilyBatchImportStatus.Existing, existingByName.Id, existingByName.CurrentVersionLabel);
+        }
+        else
+        {
+            row.SetStatusSilent(FamilyBatchImportStatus.New, null, null);
+        }
+    }
+
     private void OnRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(FamilyBatchImportRow.CanImport))
@@ -95,6 +142,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         {
             row.PropertyChanged -= OnRowPropertyChanged;
             row.PickCategoryRequested -= OnRowPickCategoryRequested;
+            row.NameChanged -= OnRowNameChanged;
         }
     }
 
@@ -131,7 +179,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             r.ExistingCatalogItemId,
             r.ExistingVersionLabel,
             r.TargetCategoryId,
-            r.TargetCategoryPath)
+            r.TargetCategoryPath,
+            r.FamilySource,
+            r.TypeCount,
+            r.RevitCategory)
         {
             Action = r.Action
         }).ToList();

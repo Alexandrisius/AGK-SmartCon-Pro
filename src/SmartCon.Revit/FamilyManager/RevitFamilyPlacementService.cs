@@ -16,17 +16,20 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
     private readonly IRevitUIContext _revitUIContext;
     private readonly ITransactionService _transactionService;
     private readonly IFamilyLoadService _loadService;
+    private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
 
     public RevitFamilyPlacementService(
         IRevitContext revitContext,
         IRevitUIContext revitUIContext,
         ITransactionService transactionService,
-        IFamilyLoadService loadService)
+        IFamilyLoadService loadService,
+        ISystemFamilyPlacementService systemFamilyPlacementService)
     {
         _revitContext = revitContext;
         _revitUIContext = revitUIContext;
         _transactionService = transactionService;
         _loadService = loadService;
+        _systemFamilyPlacementService = systemFamilyPlacementService;
     }
 
     public bool ActivateAndPlaceType(string familyName, string typeName)
@@ -94,6 +97,12 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
         }
 
         ActivateAndPlaceType(familyName, typeName);
+    }
+
+    public void LoadAndPlaceSystemType(string catalogItemId, string typeName)
+    {
+        var revitVersion = int.Parse(_revitContext.GetRevitVersion());
+        _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, revitVersion);
     }
 
     private static Autodesk.Revit.DB.Family? FindFamily(Document doc, string familyName)

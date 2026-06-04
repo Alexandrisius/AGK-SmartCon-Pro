@@ -105,7 +105,10 @@ public sealed partial class FamilyManagerMainViewModel
                     }
                     var tempDir = Path.Combine(Path.GetTempPath(), "SmartCon", "FMLoad", Guid.NewGuid().ToString());
                     Directory.CreateDirectory(tempDir);
-                    var tempPath = Path.Combine(tempDir, activeDoc.Title + ".rfa");
+                    var safeName = Path.GetFileNameWithoutExtension(activeDoc.Title);
+                    if (string.IsNullOrWhiteSpace(safeName)) safeName = "Family";
+                    foreach (var c in Path.GetInvalidFileNameChars()) safeName = safeName.Replace(c, '_');
+                    var tempPath = Path.Combine(tempDir, safeName + ".rfa");
                     activeDoc.SaveAs(tempPath);
                     tcs.SetResult(tempPath);
                 }
@@ -144,7 +147,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             var item = new FamilyBatchImportItem(
                 familyPath,
-                Path.GetFileName(familyPath),
+                Path.GetFileNameWithoutExtension(familyPath),
                 metadata.Sha256,
                 revitVersion,
                 new FileInfo(familyPath).Length,
@@ -154,7 +157,7 @@ public sealed partial class FamilyManagerMainViewModel
                 existingCategoryId,
                 existingCategoryName);
 
-            using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory);
+            using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory, _catalogProvider);
             if (_dialogService.ShowBatchImportDialog(vm) != true)
             {
                 return;
@@ -264,8 +267,31 @@ public sealed partial class FamilyManagerMainViewModel
                     var currentActivePath = uiApp.ActiveUIDocument?.Document?.PathName;
                     if (!string.IsNullOrEmpty(familyPath) && currentActivePath != familyPath)
                     {
-                        var familyDoc = app.Documents.Cast<Document>()
-                            .FirstOrDefault(d => d.IsFamilyDocument && d.PathName == familyPath);
+                        Document? familyDoc = null;
+                        try
+                        {
+                            foreach (var d in app.Documents)
+                            {
+                                Document? doc = d as Document;
+                                if (doc is null) continue;
+                                try
+                                {
+                                    if (doc.IsFamilyDocument && doc.PathName == familyPath)
+                                    {
+                                        familyDoc = doc;
+                                        break;
+                                    }
+                                }
+                                catch (Exception docEx)
+                                {
+                                    SmartConLogger.Info($"[LoadActiveFamily] Skipping invalidated document: {docEx.Message}");
+                                }
+                            }
+                        }
+                        catch (Exception enumEx)
+                        {
+                            SmartConLogger.Warn($"[LoadActiveFamily] Failed to enumerate documents: {enumEx.Message}");
+                        }
                         if (familyDoc != null)
                         {
                             try
@@ -275,7 +301,7 @@ public sealed partial class FamilyManagerMainViewModel
                             }
                             catch (Exception closeEx)
                             {
-                                SmartConLogger.Warn($"[LoadActiveFamily] Failed to close family document: {closeEx.Message}");
+                                SmartConLogger.Info($"[LoadActiveFamily] Family document already closed or invalidated: {closeEx.Message}");
                             }
                         }
                     }
@@ -331,6 +357,265 @@ public sealed partial class FamilyManagerMainViewModel
             if (!Directory.Exists(tempRoot)) return;
 
             var dir = Path.Combine(tempRoot, "FMLoad");
+            if (!Directory.Exists(dir)) return;
+            foreach (var childDir in Directory.GetDirectories(dir))
+            {
+                try { Directory.Delete(childDir, true); } catch { }
+            }
+        }
+        catch { }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanEditOps))]
+    private async Task EditSystemFamilyAsync()
+    {
+        if (SelectedTreeNode is not FamilyLeafNodeViewModel leaf) return;
+        if (leaf.FamilySource != "system") return;
+
+        var resolved = await _fileResolver.ResolveForLoadAsync(
+            leaf.CatalogItemId, CurrentRevitVersion, CancellationToken.None);
+        if (string.IsNullOrEmpty(resolved.AbsolutePath))
+        {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_FamilyFileNotFound) ?? "Error",
+                LanguageManager.GetString(StringLocalization.Keys.FM_FamilyFileNotFound) ?? "System family file not found in managed storage.");
+            return;
+        }
+
+        _externalEvent.RaiseWithApplication(obj =>
+        {
+            try
+            {
+                var app = (Autodesk.Revit.UI.UIApplication)obj;
+                app.OpenAndActivateDocument(resolved.AbsolutePath);
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Freeze($"[EditSystemFamily] OpenAndActivateDocument failed: {ex.Message}");
+            }
+        });
+    }
+
+    [RelayCommand(CanExecute = nameof(CanEditOps))]
+    private async Task LoadActiveSystemFamilyAsync()
+    {
+        IsLoading = true;
+        string? sourceRvtPath = null;
+        try
+        {
+            SmartConLogger.Info("[LoadActiveSystemFamily] Started");
+            var tcs = new TaskCompletionSource<string?>();
+            _externalEvent.RaiseWithApplication(obj =>
+            {
+                try
+                {
+                    var app = (Autodesk.Revit.UI.UIApplication)obj;
+                    var activeDoc = app.ActiveUIDocument.Document;
+                    if (activeDoc.IsFamilyDocument)
+                    {
+                        SmartConLogger.Warn("[LoadActiveSystemFamily] Active document is a family document, aborting");
+                        tcs.SetResult(null);
+                        return;
+                    }
+                    sourceRvtPath = activeDoc.PathName;
+                    var tempDir = Path.Combine(Path.GetTempPath(), "SmartCon", "SystemFamilyLoad", Guid.NewGuid().ToString());
+                    Directory.CreateDirectory(tempDir);
+                    var safeName = Path.GetFileNameWithoutExtension(activeDoc.Title);
+                    if (string.IsNullOrWhiteSpace(safeName)) safeName = "SystemFamily";
+                    foreach (var c in Path.GetInvalidFileNameChars()) safeName = safeName.Replace(c, '_');
+                    var tempPath = Path.Combine(tempDir, safeName + ".rvt");
+                    activeDoc.SaveAs(tempPath);
+                    SmartConLogger.Info($"[LoadActiveSystemFamily] Active doc '{activeDoc.Title}' (path='{sourceRvtPath}') saved as temp: {tempPath}");
+                    tcs.SetResult(tempPath);
+                }
+                catch (Exception ex) { tcs.SetException(ex); }
+            });
+
+            var rvtPath = await tcs.Task;
+            if (rvtPath is null)
+            {
+                _dialogService.ShowError(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_ActiveDocNotProject) ?? "Error",
+                    LanguageManager.GetString(StringLocalization.Keys.FM_ActiveDocNotProject) ?? "Active document is not a project.");
+                return;
+            }
+
+            var metadata = await _metadataService.ExtractAsync(rvtPath, CancellationToken.None);
+            var revitVersion = _fileInfoReader.ReadRevitVersion(rvtPath) ?? CurrentRevitVersion;
+            var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(Path.GetFileNameWithoutExtension(rvtPath));
+            var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
+
+            var existingCategoryId = existingByName?.CategoryId;
+            var existingCategoryName = existingByName?.CategoryPath;
+            if (existingCategoryId is not null && existingCategoryName is null)
+            {
+                try
+                {
+                    var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
+                    existingCategoryName = cat?.Name;
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"[LoadActiveSystemFamily] Failed to resolve category name: {ex.Message}");
+                }
+            }
+
+            var item = new FamilyBatchImportItem(
+                rvtPath,
+                Path.GetFileNameWithoutExtension(rvtPath),
+                metadata.Sha256,
+                revitVersion,
+                new FileInfo(rvtPath).Length,
+                existingByName is not null ? FamilyBatchImportStatus.Existing : FamilyBatchImportStatus.New,
+                existingByName?.Id,
+                existingByName?.CurrentVersionLabel,
+                existingCategoryId,
+                existingCategoryName,
+                FamilySource: "system");
+
+            SmartConLogger.Info($"[LoadActiveSystemFamily] Temp: {rvtPath}, displayName='{item.FileName}', Sha256: {item.Sha256[..Math.Min(16, item.Sha256.Length)]}...");
+
+            using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory, _catalogProvider);
+            if (_dialogService.ShowBatchImportDialog(vm) != true)
+            {
+                return;
+            }
+
+            var selectedItems = vm.GetResultItems();
+            var progress = new Progress<FamilyImportProgress>(p =>
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportProgress) ?? "Importing {0} of {1}...",
+                    p.CurrentFileIndex + 1, p.TotalFiles);
+            });
+
+            var importResult = await _importService.ImportBatchAsync(
+                selectedItems, null, progress, CancellationToken.None);
+
+            if (importResult.Results.Any(r => r.Success && !r.WasSkippedAsDuplicate))
+            {
+                await LoadTreeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed) ?? "Error",
+                ex.Message);
+        }
+        finally
+        {
+            var capturedSource = sourceRvtPath;
+            var cleanupTcs = new TaskCompletionSource<bool>();
+            _externalEvent.RaiseWithApplication(obj =>
+            {
+                try
+                {
+                    var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
+                    var app = uiApp.Application;
+
+                    // The active doc WAS at managed storage path BEFORE SaveAs.
+                    // After SaveAs, its PathName changed to the temp path (SaveAs updates PathName).
+                    // So `activeBeforeSwitch` below is the TEMP path, not the source managed-storage path.
+                    var activeBeforeSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
+
+                    // Find a project doc DIFFERENT from the active (system family) doc.
+                    var projectDoc = app.Documents.Cast<Document>()
+                        .FirstOrDefault(d => !d.IsFamilyDocument && !d.IsLinked
+                            && !string.IsNullOrEmpty(d.PathName)
+                            && d.PathName != activeBeforeSwitch);
+
+                    SmartConLogger.Info($"[LoadActiveSystemFamily] Cleanup: activeBeforeSwitch='{activeBeforeSwitch}', source='{capturedSource}', projectToSwitch='{projectDoc?.PathName}'");
+
+                    if (projectDoc != null)
+                    {
+                        try
+                        {
+                            uiApp.OpenAndActivateDocument(projectDoc.PathName);
+                            SmartConLogger.Info($"[LoadActiveSystemFamily] Switched to project: {projectDoc.PathName}");
+                        }
+                        catch (Exception activateEx)
+                        {
+                            SmartConLogger.Warn($"[LoadActiveSystemFamily] Failed to activate project: {activateEx.Message}");
+                            try
+                            {
+                                var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
+                                uiApp.PostCommand(closeCmd);
+                            }
+                            catch { }
+                        }
+                    }
+                    else
+                    {
+                        SmartConLogger.Info("[LoadActiveSystemFamily] No other project to switch to — closing active system family file");
+                        try
+                        {
+                            var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
+                            uiApp.PostCommand(closeCmd);
+                        }
+                        catch (Exception postEx)
+                        {
+                            SmartConLogger.Warn($"[LoadActiveSystemFamily] PostCommand Close failed: {postEx.Message}");
+                        }
+                    }
+
+                    var activeAfterSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
+                    SmartConLogger.Info($"[LoadActiveSystemFamily] After switch: active='{activeAfterSwitch}'");
+
+                    // CRITICAL: After SaveAs, the system family doc's PathName became the TEMP path.
+                    // We need to close the doc at activeBeforeSwitch (= temp path), NOT capturedSource
+                    // (= original managed-storage path which is no longer in app.Documents).
+                    var docToClosePath = activeBeforeSwitch;
+                    if (!string.IsNullOrEmpty(docToClosePath)
+                        && !string.Equals(activeAfterSwitch, docToClosePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            var docToClose = app.Documents.Cast<Document>()
+                                .FirstOrDefault(d => string.Equals(d.PathName, docToClosePath, StringComparison.OrdinalIgnoreCase));
+                            if (docToClose != null && !docToClose.IsLinked)
+                            {
+                                docToClose.Close(false);
+                                SmartConLogger.Info($"[LoadActiveSystemFamily] Closed system family file: {docToClosePath}");
+                            }
+                            else
+                            {
+                                SmartConLogger.Warn($"[LoadActiveSystemFamily] Doc at '{docToClosePath}' not found in app.Documents");
+                            }
+                        }
+                        catch (Exception closeEx)
+                        {
+                            SmartConLogger.Warn($"[LoadActiveSystemFamily] Failed to close system family file: {closeEx.Message}");
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(docToClosePath))
+                    {
+                        SmartConLogger.Info($"[LoadActiveSystemFamily] System family file is still active after switch, cannot close via API");
+                    }
+
+                    CleanupSystemFamilyTemp();
+                    cleanupTcs.TrySetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Error($"LoadActiveSystemFamily cleanup failed: {ex}");
+                    cleanupTcs.TrySetResult(false);
+                }
+            });
+            try { await cleanupTcs.Task; } catch { }
+
+            IsLoading = false;
+        }
+    }
+
+    private static void CleanupSystemFamilyTemp()
+    {
+        try
+        {
+            var tempRoot = Path.Combine(Path.GetTempPath(), "SmartCon");
+            if (!Directory.Exists(tempRoot)) return;
+
+            var dir = Path.Combine(tempRoot, "SystemFamilyLoad");
             if (!Directory.Exists(dir)) return;
             foreach (var childDir in Directory.GetDirectories(dir))
             {

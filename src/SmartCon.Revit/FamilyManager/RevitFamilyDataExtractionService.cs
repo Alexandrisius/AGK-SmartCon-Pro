@@ -63,7 +63,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"Marshal.ReleaseComObject failed for '{rfaFilePath}': {ex.Message}");
+                    SmartConLogger.Info($"Marshal.ReleaseComObject skipped for '{rfaFilePath}' (Document is not a real COM object in Revit API): {ex.Message}");
                 }
             }
         }

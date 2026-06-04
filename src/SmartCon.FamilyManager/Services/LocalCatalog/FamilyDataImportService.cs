@@ -96,21 +96,39 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
 
         await _runRepository.CreateRunAsync(run, ct);
 
+        var existingTypes = await _typeRepository.GetTypesForItemAsync(catalogItemId, ct);
+        var existingByName = existingTypes
+            .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
         var types = new List<FamilyTypeDescriptor>();
         for (var i = 0; i < extractionResult.Types.Count; i++)
         {
             var t = extractionResult.Types[i];
-            types.Add(new FamilyTypeDescriptor(
-                Guid.NewGuid().ToString(),
-                catalogItemId,
-                t.TypeName,
-                t.SortOrder,
-                versionId,
-                fileId,
-                runId));
+            if (existingByName.TryGetValue(t.TypeName, out var existing))
+            {
+                var reused = existing with { ExtractionRunId = runId, VersionId = versionId, FileId = fileId };
+                types.Add(reused);
+            }
+            else
+            {
+                types.Add(new FamilyTypeDescriptor(
+                    Guid.NewGuid().ToString(),
+                    catalogItemId,
+                    t.TypeName,
+                    t.SortOrder,
+                    versionId,
+                    fileId,
+                    runId));
+            }
         }
 
         await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, fileId, runId, types, ct);
+
+        var resolvedTypes = await _typeRepository.GetTypesForItemAsync(catalogItemId, ct);
+        var resolvedByName = resolvedTypes
+            .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
         var attrByName = allAttrs.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
@@ -118,7 +136,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
         var values = new List<ExtractedAttributeValue>();
         foreach (var typeData in extractionResult.Types)
         {
-            var typeRecord = types.FirstOrDefault(t => t.Name == typeData.TypeName);
+            resolvedByName.TryGetValue(typeData.TypeName, out var typeRecord);
             foreach (var val in typeData.Values)
             {
                 attrByName.TryGetValue(val.ParameterName, out var attrDef);

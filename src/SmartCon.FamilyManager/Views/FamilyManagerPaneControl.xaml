@@ -263,14 +263,44 @@
                             CornerRadius="6"
                             Padding="4">
                         <StackPanel>
-                            <Button Content="{loc:Loc FM_LoadActiveFamily}"
-                                    Command="{Binding LoadActiveFamilyCommand}"
+                            <Button MinWidth="140"
+                                    HorizontalContentAlignment="Left"
+                                    Padding="10,6"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Command" Value="{Binding LoadActiveFamilyCommand}"/>
+                                        <Setter Property="Content" Value="{loc:Loc FM_LoadActiveFamily}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTreeNode.FamilySource}" Value="system">
+                                                <Setter Property="Command" Value="{Binding LoadActiveSystemFamilyCommand}"/>
+                                                <Setter Property="Content" Value="{loc:Loc FM_LoadActiveSystemFamily}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <i:Interaction.Triggers>
+                                    <i:EventTrigger EventName="Click">
+                                        <i:ChangePropertyAction TargetObject="{Binding ElementName=ImportSplitPopup}" PropertyName="IsOpen" Value="False"/>
+                                    </i:EventTrigger>
+                                </i:Interaction.Triggers>
+                            </Button>
+                            <Button Content="{loc:Loc FM_ImportSystemFamily}"
+                                    Command="{Binding ImportSystemFamilyCommand}"
                                     MinWidth="140"
                                     HorizontalContentAlignment="Left"
                                     Padding="10,6"
                                     Background="Transparent"
                                     BorderThickness="0"
-                                    Cursor="Hand"/>
+                                    Cursor="Hand">
+                                <i:Interaction.Triggers>
+                                    <i:EventTrigger EventName="Click">
+                                        <i:ChangePropertyAction TargetObject="{Binding ElementName=ImportSplitPopup}" PropertyName="IsOpen" Value="False"/>
+                                    </i:EventTrigger>
+                                </i:Interaction.Triggers>
+                            </Button>
                         </StackPanel>
                     </Border>
                 </Popup>
@@ -502,9 +532,20 @@
                                   Command="{Binding LoadToProjectCommand}"
                                   Style="{StaticResource ModernMenuItem}" />
                     </MenuItem>
-                    <MenuItem Header="{loc:Loc FM_Edit}"
-                              Command="{Binding EditFamilyCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
+                    <MenuItem>
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Header" Value="{loc:Loc FM_Edit}"/>
+                                <Setter Property="Command" Value="{Binding EditFamilyCommand}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding FamilySource}" Value="system">
+                                        <Setter Property="Header" Value="{loc:Loc FM_EditSystemFamily}"/>
+                                        <Setter Property="Command" Value="{Binding EditSystemFamilyCommand}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                    </MenuItem>
                     <MenuItem Header="{loc:Loc FM_Properties}"
                               Command="{Binding OpenPropertiesCommand}"
                               Style="{StaticResource ModernMenuItem}" />

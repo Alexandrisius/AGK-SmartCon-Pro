@@ -17,6 +17,14 @@ public static partial class LocalizationService
         ru["FM_Edit"] = "Редактировать"; en["FM_Edit"] = "Edit";
         ru["FM_LoadActiveFamily"] = "Загрузить активное семейство"; en["FM_LoadActiveFamily"] = "Load Active Family";
         ru["FM_ActiveDocNotFamily"] = "Активный документ не является семейством"; en["FM_ActiveDocNotFamily"] = "Active document is not a family";
+        ru["FM_ImportSystemFamily"] = "Импорт системного семейства"; en["FM_ImportSystemFamily"] = "Import System Family";
+        ru["FM_ActiveDocNotProject"] = "Активный документ не является проектом. Откройте проект Revit."; en["FM_ActiveDocNotProject"] = "Active document is not a project. Open a Revit project.";
+        ru["FM_SystemFamilySelectPrompt"] = "Выберите элементы системного семейства в Revit..."; en["FM_SystemFamilySelectPrompt"] = "Select system family elements in Revit...";
+        ru["FM_SystemFamilyImported"] = "Импортировано системных типов: {0}"; en["FM_SystemFamilyImported"] = "System types imported: {0}";
+        ru["FM_SystemFamilyImportFailed"] = "Ошибка импорта системного семейства"; en["FM_SystemFamilyImportFailed"] = "System family import failed";
+        ru["FM_SystemFamilyPreparing"] = "Подготовлено {0} категорий, импорт..."; en["FM_SystemFamilyPreparing"] = "Prepared {0} categories, importing...";
+        ru["FM_EditSystemFamily"] = "Редактировать системное семейство"; en["FM_EditSystemFamily"] = "Edit System Family";
+        ru["FM_LoadActiveSystemFamily"] = "Загрузить активное системное семейство"; en["FM_LoadActiveSystemFamily"] = "Load Active System Family";
         ru["FM_EditMetadata"] = "Редактировать"; en["FM_EditMetadata"] = "Edit";
         ru["FM_NoActiveDocument"] = "Нет активного документа"; en["FM_NoActiveDocument"] = "No active document";
         ru["FM_ImportProgress"] = "Импорт {0} из {1}..."; en["FM_ImportProgress"] = "Importing {0} of {1}...";
@@ -261,6 +269,7 @@ public static partial class LocalizationService
         ru["FM_BatchImport_Cancel"] = "Отмена"; en["FM_BatchImport_Cancel"] = "Cancel";
         ru["FM_BatchImport_SelectAll"] = "Выбрать все"; en["FM_BatchImport_SelectAll"] = "Select All";
         ru["FM_BatchImport_Stale"] = "Устарело"; en["FM_BatchImport_Stale"] = "Stale";
+        ru["FM_BatchImport_TypeCount"] = "Типов"; en["FM_BatchImport_TypeCount"] = "Types";
 
         ru["FM_AttrStatus_Found"] = "Найдено"; en["FM_AttrStatus_Found"] = "Found";
         ru["FM_AttrStatus_MissingParameter"] = "Параметр не найден"; en["FM_AttrStatus_MissingParameter"] = "Parameter not found";

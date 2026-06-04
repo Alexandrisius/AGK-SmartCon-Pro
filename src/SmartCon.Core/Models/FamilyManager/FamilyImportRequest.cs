@@ -4,16 +4,24 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// Request to import a single family file into the published catalog.
 /// The file is copied into managed storage at the database root.
 /// </summary>
-/// <param name="FilePath">Absolute path to the .rfa file.</param>
+/// <param name="FilePath">Absolute path to the source file (.rfa or .rvt).</param>
 /// <param name="RevitMajorVersion">Target Revit major version (e.g. 2025).</param>
 /// <param name="Category">User-assigned category.</param>
 /// <param name="Tags">User-assigned tags.</param>
 /// <param name="Description">User-assigned description.</param>
 /// <param name="CategoryId">User-assigned category identifier (from categories table).</param>
+/// <param name="FileName">
+/// User-edited display name (without extension) for the catalog item and
+/// the destination file in managed storage. If null, the source file's name
+/// is used (legacy behaviour).
+/// </param>
 public sealed record FamilyImportRequest(
     string FilePath,
     int RevitMajorVersion,
     string? Category,
     IReadOnlyList<string>? Tags,
     string? Description,
-    string? CategoryId = null);
+    string? CategoryId = null,
+    string FamilySource = "loadable",
+    string? RevitCategory = null,
+    string? FileName = null);

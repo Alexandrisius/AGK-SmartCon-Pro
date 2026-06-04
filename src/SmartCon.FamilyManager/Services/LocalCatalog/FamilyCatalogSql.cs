@@ -31,6 +31,8 @@ internal static class FamilyCatalogSql
             content_status TEXT NOT NULL DEFAULT 'Active',
             current_version_label TEXT,
             published_by TEXT,
+            family_source TEXT NOT NULL DEFAULT 'loadable',
+            revit_category TEXT,
             created_at_utc TEXT NOT NULL,
             updated_at_utc TEXT NOT NULL
         )
@@ -350,6 +352,16 @@ internal static class FamilyCatalogSql
 
     public const string MigrateV10AddFamilyTypesNameIndex = """
         CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name)
+        """;
+
+    public const string MigrateV11AddSystemFamilyColumns = """
+        ALTER TABLE catalog_items ADD COLUMN family_source TEXT NOT NULL DEFAULT 'loadable';
+        ALTER TABLE catalog_items ADD COLUMN revit_category TEXT;
+        ALTER TABLE family_types ADD COLUMN type_unique_id TEXT
+        """;
+
+    public const string CreateV11Indexes = """
+        CREATE INDEX IF NOT EXISTS ix_catalog_items_family_source ON catalog_items (family_source)
         """;
 
     public const string CreateIndexes = """

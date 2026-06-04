@@ -59,9 +59,13 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var sha256 = metadata.Sha256;
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
-        SmartConLogger.Info($"[Import] File: {Path.GetFileName(filePath)}, SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
+        var displayName = !string.IsNullOrWhiteSpace(request.FileName)
+            ? Path.GetFileNameWithoutExtension(request.FileName)
+            : Path.GetFileNameWithoutExtension(filePath);
 
-        var existingItem = await FindByNameAsync(Path.GetFileNameWithoutExtension(filePath), ct);
+        SmartConLogger.Info($"[Import] File: {Path.GetFileName(filePath)} -> displayName='{displayName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
+
+        var existingItem = await FindByNameAsync(displayName, ct);
         if (existingItem is not null)
         {
             var existingVersion = await FindVersionByHashAndRevitAsync(existingItem.Id, sha256, revitVersion, ct);
@@ -83,13 +87,13 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var fileRecordId = Guid.NewGuid().ToString();
         var catalogItemId = existingItem?.Id ?? Guid.NewGuid().ToString();
         var versionId = Guid.NewGuid().ToString();
-        var normalizedName = FamilyNameNormalizer.Normalize(Path.GetFileNameWithoutExtension(filePath));
+        var normalizedName = FamilyNameNormalizer.Normalize(displayName);
 
         var versionLabel = existingItem is not null
             ? await GetNextVersionLabelAsync(existingItem.Id, ct)
             : "v1";
 
-        var copyResult = await CopyToManagedStorageAsync(filePath, catalogItemId, versionLabel, revitVersion, metadata, ct);
+        var copyResult = await CopyToManagedStorageAsync(filePath, catalogItemId, versionLabel, revitVersion, metadata, displayName, ct);
         if (!copyResult.Success)
             return new FamilyImportResult(
                 Success: false,
@@ -294,7 +298,10 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     var request = new FamilyImportRequest(
                         item.FilePath,
                         item.RevitMajorVersion,
-                        null, null, null, item.TargetCategoryId ?? categoryId);
+                        null, null, null, item.TargetCategoryId ?? categoryId,
+                        item.FamilySource,
+                        item.RevitCategory,
+                        item.FileName);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
@@ -306,7 +313,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             item.FilePath,
                             item.RevitMajorVersion,
                             item.TargetCategoryId,
-                            item.TargetCategoryName);
+                            item.TargetCategoryName,
+                            item.FileName);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -370,7 +378,11 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var sha256 = metadata.Sha256;
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
-        SmartConLogger.Info($"[Update] File: {Path.GetFileName(filePath)}, SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
+        var newName = !string.IsNullOrWhiteSpace(request.FileName)
+            ? Path.GetFileNameWithoutExtension(request.FileName)
+            : Path.GetFileNameWithoutExtension(filePath);
+
+        SmartConLogger.Info($"[Update] File: {Path.GetFileName(filePath)} -> newName='{newName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
 
         var currentVersion = await FindCurrentVersionByHashAsync(request.CatalogItemId, sha256, ct);
         if (currentVersion is not null)
@@ -387,13 +399,12 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
 
         var versionLabel = await GetNextVersionLabelAsync(request.CatalogItemId, ct);
-        var newName = Path.GetFileNameWithoutExtension(filePath);
         var normalizedName = FamilyNameNormalizer.Normalize(newName);
         var now = DateTimeOffset.UtcNow;
         var fileRecordId = Guid.NewGuid().ToString();
         var versionId = Guid.NewGuid().ToString();
 
-        var copyResult = await CopyToManagedStorageAsync(filePath, request.CatalogItemId, versionLabel, revitVersion, metadata, ct);
+        var copyResult = await CopyToManagedStorageAsync(filePath, request.CatalogItemId, versionLabel, revitVersion, metadata, newName, ct);
         if (!copyResult.Success)
             return new FamilyImportResult(
                 Success: false,
@@ -457,11 +468,24 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
     private const int CopyMaxRetries = 3;
     private static readonly int[] CopyRetryDelaysMs = [100, 300, 900];
 
-    private async Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata, CancellationToken ct)
+    private async Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata, string? displayName, CancellationToken ct)
     {
         _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel);
-        var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, metadata.FileName);
+
+        var sourceExt = Path.GetExtension(sourcePath);
+        if (string.IsNullOrEmpty(sourceExt))
+            sourceExt = Path.GetExtension(metadata.FileName);
+        if (string.IsNullOrEmpty(sourceExt))
+            sourceExt = ".rfa";
+
+        var destFileName = !string.IsNullOrWhiteSpace(displayName)
+            ? SanitizeFileName(Path.GetFileNameWithoutExtension(displayName)) + sourceExt
+            : metadata.FileName;
+
+        var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, destFileName);
         var fileName = Path.GetFileName(sourcePath);
+
+        SmartConLogger.Info($"[Import] Copy: source='{fileName}' -> dest='{destFileName}' (displayName='{displayName}')");
 
         for (var attempt = 0; attempt < CopyMaxRetries; attempt++)
         {
@@ -513,6 +537,18 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
 
         return new CopyResult(false, null, $"Failed to copy file to managed storage after {CopyMaxRetries} attempts");
+    }
+
+    private static string SanitizeFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "Family";
+        var invalid = Path.GetInvalidFileNameChars();
+        var sb = new System.Text.StringBuilder(name!.Length);
+        foreach (var c in name)
+        {
+            sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+        }
+        return sb.ToString();
     }
 
     private void CleanupFileAsync(string? relativePath)

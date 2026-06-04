@@ -265,7 +265,9 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                     tags,
                     old.PublishedBy,
                     old.CreatedAtUtc,
-                    old.UpdatedAtUtc);
+                    old.UpdatedAtUtc,
+                    old.FamilySource,
+                    old.RevitCategory);
             }
         }
 
@@ -299,7 +301,9 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             tags,
             item.PublishedBy,
             item.CreatedAtUtc,
-            item.UpdatedAtUtc);
+            item.UpdatedAtUtc,
+            item.FamilySource,
+            item.RevitCategory);
     }
 
     public async Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default)
@@ -425,6 +429,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             : null;
 
         var categoryId = TryGetString(reader, "category_id");
+        var familySource = TryGetString(reader, "family_source") ?? "loadable";
+        var revitCategory = TryGetString(reader, "revit_category");
 
         return new FamilyCatalogItem(
             Id: reader.GetString(reader.GetOrdinal("id")),
@@ -447,7 +453,9 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                 ? null
                 : reader.GetString(reader.GetOrdinal("published_by")),
             CreatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("created_at_utc"))),
-            UpdatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("updated_at_utc"))));
+            UpdatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("updated_at_utc"))),
+            FamilySource: familySource,
+            RevitCategory: revitCategory);
     }
 
     private static FamilyCatalogVersion ReadCatalogVersion(SqliteDataReader reader) => new(
@@ -520,6 +528,24 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                 ? null
                 : reader.GetInt32(reader.GetOrdinal("parameters_count")),
             PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
+    }
+
+    public async Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT * FROM catalog_items WHERE family_source = @source ORDER BY name";
+        cmd.Parameters.Add(new SqliteParameter("@source", familySource));
+
+        var items = new List<FamilyCatalogItem>();
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            items.Add(ReadCatalogItem(reader));
+        }
+
+        return items;
     }
 
     private static string? TryGetString(SqliteDataReader reader, string columnName)

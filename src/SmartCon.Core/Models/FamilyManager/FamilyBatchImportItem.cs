@@ -13,7 +13,10 @@ public sealed record FamilyBatchImportItem(
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
     string? TargetCategoryId = null,
-    string? TargetCategoryName = null)
+    string? TargetCategoryName = null,
+    string FamilySource = "loadable",
+    int TypeCount = 0,
+    string? RevitCategory = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

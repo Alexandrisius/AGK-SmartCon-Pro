@@ -137,13 +137,17 @@ internal sealed partial class LocalFamilyImportService
         string normalizedName, FamilyImportRequest request, DateTimeOffset now,
         string versionLabel, CancellationToken ct)
     {
+        var displayName = !string.IsNullOrWhiteSpace(request.FileName)
+            ? Path.GetFileNameWithoutExtension(request.FileName).Trim()
+            : Path.GetFileNameWithoutExtension(request.FilePath).Trim();
+
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, category_id, manufacturer, content_status, current_version_label, published_by, created_at_utc, updated_at_utc)
-            VALUES (@id, @name, @normalizedName, @description, @categoryName, @categoryId, @manufacturer, @status, @versionLabel, @publishedBy, @createdAtUtc, @updatedAtUtc)
+            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, category_id, manufacturer, content_status, current_version_label, published_by, family_source, revit_category, created_at_utc, updated_at_utc)
+            VALUES (@id, @name, @normalizedName, @description, @categoryName, @categoryId, @manufacturer, @status, @versionLabel, @publishedBy, @familySource, @revitCategory, @createdAtUtc, @updatedAtUtc)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
-        cmd.Parameters.Add(new SqliteParameter("@name", Path.GetFileNameWithoutExtension(request.FilePath).Trim()));
+        cmd.Parameters.Add(new SqliteParameter("@name", displayName));
         cmd.Parameters.Add(new SqliteParameter("@normalizedName", normalizedName));
         cmd.Parameters.Add(new SqliteParameter("@description", request.Description ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@categoryName", request.Category ?? (object)DBNull.Value));
@@ -152,6 +156,8 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@status", ContentStatus.Active.ToString()));
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
         cmd.Parameters.Add(new SqliteParameter("@publishedBy", DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@familySource", request.FamilySource));
+        cmd.Parameters.Add(new SqliteParameter("@revitCategory", request.RevitCategory ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@createdAtUtc", now.ToString("o")));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);

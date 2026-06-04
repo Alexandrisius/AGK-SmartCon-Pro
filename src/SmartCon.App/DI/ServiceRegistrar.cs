@@ -180,6 +180,10 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
         services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
         services.AddSingleton<IFamilyPlacementDragService, RevitFamilyPlacementDragService>();
+        services.AddSingleton<ISystemFamilyRevitOperations, SystemFamilyRevitOperations>();
+        services.AddSingleton<ISystemFamilyPlacementService, SystemFamilyPlacementService>();
+        services.AddSingleton<ISystemFamilyImportService, SmartCon.FamilyManager.Services.SystemFamilyImportService>();
+        services.AddSingleton<ISystemFamilyAttributeExtractionService, SystemFamilyAttributeExtractionService>();
         services.AddSingleton<IUserIdentityService, RevitUserIdentityService>();
         services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();

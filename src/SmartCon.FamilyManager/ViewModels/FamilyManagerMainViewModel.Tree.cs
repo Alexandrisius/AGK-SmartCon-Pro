@@ -141,6 +141,7 @@ public sealed partial class FamilyManagerMainViewModel
                     UpdatedAtUtc = item.UpdatedAtUtc,
                     Tags = item.Tags,
                     Description = item.Description,
+                    FamilySource = item.FamilySource,
                 }, isStale: isStale));
             }
             _noCategoryNode.FamilyCount = uncategorized.Count;
@@ -216,6 +217,7 @@ public sealed partial class FamilyManagerMainViewModel
                     UpdatedAtUtc = item.UpdatedAtUtc,
                     Tags = item.Tags,
                     Description = item.Description,
+                    FamilySource = item.FamilySource,
                 }, isStale: isStale));
             }
         }
