@@ -218,7 +218,7 @@ public static class StringLocalization
         public const string FM_ImportData = "FM_ImportData";
         public const string FM_PlaceType = "FM_PlaceType";
         public const string FM_Edit = "FM_Edit";
-        public const string FM_LoadActiveFamily = "FM_LoadActiveFamily";
+        public const string FM_ImportActiveFile = "FM_ImportActiveFile";
         public const string FM_ActiveDocNotFamily = "FM_ActiveDocNotFamily";
         public const string FM_ImportSystemFamily = "FM_ImportSystemFamily";
         public const string FM_ActiveDocNotProject = "FM_ActiveDocNotProject";
@@ -227,7 +227,7 @@ public static class StringLocalization
         public const string FM_SystemFamilyImportFailed = "FM_SystemFamilyImportFailed";
         public const string FM_SystemFamilyPreparing = "FM_SystemFamilyPreparing";
         public const string FM_EditSystemFamily = "FM_EditSystemFamily";
-        public const string FM_LoadActiveSystemFamily = "FM_LoadActiveSystemFamily";
+        public const string FM_NoSystemFamiliesFound = "FM_NoSystemFamiliesFound";
         public const string FM_EditMetadata = "FM_EditMetadata";
         public const string FM_NoActiveDocument = "FM_NoActiveDocument";
         public const string FM_ImportProgress = "FM_ImportProgress";

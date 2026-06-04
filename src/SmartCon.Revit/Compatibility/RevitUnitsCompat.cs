@@ -75,6 +75,20 @@ public static class RevitUnitsCompat
 #endif
     }
 
+    /// <summary>
+    /// Кросс-версионная конверсия метров → internal units Revit (футы).
+    /// R21+: <c>UnitUtils.ConvertToInternalUnits(meters, UnitTypeId.Meters)</c>.
+    /// R19–R20: <c>UnitUtils.ConvertToInternalUnits(meters, DisplayUnitType.DUT_METERS)</c>.
+    /// </summary>
+    public static double MetersToInternal(double meters)
+    {
+#if REVIT2021_OR_GREATER
+        return UnitUtils.ConvertToInternalUnits(meters, UnitTypeId.Meters);
+#else
+        return UnitUtils.ConvertToInternalUnits(meters, DisplayUnitType.DUT_METERS);
+#endif
+    }
+
     // ── Internal helpers ────────────────────────────────────────────────
 
     /// <summary>

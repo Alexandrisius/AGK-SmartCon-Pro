@@ -1380,4 +1380,98 @@ public interface ISaveableViewModel
     Task SaveAsync();
 }
 ```
+
+---
+
+### ISystemFamilyRevitOperations
+
+Низкоуровневые операции Revit для системных семейств: picker, анализ активного
+проекта по 14 категориям, копирование размещённых типов в чистый .rvt с размещением
+инстансов на сетке 2×2 м. Все методы **должны вызываться внутри ExternalEvent**
+(Revit UI thread).
+
+**Файл:** `ISystemFamilyRevitOperations.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/SystemFamilyRevitOperations.cs`
+
+```csharp
+public interface ISystemFamilyRevitOperations
+{
+    IReadOnlyList<SelectedSystemType> PickSystemTypes();
+    IReadOnlyList<CategoryAnalysis> AnalyzeActiveProject(Document activeDoc);
+    CreateCleanProjectResult CreateCleanProjectWithTypesAndInstances(
+        Document sourceDoc,
+        IReadOnlyList<string> typeUniqueIds,
+        BuiltInCategory category,
+        string displayName);
+    // Legacy: оставлен для picker flow
+    CreateCleanProjectResult CreateCleanProjectWithTypes(IReadOnlyList<string> typeUniqueIds);
+}
+```
+
+### ISystemFamilyImportService
+
+Оркестрация импорта системных семейств. Объединяет `ISystemFamilyRevitOperations`
+(создание временных .rvt) + `ISystemFamilyAttributeExtractionService` (извлечение
+атрибутов) + запись в managed storage.
+
+**Файл:** `ISystemFamilyImportService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/SystemFamilyImportService.cs`
+
+```csharp
+public interface ISystemFamilyImportService
+{
+    IReadOnlyList<SystemFamilyPendingImport> PickAndPrepare();
+
+    /// <summary>
+    /// Анализирует активный проект (14 системных категорий), копирует размещённые типы
+    /// в новый .rvt с placement инстансов на сетке 2×2 м. Должен вызываться внутри ExternalEvent.
+    /// </summary>
+    IReadOnlyList<SystemFamilyPendingImport> AnalyzeAndPrepareForProject(Document activeDoc);
+
+    Task<SystemFamilyImportResult> ImportBatchItemsAsync(IReadOnlyList<FamilyBatchImportItem> items);
+}
+
+public sealed record SystemFamilyPendingImport(
+    string CategoryName,
+    IReadOnlyList<SelectedSystemType> Types,
+    string TempRvtPath);
+```
+
+### ISystemFamilyAttributeExtractionService
+
+Извлекает Type-параметры (не Instance) из системных семейств в подготовленном .rvt
+(созданном `ISystemFamilyRevitOperations.CreateCleanProjectWithTypes*`).
+Открывает .rvt как background-документ, читает параметры, закрывает документ.
+Результат пишется в `extracted_attribute_values` через `IExtractionTaskRepository`.
+
+**Файл:** `ISystemFamilyAttributeExtractionService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/SystemFamilyAttributeExtractionService.cs`
+
+```csharp
+public interface ISystemFamilyAttributeExtractionService
+{
+    /// <param name="rvtFilePath">Absolute path to the .rvt file.</param>
+    /// <param name="typeNames">
+    /// Names of ElementTypes to extract (case-insensitive). If null/empty,
+    /// the service will try to extract from any non-default type.
+    /// </param>
+    FamilyExtractionResult ExtractFromRvt(string rvtFilePath, IReadOnlyList<string>? typeNames);
+}
+```
+
+### ISystemFamilyPlacementService
+
+Размещение (load + place) одного типа системного семейства в активный проект
+пользователя. Используется после импорта — пользователь выбирает тип в
+каталоге, и плагин загружает его из managed storage и размещает в сцене.
+
+**Файл:** `ISystemFamilyPlacementService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/SystemFamilyPlacementService.cs`
+
+```csharp
+public interface ISystemFamilyPlacementService
+{
+    void LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion);
+}
+```
 ```

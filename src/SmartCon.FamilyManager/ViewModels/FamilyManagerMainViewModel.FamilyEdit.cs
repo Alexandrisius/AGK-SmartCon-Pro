@@ -86,23 +86,146 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     [RelayCommand(CanExecute = nameof(CanEditOps))]
-    private async Task LoadActiveFamilyAsync()
+    private async Task ImportActiveFileAsync()
     {
         IsLoading = true;
+        string? familyPath = null;
         try
         {
-            var tcs = new TaskCompletionSource<string?>();
+            SmartConLogger.Info("[ImportActiveFile] Started");
+            var scan = await ScanActiveFileAsync();
+            if (scan is null) return;
+
+            if (scan.Kind == ImportActiveKind.Family)
+            {
+                familyPath = scan.FamilyPath;
+                await ProcessFamilyImportAsync(scan.FamilyPath!);
+            }
+            else if (scan.Kind == ImportActiveKind.Project)
+            {
+                await ProcessProjectImportAsync(scan.PendingItems!);
+            }
+            else
+            {
+                _dialogService.ShowError(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound) ?? "Error",
+                    LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound)
+                        ?? "В проекте не найдено размещённых системных семейств");
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[ImportActiveFile] Failed: {ex}");
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error",
+                ex.Message);
+        }
+        finally
+        {
+            var capturedFamilyPath = familyPath;
+            var cleanupTcs = new TaskCompletionSource<bool>();
             _externalEvent.RaiseWithApplication(obj =>
             {
                 try
                 {
-                    var app = (Autodesk.Revit.UI.UIApplication)obj;
-                    var activeDoc = app.ActiveUIDocument.Document;
-                    if (!activeDoc.IsFamilyDocument)
+                    var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
+                    var app = uiApp.Application;
+
+                    if (!string.IsNullOrEmpty(capturedFamilyPath))
                     {
-                        tcs.SetResult(null);
-                        return;
+                        var activeBeforeSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
+                        var projectDoc = app.Documents.Cast<Document>()
+                            .FirstOrDefault(d => !d.IsFamilyDocument && !d.IsLinked
+                                && !string.IsNullOrEmpty(d.PathName)
+                                && d.PathName != activeBeforeSwitch);
+
+                        SmartConLogger.Info(
+                            $"[ImportActiveFile] Cleanup(family): activeBeforeSwitch='{activeBeforeSwitch}', " +
+                            $"projectToSwitch='{projectDoc?.PathName}'");
+
+                        if (projectDoc != null)
+                        {
+                            try
+                            {
+                                uiApp.OpenAndActivateDocument(projectDoc.PathName);
+                            }
+                            catch (Exception activateEx)
+                            {
+                                SmartConLogger.Warn(
+                                    $"[ImportActiveFile] Activate project failed: {activateEx.Message}");
+                                try
+                                {
+                                    var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
+                                    uiApp.PostCommand(closeCmd);
+                                }
+                                catch { }
+                            }
+                        }
+                        else
+                        {
+                            try
+                            {
+                                var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
+                                uiApp.PostCommand(closeCmd);
+                            }
+                            catch (Exception postEx)
+                            {
+                                SmartConLogger.Warn(
+                                    $"[ImportActiveFile] PostCommand Close failed: {postEx.Message}");
+                            }
+                        }
+
+                        var activeAfterSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
+                        if (!string.IsNullOrEmpty(capturedFamilyPath)
+                            && !string.Equals(activeAfterSwitch, capturedFamilyPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            try
+                            {
+                                var docToClose = app.Documents.Cast<Document>()
+                                    .FirstOrDefault(d => string.Equals(
+                                        d.PathName, capturedFamilyPath, StringComparison.OrdinalIgnoreCase));
+                                if (docToClose != null && !docToClose.IsLinked)
+                                {
+                                    docToClose.Close(false);
+                                    SmartConLogger.Info(
+                                        $"[ImportActiveFile] Closed family file: {capturedFamilyPath}");
+                                }
+                            }
+                            catch (Exception closeEx)
+                            {
+                                SmartConLogger.Info(
+                                    $"[ImportActiveFile] Family close skipped: {closeEx.Message}");
+                            }
+                        }
                     }
+
+                    CleanupImportActiveTemp();
+                    cleanupTcs.TrySetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Error($"[ImportActiveFile] Cleanup failed: {ex}");
+                    cleanupTcs.TrySetResult(false);
+                }
+            });
+            try { await cleanupTcs.Task; } catch { }
+            IsLoading = false;
+        }
+    }
+
+    private async Task<ImportActiveScanResult?> ScanActiveFileAsync()
+    {
+        var tcs = new TaskCompletionSource<ImportActiveScanResult?>();
+        _externalEvent.RaiseWithApplication(obj =>
+        {
+            try
+            {
+                var app = (Autodesk.Revit.UI.UIApplication)obj;
+                var activeDoc = app.ActiveUIDocument?.Document;
+                if (activeDoc is null) { tcs.SetResult(null); return; }
+
+                if (activeDoc.IsFamilyDocument)
+                {
                     var tempDir = Path.Combine(Path.GetTempPath(), "SmartCon", "FMLoad", Guid.NewGuid().ToString());
                     Directory.CreateDirectory(tempDir);
                     var safeName = Path.GetFileNameWithoutExtension(activeDoc.Title);
@@ -110,26 +233,118 @@ public sealed partial class FamilyManagerMainViewModel
                     foreach (var c in Path.GetInvalidFileNameChars()) safeName = safeName.Replace(c, '_');
                     var tempPath = Path.Combine(tempDir, safeName + ".rfa");
                     activeDoc.SaveAs(tempPath);
-                    tcs.SetResult(tempPath);
+                    SmartConLogger.Info(
+                        $"[ImportActiveFile] Family doc saved to: {tempPath}");
+                    tcs.SetResult(new ImportActiveScanResult(ImportActiveKind.Family, tempPath, null, null));
                 }
-                catch (Exception ex) { tcs.SetException(ex); }
-            });
+                else
+                {
+                    var pending = _systemFamilyImportService.AnalyzeAndPrepareForProject(activeDoc);
+                    if (pending.Count == 0)
+                    {
+                        SmartConLogger.Info("[ImportActiveFile] No system types found in active project");
+                        tcs.SetResult(new ImportActiveScanResult(ImportActiveKind.ProjectEmpty, null, null, null));
+                        return;
+                    }
+                    var paths = pending.Select(p => p.TempRvtPath).ToList();
+                    SmartConLogger.Info(
+                        $"[ImportActiveFile] Project: {pending.Count} categories prepared, {paths.Count} temp .rvt files");
+                    tcs.SetResult(new ImportActiveScanResult(ImportActiveKind.Project, null, pending, paths));
+                }
+            }
+            catch (Exception ex) { tcs.SetException(ex); }
+        });
 
-            var familyPath = await tcs.Task;
-            if (familyPath is null)
+        try { return await tcs.Task; }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[ImportActiveFile] Scan failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task ProcessFamilyImportAsync(string familyRfaPath)
+    {
+        var metadata = await _metadataService.ExtractAsync(familyRfaPath, CancellationToken.None);
+        var revitVersion = _fileInfoReader.ReadRevitVersion(familyRfaPath) ?? CurrentRevitVersion;
+        var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(
+            Path.GetFileNameWithoutExtension(familyRfaPath));
+        var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
+
+        var existingCategoryId = existingByName?.CategoryId;
+        var existingCategoryName = existingByName?.CategoryPath;
+        if (existingCategoryId is not null && existingCategoryName is null)
+        {
+            try
             {
-                _dialogService.ShowError(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ActiveDocNotFamily) ?? "Error",
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ActiveDocNotFamily) ?? "Активный документ не является семейством");
-                return;
+                var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
+                existingCategoryName = cat?.Name;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"[ImportActiveFile] Failed to resolve category name: {ex.Message}");
+            }
+        }
+
+        var item = new FamilyBatchImportItem(
+            familyRfaPath,
+            Path.GetFileNameWithoutExtension(familyRfaPath),
+            metadata.Sha256,
+            revitVersion,
+            new FileInfo(familyRfaPath).Length,
+            existingByName is not null ? FamilyBatchImportStatus.Existing : FamilyBatchImportStatus.New,
+            existingByName?.Id,
+            existingByName?.CurrentVersionLabel,
+            existingCategoryId,
+            existingCategoryName);
+
+        using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory, _catalogProvider);
+        if (_dialogService.ShowBatchImportDialog(vm) != true) return;
+
+        var selectedItems = vm.GetResultItems();
+        var progress = new Progress<FamilyImportProgress>(p =>
+        {
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportProgress) ?? "Importing {0} of {1}...",
+                p.CurrentFileIndex + 1, p.TotalFiles);
+        });
+
+        var importResult = await _importService.ImportBatchAsync(selectedItems, null, progress, CancellationToken.None);
+
+        var successfulItems = importResult.Results
+            .Where(r => r.Success && !r.WasSkippedAsDuplicate).ToList();
+
+        if (successfulItems.Count > 0) await LoadTreeAsync();
+
+        ExtractAttributesForImportedFamilies(importResult.Results);
+
+        StatusMessage = BuildImportStatusMessage(
+            importResult.SuccessCount, importResult.SkippedCount,
+            importResult.ErrorCount, importResult.TotalFiles);
+    }
+
+    private async Task ProcessProjectImportAsync(IReadOnlyList<SystemFamilyPendingImport> pendingItems)
+    {
+        var batchItems = new List<FamilyBatchImportItem>(pendingItems.Count);
+        var pendingByFile = new Dictionary<string, SystemFamilyPendingImport>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var pending in pendingItems)
+        {
+            pendingByFile[Path.GetFileName(pending.TempRvtPath)] = pending;
+
+            if (!File.Exists(pending.TempRvtPath))
+            {
+                SmartConLogger.Warn(
+                    $"[ImportActiveFile] Temp .rvt missing: {pending.TempRvtPath}");
+                continue;
             }
 
-            var metadata = await _metadataService.ExtractAsync(familyPath, CancellationToken.None);
-            var revitVersion = _fileInfoReader.ReadRevitVersion(familyPath) ?? CurrentRevitVersion;
-            var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(Path.GetFileNameWithoutExtension(familyPath));
+            var metadata = await _metadataService.ExtractAsync(pending.TempRvtPath, CancellationToken.None);
+            var revitVersion = _fileInfoReader.ReadRevitVersion(pending.TempRvtPath) ?? CurrentRevitVersion;
+            var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(
+                Path.GetFileNameWithoutExtension(pending.TempRvtPath));
             var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
 
-            // Resolve category name if missing (category_name can be NULL while category_id is set)
             var existingCategoryId = existingByName?.CategoryId;
             var existingCategoryName = existingByName?.CategoryPath;
             if (existingCategoryId is not null && existingCategoryName is null)
@@ -141,226 +356,216 @@ public sealed partial class FamilyManagerMainViewModel
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"[LoadActiveFamily] Failed to resolve category name: {ex.Message}");
+                    SmartConLogger.Warn(
+                        $"[ImportActiveFile] Failed to resolve category for '{pending.CategoryName}': {ex.Message}");
                 }
             }
 
-            var item = new FamilyBatchImportItem(
-                familyPath,
-                Path.GetFileNameWithoutExtension(familyPath),
+            var displayName = Path.GetFileNameWithoutExtension(pending.TempRvtPath);
+            batchItems.Add(new FamilyBatchImportItem(
+                pending.TempRvtPath,
+                displayName,
                 metadata.Sha256,
                 revitVersion,
-                new FileInfo(familyPath).Length,
+                new FileInfo(pending.TempRvtPath).Length,
                 existingByName is not null ? FamilyBatchImportStatus.Existing : FamilyBatchImportStatus.New,
                 existingByName?.Id,
                 existingByName?.CurrentVersionLabel,
                 existingCategoryId,
-                existingCategoryName);
-
-            using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory, _catalogProvider);
-            if (_dialogService.ShowBatchImportDialog(vm) != true)
-            {
-                return;
-            }
-
-            var selectedItems = vm.GetResultItems();
-            var progress = new Progress<FamilyImportProgress>(p =>
-            {
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportProgress) ?? "Importing {0} of {1}...",
-                    p.CurrentFileIndex + 1, p.TotalFiles);
-            });
-
-            var importResult = await _importService.ImportBatchAsync(
-                selectedItems, null, progress, CancellationToken.None);
-
-            var successfulItems = importResult.Results
-                .Where(r => r.Success && !r.WasSkippedAsDuplicate).ToList();
-
-            var itemsWithTypeCatalog = new List<FamilyImportResult>();
-            var itemsWithoutTypeCatalog = new List<FamilyImportResult>();
-            foreach (var si in successfulItems)
-            {
-                if (string.IsNullOrEmpty(si.CatalogItemId) || string.IsNullOrEmpty(si.VersionLabel))
-                {
-                    itemsWithoutTypeCatalog.Add(si);
-                    continue;
-                }
-
-                var resolved = await _fileResolver.ResolveVersionAsync(si.CatalogItemId!, si.VersionLabel!, CancellationToken.None);
-                if (!string.IsNullOrEmpty(resolved.AbsolutePath))
-                {
-                    var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
-                    if (File.Exists(txtPath))
-                    {
-                        SmartConLogger.Info($"[LoadActiveFamily] Type Catalog found for {si.CatalogItemId} {si.VersionLabel}");
-                        itemsWithTypeCatalog.Add(si);
-                        continue;
-                    }
-                }
-                itemsWithoutTypeCatalog.Add(si);
-            }
-
-            var extractionTcs = new TaskCompletionSource<FamilyExtractionResult?>();
-            _externalEvent.RaiseWithApplication(obj =>
-            {
-                try
-                {
-                    var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
-                    var app = uiApp.Application;
-                    var activeDoc = uiApp.ActiveUIDocument?.Document;
-                    if (activeDoc == null || !activeDoc.IsFamilyDocument)
-                    {
-                        extractionTcs.SetResult(null);
-                        return;
-                    }
-
-                    string? familyPath = activeDoc.PathName;
-
-                    if (successfulItems.Count > 0)
-                    {
-                        var extractionResult = _extractionService.Extract(activeDoc, Array.Empty<string>());
-                        extractionTcs.SetResult(extractionResult);
-                    }
-                    else
-                    {
-                        extractionTcs.SetResult(null);
-                    }
-
-                    // Switch to project first (cannot close active document directly)
-                    var projectDoc = app.Documents.Cast<Document>()
-                        .FirstOrDefault(d => !d.IsFamilyDocument && !d.IsLinked);
-
-                    if (projectDoc != null && !string.IsNullOrEmpty(projectDoc.PathName))
-                    {
-                        try
-                        {
-                            uiApp.OpenAndActivateDocument(projectDoc.PathName);
-                        }
-                        catch (Exception activateEx)
-                        {
-                            SmartConLogger.Warn($"[LoadActiveFamily] Failed to activate project: {activateEx.Message}");
-                            // Fallback: close via PostCommand since we can't close active doc directly
-                            try
-                            {
-                                var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
-                                uiApp.PostCommand(closeCmd);
-                            }
-                            catch { }
-                        }
-                    }
-                    else
-                    {
-                        // No project document open — use PostCommand to close active family via UI
-                        try
-                        {
-                            var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
-                            uiApp.PostCommand(closeCmd);
-                        }
-                        catch (Exception postEx)
-                        {
-                            SmartConLogger.Warn($"[LoadActiveFamily] PostCommand Close failed: {postEx.Message}");
-                        }
-                    }
-
-                    // Close the family document only if it is no longer active
-                    var currentActivePath = uiApp.ActiveUIDocument?.Document?.PathName;
-                    if (!string.IsNullOrEmpty(familyPath) && currentActivePath != familyPath)
-                    {
-                        Document? familyDoc = null;
-                        try
-                        {
-                            foreach (var d in app.Documents)
-                            {
-                                Document? doc = d as Document;
-                                if (doc is null) continue;
-                                try
-                                {
-                                    if (doc.IsFamilyDocument && doc.PathName == familyPath)
-                                    {
-                                        familyDoc = doc;
-                                        break;
-                                    }
-                                }
-                                catch (Exception docEx)
-                                {
-                                    SmartConLogger.Info($"[LoadActiveFamily] Skipping invalidated document: {docEx.Message}");
-                                }
-                            }
-                        }
-                        catch (Exception enumEx)
-                        {
-                            SmartConLogger.Warn($"[LoadActiveFamily] Failed to enumerate documents: {enumEx.Message}");
-                        }
-                        if (familyDoc != null)
-                        {
-                            try
-                            {
-                                familyDoc.Close(false);
-                                SmartConLogger.Info($"[LoadActiveFamily] Closed family document: {familyDoc.Title}");
-                            }
-                            catch (Exception closeEx)
-                            {
-                                SmartConLogger.Info($"[LoadActiveFamily] Family document already closed or invalidated: {closeEx.Message}");
-                            }
-                        }
-                    }
-
-                    CleanupFamilyManagerTemp();
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Error($"LoadActiveFamily cleanup failed: {ex}");
-                    extractionTcs.TrySetResult(null);
-                }
-            });
-
-            var extractionResult = await extractionTcs.Task;
-            if (extractionResult != null)
-            {
-                foreach (var si in itemsWithoutTypeCatalog)
-                {
-                    if (string.IsNullOrEmpty(si.CatalogItemId)) continue;
-                    await _dataImportService.SaveExtractionResultAsync(
-                        si.CatalogItemId!, extractionResult, si.VersionId, si.FileId, CancellationToken.None);
-                }
-
-                foreach (var si in itemsWithTypeCatalog)
-                {
-                    if (string.IsNullOrEmpty(si.CatalogItemId)) continue;
-                    await _dataImportService.MergeMissingValuesAsync(
-                        si.CatalogItemId!, extractionResult, si.VersionId, si.FileId, CancellationToken.None);
-                }
-            }
-            
-            // Always reload tree if there were successful imports (even if extraction was skipped)
-            if (successfulItems.Count > 0)
-            {
-                await LoadTreeAsync();
-            }
-
-            StatusMessage = BuildImportStatusMessage(
-                importResult.SuccessCount, importResult.SkippedCount,
-                importResult.ErrorCount, importResult.TotalFiles);
+                existingCategoryName,
+                FamilySource: "system",
+                TypeCount: pending.Types.Count,
+                RevitCategory: pending.CategoryName));
         }
-        finally
+
+        if (batchItems.Count == 0)
         {
-            IsLoading = false;
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Error",
+                LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound) ?? "No system families found");
+            return;
         }
+
+        using var vm = new FamilyBatchImportViewModel(batchItems, _dialogService, _viewModelFactory, _catalogProvider);
+        if (_dialogService.ShowBatchImportDialog(vm) != true) return;
+
+        var selectedItems = vm.GetResultItems();
+        var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
+        if (toImport.Count == 0) return;
+
+        StatusMessage = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyPreparing) ?? "Импорт {0} системных семейств...",
+            toImport.Count);
+
+        var result = await _systemFamilyImportService.ImportBatchItemsAsync(toImport);
+
+        var totalTypes = pendingItems
+            .Where(p => toImport.Any(i => string.Equals(
+                Path.GetFileName(i.FilePath), Path.GetFileName(p.TempRvtPath), StringComparison.OrdinalIgnoreCase)))
+            .Sum(p => p.Types.Count);
+
+        StatusMessage = result.Success
+            ? string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported) ?? "Импортировано: {0}",
+                totalTypes)
+            : result.Message ?? "Ошибка импорта";
+
+        if (result.Success) await LoadTreeAsync();
+
+        // Извлечение атрибутов из .rvt (по образцу ImportSystemFamilyCommand: Import.cs:366-422).
+        // Revit's ExtractFromRvt требует UI thread → ExternalEvent.
+        ExtractAttributesFromRvts(result.ExtractionTasks);
     }
 
-    private static void CleanupFamilyManagerTemp()
+    private void ExtractAttributesFromRvts(IReadOnlyList<SystemFamilyExtractionTask> tasks)
+    {
+        if (tasks.Count == 0) return;
+
+        _externalEvent.Raise(() =>
+        {
+            try
+            {
+                foreach (var task in tasks)
+                {
+                    try
+                    {
+                        if (!File.Exists(task.TempRvtPath))
+                        {
+                            SmartConLogger.Warn(
+                                $"[ImportActiveFile] Temp .rvt not found for extraction: {task.TempRvtPath}");
+                            continue;
+                        }
+
+                        var extraction = _systemFamilyAttributeExtraction.ExtractFromRvt(task.TempRvtPath, task.TypeNames);
+                        if (extraction.Success)
+                        {
+                            FireAndForget(async () =>
+                            {
+                                try
+                                {
+                                    await _dataImportService.SaveExtractionResultAsync(
+                                        task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
+                                    SmartConLogger.Info(
+                                        $"[ImportActiveFile] Saved extraction for '{Path.GetFileName(task.TempRvtPath)}': {extraction.Types.Count} types");
+                                }
+                                catch (Exception ex)
+                                {
+                                    SmartConLogger.Warn($"[ImportActiveFile] SaveExtractionResult failed: {ex.Message}");
+                                }
+                            });
+                        }
+                        else
+                        {
+                            SmartConLogger.Warn(
+                                $"[ImportActiveFile] Extraction failed for '{Path.GetFileName(task.TempRvtPath)}': {extraction.ErrorMessage}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Warn($"[ImportActiveFile] Extraction exception for '{task.TempRvtPath}': {ex.Message}");
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var task in tasks)
+                {
+                    try
+                    {
+                        if (File.Exists(task.TempRvtPath)) File.Delete(task.TempRvtPath);
+                        var metaPath = task.TempRvtPath + ".types.json";
+                        if (File.Exists(metaPath)) File.Delete(metaPath);
+                    }
+                    catch { }
+                }
+            }
+        });
+    }
+
+    /// <summary>
+    /// Извлекает атрибуты (Type parameters) из импортированных .rfa-файлов.
+    /// Зеркалит поведение старого Import.cs (ExtractTypesForImportedFamilies):
+    /// после успешного импорта резолвит файл в managed storage, вызывает
+    /// <see cref="IFamilyDataExtractionService.Extract"/> и сохраняет результат
+    /// через <see cref="IFamilyDataImportService.SaveExtractionResultAsync"/>.
+    /// </summary>
+    private void ExtractAttributesForImportedFamilies(IReadOnlyList<FamilyImportResult> importResults)
+    {
+        var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionId, string? FileId, bool HasTypeCatalog)>();
+
+        try
+        {
+            foreach (var item in importResults)
+            {
+                if (!item.Success || item.WasSkippedAsDuplicate) continue;
+                if (string.IsNullOrEmpty(item.CatalogItemId)) continue;
+                var catalogItemId = item.CatalogItemId!;
+
+                var resolved = Task.Run(() =>
+                    _fileResolver.ResolveForLoadAsync(catalogItemId, CurrentRevitVersion, CancellationToken.None))
+                    .GetAwaiter().GetResult();
+
+                if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
+
+                var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
+                var hasTypeCatalog = File.Exists(txtPath);
+
+                var extraction = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());
+                if (extraction.Success)
+                {
+                    extractionResults.Add((catalogItemId, extraction, item.VersionId, item.FileId, hasTypeCatalog));
+                    SmartConLogger.Info(
+                        $"[ImportActiveFile] Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(resolved.AbsolutePath)}'");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"[ImportActiveFile] Attribute extraction failed: {ex.Message}");
+        }
+
+        if (extractionResults.Count == 0) return;
+
+        FireAndForget(async () =>
+        {
+            try
+            {
+                foreach (var (catalogItemId, result, versionId, fileId, hasTypeCatalog) in extractionResults)
+                {
+                    if (hasTypeCatalog)
+                    {
+                        await _dataImportService.MergeMissingValuesAsync(
+                            catalogItemId, result, versionId, fileId, CancellationToken.None);
+                    }
+                    else
+                    {
+                        await _dataImportService.SaveExtractionResultAsync(
+                            catalogItemId, result, versionId, fileId, CancellationToken.None);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"[ImportActiveFile] SaveExtraction failed: {ex.Message}");
+            }
+        });
+    }
+
+    private static void CleanupImportActiveTemp()
     {
         try
         {
             var tempRoot = Path.Combine(Path.GetTempPath(), "SmartCon");
             if (!Directory.Exists(tempRoot)) return;
 
-            var dir = Path.Combine(tempRoot, "FMLoad");
-            if (!Directory.Exists(dir)) return;
-            foreach (var childDir in Directory.GetDirectories(dir))
+            foreach (var sub in new[] { "FMLoad", "SystemFamilyLoad", "SystemFamilyLoadFromProject" })
             {
-                try { Directory.Delete(childDir, true); } catch { }
+                var dir = Path.Combine(tempRoot, sub);
+                if (!Directory.Exists(dir)) continue;
+                foreach (var childDir in Directory.GetDirectories(dir))
+                {
+                    try { Directory.Delete(childDir, true); } catch { }
+                }
             }
         }
         catch { }
@@ -394,235 +599,6 @@ public sealed partial class FamilyManagerMainViewModel
                 SmartConLogger.Freeze($"[EditSystemFamily] OpenAndActivateDocument failed: {ex.Message}");
             }
         });
-    }
-
-    [RelayCommand(CanExecute = nameof(CanEditOps))]
-    private async Task LoadActiveSystemFamilyAsync()
-    {
-        IsLoading = true;
-        string? sourceRvtPath = null;
-        try
-        {
-            SmartConLogger.Info("[LoadActiveSystemFamily] Started");
-            var tcs = new TaskCompletionSource<string?>();
-            _externalEvent.RaiseWithApplication(obj =>
-            {
-                try
-                {
-                    var app = (Autodesk.Revit.UI.UIApplication)obj;
-                    var activeDoc = app.ActiveUIDocument.Document;
-                    if (activeDoc.IsFamilyDocument)
-                    {
-                        SmartConLogger.Warn("[LoadActiveSystemFamily] Active document is a family document, aborting");
-                        tcs.SetResult(null);
-                        return;
-                    }
-                    sourceRvtPath = activeDoc.PathName;
-                    var tempDir = Path.Combine(Path.GetTempPath(), "SmartCon", "SystemFamilyLoad", Guid.NewGuid().ToString());
-                    Directory.CreateDirectory(tempDir);
-                    var safeName = Path.GetFileNameWithoutExtension(activeDoc.Title);
-                    if (string.IsNullOrWhiteSpace(safeName)) safeName = "SystemFamily";
-                    foreach (var c in Path.GetInvalidFileNameChars()) safeName = safeName.Replace(c, '_');
-                    var tempPath = Path.Combine(tempDir, safeName + ".rvt");
-                    activeDoc.SaveAs(tempPath);
-                    SmartConLogger.Info($"[LoadActiveSystemFamily] Active doc '{activeDoc.Title}' (path='{sourceRvtPath}') saved as temp: {tempPath}");
-                    tcs.SetResult(tempPath);
-                }
-                catch (Exception ex) { tcs.SetException(ex); }
-            });
-
-            var rvtPath = await tcs.Task;
-            if (rvtPath is null)
-            {
-                _dialogService.ShowError(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ActiveDocNotProject) ?? "Error",
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ActiveDocNotProject) ?? "Active document is not a project.");
-                return;
-            }
-
-            var metadata = await _metadataService.ExtractAsync(rvtPath, CancellationToken.None);
-            var revitVersion = _fileInfoReader.ReadRevitVersion(rvtPath) ?? CurrentRevitVersion;
-            var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(Path.GetFileNameWithoutExtension(rvtPath));
-            var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
-
-            var existingCategoryId = existingByName?.CategoryId;
-            var existingCategoryName = existingByName?.CategoryPath;
-            if (existingCategoryId is not null && existingCategoryName is null)
-            {
-                try
-                {
-                    var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
-                    existingCategoryName = cat?.Name;
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn($"[LoadActiveSystemFamily] Failed to resolve category name: {ex.Message}");
-                }
-            }
-
-            var item = new FamilyBatchImportItem(
-                rvtPath,
-                Path.GetFileNameWithoutExtension(rvtPath),
-                metadata.Sha256,
-                revitVersion,
-                new FileInfo(rvtPath).Length,
-                existingByName is not null ? FamilyBatchImportStatus.Existing : FamilyBatchImportStatus.New,
-                existingByName?.Id,
-                existingByName?.CurrentVersionLabel,
-                existingCategoryId,
-                existingCategoryName,
-                FamilySource: "system");
-
-            SmartConLogger.Info($"[LoadActiveSystemFamily] Temp: {rvtPath}, displayName='{item.FileName}', Sha256: {item.Sha256[..Math.Min(16, item.Sha256.Length)]}...");
-
-            using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory, _catalogProvider);
-            if (_dialogService.ShowBatchImportDialog(vm) != true)
-            {
-                return;
-            }
-
-            var selectedItems = vm.GetResultItems();
-            var progress = new Progress<FamilyImportProgress>(p =>
-            {
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportProgress) ?? "Importing {0} of {1}...",
-                    p.CurrentFileIndex + 1, p.TotalFiles);
-            });
-
-            var importResult = await _importService.ImportBatchAsync(
-                selectedItems, null, progress, CancellationToken.None);
-
-            if (importResult.Results.Any(r => r.Success && !r.WasSkippedAsDuplicate))
-            {
-                await LoadTreeAsync();
-            }
-        }
-        catch (Exception ex)
-        {
-            _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed) ?? "Error",
-                ex.Message);
-        }
-        finally
-        {
-            var capturedSource = sourceRvtPath;
-            var cleanupTcs = new TaskCompletionSource<bool>();
-            _externalEvent.RaiseWithApplication(obj =>
-            {
-                try
-                {
-                    var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
-                    var app = uiApp.Application;
-
-                    // The active doc WAS at managed storage path BEFORE SaveAs.
-                    // After SaveAs, its PathName changed to the temp path (SaveAs updates PathName).
-                    // So `activeBeforeSwitch` below is the TEMP path, not the source managed-storage path.
-                    var activeBeforeSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
-
-                    // Find a project doc DIFFERENT from the active (system family) doc.
-                    var projectDoc = app.Documents.Cast<Document>()
-                        .FirstOrDefault(d => !d.IsFamilyDocument && !d.IsLinked
-                            && !string.IsNullOrEmpty(d.PathName)
-                            && d.PathName != activeBeforeSwitch);
-
-                    SmartConLogger.Info($"[LoadActiveSystemFamily] Cleanup: activeBeforeSwitch='{activeBeforeSwitch}', source='{capturedSource}', projectToSwitch='{projectDoc?.PathName}'");
-
-                    if (projectDoc != null)
-                    {
-                        try
-                        {
-                            uiApp.OpenAndActivateDocument(projectDoc.PathName);
-                            SmartConLogger.Info($"[LoadActiveSystemFamily] Switched to project: {projectDoc.PathName}");
-                        }
-                        catch (Exception activateEx)
-                        {
-                            SmartConLogger.Warn($"[LoadActiveSystemFamily] Failed to activate project: {activateEx.Message}");
-                            try
-                            {
-                                var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
-                                uiApp.PostCommand(closeCmd);
-                            }
-                            catch { }
-                        }
-                    }
-                    else
-                    {
-                        SmartConLogger.Info("[LoadActiveSystemFamily] No other project to switch to — closing active system family file");
-                        try
-                        {
-                            var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
-                            uiApp.PostCommand(closeCmd);
-                        }
-                        catch (Exception postEx)
-                        {
-                            SmartConLogger.Warn($"[LoadActiveSystemFamily] PostCommand Close failed: {postEx.Message}");
-                        }
-                    }
-
-                    var activeAfterSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
-                    SmartConLogger.Info($"[LoadActiveSystemFamily] After switch: active='{activeAfterSwitch}'");
-
-                    // CRITICAL: After SaveAs, the system family doc's PathName became the TEMP path.
-                    // We need to close the doc at activeBeforeSwitch (= temp path), NOT capturedSource
-                    // (= original managed-storage path which is no longer in app.Documents).
-                    var docToClosePath = activeBeforeSwitch;
-                    if (!string.IsNullOrEmpty(docToClosePath)
-                        && !string.Equals(activeAfterSwitch, docToClosePath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        try
-                        {
-                            var docToClose = app.Documents.Cast<Document>()
-                                .FirstOrDefault(d => string.Equals(d.PathName, docToClosePath, StringComparison.OrdinalIgnoreCase));
-                            if (docToClose != null && !docToClose.IsLinked)
-                            {
-                                docToClose.Close(false);
-                                SmartConLogger.Info($"[LoadActiveSystemFamily] Closed system family file: {docToClosePath}");
-                            }
-                            else
-                            {
-                                SmartConLogger.Warn($"[LoadActiveSystemFamily] Doc at '{docToClosePath}' not found in app.Documents");
-                            }
-                        }
-                        catch (Exception closeEx)
-                        {
-                            SmartConLogger.Warn($"[LoadActiveSystemFamily] Failed to close system family file: {closeEx.Message}");
-                        }
-                    }
-                    else if (!string.IsNullOrEmpty(docToClosePath))
-                    {
-                        SmartConLogger.Info($"[LoadActiveSystemFamily] System family file is still active after switch, cannot close via API");
-                    }
-
-                    CleanupSystemFamilyTemp();
-                    cleanupTcs.TrySetResult(true);
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Error($"LoadActiveSystemFamily cleanup failed: {ex}");
-                    cleanupTcs.TrySetResult(false);
-                }
-            });
-            try { await cleanupTcs.Task; } catch { }
-
-            IsLoading = false;
-        }
-    }
-
-    private static void CleanupSystemFamilyTemp()
-    {
-        try
-        {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "SmartCon");
-            if (!Directory.Exists(tempRoot)) return;
-
-            var dir = Path.Combine(tempRoot, "SystemFamilyLoad");
-            if (!Directory.Exists(dir)) return;
-            foreach (var childDir in Directory.GetDirectories(dir))
-            {
-                try { Directory.Delete(childDir, true); } catch { }
-            }
-        }
-        catch { }
     }
 
     [RelayCommand(CanExecute = nameof(CanEditOps))]
@@ -754,4 +730,17 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     private bool CanEditOps() => CanEdit;
+
+    private enum ImportActiveKind
+    {
+        Family,
+        Project,
+        ProjectEmpty
+    }
+
+    private sealed record ImportActiveScanResult(
+        ImportActiveKind Kind,
+        string? FamilyPath,
+        IReadOnlyList<SystemFamilyPendingImport>? PendingItems,
+        IReadOnlyList<string>? RvtPaths);
 }

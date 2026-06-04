@@ -17,6 +17,7 @@ public partial class FamilyBatchImportView : DialogWindowBase
         ColFileName.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_FileName);
         ColRevitVersion.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_RevitVersion);
         ColSize.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Size);
+        ColTypeCount.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_TypeCount);
         ColStatus.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Status);
         ColCategory.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Category);
         ColAction.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Action);

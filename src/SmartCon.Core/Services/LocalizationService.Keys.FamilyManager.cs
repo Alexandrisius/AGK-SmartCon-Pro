@@ -15,7 +15,7 @@ public static partial class LocalizationService
         ru["FM_ImportData"] = "Импорт данных"; en["FM_ImportData"] = "Import Data";
         ru["FM_PlaceType"] = "Разместить тип"; en["FM_PlaceType"] = "Place Type";
         ru["FM_Edit"] = "Редактировать"; en["FM_Edit"] = "Edit";
-        ru["FM_LoadActiveFamily"] = "Загрузить активное семейство"; en["FM_LoadActiveFamily"] = "Load Active Family";
+        ru["FM_ImportActiveFile"] = "Импорт активного файла"; en["FM_ImportActiveFile"] = "Import Active File";
         ru["FM_ActiveDocNotFamily"] = "Активный документ не является семейством"; en["FM_ActiveDocNotFamily"] = "Active document is not a family";
         ru["FM_ImportSystemFamily"] = "Импорт системного семейства"; en["FM_ImportSystemFamily"] = "Import System Family";
         ru["FM_ActiveDocNotProject"] = "Активный документ не является проектом. Откройте проект Revit."; en["FM_ActiveDocNotProject"] = "Active document is not a project. Open a Revit project.";
@@ -24,7 +24,7 @@ public static partial class LocalizationService
         ru["FM_SystemFamilyImportFailed"] = "Ошибка импорта системного семейства"; en["FM_SystemFamilyImportFailed"] = "System family import failed";
         ru["FM_SystemFamilyPreparing"] = "Подготовлено {0} категорий, импорт..."; en["FM_SystemFamilyPreparing"] = "Prepared {0} categories, importing...";
         ru["FM_EditSystemFamily"] = "Редактировать системное семейство"; en["FM_EditSystemFamily"] = "Edit System Family";
-        ru["FM_LoadActiveSystemFamily"] = "Загрузить активное системное семейство"; en["FM_LoadActiveSystemFamily"] = "Load Active System Family";
+        ru["FM_NoSystemFamiliesFound"] = "В проекте не найдено размещённых системных семейств"; en["FM_NoSystemFamiliesFound"] = "No placed system families found in the project";
         ru["FM_EditMetadata"] = "Редактировать"; en["FM_EditMetadata"] = "Edit";
         ru["FM_NoActiveDocument"] = "Нет активного документа"; en["FM_NoActiveDocument"] = "No active document";
         ru["FM_ImportProgress"] = "Импорт {0} из {1}..."; en["FM_ImportProgress"] = "Importing {0} of {1}...";

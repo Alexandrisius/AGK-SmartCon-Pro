@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
@@ -66,6 +67,88 @@ internal sealed class SystemFamilyImportService : ISystemFamilyImportService
         }
 
         return result;
+    }
+
+    public IReadOnlyList<SystemFamilyPendingImport> AnalyzeAndPrepareForProject(Document activeDoc)
+    {
+        if (activeDoc is null) return [];
+
+        var analyses = _revitOps.AnalyzeActiveProject(activeDoc);
+        if (analyses.Count == 0)
+        {
+            SmartConLogger.Info("[SystemImport] AnalyzeActiveProject found no placed system types");
+            return [];
+        }
+
+        SmartConLogger.Info($"[SystemImport] Found {analyses.Count} categories with placed types");
+
+        // Round-trip: если в активном проекте только одна системная категория
+        // (например, открыт мини-проект "Трубы стальные.rvt"), используем имя
+        // файла как displayName — иначе при повторной загрузке создаётся
+        // отдельный catalog item вместо overwrite существующего.
+        var singleCategory = analyses.Count == 1;
+        var sourceName = singleCategory ? ResolveActiveProjectDisplayName(activeDoc) : null;
+        if (singleCategory)
+        {
+            SmartConLogger.Info(
+                $"[SystemImport] Single category — using source file name '{sourceName}' as displayName");
+        }
+
+        var result = new List<SystemFamilyPendingImport>();
+        foreach (var analysis in analyses)
+        {
+            var typeInfos = analysis.Types
+                .Select(t => new SelectedSystemType(t.UniqueId, t.Name, analysis.DisplayName))
+                .ToList();
+            var uniqueIds = typeInfos.Select(t => t.UniqueId).ToList();
+
+            var displayName = singleCategory ? sourceName! : analysis.DisplayName;
+
+            SmartConLogger.Info(
+                $"[SystemImport] Creating temp .rvt for '{displayName}' with {typeInfos.Count} types");
+
+            var createResult = _revitOps.CreateCleanProjectWithTypesAndInstances(
+                activeDoc, uniqueIds, analysis.Category, displayName);
+
+            if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
+            {
+                SmartConLogger.Warn(
+                    $"[SystemImport] Failed to create temp .rvt for '{displayName}': {createResult.Error}");
+                continue;
+            }
+
+            try
+            {
+                var metaPath = createResult.FilePath + ".types.json";
+                var typeNames = typeInfos.Select(t => t.Name).ToList();
+                File.WriteAllText(metaPath, JsonSerializer.Serialize(typeNames));
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"[SystemImport] Failed to write sidecar meta for '{displayName}': {ex.Message}");
+            }
+
+            result.Add(new SystemFamilyPendingImport(displayName, typeInfos, createResult.FilePath!));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Возвращает display name для случая single-category:
+    /// имя .rvt-файла активного проекта без расширения.
+    /// Fallback: <see cref="Document.Title"/> для несохранённых проектов.
+    /// </summary>
+    private static string ResolveActiveProjectDisplayName(Document activeDoc)
+    {
+        var pathName = activeDoc.PathName;
+        if (!string.IsNullOrEmpty(pathName))
+        {
+            var name = Path.GetFileNameWithoutExtension(pathName);
+            if (!string.IsNullOrEmpty(name)) return name;
+        }
+        return activeDoc.Title;
     }
 
     public async Task<SystemFamilyImportResult> ImportBatchItemsAsync(IReadOnlyList<FamilyBatchImportItem> items)

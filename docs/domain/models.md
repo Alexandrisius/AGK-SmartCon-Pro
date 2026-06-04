@@ -2137,4 +2137,115 @@ public sealed class DbAccessDeniedException : Exception
 }
 ```
 
+---
+
+### CategoryAnalysis *(System Families)*
+
+Результат анализа одной системной категории в активном проекте Revit.
+Содержит **только** типы, реально размещённые в модели (`WhereElementIsNotElementType`).
+`BuiltInCategory` — value-type carrier (допустим в Core по I-09).
+
+**Файл:** `CategoryAnalysis.cs`
+
+```csharp
+public sealed record CategoryAnalysis(
+    BuiltInCategory Category,
+    string DisplayName,
+    IReadOnlyList<SystemTypeInfo> Types)
+{
+    public int TypeCount => Types.Count;
+}
+
+public sealed record SystemTypeInfo(
+    string Name,
+    string UniqueId);
+```
+
+---
+
+### SelectedSystemType *(System Families)*
+
+Иммутабельный снапшот одного выбранного пользователем типа системного семейства
+(из picker flow в активном проекте). `UniqueId` используется для последующего
+копирования через `ElementTransformUtils.CopyElements`.
+
+**Файл:** `SelectedSystemType.cs`
+
+```csharp
+public sealed record SelectedSystemType(
+    string UniqueId,
+    string Name,
+    string CategoryName);
+```
+
+---
+
+### CreateCleanProjectResult *(System Families)*
+
+Результат создания чистого .rvt-проекта с копиями системных типов (опционально
+с размещением инстансов на сетке 2×2 м). `FilePath` — абсолютный путь к сохранённому
+.rvt во временной папке (`%TEMP%/SmartCon/SystemFamilyLoadFromProject/{guid}/`).
+
+**Файл:** `CreateCleanProjectResult.cs`
+
+```csharp
+public sealed record CreateCleanProjectResult(
+    bool Success,
+    string? FilePath,
+    string? Error,
+    int CopiedElementsCount,
+    string? CategoryName = null);
+```
+
+---
+
+### SystemFamilyBatchImportItem *(System Families)*
+
+Элемент batch-диалога импорта системных семейств (один на категорию).
+Содержит метаданные для проверки дублей и финального импорта в managed storage
+(поле `TempRvtPath` — путь к временному .rvt, `TypeNames` — список имён типов).
+
+**Файл:** `SystemFamilyBatchImportItem.cs`
+
+```csharp
+public sealed record SystemFamilyBatchImportItem(
+    string Id,
+    string SourceCategoryName,
+    string FamilyName,
+    string NormalizedName,
+    IReadOnlyList<string> TypeNames,
+    int TypeCount,
+    FamilyBatchImportStatus Status,
+    FamilyBatchImportAction Action,
+    string? ExistingCatalogItemId = null,
+    string? TempRvtPath = null,
+    string? Sha256 = null,
+    string? TargetCategoryId = null);
+```
+
+---
+
+### SystemFamilyImportResult / SystemFamilyExtractionTask *(System Families)*
+
+Результат финального импорта системных семейств из подготовленных .rvt в managed storage.
+`ExtractionTasks` — по одному на каждую импортированную категорию (атрибуты
+извлекаются отдельным фоновым сервисом `ISystemFamilyAttributeExtractionService`).
+
+**Файл:** `SystemFamilyImportResult.cs`
+
+```csharp
+public sealed record SystemFamilyImportResult(
+    bool Success,
+    string? Message,
+    IReadOnlyList<SystemFamilyExtractionTask> ExtractionTasks,
+    int TypesCount);
+
+public sealed record SystemFamilyExtractionTask(
+    string CatalogItemId,
+    string TempRvtPath,
+    IReadOnlyList<string> TypeNames,
+    string? VersionId,
+    string? FileId);
+```
+
 

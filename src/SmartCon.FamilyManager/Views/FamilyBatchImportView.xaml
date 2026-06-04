@@ -94,6 +94,22 @@
                                         MinWidth="70"
                                         IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
+                    <DataGridTextColumn x:Name="ColTypeCount"
+                                        Binding="{Binding TypeCount}"
+                                        Width="Auto"
+                                        MinWidth="50"
+                                        IsReadOnly="True"
+                                        ElementStyle="{StaticResource CenterCell}">
+                        <DataGridTextColumn.CellStyle>
+                            <Style TargetType="DataGridCell" BasedOn="{StaticResource CompactDataGridCell}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding FamilySource}" Value="loadable">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.CellStyle>
+                    </DataGridTextColumn>
                     <DataGridTextColumn x:Name="ColStatus"
                                         Binding="{Binding Status, Converter={StaticResource StatusConverter}}"
                                         Width="Auto"
