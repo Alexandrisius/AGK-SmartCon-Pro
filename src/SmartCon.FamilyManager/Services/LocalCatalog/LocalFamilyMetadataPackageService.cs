@@ -9,7 +9,7 @@ internal sealed class LocalFamilyMetadataPackageService : IFamilyMetadataPackage
     private readonly IAttributeDefinitionRepository _attributeRepository;
     private readonly ICategoryAttributeBindingService _bindingService;
     private readonly LocalCatalogDatabase _database;
-    private readonly LocalCatalogMigrator _migrator;
+    private readonly ILocalCatalogMigrator _migrator;
     private string? _migratedDbPath;
 
     public LocalFamilyMetadataPackageService(
@@ -17,7 +17,7 @@ internal sealed class LocalFamilyMetadataPackageService : IFamilyMetadataPackage
         IAttributeDefinitionRepository attributeRepository,
         ICategoryAttributeBindingService bindingService,
         LocalCatalogDatabase database,
-        LocalCatalogMigrator migrator)
+        ILocalCatalogMigrator migrator)
     {
         _categoryRepository = categoryRepository;
         _attributeRepository = attributeRepository;

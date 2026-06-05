@@ -148,7 +148,7 @@ public static class ServiceRegistrar
 
         // --- FamilyManager (Phase 13) ---
         services.AddSingleton<LocalCatalogDatabase>();
-        services.AddSingleton<LocalCatalogMigrator>();
+        services.AddSingleton<ILocalCatalogMigrator, LocalCatalogMigrator>();
         services.AddSingleton<StoragePathResolver>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());

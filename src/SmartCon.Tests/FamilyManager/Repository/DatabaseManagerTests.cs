@@ -27,7 +27,7 @@ public sealed class DatabaseManagerTests
             identityMock.Setup(s => s.GetCurrentUser())
                 .Returns(new UserIdentity("test-user", "Test User", "TEST-PC", "test-user"));
 
-            Manager = new DatabaseManager(Database, identityMock.Object);
+            Manager = new DatabaseManager(Database, identityMock.Object, new LocalCatalogMigrator(Database));
 
             var field = typeof(DatabaseManager).GetField(
                 "_registryPath",

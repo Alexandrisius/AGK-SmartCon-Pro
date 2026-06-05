@@ -1,9 +1,10 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal sealed class LocalCatalogMigrator
+public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
 {
     private readonly LocalCatalogDatabase _database;
 

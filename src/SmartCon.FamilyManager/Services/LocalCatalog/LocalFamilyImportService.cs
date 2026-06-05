@@ -10,7 +10,7 @@ namespace SmartCon.FamilyManager.Services.LocalCatalog;
 internal sealed partial class LocalFamilyImportService : IFamilyImportService
 {
     private readonly LocalCatalogDatabase _database;
-    private readonly LocalCatalogMigrator _migrator;
+    private readonly ILocalCatalogMigrator _migrator;
     private readonly LocalCatalogProvider _catalogProvider;
     private readonly StoragePathResolver _pathResolver;
     private readonly IFamilyMetadataExtractionService _metadataService;
@@ -18,7 +18,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
     public LocalFamilyImportService(
         LocalCatalogDatabase database,
-        LocalCatalogMigrator migrator,
+        ILocalCatalogMigrator migrator,
         LocalCatalogProvider catalogProvider,
         StoragePathResolver pathResolver,
         IFamilyMetadataExtractionService metadataService,

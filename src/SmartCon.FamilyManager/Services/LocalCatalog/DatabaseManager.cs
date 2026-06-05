@@ -17,12 +17,17 @@ internal sealed class DatabaseManager : IDatabaseManager
 
     private readonly LocalCatalogDatabase _catalogDatabase;
     private readonly IUserIdentityService _identityService;
+    private readonly ILocalCatalogMigrator _migrator;
     private readonly string _registryPath;
 
-    public DatabaseManager(LocalCatalogDatabase catalogDatabase, IUserIdentityService identityService)
+    public DatabaseManager(
+        LocalCatalogDatabase catalogDatabase,
+        IUserIdentityService identityService,
+        ILocalCatalogMigrator migrator)
     {
         _catalogDatabase = catalogDatabase;
         _identityService = identityService;
+        _migrator = migrator;
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var fmDir = Path.Combine(appData, "SmartCon", "FamilyManager");
         Directory.CreateDirectory(fmDir);
@@ -48,8 +53,7 @@ internal sealed class DatabaseManager : IDatabaseManager
             if (active is not null)
             {
                 _catalogDatabase.SwitchToPath(active.Path);
-                var migrator = new LocalCatalogMigrator(_catalogDatabase);
-                await migrator.MigrateAsync(ct);
+                await _migrator.MigrateAsync(ct);
             }
         }
     }
@@ -91,8 +95,7 @@ internal sealed class DatabaseManager : IDatabaseManager
         _catalogDatabase.SwitchToPath(dbRoot);
         try
         {
-            var migrator = new LocalCatalogMigrator(_catalogDatabase);
-            await migrator.MigrateAsync(ct);
+            await _migrator.MigrateAsync(ct);
 
             using var dbConn = _catalogDatabase.CreateConnection();
             await dbConn.OpenAsync(ct).ConfigureAwait(false);
@@ -201,8 +204,7 @@ internal sealed class DatabaseManager : IDatabaseManager
             connections.Add(connection);
             await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
 
-            var migrator = new LocalCatalogMigrator(_catalogDatabase);
-            await migrator.MigrateAsync(ct);
+            await _migrator.MigrateAsync(ct);
 
             ActiveDatabaseChanged?.Invoke(this, id);
             return connection;
@@ -230,8 +232,7 @@ internal sealed class DatabaseManager : IDatabaseManager
         await SaveRegistryAsync(new DatabaseConnectionRegistry(connectionId, registry.Connections), ct);
         _catalogDatabase.SwitchToPath(conn.Path);
 
-        var migrator = new LocalCatalogMigrator(_catalogDatabase);
-        await migrator.MigrateAsync(ct);
+        await _migrator.MigrateAsync(ct);
 
         ActiveDatabaseChanged?.Invoke(this, connectionId);
         return true;

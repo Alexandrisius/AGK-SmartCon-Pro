@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal sealed class LocalCatalogDatabase
+public sealed class LocalCatalogDatabase
 {
     static LocalCatalogDatabase()
     {

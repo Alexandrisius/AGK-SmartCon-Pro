@@ -8,10 +8,10 @@ internal sealed class LocalCategoryAttributeBindingService : ICategoryAttributeB
 {
     private readonly LocalCatalogDatabase _database;
     private readonly ICategoryRepository _categoryRepository;
-    private readonly LocalCatalogMigrator _migrator;
+    private readonly ILocalCatalogMigrator _migrator;
     private string? _migratedDbPath;
 
-    public LocalCategoryAttributeBindingService(LocalCatalogDatabase database, ICategoryRepository categoryRepository, LocalCatalogMigrator migrator)
+    public LocalCategoryAttributeBindingService(LocalCatalogDatabase database, ICategoryRepository categoryRepository, ILocalCatalogMigrator migrator)
     {
         _database = database;
         _categoryRepository = categoryRepository;

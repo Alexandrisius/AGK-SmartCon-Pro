@@ -9,10 +9,10 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
 {
     private readonly LocalCatalogDatabase _database;
     private readonly StoragePathResolver _pathResolver;
-    private readonly LocalCatalogMigrator _migrator;
+    private readonly ILocalCatalogMigrator _migrator;
     private string? _migratedDbPath;
 
-    public LocalFamilyAssetService(LocalCatalogDatabase database, StoragePathResolver pathResolver, LocalCatalogMigrator migrator)
+    public LocalFamilyAssetService(LocalCatalogDatabase database, StoragePathResolver pathResolver, ILocalCatalogMigrator migrator)
     {
         _database = database;
         _pathResolver = pathResolver;
