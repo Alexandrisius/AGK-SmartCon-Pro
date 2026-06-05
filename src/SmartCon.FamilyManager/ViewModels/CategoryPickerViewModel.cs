@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Common;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -115,7 +116,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
     {
         SmartConLogger.Freeze("CategoryPicker: FireAndForget.LoadTreeAsync");
         SmartConLogger.FreezeThreadPool("CategoryPicker.Before.FireAndForget");
-        FireAndForget(() => LoadTreeAsync());
+        FireAndForget(() => LoadTreeAsync(), nameof(LoadTreeAsync));
     }
 
     [RelayCommand]
@@ -141,15 +142,22 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
     [RelayCommand]
     private void Cancel() => RequestClose?.Invoke(false);
 
-    private static async void FireAndForget(Func<Task> taskFactory)
+    private static void FireAndForget(Func<Task> taskFactory, string operationName)
     {
-        try
+        Guard.ThrowIfNull(taskFactory);
+        _ = Task.Run(async () =>
         {
-            await taskFactory();
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"FireAndForget: {ex}");
-        }
+            try
+            {
+                await taskFactory().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Error($"FireAndForget '{operationName}': {ex.GetBaseException()}");
+            }
+        });
     }
 }

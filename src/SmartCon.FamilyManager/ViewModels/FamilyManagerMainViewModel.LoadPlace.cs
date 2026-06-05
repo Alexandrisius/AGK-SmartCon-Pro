@@ -116,7 +116,7 @@ public sealed partial class FamilyManagerMainViewModel
                     {
                         await _usageRepo.RecordUsageAsync(usage, CancellationToken.None);
                         await LoadTreeAsync();
-                    });
+                    }, nameof(ExecuteLoadOrUpdateAsync));
                 }
                 else
                 {
@@ -227,7 +227,7 @@ public sealed partial class FamilyManagerMainViewModel
                     {
                         try { await _usageRepo.RecordUsageAsync(usage, CancellationToken.None); }
                         catch { /* ignored */ }
-                    });
+                    }, nameof(PlaceTypeAsync));
                 }
                 else
                 {

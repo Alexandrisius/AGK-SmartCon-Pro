@@ -157,7 +157,7 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 await Task.Delay(TimeSpan.FromSeconds(10));
                 StatusMessage = string.Empty;
-            });
+            }, nameof(ImportFilesAsync));
         }
         catch (Exception ex)
         {
@@ -238,9 +238,7 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     SmartConLogger.Warn($"ExtractTypesForImportedFamilies save failed: {ex.Message}");
                 }
-
-                await LoadTreeAsync();
-            });
+            }, nameof(ExtractTypesForImportedFamilies));
         });
     }
 

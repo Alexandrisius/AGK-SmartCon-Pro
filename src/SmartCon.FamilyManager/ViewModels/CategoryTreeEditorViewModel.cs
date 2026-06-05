@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Common;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Helpers;
@@ -68,7 +69,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             SelectedCategoryPath = BuildCategoryPath(value);
             SmartConLogger.Freeze("CategoryTreeEditor: FireAndForget.LoadAttributesForCategoryAsync");
             SmartConLogger.FreezeThreadPool("CategoryTreeEditor.Before.FireAndForget");
-            FireAndForget(() => LoadAttributesForCategoryAsync(value));
+            FireAndForget(() => LoadAttributesForCategoryAsync(value), nameof(LoadAttributesForCategoryAsync));
         }
         else
         {
@@ -467,15 +468,22 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         RequestClose?.Invoke(false);
     }
 
-    private static async void FireAndForget(Func<Task> taskFactory)
+    private static void FireAndForget(Func<Task> taskFactory, string operationName)
     {
-        try
+        Guard.ThrowIfNull(taskFactory);
+        _ = Task.Run(async () =>
         {
-            await taskFactory();
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"FireAndForget: {ex.Message}");
-        }
+            try
+            {
+                await taskFactory().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"FireAndForget '{operationName}': {ex.GetBaseException().Message}");
+            }
+        });
     }
 }

@@ -527,7 +527,7 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 SmartConLogger.Warn($"[ImportActiveFile] SaveExtraction failed: {ex.Message}");
             }
-        });
+        }, nameof(ExtractAttributesForImportedFamilies));
     }
 
     [RelayCommand(CanExecute = nameof(CanEditOps))]

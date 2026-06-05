@@ -33,7 +33,7 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     SmartConLogger.Warn($"Cleanup old usages failed: {ex.Message}");
                 }
-            });
+            }, nameof(LoadTreeAsync));
 
             IReadOnlyList<Core.Models.FamilyManager.CategoryNode> categories = [];
             try

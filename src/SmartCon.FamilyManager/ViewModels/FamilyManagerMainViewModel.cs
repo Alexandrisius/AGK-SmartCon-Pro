@@ -194,11 +194,38 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private static void FireAndForget(Task task, string operationName)
     {
+        Guard.ThrowIfNull(task);
         _ = task.ContinueWith(
             t => SmartConLogger.Error($"FamilyManager '{operationName}' failed: {t.Exception?.GetBaseException()}"),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Fire-and-forget helper for inline async lambdas. Schedules the factory on the
+    /// thread pool so the calling Revit UI thread is never blocked, and routes any
+    /// exception through the operation-scoped log without leaking as
+    /// <c>AppDomain.UnhandledException</c>. Prefer
+    /// <see cref="FireAndForget(Task, string)"/> when the task is already constructed.
+    /// </summary>
+    private static void FireAndForget(Func<Task> taskFactory, string operationName)
+    {
+        Guard.ThrowIfNull(taskFactory);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await taskFactory().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Error($"FireAndForget '{operationName}' failed: {ex.GetBaseException()}");
+            }
+        });
     }
 
     private async Task RefreshAccessAndLoadTreeAsync()
@@ -487,23 +514,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     }
 
     /// <summary>
-    /// Fire-and-forget helper for post-operations inside ExternalEvent callbacks.
-    /// MUST be async void (not async Task) — ExternalEvent handler runs on Revit UI thread
-    /// and must not capture or await any Task. See revit-api-best-practice/async-threading-patterns.md
-    /// </summary>
-    private static async void FireAndForget(Func<Task> taskFactory)
-    {
-        try
-        {
-            await taskFactory();
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"FireAndForget: {ex}");
-        }
-    }
-
-    /// <summary>
     /// Triggers tree refresh via ExternalEvent so that Revit API (FilteredElementCollector)
     /// runs in the correct thread context before LoadTreeAsync builds the UI.
     /// </summary>
@@ -589,7 +599,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             {
                 dispatcher.BeginInvoke(new Action(() =>
                 {
-                    FireAndForget(async () => await LoadTreeAsync());
+                    FireAndForget(async () => await LoadTreeAsync(), nameof(LoadTreeAsync));
                 }));
             }
         }
