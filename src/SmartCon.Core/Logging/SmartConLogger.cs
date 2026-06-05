@@ -155,6 +155,70 @@ public static class SmartConLogger
         WriteFormula("FAIL", $"[{operation}] '{formula}' → {reason}");
     }
 
+    public static IDisposable BeginScope(string operation, params (string Key, object? Value)[] properties)
+    {
+        return new LogScope(operation, properties);
+    }
+
+    public static IDisposable Measure(string operation)
+    {
+        return new TimedScope(operation);
+    }
+
+    private sealed class LogScope : IDisposable
+    {
+        private readonly string _operation;
+        private readonly string _opId;
+        private readonly (string Key, object? Value)[] _properties;
+        private readonly Stopwatch _sw;
+        private bool _disposed;
+
+        public LogScope(string operation, (string Key, object? Value)[] properties)
+        {
+            _operation = operation;
+            _opId = Guid.NewGuid().ToString("N")[..8];
+            _properties = properties;
+            _sw = Stopwatch.StartNew();
+            WriteMain("INF", $"[OpId={_opId}] === START {_operation} ==={FormatProps()}");
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _sw.Stop();
+            WriteMain("INF", $"[OpId={_opId}] === END {_operation} elapsed={_sw.Elapsed.TotalMilliseconds:F1}ms ===");
+        }
+
+        private string FormatProps()
+        {
+            if (_properties is null || _properties.Length == 0) return string.Empty;
+            return " " + string.Join(" ", _properties.Select(p => $"{p.Key}={p.Value}"));
+        }
+    }
+
+    private sealed class TimedScope : IDisposable
+    {
+        private readonly string _operation;
+        private readonly Stopwatch _sw;
+        private bool _disposed;
+
+        public TimedScope(string operation)
+        {
+            _operation = operation;
+            _sw = Stopwatch.StartNew();
+            WriteFreeze("TIM", $"[{operation}] Started");
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _sw.Stop();
+            WriteFreeze("TIM", $"[{_operation}] Completed in {_sw.Elapsed.TotalMilliseconds:F1}ms");
+        }
+    }
+
     private static void RotateLogIfNeeded()
     {
         try
