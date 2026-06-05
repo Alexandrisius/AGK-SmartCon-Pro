@@ -1,3 +1,5 @@
+using SmartCon.Core.Common;
+
 namespace SmartCon.Core.Services;
 
 /// <summary>
@@ -14,7 +16,8 @@ public static class ServiceHost
     /// </summary>
     public static void Initialize(Func<Type, object> resolver)
     {
-        _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
+        Guard.ThrowIfNull(resolver);
+        _resolver = resolver;
     }
 
     /// <summary>

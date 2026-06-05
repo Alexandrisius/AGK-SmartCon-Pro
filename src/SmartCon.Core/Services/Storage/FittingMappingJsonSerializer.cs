@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SmartCon.Core.Common;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Storage.Dto;
 
@@ -36,13 +37,8 @@ public static class FittingMappingJsonSerializer
         IReadOnlyList<ConnectorTypeDefinition> types,
         IReadOnlyList<FittingMappingRule> rules)
     {
-#if NETFRAMEWORK
-        if (types is null) throw new ArgumentNullException(nameof(types));
-        if (rules is null) throw new ArgumentNullException(nameof(rules));
-#else
-        ArgumentNullException.ThrowIfNull(types);
-        ArgumentNullException.ThrowIfNull(rules);
-#endif
+        Guard.ThrowIfNull(types);
+        Guard.ThrowIfNull(rules);
 
         var dto = new MappingPayloadDto
         {
@@ -60,11 +56,7 @@ public static class FittingMappingJsonSerializer
     /// </summary>
     public static string Serialize(MappingPayload payload)
     {
-#if NETFRAMEWORK
-        if (payload is null) throw new ArgumentNullException(nameof(payload));
-#else
-        ArgumentNullException.ThrowIfNull(payload);
-#endif
+        Guard.ThrowIfNull(payload);
         return Serialize(payload.ConnectorTypes, payload.MappingRules);
     }
 
@@ -104,11 +96,7 @@ public static class FittingMappingJsonSerializer
     /// </summary>
     public static MappingPayload? TryReadFromFile(string path)
     {
-#if NETFRAMEWORK
-        if (path is null) throw new ArgumentNullException(nameof(path));
-#else
-        ArgumentNullException.ThrowIfNull(path);
-#endif
+        Guard.ThrowIfNull(path);
         if (!File.Exists(path)) return null;
 
         try
@@ -135,13 +123,8 @@ public static class FittingMappingJsonSerializer
     /// </summary>
     public static void WriteToFile(string path, MappingPayload payload)
     {
-#if NETFRAMEWORK
-        if (path is null) throw new ArgumentNullException(nameof(path));
-        if (payload is null) throw new ArgumentNullException(nameof(payload));
-#else
-        ArgumentNullException.ThrowIfNull(path);
-        ArgumentNullException.ThrowIfNull(payload);
-#endif
+        Guard.ThrowIfNull(path);
+        Guard.ThrowIfNull(payload);
 
         var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))

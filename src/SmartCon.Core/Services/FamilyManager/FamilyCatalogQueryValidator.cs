@@ -1,3 +1,4 @@
+using SmartCon.Core.Common;
 using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.Core.Services.FamilyManager;
@@ -12,9 +13,7 @@ public static class FamilyCatalogQueryValidator
     /// </summary>
     public static FamilyCatalogQuery Validate(FamilyCatalogQuery query)
     {
-#pragma warning disable CA1510
-        if (query is null) throw new ArgumentNullException(nameof(query));
-#pragma warning restore CA1510
+        Guard.ThrowIfNull(query);
 
         var offset = System.Math.Max(0, query.Offset);
         var limit = query.Limit < 1 ? 50 : System.Math.Min(query.Limit, 500);
