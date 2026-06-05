@@ -150,6 +150,8 @@ public static class ServiceRegistrar
         services.AddSingleton<LocalCatalogDatabase>();
         services.AddSingleton<ILocalCatalogMigrator, LocalCatalogMigrator>();
         services.AddSingleton<FamilyManagerServices>();
+        services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IIdGenerator, GuidIdGenerator>();
         services.AddSingleton<StoragePathResolver>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
