@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Common;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
@@ -102,68 +103,40 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(DeleteDatabaseCommand))]
     private bool _canManageUsers;
 
-    public FamilyManagerMainViewModel(
-        IFamilyCatalogProvider catalogProvider,
-        IWritableFamilyCatalogProvider writableProvider,
-        IFamilyImportService importService,
-        IFamilyFileResolver fileResolver,
-        IFamilyLoadService loadService,
-        IProjectFamilyUsageRepository usageRepo,
-        IFamilyManagerDialogService dialogService,
-        IFamilyManagerAwaitableEvent awaitableEvent,
-        IFamilyManagerViewModelFactory viewModelFactory,
-        IRevitContext revitContext,
-        IDatabaseManager databaseManager,
-        ITransactionService transactionService,
-        ICategoryRepository categoryRepository,
-        IFamilyTypeRepository typeRepository,
-        IFamilyDataExtractionService extractionService,
-        IFamilyDataImportService dataImportService,
-        IDbAccessControlService accessControl,
-        IFamilySearchService familySearchService,
-        IFamilyPlacementService familyPlacementService,
-        IFamilyPlacementDragService placementDragService,
-        IRevitFileInfoReader fileInfoReader,
-        IFamilyMetadataExtractionService metadataService,
-        ISystemFamilyPlacementService systemFamilyPlacementService,
-        ISystemFamilyRevitOperations systemFamilyRevitOps,
-        ISystemFamilyIsolationProjectService systemFamilyIsolationProject,
-        ISystemFamilyAttributeExtractor systemFamilyAttributeExtractor,
-        ISystemFamilyImportOrchestrator systemFamilyImportOrchestrator,
-        IActiveFamilyFilePreparer activeFamilyFilePreparer,
-        IActiveDocumentClassifier activeDocumentClassifier,
-        IActiveImportCleanupService activeImportCleanupService)
+    public FamilyManagerMainViewModel(FamilyManagerServices services)
     {
-        _catalogProvider = catalogProvider;
-        _writableProvider = writableProvider;
-        _importService = importService;
-        _fileResolver = fileResolver;
-        _loadService = loadService;
-        _usageRepo = usageRepo;
-        _dialogService = dialogService;
-        _awaitableEvent = awaitableEvent;
-        _viewModelFactory = viewModelFactory;
-        _revitContext = revitContext;
-        _databaseManager = databaseManager;
-        _transactionService = transactionService;
-        _categoryRepository = categoryRepository;
-        _typeRepository = typeRepository;
-        _extractionService = extractionService;
-        _dataImportService = dataImportService;
-        _accessControl = accessControl;
-        _familySearchService = familySearchService;
-        _familyPlacementService = familyPlacementService;
-        _placementDragService = placementDragService;
-        _fileInfoReader = fileInfoReader;
-        _metadataService = metadataService;
-        _systemFamilyPlacementService = systemFamilyPlacementService;
-        _systemFamilyRevitOps = systemFamilyRevitOps;
-        _systemFamilyIsolationProject = systemFamilyIsolationProject;
-        _systemFamilyAttributeExtractor = systemFamilyAttributeExtractor;
-        _systemFamilyImportOrchestrator = systemFamilyImportOrchestrator;
-        _activeFamilyFilePreparer = activeFamilyFilePreparer;
-        _activeDocumentClassifier = activeDocumentClassifier;
-        _activeImportCleanupService = activeImportCleanupService;
+        Guard.ThrowIfNull(services);
+
+        _catalogProvider = services.CatalogProvider;
+        _writableProvider = services.WritableProvider;
+        _importService = services.ImportService;
+        _fileResolver = services.FileResolver;
+        _loadService = services.LoadService;
+        _usageRepo = services.UsageRepo;
+        _dialogService = services.DialogService;
+        _awaitableEvent = services.AwaitableEvent;
+        _viewModelFactory = services.ViewModelFactory;
+        _revitContext = services.RevitContext;
+        _databaseManager = services.DatabaseManager;
+        _transactionService = services.TransactionService;
+        _categoryRepository = services.CategoryRepository;
+        _typeRepository = services.TypeRepository;
+        _extractionService = services.ExtractionService;
+        _dataImportService = services.DataImportService;
+        _accessControl = services.AccessControl;
+        _familySearchService = services.FamilySearchService;
+        _familyPlacementService = services.FamilyPlacementService;
+        _placementDragService = services.PlacementDragService;
+        _fileInfoReader = services.FileInfoReader;
+        _metadataService = services.MetadataService;
+        _systemFamilyPlacementService = services.SystemFamilyPlacementService;
+        _systemFamilyRevitOps = services.SystemFamilyRevitOps;
+        _systemFamilyIsolationProject = services.SystemFamilyIsolationProject;
+        _systemFamilyAttributeExtractor = services.SystemFamilyAttributeExtractor;
+        _systemFamilyImportOrchestrator = services.SystemFamilyImportOrchestrator;
+        _activeFamilyFilePreparer = services.ActiveFamilyFilePreparer;
+        _activeDocumentClassifier = services.ActiveDocumentClassifier;
+        _activeImportCleanupService = services.ActiveImportCleanupService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;

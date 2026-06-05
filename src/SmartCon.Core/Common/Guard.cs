@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 
 namespace SmartCon.Core.Common;
 
-internal static class Guard
+public static class Guard
 {
     public static void ThrowIfNull<T>(T? value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
     {
