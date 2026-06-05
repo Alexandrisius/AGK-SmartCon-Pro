@@ -1,4 +1,4 @@
-# ADR-019: Refactoring Migration Backlog (Phases 5–7)
+# ADR-025: Refactoring Migration Backlog (Phases 5–7)
 
 **Status:** accepted (tracking only)
 **Date:** 2026-06-05
