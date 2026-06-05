@@ -61,6 +61,10 @@ public static partial class LocalizationService
         ru["FM_DbSwitchError"] = "Ошибка переключения базы данных"; en["FM_DbSwitchError"] = "Error switching database";
         ru["FM_DbCreated"] = "База данных \"{0}\" создана"; en["FM_DbCreated"] = "Database \"{0}\" created";
         ru["FM_DbCreateError"] = "Ошибка создания БД: {0}"; en["FM_DbCreateError"] = "Error creating database: {0}";
+        ru["FM_DbCreateErrorTitle"] = "Ошибка создания базы данных"; en["FM_DbCreateErrorTitle"] = "Database creation error";
+        ru["FM_DbConnectError"] = "Ошибка подключения к БД: {0}"; en["FM_DbConnectError"] = "Database connection error: {0}";
+        ru["FM_DbConnectErrorTitle"] = "Ошибка подключения к базе данных"; en["FM_DbConnectErrorTitle"] = "Database connection error";
+        ru["FM_DbNotFoundAtPath"] = "В выбранной папке не найден файл catalog.db. Укажите корректную папку существующей БД SmartCon."; en["FM_DbNotFoundAtPath"] = "The selected folder does not contain catalog.db. Please select a valid SmartCon database folder.";
         ru["FM_DbDeleted"] = "База данных \"{0}\" удалена"; en["FM_DbDeleted"] = "Database \"{0}\" deleted";
         ru["FM_DbDeleteError"] = "Ошибка удаления БД: {0}"; en["FM_DbDeleteError"] = "Error deleting database: {0}";
         ru["FM_DbDeleteSingle"] = "Нельзя удалить единственную базу данных."; en["FM_DbDeleteSingle"] = "Cannot delete the only database.";

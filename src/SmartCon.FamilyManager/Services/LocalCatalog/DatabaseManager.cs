@@ -158,7 +158,9 @@ internal sealed class DatabaseManager : IDatabaseManager
         var fullPath = Path.GetFullPath(path);
         var dbFile = Path.Combine(fullPath, "catalog.db");
         if (!File.Exists(dbFile))
-            throw new FileNotFoundException($"Database not found at: {fullPath}");
+            throw new FileNotFoundException(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbNotFoundAtPath) ?? string.Empty,
+                dbFile);
 
         EnsureDatabaseWritable(dbFile);
 
@@ -303,8 +305,7 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         try
         {
-            var connectionString = $"Data Source={dbFile};Pooling=false";
-            using var connection = _catalogDatabase.CreateConnection();
+            using var connection = _catalogDatabase.CreateConnectionForPath(dbFile);
             connection.Open();
             using var tx = connection.BeginTransaction();
             using var cmd = connection.CreateCommand();

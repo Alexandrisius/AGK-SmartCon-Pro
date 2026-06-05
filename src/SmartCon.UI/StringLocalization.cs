@@ -288,6 +288,10 @@ public static class StringLocalization
         public const string FM_DbSwitchError = "FM_DbSwitchError";
         public const string FM_DbCreated = "FM_DbCreated";
         public const string FM_DbCreateError = "FM_DbCreateError";
+        public const string FM_DbCreateErrorTitle = "FM_DbCreateErrorTitle";
+        public const string FM_DbConnectError = "FM_DbConnectError";
+        public const string FM_DbConnectErrorTitle = "FM_DbConnectErrorTitle";
+        public const string FM_DbNotFoundAtPath = "FM_DbNotFoundAtPath";
         public const string FM_DbDeleted = "FM_DbDeleted";
         public const string FM_DbDeleteError = "FM_DbDeleteError";
         public const string FM_DbDeleteSingle = "FM_DbDeleteSingle";

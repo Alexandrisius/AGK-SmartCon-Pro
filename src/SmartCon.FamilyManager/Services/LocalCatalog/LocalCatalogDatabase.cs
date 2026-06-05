@@ -21,6 +21,7 @@ internal sealed class LocalCatalogDatabase
         _databaseRoot = Path.Combine(appData, "SmartCon", "FamilyManager", "default");
         _dbPath = Path.Combine(_databaseRoot, "catalog.db");
         _connectionString = BuildConnectionString(_dbPath);
+        Directory.CreateDirectory(_databaseRoot);
         EnsureJournalModeDeleteOnCreation();
     }
 
@@ -29,6 +30,8 @@ internal sealed class LocalCatalogDatabase
     public string GetDatabaseRoot() => _databaseRoot;
 
     public SqliteConnection CreateConnection() => new(_connectionString);
+
+    public SqliteConnection CreateConnectionForPath(string dbFilePath) => new(BuildConnectionString(dbFilePath));
 
     public void SwitchToPath(string databaseRootPath)
     {

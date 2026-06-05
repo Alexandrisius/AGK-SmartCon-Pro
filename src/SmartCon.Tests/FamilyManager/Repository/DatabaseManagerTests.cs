@@ -22,7 +22,6 @@ public sealed class DatabaseManagerTests
             Directory.CreateDirectory(TempDir);
 
             Database = new LocalCatalogDatabase();
-            Database.SwitchToPath(Path.Combine(TempDir, "workspace"));
 
             var identityMock = new Mock<IUserIdentityService>();
             identityMock.Setup(s => s.GetCurrentUser())
@@ -34,8 +33,6 @@ public sealed class DatabaseManagerTests
                 "_registryPath",
                 BindingFlags.NonPublic | BindingFlags.Instance)!;
             field.SetValue(Manager, Path.Combine(TempDir, "registry.json"));
-
-            Database.SwitchToPath(Path.Combine(TempDir, "workspace"));
         }
 
         public async Task<string> CreateStandaloneDatabaseAsync(string name)
@@ -211,5 +208,32 @@ public sealed class DatabaseManagerTests
         var path = fixture.Manager.GetActiveDatabasePath();
 
         Assert.Null(path);
+    }
+
+    [Fact]
+    public async Task ConnectDatabaseAsync_FromEmptyRegistry_ConnectsSuccessfully()
+    {
+        using var fixture = new TempDbManagerFixture();
+
+        var dbRoot = await fixture.CreateStandaloneDatabaseAsync("standalone_clean");
+
+        var conn = await fixture.Manager.ConnectDatabaseAsync(dbRoot);
+
+        Assert.NotNull(conn);
+        Assert.Equal(dbRoot, conn.Path, ignoreCase: true);
+        var connections = fixture.Manager.ListConnections();
+        Assert.Single(connections);
+    }
+
+    [Fact]
+    public async Task ConnectDatabaseAsync_PathWithoutCatalogDb_ThrowsFileNotFound()
+    {
+        using var fixture = new TempDbManagerFixture();
+
+        var emptyDir = Path.Combine(fixture.TempDir, "empty_db_folder");
+        Directory.CreateDirectory(emptyDir);
+
+        await Assert.ThrowsAsync<FileNotFoundException>(
+            () => fixture.Manager.ConnectDatabaseAsync(emptyDir));
     }
 }
