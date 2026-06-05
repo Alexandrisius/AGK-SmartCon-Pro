@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -10,6 +11,19 @@ namespace SmartCon.FamilyManager.ViewModels;
 
 public sealed partial class CategoryTreeEditorViewModel
 {
+    private static readonly JsonSerializerOptions ImportJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip
+    };
+
+    private static readonly JsonSerializerOptions ExportJsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     [RelayCommand]
     private async Task ExportCategoriesAsync()
     {
@@ -46,7 +60,7 @@ public sealed partial class CategoryTreeEditorViewModel
         try
         {
             var package = await exporter();
-            var json = JsonSerializer.Serialize(package, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(package, ExportJsonOptions);
             await Task.Run(() => File.WriteAllText(path, json));
             StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Exported) ?? "Exported to {0}", path);
         }
@@ -66,8 +80,14 @@ public sealed partial class CategoryTreeEditorViewModel
         try
         {
             var json = File.ReadAllText(path);
-            var package = JsonSerializer.Deserialize<FamilyMetadataPackage>(json);
-            if (package is null) return;
+            var package = JsonSerializer.Deserialize<FamilyMetadataPackage>(json, ImportJsonOptions);
+            if (package is null)
+            {
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: empty file";
+                return;
+            }
+
+            package = package.WithNonNullCollections();
 
             var importedNodes = new List<CategoryNodeViewModel>();
             foreach (var cat in package.Categories)
@@ -80,9 +100,15 @@ public sealed partial class CategoryTreeEditorViewModel
             _pendingImportPackage = package;
             SelectedNode = null;
             UpdateHasUnsavedChanges();
-            StatusMessage = string.Format(
+
+            var summary = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Imported) ?? "Imported {0} categories",
                 importedNodes.Count);
+            if (package.Attributes.Count > 0 || package.Bindings.Count > 0)
+            {
+                summary += $" (pending: {package.Attributes.Count} attributes, {package.Bindings.Count} bindings)";
+            }
+            StatusMessage = summary;
         }
         catch (Exception ex)
         {

@@ -17,10 +17,12 @@ namespace SmartCon.Revit.FamilyManager;
 public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 {
     private readonly IRevitUIContext _revitUIContext;
+    private readonly ITransactionService _transactionService;
 
-    public SystemFamilyRevitOperations(IRevitUIContext revitUIContext)
+    public SystemFamilyRevitOperations(IRevitUIContext revitUIContext, ITransactionService transactionService)
     {
         _revitUIContext = revitUIContext;
+        _transactionService = transactionService;
     }
 
     public IReadOnlyList<SelectedSystemType> PickSystemTypes()
@@ -176,28 +178,22 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
         try
         {
-            ICollection<ElementId> copiedTypeIds;
-            using (var tx = new Transaction(newDoc, "Copy system types"))
+            ICollection<ElementId> copiedTypeIds = [];
+            _transactionService.RunInTransaction(newDoc, "Copy system types", doc =>
             {
-                tx.Start();
-
                 var options = new CopyPasteOptions();
                 options.SetDuplicateTypeNamesHandler(new SkipDuplicateTypesHandler());
 
                 copiedTypeIds = ElementTransformUtils.CopyElements(
-                    sourceDoc, sourceTypeIds, newDoc, null, options);
-
-                tx.Commit();
-            }
+                    sourceDoc, sourceTypeIds, doc, null, options);
+            });
 
             // Размещение инстансов в новом проекте (только для линейных категорий).
-            Dictionary<ElementId, List<ElementId>> placedInstancesByType;
-            using (var tx = new Transaction(newDoc, "Place instances on grid"))
+            Dictionary<ElementId, List<ElementId>> placedInstancesByType = [];
+            _transactionService.RunInTransaction(newDoc, "Place instances on grid", doc =>
             {
-                tx.Start();
-                placedInstancesByType = PlaceInstancesOnGrid(newDoc, copiedTypeIds, category);
-                tx.Commit();
-            }
+                placedInstancesByType = PlaceInstancesOnGrid(doc, copiedTypeIds, category);
+            });
 
             // Нормализация диаметров/размеров на размещённых инстансах.
             // Причина: новый проект (NewProjectDocument Metric) создаёт типы

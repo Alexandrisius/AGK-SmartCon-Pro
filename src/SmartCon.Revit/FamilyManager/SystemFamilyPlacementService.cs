@@ -11,13 +11,16 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
 {
     private readonly IRevitUIContext _revitUIContext;
     private readonly IFamilyFileResolver _fileResolver;
+    private readonly ITransactionService _transactionService;
 
     public SystemFamilyPlacementService(
         IRevitUIContext revitUIContext,
-        IFamilyFileResolver fileResolver)
+        IFamilyFileResolver fileResolver,
+        ITransactionService transactionService)
     {
         _revitUIContext = revitUIContext;
         _fileResolver = fileResolver;
+        _transactionService = transactionService;
     }
 
     public void LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion)
@@ -68,22 +71,14 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
                 return;
             }
 
-            using (var tx = new Transaction(activeDoc, "Copy system type"))
+            _transactionService.RunInTransaction("Copy system type", doc =>
             {
-                tx.Start();
-
                 var options = new CopyPasteOptions();
                 options.SetDuplicateTypeNamesHandler(new SkipDuplicateTypesHandler());
 
-                var failOpts = tx.GetFailureHandlingOptions();
-                failOpts.SetFailuresPreprocessor(new SuppressCopyDuplicatesPreprocessor());
-                tx.SetFailureHandlingOptions(failOpts);
-
                 ElementTransformUtils.CopyElements(
                     sourceDoc, new List<ElementId> { sourceType.Id }, activeDoc, null, options);
-
-                tx.Commit();
-            }
+            });
 
             var copiedType = FindTypeByName(activeDoc, sourceType.Name, sourceType.Category?.Id);
 
@@ -125,20 +120,6 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         public DuplicateTypeAction OnDuplicateTypeNamesFound(DuplicateTypeNamesHandlerArgs args)
         {
             return DuplicateTypeAction.UseDestinationTypes;
-        }
-    }
-
-    private sealed class SuppressCopyDuplicatesPreprocessor : IFailuresPreprocessor
-    {
-        public FailureProcessingResult PreprocessFailures(FailuresAccessor failuresAccessor)
-        {
-            var failures = failuresAccessor.GetFailureMessages();
-            foreach (var f in failures)
-            {
-                if (f.GetFailureDefinitionId() == BuiltInFailures.CopyPasteFailures.CannotCopyDuplicates)
-                    failuresAccessor.DeleteWarning(f);
-            }
-            return FailureProcessingResult.Continue;
         }
     }
 }

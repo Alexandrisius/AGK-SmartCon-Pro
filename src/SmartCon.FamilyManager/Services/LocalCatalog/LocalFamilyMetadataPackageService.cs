@@ -126,6 +126,8 @@ internal sealed class LocalFamilyMetadataPackageService : IFamilyMetadataPackage
         var bindingsSkipped = 0;
         var warnings = new List<string>();
 
+        package = package.WithNonNullCollections();
+
         if (package.Sections.Categories && package.Categories.Count > 0)
         {
             var flatNodes = FlattenCategoryTree(package.Categories, null, 0);

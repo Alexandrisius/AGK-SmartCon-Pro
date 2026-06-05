@@ -378,8 +378,27 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                     Attributes = _pendingImportPackage.Attributes,
                     Bindings = _pendingImportPackage.Bindings
                 };
-                await _packageService.ImportAsync(packageWithoutCategories);
+                var importResult = await _packageService.ImportAsync(packageWithoutCategories);
                 _pendingImportPackage = null;
+
+                var parts = new List<string>();
+                if (importResult.AttributesImported > 0)
+                    parts.Add($"attributes: {importResult.AttributesImported}");
+                if (importResult.BindingsImported > 0)
+                    parts.Add($"bindings: {importResult.BindingsImported}");
+                if (importResult.BindingsSkipped > 0)
+                    parts.Add($"bindings skipped: {importResult.BindingsSkipped}");
+                if (importResult.Warnings.Count > 0)
+                {
+                    var warningPreview = importResult.Warnings.Count <= 3
+                        ? string.Join("; ", importResult.Warnings)
+                        : $"{importResult.Warnings.Count} warnings";
+                    parts.Add(warningPreview);
+                }
+                if (parts.Count > 0)
+                {
+                    StatusMessage = $"Imported {string.Join(", ", parts)}";
+                }
             }
 
             HasUnsavedChanges = false;
