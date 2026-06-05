@@ -127,6 +127,7 @@ internal sealed class LocalFamilyMetadataPackageService : IFamilyMetadataPackage
         var warnings = new List<string>();
 
         package = package.WithNonNullCollections();
+        package = FamilyMetadataMigrator.Migrate(package);
 
         if (package.Sections.Categories && package.Categories.Count > 0)
         {

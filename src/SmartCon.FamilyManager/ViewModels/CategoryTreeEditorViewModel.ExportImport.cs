@@ -1,29 +1,16 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Json;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
 public sealed partial class CategoryTreeEditorViewModel
 {
-    private static readonly JsonSerializerOptions ImportJsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        AllowTrailingCommas = true,
-        ReadCommentHandling = JsonCommentHandling.Skip
-    };
-
-    private static readonly JsonSerializerOptions ExportJsonOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-
     [RelayCommand]
     private async Task ExportCategoriesAsync()
     {
@@ -60,7 +47,7 @@ public sealed partial class CategoryTreeEditorViewModel
         try
         {
             var package = await exporter();
-            var json = JsonSerializer.Serialize(package, ExportJsonOptions);
+            var json = JsonSerializer.Serialize(package, JsonOptions.RelaxedWriteIndented);
             await Task.Run(() => File.WriteAllText(path, json));
             StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Exported) ?? "Exported to {0}", path);
         }
@@ -80,7 +67,7 @@ public sealed partial class CategoryTreeEditorViewModel
         try
         {
             var json = File.ReadAllText(path);
-            var package = JsonSerializer.Deserialize<FamilyMetadataPackage>(json, ImportJsonOptions);
+            var package = JsonSerializer.Deserialize<FamilyMetadataPackage>(json, JsonOptions.Default);
             if (package is null)
             {
                 StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: empty file";
@@ -88,6 +75,7 @@ public sealed partial class CategoryTreeEditorViewModel
             }
 
             package = package.WithNonNullCollections();
+            package = FamilyMetadataMigrator.Migrate(package);
 
             var importedNodes = new List<CategoryNodeViewModel>();
             foreach (var cat in package.Categories)

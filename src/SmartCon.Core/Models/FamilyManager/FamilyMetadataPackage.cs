@@ -5,10 +5,10 @@ namespace SmartCon.Core.Models.FamilyManager;
 public sealed class FamilyMetadataPackage
 {
     [JsonPropertyName("format")]
-    public string Format { get; init; } = "smartcon.familymanager.metadata-package";
+    public string Format { get; init; } = FamilyMetadataFormat.Id;
 
     [JsonPropertyName("version")]
-    public int Version { get; init; } = 2;
+    public int Version { get; init; } = FamilyMetadataFormat.CurrentVersion;
 
     [JsonPropertyName("exportedAtUtc")]
     public DateTimeOffset ExportedAtUtc { get; init; } = DateTimeOffset.UtcNow;

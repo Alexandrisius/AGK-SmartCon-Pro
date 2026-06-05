@@ -1,6 +1,6 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Json;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 using Xunit;
 
@@ -77,18 +77,9 @@ public sealed class LocalMetadataImportFlowIntegrationTests : IDisposable
         await binding.CreateBindingAsync(fitting.Id, diam.Id, 0);
 
         var exported = await _service.ExportFullAsync();
-        var json = JsonSerializer.Serialize(exported, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        });
+        var json = JsonSerializer.Serialize(exported, JsonOptions.RelaxedWriteIndented);
 
-        var deserialized = JsonSerializer.Deserialize<FamilyMetadataPackage>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            AllowTrailingCommas = true,
-            ReadCommentHandling = JsonCommentHandling.Skip
-        });
+        var deserialized = JsonSerializer.Deserialize<FamilyMetadataPackage>(json, JsonOptions.Default);
 
         var normalized = deserialized!.WithNonNullCollections();
 
@@ -118,19 +109,12 @@ public sealed class LocalMetadataImportFlowIntegrationTests : IDisposable
         await binding.CreateBindingAsync(root.Id, attr.Id, 0);
 
         var exported = await _service.ExportFullAsync();
-        var json = JsonSerializer.Serialize(exported, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        });
+        var json = JsonSerializer.Serialize(exported, JsonOptions.RelaxedWriteIndented);
 
         Assert.Contains("Трубы", json);
         Assert.Contains("Диаметр", json);
 
-        var deserialized = JsonSerializer.Deserialize<FamilyMetadataPackage>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        var deserialized = JsonSerializer.Deserialize<FamilyMetadataPackage>(json, JsonOptions.Default);
 
         Assert.NotNull(deserialized);
         Assert.Single(deserialized!.Categories);

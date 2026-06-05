@@ -1,6 +1,6 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Json;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.Models;
@@ -94,14 +94,7 @@ public sealed class FamilyMetadataPackageExtensionsTests
             }
             """;
 
-        var options = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            AllowTrailingCommas = true,
-            ReadCommentHandling = JsonCommentHandling.Skip
-        };
-
-        var raw = JsonSerializer.Deserialize<FamilyMetadataPackage>(jsonWithNullCollections, options);
+        var raw = JsonSerializer.Deserialize<FamilyMetadataPackage>(jsonWithNullCollections, JsonOptions.Default);
         Assert.NotNull(raw);
 
         Assert.Null(raw!.Categories);
