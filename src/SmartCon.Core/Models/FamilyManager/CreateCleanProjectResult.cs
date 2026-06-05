@@ -5,4 +5,5 @@ public sealed record CreateCleanProjectResult(
     string? FilePath,
     string? Error,
     int CopiedElementsCount,
-    string? CategoryName = null);
+    string? CategoryName = null,
+    int PlacedInstancesCount = 0);

@@ -1484,31 +1484,62 @@ public interface ISystemFamilyRevitOperations
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory category,
         string displayName);
-    // Legacy: оставлен для picker flow
-    CreateCleanProjectResult CreateCleanProjectWithTypes(IReadOnlyList<string> typeUniqueIds);
 }
 ```
 
-### ISystemFamilyImportService
+**Заметки по реализации:**
+- `PickSystemTypes` использует `SystemFamilySelectionFilter` для фильтрации элементов в Revit UI и
+  `CategoryCompat.GetBuiltInCategory` (см. `SmartCon.Core/Compatibility/CategoryCompat.cs`) для
+  кросс-TFM-резолвинга `Category → BuiltInCategory` (Revit 2022+: `Category.BuiltInCategory`;
+  Revit 2019–2021: guarded cast). Возвращаемое значение затем сверяется с
+  `SystemCategoryRegistry.SupportedCategories` (defense in depth).
+- `CreateCleanProjectWithTypesAndInstances` пишет результат в
+  `%TEMP%\SmartCon\SystemFamilyLoadFromProject\<GUID>\<safeName>.rvt` — путь берётся из
+  `SystemFamilyTempLayout` (single source of truth для cleanup).
+- **Удалено (Phase 11)**: legacy `CreateCleanProjectWithTypes(IReadOnlyList<string>)` — был неконсистентен
+  с `CreateCleanProjectWithTypesAndInstances` (не размещал инстансы, использовал другой temp-путь,
+  не поддерживал категоризацию). Заменён на единый `CreateCleanProjectWithTypesAndInstances`, который
+  используется обоими flow'ами (ImportActiveFile + Picker).
 
-Оркестрация импорта системных семейств. Объединяет `ISystemFamilyRevitOperations`
-(создание временных .rvt) + `ISystemFamilyAttributeExtractionService` (извлечение
-атрибутов) + запись в managed storage.
+### ISystemFamilyIsolationProjectService
 
-**Файл:** `ISystemFamilyImportService.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/SystemFamilyImportService.cs`
+Stage-isolation step: единая точка создания временного `.rvt` с копиями выбранных
+системных типов **и** инстансами на сетке 2×2 м. Используется **обоими** flow'ами
+(ImportActiveFile + Picker), что и было основной целью унификации (Phase 1–8).
+
+**Файл:** `ISystemFamilyIsolationProjectService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/SystemFamilyIsolationProjectAdapter.cs`
+**Wraps:** `ISystemFamilyRevitOperations` (тонкая обёртка для логирования `[SystemImport.Create]`)
 
 ```csharp
-public interface ISystemFamilyImportService
+public interface ISystemFamilyIsolationProjectService
 {
-    IReadOnlyList<SystemFamilyPendingImport> PickAndPrepare();
-
     /// <summary>
-    /// Анализирует активный проект (14 системных категорий), копирует размещённые типы
-    /// в новый .rvt с placement инстансов на сетке 2×2 м. Должен вызываться внутри ExternalEvent.
+    /// Создаёт изолированный .rvt, содержащий указанные типы и по одному нормализованному
+    /// инстансу на тип. Source = активный проект. Должен вызываться на Revit UI thread
+    /// (внутри ExternalEvent). Путь сохранения — из <c>SystemFamilyTempLayout</c>.
     /// </summary>
-    IReadOnlyList<SystemFamilyPendingImport> AnalyzeAndPrepareForProject(Document activeDoc);
+    CreateCleanProjectResult CreateCleanProjectWithTypesAndInstances(
+        Document sourceDoc,
+        IReadOnlyList<string> typeUniqueIds,
+        BuiltInCategory category,
+        string displayName);
+}
+```
 
+### ISystemFamilyImportOrchestrator *(заменяет ISystemFamilyImportService)*
+
+Catalog-side оркестрация staged system-family import: принимает список
+`FamilyBatchImportItem` (по одному на staged .rvt), прогоняет через batch importer,
+синхронизирует type descriptors в локальный каталог, возвращает
+`SystemFamilyExtractionTask[]` для `ISystemFamilyAttributeExtractor`.
+
+**Файл:** `ISystemFamilyImportOrchestrator.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/SystemFamilyImportOrchestrator.cs`
+
+```csharp
+public interface ISystemFamilyImportOrchestrator
+{
     Task<SystemFamilyImportResult> ImportBatchItemsAsync(IReadOnlyList<FamilyBatchImportItem> items);
 }
 
@@ -1518,12 +1549,50 @@ public sealed record SystemFamilyPendingImport(
     string TempRvtPath);
 ```
 
-### ISystemFamilyAttributeExtractionService
+**Заметки:**
+- **Удалено (Phase 7)**: legacy `ISystemFamilyImportService` снесён полностью. Staging-логика
+  (`PickAndPrepare` / `AnalyzeAndPrepareForProject`) переехала в `ISystemFamilyIsolationProjectService`,
+  catalog-sync остался здесь.
+- Не владеет extraction — это контракт `ISystemFamilyAttributeExtractor`.
 
-Извлекает Type-параметры (не Instance) из системных семейств в подготовленном .rvt
-(созданном `ISystemFamilyRevitOperations.CreateCleanProjectWithTypes*`).
-Открывает .rvt как background-документ, читает параметры, закрывает документ.
-Результат пишется в `extracted_attribute_values` через `IExtractionTaskRepository`.
+### ISystemFamilyAttributeExtractor
+
+DRY-извлечение Type-параметров из staged `.rvt` через AwaitableEvent. Заменяет
+дублированную inline-логику, которая раньше жила в
+`FamilyManagerMainViewModel.ExtractAttributesFromRvtsAsync` (active project)
+и `ExtractSystemFamilyAttributesAsync` (picker). Единая реализация покрыта
+unit-тестами (`SystemFamilyAttributeExtractorTests`, 6 тестов).
+
+**Файл:** `ISystemFamilyAttributeExtractor.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/SystemFamilyAttributeExtractor.cs`
+
+```csharp
+public interface ISystemFamilyAttributeExtractor
+{
+    /// <summary>
+    /// Открывает каждый staged .rvt через awaitable external event, извлекает Type-параметры,
+    /// сохраняет в каталог. Реализация ОБЯЗАНА дождаться всех in-flight сохранений
+    /// перед возвратом, чтобы вызывающий код мог безопасно удалить temp-файлы
+    /// (защита от race condition cleanup).
+    /// </summary>
+    Task ExtractAndSaveAsync(
+        IReadOnlyList<SystemFamilyExtractionTask> tasks,
+        CancellationToken ct = default);
+}
+```
+
+**Внутренние зависимости:**
+- `IFamilyDataExtractionService` / `ISystemFamilyAttributeExtractionService` — реальная
+  работа с Revit API для открытия .rvt, чтения параметров, закрытия документа.
+- `IFamilyDataImportService` — сохранение результатов в каталог.
+- `IFamilyManagerAwaitableEvent` — обёртка над ExternalEvent для UI-thread выполнения.
+  Реализация — `RevitFamilyManagerAwaitableEvent` (см. `[AwaitableEvent] ...` в логах).
+
+### ISystemFamilyAttributeExtractionService *(legacy, scoped dependency)*
+
+Низкоуровневый helper: открыть `.rvt` как background-документ, прочитать Type-параметры,
+закрыть документ. **Не используется напрямую VM/Orchestrator** — только как scoped-зависимость
+`ISystemFamilyAttributeExtractor`. Сохранён ради инкапсуляции Revit API.
 
 **Файл:** `ISystemFamilyAttributeExtractionService.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/SystemFamilyAttributeExtractionService.cs`
@@ -1539,6 +1608,48 @@ public interface ISystemFamilyAttributeExtractionService
     FamilyExtractionResult ExtractFromRvt(string rvtFilePath, IReadOnlyList<string>? typeNames);
 }
 ```
+
+### SystemFamilyTempLayout *(Core/Service constants)*
+
+Single source of truth для путей temp-папок system-family pipeline.
+И staging-producer, и cleanup-consumer ОБЯЗАНЫ брать пути отсюда — иначе риск
+"зависшего" .rvt между save и cleanup.
+
+**Файл:** `SmartCon.Core/Services/FamilyManager/SystemFamilyTempLayout.cs`
+
+```csharp
+public static class SystemFamilyTempLayout
+{
+    public const string TempRoot       = "SmartCon";
+    public const string StagingSubdir  = "SystemFamilyLoadFromProject";
+}
+```
+
+Layout под `Path.GetTempPath()`:
+```
+%TEMP%\SmartCon\SystemFamilyLoadFromProject\<GUID>\<safeName>.rvt
+```
+
+### CategoryCompat *(Core/Compatibility)*
+
+Кросс-TFM абстракция `Category → BuiltInCategory`:
+- **Revit 2022+** — канонический `Category.BuiltInCategory` (корректно для standard, INVALID для custom sub-category).
+- **Revit 2019–2021** — guarded cast `(BuiltInCategory)(int)catId.GetValue()` через
+  `ElementIdCompat.GetValue()`.
+
+**Файл:** `SmartCon.Core/Compatibility/CategoryCompat.cs`
+
+```csharp
+public static class CategoryCompat
+{
+    public static BuiltInCategory GetBuiltInCategory(Category? category); // Revit 2022+
+    // или guarded cast fallback для Revit 2019–2021
+}
+```
+
+Используется в `SystemFamilySelectionFilter.AllowElement` и `SystemFamilyRevitOperations.PickSystemTypes`.
+После резолвинга результат обязательно сверяется с `SystemCategoryRegistry.SupportedCategories`
+(в обоих местах) — defense in depth.
 
 ### ISystemFamilyPlacementService
 

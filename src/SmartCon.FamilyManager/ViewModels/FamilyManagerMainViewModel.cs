@@ -40,8 +40,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IRevitFileInfoReader _fileInfoReader;
     private readonly IFamilyMetadataExtractionService _metadataService;
     private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
-    private readonly ISystemFamilyImportService _systemFamilyImportService;
-    private readonly ISystemFamilyAttributeExtractionService _systemFamilyAttributeExtraction;
+    private readonly ISystemFamilyRevitOperations _systemFamilyRevitOps;
+    private readonly ISystemFamilyIsolationProjectService _systemFamilyIsolationProject;
+    private readonly ISystemFamilyAttributeExtractor _systemFamilyAttributeExtractor;
+    private readonly ISystemFamilyImportOrchestrator _systemFamilyImportOrchestrator;
     private readonly IActiveFamilyFilePreparer _activeFamilyFilePreparer;
     private readonly IActiveDocumentClassifier _activeDocumentClassifier;
     private readonly IActiveImportCleanupService _activeImportCleanupService;
@@ -124,8 +126,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IRevitFileInfoReader fileInfoReader,
         IFamilyMetadataExtractionService metadataService,
         ISystemFamilyPlacementService systemFamilyPlacementService,
-        ISystemFamilyImportService systemFamilyImportService,
-        ISystemFamilyAttributeExtractionService systemFamilyAttributeExtraction,
+        ISystemFamilyRevitOperations systemFamilyRevitOps,
+        ISystemFamilyIsolationProjectService systemFamilyIsolationProject,
+        ISystemFamilyAttributeExtractor systemFamilyAttributeExtractor,
+        ISystemFamilyImportOrchestrator systemFamilyImportOrchestrator,
         IActiveFamilyFilePreparer activeFamilyFilePreparer,
         IActiveDocumentClassifier activeDocumentClassifier,
         IActiveImportCleanupService activeImportCleanupService)
@@ -153,8 +157,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _fileInfoReader = fileInfoReader;
         _metadataService = metadataService;
         _systemFamilyPlacementService = systemFamilyPlacementService;
-        _systemFamilyImportService = systemFamilyImportService;
-        _systemFamilyAttributeExtraction = systemFamilyAttributeExtraction;
+        _systemFamilyRevitOps = systemFamilyRevitOps;
+        _systemFamilyIsolationProject = systemFamilyIsolationProject;
+        _systemFamilyAttributeExtractor = systemFamilyAttributeExtractor;
+        _systemFamilyImportOrchestrator = systemFamilyImportOrchestrator;
         _activeFamilyFilePreparer = activeFamilyFilePreparer;
         _activeDocumentClassifier = activeDocumentClassifier;
         _activeImportCleanupService = activeImportCleanupService;

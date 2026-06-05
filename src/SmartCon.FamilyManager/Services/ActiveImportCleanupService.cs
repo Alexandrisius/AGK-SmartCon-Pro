@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services;
@@ -31,15 +32,15 @@ internal sealed class ActiveImportCleanupService : IActiveImportCleanupService
     /// Sub-folders under <c>%TEMP%\SmartCon</c> that host temp staging
     /// artefacts for the active-file import pipeline. Each entry is a
     /// sub-folder; its child directories (one per import) are removed
-    /// recursively. A trailing wildcard is intentional — we want every
-    /// child, not the sub-folder itself.
+    /// recursively.
     /// </summary>
-    private static readonly string[] StagingSubdirs = ["FMLoad", "SystemFamilyLoadFromProject"];
+    private static readonly string[] StagingSubdirs =
+        ["FMLoad", SystemFamilyTempLayout.StagingSubdir];
 
     public Task CleanupAfterImportAsync(CancellationToken ct = default)
     {
         return Task.Run(
-            () => CleanupImpl(Path.Combine(Path.GetTempPath(), "SmartCon"), ct),
+            () => CleanupImpl(Path.Combine(Path.GetTempPath(), SystemFamilyTempLayout.TempRoot), ct),
             ct);
     }
 

@@ -131,12 +131,12 @@ public sealed partial class FamilyManagerMainViewModel
                             var activeDoc = uiApp.ActiveUIDocument?.Document;
                             return activeDoc is null
                                 ? Array.Empty<SystemFamilyPendingImport>()
-                                : _systemFamilyImportService.AnalyzeAndPrepareForProject(activeDoc);
+                                : StageFromActiveProject(activeDoc);
                         }
                         catch (Exception ex)
                         {
                             SmartConLogger.Error(
-                                $"[ImportActiveFile] AnalyzeAndPrepareForProject failed: {ex.Message}");
+                                $"[ImportActiveFile] StageFromActiveProject failed: {ex.Message}");
                             return Array.Empty<SystemFamilyPendingImport>();
                         }
                     });
@@ -438,7 +438,7 @@ public sealed partial class FamilyManagerMainViewModel
             LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyPreparing) ?? "Импорт {0} системных семейств...",
             toImport.Count);
 
-        var result = await _systemFamilyImportService.ImportBatchItemsAsync(toImport);
+        var result = await _systemFamilyImportOrchestrator.ImportBatchItemsAsync(toImport);
 
         var totalTypes = pendingItems
             .Where(p => toImport.Any(i => string.Equals(
@@ -460,111 +460,7 @@ public sealed partial class FamilyManagerMainViewModel
         // This eliminates the race condition where ActiveCleanupService
         // would delete .rvt files before ExternalEvent had a chance to
         // read them (causing "[WRN] Temp .rvt not found for extraction").
-        await ExtractAttributesFromRvtsAsync(result.ExtractionTasks);
-    }
-
-    /// <summary>
-    /// Extracts Type parameters from each staged .rvt and persists the
-    /// result to the catalog. Awaits the in-flight saves so callers can
-    /// rely on ordering (e.g. <i>extract</i> → <i>save</i> → <i>cleanup</i>).
-    /// This is the awaitable version of the legacy
-    /// <c>ExtractAttributesFromRvts</c> fire-and-forget helper.
-    /// </summary>
-    private async Task ExtractAttributesFromRvtsAsync(
-        IReadOnlyList<SystemFamilyExtractionTask> tasks,
-        CancellationToken ct = default)
-    {
-        if (tasks.Count == 0) return;
-
-        SmartConLogger.Debug(
-            $"[ImportActiveFile] Awaiting extraction for {tasks.Count} .rvt task(s) via AwaitableEvent...");
-
-        // Captured inside the UI thread callback, awaited outside.
-        var pendingSaves = new List<Task>();
-
-        await _awaitableEvent.RaiseAsync(_ =>
-        {
-            foreach (var task in tasks)
-            {
-                try
-                {
-                    if (!File.Exists(task.TempRvtPath))
-                    {
-                        SmartConLogger.Warn(
-                            $"[ImportActiveFile] Temp .rvt not found for extraction: {task.TempRvtPath}");
-                        continue;
-                    }
-
-                    var extraction = _systemFamilyAttributeExtraction.ExtractFromRvt(
-                        task.TempRvtPath, task.TypeNames);
-                    if (extraction.Success)
-                    {
-                        var saveTask = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _dataImportService.SaveExtractionResultAsync(
-                                    task.CatalogItemId, extraction, task.VersionId, task.FileId,
-                                    CancellationToken.None);
-                                SmartConLogger.Debug(
-                                    $"[ImportActiveFile] Saved extraction for '{Path.GetFileName(task.TempRvtPath)}': " +
-                                    $"{extraction.Types.Count} types");
-                            }
-                            catch (Exception ex)
-                            {
-                                SmartConLogger.Warn(
-                                    $"[ImportActiveFile] SaveExtractionResult failed: {ex.Message}");
-                            }
-                        });
-                        pendingSaves.Add(saveTask);
-                    }
-                    else
-                    {
-                        SmartConLogger.Warn(
-                            $"[ImportActiveFile] Extraction failed for '{Path.GetFileName(task.TempRvtPath)}': " +
-                            $"{extraction.ErrorMessage}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn(
-                        $"[ImportActiveFile] Extraction exception for '{task.TempRvtPath}': {ex.Message}");
-                }
-            }
-        }, ct);
-
-        // Wait for all saves to complete BEFORE deleting the temp files.
-        // This guarantees the cleanup (which happens in
-        // ImportActiveFileAsync.finally) never races with an in-flight
-        // save. The saves are pure I/O on the thread pool.
-        if (pendingSaves.Count > 0)
-        {
-            SmartConLogger.Debug(
-                $"[ImportActiveFile] Waiting for {pendingSaves.Count} save(s) before cleanup...");
-            try
-            {
-                await Task.WhenAll(pendingSaves);
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn(
-                    $"[ImportActiveFile] One or more saves failed: {ex.Message}");
-            }
-        }
-
-        foreach (var task in tasks)
-        {
-            try
-            {
-                if (File.Exists(task.TempRvtPath)) File.Delete(task.TempRvtPath);
-                var metaPath = task.TempRvtPath + ".types.json";
-                if (File.Exists(metaPath)) File.Delete(metaPath);
-            }
-            catch { }
-        }
-
-        SmartConLogger.Info(
-            $"[ImportActiveFile] ✓ Extraction phase complete ({pendingSaves.Count} file(s) saved)");
+        await _systemFamilyAttributeExtractor.ExtractAndSaveAsync(result.ExtractionTasks);
     }
 
     /// <summary>

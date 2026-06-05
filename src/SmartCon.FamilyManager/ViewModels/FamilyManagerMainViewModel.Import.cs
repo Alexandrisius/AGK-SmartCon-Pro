@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
+using Autodesk.Revit.DB;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -302,7 +304,7 @@ public sealed partial class FamilyManagerMainViewModel
                     return;
                 }
 
-                pendingItems = _systemFamilyImportService.PickAndPrepare();
+                pendingItems = StageFromPicker(doc);
             }
             catch (Exception ex)
             {
@@ -370,11 +372,11 @@ public sealed partial class FamilyManagerMainViewModel
                     ?? "Импорт {0} системных семейств...",
                 toImport.Count);
 
-            var result = await _systemFamilyImportService.ImportBatchItemsAsync(toImport);
+            var result = await _systemFamilyImportOrchestrator.ImportBatchItemsAsync(toImport);
 
             if (result.ExtractionTasks.Count > 0)
             {
-                await ExtractSystemFamilyAttributesAsync(result.ExtractionTasks);
+                await _systemFamilyAttributeExtractor.ExtractAndSaveAsync(result.ExtractionTasks);
             }
 
             StatusMessage = result.Success
@@ -402,102 +404,134 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     /// <summary>
-    /// Extracts Type parameters from each staged .rvt and persists the
-    /// result to the catalog. Awaits the in-flight saves so callers can
-    /// rely on ordering (e.g. <i>extract</i> → <i>save</i> → <i>cleanup</i>).
+    /// Picker-driven staging: invokes <see cref="ISystemFamilyRevitOperations.PickSystemTypes"/>
+    /// to let the user select elements, then groups them by
+    /// <see cref="BuiltInCategory"/> and calls
+    /// <see cref="ISystemFamilyIsolationProjectService.CreateCleanProjectWithTypesAndInstances"/>
+    /// for each non-empty group. Each produced .rvt is a real staging
+    /// project with one normalized instance per type, ready for attribute
+    /// extraction.
     /// </summary>
-    private async Task ExtractSystemFamilyAttributesAsync(
-        IReadOnlyList<SystemFamilyExtractionTask> tasks)
+    private IReadOnlyList<SystemFamilyPendingImport> StageFromPicker(Autodesk.Revit.DB.Document activeDoc)
     {
-        if (tasks.Count == 0) return;
+        var selected = _systemFamilyRevitOps.PickSystemTypes();
+        if (selected.Count == 0) return [];
 
-        SmartConLogger.Debug(
-            $"[SystemImport] Awaiting extraction for {tasks.Count} .rvt task(s) via AwaitableEvent...");
+        SmartConLogger.Info(
+            $"[SystemImport.Analyze] Picker: selected {selected.Count} system type(s) " +
+            $"across {selected.Select(s => s.Category).Distinct().Count()} category(ies)");
 
-        // Captured inside the UI thread callback, awaited outside.
-        var pendingSaves = new List<Task>();
+        var pending = new List<SystemFamilyPendingImport>();
+        var groups = selected
+            .GroupBy(s => s.Category)
+            .OrderBy(g => g.Key.ToString(), StringComparer.Ordinal);
 
-        await _awaitableEvent.RaiseAsync(_ =>
+        foreach (var group in groups)
         {
-            foreach (var task in tasks)
-            {
-                try
-                {
-                    if (!File.Exists(task.TempRvtPath))
-                    {
-                        SmartConLogger.Warn(
-                            $"[SystemImport] Temp .rvt not found for extraction: {task.TempRvtPath}");
-                        continue;
-                    }
+            var category = group.Key;
+            var types = group.ToList();
+            var uniqueIds = types.Select(t => t.UniqueId).ToList();
+            var displayName = types[0].CategoryName;
 
-                    var extraction = _systemFamilyAttributeExtraction.ExtractFromRvt(
-                        task.TempRvtPath, task.TypeNames);
-                    if (extraction.Success)
-                    {
-                        var saveTask = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _dataImportService.SaveExtractionResultAsync(
-                                    task.CatalogItemId, extraction, task.VersionId, task.FileId,
-                                    CancellationToken.None);
-                                SmartConLogger.Debug(
-                                    $"[SystemImport] Saved extraction for '{task.TempRvtPath}': " +
-                                    $"{extraction.Types.Count} types");
-                            }
-                            catch (Exception ex)
-                            {
-                                SmartConLogger.Warn(
-                                    $"[SystemImport] SaveExtractionResult failed: {ex.Message}");
-                            }
-                        });
-                        pendingSaves.Add(saveTask);
-                    }
-                    else
-                    {
-                        SmartConLogger.Warn(
-                            $"[SystemImport] Extraction failed for '{task.TempRvtPath}': " +
-                            $"{extraction.ErrorMessage}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn(
-                        $"[SystemImport] Extraction exception for '{task.TempRvtPath}': {ex.Message}");
-                }
-            }
-        });
+            var createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
+                activeDoc, uniqueIds, category, displayName);
+            if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
+                continue;
 
-        // Wait for all saves to complete BEFORE deleting the temp files.
-        // This guarantees the cleanup never races with an in-flight save.
-        if (pendingSaves.Count > 0)
-        {
-            SmartConLogger.Debug(
-                $"[SystemImport] Waiting for {pendingSaves.Count} save(s) before cleanup...");
-            try
-            {
-                await Task.WhenAll(pendingSaves);
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn(
-                    $"[SystemImport] One or more saves failed: {ex.Message}");
-            }
+            WriteTypeSidecar(createResult.FilePath!, types);
+
+            pending.Add(new SystemFamilyPendingImport(displayName, types, createResult.FilePath!));
         }
 
-        foreach (var task in tasks)
+        return pending;
+    }
+
+    /// <summary>
+    /// Active-project-driven staging: scans all 14 supported system
+    /// categories for placed types, then runs
+    /// <see cref="ISystemFamilyIsolationProjectService.CreateCleanProjectWithTypesAndInstances"/>
+    /// for each non-empty category. Round-trips single-category projects
+    /// (e.g. mini "Трубы стальные.rvt") to overwrite the existing catalog
+    /// item instead of creating a new one.
+    /// </summary>
+    private IReadOnlyList<SystemFamilyPendingImport> StageFromActiveProject(Autodesk.Revit.DB.Document activeDoc)
+    {
+        var analyses = _systemFamilyRevitOps.AnalyzeActiveProject(activeDoc);
+        if (analyses.Count == 0)
         {
-            try
-            {
-                if (File.Exists(task.TempRvtPath)) File.Delete(task.TempRvtPath);
-                var metaPath = task.TempRvtPath + ".types.json";
-                if (File.Exists(metaPath)) File.Delete(metaPath);
-            }
-            catch { }
+            SmartConLogger.Info("[SystemImport.Analyze] Active project: no placed system types");
+            return [];
         }
 
         SmartConLogger.Info(
-            $"[SystemImport] ✓ Extraction phase complete ({pendingSaves.Count} file(s) saved)");
+            $"[SystemImport.Analyze] Active project: {analyses.Count} category(ies) with placed types");
+
+        var singleCategory = analyses.Count == 1;
+        var sourceName = singleCategory ? ResolveActiveProjectDisplayName(activeDoc) : null;
+        if (singleCategory)
+        {
+            SmartConLogger.Info(
+                $"[SystemImport.Analyze] Single category — using source file name '{sourceName}' as displayName");
+        }
+
+        var pending = new List<SystemFamilyPendingImport>();
+        foreach (var analysis in analyses)
+        {
+            var types = analysis.Types
+                .Select(t => new SelectedSystemType(
+                    t.UniqueId, t.Name, analysis.DisplayName, analysis.Category))
+                .ToList();
+            var uniqueIds = types.Select(t => t.UniqueId).ToList();
+            var displayName = singleCategory ? sourceName! : analysis.DisplayName;
+
+            var createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
+                activeDoc, uniqueIds, analysis.Category, displayName);
+            if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
+                continue;
+
+            WriteTypeSidecar(createResult.FilePath!, types);
+
+            pending.Add(new SystemFamilyPendingImport(displayName, types, createResult.FilePath!));
+        }
+
+        return pending;
+    }
+
+    /// <summary>
+    /// Persists the type names alongside the staged .rvt as
+    /// <c>&lt;name&gt;.rvt.types.json</c>. The orchestrator reads this
+    /// sidecar after the batch import completes, then the extractor
+    /// uses the names to filter which types to read from the staged file.
+    /// </summary>
+    private static void WriteTypeSidecar(string rvtPath, IReadOnlyList<SelectedSystemType> types)
+    {
+        try
+        {
+            var metaPath = rvtPath + ".types.json";
+            var typeNames = types.Select(t => t.Name).ToList();
+            File.WriteAllText(metaPath, JsonSerializer.Serialize(typeNames));
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"[SystemImport.Create] Failed to write sidecar meta for '{Path.GetFileName(rvtPath)}': {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Returns display name for the single-category case: the .rvt file
+    /// name of the active project, without extension. Falls back to
+    /// <see cref="Autodesk.Revit.DB.Document.Title"/> for unsaved projects.
+    /// </summary>
+    private static string ResolveActiveProjectDisplayName(Autodesk.Revit.DB.Document activeDoc)
+    {
+        var pathName = activeDoc.PathName;
+        if (!string.IsNullOrEmpty(pathName))
+        {
+            var name = Path.GetFileNameWithoutExtension(pathName);
+            if (!string.IsNullOrEmpty(name)) return name;
+        }
+        return activeDoc.Title;
     }
 
     private async Task<List<FamilyBatchImportItem>> BuildSystemFamilyBatchItemsAsync(

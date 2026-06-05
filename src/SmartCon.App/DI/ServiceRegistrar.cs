@@ -183,7 +183,9 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyPlacementDragService, RevitFamilyPlacementDragService>();
         services.AddSingleton<ISystemFamilyRevitOperations, SystemFamilyRevitOperations>();
         services.AddSingleton<ISystemFamilyPlacementService, SystemFamilyPlacementService>();
-        services.AddSingleton<ISystemFamilyImportService, SmartCon.FamilyManager.Services.SystemFamilyImportService>();
+        services.AddSingleton<ISystemFamilyIsolationProjectService, SmartCon.FamilyManager.Services.SystemFamilyIsolationProjectAdapter>();
+        services.AddSingleton<ISystemFamilyAttributeExtractor, SmartCon.FamilyManager.Services.SystemFamilyAttributeExtractor>();
+        services.AddSingleton<ISystemFamilyImportOrchestrator, SmartCon.FamilyManager.Services.SystemFamilyImportOrchestrator>();
         services.AddSingleton<ISystemFamilyAttributeExtractionService, SystemFamilyAttributeExtractionService>();
         services.AddSingleton<IFamilySidecarLocator, LocalFamilySidecarLocator>();
         services.AddSingleton<IActiveFamilyFilePreparer, ActiveFamilyFilePreparer>();

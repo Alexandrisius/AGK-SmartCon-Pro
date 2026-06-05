@@ -24,10 +24,4 @@ public interface ISystemFamilyRevitOperations
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory category,
         string displayName);
-
-    /// <summary>
-    /// Legacy: создаёт чистый проект с типами, без размещения инстансов.
-    /// Используется старым SystemFamilyImportService (picker flow) — оставлен для обратной совместимости.
-    /// </summary>
-    CreateCleanProjectResult CreateCleanProjectWithTypes(IReadOnlyList<string> typeUniqueIds);
 }

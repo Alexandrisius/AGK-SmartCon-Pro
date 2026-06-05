@@ -4,8 +4,10 @@ using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.DB.Plumbing;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Compatibility;
 using SmartCon.Revit.Context;
@@ -51,13 +53,51 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             var typeElem = doc.GetElement(typeId);
             if (typeElem is null) continue;
 
-            var categoryName = typeElem.Category?.Name ?? "Unknown";
+            var category = typeElem.Category;
+            var categoryName = category?.Name ?? "Unknown";
+
+            // Resolve BuiltInCategory via CategoryCompat — see
+            // CategoryCompat.cs for the cross-version strategy. On
+            // Revit 2022+ it uses the canonical `Category.BuiltInCategory`
+            // property; on R19/R21 it falls back to a guarded cast.
+            //
+            // We then defend in depth: even if `GetBuiltInCategory`
+            // returns a non-INVALID value, it MUST be in
+            // `SystemCategoryRegistry.SupportedCategories`. The picker
+            // filter (SystemFamilySelectionFilter) has already gated the
+            // element against this set, so a mismatch here is a
+            // data-integrity signal (the type's category differs from
+            // the instance's category) and we log a WARN and fall back
+            // to INVALID.
+            //
+            // Types with `BuiltInCategory.INVALID` are still included
+            // in the result with INVALID — staging will copy the type
+            // and skip instance placement. This preserves the
+            // pre-refactor behaviour of "every picker selection is
+            // accepted" while signalling "no instances for this one".
+            var builtInCategory = CategoryCompat.GetBuiltInCategory(category);
+
+            if (builtInCategory == BuiltInCategory.INVALID)
+            {
+                SmartConLogger.Debug(
+                    $"[PickSystemTypes] Type '{typeElem.Name}' has no resolvable BuiltInCategory " +
+                    $"(category='{categoryName}') — will copy as type-only, no instances");
+            }
+            else if (!SystemCategoryRegistry.SupportedCategories.Contains(builtInCategory))
+            {
+                SmartConLogger.Warn(
+                    $"[PickSystemTypes] Type '{typeElem.Name}' has BuiltInCategory='{builtInCategory}' " +
+                    $"(category='{categoryName}') which is not in the supported set — " +
+                    $"will copy as type-only, no instances");
+                builtInCategory = BuiltInCategory.INVALID;
+            }
 
             if (!types.ContainsKey(typeElem.UniqueId))
                 types[typeElem.UniqueId] = new SelectedSystemType(
                     typeElem.UniqueId,
                     typeElem.Name,
-                    categoryName);
+                    categoryName,
+                    builtInCategory);
         }
 
         return types.Values.ToList();
@@ -101,77 +141,6 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         }
 
         return result;
-    }
-
-    public CreateCleanProjectResult CreateCleanProjectWithTypes(IReadOnlyList<string> typeUniqueIds)
-    {
-        var uiApp = _revitUIContext.GetUIApplication();
-        var doc = uiApp.ActiveUIDocument.Document;
-        var app = uiApp.Application;
-
-        var typeIds = new List<ElementId>();
-        string? categoryName = null;
-        foreach (var uid in typeUniqueIds)
-        {
-            var elem = doc.GetElement(uid);
-            if (elem is not null)
-            {
-                typeIds.Add(elem.Id);
-                categoryName ??= elem.Category?.Name;
-            }
-        }
-
-        if (typeIds.Count == 0)
-            return new CreateCleanProjectResult(false, null, "No type elements found", 0);
-
-        Document? newDoc = null;
-        try
-        {
-            newDoc = app.NewProjectDocument(UnitSystem.Metric);
-        }
-        catch (Exception ex)
-        {
-            return new CreateCleanProjectResult(false, null, $"Failed to create project: {ex.Message}", 0);
-        }
-
-        try
-        {
-            int copiedCount;
-            using (var tx = new Transaction(newDoc, "Copy system types"))
-            {
-                tx.Start();
-
-                var options = new CopyPasteOptions();
-                options.SetDuplicateTypeNamesHandler(new SkipDuplicateTypesHandler());
-
-                var copiedIds = ElementTransformUtils.CopyElements(
-                    doc, typeIds, newDoc, null, options);
-
-                copiedCount = copiedIds.Count;
-                tx.Commit();
-            }
-
-            var safeName = SanitizeFileName(categoryName ?? "SystemFamily") + ".rvt";
-            var tempPath = Path.Combine(
-                Path.GetTempPath(),
-                "SmartCon",
-                "SystemFamily",
-                safeName);
-
-            Directory.CreateDirectory(Path.GetDirectoryName(tempPath)!);
-
-            newDoc.SaveAs(tempPath, new SaveAsOptions { OverwriteExistingFile = true });
-            newDoc.Close(false);
-            newDoc = null;
-
-            return new CreateCleanProjectResult(true, tempPath, null, copiedCount, categoryName);
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Freeze($"[SystemFamilyRevitOps] Failed: {ex.GetType().Name}: {ex.Message}");
-            try { newDoc?.Close(false); } catch { }
-            return new CreateCleanProjectResult(false, null, ex.Message, 0);
-        }
     }
 
     public CreateCleanProjectResult CreateCleanProjectWithTypesAndInstances(
@@ -239,14 +208,14 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             var placedCount = placedInstancesByType.Sum(kv => kv.Value.Count);
 
             var safeName = SanitizeFileName(displayName) + ".rvt";
-            var tempPath = Path.Combine(
+            var tempDir = Path.Combine(
                 Path.GetTempPath(),
-                "SmartCon",
-                "SystemFamilyLoadFromProject",
+                SystemFamilyTempLayout.TempRoot,
+                SystemFamilyTempLayout.StagingSubdir,
                 Guid.NewGuid().ToString());
-            Directory.CreateDirectory(tempPath);
+            Directory.CreateDirectory(tempDir);
 
-            var finalPath = Path.Combine(tempPath, safeName);
+            var finalPath = Path.Combine(tempDir, safeName);
             newDoc.SaveAs(finalPath, new SaveAsOptions { OverwriteExistingFile = true });
             newDoc.Close(false);
             newDoc = null;
@@ -254,7 +223,8 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             SmartConLogger.Info(
                 $"[CreateCleanProjectWithTypesAndInstances] '{displayName}': copied={copiedTypeIds.Count}, placed={placedCount}");
 
-            return new CreateCleanProjectResult(true, finalPath, null, copiedTypeIds.Count, displayName);
+            return new CreateCleanProjectResult(
+                true, finalPath, null, copiedTypeIds.Count, displayName, placedCount);
         }
         catch (Exception ex)
         {
@@ -472,6 +442,16 @@ internal static class SystemCategoryRegistry
         }
         return null;
     }
+
+    /// <summary>
+    /// Единый источник правды для набора поддерживаемых системных категорий.
+    /// Используется:
+    ///   - <see cref="SystemFamilySelectionFilter"/> для фильтрации выбора в Revit UI
+    ///   - <see cref="SystemFamilyRevitOperations.PickSystemTypes"/> для проверки
+    ///     соответствия категории типа каноническому списку (defense in depth)
+    /// </summary>
+    public static readonly HashSet<BuiltInCategory> SupportedCategories =
+        new(Entries.Select(e => e.Category));
 
     private static IReadOnlyList<Entry> BuildEntries()
     {
