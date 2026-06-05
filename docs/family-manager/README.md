@@ -83,3 +83,13 @@ ExtensibleStorage остаётся паттерном существующих �
 - Схема БД обновлена до v2: `database_meta`, `schema_info`, `catalog_items`, `catalog_versions`, `family_files`, `family_assets`, `catalog_tags`, `project_usage` (8 таблиц)
 - Asset management: изображения, видео, документы, FBX, lookup-таблицы
 - Category tree для навигации по каталогу
+
+**Phase 21 (FamilyManager Active Import Refactor) — COMPLETED (2026-06-05).**
+
+- ADR-024 принят: `docs/adr/024-active-family-import-preparer.md`
+- Устранена потеря Type Catalog (.txt) при импорте активного `.rfa`
+- Новые сервисы: `IFamilySidecarLocator` (pure I/O, 13 unit-тестов), `IActiveFamilyFilePreparer`, `IActiveDocumentClassifier`, `IActiveImportCleanupService`
+- `OriginalSourcePath` в `FamilyImportRequest`/`FamilyBatchImportItem`/`FamilyUpdateRequest`
+- VM `ImportActiveFileAsync` упрощён через классификатор активного документа
+- Удалён static `CleanupImportActiveTemp` — заменён `IActiveImportCleanupService`
+- 19 новых тестов: 12 sidecar + 1 preparer + 5 TypeCatalog + 1 прочий

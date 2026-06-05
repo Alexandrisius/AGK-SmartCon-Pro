@@ -139,7 +139,7 @@ public sealed partial class FamilyManagerMainViewModel
             var successfulItems = importResult.Results.Where(r => r.Success && !r.WasSkippedAsDuplicate).ToList();
             if (successfulItems.Count > 0)
             {
-                ExtractTypesForImportedFamilies(successfulItems, importResult.SuccessCount, importResult.SkippedCount, importResult.ErrorCount, importResult.TotalFiles);
+                _ = ExtractTypesForImportedFamilies(successfulItems, importResult.SuccessCount, importResult.SkippedCount, importResult.ErrorCount, importResult.TotalFiles);
             }
             else
             {
@@ -172,11 +172,11 @@ public sealed partial class FamilyManagerMainViewModel
     /// <summary>
     /// Extracts types and attributes for successfully imported families via ExternalEvent.
     /// </summary>
-    private void ExtractTypesForImportedFamilies(
+    private async Task ExtractTypesForImportedFamilies(
         List<FamilyImportResult> importedItems,
         int successCount, int skippedCount, int errorCount, int total)
     {
-        _externalEvent.Raise(() =>
+        await _awaitableEvent.RaiseAsync(_ =>
         {
             // Update status inside ExternalEvent to avoid WPF render thread freeze
             // when OpenDocumentFile triggers MFC family upgrade dialog
@@ -279,13 +279,15 @@ public sealed partial class FamilyManagerMainViewModel
     private bool CanImportToCategoryWithAccess() => CanImport && CanImportToCategory();
 
     [RelayCommand(CanExecute = nameof(CanEditOps))]
-    private void ImportSystemFamily()
+    private async Task ImportSystemFamilyAsync()
     {
         IsLoading = true;
         StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilySelectPrompt)
             ?? "Выберите элементы системного семейства в Revit...";
 
-        _externalEvent.Raise(() =>
+        IReadOnlyList<SystemFamilyPendingImport>? pendingItems = null;
+
+        await _awaitableEvent.RaiseAsync(_ =>
         {
             try
             {
@@ -300,152 +302,7 @@ public sealed partial class FamilyManagerMainViewModel
                     return;
                 }
 
-                var pendingItems = _systemFamilyImportService.PickAndPrepare();
-
-                if (pendingItems.Count == 0)
-                {
-                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed)
-                        ?? "Не удалось подготовить системные семейства";
-                    IsLoading = false;
-                    return;
-                }
-
-                var dispatcher = System.Windows.Application.Current?.Dispatcher
-                    ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
-
-                dispatcher.BeginInvoke(new Action(async () =>
-                {
-                    try
-                    {
-                        var batchItems = await BuildSystemFamilyBatchItemsAsync(pendingItems);
-
-                        if (batchItems.Count == 0)
-                        {
-                            CleanupTempFiles(pendingItems);
-                            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed)
-                                ?? "Не удалось подготовить системные семейства";
-                            IsLoading = false;
-                            return;
-                        }
-
-                        IReadOnlyList<FamilyBatchImportItem> selectedItems;
-                        using (var batchVm = new FamilyBatchImportViewModel(batchItems, _dialogService, _viewModelFactory, _catalogProvider))
-                        {
-                            var dialogResult = _dialogService.ShowBatchImportDialog(batchVm);
-                            if (dialogResult != true)
-                            {
-                                CleanupTempFiles(pendingItems);
-                                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Cancel)
-                                    ?? "Отменено";
-                                IsLoading = false;
-                                return;
-                            }
-                            selectedItems = batchVm.GetResultItems();
-                        }
-
-                        var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
-
-                        if (toImport.Count == 0)
-                        {
-                            CleanupTempFiles(pendingItems);
-                            var skipped = selectedItems.Count;
-                            StatusMessage = string.Format(
-                                LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusSkipped) ?? "пропущено: {0}",
-                                skipped);
-                            IsLoading = false;
-                            return;
-                        }
-
-                        StatusMessage = string.Format(
-                            LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyPreparing)
-                                ?? "Импорт {0} системных семейств...",
-                            toImport.Count);
-
-                        var result = await _systemFamilyImportService.ImportBatchItemsAsync(toImport);
-
-                        if (result.ExtractionTasks.Count > 0)
-                        {
-                            _externalEvent.Raise(() =>
-                            {
-                                try
-                                {
-                                    foreach (var task in result.ExtractionTasks)
-                                    {
-                                        try
-                                        {
-                                            if (!File.Exists(task.TempRvtPath))
-                                            {
-                                                SmartConLogger.Warn($"[SystemImport] Temp .rvt not found for extraction: {task.TempRvtPath}");
-                                                continue;
-                                            }
-
-                                            var extraction = _systemFamilyAttributeExtraction.ExtractFromRvt(task.TempRvtPath, task.TypeNames);
-                                            if (extraction.Success)
-                                            {
-                                                FireAndForget(async () =>
-                                                {
-                                                    try
-                                                    {
-                                                        await _dataImportService.SaveExtractionResultAsync(
-                                                            task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
-                                                        SmartConLogger.Info($"[SystemImport] Saved extraction for '{task.TempRvtPath}': {extraction.Types.Count} types");
-                                                    }
-                                                    catch (Exception ex)
-                                                    {
-                                                        SmartConLogger.Warn($"[SystemImport] SaveExtractionResult failed: {ex.Message}");
-                                                    }
-                                                });
-                                            }
-                                            else
-                                            {
-                                                SmartConLogger.Warn($"[SystemImport] Extraction failed for '{task.TempRvtPath}': {extraction.ErrorMessage}");
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            SmartConLogger.Warn($"[SystemImport] Extraction exception for '{task.TempRvtPath}': {ex.Message}");
-                                        }
-                                    }
-                                }
-                                finally
-                                {
-                                    foreach (var task in result.ExtractionTasks)
-                                    {
-                                        try
-                                        {
-                                            if (File.Exists(task.TempRvtPath)) File.Delete(task.TempRvtPath);
-                                            var metaPath = task.TempRvtPath + ".types.json";
-                                            if (File.Exists(metaPath)) File.Delete(metaPath);
-                                        }
-                                        catch { }
-                                    }
-                                }
-                            });
-                        }
-
-                        StatusMessage = result.Success
-                            ? string.Format(
-                                LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported)
-                                    ?? "Импортировано системных семейств: {0}",
-                                result.TypesCount)
-                            : result.Message ?? (LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed)
-                                ?? "Ошибка импорта системного семейства");
-
-                        if (result.Success)
-                            await LoadTreeAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        SmartConLogger.Error($"[SystemImport] ImportSystemFamily failed: {ex.Message}");
-                        StatusMessage = string.Format(
-                            LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Ошибка импорта: {0}",
-                            ex.Message);
-                    }
-                    finally
-                    {
-                        IsLoading = false;
-                    }
-                }));
+                pendingItems = _systemFamilyImportService.PickAndPrepare();
             }
             catch (Exception ex)
             {
@@ -455,6 +312,192 @@ public sealed partial class FamilyManagerMainViewModel
                 IsLoading = false;
             }
         });
+
+        if (pendingItems is null || pendingItems.Count == 0)
+        {
+            if (pendingItems is not null)
+            {
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed)
+                    ?? "Не удалось подготовить системные семейства";
+                IsLoading = false;
+            }
+            return;
+        }
+
+        try
+        {
+            var batchItems = await BuildSystemFamilyBatchItemsAsync(pendingItems);
+
+            if (batchItems.Count == 0)
+            {
+                CleanupTempFiles(pendingItems);
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed)
+                    ?? "Не удалось подготовить системные семейства";
+                IsLoading = false;
+                return;
+            }
+
+            IReadOnlyList<FamilyBatchImportItem> selectedItems;
+            using (var batchVm = new FamilyBatchImportViewModel(batchItems, _dialogService, _viewModelFactory, _catalogProvider))
+            {
+                var dialogResult = _dialogService.ShowBatchImportDialog(batchVm);
+                if (dialogResult != true)
+                {
+                    CleanupTempFiles(pendingItems);
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Cancel)
+                        ?? "Отменено";
+                    IsLoading = false;
+                    return;
+                }
+                selectedItems = batchVm.GetResultItems();
+            }
+
+            var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
+
+            if (toImport.Count == 0)
+            {
+                CleanupTempFiles(pendingItems);
+                var skipped = selectedItems.Count;
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_ImportStatusSkipped) ?? "пропущено: {0}",
+                    skipped);
+                IsLoading = false;
+                return;
+            }
+
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyPreparing)
+                    ?? "Импорт {0} системных семейств...",
+                toImport.Count);
+
+            var result = await _systemFamilyImportService.ImportBatchItemsAsync(toImport);
+
+            if (result.ExtractionTasks.Count > 0)
+            {
+                await ExtractSystemFamilyAttributesAsync(result.ExtractionTasks);
+            }
+
+            StatusMessage = result.Success
+                ? string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported)
+                        ?? "Импортировано системных семейств: {0}",
+                    result.TypesCount)
+                : result.Message ?? (LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed)
+                    ?? "Ошибка импорта системного семейства");
+
+            if (result.Success)
+                await LoadTreeAsync();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"[SystemImport] ImportSystemFamily failed: {ex.Message}");
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Ошибка импорта: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Extracts Type parameters from each staged .rvt and persists the
+    /// result to the catalog. Awaits the in-flight saves so callers can
+    /// rely on ordering (e.g. <i>extract</i> → <i>save</i> → <i>cleanup</i>).
+    /// </summary>
+    private async Task ExtractSystemFamilyAttributesAsync(
+        IReadOnlyList<SystemFamilyExtractionTask> tasks)
+    {
+        if (tasks.Count == 0) return;
+
+        SmartConLogger.Debug(
+            $"[SystemImport] Awaiting extraction for {tasks.Count} .rvt task(s) via AwaitableEvent...");
+
+        // Captured inside the UI thread callback, awaited outside.
+        var pendingSaves = new List<Task>();
+
+        await _awaitableEvent.RaiseAsync(_ =>
+        {
+            foreach (var task in tasks)
+            {
+                try
+                {
+                    if (!File.Exists(task.TempRvtPath))
+                    {
+                        SmartConLogger.Warn(
+                            $"[SystemImport] Temp .rvt not found for extraction: {task.TempRvtPath}");
+                        continue;
+                    }
+
+                    var extraction = _systemFamilyAttributeExtraction.ExtractFromRvt(
+                        task.TempRvtPath, task.TypeNames);
+                    if (extraction.Success)
+                    {
+                        var saveTask = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _dataImportService.SaveExtractionResultAsync(
+                                    task.CatalogItemId, extraction, task.VersionId, task.FileId,
+                                    CancellationToken.None);
+                                SmartConLogger.Debug(
+                                    $"[SystemImport] Saved extraction for '{task.TempRvtPath}': " +
+                                    $"{extraction.Types.Count} types");
+                            }
+                            catch (Exception ex)
+                            {
+                                SmartConLogger.Warn(
+                                    $"[SystemImport] SaveExtractionResult failed: {ex.Message}");
+                            }
+                        });
+                        pendingSaves.Add(saveTask);
+                    }
+                    else
+                    {
+                        SmartConLogger.Warn(
+                            $"[SystemImport] Extraction failed for '{task.TempRvtPath}': " +
+                            $"{extraction.ErrorMessage}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"[SystemImport] Extraction exception for '{task.TempRvtPath}': {ex.Message}");
+                }
+            }
+        });
+
+        // Wait for all saves to complete BEFORE deleting the temp files.
+        // This guarantees the cleanup never races with an in-flight save.
+        if (pendingSaves.Count > 0)
+        {
+            SmartConLogger.Debug(
+                $"[SystemImport] Waiting for {pendingSaves.Count} save(s) before cleanup...");
+            try
+            {
+                await Task.WhenAll(pendingSaves);
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"[SystemImport] One or more saves failed: {ex.Message}");
+            }
+        }
+
+        foreach (var task in tasks)
+        {
+            try
+            {
+                if (File.Exists(task.TempRvtPath)) File.Delete(task.TempRvtPath);
+                var metaPath = task.TempRvtPath + ".types.json";
+                if (File.Exists(metaPath)) File.Delete(metaPath);
+            }
+            catch { }
+        }
+
+        SmartConLogger.Info(
+            $"[SystemImport] ✓ Extraction phase complete ({pendingSaves.Count} file(s) saved)");
     }
 
     private async Task<List<FamilyBatchImportItem>> BuildSystemFamilyBatchItemsAsync(

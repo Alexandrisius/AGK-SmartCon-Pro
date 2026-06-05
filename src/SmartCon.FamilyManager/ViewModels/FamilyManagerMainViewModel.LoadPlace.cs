@@ -41,18 +41,18 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]
-    private void LoadToProject()
+    private async Task LoadToProject()
     {
-        ExecuteLoadOrUpdate(overwriteParameterValues: true);
+        await ExecuteLoadOrUpdateAsync(overwriteParameterValues: true);
     }
 
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]
-    private void LoadToProjectKeepParams()
+    private async Task LoadToProjectKeepParams()
     {
-        ExecuteLoadOrUpdate(overwriteParameterValues: false);
+        await ExecuteLoadOrUpdateAsync(overwriteParameterValues: false);
     }
 
-    private void ExecuteLoadOrUpdate(bool overwriteParameterValues)
+    private async Task ExecuteLoadOrUpdateAsync(bool overwriteParameterValues)
     {
         if (SelectedItem is null) return;
 
@@ -60,7 +60,7 @@ public sealed partial class FamilyManagerMainViewModel
         var selectedName = SelectedItem.Name;
         var targetRevit = CurrentRevitVersion;
 
-        _externalEvent.Raise(() =>
+        await _awaitableEvent.RaiseAsync(_ =>
         {
             try
             {
@@ -98,7 +98,7 @@ public sealed partial class FamilyManagerMainViewModel
 
                     var projectPath = _revitContext.GetDocument().PathName;
                     var loadedVersionLabel = SelectedItem?.VersionLabel;
-                    
+
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
                         CatalogItemId: selectedId,
@@ -135,7 +135,7 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     [RelayCommand(CanExecute = nameof(CanPlaceType))]
-    private void PlaceType()
+    private async Task PlaceTypeAsync()
     {
         if (SelectedTreeNode is not FamilyTypeNodeViewModel typeNode) return;
 
@@ -144,7 +144,7 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (leaf.FamilySource == "system")
         {
-            PlaceSystemType(leaf.CatalogItemId, typeNode.TypeName, CurrentRevitVersion);
+            await PlaceSystemTypeAsync(leaf.CatalogItemId, typeNode.TypeName, CurrentRevitVersion);
             return;
         }
 
@@ -154,7 +154,7 @@ public sealed partial class FamilyManagerMainViewModel
         var isVirtual = typeNode.IsVirtual;
         var targetRevit = CurrentRevitVersion;
 
-        _externalEvent.Raise(() =>
+        await _awaitableEvent.RaiseAsync(_ =>
         {
             try
             {
@@ -166,7 +166,7 @@ public sealed partial class FamilyManagerMainViewModel
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_Loading) ?? "Loading {0}...",
                         typeName);
-                    
+
                     var resolved = Task.Run(() => _fileResolver
                         .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None))
                         .GetAwaiter().GetResult();
@@ -205,12 +205,12 @@ public sealed partial class FamilyManagerMainViewModel
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
                         familyName);
-                    
+
                     // Record usage analytics
                     var resolvedForUsage = Task.Run(() => _fileResolver
                         .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None))
                         .GetAwaiter().GetResult();
-                    
+
                     var projectPath = _revitContext.GetDocument().PathName;
                     var usage = new ProjectFamilyUsage(
                         Id: Guid.NewGuid().ToString(),
@@ -222,7 +222,7 @@ public sealed partial class FamilyManagerMainViewModel
                         RevitMajorVersion: targetRevit,
                         Action: "Place",
                         CreatedAtUtc: DateTimeOffset.UtcNow);
-                    
+
                     FireAndForget(async () =>
                     {
                         try { await _usageRepo.RecordUsageAsync(usage, CancellationToken.None); }
@@ -246,9 +246,9 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
-    private void PlaceSystemType(string catalogItemId, string typeName, int targetRevit)
+    private async Task PlaceSystemTypeAsync(string catalogItemId, string typeName, int targetRevit)
     {
-        _externalEvent.Raise(() =>
+        await _awaitableEvent.RaiseAsync(_ =>
         {
             try
             {

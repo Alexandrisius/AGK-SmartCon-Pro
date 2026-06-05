@@ -1,5 +1,7 @@
 using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
+using SmartCon.App.Events;
+using SmartCon.App.Services;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
@@ -13,23 +15,22 @@ using SmartCon.PipeConnect.Events;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
 using SmartCon.PipeConnect.Views;
+using SmartCon.ProjectManagement.Services;
+using SmartCon.ProjectManagement.ViewModels;
+using SmartCon.ProjectManagement.Views;
 using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
+using SmartCon.Revit.FamilyManager;
 using SmartCon.Revit.Fittings;
 using SmartCon.Revit.Network;
 using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
-using SmartCon.ProjectManagement.Services;
-using SmartCon.ProjectManagement.ViewModels;
-using SmartCon.ProjectManagement.Views;
-using SmartCon.Revit.FamilyManager;
 using SmartCon.Revit.Sharing;
 using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
 using SmartCon.Revit.Transform;
 using SmartCon.Revit.Updates;
-using SmartCon.App.Services;
 using ShareSettingsView = SmartCon.ProjectManagement.Views.ShareSettingsView;
 using ShareSettingsViewModel = SmartCon.ProjectManagement.ViewModels.ShareSettingsViewModel;
 
@@ -184,6 +185,10 @@ public static class ServiceRegistrar
         services.AddSingleton<ISystemFamilyPlacementService, SystemFamilyPlacementService>();
         services.AddSingleton<ISystemFamilyImportService, SmartCon.FamilyManager.Services.SystemFamilyImportService>();
         services.AddSingleton<ISystemFamilyAttributeExtractionService, SystemFamilyAttributeExtractionService>();
+        services.AddSingleton<IFamilySidecarLocator, LocalFamilySidecarLocator>();
+        services.AddSingleton<IActiveFamilyFilePreparer, ActiveFamilyFilePreparer>();
+        services.AddSingleton<IActiveDocumentClassifier, ActiveDocumentClassifier>();
+        services.AddSingleton<IActiveImportCleanupService, ActiveImportCleanupService>();
         services.AddSingleton<IUserIdentityService, RevitUserIdentityService>();
         services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
@@ -196,11 +201,17 @@ public static class ServiceRegistrar
         var windowFocusService = new RevitWindowFocusService(revitContext);
         services.AddSingleton<IWindowFocusService>(windowFocusService);
 
-        var fmHandler = new FamilyManagerExternalEvent(revitContext, windowFocusService);
+        // The awaitable queue is pure C# (testable in isolation).
+        // The IExternalEventHandler adapter lives in SmartCon.App so
+        // that SmartCon.FamilyManager does not need RevitAPIUI at
+        // type-init time (unit-test requirement).
+        var fmAwaitable = new FamilyManagerAwaitableEvent(revitContext, windowFocusService);
+        services.AddSingleton(fmAwaitable);
+        services.AddSingleton<IFamilyManagerAwaitableEvent>(fmAwaitable);
+
+        var fmHandler = new RevitFamilyManagerAwaitableEvent(fmAwaitable);
         var fmEvent = ExternalEvent.Create(fmHandler);
-        fmHandler.Initialize(fmEvent);
-        services.AddSingleton(fmHandler);
-        services.AddSingleton<IFamilyManagerExternalEvent>(fmHandler);
+        fmAwaitable.Initialize(() => fmEvent.Raise());
 
         services.AddSingleton<IFamilyStorageRenameService, LocalFamilyStorageRenameService>();
         services.AddSingleton<IFamilyManagerViewModelFactory, FamilyManagerViewModelFactory>();

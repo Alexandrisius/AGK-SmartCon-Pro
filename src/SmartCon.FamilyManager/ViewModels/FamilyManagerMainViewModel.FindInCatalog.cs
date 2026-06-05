@@ -10,111 +10,118 @@ namespace SmartCon.FamilyManager.ViewModels;
 public sealed partial class FamilyManagerMainViewModel
 {
     [RelayCommand(CanExecute = nameof(HasActiveDatabase))]
-    private void FindInCatalog()
+    private async Task FindInCatalogAsync()
     {
-        _externalEvent.RaiseWithApplication(appObj =>
+        try
         {
-            try
+            await _awaitableEvent.RaiseAsync(appObj =>
             {
-                var app = (Autodesk.Revit.UI.UIApplication)appObj;
-                var uidoc = app.ActiveUIDocument;
-                if (uidoc is null)
+                try
                 {
-                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_NoSelection)
-                        ?? "No element selected in the model";
-                    return;
-                }
-
-                var selectedIds = uidoc.Selection.GetElementIds();
-                if (selectedIds.Count == 0)
-                {
-                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_NoSelection)
-                        ?? "No element selected in the model";
-                    return;
-                }
-
-                var doc = uidoc.Document;
-                string? typeName = null;
-                string? familyName = null;
-
-                foreach (var id in selectedIds)
-                {
-                    var element = doc.GetElement(id);
-                    if (element is null) continue;
-
-                    if (element is FamilyInstance fi)
+                    var app = (Autodesk.Revit.UI.UIApplication)appObj;
+                    var uidoc = app.ActiveUIDocument;
+                    if (uidoc is null)
                     {
-                        typeName = fi.Symbol.Name;
-                        familyName = fi.Symbol.FamilyName;
-                        break;
+                        StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_NoSelection)
+                            ?? "No element selected in the model";
+                        return;
                     }
 
-                    if (element is FamilySymbol fs)
+                    var selectedIds = uidoc.Selection.GetElementIds();
+                    if (selectedIds.Count == 0)
                     {
-                        typeName = fs.Name;
-                        familyName = fs.FamilyName;
-                        break;
+                        StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_NoSelection)
+                            ?? "No element selected in the model";
+                        return;
                     }
 
-                    if (element is Family fam)
-                    {
-                        familyName = fam.Name;
-                        break;
-                    }
+                    var doc = uidoc.Document;
+                    string? typeName = null;
+                    string? familyName = null;
 
-                    var elemTypeId = element.GetTypeId();
-                    if (elemTypeId is not null && elemTypeId != ElementId.InvalidElementId)
+                    foreach (var id in selectedIds)
                     {
-                        var elemType = doc.GetElement(elemTypeId) as ElementType;
-                        if (elemType is not null)
+                        var element = doc.GetElement(id);
+                        if (element is null) continue;
+
+                        if (element is FamilyInstance fi)
                         {
-                            typeName = elemType.Name;
+                            typeName = fi.Symbol.Name;
+                            familyName = fi.Symbol.FamilyName;
                             break;
                         }
+
+                        if (element is FamilySymbol fs)
+                        {
+                            typeName = fs.Name;
+                            familyName = fs.FamilyName;
+                            break;
+                        }
+
+                        if (element is Family fam)
+                        {
+                            familyName = fam.Name;
+                            break;
+                        }
+
+                        var elemTypeId = element.GetTypeId();
+                        if (elemTypeId is not null && elemTypeId != ElementId.InvalidElementId)
+                        {
+                            var elemType = doc.GetElement(elemTypeId) as ElementType;
+                            if (elemType is not null)
+                            {
+                                typeName = elemType.Name;
+                                break;
+                            }
+                        }
                     }
-                }
 
-                if (string.IsNullOrEmpty(typeName) && string.IsNullOrEmpty(familyName))
+                    if (string.IsNullOrEmpty(typeName) && string.IsNullOrEmpty(familyName))
+                    {
+                        StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_NoSelection)
+                            ?? "No element selected in the model";
+                        return;
+                    }
+
+                    CatalogTreeNodeViewModel? found = null;
+                    if (!string.IsNullOrEmpty(typeName))
+                    {
+                        found = FindTypeNodeByName(TreeNodes, typeName!);
+                    }
+
+                    if (found is null && !string.IsNullOrEmpty(familyName))
+                    {
+                        found = FindFamilyNodeByName(TreeNodes, familyName!);
+                    }
+
+                    if (found is null)
+                    {
+                        var msg = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_NotFound)
+                            ?? "Family '{0}' not found in catalog";
+                        StatusMessage = string.Format(msg, typeName ?? familyName);
+                        return;
+                    }
+
+                    ClearAllSelections(TreeNodes);
+                    ExpandParents(TreeNodes, found);
+                    found.IsSelected = true;
+                    SelectedTreeNode = found;
+
+                    var foundMsg = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_Found)
+                        ?? "Family found: {0}";
+                    StatusMessage = string.Format(foundMsg, typeName ?? familyName ?? "");
+                }
+                catch (Exception ex)
                 {
-                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_NoSelection)
-                        ?? "No element selected in the model";
-                    return;
+                    SmartConLogger.Warn($"FindInCatalog failed: {ex.Message}");
+                    StatusMessage = ex.Message;
                 }
-
-                CatalogTreeNodeViewModel? found = null;
-                if (!string.IsNullOrEmpty(typeName))
-                {
-                    found = FindTypeNodeByName(TreeNodes, typeName!);
-                }
-
-                if (found is null && !string.IsNullOrEmpty(familyName))
-                {
-                    found = FindFamilyNodeByName(TreeNodes, familyName!);
-                }
-
-                if (found is null)
-                {
-                    var msg = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_NotFound)
-                        ?? "Family '{0}' not found in catalog";
-                    StatusMessage = string.Format(msg, typeName ?? familyName);
-                    return;
-                }
-
-                ClearAllSelections(TreeNodes);
-                ExpandParents(TreeNodes, found);
-                found.IsSelected = true;
-                SelectedTreeNode = found;
-
-                var foundMsg = LanguageManager.GetString(StringLocalization.Keys.FM_FindInCatalog_Found)
-                    ?? "Family found: {0}";
-                StatusMessage = string.Format(foundMsg, typeName ?? familyName ?? "");
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"FindInCatalog failed: {ex.Message}");
-                StatusMessage = ex.Message;
-            }
-        });
+            });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"FindInCatalog outer failed: {ex.Message}");
+        }
     }
 
     private static CatalogTreeNodeViewModel? FindFamilyNodeByName(ObservableCollection<CatalogTreeNodeViewModel> nodes, string name)
@@ -125,10 +132,8 @@ public sealed partial class FamilyManagerMainViewModel
                 return leaf;
 
             var found = FindFamilyNodeByName(node.Children, name);
-            if (found is not null)
-                return found;
+            if (found is not null) return found;
         }
-
         return null;
     }
 
@@ -140,10 +145,8 @@ public sealed partial class FamilyManagerMainViewModel
                 return typeNode;
 
             var found = FindTypeNodeByName(node.Children, typeName);
-            if (found is not null)
-                return found;
+            if (found is not null) return found;
         }
-
         return null;
     }
 

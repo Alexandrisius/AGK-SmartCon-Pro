@@ -24,7 +24,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyLoadService _loadService;
     private readonly IProjectFamilyUsageRepository _usageRepo;
     private readonly IFamilyManagerDialogService _dialogService;
-    private readonly IFamilyManagerExternalEvent _externalEvent;
+    private readonly IFamilyManagerAwaitableEvent _awaitableEvent;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IRevitContext _revitContext;
     private readonly IDatabaseManager _databaseManager;
@@ -42,6 +42,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
     private readonly ISystemFamilyImportService _systemFamilyImportService;
     private readonly ISystemFamilyAttributeExtractionService _systemFamilyAttributeExtraction;
+    private readonly IActiveFamilyFilePreparer _activeFamilyFilePreparer;
+    private readonly IActiveDocumentClassifier _activeDocumentClassifier;
+    private readonly IActiveImportCleanupService _activeImportCleanupService;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -105,7 +108,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IFamilyLoadService loadService,
         IProjectFamilyUsageRepository usageRepo,
         IFamilyManagerDialogService dialogService,
-        IFamilyManagerExternalEvent externalEvent,
+        IFamilyManagerAwaitableEvent awaitableEvent,
         IFamilyManagerViewModelFactory viewModelFactory,
         IRevitContext revitContext,
         IDatabaseManager databaseManager,
@@ -122,7 +125,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         IFamilyMetadataExtractionService metadataService,
         ISystemFamilyPlacementService systemFamilyPlacementService,
         ISystemFamilyImportService systemFamilyImportService,
-        ISystemFamilyAttributeExtractionService systemFamilyAttributeExtraction)
+        ISystemFamilyAttributeExtractionService systemFamilyAttributeExtraction,
+        IActiveFamilyFilePreparer activeFamilyFilePreparer,
+        IActiveDocumentClassifier activeDocumentClassifier,
+        IActiveImportCleanupService activeImportCleanupService)
     {
         _catalogProvider = catalogProvider;
         _writableProvider = writableProvider;
@@ -131,7 +137,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _loadService = loadService;
         _usageRepo = usageRepo;
         _dialogService = dialogService;
-        _externalEvent = externalEvent;
+        _awaitableEvent = awaitableEvent;
         _viewModelFactory = viewModelFactory;
         _revitContext = revitContext;
         _databaseManager = databaseManager;
@@ -149,6 +155,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _systemFamilyPlacementService = systemFamilyPlacementService;
         _systemFamilyImportService = systemFamilyImportService;
         _systemFamilyAttributeExtraction = systemFamilyAttributeExtraction;
+        _activeFamilyFilePreparer = activeFamilyFilePreparer;
+        _activeDocumentClassifier = activeDocumentClassifier;
+        _activeImportCleanupService = activeImportCleanupService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -203,7 +212,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
                 return;
             }
-            RefreshTreeViaExternalEvent();
+            _ = RefreshTreeViaExternalEventAsync();
         }
         catch (Exception ex)
         {
@@ -520,24 +529,27 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     /// Triggers tree refresh via ExternalEvent so that Revit API (FilteredElementCollector)
     /// runs in the correct thread context before LoadTreeAsync builds the UI.
     /// </summary>
-    private void RefreshTreeViaExternalEvent()
+    private async Task RefreshTreeViaExternalEventAsync()
     {
-        _externalEvent.Raise(() =>
+        try
         {
-            try
+            await _awaitableEvent.RaiseAsync(_ =>
             {
-                _cachedProjectPath = _revitContext.GetDocument().PathName;
-            }
-            catch
-            {
-                _cachedProjectPath = null;
-            }
+                try
+                {
+                    _cachedProjectPath = _revitContext.GetDocument().PathName;
+                }
+                catch
+                {
+                    _cachedProjectPath = null;
+                }
 
-            try
-            {
-                GetLoadedFamilyNamesCached();
-            }
-            catch { }
+                try
+                {
+                    GetLoadedFamilyNamesCached();
+                }
+                catch { }
+            });
 
             var dispatcher = System.Windows.Application.Current?.Dispatcher
                 ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
@@ -567,13 +579,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                         ex.Message);
                 }
             }));
-        });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"RefreshTreeViaExternalEvent failed: {ex.Message}");
+        }
     }
 
     [RelayCommand]
-    private void RefreshTree()
+    private async Task RefreshTree()
     {
-        RefreshTreeViaExternalEvent();
+        await RefreshTreeViaExternalEventAsync();
     }
 
     [RelayCommand]

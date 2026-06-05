@@ -392,7 +392,7 @@ internal sealed partial class LocalFamilyImportService
             throw;
         }
 
-        await ImportTypeCatalogIfPresentAsync(item.FilePath, item.ExistingCatalogItemId!, currentVersion.Id, currentVersion.VersionLabel, ct);
+        await ImportTypeCatalogIfPresentAsync(item.FilePath, item.OriginalSourcePath, item.ExistingCatalogItemId!, currentVersion.Id, currentVersion.VersionLabel, ct);
 
         return new FamilyImportResult(
             Success: true,

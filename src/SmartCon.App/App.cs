@@ -6,6 +6,7 @@ using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager;
 using SmartCon.UI;
 
@@ -36,6 +37,21 @@ public sealed class App : IExternalApplication
             ServiceLocator.Initialize(application);
             LanguageManager.Initialize();
 
+            // Sweep stale temp folders left over from a previous Revit session
+            // (e.g. Revit crashed mid-import). Runs once at startup; log
+            // lines use the same [ActiveCleanup] prefix as the regular
+            // per-import cleanup so the user can trace both in the log.
+            try
+            {
+                var cleanupService = ServiceHost.GetService<IActiveImportCleanupService>();
+                cleanupService.CleanupAfterImportAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"[App.OnStartup] Startup temp sweep failed: {ex.GetType().Name}: {ex.Message}");
+            }
+
             var fmProvider = ServiceHost.GetService<FamilyManagerPaneProvider>();
             var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
             application.RegisterDockablePane(fmPaneId, "Family Manager", fmProvider);
@@ -54,26 +70,22 @@ public sealed class App : IExternalApplication
     public Result OnShutdown(UIControlledApplication application)
     {
         TryLaunchUpdater();
-        CleanupFamilyManagerTemp();
-        ServiceLocator.Dispose();
-        return Result.Succeeded;
-    }
-
-    private static void CleanupFamilyManagerTemp()
-    {
+        // Use the same cleanup service as per-import cleanup so that
+        // BOTH staging roots (FMLoad and SystemFamilyLoadFromProject)
+        // are removed on shutdown. The previous inline implementation
+        // only handled FMLoad, leaking SystemFamilyLoadFromProject/*.
         try
         {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "SmartCon");
-            if (!Directory.Exists(tempRoot)) return;
-
-            var dir = Path.Combine(tempRoot, "FMLoad");
-            if (!Directory.Exists(dir)) return;
-            foreach (var childDir in Directory.GetDirectories(dir))
-            {
-                try { Directory.Delete(childDir, true); } catch { }
-            }
+            var cleanupService = ServiceHost.GetService<IActiveImportCleanupService>();
+            cleanupService.CleanupAfterImportAsync().GetAwaiter().GetResult();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"[App.OnShutdown] Temp cleanup failed: {ex.GetType().Name}: {ex.Message}");
+        }
+        ServiceLocator.Dispose();
+        return Result.Succeeded;
     }
 
     private static void ApplyUpdaterSelfUpdate()

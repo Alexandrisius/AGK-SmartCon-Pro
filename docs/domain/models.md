@@ -1641,8 +1641,16 @@ public sealed class CategoryTree
 public sealed record FamilyUpdateRequest(
     string CatalogItemId,
     string FilePath,
-    int RevitMajorVersion);
+    int RevitMajorVersion,
+    string? CategoryId = null,
+    string? CategoryName = null,
+    string? FileName = null,
+    string? OriginalSourcePath = null);
 ```
+
+`OriginalSourcePath` (см. ADR-024) — путь к исходному `.rfa` до
+копирования в temp staging folder. Используется для поиска Type
+Catalog sidecar рядом с оригиналом.
 
 ---
 
@@ -1715,8 +1723,40 @@ public sealed record FamilyImportRequest(
     string? Category,
     IReadOnlyList<string>? Tags,
     string? Description,
-    string? CategoryId = null);
+    string? CategoryId = null,
+    string FamilySource = "loadable",
+    string? RevitCategory = null,
+    string? FileName = null,
+    string? OriginalSourcePath = null);
 ```
+
+`OriginalSourcePath` — путь к исходному `.rfa` до его копирования в
+temp staging folder (используется пайплайном «Импорт активного
+файла»). Передаётся в `ImportTypeCatalogIfPresentAsync` для поиска
+Type Catalog sidecar (.txt) рядом с оригиналом, когда рядом с temp
+копией его нет. См. ADR-024.
+
+### ActiveFamilyPreparationResult
+
+Результат подготовки активного Revit family-документа для импорта.
+Возвращается `IActiveFamilyFilePreparer.PrepareActiveFamilyAsync`.
+
+**Файл:** `ActiveFamilyPreparationResult.cs`
+
+```csharp
+public sealed record ActiveFamilyPreparationResult(
+    string TempRfaPath,
+    string? TempTxtPath,
+    string? OriginalRfaPath,
+    string? OriginalTxtPath);
+```
+
+| Поле | Описание |
+|---|---|
+| `TempRfaPath` | Absolute path к `.rfa`, сохранённому в temp (например `%TEMP%\SmartCon\FMLoad\{guid}\{name}.rfa`) |
+| `TempTxtPath` | Absolute path к скопированному sidecar `.txt` рядом с `TempRfaPath`, или `null` если sidecar не найден |
+| `OriginalRfaPath` | Absolute path к исходному `.rfa` (managed storage или рабочая папка пользователя); `null` для несохранённых документов |
+| `OriginalTxtPath` | Absolute path к исходному sidecar `.txt` рядом с `OriginalRfaPath`, или `null` |
 
 ---
 
@@ -1772,12 +1812,23 @@ public sealed record FamilyBatchImportItem(
     FamilyBatchImportStatus Status,
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
-    string? TargetCategoryId = null)
+    string? TargetCategoryId = null,
+    string? TargetCategoryName = null,
+    string FamilySource = "loadable",
+    int TypeCount = 0,
+    string? RevitCategory = null,
+    string? OriginalSourcePath = null)
 {
     public FamilyBatchImportAction Action { get; set; }
     public string? TargetCategoryId { get; set; }
+    public string? TargetCategoryName { get; set; }
 }
 ```
+
+`OriginalSourcePath` (см. ADR-024) — пробрасывается из
+`ActiveFamilyPreparationResult` в пакетный импорт, чтобы
+`ImportTypeCatalogIfPresentAsync` мог найти Type Catalog рядом с
+исходным `.rfa`, когда рядом с temp-копией его нет.
 
 ---
 

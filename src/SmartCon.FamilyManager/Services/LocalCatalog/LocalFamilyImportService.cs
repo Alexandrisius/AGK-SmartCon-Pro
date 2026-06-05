@@ -143,7 +143,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
             try
             {
-                await ImportTypeCatalogIfPresentAsync(filePath, catalogItemId, versionId, versionLabel, ct);
+                await ImportTypeCatalogIfPresentAsync(filePath, request.OriginalSourcePath, catalogItemId, versionId, versionLabel, ct);
             }
             catch (Exception ex)
             {
@@ -441,7 +441,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
             try
             {
-                await ImportTypeCatalogIfPresentAsync(filePath, request.CatalogItemId, versionId, versionLabel, ct);
+                await ImportTypeCatalogIfPresentAsync(filePath, request.OriginalSourcePath, request.CatalogItemId, versionId, versionLabel, ct);
             }
             catch (Exception ex)
             {

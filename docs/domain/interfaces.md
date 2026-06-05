@@ -736,6 +736,71 @@ public interface IFamilyFileResolver
 }
 ```
 
+### IFamilySidecarLocator
+
+Поиск и копирование Type Catalog (.txt) sidecar-файла, который Revit
+хранит рядом с `.rfa` под тем же базовым именем. Pure I/O, без
+зависимости от Revit API — полностью покрывается unit-тестами.
+
+**Файл:** `IFamilySidecarLocator.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilySidecarLocator.cs`
+
+```csharp
+public interface IFamilySidecarLocator
+{
+    string? FindSidecarPath(string? rfaPath);
+    Task<string?> CopySidecarAsync(string sourceTxtPath, string destDir, CancellationToken ct = default);
+}
+```
+
+### IActiveFamilyFilePreparer
+
+Подготовка активного .rfa-документа для импорта: SaveAs в temp
+и копирование .txt sidecar рядом с temp .rfa. Реализация работает
+внутри ExternalEvent (I-01).
+
+**Файл:** `IActiveFamilyFilePreparer.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/ActiveFamilyFilePreparer.cs`
+
+```csharp
+public interface IActiveFamilyFilePreparer
+{
+    Task<ActiveFamilyPreparationResult?> PrepareActiveFamilyAsync(CancellationToken ct = default);
+}
+```
+
+### IActiveDocumentClassifier
+
+Определяет тип активного документа: `Family` / `Project` / `None`.
+Используется командой «Импорт активного файла» для выбора code path.
+
+**Файл:** `IActiveDocumentClassifier.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/ActiveDocumentClassifier.cs`
+
+```csharp
+public enum ActiveDocumentKind { None, Family, Project }
+
+public interface IActiveDocumentClassifier
+{
+    Task<ActiveDocumentKind> ClassifyAsync(CancellationToken ct = default);
+}
+```
+
+### IActiveImportCleanupService
+
+Удаляет temp-папки, созданные пайплайном «Импорт активного файла».
+Заменяет ad-hoc static helper в VM. Вызывается в `finally`.
+
+**Файл:** `IActiveImportCleanupService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/ActiveImportCleanupService.cs`
+
+```csharp
+public interface IActiveImportCleanupService
+{
+    Task CleanupAfterImportAsync(CancellationToken ct = default);
+}
+```
+
 ### IFamilyStorageRenameService
 
 Переименование физических `.rfa` файлов в managed storage при изменении отображаемого имени семейства. Переименовывает только файлы **текущей версии** (`current_version_label`) во **всех подпапках Revit-версий** (`r24/`, `r25/`...). Исторические версии (`v1`, `v2`...) остаются нетронутыми. Обновляет `family_files.file_name` и `family_files.relative_path` в БД.
@@ -1207,20 +1272,36 @@ public interface IFamilyMetadataPackageService
 
 ---
 
-### IFamilyManagerExternalEvent
+### IFamilyManagerAwaitableEvent
 
-Абстракция для ExternalEvent, используемого FamilyManager. Вызов `Raise` ставит `Action` в очередь на выполнение в контексте Revit API.
+Awaitable-обёртка над `Revit API ExternalEvent`. Позволяет коду из WPF/UI thread вызвать операцию в Revit API контексте и **дождаться её завершения через `await`**, а не городить `TaskCompletionSource` boilerplate в каждом VM.
 
-**Файл:** `IFamilyManagerExternalEvent.cs`
-**Реализация:** `SmartCon.FamilyManager/Events/FamilyManagerExternalEvent.cs`
+**Файл:** `SmartCon.Core/Services/Interfaces/IFamilyManagerAwaitableEvent.cs`
+**Реализация (pure C#, testable):** `SmartCon.FamilyManager/Events/FamilyManagerAwaitableEvent.cs`
+**Адаптер к `IExternalEventHandler`:** `SmartCon.App/Events/RevitFamilyManagerAwaitableEvent.cs`
 
 ```csharp
-public interface IFamilyManagerExternalEvent
+public interface IFamilyManagerAwaitableEvent
 {
-    void Raise(Action action);
-    void RaiseWithApplication(Action<object> actionWithApp);
+    /// Поставить Action<object> в очередь, дождаться её выполнения в Revit-потоке.
+    Task RaiseAsync(Action<object> actionWithApp, CancellationToken ct = default);
+
+    /// То же, но функция возвращает значение (generic-вариант).
+    Task<T> RaiseAsync<T>(Func<object, T> funcWithApp, CancellationToken ct = default);
+
+    /// Вызывается IExternalEventHandler-адаптером в UI-потоке Revit: достаёт
+    /// первый элемент из очереди, исполняет его и завершает ожидающий Task.
+    void ProcessQueue(object revitUIApplication);
 }
 ```
+
+**Дизайн-контракт:**
+- FIFO: элементы обрабатываются в порядке постановки в очередь.
+- `RunContinuationsAsynchronously` — продолжение после `await` не блокирует UI-поток Revit.
+- Исключения из callback пробрасываются в `Task` (наблюдаются через `await`).
+- При `ct` после `RaiseAsync` — `Task` завершается как `Canceled`.
+- **Не thread-safe для re-entrant вызовов** — один `Raise` должен полностью завершиться до следующего.
+- `object` (а не `UIApplication`) сохраняет `SmartCon.Core` независимым от `RevitAPIUI` (I-09).
 
 ---
 

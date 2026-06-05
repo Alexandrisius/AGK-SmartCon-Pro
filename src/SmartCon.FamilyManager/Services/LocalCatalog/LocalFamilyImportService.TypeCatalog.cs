@@ -22,26 +22,64 @@ internal sealed partial class LocalFamilyImportService
 
     private async Task ImportTypeCatalogIfPresentAsync(
         string sourceFilePath,
+        string? originalSourcePath,
         string catalogItemId,
         string versionId,
         string versionLabel,
         CancellationToken ct)
     {
+        SmartConLogger.Debug(
+            $"[TypeCatalog] ImportTypeCatalogIfPresentAsync: source='{sourceFilePath}', " +
+            $"original='{originalSourcePath ?? "<none>"}', catalogItem='{catalogItemId}', version='{versionLabel}'");
+
         var sourceTxtPath = Path.ChangeExtension(sourceFilePath, ".txt");
-        
+
         if (!File.Exists(sourceTxtPath))
         {
-            // Fallback: try to find Type Catalog from previous version in managed storage
-            var previousTxtPath = await FindPreviousVersionTypeCatalogPathAsync(catalogItemId, ct);
-            if (!string.IsNullOrEmpty(previousTxtPath))
+            // 1) Try the sidecar next to the ORIGINAL file (e.g. when sourceFilePath
+            //    is a temp .rfa that was copied from the user's working folder or
+            //    from managed storage but the sidecar wasn't copied along with it).
+            if (!string.IsNullOrEmpty(originalSourcePath)
+                && !string.Equals(originalSourcePath, sourceFilePath, StringComparison.OrdinalIgnoreCase))
             {
-                sourceTxtPath = previousTxtPath;
-                SmartConLogger.Info($"[TypeCatalog] Using Type Catalog from previous version: {Path.GetFileName(sourceTxtPath)}");
+                var originalTxtPath = Path.ChangeExtension(originalSourcePath, ".txt");
+                if (File.Exists(originalTxtPath))
+                {
+                    sourceTxtPath = originalTxtPath;
+                    SmartConLogger.Info(
+                        $"[TypeCatalog] Using sidecar from ORIGINAL source (next to '{originalSourcePath}'): " +
+                        $"{Path.GetFileName(sourceTxtPath)}");
+                }
+                else
+                {
+                    SmartConLogger.Debug(
+                        $"[TypeCatalog] No .txt next to original '{originalSourcePath}' — trying previous version");
+                }
             }
-            else
+
+            // 2) Legacy fallback: previous version in managed storage.
+            if (!File.Exists(sourceTxtPath) || sourceTxtPath == Path.ChangeExtension(sourceFilePath, ".txt"))
             {
-                return;
+                var previousTxtPath = await FindPreviousVersionTypeCatalogPathAsync(catalogItemId, ct);
+                if (!string.IsNullOrEmpty(previousTxtPath))
+                {
+                    sourceTxtPath = previousTxtPath;
+                    SmartConLogger.Info(
+                        $"[TypeCatalog] Using Type Catalog from previous version: " +
+                        $"{Path.GetFileName(sourceTxtPath)}");
+                }
+                else
+                {
+                    SmartConLogger.Info(
+                        $"[TypeCatalog] No Type Catalog found for '{catalogItemId}' (no sidecar, no previous version)");
+                    return;
+                }
             }
+        }
+        else
+        {
+            SmartConLogger.Info(
+                $"[TypeCatalog] Found sidecar next to import source: {Path.GetFileName(sourceTxtPath)}");
         }
 
         try

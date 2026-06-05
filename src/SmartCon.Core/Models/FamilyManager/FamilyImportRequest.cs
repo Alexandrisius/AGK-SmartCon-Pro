@@ -15,6 +15,13 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// the destination file in managed storage. If null, the source file's name
 /// is used (legacy behaviour).
 /// </param>
+/// <param name="OriginalSourcePath">
+/// Absolute path to the original .rfa from which <paramref name="FilePath"/>
+/// was derived (e.g. before it was copied to a temp staging folder).
+/// Used to locate a Type Catalog (.txt) sidecar that lives next to the
+/// original file but is not copied alongside the temp .rfa. Pass <c>null</c>
+/// when the import target is the original file (no temp staging was used).
+/// </param>
 public sealed record FamilyImportRequest(
     string FilePath,
     int RevitMajorVersion,
@@ -24,4 +31,5 @@ public sealed record FamilyImportRequest(
     string? CategoryId = null,
     string FamilySource = "loadable",
     string? RevitCategory = null,
-    string? FileName = null);
+    string? FileName = null,
+    string? OriginalSourcePath = null);

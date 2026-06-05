@@ -6,4 +6,5 @@ public sealed record FamilyUpdateRequest(
     int RevitMajorVersion,
     string? CategoryId = null,
     string? CategoryName = null,
-    string? FileName = null);
+    string? FileName = null,
+    string? OriginalSourcePath = null);
