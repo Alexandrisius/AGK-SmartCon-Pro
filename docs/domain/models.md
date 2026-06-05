@@ -2381,7 +2381,7 @@ DIP abstraction для мигратора локального каталога.
 
 ---
 
-## FamilyMetadataPackageExtensions (Phase 1)
+## FamilyMetadataPackageExtensions *(Phase 1)*
 
 `SmartCon.Core/Models/FamilyManager/FamilyMetadataPackageExtensions.cs`:
 ```csharp
