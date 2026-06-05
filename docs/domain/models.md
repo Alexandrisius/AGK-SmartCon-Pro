@@ -2321,3 +2321,71 @@ public sealed record SystemFamilyExtractionTask(
 ```
 
 
+
+
+---
+
+## Cross-cutting Models (Phase 3)
+
+### FamilyMetadataFormat
+
+`SmartCon.Core/Models/FamilyManager/FamilyMetadataFormat.cs` — единственный источник правды для формата metadata package.
+
+```csharp
+public static class FamilyMetadataFormat
+{
+    public const string Id = "smartcon.family-metadata";
+    public const int CurrentVersion = 2;
+
+    public static bool IsRecognized(string format, int version)
+        => format == Id && version <= CurrentVersion;
+}
+```
+
+### FamilyMetadataMigrator
+
+`SmartCon.Core/Models/FamilyManager/FamilyMetadataMigrator.cs` — stub v1→v2 migrator.
+
+```csharp
+public static class FamilyMetadataMigrator
+{
+    public static FamilyMetadataPackage Migrate(FamilyMetadataPackage package)
+    {
+        if (package.Format != FamilyMetadataFormat.Id)
+            throw new NotSupportedException($"Unknown format: {package.Format}");
+        if (package.Version > FamilyMetadataFormat.CurrentVersion)
+            throw new NotSupportedException($"Version {package.Version} > current {FamilyMetadataFormat.CurrentVersion}");
+        return package;
+    }
+}
+```
+
+### JsonOptions
+
+`SmartCon.Core/Services/Json/JsonOptions.cs` — статические singleton-ы для JSON сериализации:
+- `Default` — strict (no indented, no relaxed escaping)
+- `WriteIndented` — pretty
+- `RelaxedWriteIndented` — кириллица (Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping)
+
+---
+
+## DB Migration Models (Phase 4a)
+
+### ILocalCatalogMigrator
+
+DIP abstraction для мигратора локального каталога. Interface в Core, реализация `public sealed class LocalCatalogMigrator` в FamilyManager (ранее был internal class, повышена видимость для cross-assembly DI).
+
+### LocalCatalogDatabase (повышена видимость)
+
+`public sealed class LocalCatalogDatabase` (ранее `internal`). Содержит путь к файлу БД и factory для `SqliteConnection`. Повышение видимости — CS0051 fix (public ctor принимал internal параметр).
+
+---
+
+## FamilyMetadataPackageExtensions (Phase 1)
+
+`SmartCon.Core/Models/FamilyManager/FamilyMetadataPackageExtensions.cs`:
+```csharp
+public static FamilyMetadataPackage WithNonNullCollections(this FamilyMetadataPackage package);
+```
+
+Гарантирует непустые коллекции (`Categories ?? []`, `Attributes ?? []`, `Bindings ?? []`) для безопасной JSON-сериализации. Использует `with` expression для immutable update.
