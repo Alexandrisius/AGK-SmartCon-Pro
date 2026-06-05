@@ -1,8 +1,7 @@
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
-using SmartCon.FamilyManager.Services;
 
-namespace SmartCon.FamilyManager.ViewModels;
+namespace SmartCon.FamilyManager.Services;
 
 public sealed record FamilyManagerServices(
     IFamilyCatalogProvider CatalogProvider,
