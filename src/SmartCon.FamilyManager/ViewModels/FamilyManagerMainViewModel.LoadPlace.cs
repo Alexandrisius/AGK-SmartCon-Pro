@@ -60,11 +60,11 @@ public sealed partial class FamilyManagerMainViewModel
         var selectedName = SelectedItem.Name;
         var targetRevit = CurrentRevitVersion;
 
-        await _awaitableEvent.RaiseAsync(_ =>
+        await _awaitableEvent.RaiseAsyncTask(async _ =>
         {
             try
             {
-                var resolved = Task.Run(() => _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None)).GetAwaiter().GetResult();
+                var resolved = await _fileResolver.ResolveForLoadAsync(selectedId, targetRevit, CancellationToken.None).ConfigureAwait(true);
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
@@ -73,7 +73,7 @@ public sealed partial class FamilyManagerMainViewModel
                 }
 
                 var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName, OverwriteParameterValues = overwriteParameterValues };
-                var result = _loadService.LoadFamilyAsync(resolved, loadOptions, ct: CancellationToken.None).GetAwaiter().GetResult();
+                var result = await _loadService.LoadFamilyAsync(resolved, loadOptions, ct: CancellationToken.None).ConfigureAwait(true);
 
                 if (result.Success)
                 {
@@ -154,7 +154,7 @@ public sealed partial class FamilyManagerMainViewModel
         var isVirtual = typeNode.IsVirtual;
         var targetRevit = CurrentRevitVersion;
 
-        await _awaitableEvent.RaiseAsync(_ =>
+        await _awaitableEvent.RaiseAsyncTask(async _ =>
         {
             try
             {
@@ -167,9 +167,9 @@ public sealed partial class FamilyManagerMainViewModel
                         LanguageManager.GetString(StringLocalization.Keys.FM_Loading) ?? "Loading {0}...",
                         typeName);
 
-                    var resolved = Task.Run(() => _fileResolver
-                        .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None))
-                        .GetAwaiter().GetResult();
+                    var resolved = await _fileResolver
+                        .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None)
+                        .ConfigureAwait(true);
 
                     if (string.IsNullOrEmpty(resolved.AbsolutePath))
                     {
@@ -183,11 +183,11 @@ public sealed partial class FamilyManagerMainViewModel
                     if (isVirtual)
                     {
                         var options = FamilyLoadOptions.Default with { PreferredName = familyName };
-                        result = _loadService.LoadFamilyAsync(resolved, options, msg => StatusMessage = msg, CancellationToken.None).GetAwaiter().GetResult();
+                        result = await _loadService.LoadFamilyAsync(resolved, options, msg => StatusMessage = msg, CancellationToken.None).ConfigureAwait(true);
                     }
                     else
                     {
-                        result = _loadService.LoadFamilySymbolAsync(resolved.AbsolutePath, typeName, msg => StatusMessage = msg, CancellationToken.None).GetAwaiter().GetResult();
+                        result = await _loadService.LoadFamilySymbolAsync(resolved.AbsolutePath, typeName, msg => StatusMessage = msg, CancellationToken.None).ConfigureAwait(true);
                     }
 
                     if (!result.Success)
@@ -207,9 +207,9 @@ public sealed partial class FamilyManagerMainViewModel
                         familyName);
 
                     // Record usage analytics
-                    var resolvedForUsage = Task.Run(() => _fileResolver
-                        .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None))
-                        .GetAwaiter().GetResult();
+                    var resolvedForUsage = await _fileResolver
+                        .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None)
+                        .ConfigureAwait(true);
 
                     var projectPath = _revitContext.GetDocument().PathName;
                     var usage = new ProjectFamilyUsage(

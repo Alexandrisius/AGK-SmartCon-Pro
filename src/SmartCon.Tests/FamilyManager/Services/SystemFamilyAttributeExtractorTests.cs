@@ -197,8 +197,14 @@ public sealed class SystemFamilyAttributeExtractorTests
         public Task<T> RaiseAsync<T>(Func<object, T> funcWithApp, CancellationToken ct = default)
             => _inner.RaiseAsync(funcWithApp, ct);
 
-        public void ProcessQueue(object revitUIApplication)
-            => _inner.ProcessQueue(revitUIApplication);
+        public Task RaiseAsyncTask(Func<object, Task> asyncActionWithApp, CancellationToken ct = default)
+            => _inner.RaiseAsyncTask(asyncActionWithApp, ct);
+
+        public void ProcessQueue(object revitApp)
+            => _inner.ProcessQueue(revitApp);
+
+        public void Initialize(Action onRaise)
+            => _inner.Initialize(onRaise);
     }
 
     private sealed class StubExtraction : ISystemFamilyAttributeExtractionService

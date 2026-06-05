@@ -357,7 +357,7 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (successfulItems.Count > 0) await LoadTreeAsync();
 
-        ExtractAttributesForImportedFamilies(importResult.Results);
+        await ExtractAttributesForImportedFamilies(importResult.Results);
 
         StatusMessage = BuildImportStatusMessage(
             importResult.SuccessCount, importResult.SkippedCount,
@@ -470,7 +470,7 @@ public sealed partial class FamilyManagerMainViewModel
     /// <see cref="IFamilyDataExtractionService.Extract"/> и сохраняет результат
     /// через <see cref="IFamilyDataImportService.SaveExtractionResultAsync"/>.
     /// </summary>
-    private void ExtractAttributesForImportedFamilies(IReadOnlyList<FamilyImportResult> importResults)
+    private async Task ExtractAttributesForImportedFamilies(IReadOnlyList<FamilyImportResult> importResults)
     {
         var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionId, string? FileId, bool HasTypeCatalog)>();
 
@@ -482,9 +482,7 @@ public sealed partial class FamilyManagerMainViewModel
                 if (string.IsNullOrEmpty(item.CatalogItemId)) continue;
                 var catalogItemId = item.CatalogItemId!;
 
-                var resolved = Task.Run(() =>
-                    _fileResolver.ResolveForLoadAsync(catalogItemId, CurrentRevitVersion, CancellationToken.None))
-                    .GetAwaiter().GetResult();
+                var resolved = await _fileResolver.ResolveForLoadAsync(catalogItemId, CurrentRevitVersion, CancellationToken.None).ConfigureAwait(true);
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
 

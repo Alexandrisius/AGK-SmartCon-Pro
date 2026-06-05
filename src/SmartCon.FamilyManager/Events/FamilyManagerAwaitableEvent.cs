@@ -155,9 +155,9 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
     /// <c>internal</c> for unit tests that drive the queue without
     /// a real Revit instance.
     /// </summary>
-    public void ProcessQueue(object revitUIApplication)
+    public void ProcessQueue(object revitApp)
     {
-        _contextWriter.SetContext(revitUIApplication);
+        _contextWriter.SetContext(revitApp);
 
         var processed = 0;
         while (_queue.TryDequeue(out var entry))
@@ -172,7 +172,7 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
             // route them to the matching TaskCompletionSource. If an
             // exception propagates out of entry.Action it is a bug in
             // our code and we let Revit / the test surface see it.
-            entry.Action(revitUIApplication);
+            entry.Action(revitApp);
             SmartConLogger.Debug(
                 $"[AwaitableEvent] Execute[{processed}]: completed (pending={_queue.Count})");
         }
@@ -244,6 +244,55 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
                 tcs.TrySetException(ex);
             }
         };
+    }
+
+    /// <summary>
+    /// Async overload of <see cref="RaiseAsync(Action{Object}, CancellationToken)"/>.
+    /// Accepts a <see cref="Func{Object, Task}"/> so callers can <c>await</c>
+    /// Revit-API-touching operations without blocking the WPF UI thread
+    /// (which would otherwise deadlock the ExternalEvent message loop).
+    /// </summary>
+    public Task RaiseAsyncTask(Func<object, Task> asyncActionWithApp, CancellationToken ct = default)
+    {
+        ThrowIfNull(asyncActionWithApp);
+        EnsureInitialized();
+
+        var tcs = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var enqueuedAt = Stopwatch.GetTimestamp();
+
+        Action<object> asyncWrapper = obj =>
+        {
+            if (ct.IsCancellationRequested)
+            {
+                tcs.TrySetCanceled(ct);
+                return;
+            }
+            _ = BridgeAsyncResult(asyncActionWithApp(obj), tcs);
+        };
+
+        _queue.Enqueue(new Entry(asyncWrapper, enqueuedAt));
+        SmartConLogger.Debug(
+            $"[AwaitableEvent] RaiseAsync(async): enqueued (pending={_queue.Count})");
+        _onRaise!.Invoke();
+        return tcs.Task;
+    }
+
+    private static async Task BridgeAsyncResult(Task inner, TaskCompletionSource<bool> tcs)
+    {
+        try
+        {
+            await inner.ConfigureAwait(true);
+            tcs.TrySetResult(true);
+        }
+        catch (OperationCanceledException)
+        {
+            tcs.TrySetCanceled();
+        }
+        catch (Exception ex)
+        {
+            tcs.TrySetException(ex);
+        }
     }
 
     /// <summary>

@@ -96,7 +96,7 @@ public sealed class FamilyManagerAwaitableEventTests
         var sut = CreateInitializedWithCounter(_context, out _);
         var expected = new InvalidOperationException("boom");
 
-        var task = sut.RaiseAsync(_ => throw expected);
+        var task = sut.RaiseAsync((Action<object>)(_ => throw expected));
 
         sut.ProcessQueue(_uiAppSurrogate);
 

@@ -35,47 +35,18 @@ namespace SmartCon.Core.Services.Interfaces;
 /// </remarks>
 public interface IFamilyManagerAwaitableEvent
 {
-    /// <summary>
-    /// Queues an action to run on the Revit UI thread and returns a
-    /// <see cref="Task"/> that completes when the action has finished.
-    /// </summary>
-    /// <param name="actionWithApp">Callback receiving the
-    ///     <c>UIApplication</c> as <see cref="object"/> to avoid
-    ///     <c>RevitAPIUI</c> dependency in <c>SmartCon.Core</c>
-    ///     (invariant I-09).</param>
-    /// <param name="ct">Cancellation token. Cancelling transitions the
-    ///     returned <see cref="Task"/> to <see cref="TaskStatus.Canceled"/>
-    ///     but does not abort the action if it has already started.</param>
-    /// <returns>A <see cref="Task"/> that completes after the action
-    ///     finishes (or is cancelled).</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="actionWithApp"/> is <c>null</c>.</exception>
-    /// <exception cref="InvalidOperationException">Handler has not been initialized with a Revit <c>ExternalEvent</c>.</exception>
     Task RaiseAsync(Action<object> actionWithApp, CancellationToken ct = default);
-
-    /// <summary>
-    /// Queues a function to run on the Revit UI thread and returns a
-    /// <see cref="Task{TResult}"/> that resolves to the function's
-    /// return value once it has finished.
-    /// </summary>
-    /// <param name="funcWithApp">Callback receiving the
-    ///     <c>UIApplication</c> as <see cref="object"/>.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>A <see cref="Task{TResult}"/> resolving to
-    ///     <typeparamref name="T"/>.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="funcWithApp"/> is <c>null</c>.</exception>
-    /// <exception cref="InvalidOperationException">Handler has not been initialized.</exception>
     Task<T> RaiseAsync<T>(Func<object, T> funcWithApp, CancellationToken ct = default);
 
     /// <summary>
-    /// Drains the queue and completes every pending
-    /// <see cref="TaskCompletionSource{TResult}"/>. In production this
-    /// is invoked by the host's <c>IExternalEventHandler</c> adapter
-    /// from inside <c>Execute(UIApplication)</c>. In tests it is called
-    /// directly with a plain <see cref="object"/> as the
-    /// <c>UIApplication</c> surrogate.
+    /// Async overload of <see cref="RaiseAsync(Action{Object}, CancellationToken)"/>.
+    /// Renamed to <c>RaiseAsyncTask</c> to avoid C# overload-resolution
+    /// ambiguity: a statement lambda <c>_ => { ... }</c> could otherwise
+    /// be picked up as <see cref="Func{Object, Task}"/> (implicit async
+    /// conversion), silently changing exception-propagation semantics.
     /// </summary>
-    /// <param name="revitUIApplication">The <c>UIApplication</c> cast
-    ///     as <see cref="object"/>. Implementations pass it on to
-    ///     queued callbacks.</param>
-    void ProcessQueue(object revitUIApplication);
+    Task RaiseAsyncTask(Func<object, Task> asyncActionWithApp, CancellationToken ct = default);
+
+    void ProcessQueue(object revitApp);
+    void Initialize(Action onRaise);
 }

@@ -146,7 +146,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _placementDragService.PlacementStatusMessage += OnPlacementStatusMessage;
 
         DetectRevitVersion();
-        InitializeAsync();
+        FireAndForget(InitializeAsync(), nameof(InitializeAsync));
     }
 
     private void DetectRevitVersion()
@@ -175,31 +175,30 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
-    private void InitializeAsync()
+    private async Task InitializeAsync()
     {
-        try
-        {
-            SmartConLogger.TruncateMainLog();
-            SmartConLogger.Info($"======================================================================");
-            SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
-            SmartConLogger.Info($"======================================================================");
+        SmartConLogger.TruncateMainLog();
+        SmartConLogger.Info($"======================================================================");
+        SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
+        SmartConLogger.Info($"======================================================================");
 
-            _databaseManager.InitializeAsync().GetAwaiter().GetResult();
-            RefreshConnections();
-            if (!HasActiveDatabase)
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
-                return;
-            }
-            _ = RefreshTreeViaExternalEventAsync();
-        }
-        catch (Exception ex)
+        await _databaseManager.InitializeAsync().ConfigureAwait(true);
+        RefreshConnections();
+        if (!HasActiveDatabase)
         {
-            SmartConLogger.Error($"FamilyManager initialization failed: {ex}");
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Initialization error: {0}",
-                ex.Message);
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
+            return;
         }
+        _ = RefreshTreeViaExternalEventAsync();
+    }
+
+    private static void FireAndForget(Task task, string operationName)
+    {
+        _ = task.ContinueWith(
+            t => SmartConLogger.Error($"FamilyManager '{operationName}' failed: {t.Exception?.GetBaseException()}"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private async Task RefreshAccessAndLoadTreeAsync()

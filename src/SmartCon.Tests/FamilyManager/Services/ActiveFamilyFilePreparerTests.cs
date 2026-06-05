@@ -36,7 +36,13 @@ public sealed class ActiveFamilyFilePreparerTests
         public Task<T> RaiseAsync<T>(Func<object, T> funcWithApp, CancellationToken ct = default)
             => throw new InvalidOperationException("revit boom — not initialized");
 
-        public void ProcessQueue(object revitUIApplication)
+        public Task RaiseAsyncTask(Func<object, Task> asyncActionWithApp, CancellationToken ct = default)
+            => throw new InvalidOperationException("revit boom — not initialized");
+
+        public void ProcessQueue(object revitApp)
+            => throw new InvalidOperationException("revit boom — not initialized");
+
+        public void Initialize(Action onRaise)
             => throw new InvalidOperationException("revit boom — not initialized");
     }
 }

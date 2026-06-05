@@ -178,7 +178,7 @@ public sealed partial class FamilyManagerMainViewModel
         List<FamilyImportResult> importedItems,
         int successCount, int skippedCount, int errorCount, int total)
     {
-        await _awaitableEvent.RaiseAsync(_ =>
+        await _awaitableEvent.RaiseAsyncTask(async _ =>
         {
             // Update status inside ExternalEvent to avoid WPF render thread freeze
             // when OpenDocumentFile triggers MFC family upgrade dialog
@@ -194,9 +194,9 @@ public sealed partial class FamilyManagerMainViewModel
                     var catalogItemId = item.CatalogItemId!;
 
                     // ThreadPool: file resolution (SQLite/async)
-                    var resolved = Task.Run(() =>
-                        _fileResolver.ResolveForLoadAsync(catalogItemId, CurrentRevitVersion, CancellationToken.None))
-                        .GetAwaiter().GetResult();
+                    var resolved = await _fileResolver
+                        .ResolveForLoadAsync(catalogItemId, CurrentRevitVersion, CancellationToken.None)
+                        .ConfigureAwait(true);
 
                     if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
 
