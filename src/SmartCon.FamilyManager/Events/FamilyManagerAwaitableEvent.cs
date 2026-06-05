@@ -278,6 +278,22 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
         return tcs.Task;
     }
 
+    /// <summary>
+    /// Bridges an inner <see cref="Task"/> into a <see cref="TaskCompletionSource{T}"/>
+    /// so that <see cref="RaiseAsyncTask(Func{object, Task}, CancellationToken)"/>
+    /// can surface completion, cancellation, and faults through a single TCS.
+    /// </summary>
+    /// <remarks>
+    /// <para><c>ConfigureAwait(true)</c> is intentional: the caller is
+    /// <see cref="RaiseAsyncTask(Func{object, Task}, CancellationToken)"/>, which
+    /// is invoked from <c>ExternalEvent.Raise</c> on the Revit UI thread. We need
+    /// the continuation back on the UI thread so that <c>tcs.TrySetResult</c>
+    /// (and any caller of <c>await RaiseAsyncTask(...)</c>) resumes in the
+    /// correct SynchronizationContext for WPF property updates and
+    /// ObservableCollection mutations. Forcing the continuation off the UI
+    /// thread here would race with the next <c>RaiseAsyncTask</c> invocation
+    /// and could break the ProcessQueue ordering guarantee.</para>
+    /// </remarks>
     private static async Task BridgeAsyncResult(Task inner, TaskCompletionSource<bool> tcs)
     {
         try
