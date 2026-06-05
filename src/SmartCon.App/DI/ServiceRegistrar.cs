@@ -152,6 +152,7 @@ public static class ServiceRegistrar
         services.AddSingleton<FamilyManagerServices>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IIdGenerator, GuidIdGenerator>();
+        services.AddSingleton<IDispatcher, SmartCon.FamilyManager.UI.WpfDispatcher>();
         services.AddSingleton<StoragePathResolver>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
