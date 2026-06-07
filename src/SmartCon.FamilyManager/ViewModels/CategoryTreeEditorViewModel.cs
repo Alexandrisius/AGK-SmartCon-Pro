@@ -7,6 +7,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Helpers;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Models.Metadata;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
@@ -18,12 +19,12 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
     private readonly ICategoryAttributeBindingService _bindingService;
-    private readonly IFamilyMetadataPackageService _packageService;
+    private readonly IFamilyManagerMetadataMediator _metadataMediator;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private List<AttributeListItemViewModel> _allAttributeItems = [];
     private readonly Dictionary<string, bool> _bindingChanges = new();
     private readonly List<CategoryNodeViewModel> _pendingCategoryDeletions = [];
-    private FamilyMetadataPackage? _pendingImportPackage;
+    private List<MetadataExportBinding>? _pendingBindingImports;
 
     [ObservableProperty] private ObservableCollection<CategoryNodeViewModel> _rootNodes = [];
     [ObservableProperty] private CategoryNodeViewModel? _selectedNode;
@@ -45,14 +46,14 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         IFamilyManagerDialogService dialogService,
         IAttributeDefinitionRepository attributeDefRepository,
         ICategoryAttributeBindingService bindingService,
-        IFamilyMetadataPackageService packageService,
+        IFamilyManagerMetadataMediator metadataMediator,
         IFamilyManagerViewModelFactory viewModelFactory)
     {
         _categoryRepository = categoryRepository;
         _dialogService = dialogService;
         _attributeDefRepository = attributeDefRepository;
         _bindingService = bindingService;
-        _packageService = packageService;
+        _metadataMediator = metadataMediator;
         _viewModelFactory = viewModelFactory;
     }
 
@@ -243,6 +244,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         var allNodes = FlattenNodes(RootNodes);
         HasUnsavedChanges = _pendingCategoryDeletions.Count > 0
                          || _bindingChanges.Count > 0
+                         || _pendingBindingImports is { Count: > 0 }
                          || allNodes.Any(n => n.IsNew || n.IsDirty);
     }
 
@@ -271,6 +273,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     private async Task OpenAttributeLibraryAsync()
     {
         var libraryVm = _viewModelFactory.CreateAttributeLibraryViewModel();
+        libraryVm.RequestClose += _ => libraryVm.Detach();
         await libraryVm.InitializeAsync();
         _dialogService.ShowAttributeLibrary(libraryVm);
 
@@ -283,6 +286,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     {
         try
         {
+            SmartConLogger.Info($"[CategoryTreeEditor] OkAsync started. HasUnsavedChanges={HasUnsavedChanges}");
+
             foreach (var node in _pendingCategoryDeletions.Where(n => !n.IsNew))
             {
                 await _categoryRepository.DeleteAsync(node.CategoryId);
@@ -291,6 +296,20 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
 
             var allNodes = FlattenNodes(RootNodes);
 
+            var existingByPath = new Dictionary<string, CategoryNode>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var allCategories = await _categoryRepository.GetAllAsync();
+                foreach (var c in allCategories)
+                {
+                    existingByPath[c.FullPath] = c;
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"CategoryTreeEditor OkAsync GetAllAsync failed: {ex.Message}");
+            }
+
             var tempToRealId = new Dictionary<string, string>();
 
             foreach (var node in allNodes.Where(n => n.IsNew))
@@ -298,6 +317,15 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                 var realParentId = node.ParentId is not null && tempToRealId.TryGetValue(node.ParentId, out var mappedParent)
                     ? mappedParent
                     : node.ParentId;
+
+                if (existingByPath.TryGetValue(node.FullPath, out var existing))
+                {
+                    node.CategoryId = existing.Id;
+                    node.ParentId = existing.ParentId;
+                    node.IsNew = false;
+                    node.IsDirty = false;
+                    continue;
+                }
 
                 var created = await _categoryRepository.AddAsync(node.DisplayName, realParentId, node.SortOrder);
                 tempToRealId[node.CategoryId] = created.Id;
@@ -362,53 +390,78 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                 }
             }
 
-            if (_pendingImportPackage is not null)
+            if (_pendingBindingImports is { Count: > 0 })
             {
-                var packageWithoutCategories = new FamilyMetadataPackage
-                {
-                    Format = _pendingImportPackage.Format,
-                    Version = _pendingImportPackage.Version,
-                    ExportedAtUtc = _pendingImportPackage.ExportedAtUtc,
-                    Sections = new FamilyMetadataPackageSections
-                    {
-                        Categories = false,
-                        Attributes = _pendingImportPackage.Sections.Attributes,
-                        Bindings = _pendingImportPackage.Sections.Bindings
-                    },
-                    Categories = [],
-                    Attributes = _pendingImportPackage.Attributes,
-                    Bindings = _pendingImportPackage.Bindings
-                };
-                var importResult = await _packageService.ImportAsync(packageWithoutCategories);
-                _pendingImportPackage = null;
-
-                var parts = new List<string>();
-                if (importResult.AttributesImported > 0)
-                    parts.Add($"attributes: {importResult.AttributesImported}");
-                if (importResult.BindingsImported > 0)
-                    parts.Add($"bindings: {importResult.BindingsImported}");
-                if (importResult.BindingsSkipped > 0)
-                    parts.Add($"bindings skipped: {importResult.BindingsSkipped}");
-                if (importResult.Warnings.Count > 0)
-                {
-                    var warningPreview = importResult.Warnings.Count <= 3
-                        ? string.Join("; ", importResult.Warnings)
-                        : $"{importResult.Warnings.Count} warnings";
-                    parts.Add(warningPreview);
-                }
-                if (parts.Count > 0)
-                {
-                    StatusMessage = $"Imported {string.Join(", ", parts)}";
-                }
+                await ApplyPendingBindingImportsAsync(_pendingBindingImports);
+                _pendingBindingImports = null;
             }
 
             HasUnsavedChanges = false;
+            _metadataMediator.RaiseMetadataChanged();
             Saved?.Invoke();
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"[CategoryTreeEditor] OkAsync failed: {ex}");
             StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
+        }
+    }
+
+    private async Task ApplyPendingBindingImportsAsync(List<MetadataExportBinding> bindings)
+    {
+        var bindingsImported = 0;
+        var bindingsSkipped = 0;
+        var warnings = new List<string>();
+
+        var allCategories = await _categoryRepository.GetAllAsync();
+        var pathToCategory = allCategories
+            .ToDictionary(c => c.FullPath, c => c, StringComparer.OrdinalIgnoreCase);
+
+        var allAttributes = await _attributeDefRepository.GetAllAsync();
+        var nameToAttr = allAttributes
+            .ToDictionary(a => a.Name, a => a, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var binding in bindings)
+        {
+            if (!pathToCategory.TryGetValue(binding.CategoryPath, out var category))
+            {
+                warnings.Add($"Binding skipped: category '{binding.CategoryPath}' not found.");
+                bindingsSkipped++;
+                continue;
+            }
+
+            if (!nameToAttr.TryGetValue(binding.AttributeName, out var attribute))
+            {
+                warnings.Add($"Binding skipped: attribute '{binding.AttributeName}' not found.");
+                bindingsSkipped++;
+                continue;
+            }
+
+            var existingBindings = await _bindingService.GetDirectBindingsAsync(category.Id);
+            if (existingBindings.Any(b => b.AttributeId == attribute.Id))
+            {
+                bindingsSkipped++;
+                continue;
+            }
+
+            await _bindingService.CreateBindingAsync(category.Id, attribute.Id, binding.SortOrder);
+            bindingsImported++;
+        }
+
+        if (bindingsImported > 0 || bindingsSkipped > 0 || warnings.Count > 0)
+        {
+            var parts = new List<string>();
+            if (bindingsImported > 0) parts.Add($"bindings: {bindingsImported}");
+            if (bindingsSkipped > 0) parts.Add($"bindings skipped: {bindingsSkipped}");
+            if (warnings.Count > 0)
+            {
+                var preview = warnings.Count <= 3
+                    ? string.Join("; ", warnings)
+                    : $"{warnings.Count} warnings";
+                parts.Add(preview);
+            }
+            StatusMessage = $"Imported {string.Join(", ", parts)}";
         }
     }
 

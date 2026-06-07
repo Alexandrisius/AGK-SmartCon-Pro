@@ -175,7 +175,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IAttributeValueRepository>(sp => sp.GetRequiredService<LocalAttributeValueRepository>());
         services.AddSingleton<LocalFamilyDataImportRunRepository>();
         services.AddSingleton<IFamilyDataImportRunRepository>(sp => sp.GetRequiredService<LocalFamilyDataImportRunRepository>());
-        services.AddSingleton<IFamilyMetadataPackageService, LocalFamilyMetadataPackageService>();
+        services.AddSingleton<IFamilyManagerMetadataMediator, FamilyManagerMetadataMediator>();
         services.AddSingleton<IFamilyDataExtractionService, RevitFamilyDataExtractionService>();
         services.AddSingleton<FamilyDataImportService>();
         services.AddSingleton<IFamilyDataImportService>(sp => sp.GetRequiredService<FamilyDataImportService>());

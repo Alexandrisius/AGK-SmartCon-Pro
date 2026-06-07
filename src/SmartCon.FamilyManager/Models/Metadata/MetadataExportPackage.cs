@@ -1,32 +1,32 @@
 using System.Text.Json.Serialization;
 
-namespace SmartCon.Core.Models.FamilyManager;
+namespace SmartCon.FamilyManager.Models.Metadata;
 
-public sealed class FamilyMetadataPackage
+public sealed class MetadataExportPackage
 {
     [JsonPropertyName("format")]
-    public string Format { get; init; } = FamilyMetadataFormat.Id;
+    public string Format { get; init; } = "smartcon.familymanager.metadata-package";
 
     [JsonPropertyName("version")]
-    public int Version { get; init; } = FamilyMetadataFormat.CurrentVersion;
+    public int Version { get; init; } = 2;
 
     [JsonPropertyName("exportedAtUtc")]
     public DateTimeOffset ExportedAtUtc { get; init; } = DateTimeOffset.UtcNow;
 
     [JsonPropertyName("sections")]
-    public FamilyMetadataPackageSections Sections { get; init; } = new();
+    public MetadataExportSections Sections { get; init; } = new();
 
     [JsonPropertyName("categories")]
-    public List<FamilyMetadataCategoryNode> Categories { get; init; } = [];
+    public List<MetadataExportCategoryNode> Categories { get; init; } = [];
 
     [JsonPropertyName("attributes")]
-    public List<FamilyMetadataAttribute> Attributes { get; init; } = [];
+    public List<MetadataExportAttribute> Attributes { get; init; } = [];
 
     [JsonPropertyName("bindings")]
-    public List<FamilyMetadataBinding> Bindings { get; init; } = [];
+    public List<MetadataExportBinding> Bindings { get; init; } = [];
 }
 
-public sealed class FamilyMetadataPackageSections
+public sealed class MetadataExportSections
 {
     [JsonPropertyName("categories")]
     public bool Categories { get; init; }
@@ -38,16 +38,16 @@ public sealed class FamilyMetadataPackageSections
     public bool Bindings { get; init; }
 }
 
-public sealed class FamilyMetadataCategoryNode
+public sealed class MetadataExportCategoryNode
 {
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 
     [JsonPropertyName("children")]
-    public List<FamilyMetadataCategoryNode> Children { get; init; } = [];
+    public List<MetadataExportCategoryNode> Children { get; init; } = [];
 }
 
-public sealed class FamilyMetadataAttribute
+public sealed class MetadataExportAttribute
 {
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
@@ -56,7 +56,7 @@ public sealed class FamilyMetadataAttribute
     public string? Group { get; init; }
 }
 
-public sealed class FamilyMetadataBinding
+public sealed class MetadataExportBinding
 {
     [JsonPropertyName("categoryPath")]
     public string CategoryPath { get; init; } = string.Empty;

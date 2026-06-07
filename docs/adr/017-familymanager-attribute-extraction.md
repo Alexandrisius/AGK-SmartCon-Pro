@@ -82,7 +82,7 @@ Matching при извлечении из Revit — `StringComparer.Ordinal`.
 | Layer | Responsibility |
 |---|---|
 | `SmartCon.Core/Models/FamilyManager/` | AttributeDefinition, CategoryAttributeBinding, EffectiveCategoryAttribute, ExtractedAttributeValue, FamilyDataImportRun, enums |
-| `SmartCon.Core/Services/Interfaces/` | IAttributeDefinitionRepository, ICategoryAttributeBindingService, IAttributeValueRepository, IFamilyDataImportRunRepository, IFamilyDataExtractionService, IFamilyDataImportService, IFamilyMetadataPackageService |
+| `SmartCon.Core/Services/Interfaces/` | IAttributeDefinitionRepository, ICategoryAttributeBindingService, IAttributeValueRepository, IFamilyDataImportRunRepository, IFamilyDataExtractionService, IFamilyDataImportService |
 | `SmartCon.Revit/FamilyManager/` | RevitFamilyDataExtractionService (OpenDocumentFile, FamilyManager.Types, parameter matching) |
 | `SmartCon.FamilyManager/Services/LocalCatalog/` | Local repositories + FamilyDataImportService orchestration |
 | `SmartCon.FamilyManager/ViewModels/` | CategoryAttributesEditorViewModel, updated FamilyPropertiesViewModel |

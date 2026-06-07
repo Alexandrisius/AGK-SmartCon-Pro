@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Helpers;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 using SmartCon.UI.Behaviors;
 
@@ -16,7 +17,9 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     private readonly ICategoryAttributeBindingService _bindingService;
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly ICategoryRepository _categoryRepository;
+    private readonly IFamilyManagerMetadataMediator _metadataMediator;
     private readonly List<AttributeDefinitionDraft> _pendingDeletions = [];
+    private bool _detached;
 
     [ObservableProperty] private ObservableCollection<AttributeDefinitionDraft> _items = [];
     [ObservableProperty] private AttributeDefinitionDraft? _selectedItem;
@@ -31,43 +34,92 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         IAttributeDefinitionRepository attributeDefRepository,
         ICategoryAttributeBindingService bindingService,
         IFamilyManagerDialogService dialogService,
-        ICategoryRepository categoryRepository)
+        ICategoryRepository categoryRepository,
+        IFamilyManagerMetadataMediator metadataMediator)
     {
         _attributeDefRepository = attributeDefRepository;
         _bindingService = bindingService;
         _dialogService = dialogService;
         _categoryRepository = categoryRepository;
+        _metadataMediator = metadataMediator;
+
+        _metadataMediator.MetadataChanged += OnMetadataChanged;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         try
         {
-            var allDefs = await _attributeDefRepository.GetAllAsync(ct);
-            var bindingCounts = await _bindingService.GetBindingCountsAsync(allDefs.Select(d => d.Id), ct);
-
-            var drafts = allDefs.Select(def =>
-            {
-                bindingCounts.TryGetValue(def.Id, out var count);
-                return new AttributeDefinitionDraft
-                {
-                    OriginalId = def.Id,
-                    Name = def.Name,
-                    Group = def.Group,
-                    IsActive = def.IsActive,
-                    OriginalIsActive = def.IsActive,
-                    BindingCount = count,
-                    IsNew = false,
-                    IsDirty = false
-                };
-            }).ToList();
-
-            Items = new ObservableCollection<AttributeDefinitionDraft>(drafts);
+            await ReloadFromDatabaseAsync(ct);
+            SmartConLogger.Info($"[AttributeLibrary] InitializeAsync loaded {Items.Count} items");
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn($"AttributeLibrary InitializeAsync failed: {ex.Message}");
         }
+    }
+
+    public async Task RefreshAsync(CancellationToken ct = default)
+    {
+        if (HasUnsavedChanges)
+        {
+            SmartConLogger.Debug("AttributeLibrary RefreshAsync skipped: pending user changes.");
+            return;
+        }
+
+        try
+        {
+            await ReloadFromDatabaseAsync(ct);
+            SmartConLogger.Info($"[AttributeLibrary] RefreshAsync loaded {Items.Count} items");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"AttributeLibrary RefreshAsync failed: {ex.Message}");
+        }
+    }
+
+    public void Detach()
+    {
+        if (_detached) return;
+        _metadataMediator.MetadataChanged -= OnMetadataChanged;
+        _detached = true;
+    }
+
+    private void OnMetadataChanged()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            _ = RefreshAsync();
+        }
+        else
+        {
+            dispatcher.InvokeAsync(() => _ = RefreshAsync());
+        }
+    }
+
+    private async Task ReloadFromDatabaseAsync(CancellationToken ct)
+    {
+        var allDefs = await _attributeDefRepository.GetAllAsync(ct);
+        var bindingCounts = await _bindingService.GetBindingCountsAsync(allDefs.Select(d => d.Id), ct);
+
+        var drafts = allDefs.Select(def =>
+        {
+            bindingCounts.TryGetValue(def.Id, out var count);
+            return new AttributeDefinitionDraft
+            {
+                OriginalId = def.Id,
+                Name = def.Name,
+                Group = def.Group,
+                IsActive = def.IsActive,
+                OriginalIsActive = def.IsActive,
+                BindingCount = count,
+                IsNew = false,
+                IsDirty = false
+            };
+        }).ToList();
+
+        Items = new ObservableCollection<AttributeDefinitionDraft>(drafts);
     }
 
     [RelayCommand]

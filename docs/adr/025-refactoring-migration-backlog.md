@@ -76,7 +76,7 @@ safety**.
 ### M-019-002: `Guid.NewGuid()` → `IIdGenerator.NewId()`
 
 **Скоуп:** 40 call site-ов. Горячие файлы: `LocalFamilyImportService.cs` (5),
-`LocalFamilyMetadataPackageService.cs` (2), `LocalFamilyImportService.TypeCatalog.cs` (3),
+`LocalFamilyImportService.TypeCatalog.cs` (3),
 `SystemFamilyImportOrchestrator.cs` (1), `CategoryTreeEditorViewModel.*` (5).
 
 **Почему плохо:**
@@ -147,7 +147,7 @@ WpfDispatcher + 7 тестов в `WpfDispatcherTests.cs`.
 ### M-019-004: manual `SqliteConnection`/`SqliteCommand` → `SqliteConnectionExtensions`
 
 **Скоуп:** 30+ call site-ов. Горячие файлы: `LocalCatalogMigrator.cs` (~530 строк,
-50+ command-ов), `LocalFamilyImportService.cs`, `LocalFamilyMetadataPackageService.cs`,
+50+ command-ов), `LocalFamilyImportService.cs`,
 `DatabaseManager.cs`, repository-классы.
 
 **Почему плохо:**
