@@ -401,6 +401,19 @@ public sealed partial class FamilyManagerMainViewModel
         var result = new List<FamilyBatchImportItem>();
         var ct = CancellationToken.None;
 
+        // Load all categories once and reuse the dictionary for every row
+        // builder. Eliminates an N+1 query pattern (each GetByIdAsync was
+        // doing one targeted SELECT plus one full table scan to build the
+        // FullPath; with 42+ families this turned into ~84 SQL round-trips).
+        // We populate the dictionary with whatever the categories table
+        // currently has — a row's "real" category is identified by
+        // CategoryId, and the dictionary is the single source of truth for
+        // the display label (FullPath). This is the same lookup the
+        // legacy ShowBatchImportDialogAsync used to do via
+        // _categoryRepository.GetByIdAsync, but amortised across the batch.
+        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(false);
+        var categoriesById = allCategories.ToDictionary(c => c.Id);
+
         var pendingItems = StageSystemFromAnalysis(analysis);
         foreach (var pending in pendingItems)
         {
@@ -498,23 +511,20 @@ public sealed partial class FamilyManagerMainViewModel
                 status = FamilyBatchImportStatus.New;
             }
 
-            // The DB sometimes stores CategoryId without a denormalised
-            // CategoryPath (legacy rows). In that case resolve the name from
-            // the category repository so the dialog shows a readable label
-            // rather than an empty cell. Mirrors the legacy pattern in
-            // ShowBatchImportDialogAsync above.
-            if (targetCategoryId is not null && string.IsNullOrEmpty(targetCategoryName))
+            // Resolve the display label from the categories table whenever
+            // we have a real CategoryId. We do NOT trust the denormalised
+            // CategoryPath stored in catalog_items (see the matching comment
+            // in BuildLoadableFamilyBatchRowAsync for the full rationale):
+            // a stale or placeholder "Без категории" in the DB would otherwise
+            // mask a real category assignment. Use FullPath (or Name as
+            // fallback) from the categories table as the source of truth.
+            //
+            // Performance: uses the categoriesById dictionary pre-loaded at
+            // the top of this method (one DB round-trip for the whole batch
+            // instead of N+1 queries per row).
+            if (targetCategoryId is not null && categoriesById.TryGetValue(targetCategoryId, out var cat) && cat is not null)
             {
-                try
-                {
-                    var cat = await _categoryRepository.GetByIdAsync(targetCategoryId, ct);
-                    targetCategoryName = cat?.Name;
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn(
-                        $"[BatchImport] Failed to resolve category name for existing item '{existingId}': {ex.Message}");
-                }
+                targetCategoryName = cat.FullPath ?? cat.Name;
             }
 
             result.Add(new FamilyBatchImportItem(
@@ -576,6 +586,12 @@ public sealed partial class FamilyManagerMainViewModel
         var result = new List<FamilyBatchImportItem>();
         var ct = CancellationToken.None;
 
+        // Load all categories once. See BuildSelectedElementsBatchItemsAsync
+        // for the full rationale (N+1 elimination + source-of-truth for the
+        // display label).
+        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(false);
+        var categoriesById = allCategories.ToDictionary(c => c.Id);
+
         if (systemAnalyses.Count > 0)
         {
             var activeDoc = _revitContext.GetDocument();
@@ -601,7 +617,7 @@ public sealed partial class FamilyManagerMainViewModel
                     WriteTypeSidecar(createResult.FilePath!, types);
 
                     var pending = new SystemFamilyPendingImport(displayName, types, createResult.FilePath!);
-                    var row = await BuildSystemFamilyBatchRowAsync(pending, ct);
+                    var row = await BuildSystemFamilyBatchRowAsync(pending, ct, categoriesById);
                     if (row is not null) result.Add(row);
                 }
             }
@@ -614,7 +630,7 @@ public sealed partial class FamilyManagerMainViewModel
                 var rfaPath = StageLoadableFamilyFromProject(loadable);
                 if (string.IsNullOrEmpty(rfaPath) || !File.Exists(rfaPath)) continue;
 
-                var row = await BuildLoadableFamilyBatchRowAsync(loadable, rfaPath!, ct);
+                var row = await BuildLoadableFamilyBatchRowAsync(loadable, rfaPath!, ct, categoriesById);
                 if (row is not null) result.Add(row);
             }
         }
@@ -623,7 +639,8 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     private async Task<FamilyBatchImportItem?> BuildSystemFamilyBatchRowAsync(
-        SystemFamilyPendingImport pending, CancellationToken ct)
+        SystemFamilyPendingImport pending, CancellationToken ct,
+        IReadOnlyDictionary<string, CategoryNode>? categoriesById = null)
     {
         if (!File.Exists(pending.TempRvtPath)) return null;
 
@@ -638,56 +655,6 @@ public sealed partial class FamilyManagerMainViewModel
         FamilyBatchImportStatus status;
         string? existingId = null;
         string? existingVersionLabel = null;
-
-        if (existingByHash is not null)
-        {
-            status = FamilyBatchImportStatus.Duplicate;
-            existingId = existingByHash.CatalogItemId;
-            existingVersionLabel = existingByHash.VersionLabel;
-        }
-        else if (existingByName is not null)
-        {
-            status = FamilyBatchImportStatus.Existing;
-            existingId = existingByName.Id;
-            existingVersionLabel = existingByName.CurrentVersionLabel;
-        }
-        else
-        {
-            status = FamilyBatchImportStatus.New;
-        }
-
-        return new FamilyBatchImportItem(
-            FilePath: pending.TempRvtPath,
-            FileName: pending.CategoryName,
-            Sha256: sha256,
-            RevitMajorVersion: revitVersion,
-            FileSizeBytes: fileInfo.Length,
-            Status: status,
-            ExistingCatalogItemId: existingId,
-            ExistingVersionLabel: existingVersionLabel,
-            TargetCategoryId: null,
-            TargetCategoryName: null,
-            FamilySource: "system",
-            TypeCount: pending.Types.Count,
-            RevitCategory: pending.CategoryName);
-    }
-
-    private async Task<FamilyBatchImportItem?> BuildLoadableFamilyBatchRowAsync(
-        LoadableFamilyInfo loadable, string rfaPath, CancellationToken ct)
-    {
-        var fileInfo = new FileInfo(rfaPath);
-        var revitVersion = _fileInfoReader.ReadRevitVersion(rfaPath) ?? CurrentRevitVersion;
-        var metadata = await _metadataService.ExtractAsync(rfaPath, ct);
-        var sha256 = metadata.Sha256;
-
-        var stagedBaseName = SafeFileName.GetBaseName(rfaPath);
-        var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(stagedBaseName);
-        var existingByHash = await _catalogProvider.FindByHashAsync(sha256, ct);
-        var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, ct);
-
-        FamilyBatchImportStatus status;
-        string? existingId = null;
-        string? existingVersionLabel = null;
         string? targetCategoryId = null;
         string? targetCategoryName = null;
 
@@ -696,6 +663,12 @@ public sealed partial class FamilyManagerMainViewModel
             status = FamilyBatchImportStatus.Duplicate;
             existingId = existingByHash.CatalogItemId;
             existingVersionLabel = existingByHash.VersionLabel;
+            // NOTE: FamilyCatalogVersion does not carry CategoryId/Path.
+            // For Duplicate status the dialog only shows Action=Skip, so
+            // the target category is informational only; we leave it
+            // null and rely on existingByName to pre-fill for Existing
+            // (more common) status. Mirrors the legacy
+            // ShowBatchImportDialogAsync behaviour.
         }
         else if (existingByName is not null)
         {
@@ -713,21 +686,154 @@ public sealed partial class FamilyManagerMainViewModel
             status = FamilyBatchImportStatus.New;
         }
 
-        // The DB sometimes stores CategoryId without a denormalised
-        // CategoryPath (legacy rows). Resolve the name from the category
-        // repository so the dialog shows a readable label rather than an
-        // empty cell. Mirrors the legacy pattern in ShowBatchImportDialogAsync.
-        if (targetCategoryId is not null && string.IsNullOrEmpty(targetCategoryName))
+        // Resolve the display label from the categories table whenever
+        // we have a real CategoryId. We do NOT trust the denormalised
+        // CategoryPath stored in catalog_items (see the matching comment
+        // in BuildLoadableFamilyBatchRowAsync for the full rationale):
+        // a stale or placeholder "Без категории" in the DB would otherwise
+        // mask a real category assignment. Use FullPath (or Name as
+        // fallback) from the categories table as the source of truth.
+        //
+        // Performance: when called from BuildSelectedElementsBatchItemsAsync
+        // we receive a pre-loaded dictionary of all categories (one DB
+        // round-trip for the whole batch). When called standalone (single
+        // row), we fall back to a targeted GetByIdAsync query.
+        if (targetCategoryId is not null)
         {
-            try
+            CategoryNode? cat = null;
+            if (categoriesById is not null)
             {
-                var cat = await _categoryRepository.GetByIdAsync(targetCategoryId, ct);
-                targetCategoryName = cat?.Name;
+                categoriesById.TryGetValue(targetCategoryId, out cat);
             }
-            catch (Exception ex)
+            else
             {
-                SmartConLogger.Warn(
-                    $"[BatchImport] Failed to resolve category name for existing item '{existingId}': {ex.Message}");
+                try
+                {
+                    cat = await _categoryRepository.GetByIdAsync(targetCategoryId, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"[BatchImport] Failed to resolve category name for existing system item '{existingId}': {ex.Message}");
+                }
+            }
+            if (cat is not null)
+            {
+                targetCategoryName = cat.FullPath ?? cat.Name;
+            }
+        }
+
+        return new FamilyBatchImportItem(
+            FilePath: pending.TempRvtPath,
+            FileName: pending.CategoryName,
+            Sha256: sha256,
+            RevitMajorVersion: revitVersion,
+            FileSizeBytes: fileInfo.Length,
+            Status: status,
+            ExistingCatalogItemId: existingId,
+            ExistingVersionLabel: existingVersionLabel,
+            TargetCategoryId: targetCategoryId,
+            TargetCategoryName: targetCategoryName,
+            FamilySource: "system",
+            TypeCount: pending.Types.Count,
+            RevitCategory: pending.CategoryName);
+    }
+
+    private async Task<FamilyBatchImportItem?> BuildLoadableFamilyBatchRowAsync(
+        LoadableFamilyInfo loadable, string rfaPath, CancellationToken ct,
+        IReadOnlyDictionary<string, CategoryNode>? categoriesById = null)
+    {
+        var fileInfo = new FileInfo(rfaPath);
+        var revitVersion = _fileInfoReader.ReadRevitVersion(rfaPath) ?? CurrentRevitVersion;
+        var metadata = await _metadataService.ExtractAsync(rfaPath, ct);
+        var sha256 = metadata.Sha256;
+
+        var stagedBaseName = SafeFileName.GetBaseName(rfaPath);
+        var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(stagedBaseName);
+        var existingByHash = await _catalogProvider.FindByHashAsync(sha256, ct);
+        var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, ct);
+
+        // Diagnostic: trace what we found for the dialog target category.
+        // Debug-level because batch import can stage dozens of loadable
+        // families and an Info per row would dominate the log. Kept as
+        // Debug so it can be enabled with SmartConLogger.DebugEnabled for
+        // field debugging without polluting production logs.
+        SmartConLogger.Debug(
+            $"[LoadableRow] file='{stagedBaseName}' normalized='{normalizedName}' " +
+            $"byHash={(existingByHash is null ? "null" : "hit")} " +
+            $"byName={(existingByName is null ? "null" : $"Id={existingByName.Id} CatId={existingByName.CategoryId ?? "<null>"} CatPath={existingByName.CategoryPath ?? "<null>"}")}");
+
+        FamilyBatchImportStatus status;
+        string? existingId = null;
+        string? existingVersionLabel = null;
+        string? targetCategoryId = null;
+        string? targetCategoryName = null;
+
+        if (existingByHash is not null)
+        {
+            status = FamilyBatchImportStatus.Duplicate;
+            existingId = existingByHash.CatalogItemId;
+            existingVersionLabel = existingByHash.VersionLabel;
+            // NOTE: FamilyCatalogVersion does not carry CategoryId/Path.
+            // For Duplicate status the dialog only shows Action=Skip, so
+            // the target category is informational only; we leave it
+            // null and rely on existingByName to pre-fill for Existing
+            // (more common) status. Mirrors the legacy
+            // ShowBatchImportDialogAsync behaviour.
+        }
+        else if (existingByName is not null)
+        {
+            status = FamilyBatchImportStatus.Existing;
+            existingId = existingByName.Id;
+            existingVersionLabel = existingByName.CurrentVersionLabel;
+            // Inherit the existing item's category so the batch dialog
+            // pre-fills the correct "Целевая категория" cell instead of
+            // defaulting to "Без категории" for already-categorised items.
+            targetCategoryId = existingByName.CategoryId;
+            targetCategoryName = existingByName.CategoryPath;
+        }
+        else
+        {
+            status = FamilyBatchImportStatus.New;
+        }
+
+        // Resolve the display label from the categories table whenever
+        // we have a real CategoryId. We do NOT trust the denormalised
+        // CategoryPath stored in catalog_items, because picker wrote the
+        // literal "Без категории" placeholder into that column whenever the
+        // user picked "no category" in the picker. If we trusted the
+        // denormalised value here, every already-categorised family would
+        // be displayed as "Без категории" in the batch dialog and the user
+        // would see a wall of false placeholders for items that DO have
+        // a real category assigned in the tree. Use FullPath (or Name as
+        // fallback) from the categories table as the single source of truth.
+        //
+        // Performance: when called from BuildSelectedElementsBatchItemsAsync
+        // we receive a pre-loaded dictionary of all categories (one DB
+        // round-trip for the whole batch). When called standalone (single
+        // row), we fall back to a targeted GetByIdAsync query.
+        if (targetCategoryId is not null)
+        {
+            CategoryNode? cat = null;
+            if (categoriesById is not null)
+            {
+                categoriesById.TryGetValue(targetCategoryId, out cat);
+            }
+            else
+            {
+                try
+                {
+                    cat = await _categoryRepository.GetByIdAsync(targetCategoryId, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"[BatchImport] Failed to resolve category name for existing item '{existingId}': {ex.Message}");
+                }
+            }
+            if (cat is not null)
+            {
+                targetCategoryName = cat.FullPath ?? cat.Name;
             }
         }
 
@@ -794,8 +900,8 @@ public sealed partial class FamilyManagerMainViewModel
             var rfaPath = Path.Combine(dir, safeName + ".rfa");
 
             familyDoc.SaveAs(rfaPath, new SaveAsOptions { OverwriteExistingFile = true });
-            SmartConLogger.Info(
-                $"[LoadableStage] Staged '{info.FamilyName}' → '{rfaPath}'");
+                SmartConLogger.Debug(
+                    $"[LoadableStage] Staged '{info.FamilyName}' → '{rfaPath}'");
             return rfaPath;
         }
         catch (Exception ex)

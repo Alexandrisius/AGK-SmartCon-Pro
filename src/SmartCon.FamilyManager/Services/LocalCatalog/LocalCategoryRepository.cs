@@ -18,11 +18,11 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
         var rawNodes = new List<RawCategory>();
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT id, name, parent_id, sort_order, created_at_utc FROM categories ORDER BY sort_order, name";
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             rawNodes.Add(new RawCategory(
                 reader.GetString(0),
@@ -194,19 +194,19 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
     public async Task<int> GetFamilyCountAsync(string categoryId, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM catalog_items WHERE category_id = @categoryId";
         cmd.Parameters.Add(new SqliteParameter("@categoryId", categoryId));
 
-        var result = await cmd.ExecuteScalarAsync(ct);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result is long l ? (int)l : 0;
     }
 
     public async Task ReorderAsync(IReadOnlyList<(string Id, int SortOrder)> items, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var tx = connection.BeginTransaction();
 
         try
@@ -217,7 +217,7 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
                 cmd.CommandText = "UPDATE categories SET sort_order = @sortOrder WHERE id = @id";
                 cmd.Parameters.Add(new SqliteParameter("@sortOrder", sortOrder));
                 cmd.Parameters.Add(new SqliteParameter("@id", itemId));
-                await cmd.ExecuteNonQueryAsync(ct);
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
             tx.Commit();
@@ -232,7 +232,7 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
     public async Task ReplaceAllAsync(IReadOnlyList<CategoryNode> categories, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var tx = connection.BeginTransaction();
 
         try
@@ -240,7 +240,7 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
             using (var delCmd = connection.CreateCommand())
             {
                 delCmd.CommandText = "DELETE FROM categories";
-                await delCmd.ExecuteNonQueryAsync(ct);
+                await delCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
             foreach (var cat in categories)
@@ -252,7 +252,7 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
                 insertCmd.Parameters.Add(new SqliteParameter("@parentId", (object?)cat.ParentId ?? DBNull.Value));
                 insertCmd.Parameters.Add(new SqliteParameter("@sortOrder", cat.SortOrder));
                 insertCmd.Parameters.Add(new SqliteParameter("@createdAt", cat.CreatedAtUtc.ToString("o")));
-                await insertCmd.ExecuteNonQueryAsync(ct);
+                await insertCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
             tx.Commit();
@@ -269,8 +269,8 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT id, name, parent_id, sort_order, created_at_utc FROM categories WHERE id = @id";
         cmd.Parameters.Add(new SqliteParameter("@id", id));
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
             return null;
 
         return new RawCategory(
@@ -285,17 +285,16 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT id, name, parent_id, sort_order, created_at_utc FROM categories";
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         var result = new Dictionary<string, RawCategory>();
-        while (await reader.ReadAsync(ct))
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            var raw = new RawCategory(
+            result[reader.GetString(0)] = new RawCategory(
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
                 reader.GetInt32(3),
                 DateTimeOffset.Parse(reader.GetString(4)));
-            result[raw.Id] = raw;
         }
         return result;
     }
@@ -324,8 +323,8 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT id FROM categories WHERE parent_id = @parentId";
             cmd.Parameters.Add(new SqliteParameter("@parentId", currentId));
-            using var reader = await cmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
+            using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
                 var childId = reader.GetString(0);
                 result.Add(childId);
@@ -341,13 +340,13 @@ internal sealed class LocalCategoryRepository : ICategoryRepository
     public async Task<IReadOnlyDictionary<string, int>> GetAllFamilyCountsAsync(CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT category_id, COUNT(*) FROM catalog_items WHERE category_id IS NOT NULL GROUP BY category_id";
 
         var result = new Dictionary<string, int>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             result[reader.GetString(0)] = (int)reader.GetInt64(1);
         }

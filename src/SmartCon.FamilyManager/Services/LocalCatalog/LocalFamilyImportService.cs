@@ -63,7 +63,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ? request.FileName!
             : SafeFileName.GetBaseName(filePath);
 
-        SmartConLogger.Info($"[Import] File: {Path.GetFileName(filePath)} -> displayName='{displayName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
+        SmartConLogger.Debug($"[Import] File: {Path.GetFileName(filePath)} -> displayName='{displayName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
 
         var existingItem = await FindByNameAsync(displayName, ct);
         if (existingItem is not null)
@@ -295,10 +295,24 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 FamilyImportResult result;
                 if (item.Status == FamilyBatchImportStatus.New)
                 {
+                    // Source-of-truth rule: when no category is assigned, write
+                    // a NULL `Category` (and a NULL `CategoryId`) so the
+                    // denormalised catalog_items.category_name column never
+                    // accumulates a literal "Без категории" placeholder.
+                    // The picker in FamilyBatchImportViewModel writes the
+                    // placeholder string into TargetCategoryName when the user
+                    // explicitly picks "no category" — the writer must
+                    // translate that back to a real NULL, otherwise future
+                    // batch dialogs would read back the placeholder and
+                    // display it as if it were a real category name.
+                    var effectiveCategoryId = item.TargetCategoryId ?? categoryId;
+                    var effectiveCategoryName = effectiveCategoryId is null
+                        ? null
+                        : item.TargetCategoryName;
                     var request = new FamilyImportRequest(
                         item.FilePath,
                         item.RevitMajorVersion,
-                        item.TargetCategoryName, null, null, item.TargetCategoryId ?? categoryId,
+                        effectiveCategoryName, null, null, effectiveCategoryId,
                         item.FamilySource,
                         item.RevitCategory,
                         item.FileName);
@@ -308,12 +322,26 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 {
                     if (item.Action == FamilyBatchImportAction.IncrementVersion)
                     {
+                        // Source-of-truth rule: when no category is assigned
+                        // (TargetCategoryId is null), do not write the picker
+                        // placeholder literal into catalog_items.category_name.
+                        // The DB column should stay NULL until the user picks
+                        // a real category. We pass the real name only when
+                        // a real CategoryId is present, mirroring the
+                        // FamilyImportRequest branch above. UpdateFamilyAsync
+                        // calls UpdateCatalogItemCategoryAsync only when
+                        // CategoryId is not empty (Database.cs:443-445), so
+                        // passing null here is a no-op — the row's existing
+                        // category assignment is preserved.
+                        var effectiveCategoryName = item.TargetCategoryId is null
+                            ? null
+                            : item.TargetCategoryName;
                         var request = new FamilyUpdateRequest(
                             item.ExistingCatalogItemId!,
                             item.FilePath,
                             item.RevitMajorVersion,
                             item.TargetCategoryId,
-                            item.TargetCategoryName,
+                            effectiveCategoryName,
                             item.FileName);
                         result = await UpdateFamilyAsync(request, ct);
                     }
@@ -485,7 +513,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, destFileName);
         var fileName = Path.GetFileName(sourcePath);
 
-        SmartConLogger.Info($"[Import] Copy: source='{fileName}' -> dest='{destFileName}' (displayName='{displayName}')");
+        SmartConLogger.Debug($"[Import] Copy: source='{fileName}' -> dest='{destFileName}' (displayName='{displayName}')");
 
         for (var attempt = 0; attempt < CopyMaxRetries; attempt++)
         {
@@ -522,7 +550,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 }
 
                 var relativePath = _pathResolver.GetRelativePath(absolutePath);
-                SmartConLogger.Info($"[Import] Copied to managed storage (read-only): {absolutePath}");
+                SmartConLogger.Debug($"[Import] Copied to managed storage (read-only): {absolutePath}");
                 return new CopyResult(true, relativePath, null);
             }
             catch (IOException) when (attempt < CopyMaxRetries - 1)

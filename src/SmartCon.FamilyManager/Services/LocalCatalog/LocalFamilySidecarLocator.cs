@@ -49,7 +49,7 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
             var direct = Path.Combine(dir, nameNoExt + ".txt");
             if (File.Exists(direct))
             {
-                SmartConLogger.Info($"[Sidecar] Found (direct): {direct}");
+                SmartConLogger.Debug($"[Sidecar] Found (direct): {direct}");
                 return direct;
             }
 
@@ -60,7 +60,7 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
                 var candidateName = SafeFileName.GetBaseName(candidate);
                 if (string.Equals(candidateName, nameNoExt, StringComparison.OrdinalIgnoreCase))
                 {
-                    SmartConLogger.Info($"[Sidecar] Found (case-insensitive): {candidate}");
+                    SmartConLogger.Debug($"[Sidecar] Found (case-insensitive): {candidate}");
                     return candidate;
                 }
             }
@@ -115,7 +115,7 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
                         destStream.Flush();
                     }, ct);
 
-                    SmartConLogger.Info($"[Sidecar] Copied '{sourceTxtPath}' → '{destPath}' (attempt {attempt + 1})");
+                    SmartConLogger.Debug($"[Sidecar] Copied '{sourceTxtPath}' → '{destPath}' (attempt {attempt + 1})");
                     return destPath;
                 }
                 catch (IOException) when (attempt < CopyMaxRetries - 1)

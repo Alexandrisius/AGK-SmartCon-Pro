@@ -62,11 +62,25 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         ExistingVersionLabel = item.ExistingVersionLabel;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
-        // Display: prefer the resolved category path (set by CategoryPicker.SelectedPath).
-        // NEVER fall back to TargetCategoryId (a GUID) — the GUID is internal data and
-        // would be shown as raw text in the dialog. Use "Без категории" instead.
-        _targetCategoryPath = !string.IsNullOrWhiteSpace(item.TargetCategoryName)
-            ? item.TargetCategoryName!
+        // Display rule for the category cell:
+        //   * TargetCategoryId is set   → a real category is assigned; show its
+        //                                 path (or "Без категории" placeholder
+        //                                 if the user explicitly picked it in
+        //                                 the picker, which sets path to that
+        //                                 string but keeps the real GUID).
+        //   * TargetCategoryId is empty  → no category assigned; always show
+        //                                 the "Без категории" placeholder.
+        // This mirrors the legacy ShowBatchImportDialogAsync behaviour: that
+        // method relied on the resolved CategoryId to decide whether the
+        // dialog cell should display a real category name or the placeholder.
+        // The previous logic that only checked TargetCategoryName
+        // incorrectly showed "Без категории" as if it were a real category
+        // whenever the DB row had CategoryPath="Без категории" (which
+        // happens when the user previously selected the no-category option
+        // in the picker and the picker wrote the placeholder literal to
+        // category_name).
+        _targetCategoryPath = !string.IsNullOrWhiteSpace(item.TargetCategoryId)
+            ? (item.TargetCategoryName ?? "Без категории")
             : "Без категории";
         _availableActions = BuildAvailableActions(item.Status);
     }
