@@ -11,17 +11,20 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
     private readonly ILoadableFamilyTypeResolver _typeResolver;
     private readonly IFamilyTypeRepository _typeRepository;
     private readonly IFamilyFileResolver _fileResolver;
+    private readonly IFamilyManagerAwaitableEvent _awaitableEvent;
 
     public LoadableFamilyImportOrchestrator(
         IFamilyImportService importService,
         ILoadableFamilyTypeResolver typeResolver,
         IFamilyTypeRepository typeRepository,
-        IFamilyFileResolver fileResolver)
+        IFamilyFileResolver fileResolver,
+        IFamilyManagerAwaitableEvent awaitableEvent)
     {
         _importService = importService;
         _typeResolver = typeResolver;
         _typeRepository = typeRepository;
         _fileResolver = fileResolver;
+        _awaitableEvent = awaitableEvent;
     }
 
     public async Task<LoadableFamilyImportResult> ImportAndPersistTypesAsync(
@@ -67,13 +70,17 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
             try
             {
                 // I-01: ResolveTypesFromRfa calls Revit API (app.OpenDocumentFile,
-                // familyDoc.FamilyManager) — must run on the Revit UI thread.
-                // We deliberately do NOT use ConfigureAwait(false) here: the await
-                // in the loop must resume on the captured SynchronizationContext
-                // (WPF's DispatcherSynchronizationContext) so the next iteration's
-                // ResolveTypesFromRfa also runs on the UI thread.
-                var types = _typeResolver.ResolveTypesFromRfa(
-                    item.FilePath, match.CatalogItemId!, match.VersionId, match.FileId);
+                // familyDoc.FamilyManager) and must execute on the Revit UI
+                // thread. The WPF DockablePane SynchronizationContext is NOT
+                // the Revit UI thread, so the await of ImportBatchAsync
+                // (which uses ConfigureAwait(false) internally) cannot be
+                // relied upon to resume on Revit. Route the Revit-API call
+                // through IFamilyManagerAwaitableEvent, which is bound to
+                // an ExternalEvent handler.
+                var types = await _awaitableEvent.RaiseAsync(_ =>
+                    _typeResolver.ResolveTypesFromRfa(
+                        item.FilePath, match.CatalogItemId!, match.VersionId, match.FileId),
+                    ct);
                 if (types.Count == 0)
                 {
                     SmartConLogger.Warn(
