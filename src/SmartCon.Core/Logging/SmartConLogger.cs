@@ -18,7 +18,50 @@ public static class SmartConLogger
     private const long MaxLogSizeBytes = 5 * 1024 * 1024;
     private const int MaxBakFiles = 3;
 
-    public static LogLevel MinLevel { get; set; } = LogLevel.Debug;
+    // Default min level is decided at type initialisation. The DEBUG
+    // symbol is set by the C# compiler for every Debug.* configuration
+    // (Debug, Debug.R19..R26) and unset for Release.*. That gives us the
+    // "Debug build => verbose tracing, Release build => errors only"
+    // behaviour without a config file or a host-side wiring. Operators
+    // can override at runtime via the SMARTCON_LOG_LEVEL environment
+    // variable (Debug | Info | Warn | Error). See
+    // docs/architecture/logging.md for the full precedence chain.
+    private static readonly LogLevel _defaultMinLevel = ComputeDefaultMinLevel();
+
+    private static LogLevel ComputeDefaultMinLevel()
+    {
+#if DEBUG
+        return LogLevel.Debug;
+#else
+        return LogLevel.Info;
+#endif
+    }
+
+    private static LogLevel _minLevel = ResolveInitialMinLevel();
+
+    private static LogLevel ResolveInitialMinLevel()
+    {
+        var env = Environment.GetEnvironmentVariable("SMARTCON_LOG_LEVEL");
+        if (!string.IsNullOrWhiteSpace(env)
+            && Enum.TryParse<LogLevel>(env.Trim(), ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+        return _defaultMinLevel;
+    }
+
+    /// <summary>
+    /// Current minimum log level. Messages below this level are dropped
+    /// before the lock is even acquired. Defaults to Debug in Debug
+    /// builds, Info in Release builds, and can be overridden at runtime
+    /// via the SMARTCON_LOG_LEVEL environment variable or by setting this
+    /// property before any logger call.
+    /// </summary>
+    public static LogLevel MinLevel
+    {
+        get => _minLevel;
+        set => _minLevel = value;
+    }
 
     private static StreamWriter? _mainWriterField;
     private static StreamWriter? _lookupWriterField;
@@ -59,14 +102,20 @@ public static class SmartConLogger
         }
     }
 
-    public static void Info(string message) => WriteMain("INF", message);
+    public static void Info(string message)
+    {
+        if (MinLevel > LogLevel.Info) return;
+        WriteMain("INF", message);
+    }
     public static void Debug(string message)
     {
-        if (MinLevel <= LogLevel.Debug) WriteMain("DBG", message);
+        if (MinLevel > LogLevel.Debug) return;
+        WriteMain("DBG", message);
     }
     public static void DebugSection(string title)
     {
-        if (MinLevel <= LogLevel.Debug) WriteMain("DBG", $"── {title} ──");
+        if (MinLevel > LogLevel.Debug) return;
+        WriteMain("DBG", $"── {title} ──");
     }
     public static void DebugLines(string header, string[] lines, int maxLines = 20)
     {
@@ -78,7 +127,11 @@ public static class SmartConLogger
         if (lines.Length > maxLines)
             WriteMain("CSV", $"  ... ({lines.Length - maxLines} more lines hidden)");
     }
-    public static void Warn(string message) => WriteMain("WRN", message);
+    public static void Warn(string message)
+    {
+        if (MinLevel > LogLevel.Warn) return;
+        WriteMain("WRN", message);
+    }
     public static void Error(string message) => WriteMain("ERR", message);
 
     public static void LogSessionStart(string commandName)
