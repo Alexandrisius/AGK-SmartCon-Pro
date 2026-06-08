@@ -945,8 +945,8 @@ public sealed partial class FamilyManagerMainViewModel
             var rfaPath = Path.Combine(dir, safeName + ".rfa");
 
             familyDoc.SaveAs(rfaPath, new SaveAsOptions { OverwriteExistingFile = true });
-                SmartConLogger.Debug(
-                    $"[LoadableStage] Staged '{info.FamilyName}' → '{rfaPath}'");
+            SmartConLogger.Debug(
+                $"[LoadableStage] Staged '{info.FamilyName}' → '{rfaPath}'");
             return rfaPath;
         }
         catch (Exception ex)
