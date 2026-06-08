@@ -30,7 +30,13 @@
     <!-- WPF Behaviors — MVVM event-to-command binding (net48 + net8.0) -->
     <PackageVersion Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.142" />
 
-    <!-- SQLite — version frozen at 8.x (9.0+ may break net48). Compatible with net8.0-windows and net48 (.NET Standard 2.0) -->
+    <!-- SQLite — version frozen at 8.x (9.0+ may break net48). Compatible with net8.0-windows and net48 (.NET Standard 2.0).
+         SQLitePCLRaw.* are pinned in Directory.Build.props via top-level PackageReference on SmartCon.App
+         and SmartCon.FamilyManager — that is required to satisfy the NuGet "Direct dependency wins" rule
+         and avoid NETSDK1152 ("multiple output files with the same relative path: e_sqlite3.dll")
+         during `dotnet publish` for net48. Microsoft.Data.Sqlite 8.0.27 declares a hard transitive
+         dependency on SQLitePCLRaw.bundle_e_sqlite3 2.1.6 in its NuGet metadata, and CPM alone does
+         not override that nested dep. See dependabot bump c321226 for historical context. -->
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.27" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
 
