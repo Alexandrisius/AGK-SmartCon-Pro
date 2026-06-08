@@ -344,13 +344,26 @@ public sealed partial class FamilyManagerMainViewModel
         var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
 
         var existingCategoryId = existingByName?.CategoryId;
-        var existingCategoryName = existingByName?.CategoryPath;
-        if (existingCategoryId is not null && existingCategoryName is null)
+        string? existingCategoryName = null;
+
+        // Mirror BuildLoadableFamilyBatchRowAsync: do NOT trust the
+        // denormalised CategoryPath stored in catalog_items — it can
+        // contain the placeholder "Без категории" written by the picker.
+        // Use the categories table as the single source of truth for the
+        // display label (FullPath or Name fallback). Pre-load all
+        // categories in one query so we don't pay an N+1 here.
+        if (existingCategoryId is not null)
         {
             try
             {
-                var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
-                existingCategoryName = cat?.Name;
+                var allCategories = await _categoryRepository
+                    .GetAllAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+                var categoriesById = allCategories.ToDictionary(c => c.Id);
+                if (categoriesById.TryGetValue(existingCategoryId, out var cat) && cat is not null)
+                {
+                    existingCategoryName = cat.FullPath ?? cat.Name;
+                }
             }
             catch (Exception ex)
             {

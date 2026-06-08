@@ -80,7 +80,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         // in the picker and the picker wrote the placeholder literal to
         // category_name).
         _targetCategoryPath = !string.IsNullOrWhiteSpace(item.TargetCategoryId)
-            ? (item.TargetCategoryName ?? "Без категории")
+            ? (string.IsNullOrWhiteSpace(item.TargetCategoryName) ? "Без категории" : item.TargetCategoryName)
             : "Без категории";
         _availableActions = BuildAvailableActions(item.Status);
     }
