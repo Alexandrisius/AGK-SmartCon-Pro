@@ -147,6 +147,68 @@ The same `FamilyBatchImportView` shows mixed `system` and `loadable` rows. `Fami
 * **Attribute extraction for system families in `.rfa` form.** System families live inside `.rvt` project files; the existing `SystemFamilyAttributeExtractionService.ExtractFromRvt` path stays unchanged.
 * **`doc.IsModifiable` check on staging.** `EditFamily` requires the document to be non-modifiable. The existing `ImportActiveFile` flow already operates after any user transactions are committed (the button is in a popup), so we did not re-introduce the defensive `IsModifiable` check that ADR-026 added. If a future caller hits "family is in modifiable state" they will see the underlying Revit exception in the log.
 * **A real progress bar during staging.** Status messages report each phase. A progress bar would require non-trivial refactoring of `StageLoadableFamilyFromProject` to yield; left for a future phase.
+
+## Phase 2 TODO: System categories without placement handler
+
+The `SystemCategoryRegistry` in `src/SmartCon.Revit/FamilyManager/SystemFamilyRevitOperations.cs`
+exposes **7 categories with a placement handler** (Phase 1, working end-to-end: type copied,
+instance placed on 2×2m grid, attributes extracted):
+
+| Category | DisplayName | Placement handler | API |
+|---|---|---|---|
+| `OST_PipeCurves` | Трубы | `PlacePipe` | `Pipe.Create` (2 точки) |
+| `OST_FlexPipeCurves` | Гибкие трубы | `PlaceFlexPipe` | `FlexPipe.Create` (2 точки + tangents) |
+| `OST_DuctCurves` | Воздуховоды | `PlaceDuct` | `Duct.Create` (2 точки) |
+| `OST_FlexDuctCurves` | Гибкие воздуховоды | `PlaceFlexDuct` | `FlexDuct.Create` (2 точки + tangents) |
+| `OST_Conduit` | Короба | `PlaceConduit` | reflection-based `Conduit.Create` |
+| `OST_CableTray` | Лотки | `PlaceCableTray` | reflection-based `CableTray.Create` |
+| `OST_Walls` | Стены | `PlaceWall` | `Wall.Create` (Line + height) |
+
+Six more categories are registered with `PlacementHandler = null` — the type is **copied** to
+the mini-rvt but **no instance is placed**, so the downstream `SystemFamilyAttributeExtractor`
+finds 0 instances and writes 0 attribute records. They are kept in the registry on purpose
+so `AnalyzeActiveProject` and `PickSelectedElements` still surface them in the dialog (the
+user sees the system category in the project) — but they MUST be flagged for follow-up so
+the placeholder type does not silently end up in the catalog with no attributes.
+
+| Category | DisplayName | Why deferred | Required API / blocker |
+|---|---|---|---|
+| `OST_Floors` | Перекрытия | Needs `CurveLoop` outline | `Floor.NewFloor(curveLoop, floorType, level, structural)` — requires a closed loop, not 2-point line |
+| `OST_Roofs` | Крыши | Needs `CurveLoop` outline | `Roof.NewRoof(curveLoop, roofType, level, slope)` — also requires footprint, not a single line |
+| `OST_Ceilings` | Потолки | Needs `CurveLoop` outline + level | `Ceiling.Create(curveLoop, ceilingType, level)` — same outline problem |
+| `OST_Stairs` | Лестницы | Multi-level composite, no two-point representation | `Stairs.Create()` + landings + risers — substantially more than a single 2-point placement |
+| `OST_Railings` | Ограждения | Host-element + continuous path | `Railing.Create(host, curve, railingType, level)` — needs a non-empty host reference |
+| `OST_PipeInsulations` | Изоляция труб | Requires host pipe in destination doc | `PipeInsulation.Create(doc, host, insType, thickness)` — no host available in the empty mini-rvt |
+| `OST_DuctInsulations` | Изоляция воздуховодов | Requires host duct in destination doc | `DuctInsulation.Create(doc, host, insType, thickness)` — same host problem |
+
+**User decision (2026-06-08):** keep these categories visible in the dialog for awareness,
+do not implement placement now. The user explicitly asked for them to be:
+1. Documented in this ADR (this section).
+2. Called out in code comments at the registry site so the next developer sees them
+   immediately when looking at `SystemCategoryRegistry.BuildEntries()`.
+3. NOT removed from the registry — `AnalyzeActiveProject` must continue to surface
+   these categories in the batch dialog so the user knows the model contains them.
+
+**What this means in practice:**
+
+* The `copied=N, placed=0` log entry for these categories is **expected**, not a bug.
+* The category will appear in the batch dialog with `Action: IncrementVersion` and a type
+  row. The user can pick it; `IFamilyImportService.ImportBatchAsync` will copy the type
+  to managed storage. The next time the user looks at the catalog, the type is there
+  but its attribute panel is empty.
+* `NormalizeInstanceDimensions` is a no-op for these categories (handler returns empty
+  dictionary at line 263-265).
+* When the time comes to implement Phase 2, the `PlacementHandler` delegate signature
+  is `Func<Document, Element, Level, XYZ, XYZ, Element?>?` — the new handlers will need
+  to take **additional parameters** (e.g. `CurveLoop` for floors, `HostReference` for
+  insulations). This is a signature change to the registry; the `Entry` record will
+  need to evolve. Flagging this in advance.
+
+**Tracking:** the Phase 2 backlog is tracked as a list of TODOs in
+`SystemCategoryRegistry.BuildEntries()` (`src/SmartCon.Revit/FamilyManager/SystemFamilyRevitOperations.cs`).
+Do not remove the "Копируются, но НЕ размещаются (Phase 2 TODO)" comment block without
+also removing the categories from the registry (and that would break user expectations
+that the dialog still surfaces them).
 * **Hot-path `Document`/`BuiltInCategory` in `ISystemFamilyRevitOperations`.** Pre-existing I-09 violation. Out of scope.
 
 ## Test count
