@@ -345,6 +345,9 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         {
             case BuiltInCategory.OST_PipeCurves:
             case BuiltInCategory.OST_FlexPipeCurves:
+                // FlexPipe inherits MEPCurve, so it exposes the same
+                // RBS_PIPE_DIAMETER_PARAM built-in parameter as Pipe.
+                // https://www.revitapidocs.com/2027/22b56931-ade4-178f-e118-7a0e436a2fbb.htm
                 diamBip = BuiltInParameter.RBS_PIPE_DIAMETER_PARAM;
                 diameterFt = RevitUnitsCompat.MetersToInternal(0.1);
                 break;
@@ -430,7 +433,9 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 /// Содержит ОДНО место для добавления/удаления категорий.
 ///
 /// РЕАЛИЗОВАННЫЕ КАТЕГОРИИ (Phase 1):
-///   - OST_PipeCurves, OST_FlexPipeCurves   -> Pipe.Create (2 точки)
+///   - OST_PipeCurves                       -> Pipe.Create (2 точки)
+///   - OST_FlexPipeCurves                   -> FlexPipe.Create (2 точки + tangents)
+///   - OST_DuctCurves, OST_FlexDuctCurves   -> Duct.Create (2 точки)
 ///   - OST_DuctCurves, OST_FlexDuctCurves   -> Duct.Create (2 точки)
 ///   - OST_Walls                            -> Wall.Create (Line)
 ///   - OST_Conduit                          -> Conduit.Create (2 точки)
@@ -475,7 +480,7 @@ internal static class SystemCategoryRegistry
         return new List<Entry>
         {
             new(BuiltInCategory.OST_PipeCurves,      "Трубы",        PlacePipe),
-            new(BuiltInCategory.OST_FlexPipeCurves,  "Гибкие трубы", PlacePipe),
+            new(BuiltInCategory.OST_FlexPipeCurves,  "Гибкие трубы", PlaceFlexPipe),
             new(BuiltInCategory.OST_DuctCurves,      "Воздуховоды",  PlaceDuct),
             new(BuiltInCategory.OST_FlexDuctCurves,  "Гибкие воздуховоды", PlaceDuct),
             new(BuiltInCategory.OST_Conduit,         "Короба",       PlaceConduit),
@@ -502,6 +507,27 @@ internal static class SystemCategoryRegistry
             .FirstOrDefault();
         if (sysType is null) return null;
         return Pipe.Create(doc, sysType.Id, pipeType.Id, level.Id, start, end);
+    }
+
+    /// <summary>
+    /// Places a flex pipe instance on the grid. <see cref="FlexPipe.Create"/>
+    /// requires a <see cref="FlexPipeType"/> (not a regular <see cref="PipeType"/>)
+    /// and an array of intermediate points, so the regular <see cref="PlacePipe"/>
+    /// handler cannot be reused. The number of points and the tangent vectors
+    /// are minimal — Revit derives the spline from the points alone.
+    /// </summary>
+    private static Element? PlaceFlexPipe(Document doc, Element type, Level level, XYZ start, XYZ end)
+    {
+        if (type is not FlexPipeType flexPipeType) return null;
+        var sysType = new FilteredElementCollector(doc)
+            .OfClass(typeof(PipingSystemType))
+            .Cast<PipingSystemType>()
+            .FirstOrDefault();
+        if (sysType is null) return null;
+
+        var points = new List<XYZ> { start, end };
+        var tangent = XYZ.BasisX;
+        return FlexPipe.Create(doc, sysType.Id, flexPipeType.Id, level.Id, tangent, tangent, points);
     }
 
     private static Element? PlaceDuct(Document doc, Element type, Level level, XYZ start, XYZ end)
