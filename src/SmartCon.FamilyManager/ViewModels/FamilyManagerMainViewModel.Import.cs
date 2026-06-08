@@ -398,9 +398,36 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task<List<FamilyBatchImportItem>> BuildSelectedElementsBatchItemsAsync(
         SelectedElementsAnalysis analysis)
     {
+        // I-01: StageSystemFromAnalysis and StageLoadableFamilyFromProject
+        // both touch the Revit API (_systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances
+        // and EditFamily/SaveAs respectively). They must run on the Revit
+        // UI thread. The WPF DockablePane SynchronizationContext is NOT
+        // the Revit UI thread, so we route the whole build through
+        // IFamilyManagerAwaitableEvent, which is bound to an ExternalEvent
+        // handler. Mirrors the pattern in ExtractTypesForImportedFamilies
+        // and AnalyzeActiveProjectAsync. We use the async overload
+        // (RaiseAsync<Task<List<…>>>) so the caller's await unwraps the
+        // inner task before returning the list.
+        var inner = await _awaitableEvent.RaiseAsync(
+            _ => BuildSelectedElementsBatchItemsCoreAsync(analysis),
+            CancellationToken.None);
+        return await inner;
+    }
+
+    private async Task<List<FamilyBatchImportItem>> BuildSelectedElementsBatchItemsCoreAsync(
+        SelectedElementsAnalysis analysis)
+    {
         var result = new List<FamilyBatchImportItem>();
         var ct = CancellationToken.None;
 
+        // This method is invoked inside IFamilyManagerAwaitableEvent's
+        // ExternalEvent handler, so the captured SynchronizationContext is
+        // the Revit UI thread. ConfigureAwait(true) (the default) keeps us
+        // on the Revit UI thread between awaits — required because the
+        // foreach loop below calls StageLoadableFamilyFromProject (Revit
+        // API) on every iteration. ConfigureAwait(false) would resume the
+        // loop on the thread pool and crash the next EditFamily call.
+        //
         // Load all categories once and reuse the dictionary for every row
         // builder. Eliminates an N+1 query pattern (each GetByIdAsync was
         // doing one targeted SELECT plus one full table scan to build the
@@ -411,7 +438,7 @@ public sealed partial class FamilyManagerMainViewModel
         // the display label (FullPath). This is the same lookup the
         // legacy ShowBatchImportDialogAsync used to do via
         // _categoryRepository.GetByIdAsync, but amortised across the batch.
-        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(false);
+        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(true);
         var categoriesById = allCategories.ToDictionary(c => c.Id);
 
         var pendingItems = StageSystemFromAnalysis(analysis);
@@ -583,13 +610,31 @@ public sealed partial class FamilyManagerMainViewModel
         IReadOnlyList<CategoryAnalysis> systemAnalyses,
         IReadOnlyList<LoadableFamilyInfo> loadableFamilies)
     {
+        // I-01: see the matching comment in BuildSelectedElementsBatchItemsAsync.
+        // Route the whole build through IFamilyManagerAwaitableEvent so the
+        // Revit-API calls in _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances
+        // and StageLoadableFamilyFromProject (EditFamily/SaveAs) run on the
+        // Revit UI thread, not the WPF dispatcher thread that resumed after
+        // the DockablePane async flow.
+        var inner = await _awaitableEvent.RaiseAsync(
+            _ => BuildActiveProjectBatchItemsCoreAsync(systemAnalyses, loadableFamilies),
+            CancellationToken.None);
+        return await inner;
+    }
+
+    private async Task<List<FamilyBatchImportItem>> BuildActiveProjectBatchItemsCoreAsync(
+        IReadOnlyList<CategoryAnalysis> systemAnalyses,
+        IReadOnlyList<LoadableFamilyInfo> loadableFamilies)
+    {
         var result = new List<FamilyBatchImportItem>();
         var ct = CancellationToken.None;
 
         // Load all categories once. See BuildSelectedElementsBatchItemsAsync
         // for the full rationale (N+1 elimination + source-of-truth for the
-        // display label).
-        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(false);
+        // display label, and ConfigureAwait(true) so we keep resuming on
+        // the Revit UI thread between awaits — required by the
+        // StageLoadableFamilyFromProject calls below).
+        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(true);
         var categoriesById = allCategories.ToDictionary(c => c.Id);
 
         if (systemAnalyses.Count > 0)
