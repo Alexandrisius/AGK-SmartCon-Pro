@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Text.Json;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.Updates;
@@ -601,16 +602,10 @@ public sealed class GitHubUpdateService : IUpdateService
 
     private static string BuildNetworkErrorMessage(Core.Models.UpdateSettings settings, Exception ex)
     {
-        var wsa = ex.InnerException is SocketException se ? $" (SocketError {se.SocketErrorCode} / native {se.NativeErrorCode})" : "";
-        return $"Network error checking updates ({settings.GitHubOwner}/{settings.GitHubRepo}){wsa}: {ex.Message}\n\n" +
-               "Possible causes:\n" +
-               "  • Firewall, antivirus (e.g. leftover Kaspersky rules) or VPN blocking the connection.\n" +
-               "  • Hyper-V / Docker Desktop / winnat has reserved the ephemeral TCP port the OS picked.\n" +
-               "  • No internet access on this machine.\n\n" +
-               "Try, from an elevated PowerShell:\n" +
-               "  net stop winnat ; net start winnat\n" +
-               "  netsh int ipv4 set dynamic tcp start=49152 num=16384   (then reboot)\n\n" +
-               "Verify api.github.com:443 is reachable in your browser.";
+        var detail = ex.InnerException?.Message ?? ex.Message;
+        return string.Format(
+            LocalizationService.GetString("About_NetworkError"),
+            $"{settings.GitHubOwner}/{settings.GitHubRepo}: {detail}");
     }
 
     private static string? ExtractArtifactTag(string assetName)
