@@ -62,7 +62,12 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         ExistingVersionLabel = item.ExistingVersionLabel;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
-        _targetCategoryPath = item.TargetCategoryName ?? item.TargetCategoryId ?? "Без категории";
+        // Display: prefer the resolved category path (set by CategoryPicker.SelectedPath).
+        // NEVER fall back to TargetCategoryId (a GUID) — the GUID is internal data and
+        // would be shown as raw text in the dialog. Use "Без категории" instead.
+        _targetCategoryPath = !string.IsNullOrWhiteSpace(item.TargetCategoryName)
+            ? item.TargetCategoryName!
+            : "Без категории";
         _availableActions = BuildAvailableActions(item.Status);
     }
 

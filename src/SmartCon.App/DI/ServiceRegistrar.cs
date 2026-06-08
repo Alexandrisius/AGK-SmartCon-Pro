@@ -185,6 +185,9 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
         services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
         services.AddSingleton<IFamilyPlacementDragService, RevitFamilyPlacementDragService>();
+        services.AddSingleton<ILoadableFamilyScanner, LoadableFamilyScanner>();
+        services.AddSingleton<ILoadableFamilyTypeResolver, LoadableFamilyTypeResolver>();
+        services.AddSingleton<ILoadableFamilyImportOrchestrator, SmartCon.FamilyManager.Services.LoadableFamilyImportOrchestrator>();
         services.AddSingleton<ISystemFamilyRevitOperations, SystemFamilyRevitOperations>();
         services.AddSingleton<ISystemFamilyPlacementService, SystemFamilyPlacementService>();
         services.AddSingleton<ISystemFamilyIsolationProjectService, SmartCon.FamilyManager.Services.SystemFamilyIsolationProjectAdapter>();

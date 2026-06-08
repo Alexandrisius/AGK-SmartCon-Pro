@@ -2,6 +2,7 @@ using System.IO;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services;
@@ -76,13 +77,19 @@ internal sealed class ActiveFamilyFilePreparer : IActiveFamilyFilePreparer
                 Directory.CreateDirectory(tempDir);
                 SmartConLogger.Debug($"[ActivePrep] Created temp dir: {tempDir}");
 
-                var safeName = Path.GetFileNameWithoutExtension(activeDoc.Title);
-                if (string.IsNullOrWhiteSpace(safeName)) safeName = "Family";
+                // Prefer originalRfaPath (captured before SaveAs) because its
+                // filename preserves dots used as type separators
+                // (e.g. "BP_A0307_ITAP_ART.162_Амер угловая.rfa"). activeDoc.Title
+                // returns only Family.Name which Revit truncates at the first dot.
+                var sourceName = !string.IsNullOrEmpty(originalRfaPath)
+                    ? SafeFileName.GetBaseName(originalRfaPath)
+                    : SafeFileName.GetBaseName(activeDoc.Title);
+                if (string.IsNullOrWhiteSpace(sourceName)) sourceName = "Family";
                 foreach (var c in Path.GetInvalidFileNameChars())
                 {
-                    safeName = safeName.Replace(c, '_');
+                    sourceName = sourceName.Replace(c, '_');
                 }
-                var tempRfaPath = Path.Combine(tempDir, safeName + ".rfa");
+                var tempRfaPath = Path.Combine(tempDir, sourceName + ".rfa");
 
                 SmartConLogger.Info($"[ActivePrep] Calling activeDoc.SaveAs('{tempRfaPath}')");
                 activeDoc.SaveAs(tempRfaPath);

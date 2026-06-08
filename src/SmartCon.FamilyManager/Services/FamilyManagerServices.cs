@@ -33,4 +33,6 @@ public sealed record FamilyManagerServices(
     ISystemFamilyImportOrchestrator SystemFamilyImportOrchestrator,
     IActiveFamilyFilePreparer ActiveFamilyFilePreparer,
     IActiveDocumentClassifier ActiveDocumentClassifier,
-    IActiveImportCleanupService ActiveImportCleanupService);
+    IActiveImportCleanupService ActiveImportCleanupService,
+    ILoadableFamilyScanner LoadableFamilyScanner,
+    ILoadableFamilyImportOrchestrator LoadableFamilyImportOrchestrator);

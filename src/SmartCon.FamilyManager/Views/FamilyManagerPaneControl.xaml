@@ -277,8 +277,8 @@
                                     </i:EventTrigger>
                                 </i:Interaction.Triggers>
                             </Button>
-                            <Button Content="{loc:Loc FM_ImportSystemFamily}"
-                                    Command="{Binding ImportSystemFamilyCommand}"
+                            <Button Content="{loc:Loc FM_ImportSelectedElements}"
+                                    Command="{Binding ImportSelectedElementsCommand}"
                                     MinWidth="160"
                                     HorizontalContentAlignment="Left"
                                     Padding="10,6"

@@ -134,12 +134,10 @@ internal sealed partial class LocalFamilyImportService
     }
 
     private static async Task InsertCatalogItemAsync(SqliteConnection connection, string id,
-        string normalizedName, FamilyImportRequest request, DateTimeOffset now,
+        string displayName, string normalizedName, FamilyImportRequest request, DateTimeOffset now,
         string versionLabel, CancellationToken ct)
     {
-        var displayName = !string.IsNullOrWhiteSpace(request.FileName)
-            ? Path.GetFileNameWithoutExtension(request.FileName).Trim()
-            : Path.GetFileNameWithoutExtension(request.FilePath).Trim();
+        displayName = displayName.Trim();
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """

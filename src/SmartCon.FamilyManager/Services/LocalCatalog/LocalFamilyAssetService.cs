@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
@@ -47,7 +48,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         var counter = 1;
         while (File.Exists(destPath))
         {
-            var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+            var nameWithoutExt = SafeFileName.GetBaseName(fileName);
             var ext = Path.GetExtension(fileName);
             destPath = Path.Combine(destDir, $"{nameWithoutExt}_{counter}{ext}");
             counter++;

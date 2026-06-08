@@ -48,6 +48,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IActiveFamilyFilePreparer _activeFamilyFilePreparer;
     private readonly IActiveDocumentClassifier _activeDocumentClassifier;
     private readonly IActiveImportCleanupService _activeImportCleanupService;
+    private readonly ILoadableFamilyScanner _loadableFamilyScanner;
+    private readonly ILoadableFamilyImportOrchestrator _loadableFamilyImportOrchestrator;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -92,7 +94,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
     [NotifyCanExecuteChangedFor(nameof(EditFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportActiveFileCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportSystemFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportSelectedElementsCommand))]
     [NotifyCanExecuteChangedFor(nameof(EditSystemFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
@@ -137,6 +139,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _activeFamilyFilePreparer = services.ActiveFamilyFilePreparer;
         _activeDocumentClassifier = services.ActiveDocumentClassifier;
         _activeImportCleanupService = services.ActiveImportCleanupService;
+        _loadableFamilyScanner = services.LoadableFamilyScanner;
+        _loadableFamilyImportOrchestrator = services.LoadableFamilyImportOrchestrator;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;

@@ -221,6 +221,10 @@ public static class StringLocalization
         public const string FM_ImportActiveFile = "FM_ImportActiveFile";
         public const string FM_ActiveDocNotFamily = "FM_ActiveDocNotFamily";
         public const string FM_ImportSystemFamily = "FM_ImportSystemFamily";
+        public const string FM_ImportSelectedElements = "FM_ImportSelectedElements";
+        public const string FM_SelectElementsPrompt = "FM_SelectElementsPrompt";
+        public const string FM_ImportActiveConfirmTitle = "FM_ImportActiveConfirmTitle";
+        public const string FM_ImportActiveConfirmMessage = "FM_ImportActiveConfirmMessage";
         public const string FM_ActiveDocNotProject = "FM_ActiveDocNotProject";
         public const string FM_SystemFamilySelectPrompt = "FM_SystemFamilySelectPrompt";
         public const string FM_SystemFamilyImported = "FM_SystemFamilyImported";

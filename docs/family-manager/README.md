@@ -92,4 +92,18 @@ ExtensibleStorage остаётся паттерном существующих �
 - `OriginalSourcePath` в `FamilyImportRequest`/`FamilyBatchImportItem`/`FamilyUpdateRequest`
 - VM `ImportActiveFileAsync` упрощён через классификатор активного документа
 - Удалён static `CleanupImportActiveTemp` — заменён `IActiveImportCleanupService`
+
+**Phase 22 (FamilyManager Placed Families v2 — OfClass(Family) + EditFamily for extraction) — COMPLETED (2026-06-07).**
+
+- ADR-027 принят: `docs/adr/027-placed-families-v2.md`
+- "Импорт активного файла" импортирует **и** системные, **и** loadable families из активного проекта
+- "Импорт системного семейства" переименован в **"Импорт выделенных элементов"**, принимает любые элементы (system + loadable)
+- Ключевая идея: **Analyze = только метаданные (мгновенно)**, **Stage = по подтверждению**, **Extract = через существующий `IFamilyDataExtractionService`**
+- Новые сервисы: `ILoadableFamilyScanner` (`OfClass(Family)`, O(F) — не O(N)), `ILoadableFamilyTypeResolver` (открывает `.rfa`, читает `FamilyManager.GetTypes()` с UniqueId), `ILoadableFamilyImportOrchestrator` (managed storage + type persist)
+- Picker filter `SystemFamilySelectionFilter` заменён на `AnyElementSelectionFilter` (`FamilyInstance` + system categories)
+- `ISystemFamilyRevitOperations.PickSystemTypes()` → `PickSelectedElements() → SelectedElementsAnalysis`
+- `ProcessProjectImportAsync` принимает `IReadOnlyList<FamilyBatchImportItem>` и диспетчеризирует по `FamilySource` (system → `ISystemFamilyImportOrchestrator`, loadable → `ILoadableFamilyImportOrchestrator`)
+- Атрибуты loadable извлекаются через `IFamilyDataExtractionService.Extract(managedRfaPath, [])` — **переиспользует** существующий сервис (без нового extractor'а для `.rfa`)
+- 4 новых unit-теста для `LoadableFamilyInfo`. Тесты для `SelectedElementsAnalysis` невозможны (record содержит `BuiltInCategory` value-type, требует `RevitAPI.dll` в test bin)
+- Всего: 1219/1219 тестов зелёные (1215 до + 4 новых)
 - 19 новых тестов: 12 sidecar + 1 preparer + 5 TypeCatalog + 1 прочий

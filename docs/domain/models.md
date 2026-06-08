@@ -2320,6 +2320,71 @@ public sealed record SystemFamilyExtractionTask(
     string? FileId);
 ```
 
+### LoadableFamilyInfo *(Phase 22 — Loadable Families from Active Project)*
+
+Уникальное загружаемое семейство, размещённое в активном проекте.
+Возвращается из `ILoadableFamilyScanner.GetUniqueFamilies(Document)`.
+**Без `ElementId`** — только стабильные строковые идентификаторы (I-05).
+
+**Файл:** `LoadableFamilyInfo.cs`
+
+```csharp
+public sealed record LoadableFamilyInfo(
+    string FamilyName,
+    string FamilyUniqueId,
+    string CategoryName,
+    int TypeCount);
+```
+
+### SelectedElementsAnalysis *(Phase 22 — Picker Result)*
+
+Результат `ISystemFamilyRevitOperations.PickSelectedElements`:
+- `SystemTypes` — выбранные системные элементы (после фильтра `AnyElementSelectionFilter`).
+- `LoadableFamilies` — уникальные `Family` (через `GroupBy(fi.Symbol.Family)`), выбранные пользователем.
+
+**Файл:** `SelectedElementsAnalysis.cs`
+
+```csharp
+public sealed record SelectedElementsAnalysis(
+    IReadOnlyList<SelectedSystemType> SystemTypes,
+    IReadOnlyList<LoadableFamilyInfo> LoadableFamilies)
+{
+    public int TotalCount => SystemTypes.Count + LoadableFamilies.Count;
+    public bool IsEmpty => TotalCount == 0;
+}
+```
+
+### LoadableFamilyAttributeTask *(Phase 22 — Post-Import Extraction)*
+
+Задача для `IFamilyDataExtractionService.Extract` после успешного
+импорта loadable в managed storage.
+
+**Файл:** `ILoadableFamilyImportOrchestrator.cs`
+
+```csharp
+public sealed record LoadableFamilyAttributeTask(
+    string CatalogItemId,
+    string ManagedRfaPath,
+    string? VersionId,
+    string? FileId,
+    bool HasTypeCatalog);
+```
+
+### LoadableFamilyImportResult *(Phase 22 — Orchestrator Result)*
+
+Результат `ILoadableFamilyImportOrchestrator.ImportAndPersistTypesAsync`.
+
+**Файл:** `ILoadableFamilyImportOrchestrator.cs`
+
+```csharp
+public sealed record LoadableFamilyImportResult(
+    bool Success,
+    string? Message,
+    int ImportedCount,
+    int SkippedCount,
+    IReadOnlyList<LoadableFamilyAttributeTask> AttributeTasks);
+```
+
 
 
 

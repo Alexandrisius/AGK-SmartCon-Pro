@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.FamilyManager;
@@ -100,7 +101,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
     private static string BuildErrorMessage(string path)
     {
         var fileName = Path.GetFileName(path);
-        var nameWithoutExt = Path.GetFileNameWithoutExtension(path);
+        var nameWithoutExt = SafeFileName.GetBaseName(path);
 
         if (nameWithoutExt.Length > 0 && nameWithoutExt[nameWithoutExt.Length - 1] == ' ')
         {
@@ -160,7 +161,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             var preferredName = options.PreferredName?.Trim();
             var checkName = !string.IsNullOrWhiteSpace(preferredName)
                 ? preferredName
-                : Path.GetFileNameWithoutExtension(normalizedPath).Trim();
+                : SafeFileName.GetBaseName(normalizedPath).Trim();
 
             SmartConLogger.Info($"[FamilyLoad] Checking for existing family by name: '{checkName}'");
 
@@ -238,7 +239,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
 
             // If LoadFamilySymbol returns false, it may be because the type already exists.
             // Try to find the symbol in the existing family.
-            var existingFamily = FindExistingFamily(doc, Path.GetFileNameWithoutExtension(normalizedPath));
+            var existingFamily = FindExistingFamily(doc, SafeFileName.GetBaseName(normalizedPath));
             if (existingFamily is null)
             {
                 existingFamily = FindExistingFamily(doc, typeName);

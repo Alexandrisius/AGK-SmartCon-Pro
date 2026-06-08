@@ -1444,9 +1444,9 @@ public interface ISaveableViewModel
 
 ### ISystemFamilyRevitOperations
 
-Низкоуровневые операции Revit для системных семейств: picker, анализ активного
-проекта по 14 категориям, копирование размещённых типов в чистый .rvt с размещением
-инстансов на сетке 2×2 м. Все методы **должны вызываться внутри ExternalEvent**
+Низкоуровневые операции Revit для системных семейств: picker (system + loadable),
+анализ активного проекта по 14 категориям, копирование размещённых типов в чистый .rvt
+с размещением инстансов на сетке 2×2 м. Все методы **должны вызываться внутри ExternalEvent**
 (Revit UI thread).
 
 **Файл:** `ISystemFamilyRevitOperations.cs`
@@ -1455,7 +1455,7 @@ public interface ISaveableViewModel
 ```csharp
 public interface ISystemFamilyRevitOperations
 {
-    IReadOnlyList<SelectedSystemType> PickSystemTypes();
+    SelectedElementsAnalysis PickSelectedElements();
     IReadOnlyList<CategoryAnalysis> AnalyzeActiveProject(Document activeDoc);
     CreateCleanProjectResult CreateCleanProjectWithTypesAndInstances(
         Document sourceDoc,
@@ -1466,11 +1466,14 @@ public interface ISystemFamilyRevitOperations
 ```
 
 **Заметки по реализации:**
-- `PickSystemTypes` использует `SystemFamilySelectionFilter` для фильтрации элементов в Revit UI и
-  `CategoryCompat.GetBuiltInCategory` (см. `SmartCon.Core/Compatibility/CategoryCompat.cs`) для
+- `PickSelectedElements` (Phase 22, заменил `PickSystemTypes`) использует `AnyElementSelectionFilter`:
+  пропускает `FamilyInstance` (loadable) + элементы в `SystemCategoryRegistry.SupportedCategories`
+  (system). Для каждого `FamilyInstance` через `fi.Symbol?.Family` получает уникальный
+  `Family` и через `GroupBy` дедуплицирует выбор. Возвращает `SelectedElementsAnalysis`
+  с двумя списками: `SystemTypes` + `LoadableFamilies`.
+- `AnalyzeActiveProject` использует `CategoryCompat.GetBuiltInCategory` для
   кросс-TFM-резолвинга `Category → BuiltInCategory` (Revit 2022+: `Category.BuiltInCategory`;
-  Revit 2019–2021: guarded cast). Возвращаемое значение затем сверяется с
-  `SystemCategoryRegistry.SupportedCategories` (defense in depth).
+  Revit 2019–2021: guarded cast).
 - `CreateCleanProjectWithTypesAndInstances` пишет результат в
   `%TEMP%\SmartCon\SystemFamilyLoadFromProject\<GUID>\<safeName>.rvt` — путь берётся из
   `SystemFamilyTempLayout` (single source of truth для cleanup).
@@ -1625,9 +1628,65 @@ public static class CategoryCompat
 }
 ```
 
-Используется в `SystemFamilySelectionFilter.AllowElement` и `SystemFamilyRevitOperations.PickSystemTypes`.
+Используется в `AnyElementSelectionFilter.AllowElement` (Phase 22, заменил
+`SystemFamilySelectionFilter`) и `SystemFamilyRevitOperations.PickSelectedElements`.
 После резолвинга результат обязательно сверяется с `SystemCategoryRegistry.SupportedCategories`
-(в обоих местах) — defense in depth.
+— defense in depth.
+
+### ILoadableFamilyScanner *(Phase 22 — Loadable Families from Active Project)*
+
+Возвращает уникальные loadable families (с фильтром `!IsInPlace`).
+Реализация — `FilteredElementCollector.OfClass(Family)` (O(F), не O(N))
+без `EditFamily + SaveAs` (это делает `LoadableFamilyImportOrchestrator` после
+подтверждения пользователя).
+
+**Файл:** `ILoadableFamilyScanner.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/LoadableFamilyScanner.cs`
+
+```csharp
+public interface ILoadableFamilyScanner
+{
+    IReadOnlyList<LoadableFamilyInfo> GetUniqueFamilies(Document activeDoc);
+}
+```
+
+### ILoadableFamilyTypeResolver *(Phase 22 — .rfa → FamilyTypeDescriptor)*
+
+Открывает `.rfa` файл, читает `FamilyManager.Types` и `FamilySymbol`s,
+создаёт `FamilyTypeDescriptor` (с UniqueId) для каждого типа.
+Используется после `ImportBatchAsync` для сохранения типов в `IFamilyTypeRepository`.
+
+**Файл:** `ILoadableFamilyTypeResolver.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/LoadableFamilyTypeResolver.cs`
+
+```csharp
+public interface ILoadableFamilyTypeResolver
+{
+    IReadOnlyList<FamilyTypeDescriptor> ResolveTypesFromRfa(
+        string rfaFilePath,
+        string catalogItemId,
+        string? versionId = null,
+        string? fileId = null);
+}
+```
+
+### ILoadableFamilyImportOrchestrator *(Phase 22 — Managed Storage + Type Persist)*
+
+Каталог-side орчестрация для loadable: batch import (managed storage) +
+resolve managed путь + список extraction tasks для `IFamilyDataExtractionService`.
+
+**Файл:** `ILoadableFamilyImportOrchestrator.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LoadableFamilyImportOrchestrator.cs`
+
+```csharp
+public interface ILoadableFamilyImportOrchestrator
+{
+    Task<LoadableFamilyImportResult> ImportAndPersistTypesAsync(
+        IReadOnlyList<FamilyBatchImportItem> items,
+        int targetRevitVersion,
+        CancellationToken ct = default);
+}
+```
 
 ### ISystemFamilyPlacementService
 

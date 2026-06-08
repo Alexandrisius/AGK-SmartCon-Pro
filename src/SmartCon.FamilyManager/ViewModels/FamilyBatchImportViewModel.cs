@@ -36,7 +36,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         IFamilyManagerDialogService dialogService,
         IFamilyManagerViewModelFactory viewModelFactory,
         IFamilyCatalogProvider catalogProvider,
-        string? defaultCategoryId = null)
+        string? defaultCategoryId = null,
+        string? defaultCategoryName = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
@@ -47,6 +48,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             if (string.IsNullOrEmpty(item.TargetCategoryId) && !string.IsNullOrEmpty(defaultCategoryId))
             {
                 item.TargetCategoryId = defaultCategoryId;
+                item.TargetCategoryName ??= defaultCategoryName;
             }
             var row = new FamilyBatchImportRow(item);
             row.PropertyChanged += OnRowPropertyChanged;

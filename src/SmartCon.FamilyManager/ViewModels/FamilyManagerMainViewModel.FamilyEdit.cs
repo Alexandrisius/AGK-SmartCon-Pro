@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
 using SmartCon.UI.Behaviors;
@@ -123,32 +124,66 @@ public sealed partial class FamilyManagerMainViewModel
                     break;
 
                 case ActiveDocumentKind.Project:
-                    var pending = await _awaitableEvent.RaiseAsync<IReadOnlyList<SystemFamilyPendingImport>>(obj =>
+                    var (systemAnalyses, loadableFamilies) = await _awaitableEvent.RaiseAsync<(IReadOnlyList<CategoryAnalysis>, IReadOnlyList<LoadableFamilyInfo>)>(obj =>
                     {
                         try
                         {
                             var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
                             var activeDoc = uiApp.ActiveUIDocument?.Document;
-                            return activeDoc is null
-                                ? Array.Empty<SystemFamilyPendingImport>()
-                                : StageFromActiveProject(activeDoc);
+                            if (activeDoc is null) return (Array.Empty<CategoryAnalysis>(), Array.Empty<LoadableFamilyInfo>());
+
+                            var sys = _systemFamilyRevitOps.AnalyzeActiveProject(activeDoc);
+                            var load = _loadableFamilyScanner.GetUniqueFamilies(activeDoc);
+                            return (sys, load);
                         }
                         catch (Exception ex)
                         {
                             SmartConLogger.Error(
-                                $"[ImportActiveFile] StageFromActiveProject failed: {ex.Message}");
-                            return Array.Empty<SystemFamilyPendingImport>();
+                                $"[ImportActiveFile] Analyze failed: {ex.Message}");
+                            return (Array.Empty<CategoryAnalysis>(), Array.Empty<LoadableFamilyInfo>());
                         }
                     });
-                    if (pending.Count == 0)
+
+                    var systemTypeCount = systemAnalyses.Sum(a => a.TypeCount);
+                    var systemCategoryCount = systemAnalyses.Count;
+                    var loadableCount = loadableFamilies.Count;
+
+                    SmartConLogger.Info(
+                        $"[ImportActiveFile] Phase 1 (fast): system={systemCategoryCount}cat/{systemTypeCount}types, loadable={loadableCount} families");
+
+                    if (systemCategoryCount == 0 && loadableCount == 0)
                     {
                         _dialogService.ShowError(
                             LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound) ?? "Error",
                             LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound)
-                                ?? "В проекте не найдено размещённых системных семейств");
+                                ?? "В проекте не найдено размещённых семейств для импорта");
                         return;
                     }
-                    await ProcessProjectImportAsync(pending);
+
+                    var confirmMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportActiveConfirmMessage)
+                            ?? "Импортировать в каталог: {0} системных категорий ({1} типов) и {2} загружаемых семейств?",
+                        systemCategoryCount, systemTypeCount, loadableCount);
+                    var confirmed = _dialogService.ShowConfirmation(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportActiveConfirmTitle)
+                            ?? "Импорт активного файла",
+                        confirmMessage);
+                    SmartConLogger.Info($"[ImportActiveFile] Phase 2: user confirmed={confirmed}");
+                    if (!confirmed)
+                    {
+                        StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Cancel) ?? "Отменено";
+                        return;
+                    }
+
+                    var batchItems = await BuildActiveProjectBatchItemsAsync(systemAnalyses, loadableFamilies);
+                    if (batchItems.Count == 0)
+                    {
+                        _dialogService.ShowError(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Error",
+                            LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound) ?? "Не удалось подготовить семейства для импорта");
+                        return;
+                    }
+                    await ProcessProjectImportAsync(batchItems);
                     break;
             }
         }
@@ -305,7 +340,7 @@ public sealed partial class FamilyManagerMainViewModel
         var metadata = await _metadataService.ExtractAsync(familyRfaPath, CancellationToken.None);
         var revitVersion = _fileInfoReader.ReadRevitVersion(familyRfaPath) ?? CurrentRevitVersion;
         var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(
-            Path.GetFileNameWithoutExtension(familyRfaPath));
+            SafeFileName.GetBaseName(familyRfaPath));
         var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
 
         var existingCategoryId = existingByName?.CategoryId;
@@ -325,7 +360,7 @@ public sealed partial class FamilyManagerMainViewModel
 
         var item = new FamilyBatchImportItem(
             familyRfaPath,
-            Path.GetFileNameWithoutExtension(familyRfaPath),
+            SafeFileName.GetBaseName(familyRfaPath),
             metadata.Sha256,
             revitVersion,
             new FileInfo(familyRfaPath).Length,
@@ -364,103 +399,127 @@ public sealed partial class FamilyManagerMainViewModel
             importResult.ErrorCount, importResult.TotalFiles);
     }
 
-    private async Task ProcessProjectImportAsync(IReadOnlyList<SystemFamilyPendingImport> pendingItems)
+    private async Task ProcessProjectImportAsync(IReadOnlyList<FamilyBatchImportItem> batchItems)
     {
-        var batchItems = new List<FamilyBatchImportItem>(pendingItems.Count);
-        var pendingByFile = new Dictionary<string, SystemFamilyPendingImport>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var pending in pendingItems)
-        {
-            pendingByFile[Path.GetFileName(pending.TempRvtPath)] = pending;
-
-            if (!File.Exists(pending.TempRvtPath))
-            {
-                SmartConLogger.Warn(
-                    $"[ImportActiveFile] Temp .rvt missing: {pending.TempRvtPath}");
-                continue;
-            }
-
-            var metadata = await _metadataService.ExtractAsync(pending.TempRvtPath, CancellationToken.None);
-            var revitVersion = _fileInfoReader.ReadRevitVersion(pending.TempRvtPath) ?? CurrentRevitVersion;
-            var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(
-                Path.GetFileNameWithoutExtension(pending.TempRvtPath));
-            var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
-
-            var existingCategoryId = existingByName?.CategoryId;
-            var existingCategoryName = existingByName?.CategoryPath;
-            if (existingCategoryId is not null && existingCategoryName is null)
-            {
-                try
-                {
-                    var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
-                    existingCategoryName = cat?.Name;
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn(
-                        $"[ImportActiveFile] Failed to resolve category for '{pending.CategoryName}': {ex.Message}");
-                }
-            }
-
-            var displayName = Path.GetFileNameWithoutExtension(pending.TempRvtPath);
-            batchItems.Add(new FamilyBatchImportItem(
-                pending.TempRvtPath,
-                displayName,
-                metadata.Sha256,
-                revitVersion,
-                new FileInfo(pending.TempRvtPath).Length,
-                existingByName is not null ? FamilyBatchImportStatus.Existing : FamilyBatchImportStatus.New,
-                existingByName?.Id,
-                existingByName?.CurrentVersionLabel,
-                existingCategoryId,
-                existingCategoryName,
-                FamilySource: "system",
-                TypeCount: pending.Types.Count,
-                RevitCategory: pending.CategoryName));
-        }
-
         if (batchItems.Count == 0)
         {
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Error",
-                LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound) ?? "No system families found");
+                LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound) ?? "No families found");
             return;
         }
 
-        using var vm = new FamilyBatchImportViewModel(batchItems, _dialogService, _viewModelFactory, _catalogProvider);
+        // ProcessProjectImportAsync is invoked from:
+        //   1) "Импорт активного файла" (case Project)
+        //   2) "Импорт выделенных элементов"
+        // Neither path carries a user-selected category intent — the user did
+        // not click "Импорт в категорию". The default behaviour in this flow
+        // matches the legacy ImportFiles command: every row opens with
+        // "Без категории" and the user can pick a target per row, or leave
+        // it empty to keep the family un-categorised. The "Импорт в категорию"
+        // command is a SEPARATE entry point (ImportFileToCategoryAsync) that
+        // resolves defaultCategoryId from SelectedTreeNode — see
+        // FamilyManagerMainViewModel.Import.cs:ImportFileToCategoryAsync.
+        var defaultCategoryId = (string?)null;
+        var defaultCategoryName = (string?)null;
+
+        using var vm = new FamilyBatchImportViewModel(
+            batchItems, _dialogService, _viewModelFactory, _catalogProvider,
+            defaultCategoryId, defaultCategoryName);
         if (_dialogService.ShowBatchImportDialog(vm) != true) return;
 
         var selectedItems = vm.GetResultItems();
         var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
         if (toImport.Count == 0) return;
 
+        var systemItems = toImport.Where(i => i.FamilySource == "system").ToList();
+        var loadableItems = toImport.Where(i => i.FamilySource == "loadable").ToList();
+
         StatusMessage = string.Format(
-            LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyPreparing) ?? "Импорт {0} системных семейств...",
+            LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyPreparing) ?? "Импорт {0} семейств...",
             toImport.Count);
 
-        var result = await _systemFamilyImportOrchestrator.ImportBatchItemsAsync(toImport);
+        var systemTotalTypes = 0;
+        if (systemItems.Count > 0)
+        {
+            var sysResult = await _systemFamilyImportOrchestrator.ImportBatchItemsAsync(systemItems);
+            systemTotalTypes = systemItems.Sum(i => i.TypeCount);
+            SmartConLogger.Info(
+                $"[ProcessProjectImport] System: imported={sysResult.Success}, types={systemTotalTypes}, tasks={sysResult.ExtractionTasks.Count}");
 
-        var totalTypes = pendingItems
-            .Where(p => toImport.Any(i => string.Equals(
-                Path.GetFileName(i.FilePath), Path.GetFileName(p.TempRvtPath), StringComparison.OrdinalIgnoreCase)))
-            .Sum(p => p.Types.Count);
+            if (sysResult.ExtractionTasks.Count > 0)
+            {
+                await _systemFamilyAttributeExtractor.ExtractAndSaveAsync(sysResult.ExtractionTasks);
+            }
+        }
 
-        StatusMessage = result.Success
+        var loadableTotalTypes = 0;
+        IReadOnlyList<LoadableFamilyAttributeTask> loadableAttributeTasks = [];
+        if (loadableItems.Count > 0)
+        {
+            var loadResult = await _loadableFamilyImportOrchestrator.ImportAndPersistTypesAsync(
+                loadableItems, CurrentRevitVersion, defaultCategoryId);
+            loadableTotalTypes = loadableItems.Sum(i => i.TypeCount);
+            loadableAttributeTasks = loadResult.AttributeTasks;
+            SmartConLogger.Info(
+                $"[ProcessProjectImport] Loadable: imported={loadResult.ImportedCount}, skipped={loadResult.SkippedCount}, attrTasks={loadableAttributeTasks.Count}");
+        }
+
+        if (loadableAttributeTasks.Count > 0)
+        {
+            await ExtractAttributesForLoadableTasks(loadableAttributeTasks);
+        }
+
+        if (systemItems.Count > 0 || loadableItems.Count > 0)
+        {
+            await LoadTreeAsync();
+        }
+
+        var totalTypes = systemTotalTypes + loadableTotalTypes;
+        StatusMessage = totalTypes > 0
             ? string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported) ?? "Импортировано: {0}",
                 totalTypes)
-            : result.Message ?? "Ошибка импорта";
+            : "Импорт завершён";
+    }
 
-        if (result.Success) await LoadTreeAsync();
+    private async Task ExtractAttributesForLoadableTasks(
+        IReadOnlyList<LoadableFamilyAttributeTask> tasks)
+    {
+        foreach (var task in tasks)
+        {
+            try
+            {
+                if (!File.Exists(task.ManagedRfaPath))
+                {
+                    SmartConLogger.Warn(
+                        $"[LoadableAttr] Managed .rfa missing: '{task.ManagedRfaPath}'");
+                    continue;
+                }
 
-        // CRITICAL: await the extraction phase so that
-        // 1) extraction + save completes BEFORE cleanup runs
-        // 2) ImportActiveFileAsync's finally block only fires Phase 2
-        //    cleanup (temp folders) after extraction is durably persisted
-        // This eliminates the race condition where ActiveCleanupService
-        // would delete .rvt files before ExternalEvent had a chance to
-        // read them (causing "[WRN] Temp .rvt not found for extraction").
-        await _systemFamilyAttributeExtractor.ExtractAndSaveAsync(result.ExtractionTasks);
+                var extraction = _extractionService.Extract(task.ManagedRfaPath, Array.Empty<string>());
+                if (extraction.Success)
+                {
+                    if (task.HasTypeCatalog)
+                    {
+                        await _dataImportService.MergeMissingValuesAsync(
+                            task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
+                    }
+                    else
+                    {
+                        await _dataImportService.SaveExtractionResultAsync(
+                            task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
+                    }
+                    SmartConLogger.Info(
+                        $"[LoadableAttr] Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(task.ManagedRfaPath)}' (CatalogItemId={task.CatalogItemId})");
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"[LoadableAttr] Extraction failed for '{task.CatalogItemId}': {ex.Message}");
+            }
+        }
     }
 
     /// <summary>

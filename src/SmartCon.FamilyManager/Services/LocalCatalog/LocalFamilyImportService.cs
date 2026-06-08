@@ -60,8 +60,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         var displayName = !string.IsNullOrWhiteSpace(request.FileName)
-            ? Path.GetFileNameWithoutExtension(request.FileName)
-            : Path.GetFileNameWithoutExtension(filePath);
+            ? request.FileName!
+            : SafeFileName.GetBaseName(filePath);
 
         SmartConLogger.Info($"[Import] File: {Path.GetFileName(filePath)} -> displayName='{displayName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
 
@@ -116,7 +116,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
                 if (existingItem is null)
                 {
-                    await InsertCatalogItemAsync(connection, catalogItemId, normalizedName, request, now, versionLabel, ct).ConfigureAwait(false);
+                    await InsertCatalogItemAsync(connection, catalogItemId, displayName, normalizedName, request, now, versionLabel, ct).ConfigureAwait(false);
                 }
                 else
                 {
@@ -298,7 +298,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     var request = new FamilyImportRequest(
                         item.FilePath,
                         item.RevitMajorVersion,
-                        null, null, null, item.TargetCategoryId ?? categoryId,
+                        item.TargetCategoryName, null, null, item.TargetCategoryId ?? categoryId,
                         item.FamilySource,
                         item.RevitCategory,
                         item.FileName);
@@ -379,8 +379,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         var newName = !string.IsNullOrWhiteSpace(request.FileName)
-            ? Path.GetFileNameWithoutExtension(request.FileName)
-            : Path.GetFileNameWithoutExtension(filePath);
+            ? request.FileName!
+            : SafeFileName.GetBaseName(filePath);
 
         SmartConLogger.Info($"[Update] File: {Path.GetFileName(filePath)} -> newName='{newName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
 
@@ -479,7 +479,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             sourceExt = ".rfa";
 
         var destFileName = !string.IsNullOrWhiteSpace(displayName)
-            ? SanitizeFileName(Path.GetFileNameWithoutExtension(displayName)) + sourceExt
+            ? SanitizeFileName(displayName) + sourceExt
             : metadata.FileName;
 
         var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, destFileName);

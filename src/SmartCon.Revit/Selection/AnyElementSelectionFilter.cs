@@ -5,10 +5,12 @@ using SmartCon.Revit.FamilyManager;
 
 namespace SmartCon.Revit.Selection;
 
-internal sealed class SystemFamilySelectionFilter : ISelectionFilter
+internal sealed class AnyElementSelectionFilter : ISelectionFilter
 {
     public bool AllowElement(Element elem)
     {
+        if (elem is FamilyInstance) return true;
+
         var bic = CategoryCompat.GetBuiltInCategory(elem.Category);
         if (bic == BuiltInCategory.INVALID) return false;
         return SystemCategoryRegistry.SupportedCategories.Contains(bic);

@@ -18,6 +18,10 @@ public static partial class LocalizationService
         ru["FM_ImportActiveFile"] = "Импорт активного файла"; en["FM_ImportActiveFile"] = "Import Active File";
         ru["FM_ActiveDocNotFamily"] = "Активный документ не является семейством"; en["FM_ActiveDocNotFamily"] = "Active document is not a family";
         ru["FM_ImportSystemFamily"] = "Импорт системного семейства"; en["FM_ImportSystemFamily"] = "Import System Family";
+        ru["FM_ImportSelectedElements"] = "Импорт выделенных элементов"; en["FM_ImportSelectedElements"] = "Import Selected Elements";
+        ru["FM_SelectElementsPrompt"] = "Выберите элементы в Revit (системные или загружаемые семейства)..."; en["FM_SelectElementsPrompt"] = "Select elements in Revit (system or loadable families)...";
+        ru["FM_ImportActiveConfirmTitle"] = "Импорт активного файла"; en["FM_ImportActiveConfirmTitle"] = "Import Active File";
+        ru["FM_ImportActiveConfirmMessage"] = "Импортировать в каталог: {0} системных категорий ({1} типов) и {2} загружаемых семейств?"; en["FM_ImportActiveConfirmMessage"] = "Import to catalog: {0} system categories ({1} types) and {2} loadable families?";
         ru["FM_ActiveDocNotProject"] = "Активный документ не является проектом. Откройте проект Revit."; en["FM_ActiveDocNotProject"] = "Active document is not a project. Open a Revit project.";
         ru["FM_SystemFamilySelectPrompt"] = "Выберите элементы системного семейства в Revit..."; en["FM_SystemFamilySelectPrompt"] = "Select system family elements in Revit...";
         ru["FM_SystemFamilyImported"] = "Импортировано системных типов: {0}"; en["FM_SystemFamilyImported"] = "System types imported: {0}";

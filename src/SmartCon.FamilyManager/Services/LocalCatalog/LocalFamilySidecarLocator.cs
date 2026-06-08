@@ -1,5 +1,6 @@
 using System.IO;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
@@ -32,7 +33,12 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
             }
 
             var dir = Path.GetDirectoryName(rfaPath);
-            var nameNoExt = Path.GetFileNameWithoutExtension(rfaPath);
+            // Use SafeFileName.GetBaseName (NOT Path.GetFileNameWithoutExtension) to
+            // preserve internal dots used as type separators — e.g.
+            // "BP_A0307_ITAP_ART.162_Амер угловая.rfa" → "BP_A0307_ITAP_ART.162_Амер угловая"
+            // (Path.GetFileNameWithoutExtension would truncate to "BP_A0307_ITAP_ART"
+            // and silently fail to find the matching sidecar).
+            var nameNoExt = SafeFileName.GetBaseName(rfaPath);
             if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(nameNoExt))
             {
                 SmartConLogger.Debug($"[Sidecar] FindSidecarPath: cannot derive dir/basename from '{rfaPath}' → null");
@@ -51,7 +57,7 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
             //    case-insensitively. Tolerates cross-platform file systems.
             foreach (var candidate in Directory.EnumerateFiles(dir, "*.txt", SearchOption.TopDirectoryOnly))
             {
-                var candidateName = Path.GetFileNameWithoutExtension(candidate);
+                var candidateName = SafeFileName.GetBaseName(candidate);
                 if (string.Equals(candidateName, nameNoExt, StringComparison.OrdinalIgnoreCase))
                 {
                     SmartConLogger.Info($"[Sidecar] Found (case-insensitive): {candidate}");

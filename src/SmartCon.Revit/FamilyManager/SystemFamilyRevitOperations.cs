@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.DB.Plumbing;
@@ -18,14 +19,19 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 {
     private readonly IRevitUIContext _revitUIContext;
     private readonly ITransactionService _transactionService;
+    private readonly ILoadableFamilyScanner _loadableFamilyScanner;
 
-    public SystemFamilyRevitOperations(IRevitUIContext revitUIContext, ITransactionService transactionService)
+    public SystemFamilyRevitOperations(
+        IRevitUIContext revitUIContext,
+        ITransactionService transactionService,
+        ILoadableFamilyScanner loadableFamilyScanner)
     {
         _revitUIContext = revitUIContext;
         _transactionService = transactionService;
+        _loadableFamilyScanner = loadableFamilyScanner;
     }
 
-    public IReadOnlyList<SelectedSystemType> PickSystemTypes()
+    public SelectedElementsAnalysis PickSelectedElements()
     {
         var uidoc = _revitUIContext.GetUIDocument();
         var doc = uidoc.Document;
@@ -35,74 +41,80 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         {
             refs = uidoc.Selection.PickObjects(
                 ObjectType.Element,
-                new Selection.SystemFamilySelectionFilter(),
-                "Select system family elements");
+                new Selection.AnyElementSelectionFilter(),
+                "Select system family or loadable family elements");
         }
         catch (Autodesk.Revit.Exceptions.OperationCanceledException)
         {
-            return [];
+            return new SelectedElementsAnalysis([], []);
         }
 
-        var types = new Dictionary<string, SelectedSystemType>();
+        var systemTypes = new Dictionary<string, SelectedSystemType>();
+        var loadableFamilies = new Dictionary<string, LoadableFamilyInfo>();
+        int skippedCount = 0;
+
         foreach (var r in refs)
         {
             var elem = doc.GetElement(r);
             if (elem is null) continue;
 
+            if (elem is FamilyInstance fi)
+            {
+                var family = fi.Symbol?.Family;
+                if (family is null || family.IsInPlace) { skippedCount++; continue; }
+                if (!loadableFamilies.ContainsKey(family.UniqueId))
+                {
+                    loadableFamilies[family.UniqueId] = new LoadableFamilyInfo(
+                        FamilyName: family.Name,
+                        FamilyUniqueId: family.UniqueId,
+                        CategoryName: family.FamilyCategory?.Name ?? "Unknown",
+                        TypeCount: family.GetFamilySymbolIds().Count);
+                }
+                continue;
+            }
+
             var typeId = elem.GetTypeId();
-            if (typeId == ElementId.InvalidElementId) continue;
+            if (typeId == ElementId.InvalidElementId) { skippedCount++; continue; }
 
             var typeElem = doc.GetElement(typeId);
-            if (typeElem is null) continue;
+            if (typeElem is null) { skippedCount++; continue; }
 
             var category = typeElem.Category;
             var categoryName = category?.Name ?? "Unknown";
-
-            // Resolve BuiltInCategory via CategoryCompat — see
-            // CategoryCompat.cs for the cross-version strategy. On
-            // Revit 2022+ it uses the canonical `Category.BuiltInCategory`
-            // property; on R19/R21 it falls back to a guarded cast.
-            //
-            // We then defend in depth: even if `GetBuiltInCategory`
-            // returns a non-INVALID value, it MUST be in
-            // `SystemCategoryRegistry.SupportedCategories`. The picker
-            // filter (SystemFamilySelectionFilter) has already gated the
-            // element against this set, so a mismatch here is a
-            // data-integrity signal (the type's category differs from
-            // the instance's category) and we log a WARN and fall back
-            // to INVALID.
-            //
-            // Types with `BuiltInCategory.INVALID` are still included
-            // in the result with INVALID — staging will copy the type
-            // and skip instance placement. This preserves the
-            // pre-refactor behaviour of "every picker selection is
-            // accepted" while signalling "no instances for this one".
             var builtInCategory = CategoryCompat.GetBuiltInCategory(category);
 
             if (builtInCategory == BuiltInCategory.INVALID)
             {
                 SmartConLogger.Debug(
-                    $"[PickSystemTypes] Type '{typeElem.Name}' has no resolvable BuiltInCategory " +
+                    $"[PickSelectedElements] Type '{typeElem.Name}' has no resolvable BuiltInCategory " +
                     $"(category='{categoryName}') — will copy as type-only, no instances");
             }
             else if (!SystemCategoryRegistry.SupportedCategories.Contains(builtInCategory))
             {
                 SmartConLogger.Warn(
-                    $"[PickSystemTypes] Type '{typeElem.Name}' has BuiltInCategory='{builtInCategory}' " +
+                    $"[PickSelectedElements] Type '{typeElem.Name}' has BuiltInCategory='{builtInCategory}' " +
                     $"(category='{categoryName}') which is not in the supported set — " +
                     $"will copy as type-only, no instances");
                 builtInCategory = BuiltInCategory.INVALID;
             }
 
-            if (!types.ContainsKey(typeElem.UniqueId))
-                types[typeElem.UniqueId] = new SelectedSystemType(
+            if (!systemTypes.ContainsKey(typeElem.UniqueId))
+            {
+                systemTypes[typeElem.UniqueId] = new SelectedSystemType(
                     typeElem.UniqueId,
                     typeElem.Name,
                     categoryName,
                     builtInCategory);
+            }
         }
 
-        return types.Values.ToList();
+        if (skippedCount > 0)
+            SmartConLogger.Info(
+                $"[PickSelectedElements] Skipped {skippedCount} element(s) without resolvable type/category");
+
+        return new SelectedElementsAnalysis(
+            SystemTypes: systemTypes.Values.ToList(),
+            LoadableFamilies: loadableFamilies.Values.ToList());
     }
 
     public IReadOnlyList<CategoryAnalysis> AnalyzeActiveProject(Document activeDoc)
@@ -214,6 +226,11 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             var finalPath = Path.Combine(tempDir, safeName);
             newDoc.SaveAs(finalPath, new SaveAsOptions { OverwriteExistingFile = true });
             newDoc.Close(false);
+            // Defensive ReleaseComObject — required for batch processing of
+            // 100+ system categories to prevent family-upgrade freeze (REVIT-237190).
+            // Document is a RCW; without explicit release the runtime keeps
+            // a reference until GC, which can hang Revit on shutdown.
+            try { Marshal.ReleaseComObject(newDoc); } catch { }
             newDoc = null;
 
             SmartConLogger.Info(
@@ -225,7 +242,11 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         catch (Exception ex)
         {
             SmartConLogger.Freeze($"[CreateCleanProjectWithTypesAndInstances] Failed: {ex.GetType().Name}: {ex.Message}");
-            try { newDoc?.Close(false); } catch { }
+            if (newDoc is not null)
+            {
+                try { newDoc.Close(false); } catch { }
+                try { Marshal.ReleaseComObject(newDoc); } catch { }
+            }
             return new CreateCleanProjectResult(false, null, ex.Message, 0);
         }
     }
@@ -442,8 +463,8 @@ internal static class SystemCategoryRegistry
     /// <summary>
     /// Единый источник правды для набора поддерживаемых системных категорий.
     /// Используется:
-    ///   - <see cref="SystemFamilySelectionFilter"/> для фильтрации выбора в Revit UI
-    ///   - <see cref="SystemFamilyRevitOperations.PickSystemTypes"/> для проверки
+    ///   - <see cref="Selection.AnyElementSelectionFilter"/> для фильтрации выбора в Revit UI
+    ///   - <see cref="PickSelectedElements"/> для проверки
     ///     соответствия категории типа каноническому списку (defense in depth)
     /// </summary>
     public static readonly HashSet<BuiltInCategory> SupportedCategories =
