@@ -304,7 +304,8 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
 
         if (otherTypes.Count > 0 && sharedParams.Count > 0)
         {
-            SmartConLogger.Info($"[Merge] Propagating {sharedParams.Count} shared params to {otherTypes.Count} unmatched catalog types");
+            using var _scope = SmartConLogger.BeginScope("Merge", ("Kind", "SharedParams"), ("CatalogItemId", catalogItemId));
+            SmartConLogger.Info($"Propagating {sharedParams.Count} shared params to {otherTypes.Count} unmatched catalog types");
             foreach (var existingType in otherTypes)
             {
                 foreach (var sp in sharedParams)
@@ -342,7 +343,8 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
 
         if (existingTypes.Count > 0 && unmatchedSharedParams.Count > 0)
         {
-            SmartConLogger.Info($"[Merge] Propagating {unmatchedSharedParams.Count} unmatched shared params to {existingTypes.Count} catalog types");
+            using var _scope = SmartConLogger.BeginScope("Merge", ("Kind", "UnmatchedShared"), ("CatalogItemId", catalogItemId));
+            SmartConLogger.Info($"Propagating {unmatchedSharedParams.Count} unmatched shared params to {existingTypes.Count} catalog types");
             foreach (var existingType in existingTypes)
             {
                 foreach (var val in unmatchedSharedParams)
@@ -380,7 +382,8 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
 
         if (extractionResult.UntypedValues is not null && existingTypes.Count > 0)
         {
-            SmartConLogger.Info($"[Merge] Propagating {extractionResult.UntypedValues.Count} untyped values to {existingTypes.Count} catalog types");
+            using var _scope = SmartConLogger.BeginScope("Merge", ("Kind", "UntypedValues"), ("CatalogItemId", catalogItemId));
+            SmartConLogger.Info($"Propagating {extractionResult.UntypedValues.Count} untyped values to {existingTypes.Count} catalog types");
             foreach (var existingType in existingTypes)
             {
                 foreach (var val in extractionResult.UntypedValues)
@@ -416,7 +419,8 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
             }
         }
 
-        SmartConLogger.Info($"[Merge] RESULT: adding={valuesToAdd.Count}, skipped_existing={skippedExisting}, unmatched_shared={unmatchedSharedParams.Count}");
+        using var _result = SmartConLogger.BeginScope("Merge", ("Kind", "Result"), ("CatalogItemId", catalogItemId));
+        SmartConLogger.Info($"RESULT: adding={valuesToAdd.Count}, skipped_existing={skippedExisting}, unmatched_shared={unmatchedSharedParams.Count}");
         if (valuesToAdd.Count > 0)
         {
             await _valueRepository.SaveValuesAsync(valuesToAdd, ct);

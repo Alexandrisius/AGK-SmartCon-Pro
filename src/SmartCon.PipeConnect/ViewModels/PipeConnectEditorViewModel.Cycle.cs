@@ -16,6 +16,8 @@ public sealed partial class PipeConnectEditorViewModel
     [RelayCommand(CanExecute = nameof(CanCycleConnector))]
     private void CycleConnector()
     {
+        using var _scope = SmartConLogger.BeginScope("EditorCycle",
+            ("Method", "CycleConnector"));
         if (_cycleService.State.Count <= 1) return;
 
         var target = _cycleService.State.FindNext();
@@ -46,9 +48,9 @@ public sealed partial class PipeConnectEditorViewModel
 
             _chainDisabledByCycle = IsChainConnector(target.ConnectorIndex);
             if (_chainDisabledByCycle)
-                SmartConLogger.Info($"[CycleConnector] Connector {target.ConnectorIndex} is chain connector — chain disabled");
+                SmartConLogger.Info($"Connector {target.ConnectorIndex} is chain connector — chain disabled");
             else
-                SmartConLogger.Info($"[CycleConnector] Connector {target.ConnectorIndex} is NOT chain connector — chain preserved");
+                SmartConLogger.Info($"Connector {target.ConnectorIndex} is NOT chain connector — chain preserved");
 
             _activeChainPlan = null;
             UpdateChainUI();
@@ -61,7 +63,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[CycleConnector] Failed: {ex.Message}");
+            SmartConLogger.Error($"Failed: {ex.Message}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
@@ -74,9 +76,11 @@ public sealed partial class PipeConnectEditorViewModel
 
     private void RollbackChainLevels()
     {
+        using var _scope = SmartConLogger.BeginScope("EditorCycle",
+            ("Method", "RollbackChainLevels"));
         if (ChainDepth <= 0 || _chainGraph is null) return;
 
-        SmartConLogger.Info($"[RollbackChainLevels] Rolling back {ChainDepth} chain levels before alignment");
+        SmartConLogger.Info($"Rolling back {ChainDepth} chain levels before alignment");
 
         try
         {
@@ -89,7 +93,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[RollbackChainLevels] Error (ignored): {ex.Message}");
+            SmartConLogger.Warn($"Error (ignored): {ex.Message}");
             ChainDepth = 0;
         }
 
@@ -100,7 +104,7 @@ public sealed partial class PipeConnectEditorViewModel
     {
         if (targetDepth <= 0 || _chainGraph is null) return;
 
-        SmartConLogger.Info($"[RestoreChainLevels] Restoring {targetDepth} chain levels after cancel");
+        SmartConLogger.Info($"Restoring {targetDepth} chain levels after cancel");
 
         try
         {
@@ -116,7 +120,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[RestoreChainLevels] Error (ignored): {ex.Message}");
+            SmartConLogger.Warn($"Error (ignored): {ex.Message}");
         }
 
         _chainDisabledByCycle = false;
@@ -133,7 +137,7 @@ public sealed partial class PipeConnectEditorViewModel
 
     private void RollbackCycleAlignment(ConnectorProxy previousConnector, ConnectorProxy alignTarget)
     {
-        SmartConLogger.Info($"[RollbackCycleAlignment] Re-aligning to previous connector {previousConnector.ConnectorIndex}");
+        SmartConLogger.Info($"Re-aligning to previous connector {previousConnector.ConnectorIndex}");
 
         var dynId = previousConnector.OwnerElementId;
 
@@ -181,7 +185,7 @@ public sealed partial class PipeConnectEditorViewModel
         var selected = _dialogSvc.ShowMiniTypeSelector(types);
         if (selected is null)
         {
-            SmartConLogger.Info("[CycleConnector] User cancelled MiniTypeSelector — rolling back");
+            SmartConLogger.Info("User cancelled MiniTypeSelector — rolling back");
             return false;
         }
 
@@ -199,7 +203,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             var ctc = new ConnectionTypeCode(selected.Code);
             _virtualCtcStore.Set(proxy.OwnerElementId, proxy.ConnectorIndex, ctc, selected);
-            SmartConLogger.Info($"[CycleConnector] Virtual CTC for {proxy.OwnerElementId.GetValue()}:{proxy.ConnectorIndex} = {selected.Code}.{selected.Name}");
+            SmartConLogger.Info($"Virtual CTC for {proxy.OwnerElementId.GetValue()}:{proxy.ConnectorIndex} = {selected.Code}.{selected.Name}");
         }
 
         return true;
@@ -250,7 +254,7 @@ public sealed partial class PipeConnectEditorViewModel
         var newCtc = GetEffectiveCtcForConnector(_activeDynamic);
         var staticCtc = _ctx.StaticConnector.ConnectionTypeCode;
 
-        SmartConLogger.Info($"[ReevaluateAfterCycle] New dynamic CTC={newCtc.Value}, Static CTC={staticCtc.Value}, " +
+        SmartConLogger.Info($"New dynamic CTC={newCtc.Value}, Static CTC={staticCtc.Value}, " +
             $"Radius={_activeDynamic.Radius * Core.Units.FeetToMm:F1}mm");
 
         var proposed = _fittingMapper.GetMappings(staticCtc, newCtc);
@@ -271,7 +275,7 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (_currentFittingId is not null)
         {
-            SmartConLogger.Info("[ReevaluateAfterCycle] Deleting old fitting before re-insert");
+            SmartConLogger.Info("Deleting old fitting before re-insert");
             _groupSession!.RunInTransaction("Tx_CleanupOldFitting", doc =>
             {
                 _fittingInsertSvc.DeleteElement(doc, _currentFittingId);
@@ -283,7 +287,7 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (_primaryReducerId is not null)
         {
-            SmartConLogger.Info("[ReevaluateAfterCycle] Deleting old reducer before re-insert");
+            SmartConLogger.Info("Deleting old reducer before re-insert");
             _groupSession!.RunInTransaction("Tx_CleanupOldReducer", doc =>
             {
                 _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
@@ -346,7 +350,7 @@ public sealed partial class PipeConnectEditorViewModel
             needsReducer = Math.Abs(dynRadius - staticRadius) > radiusEps;
 
             if (needsReducer)
-                SmartConLogger.Info($"[CheckReducerAfterCycle] Radii mismatch: dyn={dynRadius * Core.Units.FeetToMm:F1}mm, " +
+                SmartConLogger.Info($"Radii mismatch: dyn={dynRadius * Core.Units.FeetToMm:F1}mm, " +
                     $"static={staticRadius * Core.Units.FeetToMm:F1}mm → reducer needed");
         }
 
@@ -364,7 +368,7 @@ public sealed partial class PipeConnectEditorViewModel
             else
             {
                 IsReducerVisible = true;
-                SmartConLogger.Warn("[CheckReducerAfterCycle] Reducer needed but no reducer families found");
+                SmartConLogger.Warn("Reducer needed but no reducer families found");
             }
         }
         else
@@ -374,3 +378,4 @@ public sealed partial class PipeConnectEditorViewModel
         }
     }
 }
+

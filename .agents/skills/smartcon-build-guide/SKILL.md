@@ -64,15 +64,44 @@ dotnet restore src/SmartCon.App/SmartCon.App.csproj
 dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R25
 ```
 
-### 3. TFM Switch = Force Restore
-When switching between net8 and net48 configurations:
-```bash
-# net8 → net48: MUST restore with config
-dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R24
+### 3. TFM Switch = NEVER Use `--no-restore`
 
-# net48 → net8: MUST restore with config
-dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R25
+`Nice3point.Revit.Api.RevitAPI` is pulled with `VersionOverride` that depends
+on `$(RevitVersion)`. Each configuration must produce a fresh
+`obj/project.assets.json` that targets the right Revit API year (2021.*,
+2022.*, 2025.*). Once an `assets.json` is written, it is reused on the
+next build **regardless of the new `-c` flag** unless you re-restore.
+
+**This is why `build-and-deploy.bat` runs `dotnet build` WITHOUT
+`--no-restore` for every configuration** (lines 29, 35, 41, 47): the
+restore step is part of the build, and produces a clean assets file.
+
+```bash
+# WRONG — assets.json from previous config is reused, R21 build
+# sees the R25 RevitAPI and explodes with CS0246 ForgeTypeId (added
+# in Revit 2022, not in 2021.*).
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21 --no-restore
+#                            ^^^^^^^^^^^^^^^^^^^^^^ NEVER do this
+
+# WRONG — separate restore of a different config writes assets.json
+# for that config, then subsequent --no-restore build of yet another
+# config reuses the wrong assets.
+dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R24
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21 --no-restore
+
+# CORRECT — restore is part of every build, just like build-and-deploy.bat
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19
 ```
+
+**Heuristic for the agent:** if you are about to run
+`dotnet build … --no-restore`, you are doing it wrong. The only time
+`--no-restore` is acceptable is the SECOND build of the **same**
+configuration in a row (e.g. after fixing a typo in a source file).
+Switching `-c` always requires a fresh restore.
 
 ### 4. Build App Project, NOT Solution
 ```bash

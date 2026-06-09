@@ -1,7 +1,23 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace SmartCon.Core.Logging;
 
+/// <summary>
+/// Application-wide structured logger. Writes to two files under
+/// <c>%AppData%\AGK\SmartCon\</c>:
+/// <list type="bullet">
+///   <item><c>smartcon.log</c> — main event log (Info/Warn/Error, plus
+///     Debug when enabled). 5 MB rotation, 3 .bak generations.</item>
+///   <item><c>formula-diagnostic.log</c> — append-only trace of every
+///     Revit formula the engine sees (resolved / unresolved / failed).
+///     No rotation: this file is intentionally cumulative so we can
+///     collect statistics on which formulas the PipeConnect module
+///     encounters and how each one was resolved.</item>
+/// </list>
+/// Active <see cref="LogScope"/> instances decorate every line with
+/// <c>[OpId=… Op=…]</c> for correlation across awaits and threads.
+/// </summary>
 public static class SmartConLogger
 {
     private static readonly string LogDir = Path.Combine(
@@ -9,9 +25,7 @@ public static class SmartConLogger
         "AGK", "SmartCon");
 
     private static readonly string LogPath = Path.Combine(LogDir, "smartcon.log");
-    private static readonly string LookupLogPath = Path.Combine(LogDir, "lookup-diagnostic.log");
     private static readonly string FormulaLogPath = Path.Combine(LogDir, "formula-diagnostic.log");
-    private static readonly string FreezeLogPath = Path.Combine(LogDir, "freeze-diagnostic.log");
 
     private static readonly object _lock = new();
 
@@ -37,7 +51,7 @@ public static class SmartConLogger
 #endif
     }
 
-    private static LogLevel _minLevel = ResolveInitialMinLevel();
+    private static volatile LogLevel _minLevel = ResolveInitialMinLevel();
 
     private static LogLevel ResolveInitialMinLevel()
     {
@@ -64,9 +78,7 @@ public static class SmartConLogger
     }
 
     private static StreamWriter? _mainWriterField;
-    private static StreamWriter? _lookupWriterField;
     private static StreamWriter? _formulaWriterField;
-    private static StreamWriter? _freezeWriterField;
 
     static SmartConLogger()
     {
@@ -78,7 +90,7 @@ public static class SmartConLogger
         => new StreamWriter(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
         { AutoFlush = true };
 
-       public static void TruncateMainLog()
+    public static void TruncateMainLog()
     {
         lock (_lock)
         {
@@ -144,15 +156,31 @@ public static class SmartConLogger
         WriteMain("INF", header);
         WriteMain("INF", line);
         WriteMain("INF", header);
-        WriteLookup("INF", header);
-        WriteLookup("INF", line);
-        WriteLookup("INF", header);
         WriteFormula("INF", header);
         WriteFormula("INF", line);
         WriteFormula("INF", header);
     }
 
-    public static void Lookup(string message) => WriteLookup("LKP", message);
+    /// <summary>
+    /// Close a session previously opened by <see cref="LogSessionStart"/>.
+    /// Emits a matching <c>SESSION END</c> banner into both log files with
+    /// the timestamp at which the session ended. The duration since
+    /// <see cref="LogSessionStart"/> is shown in seconds (rounded to
+    /// milliseconds) so an operator can grep the file for the session
+    /// lifecycle at a glance.
+    /// </summary>
+    public static void LogSessionEnd(string commandName, DateTime startedAt)
+    {
+        var header = new string('=', 70);
+        var duration = (DateTime.Now - startedAt).TotalSeconds;
+        var line = $"SESSION END:   {commandName}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]  duration={duration:F3}s";
+        WriteMain("INF", header);
+        WriteMain("INF", line);
+        WriteMain("INF", header);
+        WriteFormula("INF", header);
+        WriteFormula("INF", line);
+        WriteFormula("INF", header);
+    }
 
     public static void Formula(string message) => WriteFormula("FRM", message);
 
@@ -161,115 +189,42 @@ public static class SmartConLogger
         WriteFormula(" OK", $"[{operation}] '{formula}' → {detail}");
     }
 
-    public static void Freeze(string message) => WriteFreeze("FRZ", message);
-
-    public static void FreezeThreadPool(string operation)
-    {
-        ThreadPool.GetMaxThreads(out var maxWorker, out var maxIo);
-        ThreadPool.GetAvailableThreads(out var availWorker, out var availIo);
-        ThreadPool.GetMinThreads(out var minWorker, out var minIo);
-
-        WriteFreeze("THR", $"[{operation}] ThreadPool — Available: {availWorker}/{maxWorker} workers, {availIo}/{maxIo} IO | Min: {minWorker}/{minIo}");
-    }
-
-    public static void FreezeTimer(string operation, Action action)
-    {
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            action();
-            WriteFreeze("TIM", $"[{operation}] Completed in {sw.Elapsed.TotalMilliseconds:F1}ms");
-        }
-        catch (Exception ex)
-        {
-            WriteFreeze("ERR", $"[{operation}] Failed after {sw.Elapsed.TotalMilliseconds:F1}ms: {ex.Message}");
-            throw;
-        }
-    }
-
-    public static T FreezeTimer<T>(string operation, Func<T> func)
-    {
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            var result = func();
-            WriteFreeze("TIM", $"[{operation}] Completed in {sw.Elapsed.TotalMilliseconds:F1}ms");
-            return result;
-        }
-        catch (Exception ex)
-        {
-            WriteFreeze("ERR", $"[{operation}] Failed after {sw.Elapsed.TotalMilliseconds:F1}ms: {ex.Message}");
-            throw;
-        }
-    }
-
     public static void FormulaFail(string operation, string formula, string reason)
     {
         WriteFormula("FAIL", $"[{operation}] '{formula}' → {reason}");
     }
 
+    /// <summary>
+    /// Open a structured logging scope. Every log line written while the
+    /// scope is open (including across <c>await</c> boundaries) is prefixed
+    /// with <c>[OpId=… Op=…]</c> and the supplied <paramref name="properties"/>.
+    /// Dispose the returned <see cref="IDisposable"/> to close the scope
+    /// and emit the elapsed-time footer.
+    /// </summary>
     public static IDisposable BeginScope(string operation, params (string Key, object? Value)[] properties)
     {
-        return new LogScope(operation, properties);
+        var opId = Guid.NewGuid().ToString("N")[..8];
+        var scope = new LogScope(operation, properties, opId);
+        WriteMain("INF", $"{scope.FormatPrefix()} === START ===");
+        return LogScopeProvider.Push(scope);
     }
 
-    public static IDisposable Measure(string operation)
+    /// <summary>
+    /// Open a scope that records elapsed time on dispose, but does not
+    /// emit a START/END pair (suitable for fire-and-forget timers that
+    /// just want the <c>elapsed=</c> footer line). Returns a
+    /// <see cref="MeasureScope"/> which is <see cref="IDisposable"/> and
+    /// also exposes <see cref="MeasureScope.GetElapsedMilliseconds"/>
+    /// for callers that want to read the elapsed time before the scope
+    /// is disposed.
+    /// </summary>
+    public static MeasureScope Measure(string operation)
     {
-        return new TimedScope(operation);
-    }
-
-    private sealed class LogScope : IDisposable
-    {
-        private readonly string _operation;
-        private readonly string _opId;
-        private readonly (string Key, object? Value)[] _properties;
-        private readonly Stopwatch _sw;
-        private bool _disposed;
-
-        public LogScope(string operation, (string Key, object? Value)[] properties)
-        {
-            _operation = operation;
-            _opId = Guid.NewGuid().ToString("N")[..8];
-            _properties = properties;
-            _sw = Stopwatch.StartNew();
-            WriteMain("INF", $"[OpId={_opId}] === START {_operation} ==={FormatProps()}");
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-            _sw.Stop();
-            WriteMain("INF", $"[OpId={_opId}] === END {_operation} elapsed={_sw.Elapsed.TotalMilliseconds:F1}ms ===");
-        }
-
-        private string FormatProps()
-        {
-            if (_properties is null || _properties.Length == 0) return string.Empty;
-            return " " + string.Join(" ", _properties.Select(p => $"{p.Key}={p.Value}"));
-        }
-    }
-
-    private sealed class TimedScope : IDisposable
-    {
-        private readonly string _operation;
-        private readonly Stopwatch _sw;
-        private bool _disposed;
-
-        public TimedScope(string operation)
-        {
-            _operation = operation;
-            _sw = Stopwatch.StartNew();
-            WriteFreeze("TIM", $"[{operation}] Started");
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-            _sw.Stop();
-            WriteFreeze("TIM", $"[{_operation}] Completed in {_sw.Elapsed.TotalMilliseconds:F1}ms");
-        }
+        var sw = Stopwatch.StartNew();
+        var opId = Guid.NewGuid().ToString("N")[..8];
+        var scope = new MeasureScope(operation, Array.Empty<(string Key, object? Value)>(), opId, sw);
+        LogScopeProvider.Push(scope);
+        return scope;
     }
 
     private static void RotateLogIfNeeded()
@@ -316,53 +271,47 @@ public static class SmartConLogger
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Cleanup failed: {ex.Message}"); }
     }
 
-    private static void WriteMain(string level, string message)
+    /// <summary>
+    /// Compose the scope prefix for a write. Joins all active scopes
+    /// (outermost first) with a single space so a deeply-nested call
+    /// shows the full chain: <c>[OpId=… Op=Outer] [OpId=… Op=Inner] message</c>.
+    /// Returns an empty string when no scope is active.
+    /// </summary>
+    private static string ComposeScopePrefix()
+    {
+        var scopes = LogScopeProvider.EnumerateFromRoot().ToList();
+        if (scopes.Count == 0) return string.Empty;
+        var sb = new StringBuilder(scopes.Count * 48);
+        foreach (var s in scopes)
+        {
+            sb.Append(s.FormatPrefix()).Append(' ');
+        }
+        return sb.ToString();
+    }
+
+    internal static void WriteMain(string level, string message)
     {
         try
         {
+            var prefix = ComposeScopePrefix();
             lock (_lock)
             {
                 _mainWriterField ??= CreateWriter(LogPath);
-                _mainWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
+                _mainWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {prefix}{message}");
             }
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
     }
 
-    private static void WriteLookup(string level, string message)
+    internal static void WriteFormula(string level, string message)
     {
         try
         {
-            lock (_lock)
-            {
-                _lookupWriterField ??= CreateWriter(LookupLogPath);
-                _lookupWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
-            }
-        }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
-    }
-
-    private static void WriteFormula(string level, string message)
-    {
-        try
-        {
+            var prefix = ComposeScopePrefix();
             lock (_lock)
             {
                 _formulaWriterField ??= CreateWriter(FormulaLogPath);
-                _formulaWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
-            }
-        }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
-    }
-
-    private static void WriteFreeze(string level, string message)
-    {
-        try
-        {
-            lock (_lock)
-            {
-                _freezeWriterField ??= CreateWriter(FreezeLogPath);
-                _freezeWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {message}");
+                _formulaWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {prefix}{message}");
             }
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }

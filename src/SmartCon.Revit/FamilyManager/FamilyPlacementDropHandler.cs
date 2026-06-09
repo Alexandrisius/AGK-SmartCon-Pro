@@ -2,6 +2,7 @@ using Autodesk.Revit.UI;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Threading;
 
 namespace SmartCon.Revit.FamilyManager;
 
@@ -51,6 +52,9 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
 
     public void Execute(UIDocument document, object data)
     {
+        using var _scope = SmartConLogger.BeginScope("DropHandler",
+            ("Method", "Execute"));
+
         try
         {
             if (data is not FamilyPlacementDragData dragData)
@@ -58,7 +62,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
 
             if (dragData.FamilySource == "system" || !string.IsNullOrEmpty(dragData.UniqueId))
             {
-                SmartConLogger.Info($"[DropHandler] System family: '{dragData.FamilyName}', type: '{dragData.TypeName}' (FamilySource='{dragData.FamilySource}', UniqueId='{dragData.UniqueId}')");
+                SmartConLogger.Info($"System family: '{dragData.FamilyName}', type: '{dragData.TypeName}' (FamilySource='{dragData.FamilySource}', UniqueId='{dragData.UniqueId}')");
                 _systemFamilyPlacementService.LoadAndPlaceSystemType(
                     dragData.CatalogItemId,
                     dragData.TypeName,
@@ -75,17 +79,16 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
 
             var isFamilyLoaded = _searchService.IsFamilyLoaded(familyName);
             var isTypeLoaded = isFamilyLoaded && _searchService.HasFamilyType(familyName, typeName);
-            SmartConLogger.Info($"[DropHandler] Family '{familyName}' loaded: {isFamilyLoaded}, Type '{typeName}' loaded: {isTypeLoaded}");
+            SmartConLogger.Info($"Family '{familyName}' loaded: {isFamilyLoaded}, Type '{typeName}' loaded: {isTypeLoaded}");
 
             if (!isFamilyLoaded || !isTypeLoaded)
             {
-                resolved = Task.Run(() => _fileResolver
-                    .ResolveForLoadAsync(dragData.CatalogItemId, _targetRevitVersion, CancellationToken.None))
-                    .GetAwaiter().GetResult();
+                resolved = AsyncBridge.RunSync(() => _fileResolver
+                    .ResolveForLoadAsync(dragData.CatalogItemId, _targetRevitVersion, CancellationToken.None));
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
-                    SmartConLogger.Warn($"[DropHandler] No file resolved for '{familyName}'");
+                    SmartConLogger.Warn($"No file resolved for '{familyName}'");
                     return;
                 }
 
@@ -103,19 +106,19 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                 if (!result.Success)
                 {
                     var errorMsg = $"Failed to load '{familyName}': {result.ErrorMessage}";
-                    SmartConLogger.Warn($"[DropHandler] {errorMsg}");
+                    SmartConLogger.Warn(errorMsg);
                     _onError?.Invoke(errorMsg);
                     return;
                 }
 
-                SmartConLogger.Info($"[DropHandler] Loaded successfully: {result.Status} - {result.Message}");
+                SmartConLogger.Info($"Loaded successfully: {result.Status} - {result.Message}");
             }
 
             var placementSuccess = _placementService.ActivateAndPlaceType(familyName, typeName);
             if (!placementSuccess)
             {
                 var errorMsg = $"Failed to activate type '{typeName}' for placement";
-                SmartConLogger.Warn($"[DropHandler] {errorMsg}");
+                SmartConLogger.Warn(errorMsg);
                 _onError?.Invoke(errorMsg);
                 return;
             }

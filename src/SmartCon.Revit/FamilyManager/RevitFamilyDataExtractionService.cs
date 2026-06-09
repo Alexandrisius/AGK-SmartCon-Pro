@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
@@ -17,6 +18,9 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
 
     public FamilyExtractionResult Extract(string rfaFilePath, IReadOnlyList<string> expectedParameterNames)
     {
+        using var _scope = SmartConLogger.BeginScope("FamilyDataExt",
+            ("Method", "Extract"),
+            ("RfaFileName", Path.GetFileName(rfaFilePath)));
         var doc = _revitContext.GetDocument();
         var app = doc.Application;
 
@@ -41,7 +45,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"Extract failed for '{rfaFilePath}': {ex.Message}");
+            SmartConLogger.Warn($"Extract failed for '{Path.GetFileName(rfaFilePath)}': {ex.Message}");
             return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion);
         }
         finally
@@ -54,7 +58,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"Failed to close family document '{rfaFilePath}': {ex.Message}");
+                    SmartConLogger.Warn($"Failed to close family document '{Path.GetFileName(rfaFilePath)}': {ex.Message}");
                 }
 
                 try
@@ -63,7 +67,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Info($"Marshal.ReleaseComObject skipped for '{rfaFilePath}' (Document is not a real COM object in Revit API): {ex.Message}");
+                    SmartConLogger.Info($"Marshal.ReleaseComObject skipped (Document is not a real COM object in Revit API): {ex.Message} (param={ex.GetType().GetProperty("ParamName")?.GetValue(ex) ?? "<n/a>"})");
                 }
             }
         }
@@ -144,7 +148,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
         }
         else
         {
-            SmartConLogger.Info($"[Extract] fm.Types.Size=0 — creating temporary type to read parameter values");
+            SmartConLogger.Info($"fm.Types.Size=0 — creating temporary type to read parameter values");
 
             // I-03b: family document — separate Transaction scope, not managed by ITransactionService.
             // We create a temporary type to force Revit to materialize the hidden default parameter values,
@@ -159,7 +163,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"[Extract] Failed to create temporary type: {ex.Message}");
+                    SmartConLogger.Warn($"Failed to create temporary type: {ex.Message}");
                 }
 
                 if (tempType is not null)
@@ -183,7 +187,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values))
             .ToList();
 
-        SmartConLogger.Info($"[Extract] RESULT: {types.Count} named types, UntypedValues={(untypedValues is not null ? untypedValues.Count.ToString() : "null")}");
+        SmartConLogger.Info($"RESULT: {types.Count} named types, UntypedValues={(untypedValues is not null ? untypedValues.Count.ToString() : "null")}");
 
         return new FamilyExtractionResult(true, types, untypedValues, null, revitMajorVersion);
     }
@@ -276,3 +280,4 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
 
 
 }
+

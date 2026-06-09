@@ -18,6 +18,8 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanImportFiles))]
     private async Task ImportFilesAsync()
     {
+        using var _scope = SmartConLogger.BeginScope("FMImport",
+            ("Method", "ImportFilesAsync"));
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import Files";
         var paths = _dialogService.ShowImportFilesDialog(title);
         if (paths is null || paths.Length == 0) return;
@@ -99,7 +101,7 @@ public sealed partial class FamilyManagerMainViewModel
                             }
                             catch (Exception ex)
                             {
-                                SmartConLogger.Warn($"[BatchImport] Failed to resolve category name for '{existingCategoryId}': {ex.Message}");
+                                SmartConLogger.Warn($"Failed to resolve category name for '{existingCategoryId}': {ex.Message}");
                             }
                         }
                         items.Add(new FamilyBatchImportItem(
@@ -347,7 +349,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[ImportSelectedElements] failed: {ex.Message}");
+            SmartConLogger.Error($"failed: {ex.Message}");
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Ошибка импорта: {0}",
                 ex.Message);
@@ -759,7 +761,7 @@ public sealed partial class FamilyManagerMainViewModel
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn(
-                        $"[BatchImport] Failed to resolve category name for existing system item '{existingId}': {ex.Message}");
+                        $"Failed to resolve category name for existing system item '{existingId}': {ex.Message}");
                 }
             }
             if (cat is not null)
@@ -804,7 +806,7 @@ public sealed partial class FamilyManagerMainViewModel
         // Debug so it can be enabled with SmartConLogger.DebugEnabled for
         // field debugging without polluting production logs.
         SmartConLogger.Debug(
-            $"[LoadableRow] file='{stagedBaseName}' normalized='{normalizedName}' " +
+            $"file='{stagedBaseName}' normalized='{normalizedName}' " +
             $"byHash={(existingByHash is null ? "null" : "hit")} " +
             $"byName={(existingByName is null ? "null" : $"Id={existingByName.Id} CatId={existingByName.CategoryId ?? "<null>"} CatPath={existingByName.CategoryPath ?? "<null>"}")}");
 
@@ -873,7 +875,7 @@ public sealed partial class FamilyManagerMainViewModel
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn(
-                        $"[BatchImport] Failed to resolve category name for existing item '{existingId}': {ex.Message}");
+                        $"Failed to resolve category name for existing item '{existingId}': {ex.Message}");
                 }
             }
             if (cat is not null)
@@ -908,13 +910,13 @@ public sealed partial class FamilyManagerMainViewModel
         if (family is null)
         {
             SmartConLogger.Warn(
-                $"[LoadableStage] Family '{info.FamilyName}' (uid='{info.FamilyUniqueId}') not found in active project");
+                $"Family '{info.FamilyName}' (uid='{info.FamilyUniqueId}') not found in active project");
             return null;
         }
         if (family.IsInPlace)
         {
             SmartConLogger.Warn(
-                $"[LoadableStage] Skipping in-place family '{info.FamilyName}'");
+                $"Skipping in-place family '{info.FamilyName}'");
             return null;
         }
 
@@ -925,7 +927,7 @@ public sealed partial class FamilyManagerMainViewModel
             if (familyDoc is null || !familyDoc.IsFamilyDocument)
             {
                 SmartConLogger.Warn(
-                    $"[LoadableStage] EditFamily returned null/non-family for '{info.FamilyName}'");
+                    $"EditFamily returned null/non-family for '{info.FamilyName}'");
                 return null;
             }
 
@@ -946,13 +948,13 @@ public sealed partial class FamilyManagerMainViewModel
 
             familyDoc.SaveAs(rfaPath, new SaveAsOptions { OverwriteExistingFile = true });
             SmartConLogger.Debug(
-                $"[LoadableStage] Staged '{info.FamilyName}' → '{rfaPath}'");
+                $"Staged '{info.FamilyName}' → '{rfaPath}'");
             return rfaPath;
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn(
-                $"[LoadableStage] Failed to stage '{info.FamilyName}': {ex.Message}");
+                $"Failed to stage '{info.FamilyName}': {ex.Message}");
             return null;
         }
         finally
@@ -980,3 +982,4 @@ public sealed partial class FamilyManagerMainViewModel
         return sb.ToString();
     }
 }
+

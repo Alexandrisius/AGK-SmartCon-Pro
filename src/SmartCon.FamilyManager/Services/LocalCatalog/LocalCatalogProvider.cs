@@ -161,12 +161,14 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             }
             catch (IOException ex) when (i < maxRetries - 1)
             {
-                SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed to delete directory '{path}': {ex.Message}. Retrying...");
+                using var _scope = SmartConLogger.BeginScope("FM Delete", ("Path", path), ("Attempt", i + 1));
+                SmartConLogger.Warn($"failed to delete directory: {ex.Message}. Retrying...");
                 await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException ex) when (i < maxRetries - 1)
             {
-                SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed (access denied) for '{path}': {ex.Message}. Retrying...");
+                using var _scope = SmartConLogger.BeginScope("FM Delete", ("Path", path), ("Attempt", i + 1));
+                SmartConLogger.Warn($"failed (access denied): {ex.Message}. Retrying...");
                 await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
             }
         }

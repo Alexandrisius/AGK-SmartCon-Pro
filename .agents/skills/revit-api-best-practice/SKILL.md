@@ -175,3 +175,20 @@ private void OpenDialog()
 **Symptoms:** UI "alive" (clicks work, window moves) but doesn't redraw after family upgrade dialog. Process closes normally.  
 **Fix:** Move ALL `PropertyChanged` (StatusMessage, IsLoading with XAML binding) inside `ExternalEvent` handler. Never use `FireAndForget(async)` before `ExternalEvent` with MFC dialog.  
 **Details:** [WPF MFC Render Freeze](references/wpf-mfc-render-freeze.md)
+
+### IDropHandler.Execute + LoadFamily Async Pattern (CRITICAL)
+
+**Affected:** `IDropHandler.Execute` calling `IFamilyLoadService.LoadFamilyAsync` / `LoadFamilySymbolAsync`  
+**Symptoms:** "Failed to register a managed object" or "The calling thread cannot access this object because a different thread owns it" when wrapped in `AsyncBridge.RunSync(() => LoadFamilyAsync(...))` (= `Task.Run`).  
+**Root cause:** `IFamilyLoadService.LoadFamilyAsync` is a sync wrapper that internally calls `doc.LoadFamily` / `doc.LoadFamilySymbol` (Revit API, main UI thread only). `AsyncBridge.RunSync` (= `Task.Run` + `GetResult`) shifts the call to ThreadPool → Revit API on non-main thread → crash.  
+**Fix:** Do NOT wrap Revit API in `AsyncBridge.RunSync`. Use `.GetAwaiter().GetResult()` directly — it's deadlock-free because the underlying method is `Task.FromResult(...)` with no real `await`.  
+**Real example (feature/logging-improvements B1 fix):**
+```csharp
+// WRONG — Task.Run + Revit API = crash
+result = AsyncBridge.RunSync(() => _loadService.LoadFamilyAsync(resolved, options, _onStatusMessage, ct));
+
+// CORRECT — sync-on-sync on main thread, no deadlock
+result = _loadService.LoadFamilyAsync(resolved, options, _onStatusMessage, ct).GetAwaiter().GetResult();
+```
+**Decision rule:** `AsyncBridge.RunSync` is SAFE only for true async I/O (SQLite, file, HTTP). It is DANGEROUS for any method that internally calls Revit API. See `AsyncBridge.cs` XML doc for the full SAFE/DANGEROUS table.  
+**Details:** [Async & Threading](references/async-threading-patterns.md) (Mistake 1)

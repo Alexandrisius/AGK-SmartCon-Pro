@@ -69,7 +69,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"RevitFamilyPlacementDragService.DoDragDrop failed: {ex}");
+            SmartConLogger.Error($"RevitFamilyPlacementDragService.DoDragDrop: failed: {ex}");
         }
     }
 

@@ -22,6 +22,10 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
 
     public async Task<FamilyResolvedFile> ResolveForLoadAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("FileResolver",
+            ("Method", "ResolveForLoadAsync"),
+            ("CatalogItemId", catalogItemId),
+            ("TargetRevitVersion", targetRevitVersion));
         var dbRoot = _database.GetDatabaseRoot();
         if (string.IsNullOrEmpty(dbRoot))
         {
@@ -47,7 +51,7 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            SmartConLogger.Info($"[FileResolver] No version found for item={catalogItemId}, targetRevit={targetRevitVersion}");
+            SmartConLogger.Info("No version found for targetRevitVersion");
             return new FamilyResolvedFile("", catalogItemId, null, null);
         }
 
@@ -55,19 +59,24 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         var versionId = reader.GetString(1);
         var versionLabel = reader.IsDBNull(2) ? null : reader.GetString(2);
         var absolutePath = Path.Combine(dbRoot, relativePath);
+        var fileName = Path.GetFileName(absolutePath);
 
         if (!File.Exists(absolutePath))
         {
-            SmartConLogger.Info($"[FileResolver] File not found: {absolutePath}");
+            SmartConLogger.Info($"File not found: {fileName}");
             return new FamilyResolvedFile("", catalogItemId, versionId, versionLabel);
         }
 
-        SmartConLogger.Info($"[FileResolver] Resolved: {absolutePath}");
+        SmartConLogger.Info($"Resolved: {fileName}");
         return new FamilyResolvedFile(absolutePath, catalogItemId, versionId, versionLabel);
     }
 
     public async Task<FamilyResolvedFile> ResolveVersionAsync(string catalogItemId, string versionLabel, CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("FileResolver",
+            ("Method", "ResolveVersionAsync"),
+            ("CatalogItemId", catalogItemId),
+            ("VersionLabel", versionLabel));
         var dbRoot = _database.GetDatabaseRoot();
         if (string.IsNullOrEmpty(dbRoot))
         {
@@ -91,21 +100,23 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            SmartConLogger.Info($"[FileResolver] No version found for item={catalogItemId}, version={versionLabel}");
+            SmartConLogger.Info("No version found for versionLabel");
             return new FamilyResolvedFile("", catalogItemId, null, versionLabel);
         }
 
         var relativePath = reader.GetString(0);
         var versionId = reader.GetString(1);
         var absolutePath = Path.Combine(dbRoot, relativePath);
+        var fileName = Path.GetFileName(absolutePath);
 
         if (!File.Exists(absolutePath))
         {
-            SmartConLogger.Info($"[FileResolver] File not found: {absolutePath}");
+            SmartConLogger.Info($"File not found: {fileName}");
             return new FamilyResolvedFile("", catalogItemId, versionId, versionLabel);
         }
 
-        SmartConLogger.Info($"[FileResolver] Resolved version {versionLabel}: {absolutePath}");
+        SmartConLogger.Info($"Resolved version {versionLabel}: {fileName}");
         return new FamilyResolvedFile(absolutePath, catalogItemId, versionId, versionLabel);
     }
 }
+

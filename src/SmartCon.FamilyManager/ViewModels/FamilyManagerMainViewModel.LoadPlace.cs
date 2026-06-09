@@ -238,7 +238,8 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"PlaceType failed: {ex.Message}");
+                using var _scope = SmartConLogger.BeginScope("PlaceType", ("CatalogItemId", catalogItemId));
+                SmartConLogger.Warn($"failed: {ex.Message}");
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                     ex.Message);

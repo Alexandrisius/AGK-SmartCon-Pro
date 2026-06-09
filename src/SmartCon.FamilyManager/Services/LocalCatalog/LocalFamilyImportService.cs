@@ -40,6 +40,10 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
     public async Task<FamilyImportResult> ImportFileAsync(FamilyImportRequest request, CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("LocalImport",
+            ("Method", "ImportFileAsync"),
+            ("FileName", Path.GetFileName(request.FilePath)));
+
         await _migrator.MigrateAsync(ct);
 
         var filePath = request.FilePath;
@@ -63,7 +67,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ? request.FileName!
             : SafeFileName.GetBaseName(filePath);
 
-        SmartConLogger.Debug($"[Import] File: {Path.GetFileName(filePath)} -> displayName='{displayName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
+        SmartConLogger.Debug($"File: {Path.GetFileName(filePath)} -> displayName='{displayName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
 
         var existingItem = await FindByNameAsync(displayName, ct);
         if (existingItem is not null)
@@ -147,7 +151,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"[Import] Type Catalog import failed for {catalogItemId}: {ex.Message}");
+                SmartConLogger.Warn($"Type Catalog import failed for {catalogItemId}: {ex.Message}");
             }
 
             return new FamilyImportResult(
@@ -253,6 +257,10 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         IProgress<FamilyImportProgress>? progress,
         CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("LocalImport",
+            ("Method", "ImportBatchAsync"),
+            ("Count", items.Count));
+
         await _migrator.MigrateAsync(ct);
 
         var results = new List<FamilyImportResult>();
@@ -264,8 +272,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         {
             ct.ThrowIfCancellationRequested();
             var item = items[i];
-            
-            SmartConLogger.Info($"[BatchImport] File: {item.FileName}, Status: {item.Status}, Action: {item.Action}");
+
+            SmartConLogger.Info($"File: {item.FileName}, Status: {item.Status}, Action: {item.Action}");
 
             progress?.Report(new FamilyImportProgress(
                 CurrentFileIndex: i,
@@ -387,6 +395,11 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
     public async Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("LocalImport",
+            ("Method", "UpdateFamilyAsync"),
+            ("CatalogItemId", request.CatalogItemId),
+            ("FileName", Path.GetFileName(request.FilePath)));
+
         await _migrator.MigrateAsync(ct);
 
         var filePath = request.FilePath;
@@ -410,7 +423,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ? request.FileName!
             : SafeFileName.GetBaseName(filePath);
 
-        SmartConLogger.Info($"[Update] File: {Path.GetFileName(filePath)} -> newName='{newName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
+        SmartConLogger.Info($"File: {Path.GetFileName(filePath)} -> newName='{newName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
 
         var currentVersion = await FindCurrentVersionByHashAsync(request.CatalogItemId, sha256, ct);
         if (currentVersion is not null)
@@ -473,7 +486,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"[Update] Type Catalog import failed for {request.CatalogItemId}: {ex.Message}");
+                SmartConLogger.Warn($"Type Catalog import failed for {request.CatalogItemId}: {ex.Message}");
             }
 
             return new FamilyImportResult(
@@ -513,7 +526,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, destFileName);
         var fileName = Path.GetFileName(sourcePath);
 
-        SmartConLogger.Debug($"[Import] Copy: source='{fileName}' -> dest='{destFileName}' (displayName='{displayName}')");
+        SmartConLogger.Debug($"Copy: source='{fileName}' -> dest='{destFileName}' (displayName='{displayName}')");
 
         for (var attempt = 0; attempt < CopyMaxRetries; attempt++)
         {
@@ -544,13 +557,13 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 }
                 catch (IOException attrEx) when (attempt < CopyMaxRetries - 1)
                 {
-                    SmartConLogger.Info($"[Import] SetAttributes failed (attempt {attempt + 1}), retrying: {attrEx.Message}");
+                    SmartConLogger.Info($"SetAttributes failed (attempt {attempt + 1}), retrying: {attrEx.Message}");
                     await Task.Delay(CopyRetryDelaysMs[attempt], ct);
                     continue;
                 }
 
                 var relativePath = _pathResolver.GetRelativePath(absolutePath);
-                SmartConLogger.Debug($"[Import] Copied to managed storage (read-only): {absolutePath}");
+                SmartConLogger.Debug($"Copied to managed storage (read-only): {absolutePath}");
                 return new CopyResult(true, relativePath, null);
             }
             catch (IOException) when (attempt < CopyMaxRetries - 1)
@@ -559,7 +572,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             }
             catch (Exception ex)
             {
-                SmartConLogger.Info($"[Import] Copy FAILED for '{fileName}': {ex.Message}");
+                SmartConLogger.Info($"Copy FAILED for '{fileName}': {ex.Message}");
                 return new CopyResult(false, null, $"Failed to copy file to managed storage: {ex.Message}");
             }
         }

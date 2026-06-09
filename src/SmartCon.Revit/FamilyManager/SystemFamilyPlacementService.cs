@@ -3,6 +3,7 @@ using Autodesk.Revit.UI;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Threading;
 using SmartCon.Revit.Context;
 
 namespace SmartCon.Revit.FamilyManager;
@@ -30,15 +31,15 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
 
         if (uiApp is null || activeDoc is null)
         {
-            SmartConLogger.Freeze("[SystemFamilyPlacement] ABORT: uiApp or activeDoc is null");
+            SmartConLogger.Error("SystemFamilyPlacement.ABORT: uiApp or activeDoc is null");
             return;
         }
 
-        var resolved = _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevitVersion).GetAwaiter().GetResult();
+        var resolved = AsyncBridge.RunSync(() => _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevitVersion));
 
         if (string.IsNullOrEmpty(resolved.AbsolutePath))
         {
-            SmartConLogger.Freeze("[SystemFamilyPlacement] ABORT: No file resolved");
+            SmartConLogger.Error("SystemFamilyPlacement.ABORT: No file resolved");
             return;
         }
 
@@ -49,7 +50,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         }
         catch (Exception ex)
         {
-            SmartConLogger.Freeze($"[SystemFamilyPlacement] OpenDocumentFile failed: {ex.Message}");
+            SmartConLogger.Error($"SystemFamilyPlacement.OpenDocumentFile failed: {ex.Message}");
             return;
         }
 
@@ -58,7 +59,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             var sourceType = FindTypeByName(sourceDoc, typeName);
             if (sourceType is null)
             {
-                SmartConLogger.Freeze($"[SystemFamilyPlacement] Type '{typeName}' not found in source doc");
+                SmartConLogger.Error($"SystemFamilyPlacement: Type '{typeName}' not found in source doc");
                 return;
             }
 

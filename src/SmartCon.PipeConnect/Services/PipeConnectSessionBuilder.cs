@@ -48,6 +48,9 @@ public sealed class PipeConnectSessionBuilder(
     /// </summary>
     public PipeConnectSessionContext? BuildSession(Document doc)
     {
+        using var _scope = SmartConLogger.BeginScope("SessionBuilder",
+            ("Method", "BuildSession"));
+
         // ── S1: Dynamic element ──────────────────────────────────────────────
         var dynamicPick = selectionSvc.PickElementWithFreeConnector(
             LocalizationService.GetString("Pick_FirstElement"));
@@ -120,7 +123,7 @@ public sealed class PipeConnectSessionBuilder(
         var chainPlan = chainResolver.Resolve(
             staticProxy.ConnectionTypeCode, dynamicProxy.ConnectionTypeCode,
             staticProxy.Radius, dynamicProxy.Radius);
-        SmartConLogger.Info($"[S5] ChainPlan: topology={chainPlan.Topology}, links={chainPlan.Links.Count}" +
+        SmartConLogger.Info($"S5: ChainPlan: topology={chainPlan.Topology}, links={chainPlan.Links.Count}" +
             $" (reducers={chainPlan.ReducerCount}, fittings={chainPlan.FittingCount})");
 
         // ── S6: chain graph ──────────────────────────────────────────────────
@@ -129,7 +132,7 @@ public sealed class PipeConnectSessionBuilder(
             staticPick.Value.ElementId
         };
         var chainGraph = chainIterator.BuildGraph(doc, dynamicPick.Value.ElementId, stopAt);
-            SmartConLogger.Info($"[Chain] Graph: {chainGraph.TotalChainElements} elements, " +
+            SmartConLogger.Info($"Chain Graph: {chainGraph.TotalChainElements} elements, " +
                 $"{chainGraph.MaxLevel} {LocalizationService.GetString("Chain_Levels")}");
 
         return new PipeConnectSessionContext
@@ -185,7 +188,7 @@ public sealed class PipeConnectSessionBuilder(
         {
             var ctc = new ConnectionTypeCode(selected.Code);
             virtualCtcStore.Set(proxy.OwnerElementId, proxy.ConnectorIndex, ctc, selected);
-            SmartConLogger.Info($"[CTC] Virtual CTC for {proxy.OwnerElementId.GetValue()}:{proxy.ConnectorIndex} = {selected.Code}.{selected.Name}");
+            SmartConLogger.Info($"Virtual CTC for {proxy.OwnerElementId.GetValue()}:{proxy.ConnectorIndex} = {selected.Code}.{selected.Name}");
         }
 
         return selected;
@@ -196,6 +199,9 @@ public sealed class PipeConnectSessionBuilder(
         ConnectorProxy dynamicProxy,
         double staticRadius)
     {
+        using var _scope = SmartConLogger.BeginScope("S4",
+            ("Method", "BuildResolutionPlan"));
+
         const double eps = 1e-6;
 
         SmartConLogger.DebugSection("BuildResolutionPlan (S4)");
@@ -225,17 +231,17 @@ public sealed class PipeConnectSessionBuilder(
         {
             var constraintStr = string.Join(", ", lookupConstraints.Select(c => $"{c.ParameterName}={c.ValueMm:F0}mm"));
             SmartConLogger.Debug($"  Multi-column constraints: [{constraintStr}]");
-            SmartConLogger.Info($"[S4] [MultiCol] constraints: [{constraintStr}]");
+            SmartConLogger.Info($"Multi-column constraints: [{constraintStr}]");
         }
         else
         {
-            SmartConLogger.Info($"[S4] [MultiCol] constraints: [] (no other connectors with dep)");
+            SmartConLogger.Info("Multi-column constraints: [] (no other connectors with dep)");
         }
 
         if (System.Math.Abs(staticRadius - dynamicProxy.Radius) < eps)
         {
             SmartConLogger.Debug("  → Radii match (< eps) → Plan(Skip=true)");
-            SmartConLogger.Info($"[S4] Radii match, S4 skipped (constraints={lookupConstraints.Count})");
+            SmartConLogger.Info($"Radii match, S4 skipped (constraints={lookupConstraints.Count})");
             return new ParameterResolutionPlan(Skip: true, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: false, WarningMessage: null, LookupConstraints: lookupConstraints);
         }
@@ -247,7 +253,7 @@ public sealed class PipeConnectSessionBuilder(
         if (element is MEPCurve or Autodesk.Revit.DB.Plumbing.FlexPipe)
         {
             SmartConLogger.Debug("  → MEPCurve/FlexPipe: direct write RBS_PIPE_DIAMETER_PARAM → Plan(Skip=false, target=staticRadius)");
-            SmartConLogger.Info($"[S4] MEPCurve DN{dynDn} → DN{staticDn}: direct write");
+            SmartConLogger.Info($"MEPCurve DN{dynDn} → DN{staticDn}: direct write");
             return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: false, WarningMessage: null, LookupConstraints: []);
         }
@@ -270,7 +276,7 @@ public sealed class PipeConnectSessionBuilder(
             if (exactMatch)
             {
                 SmartConLogger.Debug("  → Exact match in table → Plan(Skip=false, target=staticRadius)");
-                SmartConLogger.Info($"[S4] LookupTable: DN{staticDn} found exactly (constraints={lookupConstraints.Count})");
+                SmartConLogger.Info($"LookupTable: DN{staticDn} found exactly (constraints={lookupConstraints.Count})");
                 return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
                     ExpectNeedsAdapter: false, WarningMessage: null, LookupConstraints: lookupConstraints);
             }
@@ -294,7 +300,7 @@ public sealed class PipeConnectSessionBuilder(
                 if (deltaUnconstrained < deltaConstrained - eps)
                 {
                     SmartConLogger.Debug($"  → Pass 2 BETTER: using unconstrained result DN{nearestUncDn}");
-                    SmartConLogger.Info($"[S4] Pass 2 (unconstrained): DN{staticDn} → nearest=DN{nearestUncDn} (other connectors will change)");
+                    SmartConLogger.Info($"Pass 2 (unconstrained): DN{staticDn} → nearest=DN{nearestUncDn} (other connectors will change)");
 
                     bool exactUnc = deltaUnconstrained < eps;
                     return new ParameterResolutionPlan(
@@ -308,7 +314,7 @@ public sealed class PipeConnectSessionBuilder(
             }
 
             SmartConLogger.Debug($"  → Pass 1 result: DN{nearestDn} (constraints={lookupConstraints.Count})");
-            SmartConLogger.Warn($"[S4] LookupTable: DN{staticDn} not found, nearest=DN{nearestDn} (NeedsAdapter)");
+            SmartConLogger.Warn($"LookupTable: DN{staticDn} not found, nearest=DN{nearestDn} (NeedsAdapter)");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: nearest,
                 ExpectNeedsAdapter: true,
@@ -319,7 +325,7 @@ public sealed class PipeConnectSessionBuilder(
         if (dep is null)
         {
             SmartConLogger.Debug("  → No table and no dep → Plan(NeedsAdapter=true, warning)");
-            SmartConLogger.Warn($"[S4] No table, dep=null — S4 failed (NeedsAdapter)");
+            SmartConLogger.Warn("No table, dep=null — S4 failed (NeedsAdapter)");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: true,
@@ -329,7 +335,7 @@ public sealed class PipeConnectSessionBuilder(
 
         bool expectAdapter = !dep.IsInstance && dep.Formula is null;
         SmartConLogger.Debug($"  → Dep found: IsInstance={dep.IsInstance}, Formula='{dep.Formula}' → Plan(target=staticRadius, ExpectNeedsAdapter={expectAdapter})");
-        SmartConLogger.Info($"[S4] dep found: IsInstance={dep.IsInstance}, Formula='{dep.Formula}', DirectParamName='{dep.DirectParamName}', IsDiameter={dep.IsDiameter}");
+        SmartConLogger.Info($"dep found: IsInstance={dep.IsInstance}, Formula='{dep.Formula}', DirectParamName='{dep.DirectParamName}', IsDiameter={dep.IsDiameter}");
         return new ParameterResolutionPlan(Skip: false, TargetRadius: staticRadius,
             ExpectNeedsAdapter: expectAdapter,
             WarningMessage: null,
@@ -341,22 +347,26 @@ public sealed class PipeConnectSessionBuilder(
         ElementId elementId,
         int currentConnectorIndex)
     {
+        using var _scope = SmartConLogger.BeginScope("MultiCol",
+            ("Method", "BuildMultiColumnConstraints"),
+            ("ElementId", elementId.GetValue()));
+
         var constraints = new List<LookupColumnConstraint>();
 
         var element = doc.GetElement(elementId);
         if (element is not FamilyInstance)
         {
-            SmartConLogger.Debug($"  [MultiCol] element is not FamilyInstance → constraints=[]");
+            SmartConLogger.Debug("element is not FamilyInstance → constraints=[]");
             return constraints;
         }
 
         var allConns = connectorSvc.GetAllConnectors(doc, elementId);
-        SmartConLogger.Debug($"  [MultiCol] BuildMultiColumnConstraints: elementId={elementId.GetValue()}, currentConn={currentConnectorIndex}, allConns={allConns.Count}");
-        SmartConLogger.Info($"[S4] [MultiCol] allConns={allConns.Count} for elementId={elementId.GetValue()}, currentConn={currentConnectorIndex}");
+        SmartConLogger.Debug($"BuildMultiColumnConstraints: elementId={elementId.GetValue()}, currentConn={currentConnectorIndex}, allConns={allConns.Count}");
+        SmartConLogger.Info($"allConns={allConns.Count} for elementId={elementId.GetValue()}, currentConn={currentConnectorIndex}");
 
         if (allConns.Count <= 1)
         {
-            SmartConLogger.Debug($"  [MultiCol] Only 1 connector → constraints=[] (single-port element)");
+            SmartConLogger.Debug("Only 1 connector → constraints=[] (single-port element)");
             return constraints;
         }
 
@@ -364,33 +374,33 @@ public sealed class PipeConnectSessionBuilder(
         {
             if (conn.ConnectorIndex == currentConnectorIndex)
             {
-                SmartConLogger.Debug($"    conn[{conn.ConnectorIndex}]: SKIP (current connector)");
+                SmartConLogger.Debug($"conn[{conn.ConnectorIndex}]: SKIP (current connector)");
                 continue;
             }
 
             var deps = paramResolver.GetConnectorRadiusDependencies(doc, elementId, conn.ConnectorIndex);
             if (deps.Count == 0)
             {
-                SmartConLogger.Debug($"    conn[{conn.ConnectorIndex}]: deps=0, radius={conn.Radius * FeetToMm:F2}mm → SKIP (no dep)");
+                SmartConLogger.Debug($"conn[{conn.ConnectorIndex}]: deps=0, radius={conn.Radius * FeetToMm:F2}mm → SKIP (no dep)");
                 continue;
             }
 
             var dep = deps[0];
             var paramName = dep.RootParamName ?? dep.DirectParamName;
-            SmartConLogger.Debug($"    conn[{conn.ConnectorIndex}]: RootParam='{dep.RootParamName}', DirectParam='{dep.DirectParamName}', Formula='{dep.Formula}', radius={conn.Radius * FeetToMm:F2}mm");
+            SmartConLogger.Debug($"conn[{conn.ConnectorIndex}]: RootParam='{dep.RootParamName}', DirectParam='{dep.DirectParamName}', Formula='{dep.Formula}', radius={conn.Radius * FeetToMm:F2}mm");
 
             if (paramName is null)
             {
-                SmartConLogger.Debug($"    conn[{conn.ConnectorIndex}]: paramName=null → SKIP");
+                SmartConLogger.Debug($"conn[{conn.ConnectorIndex}]: paramName=null → SKIP");
                 continue;
             }
 
             var valueMm = System.Math.Round(conn.Radius * 2.0 * FeetToMm);
             constraints.Add(new LookupColumnConstraint(conn.ConnectorIndex, paramName, valueMm));
-            SmartConLogger.Debug($"    conn[{conn.ConnectorIndex}]: → CONSTRAINT: param='{paramName}', DN={valueMm}mm");
+            SmartConLogger.Debug($"conn[{conn.ConnectorIndex}]: → CONSTRAINT: param='{paramName}', DN={valueMm}mm");
         }
 
-        SmartConLogger.Debug($"  [MultiCol] Total constraints: {constraints.Count}");
+        SmartConLogger.Debug($"Total constraints: {constraints.Count}");
         return constraints;
     }
 }

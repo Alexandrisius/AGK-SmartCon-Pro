@@ -25,15 +25,20 @@ internal sealed class ActiveDocumentClassifier : IActiveDocumentClassifier
 
     public Task<ActiveDocumentKind> ClassifyAsync(CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("ActiveClassifier",
+            ("Method", "ClassifyAsync"));
         return _awaitableEvent.RaiseAsync<ActiveDocumentKind>(obj =>
         {
+            using var _uiScope = SmartConLogger.BeginScope("ActiveClassifier",
+                ("Method", "ClassifyAsync"),
+                ("Thread", "RevitUI"));
             try
             {
                 var uiApp = (UIApplication)obj;
                 var activeDoc = uiApp.ActiveUIDocument?.Document;
                 if (activeDoc is null)
                 {
-                    SmartConLogger.Debug("[ActiveClassifier] No active document → None");
+                    SmartConLogger.Debug("No active document → None");
                     return ActiveDocumentKind.None;
                 }
 
@@ -42,7 +47,7 @@ internal sealed class ActiveDocumentClassifier : IActiveDocumentClassifier
                     : ActiveDocumentKind.Project;
 
                 SmartConLogger.Info(
-                    $"[ActiveClassifier] Active doc: title='{activeDoc.Title}', " +
+                    $"Active doc: title='{activeDoc.Title}', " +
                     $"isFamily={activeDoc.IsFamilyDocument} → {kind}");
                 return kind;
             }
@@ -52,7 +57,7 @@ internal sealed class ActiveDocumentClassifier : IActiveDocumentClassifier
                 // coerced to None so the import command can show a
                 // clean error dialog rather than crashing the UI thread.
                 SmartConLogger.Error(
-                    $"[ActiveClassifier] Classification failed: {ex.Message}");
+                    $"Classification failed: {ex.Message}");
                 return ActiveDocumentKind.None;
             }
         }, ct);

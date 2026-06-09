@@ -179,12 +179,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
+    private DateTime _sessionStart = DateTime.MinValue;
+
     private async Task InitializeAsync()
     {
         SmartConLogger.TruncateMainLog();
-        SmartConLogger.Info($"======================================================================");
-        SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
-        SmartConLogger.Info($"======================================================================");
+        _sessionStart = DateTime.Now;
+        SmartConLogger.LogSessionStart($"FamilyManager (Revit {CurrentRevitVersion})");
 
         await _databaseManager.InitializeAsync().ConfigureAwait(true);
         RefreshConnections();
@@ -616,23 +617,25 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private void OnPlacementFailed(string errorMessage)
     {
         StatusMessage = errorMessage;
-        SmartConLogger.Warn($"[PlacementFailed] {errorMessage}");
+        SmartConLogger.Warn($"{errorMessage}");
     }
 
     private void OnPlacementSucceeded(string successMessage)
     {
         StatusMessage = successMessage;
-        SmartConLogger.Info($"[PlacementSucceeded] {successMessage}");
+        SmartConLogger.Info($"{successMessage}");
     }
 
     private void OnPlacementStatusMessage(string statusMessage)
     {
         StatusMessage = statusMessage;
-        SmartConLogger.Info($"[PlacementStatus] {statusMessage}");
+        SmartConLogger.Info($"{statusMessage}");
     }
 
     public void Dispose()
     {
+        using var _scope = SmartConLogger.BeginScope("FMVM",
+            ("Method", "Dispose"));
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
         _placementDragService.PlacementCompleted -= OnPlacementCompleted;
@@ -641,5 +644,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _placementDragService.PlacementStatusMessage -= OnPlacementStatusMessage;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
+        if (_sessionStart != DateTime.MinValue)
+        {
+            SmartConLogger.LogSessionEnd($"FamilyManager (Revit {CurrentRevitVersion})", _sessionStart);
+        }
     }
 }
+

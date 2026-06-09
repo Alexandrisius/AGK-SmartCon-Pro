@@ -68,8 +68,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         if (value is not null)
         {
             SelectedCategoryPath = BuildCategoryPath(value);
-            SmartConLogger.Freeze("CategoryTreeEditor: FireAndForget.LoadAttributesForCategoryAsync");
-            SmartConLogger.FreezeThreadPool("CategoryTreeEditor.Before.FireAndForget");
+            SmartConLogger.Debug("CategoryTreeEditor: FireAndForget.LoadAttributesForCategoryAsync");
+            SmartConLogger.Debug("[ThreadPool] CategoryTreeEditor.Before.FireAndForget");
             FireAndForget(() => LoadAttributesForCategoryAsync(value), nameof(LoadAttributesForCategoryAsync));
         }
         else
@@ -87,6 +87,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
 
     private async Task LoadTreeAsync(CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("CategoryTree",
+            ("Method", "LoadTreeAsync"));
         IReadOnlyList<CategoryNode> nodes = [];
         try
         {
@@ -286,7 +288,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     {
         try
         {
-            SmartConLogger.Info($"[CategoryTreeEditor] OkAsync started. HasUnsavedChanges={HasUnsavedChanges}");
+            SmartConLogger.Info($"OkAsync started. HasUnsavedChanges={HasUnsavedChanges}");
 
             foreach (var node in _pendingCategoryDeletions.Where(n => !n.IsNew))
             {
@@ -403,7 +405,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[CategoryTreeEditor] OkAsync failed: {ex}");
+            SmartConLogger.Error($"OkAsync failed: {ex}");
             StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
         }
     }
@@ -540,3 +542,4 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         });
     }
 }
+

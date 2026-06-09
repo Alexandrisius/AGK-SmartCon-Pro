@@ -48,7 +48,7 @@ public sealed class ElementChainIterator : IElementChainIterator
             }
         }
 
-        SmartConLogger.Info($"[Chain] BuildGraph: start={startElementId.GetValue()}, excludedConnIdx={excludedConnIdx}");
+        SmartConLogger.Info($"BuildGraph: start={startElementId.GetValue()}, excludedConnIdx={excludedConnIdx}");
 
         // 2. BFS по уровням
         List<ElementId> currentLevelIds = [startElementId];
@@ -98,7 +98,8 @@ public sealed class ElementChainIterator : IElementChainIterator
 
         var graph = builder.Build();
 
-        SmartConLogger.Info($"[Chain] BuildGraph done: {graph.TotalChainElements} elements, {graph.MaxLevel} levels");
+        using var _scope = SmartConLogger.BeginScope("Chain", ("Start", startElementId.GetValue()));
+        SmartConLogger.Info($"BuildGraph done: {graph.TotalChainElements} elements, {graph.MaxLevel} levels");
         return graph;
     }
 

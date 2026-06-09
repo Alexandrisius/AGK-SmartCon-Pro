@@ -64,9 +64,13 @@ public sealed class CtcFamilyWriter(
         Document doc, FamilySymbol symbol, List<FittingCtcSetupItem> items,
         ElementId? projectElementId = null)
     {
+        using var _scope = SmartConLogger.BeginScope("CTC",
+            ("Method", "ApplyFittingCtcToFamily"),
+            ("FamilyName", symbol.Family.Name));
+
         if (doc.IsModifiable)
         {
-            SmartConLogger.Warn($"[CTC] ApplyFittingCtcToFamily: doc.IsModifiable=true, skipping write for '{symbol.Family.Name}'");
+            SmartConLogger.Warn($"doc.IsModifiable=true, skipping write for '{symbol.Family.Name}'");
             return;
         }
 
@@ -124,13 +128,13 @@ public sealed class CtcFamilyWriter(
                             if (itemByConnIdx.TryGetValue(pConnIdx, out var item))
                             {
                                 orderMap[origIdx] = item;
-                                SmartConLogger.Info($"[CTC] Order match: connElem[{origIdx}](id={sortedConnElems[i].Id.GetValue()}) ↔ project conn[{pConnIdx}]");
+                                SmartConLogger.Info($"Order match: connElem[{origIdx}](id={sortedConnElems[i].Id.GetValue()}) ↔ project conn[{pConnIdx}]");
                             }
                         }
 
                         if (orderMap.Count == 0)
                         {
-                            SmartConLogger.Warn($"[CTC] Order matching: 0 matches — positional fallback");
+                            SmartConLogger.Warn("Order matching: 0 matches — positional fallback");
                             orderMap = null;
                         }
                     }
@@ -161,7 +165,7 @@ public sealed class CtcFamilyWriter(
             if (anyWritten)
             {
                 familyDoc.LoadFamily(doc, new FamilyLoadOptions());
-                SmartConLogger.Info($"[CTC] CTC written for '{symbol.Family.Name}'");
+                SmartConLogger.Info($"CTC written for '{symbol.Family.Name}'");
             }
         }
         finally
@@ -211,13 +215,13 @@ public sealed class CtcFamilyWriter(
                 && usedItems.Add(nearest.ConnectorIndex))
             {
                 result[i] = item;
-                SmartConLogger.Info($"[CTC] Spatial match: connElem[{i}](id={ce.Id.GetValue()}) ↔ project conn[{nearest.ConnectorIndex}] (dist={minDist * FeetToMm:F2}mm)");
+                SmartConLogger.Info($"Spatial match: connElem[{i}](id={ce.Id.GetValue()}) ↔ project conn[{nearest.ConnectorIndex}] (dist={minDist * FeetToMm:F2}mm)");
             }
         }
 
         if (result.Count != items.Count)
         {
-            SmartConLogger.Warn($"[CTC] Spatial matching: matched {result.Count}/{items.Count} items — fallback to positional");
+            SmartConLogger.Warn($"Spatial matching: matched {result.Count}/{items.Count} items — fallback to positional");
             return null;
         }
 
@@ -263,7 +267,7 @@ public sealed class CtcFamilyWriter(
             }
         }
 
-        SmartConLogger.Info($"[CTC] FlushVirtualCtcToFamilies: written {pendingWrites.Count} CTCs for {byElement.Count} elements");
+        SmartConLogger.Info($"FlushVirtualCtcToFamilies: written {pendingWrites.Count} CTCs for {byElement.Count} elements");
 
         virtualCtcStore.ClearPendingWrites();
     }
@@ -355,7 +359,7 @@ public sealed class CtcFamilyWriter(
         }
         catch (Exception ex)
         {
-            SmartConLogger.Info($"[SetDrivingFamilyParameter] Error (ignored): {ex.Message}");
+            SmartConLogger.Info($"SetDrivingFamilyParameter error (ignored): {ex.Message}");
             return false;
         }
     }

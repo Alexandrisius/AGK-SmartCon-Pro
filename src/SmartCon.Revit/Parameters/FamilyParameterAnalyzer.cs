@@ -37,6 +37,8 @@ internal static class FamilyParameterAnalyzer
                                     bool handFlipped = false,
                                     bool facingFlipped = false)
     {
+        using var _scope = SmartConLogger.BeginScope("FPA",
+            ("Method", "AnalyzeConnectorRadiusParam"));
         // 1. Найти ConnectorElement по ближайшему origin (аналогично RevitFamilyConnectorService)
         SmartConLogger.Debug($"  targetOriginGlobal=({targetOriginGlobal.X:F4}, {targetOriginGlobal.Y:F4}, {targetOriginGlobal.Z:F4})");
 
@@ -100,7 +102,7 @@ internal static class FamilyParameterAnalyzer
         if (targetConnElem is null || bestScore < ConnectorMatchScore.DirectionThreshold)
         {
             SmartConLogger.Debug($"  WARNING: connector not found or score too low ({bestScore:F4} < {ConnectorMatchScore.DirectionThreshold}) → return default");
-            SmartConLogger.Warn($"[FPA] Target connector not found or score too low ({bestScore:F4})");
+            SmartConLogger.Warn($"Target connector not found or score too low ({bestScore:F4})");
             return default;
         }
 
@@ -159,7 +161,7 @@ internal static class FamilyParameterAnalyzer
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"    FP '{fp.Definition?.Name}': AssociatedParameters EXCEPTION: {ex.GetType().Name}: {ex.Message}");
-                SmartConLogger.Warn($"[FPA] AssociatedParameters error for '{fp.Definition?.Name}': {ex.Message}");
+                SmartConLogger.Warn($"AssociatedParameters error for '{fp.Definition?.Name}': {ex.Message}");
             }
 
             if (directFp is not null) break;
@@ -168,7 +170,7 @@ internal static class FamilyParameterAnalyzer
         if (directFp is null)
         {
             SmartConLogger.Debug("  WARNING: FamilyParameter for CONNECTOR_RADIUS/DIAMETER not found in AssociatedParameters → return default");
-            SmartConLogger.Warn("[FPA] No FamilyParameter found for CONNECTOR_RADIUS/DIAMETER");
+            SmartConLogger.Warn("No FamilyParameter found for CONNECTOR_RADIUS/DIAMETER");
             return default;
         }
 
@@ -272,3 +274,4 @@ internal static class FamilyParameterAnalyzer
         return null;
     }
 }
+

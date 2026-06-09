@@ -113,14 +113,16 @@ public sealed partial class FamilyManagerMainViewModel
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"FindInCatalog failed: {ex.Message}");
+                    using var _scope = SmartConLogger.BeginScope("FindInCatalog", ("Stage", "inner"));
+                    SmartConLogger.Warn($"failed: {ex.Message}");
                     StatusMessage = ex.Message;
                 }
             });
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"FindInCatalog outer failed: {ex.Message}");
+            using var _scope = SmartConLogger.BeginScope("FindInCatalog", ("Stage", "outer"));
+            SmartConLogger.Error($"failed: {ex.Message}");
         }
     }
 

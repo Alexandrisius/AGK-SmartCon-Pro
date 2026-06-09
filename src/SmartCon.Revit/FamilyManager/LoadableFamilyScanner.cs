@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -11,8 +10,6 @@ public sealed class LoadableFamilyScanner : ILoadableFamilyScanner
     public IReadOnlyList<LoadableFamilyInfo> GetUniqueFamilies(Document activeDoc)
     {
         if (activeDoc is null) return [];
-
-        var sw = Stopwatch.StartNew();
 
         var uniqueFamilies = new FilteredElementCollector(activeDoc)
             .OfClass(typeof(FamilyInstance))
@@ -32,8 +29,9 @@ public sealed class LoadableFamilyScanner : ILoadableFamilyScanner
             .OrderBy(i => i.FamilyName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        SmartConLogger.Info(
-            $"[LoadableFamilyScanner] Scanned {uniqueFamilies.Count} placed loadable family group(s) in {sw.ElapsedMilliseconds}ms");
+        using var _scope = SmartConLogger.BeginScope("LoadableFamilyScanner",
+            ("Count", uniqueFamilies.Count));
+        SmartConLogger.Debug($"Scanned {uniqueFamilies.Count} placed loadable family group(s)");
 
         return uniqueFamilies;
     }

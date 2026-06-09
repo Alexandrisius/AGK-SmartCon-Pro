@@ -200,12 +200,12 @@ public sealed partial class CategoryTreeEditorViewModel
             StatusMessage = summary;
 
             SmartConLogger.Info(
-                $"[CategoryTreeEditor] ImportFromJson: categories={importedNodes.Count}, " +
+                $"ImportFromJson: categories={importedNodes.Count}, " +
                 $"attributesImported={attributesImported}, pendingBindings={package.Bindings.Count}");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[CategoryTreeEditor] ImportFromJson failed: {ex}");
+            SmartConLogger.Error($"CategoryTreeEditor.ImportFromJson: failed: {ex}");
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}",
                 ex.Message);

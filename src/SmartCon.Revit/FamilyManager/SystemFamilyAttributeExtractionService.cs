@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
@@ -20,6 +21,9 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
 
     public FamilyExtractionResult ExtractFromRvt(string rvtFilePath, IReadOnlyList<string>? typeNames)
     {
+        using var _scope = SmartConLogger.BeginScope("SystemFamilyAttr",
+            ("Method", "ExtractFromRvt"),
+            ("RvtFileName", Path.GetFileName(rvtFilePath)));
         var app = _revitUIContext.GetUIApplication().Application;
         var versionString = _revitContext.GetRevitVersion();
         var revitMajorVersion = int.TryParse(versionString, out var v) ? v : 0;
@@ -42,7 +46,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[SystemFamilyAttr] Extract failed for '{rvtFilePath}': {ex.Message}");
+            SmartConLogger.Warn($"Extract failed for '{Path.GetFileName(rvtFilePath)}': {ex.Message}");
             return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion);
         }
         finally
@@ -55,7 +59,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"Failed to close rvt '{rvtFilePath}': {ex.Message}");
+                    SmartConLogger.Warn($"Failed to close rvt '{Path.GetFileName(rvtFilePath)}': {ex.Message}");
                 }
 
                 try
@@ -64,7 +68,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Info($"Marshal.ReleaseComObject skipped for '{rvtFilePath}' (Document is not a real COM object in Revit API): {ex.Message}");
+                    SmartConLogger.Info($"Marshal.ReleaseComObject skipped (Document is not a real COM object in Revit API): {ex.Message} (param={ex.GetType().GetProperty("ParamName")?.GetValue(ex) ?? "<n/a>"})");
                 }
             }
         }
@@ -85,7 +89,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             .Where(et => et.Category is not null)
             .ToList();
 
-        SmartConLogger.Info($"[SystemFamilyAttr] Project contains {typeCollector.Count} element types. Filter: {requestedSet?.Count.ToString() ?? "none"}");
+        SmartConLogger.Info($"Project contains {typeCollector.Count} element types. Filter: {requestedSet?.Count.ToString() ?? "none"}");
 
         var types = new List<FamilyExtractionTypeValues>();
         var skippedNoMatch = 0;
@@ -118,11 +122,11 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             var missing = requestedSet.Except(foundNames).ToList();
             if (missing.Count > 0)
             {
-                SmartConLogger.Warn($"[SystemFamilyAttr] {missing.Count} requested types not found in rvt: {string.Join(", ", missing)}");
+                SmartConLogger.Warn($"{missing.Count} requested types not found in rvt: {string.Join(", ", missing)}");
             }
         }
 
-        SmartConLogger.Info($"[SystemFamilyAttr] Extracted {sorted.Count} types (skipped {skippedNoMatch} non-matching)");
+        SmartConLogger.Info($"Extracted {sorted.Count} types (skipped {skippedNoMatch} non-matching)");
 
         return new FamilyExtractionResult(true, sorted, null, null, revitMajorVersion);
     }
@@ -219,3 +223,4 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             AttributeValueStatus.Found, null);
     }
 }
+

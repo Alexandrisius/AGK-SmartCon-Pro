@@ -28,9 +28,14 @@ internal sealed partial class LocalFamilyImportService
         string versionLabel,
         CancellationToken ct)
     {
+        using var _scope = SmartConLogger.BeginScope("TypeCatalog",
+            ("Method", "ImportTypeCatalogIfPresentAsync"),
+            ("CatalogItemId", catalogItemId),
+            ("VersionLabel", versionLabel));
+
         SmartConLogger.Debug(
-            $"[TypeCatalog] ImportTypeCatalogIfPresentAsync: source='{sourceFilePath}', " +
-            $"original='{originalSourcePath ?? "<none>"}', catalogItem='{catalogItemId}', version='{versionLabel}'");
+            $"ImportTypeCatalogIfPresentAsync: source='{Path.GetFileName(sourceFilePath)}', " +
+            $"original='{(originalSourcePath is null ? "<none>" : Path.GetFileName(originalSourcePath))}', catalogItem='{catalogItemId}', version='{versionLabel}'");
 
         var sourceTxtPath = Path.ChangeExtension(sourceFilePath, ".txt");
 
@@ -47,13 +52,13 @@ internal sealed partial class LocalFamilyImportService
                 {
                     sourceTxtPath = originalTxtPath;
                     SmartConLogger.Info(
-                        $"[TypeCatalog] Using sidecar from ORIGINAL source (next to '{originalSourcePath}'): " +
+                        $"Using sidecar from ORIGINAL source (next to '{originalSourcePath}'): " +
                         $"{Path.GetFileName(sourceTxtPath)}");
                 }
                 else
                 {
                     SmartConLogger.Debug(
-                        $"[TypeCatalog] No .txt next to original '{originalSourcePath}' — trying previous version");
+                        $"No .txt next to original '{originalSourcePath}' — trying previous version");
                 }
             }
 
@@ -65,13 +70,13 @@ internal sealed partial class LocalFamilyImportService
                 {
                     sourceTxtPath = previousTxtPath;
                     SmartConLogger.Info(
-                        $"[TypeCatalog] Using Type Catalog from previous version: " +
+                        $"Using Type Catalog from previous version: " +
                         $"{Path.GetFileName(sourceTxtPath)}");
                 }
                 else
                 {
                     SmartConLogger.Info(
-                        $"[TypeCatalog] No Type Catalog found for '{catalogItemId}' (no sidecar, no previous version)");
+                        $"No Type Catalog found for '{catalogItemId}' (no sidecar, no previous version)");
                     return;
                 }
             }
@@ -79,7 +84,7 @@ internal sealed partial class LocalFamilyImportService
         else
         {
             SmartConLogger.Info(
-                $"[TypeCatalog] Found sidecar next to import source: {Path.GetFileName(sourceTxtPath)}");
+                $"Found sidecar next to import source: {Path.GetFileName(sourceTxtPath)}");
         }
 
         try
@@ -92,18 +97,18 @@ internal sealed partial class LocalFamilyImportService
             await CopyTypeCatalogWithRetryAsync(sourceTxtPath!, destTxtPath, ct);
 
             var content = await Task.Run(() => ReadTypeCatalogWithEncodingFallback(sourceTxtPath!), ct);
-            
+
             if (content.Length == 0)
             {
-                SmartConLogger.Warn($"[TypeCatalog] File is empty: {Path.GetFileName(sourceTxtPath)}");
+                SmartConLogger.Warn($"File is empty: {Path.GetFileName(sourceTxtPath)}");
                 return;
             }
-            
+
             var parseResult = TypeCatalogParser.Parse(content);
 
             if (!parseResult.HasEntries)
             {
-                SmartConLogger.Warn($"[TypeCatalog] Parsed 0 entries from {Path.GetFileName(sourceTxtPath)}");
+                SmartConLogger.Warn($"Parsed 0 entries from {Path.GetFileName(sourceTxtPath)}");
                 return;
             }
 
@@ -136,7 +141,7 @@ internal sealed partial class LocalFamilyImportService
                 if (!seenTypeNames.Add(entry.TypeName))
                 {
                     duplicateCount++;
-                    SmartConLogger.Warn($"[TypeCatalog] Duplicate type name '{entry.TypeName}' at index {i}, skipping (keeping first occurrence)");
+                    SmartConLogger.Warn($"Duplicate type name '{entry.TypeName}' at index {i}, skipping (keeping first occurrence)");
                     continue;
                 }
 
@@ -176,17 +181,17 @@ internal sealed partial class LocalFamilyImportService
 
             if (duplicateCount > 0)
             {
-                SmartConLogger.Info($"[TypeCatalog] Skipped {duplicateCount} duplicate type(s), imported {types.Count} unique types");
+                SmartConLogger.Info($"Skipped {duplicateCount} duplicate type(s), imported {types.Count} unique types");
             }
 
             await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, null, runId, types, ct);
             await _valueRepository.ReplaceSnapshotAsync(catalogItemId, versionId, runId, values, ct);
 
-            SmartConLogger.Info($"[TypeCatalog] Imported {types.Count} types from '{Path.GetFileName(sourceTxtPath)}' for catalog item {catalogItemId}");
+            SmartConLogger.Info($"Imported {types.Count} types from '{Path.GetFileName(sourceTxtPath)}' for catalog item {catalogItemId}");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[TypeCatalog] Failed to import type catalog for {catalogItemId}: {ex.Message}");
+            SmartConLogger.Error($"Failed to import type catalog for {catalogItemId}: {ex.Message}");
             throw;
         }
     }
@@ -218,7 +223,7 @@ internal sealed partial class LocalFamilyImportService
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[TypeCatalog] Failed to find previous version Type Catalog for {catalogItemId}: {ex.Message}");
+            SmartConLogger.Warn($"Failed to find previous version Type Catalog for {catalogItemId}: {ex.Message}");
             return null;
         }
     }
@@ -291,7 +296,7 @@ internal sealed partial class LocalFamilyImportService
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"[TypeCatalog] Charset detection failed: {ex.Message}, returning UTF-8 result with replacement chars");
+                SmartConLogger.Warn($"Charset detection failed: {ex.Message}, returning UTF-8 result with replacement chars");
             }
         }
         

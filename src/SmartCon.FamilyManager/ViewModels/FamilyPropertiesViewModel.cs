@@ -167,6 +167,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [RelayCommand]
     private async Task InitializeAsync(CancellationToken ct)
     {
+        using var _scope = SmartConLogger.BeginScope("FMProperties",
+            ("Method", "InitializeAsync"));
         IsBusy = true;
         try
         {
@@ -396,7 +398,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     {
         try
         {
-            SmartConLogger.Info($"[FM Properties] Saving for {_catalogItemId}, new name='{Name}'");
+            SmartConLogger.Info($"Saving for {_catalogItemId}, new name='{Name}'");
 
             var tags = TagsText
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
@@ -413,15 +415,15 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                 ContentStatus,
                 Manufacturer);
 
-            SmartConLogger.Info($"[FM Properties] DB updated, renaming files...");
+            SmartConLogger.Info($"DB updated, renaming files...");
             await _renameService.RenameFamilyFilesAsync(_catalogItemId, Name);
-            SmartConLogger.Info($"[FM Properties] Rename completed");
+            SmartConLogger.Info($"Rename completed");
 
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[FM Properties] FAILED: {ex.Message}\n{ex.StackTrace}");
+            SmartConLogger.Error($"FAILED: {ex.Message}\n{ex.StackTrace}");
             _dialogService.ShowError("Family Manager", $"Failed to save: {ex.Message}");
         }
     }
@@ -480,3 +482,4 @@ public sealed class AttributeValueRow
     public bool IsInherited { get; init; }
     public string? Group { get; init; }
 }
+

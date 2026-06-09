@@ -34,33 +34,40 @@ internal sealed class ActiveFamilyFilePreparer : IActiveFamilyFilePreparer
 
     public async Task<ActiveFamilyPreparationResult?> PrepareActiveFamilyAsync(CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("ActivePrep",
+            ("Method", "PrepareActiveFamilyAsync"));
+        var sessionStart = DateTime.Now;
         SmartConLogger.LogSessionStart("ActiveFamilyFilePreparer.PrepareActiveFamilyAsync");
-        SmartConLogger.Info("[ActivePrep] === Start: preparing active family for import ===");
+        try
+        {
 
         // Phase 1 (Revit UI thread): read active doc state, SaveAs, find original .txt.
         // We do NOT perform async I/O on the UI thread — the actual sidecar copy
         // runs on a thread-pool continuation below (Phase 2).
         var phase1 = await _awaitableEvent.RaiseAsync<Phase1Result?>(obj =>
         {
+            using var _uiScope = SmartConLogger.BeginScope("ActivePrep",
+                ("Method", "PrepareActiveFamilyAsync.Phase1"),
+                ("Thread", "RevitUI"));
             try
             {
                 var uiApp = (UIApplication)obj;
                 var activeDoc = uiApp.ActiveUIDocument?.Document;
                 if (activeDoc is null)
                 {
-                    SmartConLogger.Warn("[ActivePrep] No active document — returning null");
+                    SmartConLogger.Warn("No active document — returning null");
                     return null;
                 }
 
                 SmartConLogger.Info(
-                    $"[ActivePrep] Active document: title='{activeDoc.Title}', " +
+                    $"Active document: title='{activeDoc.Title}', " +
                     $"isFamily={activeDoc.IsFamilyDocument}, " +
                     $"pathName='{activeDoc.PathName}'");
 
                 if (!activeDoc.IsFamilyDocument)
                 {
                     SmartConLogger.Warn(
-                        "[ActivePrep] Active document is NOT a family — caller should use the project flow");
+                        "Active document is NOT a family — caller should use the project flow");
                     return null;
                 }
 
@@ -70,12 +77,12 @@ internal sealed class ActiveFamilyFilePreparer : IActiveFamilyFilePreparer
                 var originalRfaPath = string.IsNullOrEmpty(activeDoc.PathName) ? null : activeDoc.PathName;
                 SmartConLogger.Debug(
                     originalRfaPath is null
-                        ? "[ActivePrep] originalRfaPath captured: <untitled>"
-                        : $"[ActivePrep] originalRfaPath captured: '{originalRfaPath}'");
+                        ? "originalRfaPath captured: <untitled>"
+                        : $"originalRfaPath captured: '{originalRfaPath}'");
 
                 var tempDir = Path.Combine(Path.GetTempPath(), "SmartCon", "FMLoad", Guid.NewGuid().ToString());
                 Directory.CreateDirectory(tempDir);
-                SmartConLogger.Debug($"[ActivePrep] Created temp dir: {tempDir}");
+                SmartConLogger.Debug($"Created temp dir: {tempDir}");
 
                 // Prefer originalRfaPath (captured before SaveAs) because its
                 // filename preserves dots used as type separators
@@ -91,10 +98,10 @@ internal sealed class ActiveFamilyFilePreparer : IActiveFamilyFilePreparer
                 }
                 var tempRfaPath = Path.Combine(tempDir, sourceName + ".rfa");
 
-                SmartConLogger.Info($"[ActivePrep] Calling activeDoc.SaveAs('{tempRfaPath}')");
+                SmartConLogger.Info($"Calling activeDoc.SaveAs('{tempRfaPath}')");
                 activeDoc.SaveAs(tempRfaPath);
                 SmartConLogger.Info(
-                    $"[ActivePrep] SaveAs OK. tempRfa='{tempRfaPath}', " +
+                    $"SaveAs OK. tempRfa='{tempRfaPath}', " +
                     $"size={new FileInfo(tempRfaPath).Length} bytes");
 
                 // Sidecar lookup is pure I/O on the FS — safe on the UI thread
@@ -107,28 +114,28 @@ internal sealed class ActiveFamilyFilePreparer : IActiveFamilyFilePreparer
 
                 if (originalTxtPath is not null)
                 {
-                    SmartConLogger.Info($"[ActivePrep] Original sidecar found: '{originalTxtPath}'");
+                    SmartConLogger.Info($"Original sidecar found: '{originalTxtPath}'");
                 }
                 else
                 {
                     SmartConLogger.Info(
                         originalRfaPath is null
-                            ? "[ActivePrep] activeDoc.PathName is empty (untitled family) — no original to look for a sidecar next to"
-                            : $"[ActivePrep] No .txt sidecar found next to original '{originalRfaPath}' — family has no Type Catalog");
+                            ? "activeDoc.PathName is empty (untitled family) — no original to look for a sidecar next to"
+                            : $"No .txt sidecar found next to original '{originalRfaPath}' — family has no Type Catalog");
                 }
 
                 return new Phase1Result(tempRfaPath, tempDir, originalRfaPath, originalTxtPath);
             }
             catch (Exception ex)
             {
-                SmartConLogger.Error($"[ActivePrep] EXCEPTION during phase 1 (SaveAs/lookup): {ex}");
+                SmartConLogger.Error($"EXCEPTION during phase 1 (SaveAs/lookup): {ex}");
                 throw;
             }
         }, ct).ConfigureAwait(false);
 
         if (phase1 is null)
         {
-            SmartConLogger.Info("[ActivePrep] Phase 1 returned null — propagating null result");
+            SmartConLogger.Info("Phase 1 returned null — propagating null result");
             return null;
         }
 
@@ -138,20 +145,20 @@ internal sealed class ActiveFamilyFilePreparer : IActiveFamilyFilePreparer
         if (!string.IsNullOrEmpty(phase1.OriginalTxtPath))
         {
             SmartConLogger.Info(
-                $"[ActivePrep] Phase 2: copying sidecar from '{phase1.OriginalTxtPath}' to '{phase1.TempDir}'");
+                $"Phase 2: copying sidecar from '{phase1.OriginalTxtPath}' to '{phase1.TempDir}'");
             tempTxtPath = await _sidecarLocator
                 .CopySidecarAsync(phase1.OriginalTxtPath!, phase1.TempDir, ct)
                 .ConfigureAwait(false);
             if (tempTxtPath is not null)
             {
                 SmartConLogger.Info(
-                    $"[ActivePrep] Sidecar copied to temp: '{tempTxtPath}', " +
+                    $"Sidecar copied to temp: '{tempTxtPath}', " +
                     $"size={new FileInfo(tempTxtPath).Length} bytes");
             }
             else
             {
                 SmartConLogger.Warn(
-                    $"[ActivePrep] Sidecar copy FAILED (source='{phase1.OriginalTxtPath}'). " +
+                    $"Sidecar copy FAILED (source='{phase1.OriginalTxtPath}'). " +
                     "Type Catalog will be missing from import.");
             }
         }
@@ -163,12 +170,19 @@ internal sealed class ActiveFamilyFilePreparer : IActiveFamilyFilePreparer
             OriginalTxtPath: phase1.OriginalTxtPath);
 
         SmartConLogger.Info(
-            $"[ActivePrep] Final result: tempRfa='{result.TempRfaPath}', " +
+            $"Final result: tempRfa='{result.TempRfaPath}', " +
             $"tempTxt='{result.TempTxtPath ?? "<none>"}', " +
             $"originalRfa='{result.OriginalRfaPath ?? "<untitled>"}', " +
             $"originalTxt='{result.OriginalTxtPath ?? "<none>"}'");
 
+        SmartConLogger.LogSessionEnd("ActiveFamilyFilePreparer.PrepareActiveFamilyAsync", sessionStart);
         return result;
+        }
+        catch
+        {
+            SmartConLogger.LogSessionEnd("ActiveFamilyFilePreparer.PrepareActiveFamilyAsync", sessionStart);
+            throw;
+        }
     }
 
     private sealed record Phase1Result(

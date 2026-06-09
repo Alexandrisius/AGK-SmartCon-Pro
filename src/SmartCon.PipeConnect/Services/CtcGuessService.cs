@@ -48,7 +48,8 @@ public sealed class CtcGuessService(
         {
             foreach (var c in conns)
                 virtualCtcStore.Set(elementId, c.ConnectorIndex, c.ConnectionTypeCode);
-            SmartConLogger.Info($"[VirtualCTC] {label} {elementId.GetValue()}: CTC already defined → " +
+            using var _scope = SmartConLogger.BeginScope("VirtualCTC", ("Label", label), ("ElementId", elementId.GetValue()));
+            SmartConLogger.Info($"CTC already defined → " +
                 string.Join(", ", conns.Select(c => $"conn[{c.ConnectorIndex}]={c.ConnectionTypeCode.Value}")));
             return virtualCtcStore.GetOverridesForElement(elementId);
         }
@@ -72,8 +73,8 @@ public sealed class CtcGuessService(
 
             virtualCtcStore.Set(elementId, connForStatic.ConnectorIndex, ctcForStaticSide);
             virtualCtcStore.Set(elementId, connForDynamic.ConnectorIndex, ctcForDynamicSide);
-            SmartConLogger.Info($"[VirtualCTC] {label} {elementId.GetValue()} (guessed): " +
-                $"conn[{connForStatic.ConnectorIndex}]={ctcForStaticSide.Value}→static(R={connForStatic.Radius * FeetToMm:F1}mm), " +
+            using var _scope = SmartConLogger.BeginScope("VirtualCTC", ("Label", label), ("ElementId", elementId.GetValue()), ("Kind", "guessed"));
+            SmartConLogger.Info($"conn[{connForStatic.ConnectorIndex}]={ctcForStaticSide.Value}→static(R={connForStatic.Radius * FeetToMm:F1}mm), " +
                 $"conn[{connForDynamic.ConnectorIndex}]={ctcForDynamicSide.Value}→dynamic(R={connForDynamic.Radius * FeetToMm:F1}mm)");
         }
 
@@ -148,7 +149,8 @@ public sealed class CtcGuessService(
             }
             if (allMatch) return;
 
-            SmartConLogger.Info($"[CTC] Virtual CTC differs from family CTC for {elementId.GetValue()} — overwrite");
+            using var _scope = SmartConLogger.BeginScope("CTC", ("ElementId", elementId.GetValue()));
+            SmartConLogger.Info($"Virtual CTC differs from family CTC for {elementId.GetValue()} — overwrite");
         }
 
         foreach (var kvp in overrides)
@@ -157,7 +159,8 @@ public sealed class CtcGuessService(
             if (typeDef is not null)
             {
                 virtualCtcStore.Set(elementId, kvp.Key, kvp.Value, typeDef);
-                SmartConLogger.Info($"[CTC] Promoted guessed CTC {kvp.Value.Value} → pending write for {elementId.GetValue()}:{kvp.Key}");
+                using var _scope = SmartConLogger.BeginScope("CTC", ("ElementId", elementId.GetValue()), ("ConnectorIndex", kvp.Key));
+                SmartConLogger.Info($"Promoted guessed CTC {kvp.Value.Value} → pending write for {elementId.GetValue()}:{kvp.Key}");
             }
         }
     }

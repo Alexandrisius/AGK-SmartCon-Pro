@@ -87,6 +87,8 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
     ///     ask the host to schedule <see cref="Execute(UIApplication)"/>.</param>
     public void Initialize(Action onRaise)
     {
+        using var _scope = SmartConLogger.BeginScope("AwaitableEvent",
+            ("Method", "Initialize"));
         _onRaise = onRaise ?? throw new ArgumentNullException(nameof(onRaise));
         SmartConLogger.Debug(
             "[AwaitableEvent] Initialized: handler bound to host raise signal");

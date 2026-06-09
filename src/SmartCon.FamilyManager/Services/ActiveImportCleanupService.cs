@@ -50,15 +50,16 @@ internal sealed class ActiveImportCleanupService : IActiveImportCleanupService
     /// </summary>
     internal void CleanupImpl(string rootPath, CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("ActiveCleanup",
+            ("Method", "CleanupImpl"),
+            ("RootPath", rootPath));
         var startUtc = DateTimeOffset.UtcNow;
-        SmartConLogger.Info(
-            $"[ActiveCleanup] === START: scanning '{StagingSubdirs.Length}' staging location(s) under '{rootPath}' ===");
 
         try
         {
             if (!Directory.Exists(rootPath))
             {
-                SmartConLogger.Debug($"[ActiveCleanup] Temp root missing ('{rootPath}') — nothing to clean");
+                SmartConLogger.Debug($"Temp root missing ('{rootPath}') — nothing to clean");
                 return;
             }
 
@@ -74,23 +75,23 @@ internal sealed class ActiveImportCleanupService : IActiveImportCleanupService
                 var dir = Path.Combine(rootPath, sub);
                 if (!Directory.Exists(dir))
                 {
-                    SmartConLogger.Debug($"[ActiveCleanup] Skipped: '{dir}' does not exist");
+                    SmartConLogger.Debug($"Skipped: '{dir}' does not exist");
                     continue;
                 }
 
                 locationsScanned++;
-                SmartConLogger.Info($"[ActiveCleanup] Scanning '{dir}'");
+                SmartConLogger.Info($"Scanning '{dir}'");
 
                 var childDirs = Directory.GetDirectories(dir);
                 if (childDirs.Length == 0)
                 {
                     SmartConLogger.Info(
-                        $"[ActiveCleanup] '{dir}': empty (no staging sub-folders) — clean as a whistle");
+                        $"'{dir}': empty (no staging sub-folders) — clean as a whistle");
                     continue;
                 }
 
                 SmartConLogger.Info(
-                    $"[ActiveCleanup] '{dir}': found {childDirs.Length} staging sub-folder(s)");
+                    $"'{dir}': found {childDirs.Length} staging sub-folder(s)");
 
                     foreach (var childDir in childDirs)
                     {
@@ -107,14 +108,14 @@ internal sealed class ActiveImportCleanupService : IActiveImportCleanupService
                             bytesReclaimed += sizeBytes;
                             var childDurationMs = (long)(DateTimeOffset.UtcNow - childStart).TotalMilliseconds;
                             SmartConLogger.Info(
-                                $"[ActiveCleanup]   ✓ Deleted '{Path.GetFileName(childDir)}' " +
+                                $"  ✓ Deleted '{Path.GetFileName(childDir)}' " +
                                 $"(files={fileCount}, size={FormatBytes(sizeBytes)}, took {childDurationMs} ms)");
                         }
                         catch (Exception ex)
                         {
                             directoriesSkipped++;
                             SmartConLogger.Warn(
-                                $"[ActiveCleanup]   ✗ Failed to delete '{childDir}': {ex.GetType().Name}: {ex.Message}");
+                                $"  ✗ Failed to delete '{childDir}': {ex.GetType().Name}: {ex.Message}");
                         }
                     }
 
@@ -122,18 +123,18 @@ internal sealed class ActiveImportCleanupService : IActiveImportCleanupService
                 if (remaining.Length > 0)
                 {
                     SmartConLogger.Warn(
-                        $"[ActiveCleanup] '{dir}' still contains {remaining.Length} sub-folder(s) after cleanup: " +
+                        $"'{dir}' still contains {remaining.Length} sub-folder(s) after cleanup: " +
                         $"[{string.Join(", ", remaining.Select(Path.GetFileName))}]");
                 }
                 else
                 {
-                    SmartConLogger.Info($"[ActiveCleanup] '{dir}' is clean (0 sub-folders remaining)");
+                    SmartConLogger.Info($"'{dir}' is clean (0 sub-folders remaining)");
                 }
             }
 
             var totalDurationAll = (long)(DateTimeOffset.UtcNow - startUtc).TotalMilliseconds;
             var summary = new StringBuilder();
-            summary.Append("[ActiveCleanup] === END: ");
+            summary.Append("=== summary: ");
             summary.Append($"locations_scanned={locationsScanned}, ");
             summary.Append($"directories_deleted={directoriesDeleted}, ");
             summary.Append($"directories_skipped={directoriesSkipped}, ");
@@ -154,18 +155,18 @@ internal sealed class ActiveImportCleanupService : IActiveImportCleanupService
             {
                 var preview = filesSkipped.Take(5).Select(Path.GetFileName);
                 SmartConLogger.Warn(
-                    $"[ActiveCleanup] Skipped files (first 5): [{string.Join(", ", preview)}]" +
+                    $"Skipped files (first 5): [{string.Join(", ", preview)}]" +
                     (filesSkipped.Count > 5 ? $" (+{filesSkipped.Count - 5} more)" : ""));
             }
         }
         catch (OperationCanceledException)
         {
-            SmartConLogger.Warn("[ActiveCleanup] Cleanup was cancelled");
+            SmartConLogger.Warn("Cleanup was cancelled");
             throw;
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[ActiveCleanup] Cleanup pass failed: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Warn($"Cleanup pass failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -188,13 +189,13 @@ internal sealed class ActiveImportCleanupService : IActiveImportCleanupService
                 catch (Exception ex)
                 {
                     skipped.Add(file);
-                    SmartConLogger.Debug($"[ActiveCleanup]   ! Cannot stat '{file}': {ex.Message}");
+                    SmartConLogger.Debug($"  ! Cannot stat '{file}': {ex.Message}");
                 }
             }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Debug($"[ActiveCleanup]   ! Cannot enumerate '{dir}': {ex.Message}");
+            SmartConLogger.Debug($"  ! Cannot enumerate '{dir}': {ex.Message}");
         }
         return total;
     }

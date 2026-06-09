@@ -52,14 +52,14 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             }
             var row = new FamilyBatchImportRow(item);
             row.PropertyChanged += OnRowPropertyChanged;
-            row.PickCategoryRequested += OnRowPickCategoryRequested;
-            row.NameChanged += OnRowNameChanged;
+            row.PickCategoryRequested += OnRowPickCategoryRequestedAsync;
+            row.NameChanged += OnRowNameChangedAsync;
             Items.Add(row);
         }
         UpdateCanImport();
     }
 
-    private async void OnRowPickCategoryRequested(FamilyBatchImportRow row)
+    private async Task OnRowPickCategoryRequestedAsync(FamilyBatchImportRow row)
     {
         try
         {
@@ -82,11 +82,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[BatchImport] Category picker failed: {ex.Message}");
+            SmartConLogger.Error($"BatchImport.CategoryPicker: failed: {ex.Message}");
         }
     }
 
-    private async void OnRowNameChanged(FamilyBatchImportRow row)
+    private async Task OnRowNameChangedAsync(FamilyBatchImportRow row)
     {
         var seq = System.Threading.Interlocked.Increment(ref _statusLookupSeq);
         try
@@ -96,7 +96,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         catch (Exception ex)
         {
             if (seq == Volatile.Read(ref _statusLookupSeq))
-                SmartConLogger.Warn($"[BatchImport] UpdateStatusForRow failed: {ex.Message}");
+            {
+                using var _scope = SmartConLogger.BeginScope("BatchImport", ("Method", "UpdateStatusForRow"));
+                SmartConLogger.Warn($"failed: {ex.Message}");
+            }
         }
     }
 
@@ -143,8 +146,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         foreach (var row in Items)
         {
             row.PropertyChanged -= OnRowPropertyChanged;
-            row.PickCategoryRequested -= OnRowPickCategoryRequested;
-            row.NameChanged -= OnRowNameChanged;
+            row.PickCategoryRequested -= OnRowPickCategoryRequestedAsync;
+            row.NameChanged -= OnRowNameChangedAsync;
         }
     }
 

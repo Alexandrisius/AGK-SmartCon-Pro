@@ -33,6 +33,8 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
     public SelectedElementsAnalysis PickSelectedElements()
     {
+        using var _scope = SmartConLogger.BeginScope("SystemRevitOps",
+            ("Method", "PickSelectedElements"));
         var uidoc = _revitUIContext.GetUIDocument();
         var doc = uidoc.Document;
 
@@ -86,13 +88,13 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             if (builtInCategory == BuiltInCategory.INVALID)
             {
                 SmartConLogger.Debug(
-                    $"[PickSelectedElements] Type '{typeElem.Name}' has no resolvable BuiltInCategory " +
+                    $"Type '{typeElem.Name}' has no resolvable BuiltInCategory " +
                     $"(category='{categoryName}') — will copy as type-only, no instances");
             }
             else if (!SystemCategoryRegistry.SupportedCategories.Contains(builtInCategory))
             {
                 SmartConLogger.Warn(
-                    $"[PickSelectedElements] Type '{typeElem.Name}' has BuiltInCategory='{builtInCategory}' " +
+                    $"Type '{typeElem.Name}' has BuiltInCategory='{builtInCategory}' " +
                     $"(category='{categoryName}') which is not in the supported set — " +
                     $"will copy as type-only, no instances");
                 builtInCategory = BuiltInCategory.INVALID;
@@ -110,7 +112,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
         if (skippedCount > 0)
             SmartConLogger.Info(
-                $"[PickSelectedElements] Skipped {skippedCount} element(s) without resolvable type/category");
+                $"Skipped {skippedCount} element(s) without resolvable type/category");
 
         return new SelectedElementsAnalysis(
             SystemTypes: systemTypes.Values.ToList(),
@@ -119,6 +121,8 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
     public IReadOnlyList<CategoryAnalysis> AnalyzeActiveProject(Document activeDoc)
     {
+        using var _scope = SmartConLogger.BeginScope("SystemRevitOps",
+            ("Method", "AnalyzeActiveProject"));
         if (activeDoc is null) return [];
 
         var result = new List<CategoryAnalysis>();
@@ -150,7 +154,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"[AnalyzeActiveProject] {entry.DisplayName}: {ex.Message}");
+                SmartConLogger.Warn($"{entry.DisplayName}: {ex.Message}");
             }
         }
 
@@ -234,14 +238,14 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             newDoc = null;
 
             SmartConLogger.Info(
-                $"[CreateCleanProjectWithTypesAndInstances] '{displayName}': copied={copiedTypeIds.Count}, placed={placedCount}");
+                $"'{displayName}': copied={copiedTypeIds.Count}, placed={placedCount}");
 
             return new CreateCleanProjectResult(
                 true, finalPath, null, copiedTypeIds.Count, displayName, placedCount);
         }
         catch (Exception ex)
         {
-            SmartConLogger.Freeze($"[CreateCleanProjectWithTypesAndInstances] Failed: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Error($"Failed: {ex.GetType().Name}: {ex.Message}");
             if (newDoc is not null)
             {
                 try { newDoc.Close(false); } catch { }
@@ -265,7 +269,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         var handler = SystemCategoryRegistry.GetPlacementHandler(category);
         if (handler is null)
         {
-            SmartConLogger.Info($"[PlaceInstancesOnGrid] No placement handler for {category}; types copied only");
+            SmartConLogger.Info($"No placement handler for {category}; types copied only");
             return instancesByType;
         }
 
@@ -276,7 +280,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             .FirstOrDefault();
         if (level is null)
         {
-            SmartConLogger.Warn("[PlaceInstancesOnGrid] No Level 1 in new project");
+            SmartConLogger.Warn("No Level 1 in new project");
             return instancesByType;
         }
 
@@ -311,7 +315,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"[PlaceInstancesOnGrid] Failed type '{type.Name}': {ex.Message}");
+                SmartConLogger.Warn($"Failed type '{type.Name}': {ex.Message}");
             }
 
             i++;
@@ -398,11 +402,11 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                     }
                     tx.Commit();
                     SmartConLogger.Info(
-                        $"[NormalizeInstanceDimensions] '{typeName}': applied to {instanceIds.Count} instance(s)");
+                        $"'{typeName}': applied to {instanceIds.Count} instance(s)");
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"[NormalizeInstanceDimensions] '{typeName}': {ex.Message}");
+                    SmartConLogger.Warn($"'{typeName}': {ex.Message}");
                 }
             }
         }
@@ -600,7 +604,7 @@ internal static class SystemCategoryRegistry
         }
         catch (TargetInvocationException tex)
         {
-            SmartConLogger.Warn($"[PlaceConduit] {tex.InnerException?.Message ?? tex.Message}");
+            SmartConLogger.Warn($"{tex.InnerException?.Message ?? tex.Message}");
             return null;
         }
     }
@@ -627,7 +631,7 @@ internal static class SystemCategoryRegistry
         }
         catch (TargetInvocationException tex)
         {
-            SmartConLogger.Warn($"[PlaceCableTray] {tex.InnerException?.Message ?? tex.Message}");
+            SmartConLogger.Warn($"{tex.InnerException?.Message ?? tex.Message}");
             return null;
         }
     }
@@ -640,3 +644,4 @@ internal static class SystemCategoryRegistry
         return Wall.Create(doc, line, wallType.Id, level.Id, height, 0.0, false, false);
     }
 }
+

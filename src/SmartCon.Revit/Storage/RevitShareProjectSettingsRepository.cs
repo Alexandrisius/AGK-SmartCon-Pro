@@ -38,12 +38,12 @@ public sealed class RevitShareProjectSettingsRepository : IShareProjectSettingsR
         }
         catch (System.Text.Json.JsonException ex)
         {
-            SmartConLogger.Error($"[PM] Corrupted payload: {ex.Message}. Returning empty settings.");
+            SmartConLogger.Error($"PM.Load: Corrupted payload: {ex.Message}. Returning empty settings.");
             return ShareProjectSettings.Empty;
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] Load failed: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Error($"PM.Load: Load failed: {ex.GetType().Name}: {ex.Message}");
             return ShareProjectSettings.Empty;
         }
     }
@@ -110,7 +110,7 @@ public sealed class RevitShareProjectSettingsRepository : IShareProjectSettingsR
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] LoadExportNameOverride failed: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Error($"PM.LoadExportNameOverride: failed: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
@@ -167,8 +167,9 @@ public sealed class RevitShareProjectSettingsRepository : IShareProjectSettingsR
         if (matches.Count == 0) return null;
         if (matches.Count > 1)
         {
+            using var _scope = SmartConLogger.BeginScope("PM", ("Method", "FindDataStorage"));
             SmartConLogger.Warn(
-                $"[PM] Found {matches.Count} DataStorage elements with PM schema. Using the first one (ids: " +
+                $"Found {matches.Count} DataStorage elements with PM schema. Using the first one (ids: " +
                 string.Join(", ", matches.Select(m => m.Id.GetValue())) + ").");
         }
 

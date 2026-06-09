@@ -30,6 +30,9 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
 
     public async Task<SystemFamilyImportResult> ImportBatchItemsAsync(IReadOnlyList<FamilyBatchImportItem> items)
     {
+        using var _scope = SmartConLogger.BeginScope("SystemImport",
+            ("Method", "ImportBatchItemsAsync"),
+            ("Count", items.Count));
         var totalImported = 0;
         var extractionTasks = new List<SystemFamilyExtractionTask>();
 
@@ -56,12 +59,12 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
                 var types = LoadTypesFromSidecar(item.FilePath);
                 if (types.Count == 0)
                 {
-                    SmartConLogger.Warn($"[SystemImport] No types for '{item.FileName}'");
+                    SmartConLogger.Warn($"No types for '{item.FileName}'");
                 }
                 else
                 {
                     await SaveSystemTypesAsync(matchingResult.CatalogItemId!, types, matchingResult.VersionId, matchingResult.FileId).ConfigureAwait(false);
-                    SmartConLogger.Info($"[SystemImport] Saved {types.Count} types for '{item.FileName}' (CatalogItemId={matchingResult.CatalogItemId})");
+                    SmartConLogger.Info($"Saved {types.Count} types for '{item.FileName}' (CatalogItemId={matchingResult.CatalogItemId})");
                 }
 
                 extractionTasks.Add(new SystemFamilyExtractionTask(
@@ -74,7 +77,7 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[SystemImport] ImportBatchItemsAsync failed: {ex.Message}");
+            SmartConLogger.Error($"ImportBatchItemsAsync failed: {ex.Message}");
             return new SystemFamilyImportResult(false, ex.Message, extractionTasks, totalImported);
         }
 
@@ -120,3 +123,4 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
         }
     }
 }
+

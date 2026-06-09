@@ -22,15 +22,16 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
         string? versionId = null,
         string? fileId = null)
     {
+        var rfaFileName = System.IO.Path.GetFileName(rfaFilePath);
         var app = _revitUIContext.GetUIApplication().Application;
         Document? familyDoc = null;
         try
         {
+            using var _scope = SmartConLogger.BeginScope("LoadableFamilyTypeResolver", ("RfaFileName", rfaFileName), ("CatalogItemId", catalogItemId));
             familyDoc = app.OpenDocumentFile(rfaFilePath);
             if (familyDoc is null || !familyDoc.IsFamilyDocument)
             {
-                SmartConLogger.Warn(
-                    $"[LoadableFamilyTypeResolver] OpenDocumentFile did not return a family document for '{rfaFilePath}'");
+                SmartConLogger.Warn("OpenDocumentFile did not return a family document [Action: Verify file is a valid Revit .rfa, or check Revit version compatibility]");
                 return [];
             }
 
@@ -45,8 +46,7 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
 
             if (fm.Types.Size == 0)
             {
-                SmartConLogger.Info(
-                    $"[LoadableFamilyTypeResolver] No types in family document '{rfaFilePath}' (types.Size=0)");
+                SmartConLogger.Info("No types in family document (types.Size=0)");
                 return result;
             }
 
@@ -68,14 +68,13 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
                     UniqueId: symbol?.UniqueId));
             }
 
-            SmartConLogger.Info(
-                $"[LoadableFamilyTypeResolver] Resolved {result.Count} type(s) from '{rfaFilePath}'");
+            SmartConLogger.Info($"Resolved {result.Count} type(s)");
             return result;
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn(
-                $"[LoadableFamilyTypeResolver] Failed to resolve types from '{rfaFilePath}': {ex.Message}");
+            using var _scope = SmartConLogger.BeginScope("LoadableFamilyTypeResolver", ("RfaFileName", rfaFileName), ("Stage", "Resolve"));
+            SmartConLogger.Warn($"Failed to resolve types: {ex.Message} [Action: Check Revit journal for detailed error, or restart Revit if COM object is corrupted]");
             return [];
         }
         finally
@@ -85,8 +84,8 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
                 try { familyDoc.Close(false); }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn(
-                        $"[LoadableFamilyTypeResolver] Close failed for '{rfaFilePath}': {ex.Message}");
+                    using var _scope = SmartConLogger.BeginScope("LoadableFamilyTypeResolver", ("RfaFileName", rfaFileName), ("Stage", "Close"));
+                    SmartConLogger.Warn($"Close failed: {ex.Message} [Action: Safe to ignore — Revit will release the document on its own]");
                 }
                 try { Marshal.ReleaseComObject(familyDoc); }
                 catch { }

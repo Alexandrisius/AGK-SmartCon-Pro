@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows.Data;
 using System.Windows.Media.Imaging;
+using SmartCon.Core.Logging;
 
 namespace SmartCon.UI.Converters;
 
@@ -30,7 +31,7 @@ public sealed class PathToBitmapImageConverter : IValueConverter
         }
         catch (Exception ex)
         {
-            SmartCon.Core.Logging.SmartConLogger.Warn($"[PathToBitmapImageConverter] Failed to load image '{path}': {ex.Message}");
+            SmartConLogger.Warn($"PathToBitmapImageConverter: Failed to load image '{Path.GetFileName(path)}': {ex.Message}");
             return null;
         }
     }

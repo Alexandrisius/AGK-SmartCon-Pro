@@ -40,6 +40,9 @@ internal sealed class SystemFamilyIsolationProjectAdapter : ISystemFamilyIsolati
         BuiltInCategory category,
         string displayName)
     {
+        using var _scope = SmartConLogger.BeginScope("CreateCleanProject",
+            ("Method", "CreateCleanProjectWithTypesAndInstances"),
+            ("DisplayName", displayName));
         if (sourceDoc is null)
         {
             return new CreateCleanProjectResult(false, null, "sourceDoc is null", 0);

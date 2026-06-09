@@ -7,6 +7,7 @@ using SmartCon.App.Ribbon;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Threading;
 using SmartCon.FamilyManager;
 using SmartCon.UI;
 
@@ -44,12 +45,11 @@ public sealed class App : IExternalApplication
             try
             {
                 var cleanupService = ServiceHost.GetService<IActiveImportCleanupService>();
-                cleanupService.CleanupAfterImportAsync().GetAwaiter().GetResult();
+                AsyncBridge.RunSync(() => cleanupService.CleanupAfterImportAsync());
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn(
-                    $"[App.OnStartup] Startup temp sweep failed: {ex.GetType().Name}: {ex.Message}");
+                SmartConLogger.Warn($"App.OnStartup.StartupTempSweep: failed: {ex.GetType().Name}: {ex.Message}");
             }
 
             var fmProvider = ServiceHost.GetService<FamilyManagerPaneProvider>();
@@ -77,12 +77,11 @@ public sealed class App : IExternalApplication
         try
         {
             var cleanupService = ServiceHost.GetService<IActiveImportCleanupService>();
-            cleanupService.CleanupAfterImportAsync().GetAwaiter().GetResult();
+            AsyncBridge.RunSync(() => cleanupService.CleanupAfterImportAsync());
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn(
-                $"[App.OnShutdown] Temp cleanup failed: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Warn($"App.OnShutdown.TempCleanup: failed: {ex.GetType().Name}: {ex.Message}");
         }
         ServiceLocator.Dispose();
         return Result.Succeeded;
@@ -105,7 +104,7 @@ public sealed class App : IExternalApplication
         }
         catch (Exception ex)
         {
-            SmartConLogger.Debug($"[App.ApplyUpdaterSelfUpdate] {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Debug($"App.ApplyUpdaterSelfUpdate: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -132,7 +131,7 @@ public sealed class App : IExternalApplication
         }
         catch (Exception ex)
         {
-            SmartConLogger.Debug($"[App.CleanupStalePendingUpdate] {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Debug($"App.CleanupStalePendingUpdate: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -166,7 +165,7 @@ public sealed class App : IExternalApplication
         }
         catch (Exception ex)
         {
-            SmartConLogger.Debug($"[App.TryLaunchUpdater] {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Debug($"App.TryLaunchUpdater: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

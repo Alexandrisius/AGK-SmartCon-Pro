@@ -20,7 +20,8 @@ public sealed class RevitFamilyLoadOptions : IFamilyLoadOptions
 
     public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
     {
-        SmartConLogger.Info($"[FamilyLoadOptions] OnFamilyFound called: familyInUse={familyInUse}, overwrite={_overwriteParameterValues}");
+        using var _scope = SmartConLogger.BeginScope("FamilyLoadOptions", ("Method", "OnFamilyFound"), ("FamilyInUse", familyInUse));
+        SmartConLogger.Info($"called: overwrite={_overwriteParameterValues}");
         overwriteParameterValues = _overwriteParameterValues;
         return true;
     }
@@ -28,7 +29,8 @@ public sealed class RevitFamilyLoadOptions : IFamilyLoadOptions
     public bool OnSharedFamilyFound(Autodesk.Revit.DB.Family sharedFamily, bool familyInUse, out Autodesk.Revit.DB.FamilySource source, out bool overwriteParameterValues)
     {
         var familyName = sharedFamily?.Name ?? "<null>";
-        SmartConLogger.Info($"[FamilyLoadOptions] OnSharedFamilyFound called: sharedFamily='{familyName}', familyInUse={familyInUse}, overwrite={_overwriteParameterValues}");
+        using var _scope = SmartConLogger.BeginScope("FamilyLoadOptions", ("Method", "OnSharedFamilyFound"), ("SharedFamily", familyName), ("FamilyInUse", familyInUse));
+        SmartConLogger.Info($"called: overwrite={_overwriteParameterValues}");
         source = Autodesk.Revit.DB.FamilySource.Family;
         overwriteParameterValues = _overwriteParameterValues;
 

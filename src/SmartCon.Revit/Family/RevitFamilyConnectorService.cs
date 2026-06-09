@@ -31,6 +31,11 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
     public bool SetConnectorTypeCode(Document doc, ElementId elementId,
                                      int connectorIndex, ConnectorTypeDefinition typeDef)
     {
+        using var _scope = SmartConLogger.BeginScope("FamilyConn",
+            ("Method", "SetConnectorTypeCode"),
+            ("ElementId", elementId.GetValue()),
+            ("ConnectorIndex", connectorIndex));
+
         var element = doc.GetElement(elementId);
         if (element is null) return false;
 
@@ -54,52 +59,56 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
     private bool SetFittingConnectorTypeCode(Document doc, FamilyInstance instance,
                                               int connectorIndex, ConnectorTypeDefinition typeDef)
     {
+        using var _scope = SmartConLogger.BeginScope("FittingCTC",
+            ("Method", "SetFittingConnectorTypeCode"),
+            ("ConnectorIndex", connectorIndex));
+
         RevitFamily? family = instance.Symbol?.Family;
         if (family is null)
         {
-            SmartConLogger.Info("[SmartCon] SetFittingConnectorTypeCode: family is null");
+            SmartConLogger.Info("SetFittingConnectorTypeCode: family is null");
             return false;
         }
 
-        SmartConLogger.Info($"[SmartCon] Processing family: {family.Name}");
+        SmartConLogger.Info($"Processing family: {family.Name}");
 
         // Origin нужного коннектора в глобальных координатах проекта.
         var cm = instance.GetConnectorManager();
         var conn = cm?.FindByIndex(connectorIndex);
         if (conn is null)
         {
-            SmartConLogger.Info($"[SmartCon] Connector not found by index: {connectorIndex}");
+            SmartConLogger.Info($"Connector not found by index: {connectorIndex}");
             return false;
         }
 
         var targetOriginGlobal = conn.CoordinateSystem.Origin;
         var transform = instance.GetTransform();
 
-        SmartConLogger.Info($"[SmartCon] conn.CoordinateSystem.Origin (world) = ({targetOriginGlobal.X:F6}, {targetOriginGlobal.Y:F6}, {targetOriginGlobal.Z:F6})");
-        SmartConLogger.Info($"[SmartCon] GetTransform: Origin=({transform.Origin.X:F6},{transform.Origin.Y:F6},{transform.Origin.Z:F6})");
-        SmartConLogger.Info($"[SmartCon] GetTransform: BasisX=({transform.BasisX.X:F4},{transform.BasisX.Y:F4},{transform.BasisX.Z:F4})");
-        SmartConLogger.Info($"[SmartCon] GetTransform: BasisY=({transform.BasisY.X:F4},{transform.BasisY.Y:F4},{transform.BasisY.Z:F4})");
-        SmartConLogger.Info($"[SmartCon] GetTransform: BasisZ=({transform.BasisZ.X:F4},{transform.BasisZ.Y:F4},{transform.BasisZ.Z:F4})");
-        SmartConLogger.Info($"[SmartCon] GetTransform: Scale={transform.Scale:F6}, IsIdentity={transform.IsIdentity}");
+        SmartConLogger.Info($"conn.CoordinateSystem.Origin (world) = ({targetOriginGlobal.X:F6}, {targetOriginGlobal.Y:F6}, {targetOriginGlobal.Z:F6})");
+        SmartConLogger.Info($"GetTransform: Origin=({transform.Origin.X:F6},{transform.Origin.Y:F6},{transform.Origin.Z:F6})");
+        SmartConLogger.Info($"GetTransform: BasisX=({transform.BasisX.X:F4},{transform.BasisX.Y:F4},{transform.BasisX.Z:F4})");
+        SmartConLogger.Info($"GetTransform: BasisY=({transform.BasisY.X:F4},{transform.BasisY.Y:F4},{transform.BasisY.Z:F4})");
+        SmartConLogger.Info($"GetTransform: BasisZ=({transform.BasisZ.X:F4},{transform.BasisZ.Y:F4},{transform.BasisZ.Z:F4})");
+        SmartConLogger.Info($"GetTransform: Scale={transform.Scale:F6}, IsIdentity={transform.IsIdentity}");
 
         // Также логируем цель в локальных координатах семейства для кросс-проверки.
         var targetOriginLocal = transform.Inverse.OfPoint(targetOriginGlobal);
-        SmartConLogger.Info($"[SmartCon] targetOriginLocal (family space) = ({targetOriginLocal.X:F6}, {targetOriginLocal.Y:F6}, {targetOriginLocal.Z:F6})");
+        SmartConLogger.Info($"targetOriginLocal (family space) = ({targetOriginLocal.X:F6}, {targetOriginLocal.Y:F6}, {targetOriginLocal.Z:F6})");
 
         // GetTransform() НЕ учитывает HandFlipped/FacingFlipped.
         // Connector world positions учитывают flip → inverse даёт зеркальные локальные координаты.
         // Для корректного сравнения с CE.Origin (unflipped family space) — компенсируем flip.
-        SmartConLogger.Info($"[SmartCon] HandFlipped={instance.HandFlipped}, FacingFlipped={instance.FacingFlipped}");
+        SmartConLogger.Info($"HandFlipped={instance.HandFlipped}, FacingFlipped={instance.FacingFlipped}");
         if (instance.HandFlipped)
             targetOriginLocal = new XYZ(-targetOriginLocal.X, targetOriginLocal.Y, targetOriginLocal.Z);
         if (instance.FacingFlipped)
             targetOriginLocal = new XYZ(targetOriginLocal.X, -targetOriginLocal.Y, targetOriginLocal.Z);
         if (instance.HandFlipped || instance.FacingFlipped)
-            SmartConLogger.Info($"[SmartCon] targetOriginLocal (flip-corrected) = ({targetOriginLocal.X:F6}, {targetOriginLocal.Y:F6}, {targetOriginLocal.Z:F6})");
+            SmartConLogger.Info($"targetOriginLocal (flip-corrected) = ({targetOriginLocal.X:F6}, {targetOriginLocal.Y:F6}, {targetOriginLocal.Z:F6})");
 
         // EditFamily — doc.IsModifiable уже проверен выше.
         var familyDoc = doc.EditFamily(family);
-        SmartConLogger.Info($"[SmartCon] EditFamily opened: {familyDoc.Title}");
+        SmartConLogger.Info($"EditFamily opened: {familyDoc.Title}");
         try
         {
             // OfCategory(OST_ConnectorElem) — правильный способ получить все ConnectorElement в семействе.
@@ -109,7 +118,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
                 .Cast<ConnectorElement>()
                 .ToList();
 
-            SmartConLogger.Info($"[SmartCon] Found {connElems.Count} ConnectorElement(s) in family");
+            SmartConLogger.Info($"Found {connElems.Count} ConnectorElement(s) in family");
 
             // Поиск ConnectorElement по направлению в локальных координатах семейства.
             // Для параметрических фитингов (отводы, краны) размер изменяется,
@@ -139,26 +148,26 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
                 {
                     score = -distLocal; // fallback: ближайшая по расстоянию
                 }
-                SmartConLogger.Info($"[SmartCon]   CE Id={ce.Id.GetValue()}: origin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}) distLocal={distLocal:F4} score={score:F4}");
+                SmartConLogger.Info($"  CE Id={ce.Id.GetValue()}: origin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}) distLocal={distLocal:F4} score={score:F4}");
                 if (score > bestScore) { bestScore = score; target = ce; }
             }
 
-            SmartConLogger.Info($"[SmartCon] Best match: Id={target?.Id.GetValue()}, bestScore={bestScore:F4}");
+            SmartConLogger.Info($"Best match: Id={target?.Id.GetValue()}, bestScore={bestScore:F4}");
 
             // Валидно если: точное совпадение (score=2.0) или направление совпадает (score≥0.99).
             if (target is null || bestScore < ConnectorMatchScore.DirectionThreshold)
             {
-                SmartConLogger.Info($"[SmartCon] No valid match (bestScore={bestScore:F4} < {ConnectorMatchScore.DirectionThreshold})");
+                SmartConLogger.Info($"No valid match (bestScore={bestScore:F4} < {ConnectorMatchScore.DirectionThreshold})");
                 return false;
             }
 
             // Логируем все параметры ConnectorElement для диагностики
-            SmartConLogger.Info($"[SmartCon] All parameters on target ConnectorElement (Id={target.Id.GetValue()}):");
+            SmartConLogger.Info($"All parameters on target ConnectorElement (Id={target.Id.GetValue()}):");
             foreach (Parameter p in target.Parameters)
             {
                 var name = p.Definition?.Name ?? "N/A";
                 var isShared = p.IsShared ? "Shared" : "Built-in";
-                SmartConLogger.Info($"[SmartCon]   Param: {name}, Type={isShared}, ReadOnly={p.IsReadOnly}, Value={p.AsValueString()}");
+                SmartConLogger.Info($"  Param: {name}, Type={isShared}, ReadOnly={p.IsReadOnly}, Value={p.AsValueString()}");
             }
 
             // I-03b: family document — separate Transaction scope, not managed by ITransactionService.
@@ -168,7 +177,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             // RBS_CONNECTOR_DESCRIPTION — единственный locale-независимый BIP для параметра
             // "Описание соединителя" / "Connector Description" на ConnectorElement.
             var descParam = target.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
-            SmartConLogger.Info($"[SmartCon] descParam found: '{descParam?.Definition?.Name ?? "NULL"}', IsReadOnly={descParam?.IsReadOnly}");
+            SmartConLogger.Info($"descParam found: '{descParam?.Definition?.Name ?? "NULL"}', IsReadOnly={descParam?.IsReadOnly}");
 
             // Формат: "КОД.НАЗВАНИЕ.ОПИСАНИЕ" — читается через ConnectionTypeCode.Parse
             var value = $"{typeDef.Code}.{typeDef.Name}.{typeDef.Description}";
@@ -177,19 +186,19 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             if (descParam is not null && !descParam.IsReadOnly)
             {
                 // Path 1: прямая запись (параметр доступен).
-                SmartConLogger.Info($"[SmartCon] Path1: param='{descParam.Definition?.Name}', StorageType={descParam.StorageType}, valueBefore='{descParam.AsString()}'");
+                SmartConLogger.Info($"Path1: param='{descParam.Definition?.Name}', StorageType={descParam.StorageType}, valueBefore='{descParam.AsString()}'");
                 bool setOk = descParam.Set(value);
-                SmartConLogger.Info($"[SmartCon] Path1: Set()={setOk}, valueAfter='{descParam.AsString()}'");
+                SmartConLogger.Info($"Path1: Set()={setOk}, valueAfter='{descParam.AsString()}'");
                 success = setOk;
             }
             else if (descParam is not null && descParam.IsReadOnly)
             {
                 // Path 2: параметр ReadOnly из-за driving FamilyParameter.
-                SmartConLogger.Info($"[SmartCon] Path2: '{descParam.Definition?.Name}' ReadOnly → trying FamilyManager");
+                SmartConLogger.Info($"Path2: '{descParam.Definition?.Name}' ReadOnly → trying FamilyManager");
                 success = TrySetDrivingFamilyParameter(familyDoc.FamilyManager, target, descParam, value);
                 if (!success)
                 {
-                    SmartConLogger.Info("[SmartCon] Path2 failed → trying SystemClassification = Global (Path3)");
+                    SmartConLogger.Info("Path2 failed → trying SystemClassification = Global (Path3)");
                     success = TrySetViaSystemClassificationChange(familyDoc, target, value);
                 }
             }
@@ -198,7 +207,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
                 // Path 3: descParam is null — параметр скрыт при SystemClassification = Fitting.
                 // TrySetViaSystemClassificationChange переключит на Global, сделает Regenerate,
                 // и параметр появится.
-                SmartConLogger.Info("[SmartCon] Path3: descParam NULL (likely Fitting hides it) → switching to Global");
+                SmartConLogger.Info("Path3: descParam NULL (likely Fitting hides it) → switching to Global");
                 success = TrySetViaSystemClassificationChange(familyDoc, target, value);
             }
 
@@ -209,35 +218,35 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             }
 
             var txStatus = familyTx.Commit();
-            SmartConLogger.Info($"[SmartCon] familyTx.Commit() status = {txStatus}");
+            SmartConLogger.Info($"familyTx.Commit() status = {txStatus}");
 
             if (txStatus != Autodesk.Revit.DB.TransactionStatus.Committed)
             {
-                SmartConLogger.Info($"[SmartCon] FATAL: transaction not committed, status={txStatus}, returning false");
+                SmartConLogger.Info($"FATAL: transaction not committed, status={txStatus}, returning false");
                 return false;
             }
 
             // Явно освобождаем familyTx чтобы familyDoc.IsModifiable стал false
             familyTx.Dispose();
-            SmartConLogger.Info($"[SmartCon] familyTx disposed, familyDoc.IsModifiable = {familyDoc.IsModifiable}");
+            SmartConLogger.Info($"familyTx disposed, familyDoc.IsModifiable = {familyDoc.IsModifiable}");
 
             if (familyDoc.IsModifiable)
             {
-                SmartConLogger.Info("[SmartCon] WARNING: familyDoc.IsModifiable is still true after Dispose! LoadFamily may reload unchanged family.");
+                SmartConLogger.Info("WARNING: familyDoc.IsModifiable is still true after Dispose! LoadFamily may reload unchanged family.");
             }
 
             // Загружаем изменённое семейство обратно в проект.
             // LoadFamily требует familyDoc.IsModifiable = false (транзакция закрыта).
-            SmartConLogger.Info("[SmartCon] Starting LoadFamily...");
+            SmartConLogger.Info("Starting LoadFamily...");
             var loadedFamily = familyDoc.LoadFamily(doc, new FamilyLoadOptions());
-            SmartConLogger.Info($"[SmartCon] LoadFamily result: {(loadedFamily is null ? "NULL (existing family kept)" : $"loaded '{loadedFamily.Name}'")}");
+            SmartConLogger.Info($"LoadFamily result: {(loadedFamily is null ? "NULL (existing family kept)" : $"loaded '{loadedFamily.Name}'")}");
 
             return true;
         }
         finally
         {
             familyDoc.Close(false);
-            SmartConLogger.Info("[SmartCon] familyDoc closed");
+            SmartConLogger.Info("familyDoc closed");
         }
     }
 
@@ -266,20 +275,20 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             }
             catch (Exception ex)
             {
-                SmartConLogger.Info($"[SmartCon] AssociatedParameters error for '{fp.Definition?.Name}': {ex.Message}");
+                SmartConLogger.Info($"AssociatedParameters error for '{fp.Definition?.Name}': {ex.Message}");
             }
             if (drivingFp is not null) break;
         }
 
         if (drivingFp is null)
         {
-            SmartConLogger.Info("[SmartCon] TrySetDrivingFamilyParameter: no driving FamilyParameter found");
+            SmartConLogger.Info("TrySetDrivingFamilyParameter: no driving FamilyParameter found");
             return false;
         }
 
         if (!string.IsNullOrEmpty(drivingFp.Formula))
         {
-            SmartConLogger.Info($"[SmartCon] TrySetDrivingFamilyParameter: '{drivingFp.Definition?.Name}' has formula '{drivingFp.Formula}' — cannot set");
+            SmartConLogger.Info($"TrySetDrivingFamilyParameter: '{drivingFp.Definition?.Name}' has formula '{drivingFp.Formula}' — cannot set");
             return false;
         }
 
@@ -297,12 +306,12 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             {
                 fm.Set(drivingFp, value);
             }
-            SmartConLogger.Info($"[SmartCon] TrySetDrivingFamilyParameter: set '{drivingFp.Definition?.Name}' = '{value}' (isInstance={drivingFp.IsInstance})");
+            SmartConLogger.Info($"TrySetDrivingFamilyParameter: set '{drivingFp.Definition?.Name}' = '{value}' (isInstance={drivingFp.IsInstance})");
             return true;
         }
         catch (Exception ex)
         {
-            SmartConLogger.Info($"[SmartCon] TrySetDrivingFamilyParameter failed: {ex.Message}");
+            SmartConLogger.Info($"TrySetDrivingFamilyParameter failed: {ex.Message}");
             return false;
         }
     }
@@ -330,19 +339,19 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
 
         if (sysParam is null)
         {
-            SmartConLogger.Info("[SmartCon] TrySetViaSystemClassificationChange: 'System Classification' param not found");
+            SmartConLogger.Info("TrySetViaSystemClassificationChange: 'System Classification' param not found");
             return false;
         }
 
         if (sysParam.IsReadOnly)
         {
-            SmartConLogger.Info("[SmartCon] TrySetViaSystemClassificationChange: SystemClassification is ReadOnly, cannot change");
+            SmartConLogger.Info("TrySetViaSystemClassificationChange: SystemClassification is ReadOnly, cannot change");
             return false;
         }
 
         int originalSysClass = sysParam.AsInteger();
         int globalValue = (int)PipeSystemType.Global;
-        SmartConLogger.Info($"[SmartCon] TrySetViaSystemClassificationChange: sysClass {originalSysClass} → {globalValue} (Global)");
+        SmartConLogger.Info($"TrySetViaSystemClassificationChange: sysClass {originalSysClass} → {globalValue} (Global)");
 
         try
         {
@@ -354,24 +363,24 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
             // После смены на Global — переищем параметр описания (IsReadOnly мог измениться).
             var descParam = target.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION);
 
-            SmartConLogger.Info($"[SmartCon] TrySetViaSystemClassificationChange: descParam after Global='{descParam?.Definition?.Name ?? "NULL"}', IsReadOnly={descParam?.IsReadOnly}");
+            SmartConLogger.Info($"TrySetViaSystemClassificationChange: descParam after Global='{descParam?.Definition?.Name ?? "NULL"}', IsReadOnly={descParam?.IsReadOnly}");
 
             if (descParam is null || descParam.IsReadOnly)
             {
-                SmartConLogger.Info("[SmartCon] TrySetViaSystemClassificationChange: Description still NULL/ReadOnly after Global switch");
+                SmartConLogger.Info("TrySetViaSystemClassificationChange: Description still NULL/ReadOnly after Global switch");
                 sysParam.Set(originalSysClass);
                 return false;
             }
 
             bool setOk = descParam.Set(value);
-            SmartConLogger.Info($"[SmartCon] TrySetViaSystemClassificationChange: Set()={setOk}, valueAfter='{descParam.AsString()}'");
+            SmartConLogger.Info($"TrySetViaSystemClassificationChange: Set()={setOk}, valueAfter='{descParam.AsString()}'");
             sysParam.Set(originalSysClass);
-            SmartConLogger.Info($"[SmartCon] TrySetViaSystemClassificationChange: SystemClassification restored to {originalSysClass}");
+            SmartConLogger.Info($"TrySetViaSystemClassificationChange: SystemClassification restored to {originalSysClass}");
             return setOk;
         }
         catch (Exception ex)
         {
-            SmartConLogger.Info($"[SmartCon] TrySetViaSystemClassificationChange failed: {ex.Message}");
+            SmartConLogger.Info($"TrySetViaSystemClassificationChange failed: {ex.Message}");
             try { sysParam.Set(originalSysClass); } catch (Exception restoreEx) { SmartConLogger.Debug($"[Restore SystemClassification] {restoreEx.GetType().Name}: {restoreEx.Message}"); }
             return false;
         }
@@ -419,3 +428,4 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
         }
     }
 }
+

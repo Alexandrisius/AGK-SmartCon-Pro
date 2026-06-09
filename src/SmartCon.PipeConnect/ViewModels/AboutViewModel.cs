@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Threading;
 using SmartCon.PipeConnect.Services;
 using SmartCon.UI;
 
@@ -160,7 +161,7 @@ public sealed partial class AboutViewModel : ObservableObject, IObservableReques
     {
         try
         {
-            var pending = _updateService.GetPendingUpdateAsync().GetAwaiter().GetResult();
+            var pending = AsyncBridge.RunSync(() => _updateService.GetPendingUpdateAsync());
             UpdatePending = pending is not null;
             if (UpdatePending)
                 StatusMessage = LocalizationService.GetString("About_PendingUpdate");

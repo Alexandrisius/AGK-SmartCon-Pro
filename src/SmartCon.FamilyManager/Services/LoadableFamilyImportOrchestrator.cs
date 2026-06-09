@@ -83,20 +83,20 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                     ct);
                 if (types.Count == 0)
                 {
-                    SmartConLogger.Warn(
-                        $"[LoadableImport] No types for '{item.FileName}'");
+                    using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName));
+                    SmartConLogger.Warn($"No types for '{item.FileName}' [Action: Check .rfa has FamilyManager.Types parameter, or update Family Editor]");
                 }
                 else
                 {
                     await _typeRepository.SaveTypesAsync(match.CatalogItemId!, types, ct);
-                    SmartConLogger.Info(
-                        $"[LoadableImport] Saved {types.Count} type(s) for '{item.FileName}' (CatalogItemId={match.CatalogItemId})");
+                    using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName), ("CatalogItemId", match.CatalogItemId));
+                    SmartConLogger.Info($"Saved {types.Count} type(s) for '{item.FileName}' (CatalogItemId={match.CatalogItemId})");
                 }
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn(
-                    $"[LoadableImport] Failed to persist types for '{item.FileName}': {ex.Message}");
+                using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName));
+                SmartConLogger.Warn($"Failed to persist types: {ex.Message} [Action: Check database write permissions and SQLite file integrity]");
             }
 
             try
@@ -116,8 +116,8 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn(
-                    $"[LoadableImport] ResolveForLoadAsync failed for '{item.FileName}': {ex.Message}");
+                using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName));
+                SmartConLogger.Warn($"ResolveForLoadAsync failed: {ex.Message} [Action: Verify file exists and Revit version matches catalog targetRevitVersion]");
             }
         }
 

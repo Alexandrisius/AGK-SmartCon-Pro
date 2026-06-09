@@ -18,6 +18,8 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task OpenCategoryEditorAsync()
     {
+        using var _scope = SmartConLogger.BeginScope("FMEdit",
+            ("Method", "OpenCategoryEditorAsync"));
         var editorVm = _viewModelFactory.CreateCategoryTreeEditorViewModel();
         editorVm.Saved += () => _ = LoadTreeAsync();
         await editorVm.InitializeAsync();
@@ -27,6 +29,8 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand]
     private async Task OpenProperties()
     {
+        using var _scope = SmartConLogger.BeginScope("FMEdit",
+            ("Method", "OpenProperties"));
         if (SelectedItem is null) return;
 
         var itemId = SelectedItem.Id;
@@ -60,6 +64,8 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task EditFamilyAsync()
     {
+        using var _scope = SmartConLogger.BeginScope("FMEdit",
+            ("Method", "EditFamilyAsync"));
         if (SelectedTreeNode is not FamilyLeafNodeViewModel leaf) return;
 
         var resolved = await _fileResolver.ResolveForLoadAsync(
@@ -89,15 +95,17 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task ImportActiveFileAsync()
     {
+        using var _scope = SmartConLogger.BeginScope("FMImport",
+            ("Method", "ImportActiveFileAsync"));
         IsLoading = true;
         ActiveFamilyPreparationResult? familyPreparation = null;
+        var sessionStart = DateTime.Now;
         try
         {
             SmartConLogger.LogSessionStart("ImportActiveFile");
-            SmartConLogger.Info("[ImportActiveFile] === START ===");
 
             var kind = await _activeDocumentClassifier.ClassifyAsync();
-            SmartConLogger.Info($"[ImportActiveFile] Active document kind: {kind}");
+            SmartConLogger.Info($"Active document kind: {kind}");
 
             switch (kind)
             {
@@ -112,11 +120,11 @@ public sealed partial class FamilyManagerMainViewModel
                     familyPreparation = await _activeFamilyFilePreparer.PrepareActiveFamilyAsync();
                     if (familyPreparation is null)
                     {
-                        SmartConLogger.Warn("[ImportActiveFile] Preparer returned null — aborting");
+                        SmartConLogger.Warn("Preparer returned null — aborting");
                         return;
                     }
                     SmartConLogger.Info(
-                        $"[ImportActiveFile] Family prepared: tempRfa='{familyPreparation.TempRfaPath}', " +
+                        $"Family prepared: tempRfa='{familyPreparation.TempRfaPath}', " +
                         $"tempTxt='{familyPreparation.TempTxtPath ?? "<none>"}', " +
                         $"originalRfa='{familyPreparation.OriginalRfaPath ?? "<untitled>"}', " +
                         $"originalTxt='{familyPreparation.OriginalTxtPath ?? "<none>"}'");
@@ -139,7 +147,7 @@ public sealed partial class FamilyManagerMainViewModel
                         catch (Exception ex)
                         {
                             SmartConLogger.Error(
-                                $"[ImportActiveFile] Analyze failed: {ex.Message}");
+                                $"Analyze failed: {ex.Message}");
                             return (Array.Empty<CategoryAnalysis>(), Array.Empty<LoadableFamilyInfo>());
                         }
                     });
@@ -149,7 +157,7 @@ public sealed partial class FamilyManagerMainViewModel
                     var loadableCount = loadableFamilies.Count;
 
                     SmartConLogger.Info(
-                        $"[ImportActiveFile] Phase 1 (fast): system={systemCategoryCount}cat/{systemTypeCount}types, loadable={loadableCount} families");
+                        $"Phase 1 (fast): system={systemCategoryCount}cat/{systemTypeCount}types, loadable={loadableCount} families");
 
                     if (systemCategoryCount == 0 && loadableCount == 0)
                     {
@@ -168,7 +176,7 @@ public sealed partial class FamilyManagerMainViewModel
                         LanguageManager.GetString(StringLocalization.Keys.FM_ImportActiveConfirmTitle)
                             ?? "Импорт активного файла",
                         confirmMessage);
-                    SmartConLogger.Info($"[ImportActiveFile] Phase 2: user confirmed={confirmed}");
+                    SmartConLogger.Info($"Phase 2: user confirmed={confirmed}");
                     if (!confirmed)
                     {
                         StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Cancel) ?? "Отменено";
@@ -189,7 +197,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[ImportActiveFile] FAILED: {ex}");
+            SmartConLogger.Error($"FAILED: {ex}");
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error",
                 ex.Message);
@@ -200,32 +208,32 @@ public sealed partial class FamilyManagerMainViewModel
             if (!string.IsNullOrEmpty(capturedFamilyPath))
             {
                 SmartConLogger.Info(
-                    $"[ImportActiveFile] Cleanup phase 1/2: closing family document at '{capturedFamilyPath}'");
+                    $"Cleanup phase 1/2: closing family document at '{capturedFamilyPath}'");
                 await CloseFamilyDocumentAsync(capturedFamilyPath!);
             }
             else
             {
                 SmartConLogger.Debug(
-                    "[ImportActiveFile] Cleanup phase 1/2: no family preparation to close (project or abort path)");
+                    "Cleanup phase 1/2: no family preparation to close (project or abort path)");
             }
 
             // Temp folder cleanup runs on the thread pool — it is pure I/O
             // and does not require the Revit UI thread.
             SmartConLogger.Debug(
-                "[ImportActiveFile] Cleanup phase 2/2: removing temp staging folders");
+                "Cleanup phase 2/2: removing temp staging folders");
             try
             {
                 await _activeImportCleanupService.CleanupAfterImportAsync();
                 SmartConLogger.Info(
-                    "[ImportActiveFile] ✓ Cleanup phase 2/2 complete (see [ActiveCleanup] details above)");
+                    "✓ Cleanup phase 2/2 complete (see details above)");
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"[ImportActiveFile] Temp cleanup failed: {ex.Message}");
+                SmartConLogger.Warn($"Temp cleanup failed: {ex.Message}");
             }
 
             IsLoading = false;
-            SmartConLogger.Info("[ImportActiveFile] === END ===");
+            SmartConLogger.LogSessionEnd("ImportActiveFile", sessionStart);
         }
     }
 
@@ -237,10 +245,15 @@ public sealed partial class FamilyManagerMainViewModel
     /// </summary>
     private async Task CloseFamilyDocumentAsync(string capturedFamilyPath)
     {
+        using var _ = SmartConLogger.BeginScope("FMImport",
+            ("Method", "CloseFamilyDocumentAsync"));
         try
         {
             await _awaitableEvent.RaiseAsync(obj =>
             {
+                using var _uiScope = SmartConLogger.BeginScope("FMImport",
+                    ("Method", "CloseFamilyDocumentAsync"),
+                    ("Thread", "RevitUI"));
                 var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
                 var app = uiApp.Application;
                 var activeBeforeSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
@@ -250,7 +263,7 @@ public sealed partial class FamilyManagerMainViewModel
                         && d.PathName != activeBeforeSwitch);
 
                 SmartConLogger.Info(
-                    $"[ImportActiveFile] Cleanup(family): activeBeforeSwitch='{activeBeforeSwitch}', " +
+                    $"Cleanup(family): activeBeforeSwitch='{activeBeforeSwitch}', " +
                     $"projectToSwitch='{projectDoc?.PathName}'");
 
                 if (projectDoc != null)
@@ -259,12 +272,12 @@ public sealed partial class FamilyManagerMainViewModel
                     {
                         uiApp.OpenAndActivateDocument(projectDoc.PathName);
                         SmartConLogger.Info(
-                            $"[ImportActiveFile] Re-activated project: '{projectDoc.PathName}'");
+                            $"Re-activated project: '{projectDoc.PathName}'");
                     }
                     catch (Exception activateEx)
                     {
                         SmartConLogger.Warn(
-                            $"[ImportActiveFile] Activate project failed: {activateEx.Message}");
+                            $"Activate project failed: {activateEx.Message}");
                         try
                         {
                             var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
@@ -280,12 +293,12 @@ public sealed partial class FamilyManagerMainViewModel
                         var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
                         uiApp.PostCommand(closeCmd);
                         SmartConLogger.Info(
-                            "[ImportActiveFile] No project to switch to — posted Close command");
+                            "No project to switch to — posted Close command");
                     }
                     catch (Exception postEx)
                     {
                         SmartConLogger.Warn(
-                            $"[ImportActiveFile] PostCommand Close failed: {postEx.Message}");
+                            $"PostCommand Close failed: {postEx.Message}");
                     }
                 }
 
@@ -302,38 +315,40 @@ public sealed partial class FamilyManagerMainViewModel
                         {
                             docToClose.Close(false);
                             SmartConLogger.Debug(
-                                $"[ImportActiveFile] ✓ Closed family file: {capturedFamilyPath}");
+                                $"✓ Closed family file: {capturedFamilyPath}");
                         }
                         else
                         {
                             SmartConLogger.Debug(
-                                $"[ImportActiveFile] Family document not found in app.Documents (already closed?)");
+                                $"Family document not found in app.Documents (already closed?)");
                         }
                     }
                     catch (Exception closeEx)
                     {
                         SmartConLogger.Info(
-                            $"[ImportActiveFile] Family close skipped: {closeEx.Message}");
+                            $"Family close skipped: {closeEx.Message}");
                     }
                 }
                 else
                 {
                     SmartConLogger.Debug(
-                        $"[ImportActiveFile] Active document switched to '{activeAfterSwitch}' — no need to close family");
+                        $"Active document switched to '{activeAfterSwitch}' — no need to close family");
                 }
             });
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[ImportActiveFile] Document cleanup failed: {ex.Message}");
+            SmartConLogger.Error($"Document cleanup failed: {ex.Message}");
         }
     }
 
     private async Task ProcessFamilyImportAsync(ActiveFamilyPreparationResult preparation)
     {
+        using var _ = SmartConLogger.BeginScope("FMImport",
+            ("Method", "ProcessFamilyImportAsync"));
         var familyRfaPath = preparation.TempRfaPath;
         SmartConLogger.Debug(
-            $"[ImportActiveFile] ProcessFamilyImport: tempRfa='{familyRfaPath}', " +
+            $"ProcessFamilyImport: tempRfa='{familyRfaPath}', " +
             $"originalRfa='{preparation.OriginalRfaPath ?? "<untitled>"}', " +
             $"tempTxt='{preparation.TempTxtPath ?? "<none>"}'");
 
@@ -367,7 +382,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"[ImportActiveFile] Failed to resolve category name: {ex.Message}");
+                SmartConLogger.Warn($"Failed to resolve category name: {ex.Message}");
             }
         }
 
@@ -414,6 +429,8 @@ public sealed partial class FamilyManagerMainViewModel
 
     private async Task ProcessProjectImportAsync(IReadOnlyList<FamilyBatchImportItem> batchItems)
     {
+        using var _ = SmartConLogger.BeginScope("FMImport",
+            ("Method", "ProcessProjectImportAsync"));
         if (batchItems.Count == 0)
         {
             _dialogService.ShowError(
@@ -458,7 +475,7 @@ public sealed partial class FamilyManagerMainViewModel
             var sysResult = await _systemFamilyImportOrchestrator.ImportBatchItemsAsync(systemItems);
             systemTotalTypes = systemItems.Sum(i => i.TypeCount);
             SmartConLogger.Info(
-                $"[ProcessProjectImport] System: imported={sysResult.Success}, types={systemTotalTypes}, tasks={sysResult.ExtractionTasks.Count}");
+                $"System: imported={sysResult.Success}, types={systemTotalTypes}, tasks={sysResult.ExtractionTasks.Count}");
 
             if (sysResult.ExtractionTasks.Count > 0)
             {
@@ -475,7 +492,7 @@ public sealed partial class FamilyManagerMainViewModel
             loadableTotalTypes = loadableItems.Sum(i => i.TypeCount);
             loadableAttributeTasks = loadResult.AttributeTasks;
             SmartConLogger.Info(
-                $"[ProcessProjectImport] Loadable: imported={loadResult.ImportedCount}, skipped={loadResult.SkippedCount}, attrTasks={loadableAttributeTasks.Count}");
+                $"Loadable: imported={loadResult.ImportedCount}, skipped={loadResult.SkippedCount}, attrTasks={loadableAttributeTasks.Count}");
         }
 
         if (loadableAttributeTasks.Count > 0)
@@ -496,9 +513,11 @@ public sealed partial class FamilyManagerMainViewModel
             : "Импорт завершён";
     }
 
-    private async Task ExtractAttributesForLoadableTasks(
-        IReadOnlyList<LoadableFamilyAttributeTask> tasks)
+    private async Task ExtractAttributesForLoadableTasks(IReadOnlyList<LoadableFamilyAttributeTask> tasks)
     {
+        using var _scope = SmartConLogger.BeginScope("FMLoadable",
+            ("Method", "ExtractAttributesForLoadableTasks"),
+            ("Count", tasks.Count));
         foreach (var task in tasks)
         {
             try
@@ -506,7 +525,7 @@ public sealed partial class FamilyManagerMainViewModel
                 if (!File.Exists(task.ManagedRfaPath))
                 {
                     SmartConLogger.Warn(
-                        $"[LoadableAttr] Managed .rfa missing: '{task.ManagedRfaPath}'");
+                        $"Managed .rfa missing: '{task.ManagedRfaPath}'");
                     continue;
                 }
 
@@ -524,13 +543,13 @@ public sealed partial class FamilyManagerMainViewModel
                             task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
                     }
                     SmartConLogger.Info(
-                        $"[LoadableAttr] Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(task.ManagedRfaPath)}' (CatalogItemId={task.CatalogItemId})");
+                        $"Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(task.ManagedRfaPath)}' (CatalogItemId={task.CatalogItemId})");
                 }
             }
             catch (Exception ex)
             {
                 SmartConLogger.Warn(
-                    $"[LoadableAttr] Extraction failed for '{task.CatalogItemId}': {ex.Message}");
+                    $"Extraction failed for '{task.CatalogItemId}': {ex.Message}");
             }
         }
     }
@@ -544,6 +563,9 @@ public sealed partial class FamilyManagerMainViewModel
     /// </summary>
     private async Task ExtractAttributesForImportedFamilies(IReadOnlyList<FamilyImportResult> importResults)
     {
+        using var _scope = SmartConLogger.BeginScope("FMLoadable",
+            ("Method", "ExtractAttributesForImportedFamilies"),
+            ("Count", importResults.Count));
         var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionId, string? FileId, bool HasTypeCatalog)>();
 
         try
@@ -566,13 +588,13 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     extractionResults.Add((catalogItemId, extraction, item.VersionId, item.FileId, hasTypeCatalog));
                     SmartConLogger.Info(
-                        $"[ImportActiveFile] Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(resolved.AbsolutePath)}'");
+                        $"Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(resolved.AbsolutePath)}'");
                 }
             }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[ImportActiveFile] Attribute extraction failed: {ex.Message}");
+            SmartConLogger.Warn($"Attribute extraction failed: {ex.Message}");
         }
 
         if (extractionResults.Count == 0) return;
@@ -597,7 +619,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"[ImportActiveFile] SaveExtraction failed: {ex.Message}");
+                SmartConLogger.Warn($"SaveExtraction failed: {ex.Message}");
             }
         }, nameof(ExtractAttributesForImportedFamilies));
     }
@@ -605,6 +627,8 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task EditSystemFamilyAsync()
     {
+        using var _scope = SmartConLogger.BeginScope("FMEdit",
+            ("Method", "EditSystemFamilyAsync"));
         if (SelectedTreeNode is not FamilyLeafNodeViewModel leaf) return;
         if (leaf.FamilySource != "system") return;
 
@@ -627,7 +651,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Freeze($"[EditSystemFamily] OpenAndActivateDocument failed: {ex.Message}");
+                SmartConLogger.Error($"OpenAndActivateDocument failed: {ex.Message}");
             }
         });
     }
@@ -635,6 +659,8 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task DeleteFamilyAsync()
     {
+        using var _scope = SmartConLogger.BeginScope("FMEdit",
+            ("Method", "DeleteFamilyAsync"));
         if (SelectedItem is null) return;
 
         var confirmed = _dialogService.ShowConfirmation(
@@ -680,7 +706,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (!CanEdit)
         {
-            SmartConLogger.Warn($"[FM] MoveFamilyToCategoryAsync blocked: user lacks edit permissions.");
+            SmartConLogger.Warn($"MoveFamilyToCategoryAsync blocked: user lacks edit permissions.");
             return;
         }
 
@@ -713,6 +739,8 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanDropFamily))]
     private async Task DropFamilyAsync(TreeViewDropInfo? info)
     {
+        using var _scope = SmartConLogger.BeginScope("FMTree",
+            ("Method", "DropFamilyAsync"));
         if (info is not { Payload: FamilyLeafNodeViewModel leaf, Target: CategoryNodeViewModel target })
             return;
 
@@ -762,3 +790,4 @@ public sealed partial class FamilyManagerMainViewModel
 
     private bool CanEditOps() => CanEdit;
 }
+

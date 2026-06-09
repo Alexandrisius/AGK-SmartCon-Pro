@@ -103,12 +103,12 @@ public sealed class RevitFittingMappingRepository : IFittingMappingRepository
         }
         catch (System.Text.Json.JsonException ex)
         {
-            SmartConLogger.Error($"[Mapping] Corrupted payload: {ex.Message}. Returning empty payload.");
+            SmartConLogger.Error($"Mapping.LoadPayload: Corrupted payload: {ex.Message}. Returning empty payload.");
             return MappingPayload.Empty;
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[Mapping] LoadPayload failed: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Error($"Mapping.LoadPayload: failed: {ex.GetType().Name}: {ex.Message}");
             return MappingPayload.Empty;
         }
     }
@@ -118,7 +118,7 @@ public sealed class RevitFittingMappingRepository : IFittingMappingRepository
         var doc = TryGetDocument();
         if (doc is null)
         {
-            SmartConLogger.Warn("[Mapping] SavePayload skipped: active document is not available.");
+            SmartConLogger.Warn("Mapping.SavePayload: skipped: active document is not available.");
             return;
         }
 
@@ -151,8 +151,9 @@ public sealed class RevitFittingMappingRepository : IFittingMappingRepository
         if (matches.Count == 0) return null;
         if (matches.Count > 1)
         {
+            using var _scope = SmartConLogger.BeginScope("Mapping", ("Method", "FindDataStorage"));
             SmartConLogger.Warn(
-                $"[Mapping] Found {matches.Count} DataStorage elements with SmartCon schema. Using the first one (ids: " +
+                $"Found {matches.Count} DataStorage elements with SmartCon schema. Using the first one (ids: " +
                 string.Join(", ", matches.Select(m => m.Id.GetValue())) + ").");
         }
 

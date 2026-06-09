@@ -34,6 +34,10 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
 
     public bool ActivateAndPlaceType(string familyName, string typeName)
     {
+        using var _scope = SmartConLogger.BeginScope("Placement",
+            ("Method", "ActivateAndPlaceType"),
+            ("FamilyName", familyName),
+            ("TypeName", typeName));
         var doc = _revitContext.GetDocument();
         var uiApp = GetUIApplication();
         if (doc is null || uiApp is null) return false;

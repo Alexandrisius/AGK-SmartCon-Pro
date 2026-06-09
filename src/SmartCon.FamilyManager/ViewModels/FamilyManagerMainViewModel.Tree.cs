@@ -26,12 +26,13 @@ public sealed partial class FamilyManagerMainViewModel
                     var deleted = await _usageRepo.DeleteOldUsagesAsync(TimeSpan.FromDays(90), CancellationToken.None);
                     if (deleted > 0)
                     {
-                        SmartConLogger.Info($"[Cleanup] Deleted {deleted} old project_usage records");
+                        using var _scope = SmartConLogger.BeginScope("Cleanup", ("Source", "LoadTreeAsync"));
+                        SmartConLogger.Info($"Deleted {deleted} old project_usage records");
                     }
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"Cleanup old usages failed: {ex.Message}");
+                    SmartConLogger.Warn($"Cleanup.LoadTreeAsync: failed: {ex.Message}");
                 }
             }, nameof(LoadTreeAsync));
 
@@ -42,7 +43,8 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"LoadTreeAsync GetAllAsync failed: {ex.Message}");
+                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "GetAllAsync"));
+                SmartConLogger.Warn($"failed: {ex.Message}");
             }
 
             var tree = new CategoryTree(categories);
@@ -94,7 +96,8 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"LoadTreeAsync stale check failed: {ex.Message}");
+                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "StaleCheck"));
+                SmartConLogger.Warn($"failed: {ex.Message}");
             }
 
             var itemsByCategory = results
@@ -154,7 +157,8 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"AttachCachedTypesAsync failed: {ex.Message}");
+                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "AttachCachedTypesAsync"));
+                SmartConLogger.Warn($"failed: {ex.Message}");
             }
 
             TreeNodes = rootNodes;

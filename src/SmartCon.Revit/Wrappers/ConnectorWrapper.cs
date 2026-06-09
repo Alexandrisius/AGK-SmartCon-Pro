@@ -61,7 +61,11 @@ public static class ConnectorWrapper
             // BuiltInParameter.ALL_MODEL_DESCRIPTION — языконезависимый системный параметр «Описание».
             return elemType?.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION)?.AsString();
         }
-        catch (Exception ex) { SmartConLogger.Warn($"[ConnectorWrapper] GetTypeDescriptionSafe: {ex.GetType().Name}: {ex.Message}"); return null; }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"ConnectorWrapper.GetTypeDescriptionSafe: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 
     private static string? GetConnectorDescriptionSafe(Connector connector)

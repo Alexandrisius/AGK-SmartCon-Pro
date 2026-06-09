@@ -44,7 +44,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"CategoryPicker LoadTreeAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"CategoryPicker.LoadTreeAsync: failed: {ex.Message}");
         }
 
         var tree = new CategoryTree(nodes);
@@ -114,8 +114,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
     partial void OnSearchTextChanged(string value)
     {
-        SmartConLogger.Freeze("CategoryPicker: FireAndForget.LoadTreeAsync");
-        SmartConLogger.FreezeThreadPool("CategoryPicker.Before.FireAndForget");
+        SmartConLogger.Debug("CategoryPicker: FireAndForget.LoadTreeAsync (before)");
         FireAndForget(() => LoadTreeAsync(), nameof(LoadTreeAsync));
     }
 
@@ -156,7 +155,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
             }
             catch (Exception ex)
             {
-                SmartConLogger.Error($"FireAndForget '{operationName}': {ex.GetBaseException()}");
+                SmartConLogger.Error($"FireAndForget({operationName}): {ex.GetBaseException()}");
             }
         });
     }

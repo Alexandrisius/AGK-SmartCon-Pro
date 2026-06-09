@@ -37,6 +37,8 @@ public sealed class PipeConnectSizeHandler(
         ElementId? fittingId,
         ElementId? reducerId)
     {
+        using var _scope = SmartConLogger.BeginScope("SizeHandler",
+            ("Method", "ChangeSize"));
         ConnectorProxy? updatedDynamic = activeDynamic;
         bool needsPrimaryReducer = false;
 
@@ -75,7 +77,7 @@ public sealed class PipeConnectSizeHandler(
                     var connIdx = kvp.Key;
                     var targetRadius = kvp.Value;
                     bool success = paramResolver.TrySetConnectorRadius(d, dynId, connIdx, targetRadius);
-                    SmartConLogger.Info($"[ChangeDynamicSize] TrySetConnectorRadius(connIdx={connIdx}, " +
+                    SmartConLogger.Info($"TrySetConnectorRadius(connIdx={connIdx}, " +
                         $"targetDN={FamilySizeFormatter.ToDn(targetRadius)}): {(success ? "OK" : "FAILED")}");
                 }
             }
@@ -89,7 +91,7 @@ public sealed class PipeConnectSizeHandler(
                 if (!VectorUtils.IsZero(correction))
                 {
                     var distMm = VectorUtils.Length(correction) * FeetToMm;
-                    SmartConLogger.Info($"[ChangeDynamicSize] PositionCorrection: {distMm:F3} mm");
+                    SmartConLogger.Info($"PositionCorrection: {distMm:F3} mm");
                     transformSvc.MoveElement(d, dynId, correction);
                 }
             }
@@ -100,14 +102,14 @@ public sealed class PipeConnectSizeHandler(
             foreach (var c in allConnsAfter)
             {
                 var actualDn = FamilySizeFormatter.ToDn(c.Radius);
-                SmartConLogger.Info($"[ChangeDynamicSize] After change: conn[{c.ConnectorIndex}] = DN {actualDn}");
+                SmartConLogger.Info($"After change: conn[{c.ConnectorIndex}] = DN {actualDn}");
             }
 
             updatedDynamic = ctcManager.RefreshWithCtcOverride(d, dynId, dynIdx) ?? updatedDynamic;
             if (updatedDynamic is not null)
             {
                 var actualDn = (int)Math.Round(updatedDynamic.Radius * 2.0 * FeetToMm);
-                SmartConLogger.Info($"[ChangeDynamicSize] Target connector after change: DN {actualDn}");
+                SmartConLogger.Info($"Target connector after change: DN {actualDn}");
             }
         });
 
@@ -138,7 +140,7 @@ public sealed class PipeConnectSizeHandler(
 
         if (Math.Abs(dynRadius - referenceRadius) > radiusEps)
         {
-            SmartConLogger.Info($"[DetectReducerNeeded] Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, " +
+            SmartConLogger.Info($"Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, " +
                 $"reference={referenceRadius * FeetToMm:F1}mm → reducer needed");
             return true;
         }
@@ -157,7 +159,7 @@ public sealed class PipeConnectSizeHandler(
 
         if (Math.Abs(dynRadius - fitConn2Radius) > radiusEps)
         {
-            SmartConLogger.Info($"[DetectReducerNeededAfterFitting] Radii mismatch: " +
+            SmartConLogger.Info($"Radii mismatch: " +
                 $"dyn={dynRadius * FeetToMm:F1}mm, fittingConn2={fitConn2Radius * FeetToMm:F1}mm → reducer needed");
             return true;
         }
@@ -203,23 +205,23 @@ public sealed class PipeConnectSizeHandler(
             var param = FindWritableParam(element, symbol, paramName);
             if (param is null)
             {
-                SmartConLogger.Info($"[ApplyQueryParams] SKIP '{paramName}': not found on element or symbol");
+                SmartConLogger.Info($"SKIP '{paramName}': not found on element or symbol");
                 continue;
             }
 
             if (param.IsReadOnly)
             {
-                SmartConLogger.Info($"[ApplyQueryParams] SKIP '{paramName}': ReadOnly (elem={element.Id.GetValue()})");
+                SmartConLogger.Info($"SKIP '{paramName}': ReadOnly (elem={element.Id.GetValue()})");
                 continue;
             }
 
             double valueFt = rawMm * MmToFeet;
             param.Set(valueFt);
             setCount++;
-            SmartConLogger.Info($"[ApplyQueryParams] Set '{paramName}' = {rawMm:F2} mm ({valueFt:F6} ft) via {(symbol != null && symbol.LookupParameter(paramName) is not null ? "Symbol" : "Instance")}");
+            SmartConLogger.Info($"Set '{paramName}' = {rawMm:F2} mm ({valueFt:F6} ft) via {(symbol != null && symbol.LookupParameter(paramName) is not null ? "Symbol" : "Instance")}");
         }
 
-        SmartConLogger.Info($"[ApplyQueryParams] Set {setCount}/{option.QueryParamNames.Count} query params for '{option.DisplayName}'");
+        SmartConLogger.Info($"Set {setCount}/{option.QueryParamNames.Count} query params for '{option.DisplayName}'");
         return setCount > 0;
     }
 
@@ -252,3 +254,4 @@ public sealed class PipeConnectSizeHandler(
         return null;
     }
 }
+

@@ -18,9 +18,11 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
 
     public string? FindSidecarPath(string? rfaPath)
     {
+        using var _scope = SmartConLogger.BeginScope("Sidecar",
+            ("Method", "FindSidecarPath"));
         if (string.IsNullOrWhiteSpace(rfaPath))
         {
-            SmartConLogger.Debug("[Sidecar] FindSidecarPath: empty rfaPath → null");
+            SmartConLogger.Debug("FindSidecarPath: empty rfaPath → null");
             return null;
         }
 
@@ -28,7 +30,7 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
         {
             if (!File.Exists(rfaPath))
             {
-                SmartConLogger.Debug($"[Sidecar] FindSidecarPath: rfaPath does not exist '{rfaPath}' → null");
+                SmartConLogger.Debug($"FindSidecarPath: rfaPath does not exist '{rfaPath}' → null");
                 return null;
             }
 
@@ -41,7 +43,7 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
             var nameNoExt = SafeFileName.GetBaseName(rfaPath);
             if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(nameNoExt))
             {
-                SmartConLogger.Debug($"[Sidecar] FindSidecarPath: cannot derive dir/basename from '{rfaPath}' → null");
+                SmartConLogger.Debug($"FindSidecarPath: cannot derive dir/basename from '{rfaPath}' → null");
                 return null;
             }
 
@@ -49,7 +51,7 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
             var direct = Path.Combine(dir, nameNoExt + ".txt");
             if (File.Exists(direct))
             {
-                SmartConLogger.Debug($"[Sidecar] Found (direct): {direct}");
+                SmartConLogger.Debug($"Found (direct): {direct}");
                 return direct;
             }
 
@@ -60,32 +62,34 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
                 var candidateName = SafeFileName.GetBaseName(candidate);
                 if (string.Equals(candidateName, nameNoExt, StringComparison.OrdinalIgnoreCase))
                 {
-                    SmartConLogger.Debug($"[Sidecar] Found (case-insensitive): {candidate}");
+                    SmartConLogger.Debug($"Found (case-insensitive): {candidate}");
                     return candidate;
                 }
             }
 
-            SmartConLogger.Debug($"[Sidecar] No .txt sidecar found for '{rfaPath}' (basename='{nameNoExt}', dir='{dir}')");
+            SmartConLogger.Debug($"No .txt sidecar found for '{rfaPath}' (basename='{nameNoExt}', dir='{dir}')");
             return null;
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[Sidecar] FindSidecarPath failed for '{rfaPath}': {ex.Message}");
+            SmartConLogger.Warn($"FindSidecarPath failed for '{rfaPath}': {ex.Message}");
             return null;
         }
     }
 
     public async Task<string?> CopySidecarAsync(string sourceTxtPath, string destDir, CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("Sidecar",
+            ("Method", "CopySidecarAsync"));
         if (string.IsNullOrWhiteSpace(sourceTxtPath) || string.IsNullOrWhiteSpace(destDir))
         {
-            SmartConLogger.Warn($"[Sidecar] CopySidecarAsync: invalid arguments (source='{sourceTxtPath}', destDir='{destDir}')");
+            SmartConLogger.Warn($"CopySidecarAsync: invalid arguments (source='{sourceTxtPath}', destDir='{destDir}')");
             return null;
         }
 
         if (!File.Exists(sourceTxtPath))
         {
-            SmartConLogger.Warn($"[Sidecar] CopySidecarAsync: source does not exist '{sourceTxtPath}'");
+            SmartConLogger.Warn($"CopySidecarAsync: source does not exist '{sourceTxtPath}'");
             return null;
         }
 
@@ -115,18 +119,18 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
                         destStream.Flush();
                     }, ct);
 
-                    SmartConLogger.Debug($"[Sidecar] Copied '{sourceTxtPath}' → '{destPath}' (attempt {attempt + 1})");
+                    SmartConLogger.Debug($"Copied '{sourceTxtPath}' → '{destPath}' (attempt {attempt + 1})");
                     return destPath;
                 }
                 catch (IOException) when (attempt < CopyMaxRetries - 1)
                 {
                     var delay = CopyRetryDelaysMs[attempt];
-                    SmartConLogger.Debug($"[Sidecar] Copy attempt {attempt + 1} failed (IO), retrying in {delay}ms");
+                    SmartConLogger.Debug($"Copy attempt {attempt + 1} failed (IO), retrying in {delay}ms");
                     await Task.Delay(delay, ct);
                 }
             }
 
-            SmartConLogger.Warn($"[Sidecar] CopySidecarAsync: failed to copy '{sourceTxtPath}' after {CopyMaxRetries} attempts");
+            SmartConLogger.Warn($"CopySidecarAsync: failed to copy '{sourceTxtPath}' after {CopyMaxRetries} attempts");
             return null;
         }
         catch (OperationCanceledException)
@@ -135,8 +139,9 @@ internal sealed class LocalFamilySidecarLocator : IFamilySidecarLocator
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[Sidecar] CopySidecarAsync unexpected error: {ex.Message}");
+            SmartConLogger.Error($"CopySidecarAsync unexpected error: {ex.Message}");
             return null;
         }
     }
 }
+

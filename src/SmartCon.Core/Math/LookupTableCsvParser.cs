@@ -18,6 +18,8 @@ public static class LookupTableCsvParser
 
     public static bool TryParseRevitValue(string cell, out double value)
     {
+        using var _scope = SmartConLogger.BeginScope("LookupTable",
+            ("Method", "TryParseRevitValue"));
         value = 0;
         if (string.IsNullOrWhiteSpace(cell)) return false;
 

@@ -41,6 +41,8 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
         IReadOnlyList<SystemFamilyExtractionTask> tasks,
         CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("SystemFamilyAttr",
+            ("Method", "ExtractAndSaveAsync"));
         if (tasks.Count == 0) return;
 
         SmartConLogger.Debug(

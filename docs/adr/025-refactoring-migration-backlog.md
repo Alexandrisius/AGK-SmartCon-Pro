@@ -1,7 +1,7 @@
 # ADR-025: Refactoring Migration Backlog (Phases 5–7)
 
-**Status:** accepted (tracking only)
-**Date:** 2026-06-05
+**Status:** accepted (tracking only) — M-019-005 выполнено
+**Date:** 2026-06-05 (initial), 2026-06-09 (M-019-005 ✅)
 **Branch:** develop
 
 ## Контекст
@@ -183,7 +183,10 @@ WpfDispatcher + 7 тестов в `WpfDispatcherTests.cs`.
 
 ---
 
-### M-019-005: `SmartConLogger.Info("...")` → `using var _ = BeginScope("OpName")`
+### M-019-005: `SmartConLogger.Info("...")` → `using var _ = BeginScope("OpName")` ✅ DONE
+
+**Статус:** выполнено в `feature/logging-improvements` (21 коммит, 5afc419…206bcec)
++ 9 follow-up коммитов (c084e58…c54c19d).
 
 **Скоуп:** 1001 call site. Горячие файлы:
 - `SystemFamilyRevitOperations.cs` (24)
@@ -191,49 +194,62 @@ WpfDispatcher + 7 тестов в `WpfDispatcherTests.cs`.
 - `FamilyManagerMainViewModel.*` (все partials, ~100)
 - `DatabaseManager.cs`, repository-классы
 
-**Почему плохо:**
-- `SmartConLogger.Info($"[{opName}] something happened")` — opName **пишется вручную**
-  в каждое сообщение, нет корреляции между сообщениями одной операции.
-- Невозможно в логе найти **все** сообщения, относящиеся к операции X — только если помнишь opName.
-- Тайминги операций — вручную через `Stopwatch.StartNew()` + `Stopwatch.Stop()`.
+**Результат:**
+- 990 Info/Debug/Warn/Error call-sites мигрированы на structured `BeginScope`
+- 184 BeginScope uses (87 файлов покрыто)
+- 6 Measure uses (в т.ч. новая MeasureScope API из C1)
+- 0 manual `[Category]` префиксов в message
+- 0 `Op=X Op=X` дублей (D1 fix в FormatPrefix)
+- 0 production `.GetAwaiter().GetResult()` (C6: 8 мест → AsyncBridge.RunSync)
+- 0 `async void` в production (C7: 2 места → Func<T,Task>)
 
-**Почему хорошо после:**
-- `using var _ = SmartConLogger.BeginScope("ImportActiveFile")` — все сообщения
-  внутри блока автоматически получают `[OpId=abc12345]`.
-- В логе: `grep abc12345 smartcon.log` → вся операция целиком.
-- Тайминги — `using var _ = SmartConLogger.Measure("SubOperation")` — авто elapsed в Dispose.
+**Подводный камень (resolved):**
+- 1001 call site — diff был **большой**, но разбит на 21+ коммит по файлам.
+- `using var _ = scope` — `LogScope.Dispose` идемпотентен (есть `_disposed` guard).
+- Fire-and-forget — scope через `LogScopeProvider` AsyncLocal работает корректно.
+- `BeginScope` + `Measure` в одном методе — D3 fix (убраны двойные scope).
 
-**Критичность:** 🟢 низкая. Логи работают, **но observability** страдает:
-при инциденте в продакшене корреляция событий — manual.
+**Ссылка:** инфраструктура в коммите `a273063` (Phase 7) + C1-C11 в
+`feature/logging-improvements`. Подробно — `docs/adr/026-logging-migration.md`
++ `docs/logging/final-validation-report.md` + skill `smartcon-logging`.
 
-**Подводный камень:**
-- 1001 call site — это **большой** diff. Code review будет длинным.
-- Возможны **новые баги**: `using var _ = scope` — если scope не Dispose-ится (например, exception в ctor),
-  логирование не сработает. Текущий `LogScope.Dispose` идемпотентен (есть `_disposed` guard).
-- Некоторые `Info(...)` вызываются в **fire-and-forget** контексте (после `await` отвалился) —
-  scope там не сработает корректно.
+---
 
-**Стратегия:**
-1. Начать с `DatabaseManager.cs` (centralized, простая логика).
-2. Мигрировать один ViewModel partial за раз (5-10 use sites).
-3. Каждый commit — отдельный файл.
-4. **Никогда** не bulk-replace — слишком высокий риск regression.
+#### Phase 0a (2026-06) — обязательная предпосылка для M-019-005
 
-**Ссылка:** инфраструктура в коммите `a273063` (Phase 7).
-`SmartConLogger.BeginScope` / `Measure` + 5 тестов в `SmartConLoggerScopeTests.cs`.
+> ⚠️ **Блокер.** До этого момента мигрировать call sites на `BeginScope` **нельзя**:
+> старая реализация scope не пробрасывала `OpId` в дочерние `Info`/`Debug`,
+> миграция не дала бы observability.
+
+Что сделано:
+- `LogScopeProvider` переписан на `AsyncLocal<ImmutableStack<LogScope>>` —
+  `OpId` теперь корректно течёт через `await` и thread-pool hops.
+- `WriteMain` / `WriteFormula` дополняют каждую строку префиксом
+  `[OpId=… Op=…]`, который собирается из активной цепочки scopes.
+- `MinLevel` стал `volatile` (защита от cross-thread race).
+- `FreezeTimer` / `FreezeThreadPool` / `Lookup` удалены
+  (0 production-вызовов). Их содержимое (если было важно) перенесено
+  в `smartcon.log` с тегами `[Freeze]` / `[Lookup]`.
+- `lookup-diagnostic.log` и `freeze-diagnostic.log` больше не создаются.
+- `formula-diagnostic.log` стал строго append-only (без ротации).
+- Тесты в `SmartConLoggerScopeTests.cs` дополнены: async-flow,
+  thread-pool-hop, prefix-format, uniqueness, nested dispose.
+
+**Acceptance criteria для M-019-005b** (миграция call sites) —
+после того как Phase 0a зелёный в main.
 
 ---
 
 ## Сводная таблица
 
-| ID | Миграция | Скоуп | Критичность | Трудоёмкость | Риск регрессии |
-|---|---|---|---|---|---|
-| M-019-001 | `DateTimeOffset.UtcNow` → `IClock` | 74 места | 🟡 средне | 1-2 дня | низкий (read-only) |
-| M-019-002 | `Guid.NewGuid()` → `IIdGenerator` | 40 мест | 🟢 низко | 0.5 дня | низкий (read-only) |
-| M-019-003 | `Application.Current?.Dispatcher` → `IDispatcher` | 5 мест | 🟠 высоко | 0.5 дня | средний (UI thread) |
-| M-019-004 | manual SQL → `SqliteConnectionExtensions` | 30+ мест | 🟡 средне | 1 день | средний (repositories) |
-| M-019-005 | `SmartConLogger.Info` → `BeginScope` | 1001 место | 🟢 низко | 2-3 дня | средний (observability) |
-| | **ИТОГО** | **~1150 мест** | | **5-7 дней** | |
+| ID | Миграция | Скоуп | Критичность | Трудоёмкость | Риск регрессии | Статус |
+|---|---|---|---|---|---|---|
+| M-019-001 | `DateTimeOffset.UtcNow` → `IClock` | 74 места | 🟡 средне | 1-2 дня | низкий (read-only) | open |
+| M-019-002 | `Guid.NewGuid()` → `IIdGenerator` | 40 мест | 🟢 низко | 0.5 дня | низкий (read-only) | open |
+| M-019-003 | `Application.Current?.Dispatcher` → `IDispatcher` | 5 мест | 🟠 высоко | 0.5 дня | средний (UI thread) | open |
+| M-019-004 | manual SQL → `SqliteConnectionExtensions` | 30+ мест | 🟡 средне | 1 день | средний (repositories) | open |
+| M-019-005 | `SmartConLogger.Info` → `BeginScope` | 1001 место | 🟢 низко | 2-3 дня | средний (observability) | ✅ **DONE** |
+| | **ИТОГО** | **~1150 мест** | | **5-7 дней** | | 1/5 done |
 
 ## Рекомендуемый порядок миграции
 

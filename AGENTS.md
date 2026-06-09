@@ -223,6 +223,22 @@
 - Новые доменные классы → обнови `docs/domain/models.md`
 - Новые интерфейсы → обнови `docs/domain/interfaces.md`
 - Архитектурные решения → создай ADR в `docs/adr/`
+- **Логирование** → **НИКОГДА** не пиши `$"[Cat] message"` — используй
+  `using var _scope = SmartConLogger.BeginScope("Cat", ("Method", nameof(M)));`
+  Подробно — skill `smartcon-logging` (SKILL.md → `references/logging-cookbook.md`)
+  и `docs/adr/026-logging-migration.md`. Три правила без исключений:
+  1. **`FilePath` / `FileName` в scope = `Path.GetFileName()`, не full path** (L8).
+  2. **`Warn(...)` всегда заканчивается `[Action: ...]`** — оператору нужен следующий шаг (L9).
+  3. **Не оборачивай `BeginScope` методы, которые живут > 1 сек с тяжёлой inner работой** — это даёт 2 МБ логов за один прогон (C15). Пусть inner work откроет свой scope.
+
+## Обязательные навыки (загружай перед задачей)
+
+| Навык | Когда загружать |
+|---|---|
+| `smartcon-build-guide` | **ВСЕГДА** перед сборкой / деплоем / релизом |
+| `revit-api-best-practice` | Работа с Revit API, ExternalEvent, Threading, MVVM+Revit |
+| `revit-wpf-compat` | WPF-диалоги, Dispatcher, `Application.Current`, net48/net8 совместимость |
+| `smartcon-logging` | **ВСЕГДА** при работе с логами (чтение, добавление вызовов, миграция prefix→scope, аудит `smartcon.log`) |
 
 ## Частые ловушки (gotchas)
 
@@ -231,6 +247,17 @@
 - **При переходе net8 ↔ net48** — ВСЕГДА делай restore с конфигурацией
 - **НЕ создавать PR** без явного запроса пользователя
 - **NEVER commit** если не попросили — только `git add/commit/push` по запросу
+- **`.GetAwaiter().GetResult()` на UI thread** → DEADLOCK. Используй `AsyncBridge.RunSync(() => async())` из `SmartCon.Core.Threading` (обёртка над `Task.Run + GetResult`). См. skill `revit-api-best-practice` + skill `smartcon-logging` §"Threading".
+- **`async void`** — exception swallowing, используй `async Task` + try/catch. Для event handlers: `Func<T, Task>` (caller обязан await).
+- **Stopwatch в production** — не используй `System.Diagnostics.Stopwatch` напрямую; используй `using var ms = SmartConLogger.Measure("Op")` + `ms.GetElapsedMilliseconds()`.
+- **Логирование**:
+  - `Op=X Op=X` дубль — не добавляй `("Op", X)` если operation уже `X` (D1 fix в `LogScope.FormatPrefix`)
+  - `BeginScope` + `Measure` в одном методе → двойной `OpId=`. Выбери одно
+  - `using var _` (discard) + `() => _ = …` lambda → CS0136 collision. Используй `_scope`
+  - Hot loops (>100 iter) с `Debug($"...")` → используй `HotLoopCounter` (см. skill `smartcon-logging` §"Counter pattern")
+  - **`FilePath` в scope = `Path.GetFileName()`, не full path** — full path в scope + повтор в message = 100+ chars spam в каждой строке. Убери path из message (L8).
+  - **`Warn` без `[Action: ...]`** — оператор читает лог и не знает что делать. Каждый Warn должен заканчиваться конкретным actionable предложением (L9). Примеры: см. skill `smartcon-logging` → `references/recent-patterns.md` §"L9".
+  - **`BeginScope` вокруг долгого метода (>1 сек с тяжёлой inner работой)** — 7803 строк лога из-за одного scope в PipeConnect Editor. Убирай внешний scope, оставь только inner (C15).
 
 ## Инструменты поиска
 

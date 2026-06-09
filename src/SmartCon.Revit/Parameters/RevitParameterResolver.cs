@@ -22,6 +22,11 @@ public sealed class RevitParameterResolver : IParameterResolver
     public IReadOnlyList<ParameterDependency> GetConnectorRadiusDependencies(
         Document doc, ElementId elementId, int connectorIndex)
     {
+        using var _scope = SmartConLogger.BeginScope("Resolver",
+            ("Method", "GetConnectorRadiusDependencies"),
+            ("ElementId", elementId.GetValue()),
+            ("ConnectorIndex", connectorIndex));
+
         SmartConLogger.DebugSection("GetConnectorRadiusDependencies");
         SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}");
 
@@ -84,7 +89,7 @@ public sealed class RevitParameterResolver : IParameterResolver
         if (!useRadius && !useDiameter)
         {
             SmartConLogger.Debug("  WARNING: no bound parameter to CONNECTOR_RADIUS/DIAMETER → return []");
-            SmartConLogger.Warn($"[Resolver] elementId={elementId.GetValue()}: no CONNECTOR_RADIUS or CONNECTOR_DIAMETER binding");
+            SmartConLogger.Warn($"elementId={elementId.GetValue()}: no CONNECTOR_RADIUS or CONNECTOR_DIAMETER binding");
             return [];
         }
 
@@ -99,7 +104,7 @@ public sealed class RevitParameterResolver : IParameterResolver
         if (string.IsNullOrEmpty(paramName))
         {
             SmartConLogger.Debug("  WARNING: failed to get parameter name from ParameterElement → return []");
-            SmartConLogger.Warn($"[Resolver] elementId={elementId.GetValue()}: parameter name is empty");
+            SmartConLogger.Warn($"elementId={elementId.GetValue()}: parameter name is empty");
             return [];
         }
 
@@ -180,6 +185,11 @@ public sealed class RevitParameterResolver : IParameterResolver
     public bool TrySetConnectorRadius(Document doc, ElementId elementId,
         int connectorIndex, double targetRadiusInternalUnits)
     {
+        using var _scope = SmartConLogger.BeginScope("Resolver",
+            ("Method", "TrySetConnectorRadius"),
+            ("ElementId", elementId.GetValue()),
+            ("ConnectorIndex", connectorIndex));
+
         SmartConLogger.DebugSection("TrySetConnectorRadius");
         SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, targetRadius={targetRadiusInternalUnits:F6} ft ({targetRadiusInternalUnits * FeetToMm:F2} mm)");
 
@@ -340,7 +350,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.GetValue()}: {ex.GetType().Name}: {ex.Message}");
-                SmartConLogger.Warn($"[Resolver] ChangeTypeId symbolId={symbolId.GetValue()} failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId symbolId={symbolId.GetValue()} failed: {ex.Message}");
             }
         }
 
@@ -387,7 +397,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION ChangeTypeId nearest: {ex.Message}");
-                SmartConLogger.Warn($"[Resolver] ChangeTypeId nearest failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId nearest failed: {ex.Message}");
             }
             return false;
         }
@@ -401,6 +411,10 @@ public sealed class RevitParameterResolver : IParameterResolver
         int staticConnIdx, double staticRadius,
         int dynConnIdx, double dynRadius)
     {
+        using var _scope = SmartConLogger.BeginScope("FittingTypeForPair",
+            ("Method", "TrySetFittingTypeForPair"),
+            ("FittingId", fittingId.GetValue()));
+
         SmartConLogger.DebugSection("TrySetFittingTypeForPair");
         SmartConLogger.Debug($"  fittingId={fittingId.GetValue()}, staticConn={staticConnIdx} R={staticRadius:F6} ft ({staticRadius * FeetToMm:F2}mm), dynConn={dynConnIdx} R={dynRadius:F6} ft ({dynRadius * FeetToMm:F2}mm)");
 
@@ -478,7 +492,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.GetValue()}: {ex.Message}");
-                SmartConLogger.Warn($"[TrySetFittingTypeForPair] symbolId={symbolId.GetValue()}: {ex.Message}");
+                SmartConLogger.Warn($"symbolId={symbolId.GetValue()}: {ex.Message}");
             }
         }
 
@@ -502,7 +516,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION applying winner: {ex.Message}");
-                SmartConLogger.Warn($"[TrySetFittingTypeForPair] ChangeTypeId winner failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId winner failed: {ex.Message}");
             }
         }
         else
@@ -516,3 +530,4 @@ public sealed class RevitParameterResolver : IParameterResolver
     private void Cache(ElementId elementId, int connectorIndex, ParameterDependency dep)
         => _cache[(elementId.GetValue(), connectorIndex)] = dep;
 }
+

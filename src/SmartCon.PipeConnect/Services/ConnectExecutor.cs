@@ -89,6 +89,10 @@ public sealed class ConnectExecutor
         bool userManuallyChangedSize,
         ChainTopology topology = ChainTopology.Direct)
     {
+        using var _scope = SmartConLogger.BeginScope("Connect",
+            ("Method", "ValidateAndFixBeforeConnect"),
+            ("Topology", topology.ToString()));
+
         const double radiusEps = Tolerance.RadiusFt;
         const double positionEpsFt = Tolerance.PositionRelaxedMm * MmToFeet;
         const double angleEpsDeg = Tolerance.AngleDeg;
@@ -159,6 +163,10 @@ public sealed class ConnectExecutor
         FittingMappingRule? activeFittingRule,
         ChainTopology topology = ChainTopology.Direct)
     {
+        using var _scope = SmartConLogger.BeginScope("Connect",
+            ("Method", "ExecuteConnectTo"),
+            ("Topology", topology.ToString()));
+
         var dyn = activeDynamic ?? context.Session.DynamicConnector;
         var staticConn = context.Session.StaticConnector;
 
@@ -220,6 +228,11 @@ public sealed class ConnectExecutor
         bool adjustDynamicToFit = true,
         ConnectorProxy? upstreamTarget = null)
     {
+        using var _scope = SmartConLogger.BeginScope("SizeFitting",
+            ("Method", "SizeFittingConnectors"),
+            ("FittingId", fittingId.GetValue()),
+            ("AdjustDynamicToFit", adjustDynamicToFit));
+
         ConnectorProxy? result = null;
         ConnectorProxy? currentDynamic = activeDynamic;
 
@@ -277,7 +290,7 @@ public sealed class ConnectExecutor
                 double actualDynRadius = currentDynamic?.Radius ?? currentDynRadius;
                 if (adjustDynamicToFit && System.Math.Abs(achievedDynRadius - actualDynRadius) > eps)
                 {
-                    SmartConLogger.Info($"[SizeFitting] Adjusting dynamic: {actualDynRadius * FeetToMm:F2}mm → {achievedDynRadius * FeetToMm:F2}mm");
+                    SmartConLogger.Info($"Adjusting dynamic: {actualDynRadius * FeetToMm:F2}mm → {achievedDynRadius * FeetToMm:F2}mm");
                     context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_FitDynamicToFitting"), txDoc =>
                     {
                         _paramResolver.TrySetConnectorRadius(txDoc, dynId, dynConnIdx, achievedDynRadius);
@@ -286,7 +299,7 @@ public sealed class ConnectExecutor
                 }
                 else if (!adjustDynamicToFit)
                 {
-                    SmartConLogger.Info($"[SizeFitting] Skipping dynamic adjustment (adjustDynamicToFit=false). Actual dynamic={actualDynRadius * FeetToMm:F2}mm, fitting achieved={achievedDynRadius * FeetToMm:F2}mm");
+                    SmartConLogger.Info($"Skipping dynamic adjustment (adjustDynamicToFit=false). Actual dynamic={actualDynRadius * FeetToMm:F2}mm, fitting achieved={achievedDynRadius * FeetToMm:F2}mm");
                 }
             }
             else
@@ -320,7 +333,7 @@ public sealed class ConnectExecutor
             currentDynamic = updatedDynamic;
             result = realignFitConn2;
         }
-        catch (Exception ex) { SmartConLogger.Warn($"[SizeFitting] Best-effort error (ignored): {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"Best-effort error in SizeFitting: {ex.Message}"); }
 
         return new SizeFittingResult(result, currentDynamic);
     }
@@ -332,6 +345,10 @@ public sealed class ConnectExecutor
         FittingMappingRule? activeFittingRule,
         ConnectorProxy upstreamTarget)
     {
+        using var _scope = SmartConLogger.BeginScope("RealignAfterSizing",
+            ("Method", "RealignAfterSizing"),
+            ("FittingId", fittingId.GetValue()));
+
         ConnectorProxy? newFitConn2 = null;
         ConnectorProxy? currentDynamic = activeDynamic;
 
@@ -368,7 +385,7 @@ public sealed class ConnectExecutor
                 txDoc.Regenerate();
             });
         }
-        catch (Exception ex) { SmartConLogger.Warn($"[RealignAfterSizing] Best-effort error (ignored): {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"Best-effort error in RealignAfterSizing: {ex.Message}"); }
 
         return (newFitConn2, currentDynamic);
     }
@@ -377,7 +394,7 @@ public sealed class ConnectExecutor
         => $"{label}({connector.OwnerElementId.GetValue()}:{connector.ConnectorIndex})";
 
     private static string BuildConnectLog(string leftLabel, ConnectorProxy left, string rightLabel, ConnectorProxy right)
-        => $"[Connect] {DescribeConnector(leftLabel, left)} ↔ {DescribeConnector(rightLabel, right)}";
+        => $"{DescribeConnector(leftLabel, left)} ↔ {DescribeConnector(rightLabel, right)}";
 
     private ConnectorProxy RefreshDynamicConnector(Document doc, ConnectorProxy dyn)
         => _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
@@ -431,12 +448,12 @@ public sealed class ConnectExecutor
     {
         if (topology == ChainTopology.ReducerFitting)
         {
-            SmartConLogger.Info($"[Connect] ReducerFitting branch: reducer={reducerId.GetValue()}, fitting={fittingId.GetValue()}");
+            SmartConLogger.Info($"ReducerFitting branch: reducer={reducerId.GetValue()}, fitting={fittingId.GetValue()}");
             ExecuteCompositeConnectTo(doc, staticConn, dyn, reducerId, fittingId, "reducer", "fitting");
             return;
         }
 
-        SmartConLogger.Info($"[Connect] Fitting+Reducer branch: fitting={fittingId.GetValue()}, reducer={reducerId.GetValue()}");
+        SmartConLogger.Info($"Fitting+Reducer branch: fitting={fittingId.GetValue()}, reducer={reducerId.GetValue()}");
         ExecuteCompositeConnectTo(doc, staticConn, dyn, fittingId, reducerId, "fitting", "reducer");
     }
 
@@ -479,7 +496,7 @@ public sealed class ConnectExecutor
         var posErr = VectorUtils.DistanceTo(conn.OriginVec3, targetOrigin);
         if (posErr > positionEpsFt)
         {
-            SmartConLogger.Warn($"[Validate] offset by {posErr * FeetToMm:F2} mm — correcting");
+            SmartConLogger.Warn($"offset by {posErr * FeetToMm:F2} mm — correcting");
             _transformSvc.MoveElement(doc, elementId, targetOrigin - conn.OriginVec3);
             doc.Regenerate();
         }
@@ -488,9 +505,9 @@ public sealed class ConnectExecutor
     private void CheckRadiusMismatch(ConnectorProxy conn, ConnectorProxy target, double radiusEps, string label)
     {
         double err = System.Math.Abs(conn.Radius - target.Radius);
-        SmartConLogger.Debug($"  {label} R={conn.Radius * FeetToMm:F2}mm, target R={target.Radius * FeetToMm:F2}mm, Δ={err * FeetToMm:F2}mm");
+        SmartConLogger.Debug($"{label} R={conn.Radius * FeetToMm:F2}mm, target R={target.Radius * FeetToMm:F2}mm, Δ={err * FeetToMm:F2}mm");
         if (err > radiusEps)
-            SmartConLogger.Warn($"[Validate] MISMATCH: {label} radius mismatch (Δ={err * FeetToMm:F2}mm)");
+            SmartConLogger.Warn($"MISMATCH: {label} radius mismatch (Δ={err * FeetToMm:F2}mm)");
     }
 
     private void CorrectDynamicPosition(
@@ -500,7 +517,7 @@ public sealed class ConnectExecutor
         var posErr = VectorUtils.DistanceTo(dynFresh.OriginVec3, target.OriginVec3);
         if (posErr > positionEpsFt)
         {
-            SmartConLogger.Warn($"[Validate] dynamic offset by {posErr * FeetToMm:F2} mm — correcting");
+            SmartConLogger.Warn($"dynamic offset by {posErr * FeetToMm:F2} mm — correcting");
             PositionCorrector.ApplyOffset(doc, _transformSvc, dynFresh.OwnerElementId, target.OriginVec3 - dynFresh.OriginVec3);
             dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
             updatedDynamic = dynFresh;
@@ -526,7 +543,7 @@ public sealed class ConnectExecutor
             ref updatedDynamic,
             positionEpsFt,
             radiusEps,
-            "[Validate] Fitting+Reducer branch",
+            "Fitting+Reducer branch",
             false,
             "fitting.conn1",
             true,
@@ -553,7 +570,7 @@ public sealed class ConnectExecutor
             ref updatedDynamic,
             positionEpsFt,
             radiusEps,
-            "[Validate] ReducerFitting branch: static ↔ reducer ↔ fitting ↔ dynamic",
+            "ReducerFitting branch: static ↔ reducer ↔ fitting ↔ dynamic",
             true,
             "reducer.conn1",
             false,
@@ -574,6 +591,10 @@ public sealed class ConnectExecutor
         bool userManuallyChangedSize,
         ref bool needsPrimaryReducer)
     {
+        using var _scope = SmartConLogger.BeginScope("Validate",
+            ("Method", "ValidateFittingBranch"),
+            ("FittingId", fittingId.GetValue()));
+
         var dynTypeCode = dynFresh.ConnectionTypeCode.IsDefined
             ? dynFresh.ConnectionTypeCode
             : originalDyn.ConnectionTypeCode;
@@ -588,17 +609,17 @@ public sealed class ConnectExecutor
         if (fc2 is not null)
         {
             double r2Err = System.Math.Abs(fc2.Radius - dynFresh.Radius);
-            SmartConLogger.Debug($"  fc2 R={fc2.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={r2Err * FeetToMm:F2}mm");
+            SmartConLogger.Debug($"fc2 R={fc2.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={r2Err * FeetToMm:F2}mm");
             if (r2Err > radiusEps)
             {
                 if (userManuallyChangedSize)
                 {
-                    SmartConLogger.Warn($"[Validate] User changed size manually, fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — reducer needed");
+                    SmartConLogger.Warn($"User changed size manually, fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — reducer needed");
                     needsPrimaryReducer = true;
                 }
                 else
                 {
-                    SmartConLogger.Warn($"[Validate] Mismatch fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — trying to adjust dynamic");
+                    SmartConLogger.Warn($"Mismatch fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — trying to adjust dynamic");
                     bool fixed1 = _paramResolver.TrySetConnectorRadius(
                         doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, fc2.Radius);
                     doc.Regenerate();
@@ -606,11 +627,11 @@ public sealed class ConnectExecutor
                     {
                         dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
                         updatedDynamic = dynFresh;
-                        SmartConLogger.Debug($"  → dynamic adjusted to {dynFresh.Radius * FeetToMm:F2}mm");
+                        SmartConLogger.Debug($"→ dynamic adjusted to {dynFresh.Radius * FeetToMm:F2}mm");
                     }
                     else
                     {
-                        SmartConLogger.Warn($"[Validate] Dynamic adjustment failed — reducer needed");
+                        SmartConLogger.Warn("Dynamic adjustment failed — reducer needed");
                         needsPrimaryReducer = true;
                     }
                 }
@@ -620,9 +641,9 @@ public sealed class ConnectExecutor
 
             double angleZ = VectorUtils.AngleBetween(fc2.BasisZVec3, dynFresh.BasisZVec3);
             double antiParallelErr = System.Math.Abs(angleZ - System.Math.PI) * 180.0 / System.Math.PI;
-            SmartConLogger.Debug($"  BasisZ: angle fc2↔dyn={angleZ * 180 / System.Math.PI:F1}° (ideal=180°, dev={antiParallelErr:F1}°)");
+            SmartConLogger.Debug($"BasisZ: angle fc2↔dyn={angleZ * 180 / System.Math.PI:F1}° (ideal=180°, dev={antiParallelErr:F1}°)");
             if (antiParallelErr > angleEpsDeg)
-                SmartConLogger.Warn($"[Validate] WARNING: BasisZ not anti-parallel (dev. {antiParallelErr:F1}°) — connection may fail");
+                SmartConLogger.Warn($"WARNING: BasisZ not anti-parallel (dev. {antiParallelErr:F1}°) — connection may fail");
         }
     }
 
@@ -690,6 +711,11 @@ public sealed class ConnectExecutor
         string secondRadiusLabel,
         string dynamicLabel)
     {
+        using var _scope = SmartConLogger.BeginScope("Validate",
+            ("Method", "ValidateCompositeBranch"),
+            ("FirstId", firstElementId.GetValue()),
+            ("SecondId", secondElementId.GetValue()));
+
         SmartConLogger.Info(branchLog);
 
         var dynTypeCode = ResolveDynamicTypeCode(dynFresh, dynFresh);
@@ -733,18 +759,21 @@ public sealed class ConnectExecutor
         double angleEpsDeg,
         bool userManuallyChangedSize)
     {
+        using var _scope = SmartConLogger.BeginScope("Validate",
+            ("Method", "ValidateDirectBranch"));
+
         double rErr = System.Math.Abs(staticConn.Radius - dynFresh.Radius);
-        SmartConLogger.Debug($"  direct: static R={staticConn.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={rErr * FeetToMm:F2}mm");
+        SmartConLogger.Debug($"direct: static R={staticConn.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={rErr * FeetToMm:F2}mm");
         if (rErr > radiusEps)
         {
             if (userManuallyChangedSize)
             {
-                SmartConLogger.Warn($"[Validate] User manually changed size (Δ={rErr * FeetToMm:F2}mm) → reducer needed");
+                SmartConLogger.Warn($"User manually changed size (Δ={rErr * FeetToMm:F2}mm) → reducer needed");
                 needsPrimaryReducer = true;
             }
             else
             {
-                SmartConLogger.Warn($"[Validate] Direct: mismatch Δ={rErr * FeetToMm:F2}mm — trying to adjust dynamic");
+                SmartConLogger.Warn($"Direct: mismatch Δ={rErr * FeetToMm:F2}mm — trying to adjust dynamic");
                 bool fixed2 = _paramResolver.TrySetConnectorRadius(
                     doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, staticConn.Radius);
                 doc.Regenerate();
@@ -753,11 +782,11 @@ public sealed class ConnectExecutor
                 {
                     dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
                     double verifyDelta = System.Math.Abs(dynFresh.Radius - staticConn.Radius);
-                    SmartConLogger.Debug($"  → verify: actual R={dynFresh.Radius * FeetToMm:F2}mm, Δ={verifyDelta * FeetToMm:F2}mm");
+                    SmartConLogger.Debug($"→ verify: actual R={dynFresh.Radius * FeetToMm:F2}mm, Δ={verifyDelta * FeetToMm:F2}mm");
 
                     if (verifyDelta > radiusEps)
                     {
-                        SmartConLogger.Warn($"[Validate] Actual radius ({dynFresh.Radius * FeetToMm:F2}mm) ≠ static ({staticConn.Radius * FeetToMm:F2}mm) — falling back to nearest, reducer needed");
+                        SmartConLogger.Warn($"Actual radius ({dynFresh.Radius * FeetToMm:F2}mm) ≠ static ({staticConn.Radius * FeetToMm:F2}mm) — falling back to nearest, reducer needed");
                         needsPrimaryReducer = true;
 
                         if (context.Session.ParamTargetRadius is { } bestRadius)
@@ -772,7 +801,7 @@ public sealed class ConnectExecutor
                 }
                 else
                 {
-                    SmartConLogger.Warn($"[Validate] TrySetConnectorRadius returned false — reducer needed");
+                    SmartConLogger.Warn("TrySetConnectorRadius returned false — reducer needed");
                     needsPrimaryReducer = true;
                 }
             }
@@ -789,7 +818,7 @@ public sealed class ConnectExecutor
         double angleZD = VectorUtils.AngleBetween(staticConn.BasisZVec3, dynFresh.BasisZVec3);
         double antiErrD = System.Math.Abs(angleZD - System.Math.PI) * 180.0 / System.Math.PI;
         if (antiErrD > angleEpsDeg)
-            SmartConLogger.Warn($"[Validate] WARNING: BasisZ not anti-parallel (dev. {antiErrD:F1}°)");
+            SmartConLogger.Warn($"WARNING: BasisZ not anti-parallel (dev. {antiErrD:F1}°)");
     }
 
     // ...

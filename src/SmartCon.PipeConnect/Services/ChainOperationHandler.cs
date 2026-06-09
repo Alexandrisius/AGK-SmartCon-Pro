@@ -46,9 +46,13 @@ public sealed class ChainOperationHandler(
         HashSet<long> warmedElementIds,
         int nextLevel)
     {
+        using var _scope = SmartConLogger.BeginScope("Chain+",
+            ("Method", "IncrementLevel"),
+            ("Level", nextLevel));
+
         var levelElements = graph.Levels[nextLevel];
 
-        SmartConLogger.Info($"[Chain+] ═══ LEVEL {nextLevel} ═══ ({levelElements.Count} elements)");
+        SmartConLogger.Debug($"═══ LEVEL {nextLevel} ═══ ({levelElements.Count} elements)");
 
         WarmDepsForLevel(doc, levelElements, warmedElementIds);
 
@@ -67,7 +71,7 @@ public sealed class ChainOperationHandler(
             doc.Regenerate();
         });
 
-        SmartConLogger.Info($"[Chain+] ═══ LEVEL {nextLevel} DONE ═══");
+        SmartConLogger.Debug($"═══ LEVEL {nextLevel} DONE ═══");
     }
 
     /// <summary>
@@ -86,9 +90,13 @@ public sealed class ChainOperationHandler(
         NetworkSnapshotStore snapshotStore,
         int currentDepth)
     {
+        using var _scope = SmartConLogger.BeginScope("Chain-",
+            ("Method", "DecrementLevel"),
+            ("Level", currentDepth));
+
         var levelElements = graph.Levels[currentDepth];
 
-        SmartConLogger.Info($"[Chain−] ═══ ROLLBACK LEVEL {currentDepth} ═══ ({levelElements.Count} elements)");
+        SmartConLogger.Debug($"═══ ROLLBACK LEVEL {currentDepth} ═══ ({levelElements.Count} elements)");
 
         groupSession.RunInTransaction(string.Format(LocalizationService.GetString("Tx_ChainRollback"), currentDepth), doc =>
         {
@@ -107,7 +115,7 @@ public sealed class ChainOperationHandler(
     {
         var snapshot = CaptureSnapshot(doc, elemId, graph);
         snapshotStore.Save(snapshot);
-        SmartConLogger.Info($"[Chain+] Snapshot: elemId={elemId.GetValue()}, " +
+        SmartConLogger.Debug($"  Snapshot: elemId={elemId.GetValue()}, " +
             $"isMepCurve={snapshot.IsMepCurve}, " +
             $"R={snapshot.ConnectorRadius * FeetToMm:F2}mm (DN{System.Math.Round(snapshot.ConnectorRadius * 2.0 * FeetToMm)}), " +
             $"symbolId={snapshot.FamilySymbolId?.GetValue()}, connections={snapshot.Connections.Count}");
@@ -124,26 +132,26 @@ public sealed class ChainOperationHandler(
     {
         LogIncrementElementHeader(doc, elemId, elemIndex, levelCount);
 
-        DisconnectElementConnections(doc, elemId, "[Chain+]");
+        DisconnectElementConnections(doc, elemId);
 
         var edge = FindEdgeToParent(elemId, nextLevel, graph);
         if (edge is null)
         {
-            SmartConLogger.Warn($"[Chain+]   b. Edge to parent NOT FOUND → skip");
+            SmartConLogger.Warn($"b. Edge to parent NOT FOUND → skip");
             return;
         }
 
-        SmartConLogger.Info($"[Chain+]   b. Edge: parent={edge.Value.ParentId.GetValue()} " +
+        SmartConLogger.Debug($"b. Edge: parent={edge.Value.ParentId.GetValue()} " +
             $"parentConnIdx={edge.Value.ParentConnIdx}, elemConnIdx={edge.Value.ElemConnIdx}");
 
         var parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
         if (parentProxy is null)
         {
-            SmartConLogger.Warn($"[Chain+]   parentProxy=NULL → skip");
+            SmartConLogger.Warn($"parentProxy=NULL → skip");
             return;
         }
 
-        SmartConLogger.Info($"[Chain+]   parent: R={parentProxy.Radius * FeetToMm:F2}mm " +
+        SmartConLogger.Debug($"parent: R={parentProxy.Radius * FeetToMm:F2}mm " +
             $"(DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)}) " +
             $"origin=({parentProxy.Origin.X:F4},{parentProxy.Origin.Y:F4},{parentProxy.Origin.Z:F4})");
 
@@ -156,7 +164,7 @@ public sealed class ChainOperationHandler(
         AlignElement(doc, elemId, elemProxyForAlign, alignTarget);
         ReconnectIncrementElement(doc, elemId, edge.Value, parentProxy, reducerId);
 
-        SmartConLogger.Info($"[Chain+] ── Element {elemId.GetValue()} ready ──");
+        SmartConLogger.Debug($"── Element {elemId.GetValue()} ready ──");
     }
 
     private void LogIncrementElementHeader(Document doc, ElementId elemId, int elemIndex, int levelCount)
@@ -164,11 +172,11 @@ public sealed class ChainOperationHandler(
         var elemRaw = doc.GetElement(elemId);
         string elemName = elemRaw?.Name ?? "?";
         string elemType = elemRaw?.GetType().Name ?? "?";
-        SmartConLogger.Info($"[Chain+] ── Element {elemIndex}/{levelCount}: " +
+        SmartConLogger.Debug($"  ── Element {elemIndex}/{levelCount}: " +
             $"id={elemId.GetValue()} '{elemName}' ({elemType}) ──");
     }
 
-    private void DisconnectElementConnections(Document doc, ElementId elemId, string logPrefix)
+    private void DisconnectElementConnections(Document doc, ElementId elemId)
     {
         var allConns = connSvc.GetAllConnectors(doc, elemId);
         int disconnected = 0;
@@ -176,25 +184,15 @@ public sealed class ChainOperationHandler(
         {
             if (!c.IsFree)
             {
-                if (logPrefix == "[Chain+]")
-                {
-                    SmartConLogger.Info($"[Chain+]   a. Disconnect connIdx={c.ConnectorIndex} " +
-                        $"(R={c.Radius * FeetToMm:F2}mm)");
-                }
+                SmartConLogger.Debug($"a. Disconnect connIdx={c.ConnectorIndex} " +
+                    $"(R={c.Radius * FeetToMm:F2}mm)");
 
                 connSvc.DisconnectAllFromConnector(doc, elemId, c.ConnectorIndex);
                 disconnected++;
             }
         }
 
-        if (logPrefix == "[Chain+]")
-        {
-            SmartConLogger.Info($"[Chain+]   a. Disconnect done: {disconnected} connections broken, " +
-                $"всего коннекторов={allConns.Count}");
-            return;
-        }
-
-        SmartConLogger.Info($"[Chain−]   a. Disconnect: {disconnected} connections broken");
+        SmartConLogger.Debug($"a. Disconnect done: {disconnected} connections broken, всего коннекторов={allConns.Count}");
     }
 
     private ElementId? AdjustElementSize(
@@ -214,16 +212,16 @@ public sealed class ChainOperationHandler(
         double elemDn = System.Math.Round(elemRadius * 2.0 * FeetToMm);
         double delta = System.Math.Abs(targetRadius - elemRadius);
 
-        SmartConLogger.Info($"[Chain+]   c. AdjustSize: target={targetRadius * FeetToMm:F2}mm (DN{targetDn}), " +
+        SmartConLogger.Debug($"    c. AdjustSize: target={targetRadius * FeetToMm:F2}mm (DN{targetDn}), " +
             $"elem={elemRadius * FeetToMm:F2}mm (DN{elemDn}), delta={delta * FeetToMm:F4}mm, needsAdjust={delta > 1e-5}");
 
         if (elemRefreshed is not null && delta > 1e-5)
         {
-            SmartConLogger.Info($"[Chain+]   c.1 TrySetConnectorRadius(elemId={elemId.GetValue()}, " +
+            SmartConLogger.Debug($"    c.1 TrySetConnectorRadius(elemId={elemId.GetValue()}, " +
                 $"connIdx={edge.ElemConnIdx}, target={targetRadius * FeetToMm:F2}mm)...");
             bool setResult = paramResolver.TrySetConnectorRadius(
                 doc, elemId, edge.ElemConnIdx, targetRadius);
-            SmartConLogger.Info($"[Chain+]   c.1 TrySetConnectorRadius → {(setResult ? "OK" : "FAILED")}");
+            SmartConLogger.Debug($"    c.1 TrySetConnectorRadius → {(setResult ? "OK" : "FAILED")}");
 
             doc.Regenerate();
 
@@ -238,7 +236,7 @@ public sealed class ChainOperationHandler(
             double actualDn = System.Math.Round(actualRadius * 2.0 * FeetToMm);
             double verifyDelta = System.Math.Abs(targetRadius - actualRadius);
 
-            SmartConLogger.Info($"[Chain+]   c.3 Verification: actualR={actualRadius * FeetToMm:F2}mm " +
+            SmartConLogger.Debug($"    c.3 Verification: actualR={actualRadius * FeetToMm:F2}mm " +
                 $"(DN{actualDn}), targetR={targetRadius * FeetToMm:F2}mm (DN{targetDn}), " +
                 $"delta={verifyDelta * FeetToMm:F4}mm, match={verifyDelta <= 1e-5}");
 
@@ -247,7 +245,7 @@ public sealed class ChainOperationHandler(
         }
         else
         {
-            SmartConLogger.Info($"[Chain+]   c. Sizes match, no adjustment needed");
+            SmartConLogger.Debug($"    c. Sizes match, no adjustment needed");
         }
 
         doc.Regenerate();
@@ -266,10 +264,10 @@ public sealed class ChainOperationHandler(
             return;
 
         var allElemConns = connSvc.GetAllConnectors(doc, elemId);
-        SmartConLogger.Info($"[Chain+]   c.2 FamilyInstance '{fiElem.Symbol?.Family?.Name}' " +
+        SmartConLogger.Debug($"    c.2 FamilyInstance '{fiElem.Symbol?.Family?.Name}' " +
             $"symbolId={fiElem.Symbol?.Id.GetValue()}: {allElemConns.Count} коннекторов (после Regenerate):");
         foreach (var c in allElemConns)
-            SmartConLogger.Info($"[Chain+]     conn[{c.ConnectorIndex}]: R={c.Radius * FeetToMm:F2}mm, " +
+            SmartConLogger.Debug($"      conn[{c.ConnectorIndex}]: R={c.Radius * FeetToMm:F2}mm, " +
                 $"isFree={c.IsFree}");
 
         foreach (var c in allElemConns)
@@ -280,21 +278,21 @@ public sealed class ChainOperationHandler(
             double connDelta = System.Math.Abs(c.Radius - targetRadius);
             if (connDelta <= 1e-5)
             {
-                SmartConLogger.Info($"[Chain+]   c.2 conn[{c.ConnectorIndex}]: " +
+                SmartConLogger.Debug($"    c.2 conn[{c.ConnectorIndex}]: " +
                     $"R={c.Radius * FeetToMm:F2}mm ≈ target — уже верно, skip");
                 continue;
             }
 
             if (IsConnectorInGraph(graph, elemId, c.ConnectorIndex))
             {
-                SmartConLogger.Info($"[Chain+]   c.2 TrySetConnectorRadius(connIdx={c.ConnectorIndex}, " +
+                SmartConLogger.Debug($"    c.2 TrySetConnectorRadius(connIdx={c.ConnectorIndex}, " +
                     $"currentR={c.Radius * FeetToMm:F2}mm, target={targetRadius * FeetToMm:F2}mm)...");
                 bool r2 = paramResolver.TrySetConnectorRadius(doc, elemId, c.ConnectorIndex, targetRadius);
-                SmartConLogger.Info($"[Chain+]   c.2 → {(r2 ? "OK" : "FAILED")}");
+                SmartConLogger.Debug($"    c.2 → {(r2 ? "OK" : "FAILED")}");
             }
             else
             {
-                SmartConLogger.Info($"[Chain+]   c.2 conn[{c.ConnectorIndex}]: NOT in graph, " +
+                SmartConLogger.Debug($"    c.2 conn[{c.ConnectorIndex}]: NOT in graph, " +
                     $"R={c.Radius * FeetToMm:F2}mm ≠ target {targetRadius * FeetToMm:F2}mm — пропущен");
             }
         }
@@ -322,7 +320,7 @@ public sealed class ChainOperationHandler(
 
         var diagConns = connSvc.GetAllConnectors(doc, elemId);
         foreach (var dc in diagConns)
-            SmartConLogger.Info($"[Chain+]   c.2b diag conn[{dc.ConnectorIndex}]: " +
+            SmartConLogger.Debug($"    c.2b diag conn[{dc.ConnectorIndex}]: " +
                 $"R={dc.Radius * FeetToMm:F2}mm (DN{System.Math.Round(dc.Radius * 2.0 * FeetToMm)}), " +
                 $"isFree={dc.IsFree}");
     }
@@ -334,16 +332,16 @@ public sealed class ChainOperationHandler(
         ConnectorProxy parentProxy,
         ConnectorProxy elemProxy)
     {
-        SmartConLogger.Info($"[Chain+]   c.3 Adjustment failed → InsertReducer...");
+        SmartConLogger.Debug($"    c.3 Adjustment failed → InsertReducer...");
         var reducerId = networkMover.InsertReducer(doc, parentProxy, elemProxy);
         if (reducerId is not null)
         {
-            SmartConLogger.Info($"[Chain+]   c.3 Reducer inserted: id={reducerId.GetValue()}");
+            SmartConLogger.Debug($"    c.3 Reducer inserted: id={reducerId.GetValue()}");
             snapshotStore.TrackReducer(elemId, reducerId);
         }
         else
         {
-            SmartConLogger.Warn($"[Chain+]   c.3 Reducer not found in mapping!");
+            SmartConLogger.Warn($"    c.3 Reducer not found in mapping!");
         }
 
         return reducerId;
@@ -362,7 +360,7 @@ public sealed class ChainOperationHandler(
                     .OrderBy(rc => VectorUtils.DistanceTo(rc.OriginVec3, parentProxy.OriginVec3))
                     .First();
                 alignTarget = rConns.FirstOrDefault(rc => rc.ConnectorIndex != rConn1.ConnectorIndex);
-                SmartConLogger.Info($"[Chain+]   d. Align target = reducer conn2 " +
+                SmartConLogger.Debug($"    d. Align target = reducer conn2 " +
                     $"(R={alignTarget?.Radius * FeetToMm:F2}mm, " +
                     $"origin=({alignTarget?.Origin.X:F4},{alignTarget?.Origin.Y:F4},{alignTarget?.Origin.Z:F4}))");
             }
@@ -376,7 +374,7 @@ public sealed class ChainOperationHandler(
         if (alignTarget is null || elemProxyForAlign is null)
             return;
 
-        SmartConLogger.Info($"[Chain+]   d. Align: elem R={elemProxyForAlign.Radius * FeetToMm:F2}mm " +
+        SmartConLogger.Debug($"    d. Align: elem R={elemProxyForAlign.Radius * FeetToMm:F2}mm " +
             $"→ target R={alignTarget.Radius * FeetToMm:F2}mm");
 
         alignmentSvc.ApplyAlignment(doc, elemId, alignTarget, elemProxyForAlign);
@@ -391,9 +389,9 @@ public sealed class ChainOperationHandler(
     {
         if (reducerId is not null && parentProxy is not null)
         {
-            SmartConLogger.Info($"[Chain+]   e. ConnectTo via reducer id={reducerId.GetValue()}");
+            SmartConLogger.Debug($"    e. ConnectTo via reducer id={reducerId.GetValue()}");
             var rConnsForConnect = connSvc.GetAllFreeConnectors(doc, reducerId);
-            SmartConLogger.Info($"[Chain+]   e. Reducer free conns: {rConnsForConnect.Count}");
+            SmartConLogger.Debug($"    e. Reducer free conns: {rConnsForConnect.Count}");
             var rConn1 = rConnsForConnect
                 .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, parentProxy.OriginVec3))
                 .FirstOrDefault();
@@ -401,13 +399,13 @@ public sealed class ChainOperationHandler(
 
             if (rConn1 is not null)
             {
-                SmartConLogger.Info($"[Chain+]   e. ConnectTo: parent({edge.ParentId.GetValue()}:{edge.ParentConnIdx}) ↔ reducer({reducerId.GetValue()}:{rConn1.ConnectorIndex})");
+                SmartConLogger.Debug($"    e. ConnectTo: parent({edge.ParentId.GetValue()}:{edge.ParentConnIdx}) ↔ reducer({reducerId.GetValue()}:{rConn1.ConnectorIndex})");
                 connSvc.ConnectTo(doc, edge.ParentId, edge.ParentConnIdx,
                     reducerId, rConn1.ConnectorIndex);
             }
             if (rConn2 is not null)
             {
-                SmartConLogger.Info($"[Chain+]   e. ConnectTo: reducer({reducerId.GetValue()}:{rConn2.ConnectorIndex}) ↔ elem({elemId.GetValue()}:{edge.ElemConnIdx})");
+                SmartConLogger.Debug($"    e. ConnectTo: reducer({reducerId.GetValue()}:{rConn2.ConnectorIndex}) ↔ elem({elemId.GetValue()}:{edge.ElemConnIdx})");
                 connSvc.ConnectTo(doc, reducerId, rConn2.ConnectorIndex,
                     elemId, edge.ElemConnIdx);
             }
@@ -415,7 +413,7 @@ public sealed class ChainOperationHandler(
             return;
         }
 
-        SmartConLogger.Info($"[Chain+]   e. ConnectTo direct: parent({edge.ParentId.GetValue()}:{edge.ParentConnIdx}) ↔ elem({elemId.GetValue()}:{edge.ElemConnIdx})");
+        SmartConLogger.Debug($"    e. ConnectTo direct: parent({edge.ParentId.GetValue()}:{edge.ParentConnIdx}) ↔ elem({elemId.GetValue()}:{edge.ElemConnIdx})");
         connSvc.ConnectTo(doc, edge.ParentId, edge.ParentConnIdx,
             elemId, edge.ElemConnIdx);
     }
@@ -428,15 +426,15 @@ public sealed class ChainOperationHandler(
         ElementId elemId)
     {
         var elemRaw = doc.GetElement(elemId);
-        SmartConLogger.Info($"[Chain−] ── Element id={elemId.GetValue()} '{elemRaw?.Name}' ({elemRaw?.GetType().Name}) ──");
+        SmartConLogger.Debug($" ── Element id={elemId.GetValue()} '{elemRaw?.Name}' ({elemRaw?.GetType().Name}) ──");
 
-        DisconnectElementConnections(doc, elemId, "[Chain−]");
+            DisconnectElementConnections(doc, elemId);
         DeleteTrackedReducers(doc, snapshotStore, elemId);
 
         var snapshot = snapshotStore.Get(elemId);
         if (snapshot is null)
         {
-            SmartConLogger.Warn($"[Chain−]   c. Snapshot not found → skip");
+            SmartConLogger.Warn($"   c. Snapshot not found → skip");
             return;
         }
 
@@ -447,10 +445,10 @@ public sealed class ChainOperationHandler(
     private void DeleteTrackedReducers(Document doc, NetworkSnapshotStore snapshotStore, ElementId elemId)
     {
         var reducers = snapshotStore.GetReducers(elemId);
-        SmartConLogger.Info($"[Chain−]   b. Reducers to delete: {reducers.Count}");
+        SmartConLogger.Debug($"   b. Reducers to delete: {reducers.Count}");
         foreach (var reducerId in reducers)
         {
-            SmartConLogger.Info($"[Chain−]   b. Deleting reducer id={reducerId.GetValue()}");
+            SmartConLogger.Debug($"   b. Deleting reducer id={reducerId.GetValue()}");
             var rConns = connSvc.GetAllConnectors(doc, reducerId);
             foreach (var rc in rConns)
             {
@@ -464,7 +462,7 @@ public sealed class ChainOperationHandler(
     private void RestoreElementFromSnapshot(Document doc, ElementId elemId, ElementSnapshot snapshot)
     {
         var elem = doc.GetElement(elemId);
-        SmartConLogger.Info($"[Chain−]   c. Restoring: isMepCurve={snapshot.IsMepCurve}, " +
+        SmartConLogger.Debug($"   c. Restoring: isMepCurve={snapshot.IsMepCurve}, " +
             $"snapR={snapshot.ConnectorRadius * FeetToMm:F2}mm (DN{System.Math.Round(snapshot.ConnectorRadius * 2.0 * FeetToMm)}), " +
             $"symbolId={snapshot.FamilySymbolId?.GetValue()}");
 
@@ -508,7 +506,7 @@ public sealed class ChainOperationHandler(
             warmedCount++;
         }
         if (warmedCount > 0)
-            SmartConLogger.Info($"[Chain] WarmDeps: warmed {warmedCount} elements for level");
+            SmartConLogger.Debug($"WarmDeps: warmed {warmedCount} elements for level");
     }
 
     /// <summary>Capture a full snapshot of an element's state for rollback.</summary>
@@ -576,12 +574,12 @@ public sealed class ChainOperationHandler(
         if (diamParam is not null && !diamParam.IsReadOnly)
         {
             double targetDiam = snapshot.ConnectorRadius * 2.0;
-            SmartConLogger.Info($"[Chain−]   c. MEPCurve: restore diameter={targetDiam * FeetToMm:F2}mm");
+            SmartConLogger.Debug($"   c. MEPCurve: restore diameter={targetDiam * FeetToMm:F2}mm");
             diamParam.Set(targetDiam);
         }
         else
         {
-            SmartConLogger.Info($"[Chain−]   c. MEPCurve: TrySetConnectorRadius fallback...");
+            SmartConLogger.Debug($"   c. MEPCurve: TrySetConnectorRadius fallback...");
             var conns = connSvc.GetAllConnectors(doc, elemId);
             if (conns.Count > 0)
                 paramResolver.TrySetConnectorRadius(doc, elemId, conns[0].ConnectorIndex, snapshot.ConnectorRadius);
@@ -591,11 +589,11 @@ public sealed class ChainOperationHandler(
         if (snapshot.CurveStart is not null && snapshot.CurveEnd is not null
             && mc.Location is LocationCurve lc && lc.Curve is Line)
         {
-            SmartConLogger.Info($"[Chain−]   c. MEPCurve: restore curve " +
+            SmartConLogger.Debug($"   c. MEPCurve: restore curve " +
                 $"({snapshot.CurveStart.X:F4},{snapshot.CurveStart.Y:F4},{snapshot.CurveStart.Z:F4}) → " +
                 $"({snapshot.CurveEnd.X:F4},{snapshot.CurveEnd.Y:F4},{snapshot.CurveEnd.Z:F4})");
             try { lc.Curve = Line.CreateBound(snapshot.CurveStart, snapshot.CurveEnd); }
-            catch (Exception exCurve) { SmartConLogger.Warn($"[Chain−]   c. MEPCurve: Line.CreateBound failed: {exCurve.Message}"); }
+            catch (Exception exCurve) { SmartConLogger.Warn($"   c. MEPCurve: Line.CreateBound failed: {exCurve.Message}"); }
         }
         else if (snapshot.FirstConnectorOrigin is not null)
         {
@@ -608,7 +606,7 @@ public sealed class ChainOperationHandler(
                     snapshot.FirstConnectorOrigin.Z - currentConn.Origin.Z);
                 if (!VectorUtils.IsZero(offset))
                 {
-                    SmartConLogger.Info($"[Chain−]   c. MEPCurve(FlexPipe): MoveElement to snap connector, " +
+                    SmartConLogger.Debug($"   c. MEPCurve(FlexPipe): MoveElement to snap connector, " +
                         $"dist={VectorUtils.Length(offset) * FeetToMm:F2}mm");
                     transformSvc.MoveElement(doc, elemId, offset);
                 }
@@ -616,7 +614,7 @@ public sealed class ChainOperationHandler(
         }
         else
         {
-            SmartConLogger.Info($"[Chain−]   c. MEPCurve: skip restore (no position data)");
+            SmartConLogger.Debug($"   c. MEPCurve: skip restore (no position data)");
         }
         doc.Regenerate();
     }
@@ -625,7 +623,7 @@ public sealed class ChainOperationHandler(
     {
         if (snapshot.FamilySymbolId is not null && fi.Symbol.Id != snapshot.FamilySymbolId)
         {
-            SmartConLogger.Info($"[Chain−]   c. FI: ChangeTypeId {fi.Symbol.Id.GetValue()} → {snapshot.FamilySymbolId.GetValue()}");
+            SmartConLogger.Debug($"   c. FI: ChangeTypeId {fi.Symbol.Id.GetValue()} → {snapshot.FamilySymbolId.GetValue()}");
             fi.ChangeTypeId(snapshot.FamilySymbolId);
         }
 
@@ -637,7 +635,7 @@ public sealed class ChainOperationHandler(
             double delta = System.Math.Abs(fc.Radius - targetR);
             if (delta > 1e-5)
             {
-                SmartConLogger.Info($"[Chain−]   c. FI: TrySetConnectorRadius(connIdx={fc.ConnectorIndex}, " +
+                SmartConLogger.Debug($"   c. FI: TrySetConnectorRadius(connIdx={fc.ConnectorIndex}, " +
                     $"current={fc.Radius * FeetToMm:F2}mm → target={targetR * FeetToMm:F2}mm)");
                 paramResolver.TrySetConnectorRadius(doc, elemId, fc.ConnectorIndex, targetR);
             }
@@ -646,7 +644,7 @@ public sealed class ChainOperationHandler(
 
         if (fi.Location is LocationPoint lp)
         {
-            SmartConLogger.Info($"[Chain−]   c. FI: set Point=({snapshot.FiOrigin!.X:F4},{snapshot.FiOrigin.Y:F4},{snapshot.FiOrigin.Z:F4})");
+            SmartConLogger.Debug($"   c. FI: set Point=({snapshot.FiOrigin!.X:F4},{snapshot.FiOrigin.Y:F4},{snapshot.FiOrigin.Z:F4})");
             lp.Point = snapshot.FiOrigin;
         }
         doc.Regenerate();
@@ -661,7 +659,7 @@ public sealed class ChainOperationHandler(
                 snapshot.FiOrigin.Z - lp2.Point.Z);
             if (!VectorUtils.IsZero(correction))
             {
-                SmartConLogger.Info($"[Chain−]   c. FI: final correction={VectorUtils.Length(correction) * FeetToMm:F2}mm");
+                SmartConLogger.Debug($"   c. FI: final correction={VectorUtils.Length(correction) * FeetToMm:F2}mm");
                 transformSvc.MoveElement(doc, elemId, correction);
             }
             doc.Regenerate();
@@ -683,7 +681,7 @@ public sealed class ChainOperationHandler(
             if (axisLen > 1e-10)
             {
                 axisBZ = new Vec3(axisBZ.X / axisLen, axisBZ.Y / axisLen, axisBZ.Z / axisLen);
-                SmartConLogger.Info($"[Chain−]   c. FI: RotBZ angle={angleBZ * 180 / System.Math.PI:F2}°");
+                SmartConLogger.Debug($"   c. FI: RotBZ angle={angleBZ * 180 / System.Math.PI:F2}°");
                 transformSvc.RotateElement(doc, elemId, origin, axisBZ, angleBZ);
                 doc.Regenerate();
             }
@@ -692,7 +690,7 @@ public sealed class ChainOperationHandler(
         {
             var perpAxis = System.Math.Abs(curBZ.Z) < 0.9
                 ? new Vec3(0, 0, 1) : new Vec3(1, 0, 0);
-            SmartConLogger.Info($"[Chain−]   c. FI: RotBZ 180° (antiparallel)");
+            SmartConLogger.Debug($"   c. FI: RotBZ 180° (antiparallel)");
             transformSvc.RotateElement(doc, elemId, origin, perpAxis, System.Math.PI);
             doc.Regenerate();
         }
@@ -707,7 +705,7 @@ public sealed class ChainOperationHandler(
             var cross = VectorUtils.CrossProduct(curBX, snapBX);
             double dot = cross.X * rotAxis.X + cross.Y * rotAxis.Y + cross.Z * rotAxis.Z;
             double signedAngle = dot >= 0 ? angleBX : -angleBX;
-            SmartConLogger.Info($"[Chain−]   c. FI: RotBX angle={signedAngle * 180 / System.Math.PI:F2}°");
+            SmartConLogger.Debug($"   c. FI: RotBX angle={signedAngle * 180 / System.Math.PI:F2}°");
             transformSvc.RotateElement(doc, elemId, origin, rotAxis, signedAngle);
             doc.Regenerate();
         }
@@ -716,24 +714,24 @@ public sealed class ChainOperationHandler(
     private void ReconnectSnapshotConnections(
         Document doc, ElementId elemId, ElementSnapshot snapshot, int maxLevel, ConnectionGraph graph)
     {
-        SmartConLogger.Info($"[Chain−]   d. Restoring connections: {snapshot.Connections.Count} records");
+        SmartConLogger.Debug($"   d. Restoring connections: {snapshot.Connections.Count} records");
         foreach (var connRecord in snapshot.Connections)
         {
             var neighborId = connRecord.NeighborElementId;
             bool inChain = IsInCurrentChain(neighborId, maxLevel, graph);
-            SmartConLogger.Info($"[Chain−]   d. connRecord: this={connRecord.ThisElementId.GetValue()}:{connRecord.ThisConnectorIndex} " +
+            SmartConLogger.Debug($"   d. connRecord: this={connRecord.ThisElementId.GetValue()}:{connRecord.ThisConnectorIndex} " +
                 $"↔ neighbor={neighborId.GetValue()}:{connRecord.NeighborConnectorIndex}, inChain={inChain}");
             if (inChain) continue;
 
             var neighborConn = connSvc.RefreshConnector(doc, neighborId, connRecord.NeighborConnectorIndex);
             if (neighborConn is null)
             {
-                SmartConLogger.Warn($"[Chain−]   d. neighborConn=null → skip");
+                SmartConLogger.Warn($"   d. neighborConn=null → skip");
                 continue;
             }
             if (!neighborConn.IsFree)
             {
-                SmartConLogger.Info($"[Chain−]   d. neighbor busy → disconnect first");
+                SmartConLogger.Debug($"   d. neighbor busy → disconnect first");
                 connSvc.DisconnectAllFromConnector(doc, neighborId, connRecord.NeighborConnectorIndex);
             }
 
@@ -742,9 +740,9 @@ public sealed class ChainOperationHandler(
                 connSvc.ConnectTo(doc,
                     connRecord.ThisElementId, connRecord.ThisConnectorIndex,
                     connRecord.NeighborElementId, connRecord.NeighborConnectorIndex);
-                SmartConLogger.Info($"[Chain−]   d. ConnectTo OK");
+                SmartConLogger.Debug($"   d. ConnectTo OK");
             }
-            catch (Exception exConn) { SmartConLogger.Warn($"[Chain−]   d. ConnectTo FAILED: {exConn.Message}"); }
+            catch (Exception exConn) { SmartConLogger.Warn($"   d. ConnectTo FAILED: {exConn.Message}"); }
         }
     }
 

@@ -51,11 +51,11 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         try
         {
             await ReloadFromDatabaseAsync(ct);
-            SmartConLogger.Info($"[AttributeLibrary] InitializeAsync loaded {Items.Count} items");
+            SmartConLogger.Info($"AttributeLibrary.InitializeAsync: loaded {Items.Count} items");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"AttributeLibrary InitializeAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"AttributeLibrary.InitializeAsync: failed: {ex.Message}");
         }
     }
 
@@ -63,18 +63,18 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     {
         if (HasUnsavedChanges)
         {
-            SmartConLogger.Debug("AttributeLibrary RefreshAsync skipped: pending user changes.");
+            SmartConLogger.Debug("AttributeLibrary.RefreshAsync: skipped: pending user changes.");
             return;
         }
 
         try
         {
             await ReloadFromDatabaseAsync(ct);
-            SmartConLogger.Info($"[AttributeLibrary] RefreshAsync loaded {Items.Count} items");
+            SmartConLogger.Info($"AttributeLibrary.RefreshAsync: loaded {Items.Count} items");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"AttributeLibrary RefreshAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"AttributeLibrary.RefreshAsync: failed: {ex.Message}");
         }
     }
 

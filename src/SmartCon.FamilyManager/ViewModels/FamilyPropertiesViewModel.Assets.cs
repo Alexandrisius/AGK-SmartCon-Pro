@@ -125,7 +125,7 @@ public sealed partial class FamilyPropertiesViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"OpenAsset failed: {ex.Message}");
+            SmartConLogger.Warn($"OpenAsset({asset?.FileName ?? "<null>"}): failed: {ex.Message}");
         }
     }
 

@@ -115,6 +115,6 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         PickCategoryRequested?.Invoke(this);
     }
 
-    public event Action<FamilyBatchImportRow>? PickCategoryRequested;
-    public event Action<FamilyBatchImportRow>? NameChanged;
+    public event Func<FamilyBatchImportRow, Task>? PickCategoryRequested;
+    public event Func<FamilyBatchImportRow, Task>? NameChanged;
 }

@@ -172,7 +172,8 @@ internal sealed class DatabaseManager : IDatabaseManager
             c => c.Path.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
-            SmartConLogger.Info($"[DatabaseManager] Database at '{fullPath}' already connected as '{existing.Name}', activating");
+            using var _scope = SmartConLogger.BeginScope("DatabaseManager", ("Path", fullPath), ("ExistingName", existing.Name));
+            SmartConLogger.Info($"Database at '{fullPath}' already connected as '{existing.Name}', activating");
             if (existingRegistry.ActiveConnectionId != existing.Id)
             {
                 await SaveRegistryAsync(new DatabaseConnectionRegistry(existing.Id, existingRegistry.Connections), ct);
@@ -295,7 +296,7 @@ internal sealed class DatabaseManager : IDatabaseManager
             ActiveDatabaseChanged?.Invoke(this, newActiveId!);
         }
 
-        SmartConLogger.Info($"[DatabaseManager] Database at '{conn.Path}' deleted");
+        SmartConLogger.Info($"DatabaseManager.Delete: Database at '{conn.Path}' deleted");
         return true;
     }
 

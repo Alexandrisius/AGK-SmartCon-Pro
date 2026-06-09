@@ -57,17 +57,17 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 try
                 {
                     family.Name = preferredName;
-                    renameResult = $"[FamilyLoad] Renamed family to '{preferredName}'";
+                    renameResult = $"Renamed family to '{preferredName}'";
                 }
                 catch (Exception ex)
                 {
-                    renameResult = $"[FamilyLoad] Rename failed (non-fatal): {ex.Message}";
+                    renameResult = $"Rename failed (non-fatal): {ex.Message}";
                 }
             }
         });
 
         if (renameResult is not null)
-            SmartConLogger.Info(renameResult);
+            SmartConLogger.Info($"[{attemptName}] {renameResult}");
 
         if (success && loadedFamily is not null)
         {
@@ -78,7 +78,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             var msg = status == FamilyLoadStatus.Updated
                 ? $"Family '{displayName}' updated to latest version"
                 : $"Family '{displayName}' loaded successfully";
-            SmartConLogger.Info($"[FamilyLoad][{attemptName}] {msg}");
+            SmartConLogger.Info($"[{attemptName}] {msg}");
             return new FamilyLoadResult(true, displayName, msg, null, status);
         }
 
@@ -86,15 +86,15 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         {
             // Revit rejected the load because the family is already up-to-date.
 #if REVIT2021_OR_GREATER
-            SmartConLogger.Info($"[FamilyLoad][{attemptName}] Family '{existingFamily.Name}' is already current (VersionGuid unchanged)");
+            SmartConLogger.Info($"[{attemptName}] Family '{existingFamily.Name}' is already current (VersionGuid unchanged)");
 #else
-            SmartConLogger.Info($"[FamilyLoad][{attemptName}] Family '{existingFamily.Name}' is already current");
+            SmartConLogger.Info($"[{attemptName}] Family '{existingFamily.Name}' is already current");
 #endif
             return new FamilyLoadResult(true, existingFamily.Name,
                 $"Family '{existingFamily.Name}' is already up-to-date", null, FamilyLoadStatus.Current);
         }
 
-        SmartConLogger.Info($"[FamilyLoad][{attemptName}] Failed: loadedFamily is null or success=false");
+        SmartConLogger.Info($"[{attemptName}] Failed: loadedFamily is null or success=false");
         return null;
     }
 
@@ -123,38 +123,43 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             return Task.FromResult(new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed));
 
         var normalizedPath = Path.GetFullPath(file.AbsolutePath);
-        SmartConLogger.Info($"[FamilyLoad] Attempting to load family from: {normalizedPath}");
-        SmartConLogger.Info($"[FamilyLoad] File exists: {File.Exists(normalizedPath)}");
-        SmartConLogger.Info($"[FamilyLoad] Current Revit version: {doc.Application.VersionNumber}");
+        var fileName = Path.GetFileName(normalizedPath);
+        using var _scope = SmartConLogger.BeginScope("FamilyLoad",
+            ("Method", "LoadFamilyAsync"),
+            ("FilePath", fileName));
+
+        SmartConLogger.Info("Attempting to load family");
+        SmartConLogger.Info($"File exists: {File.Exists(normalizedPath)}");
+        SmartConLogger.Info($"Current Revit version: {doc.Application.VersionNumber}");
 
         if (!File.Exists(normalizedPath))
         {
-            SmartConLogger.Info($"[FamilyLoad] File not found: {normalizedPath}");
+            SmartConLogger.Info("File not found");
             return Task.FromResult(new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed));
         }
 
         try
         {
             var fileInfo = new FileInfo(normalizedPath);
-            SmartConLogger.Info($"[FamilyLoad] File size: {fileInfo.Length} bytes");
+            SmartConLogger.Info($"File size: {fileInfo.Length} bytes");
 
             using var basicInfo = BasicFileInfo.Extract(normalizedPath);
             if (basicInfo != null)
             {
                 var fileFormat = basicInfo.Format ?? "unknown";
                 var isCurrentVersion = basicInfo.IsSavedInCurrentVersion;
-                SmartConLogger.Info($"[FamilyLoad] File version={fileFormat}, IsCurrentVersion={isCurrentVersion}, LaterVersion={basicInfo.IsSavedInLaterVersion}");
+                SmartConLogger.Info($"File version={fileFormat}, IsCurrentVersion={isCurrentVersion}, LaterVersion={basicInfo.IsSavedInLaterVersion}");
 
                 if (basicInfo.IsSavedInLaterVersion)
                 {
-                    SmartConLogger.Info($"[FamilyLoad] Family saved in newer version: {fileFormat}");
+                    SmartConLogger.Info($"Family saved in newer version: {fileFormat}");
                     return Task.FromResult(new FamilyLoadResult(false, null, null,
                         $"Family was saved in Revit {fileFormat} and cannot be opened in the current version.", FamilyLoadStatus.Failed));
                 }
 
                 if (!isCurrentVersion)
                 {
-                    SmartConLogger.Info($"[FamilyLoad] UPGRADE DIALOG EXPECTED for {normalizedPath} (version {fileFormat})");
+                    SmartConLogger.Info($"UPGRADE DIALOG EXPECTED (version {fileFormat})");
                 }
             }
 
@@ -163,43 +168,43 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 ? preferredName
                 : SafeFileName.GetBaseName(normalizedPath).Trim();
 
-            SmartConLogger.Info($"[FamilyLoad] Checking for existing family by name: '{checkName}'");
+            SmartConLogger.Info($"Checking for existing family by name: '{checkName}'");
 
             var existingFamily = FindExistingFamily(doc, checkName!);
             if (existingFamily is not null)
             {
 #if REVIT2021_OR_GREATER
-                SmartConLogger.Info($"[FamilyLoad] Family '{checkName}' found in project (Id={existingFamily.Id}, VersionGuid={existingFamily.VersionGuid})");
+                SmartConLogger.Info($"Family '{checkName}' found in project (Id={existingFamily.Id}, VersionGuid={existingFamily.VersionGuid})");
 #else
-                SmartConLogger.Info($"[FamilyLoad] Family '{checkName}' found in project (Id={existingFamily.Id})");
+                SmartConLogger.Info($"Family '{checkName}' found in project (Id={existingFamily.Id})");
 #endif
             }
             else
             {
-                SmartConLogger.Info($"[FamilyLoad] No existing family found with name '{checkName}'");
+                SmartConLogger.Info($"No existing family found with name '{checkName}'");
             }
 
             var loadOptions = new RevitFamilyLoadOptions(options.OverwriteParameterValues, onStatusMessage);
 
-            SmartConLogger.Info("[FamilyLoad] Attempt 1: LoadFamily with options in transaction...");
+            SmartConLogger.Info("Attempt 1: LoadFamily with options in transaction...");
             var result1 = TryLoadInTransaction(doc, normalizedPath, loadOptions, options, "Attempt1", existingFamily);
             if (result1 is not null)
                 return Task.FromResult(result1);
-            SmartConLogger.Info("[FamilyLoad] Attempt 1 failed (returned null)");
+            SmartConLogger.Info("Attempt 1 failed (returned null)");
 
-            SmartConLogger.Info("[FamilyLoad] Attempt 2: LoadFamily without IFamilyLoadOptions...");
+            SmartConLogger.Info("Attempt 2: LoadFamily without IFamilyLoadOptions...");
             var result2 = TryLoadInTransaction(doc, normalizedPath, null, options, "Attempt2", existingFamily);
             if (result2 is not null)
                 return Task.FromResult(result2);
-            SmartConLogger.Info("[FamilyLoad] Attempt 2 failed (returned null)");
+            SmartConLogger.Info("Attempt 2 failed (returned null)");
 
             var errorMessage = BuildErrorMessage(normalizedPath);
-            SmartConLogger.Info($"[FamilyLoad] Both attempts failed - returning error: {errorMessage}");
+            SmartConLogger.Info($"Both attempts failed - returning error: {errorMessage}");
             return Task.FromResult(new FamilyLoadResult(false, null, null, errorMessage, FamilyLoadStatus.Failed));
         }
         catch (Exception ex)
         {
-            SmartConLogger.Info($"[FamilyLoad] LoadFamily exception: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Info($"LoadFamily exception: {ex.GetType().Name}: {ex.Message}");
             return Task.FromResult(new FamilyLoadResult(false, null, null, ex.Message, FamilyLoadStatus.Failed));
         }
     }
@@ -211,11 +216,17 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             return Task.FromResult(new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed));
 
         var normalizedPath = Path.GetFullPath(filePath);
-        SmartConLogger.Info($"[FamilyLoadSymbol] Attempting to load symbol '{typeName}' from: {normalizedPath}");
+        var fileName = Path.GetFileName(normalizedPath);
+        using var _scope = SmartConLogger.BeginScope("FamilyLoadSymbol",
+            ("Method", "LoadFamilySymbolAsync"),
+            ("TypeName", typeName),
+            ("FilePath", fileName));
+
+        SmartConLogger.Info($"Attempting to load symbol '{typeName}'");
 
         if (!File.Exists(normalizedPath))
         {
-            SmartConLogger.Info($"[FamilyLoadSymbol] File not found: {normalizedPath}");
+            SmartConLogger.Info("File not found");
             return Task.FromResult(new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed));
         }
 
@@ -233,7 +244,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             if (loaded && symbol is not null)
             {
                 var familyName = symbol.FamilyName;
-                SmartConLogger.Info($"[FamilyLoadSymbol] Symbol '{typeName}' loaded successfully from family '{familyName}'");
+                SmartConLogger.Info($"Symbol '{typeName}' loaded successfully from family '{familyName}'");
                 return Task.FromResult(new FamilyLoadResult(true, familyName, $"Type '{typeName}' loaded", null, FamilyLoadStatus.Loaded));
             }
 
@@ -254,17 +265,17 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
 
                 if (existingSymbol is not null)
                 {
-                    SmartConLogger.Info($"[FamilyLoadSymbol] Symbol '{typeName}' already exists in family '{existingFamily.Name}'");
+                    SmartConLogger.Info($"Symbol '{typeName}' already exists in family '{existingFamily.Name}'");
                     return Task.FromResult(new FamilyLoadResult(true, existingFamily.Name, $"Type '{typeName}' already exists", null, FamilyLoadStatus.Current));
                 }
             }
 
-            SmartConLogger.Info($"[FamilyLoadSymbol] Failed to load symbol '{typeName}'");
+            SmartConLogger.Info($"Failed to load symbol '{typeName}'");
             return Task.FromResult(new FamilyLoadResult(false, null, null, $"Failed to load type '{typeName}'", FamilyLoadStatus.Failed));
         }
         catch (Exception ex)
         {
-            SmartConLogger.Info($"[FamilyLoadSymbol] Exception: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Info($"Exception: {ex.GetType().Name}: {ex.Message}");
             return Task.FromResult(new FamilyLoadResult(false, null, null, ex.Message, FamilyLoadStatus.Failed));
         }
     }
