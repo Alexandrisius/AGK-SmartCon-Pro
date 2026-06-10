@@ -21,6 +21,16 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     public string? RevitCategory { get; }
 
+    /// <summary>
+    /// VM-owned selection state. Bound to <c>DataGridRow.IsSelected</c> in
+    /// XAML so that the selection survives clicks on inline editors
+    /// (ComboBox dropdown, "…" Button) — those clicks collapse
+    /// <c>DataGrid.SelectedItems</c> but the row stays visually selected
+    /// because <c>IsSelected</c> is driven by this property.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isSelected;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanImport))]
     [NotifyPropertyChangedFor(nameof(AvailableActions))]
@@ -112,6 +122,24 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         NameChanged?.Invoke(this);
     }
 
+    partial void OnActionChanged(FamilyBatchImportAction value)
+    {
+        ActionChanged?.Invoke(this, value);
+    }
+
+    partial void OnTargetCategoryPathChanged(string value)
+    {
+        // Fire only on path change so we always have a consistent (Id, Path)
+        // pair. Picker flow sets Id first, then Path, so this fires after
+        // both values are in place.
+        CategoryChanged?.Invoke(this, (TargetCategoryId, value));
+    }
+
+    partial void OnIsSelectedChanged(bool value)
+    {
+        SelectionChanged?.Invoke(this, value);
+    }
+
     [RelayCommand]
     private void PickCategory()
     {
@@ -120,4 +148,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     public event Func<FamilyBatchImportRow, Task>? PickCategoryRequested;
     public event Func<FamilyBatchImportRow, Task>? NameChanged;
+    public event Action<FamilyBatchImportRow, FamilyBatchImportAction>? ActionChanged;
+    public event Action<FamilyBatchImportRow, (string? Id, string Path)>? CategoryChanged;
+    public event Action<FamilyBatchImportRow, bool>? SelectionChanged;
 }

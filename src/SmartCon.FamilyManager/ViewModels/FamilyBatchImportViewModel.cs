@@ -25,11 +25,22 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     [ObservableProperty]
     private ObservableCollection<FamilyBatchImportRow> _items = new();
 
+    /// <summary>
+    /// VM-owned set of currently selected rows. Maintained through
+    /// <see cref="OnRowSelectionChanged"/> wired to each row's
+    /// <c>IsSelected</c> property. This is the source of truth for batch
+    /// operations, NOT <c>DataGrid.SelectedItems</c> — that one collapses
+    /// when the user clicks an inline editor (ComboBox / Button) and would
+    /// defeat the multi-select batch-apply UX.
+    /// </summary>
+    private readonly HashSet<FamilyBatchImportRow> _selectedRows = new();
+
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IFamilyCatalogProvider _catalogProvider;
     private int _statusLookupSeq;
     private bool _disposed;
+    private bool _batchApplying;
 
     public FamilyBatchImportViewModel(
         IReadOnlyList<FamilyBatchImportItem> items,
@@ -54,9 +65,24 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.PropertyChanged += OnRowPropertyChanged;
             row.PickCategoryRequested += OnRowPickCategoryRequestedAsync;
             row.NameChanged += OnRowNameChangedAsync;
+            row.ActionChanged += OnRowActionChanged;
+            row.CategoryChanged += OnRowCategoryChanged;
+            row.SelectionChanged += OnRowSelectionChanged;
             Items.Add(row);
         }
         UpdateCanImport();
+    }
+
+    private void OnRowSelectionChanged(FamilyBatchImportRow row, bool isSelected)
+    {
+        if (isSelected)
+        {
+            _selectedRows.Add(row);
+        }
+        else
+        {
+            _selectedRows.Remove(row);
+        }
     }
 
     private async Task OnRowPickCategoryRequestedAsync(FamilyBatchImportRow row)
@@ -78,12 +104,87 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     row.TargetCategoryId = result;
                     row.TargetCategoryPath = pickerVm.SelectedPath;
                 }
+                // OnTargetCategoryPathChanged partial-method on Row fires
+                // ApplyCategoryToSelection, so the multi-select batch effect
+                // is delivered without an explicit call here.
             }
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"BatchImport.CategoryPicker: failed: {ex.Message}");
         }
+    }
+
+    private void OnRowActionChanged(FamilyBatchImportRow row, FamilyBatchImportAction newValue)
+    {
+        // Re-entrancy guard: when ApplyActionToSelection sets
+        // target.Action = newValue below, that fires OnActionChanged on
+        // the target, which would re-enter this method. The flag is
+        // also checked inside ApplyActionToSelection itself for the
+        // same reason.
+        if (_batchApplying) return;
+        ApplyActionToSelection(row, newValue);
+    }
+
+    private void OnRowCategoryChanged(FamilyBatchImportRow row, (string? Id, string Path) payload)
+    {
+        if (_batchApplying) return;
+        ApplyCategoryToSelection(row, payload.Id, payload.Path);
+    }
+
+    private void ApplyActionToSelection(FamilyBatchImportRow source, FamilyBatchImportAction newValue)
+    {
+        if (_batchApplying) return;
+        _batchApplying = true;
+        try
+        {
+            foreach (var target in GetOtherSelectedRows(source))
+            {
+                if (target.AvailableActions.Contains(newValue))
+                {
+                    target.Action = newValue;
+                }
+                else
+                {
+                    SmartConLogger.Debug(
+                        $"BatchImport.Action: skip apply {newValue} to '{target.FileName}' — not in AvailableActions");
+                }
+            }
+        }
+        finally
+        {
+            _batchApplying = false;
+        }
+    }
+
+    private void ApplyCategoryToSelection(FamilyBatchImportRow source, string? id, string path)
+    {
+        if (_batchApplying) return;
+        _batchApplying = true;
+        try
+        {
+            foreach (var target in GetOtherSelectedRows(source))
+            {
+                target.TargetCategoryId = id;
+                target.TargetCategoryPath = path;
+            }
+        }
+        finally
+        {
+            _batchApplying = false;
+        }
+    }
+
+    private List<FamilyBatchImportRow> GetOtherSelectedRows(FamilyBatchImportRow source)
+    {
+        // Exclude the source so the setter isn't fired twice (it would
+        // still be idempotent but would emit an extra PropertyChanged and
+        // a redundant UpdateCanImport cycle). The Count <= 1 fast-path
+        // also covers the single-row selection case — when the user
+        // changes Action on a single selected row there is nothing to
+        // batch-apply.
+        if (_selectedRows.Count <= 1) return new List<FamilyBatchImportRow>();
+        return _selectedRows.Where(r => !ReferenceEquals(r, source)).ToList();
     }
 
     private async Task OnRowNameChangedAsync(FamilyBatchImportRow row)
@@ -148,6 +249,9 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.PropertyChanged -= OnRowPropertyChanged;
             row.PickCategoryRequested -= OnRowPickCategoryRequestedAsync;
             row.NameChanged -= OnRowNameChangedAsync;
+            row.ActionChanged -= OnRowActionChanged;
+            row.CategoryChanged -= OnRowCategoryChanged;
+            row.SelectionChanged -= OnRowSelectionChanged;
         }
     }
 

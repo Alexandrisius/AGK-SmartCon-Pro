@@ -35,6 +35,26 @@
                 <Setter Property="VerticalAlignment" Value="Center"/>
                 <Setter Property="Margin" Value="4,0"/>
             </Style>
+            <!--
+                Enterprise multi-select pattern (Microsoft / Syncfusion
+                best practice): bind DataGridRow.IsSelected TwoWay to the
+                row VM's IsSelected property. The DataGrid uses its native
+                SelectionMode="Extended" for Ctrl/Shift/Click selection,
+                and the RestoreMultiSelectOnCellClick behavior below
+                preserves multi-select when the user clicks an inline
+                editor (ComboBox / Button) inside an already-selected cell.
+
+                Defined at the window level (not DataGrid.Resources) so
+                that SingletonResources — which expose CompactDataGridRow
+                and CompactDataGridColumnHeader — are already in scope
+                when this style is resolved.
+            -->
+            <Style x:Key="BatchImportRowStyle"
+                   TargetType="DataGridRow"
+                   BasedOn="{StaticResource CompactDataGridRow}">
+                <Setter Property="IsSelected"
+                        Value="{Binding IsSelected, Mode=TwoWay}"/>
+            </Style>
         </ResourceDictionary>
     </controls:DialogWindowBase.Resources>
 
@@ -63,13 +83,14 @@
             <DataGrid ItemsSource="{Binding Items}"
                      AutoGenerateColumns="False"
                      Style="{DynamicResource CompactDataGrid}"
-                     RowStyle="{DynamicResource CompactDataGridRow}"
+                     RowStyle="{StaticResource BatchImportRowStyle}"
                      CellStyle="{DynamicResource CompactDataGridCell}"
-                     SelectionMode="Single"
+                     SelectionMode="Extended"
                      SelectionUnit="FullRow"
                      CanUserResizeColumns="True"
                      CanUserSortColumns="False"
-                     behaviors:DataGridBehaviors.DeselectOnEmptyClick="True">
+                     behaviors:DataGridBehaviors.DeselectOnEmptyClick="True"
+                     behaviors:DataGridBehaviors.RestoreMultiSelectOnCellClick="True">
                 <DataGrid.ColumnHeaderStyle>
                     <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
                         <Setter Property="HorizontalContentAlignment" Value="Center"/>

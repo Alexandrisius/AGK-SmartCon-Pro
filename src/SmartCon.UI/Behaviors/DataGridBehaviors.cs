@@ -8,7 +8,7 @@ namespace SmartCon.UI.Behaviors;
 /// <summary>
 /// Attached behaviors for DataGrid controls.
 /// </summary>
-public static class DataGridBehaviors
+public static partial class DataGridBehaviors
 {
     #region DeselectOnEmptyClick
 
