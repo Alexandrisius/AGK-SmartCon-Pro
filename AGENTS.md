@@ -220,8 +220,8 @@
 - Транзакции → только через `ITransactionService`. Запрещено `new Transaction(doc)` (I-03)
 - Не хранить `Element`/`Connector` между транзакциями. Только `ElementId` (I-05)
 - `SmartCon.Core` НЕ вызывает Revit API — compile-time only. Запрет `using System.Windows` (I-09)
-- Новые доменные классы → обнови `docs/domain/models.md`
-- Новые интерфейсы → обнови `docs/domain/interfaces.md`
+- Новые доменные классы → обнови `docs/domain/models/<module>.md` (см. `docs/domain/models/README.md`)
+- Новые интерфейсы → обнови `docs/domain/interfaces/<module>.md` (см. `docs/domain/interfaces/README.md`)
 - Архитектурные решения → создай ADR в `docs/adr/`
 - **Логирование** → **НИКОГДА** не пиши `$"[Cat] message"` — используй
   `using var _scope = SmartConLogger.BeginScope("Cat", ("Method", nameof(M)));`

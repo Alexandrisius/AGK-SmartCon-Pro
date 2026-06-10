@@ -73,7 +73,7 @@ ExtensibleStorage остаётся паттерном существующих �
 **Phase 12 (FamilyManager MVP) — COMPLETED (2026-04-28).**
 
 - ADR-014 принят: `docs/adr/014-familymanager-mvp-architecture.md`
-- Модели и интерфейсы добавлены в `docs/domain/models.md` и `docs/domain/interfaces.md`
+- Модели и интерфейсы добавлены в `docs/domain/models/family-manager.md` и `docs/domain/interfaces/family-manager.md`
 - `SmartCon.FamilyManager` добавлен в `docs/architecture/solution-structure.md` и `docs/architecture/dependency-rule.md`
 
 **Phase 13 (FamilyManager Published Storage) — COMPLETED (2026-05-01).**

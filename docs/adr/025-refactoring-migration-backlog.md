@@ -296,8 +296,8 @@ WpfDispatcher + 7 тестов в `WpfDispatcherTests.cs`.
 - [ADR-018](018-familymanager-refactoring.md) — Phases 1-7 Refactoring Updates
 - [revit-api-best-practice skill](../../.agents/skills/revit-api-best-practice/SKILL.md) — threading patterns
 - [revit-wpf-compat skill](../../.agents/skills/revit-wpf-compat/SKILL.md) — net48 dispatcher safety
-- [docs/domain/interfaces.md](../domain/interfaces.md) — `IClock`, `IIdGenerator`, `IDispatcher`, `ILocalCatalogMigrator`
-- [docs/domain/models.md](../domain/models.md) — `FamilyMetadataFormat`, `FamilyMetadataMigrator`
+- [docs/domain/interfaces/cross-cutting.md](../domain/interfaces/cross-cutting.md) — `IClock`, `IIdGenerator`, `IDispatcher`, `ILocalCatalogMigrator`
+- [docs/domain/models/cross-cutting.md](../domain/models/cross-cutting.md) — `FamilyMetadataFormat`, `FamilyMetadataMigrator`
 
 ## Verification логов (2026-06-05)
 

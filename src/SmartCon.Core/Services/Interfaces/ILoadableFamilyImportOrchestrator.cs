@@ -10,17 +10,3 @@ public interface ILoadableFamilyImportOrchestrator
         string? categoryId = null,
         CancellationToken ct = default);
 }
-
-public sealed record LoadableFamilyImportResult(
-    bool Success,
-    string? Message,
-    int ImportedCount,
-    int SkippedCount,
-    IReadOnlyList<LoadableFamilyAttributeTask> AttributeTasks);
-
-public sealed record LoadableFamilyAttributeTask(
-    string CatalogItemId,
-    string ManagedRfaPath,
-    string? VersionId,
-    string? FileId,
-    bool HasTypeCatalog);

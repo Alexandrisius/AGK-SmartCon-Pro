@@ -135,8 +135,8 @@ The same `FamilyBatchImportView` shows mixed `system` and `loadable` rows. `Fami
 * `src/SmartCon.Core/Services/LocalizationService.Keys.FamilyManager.cs` — 5 new keys (see above)
 * `src/SmartCon.UI/StringLocalization.cs` — corresponding `const string` additions
 * `src/SmartCon.App/DI/ServiceRegistrar.cs` — registered `ILoadableFamilyScanner`, `ILoadableFamilyTypeResolver`, `ILoadableFamilyImportOrchestrator`
-* `docs/domain/models.md` — added sections for `LoadableFamilyInfo`, `SelectedElementsAnalysis`, `LoadableFamilyAttributeTask`, `LoadableFamilyImportResult`
-* `docs/domain/interfaces.md` — `ISystemFamilyRevitOperations.PickSelectedElements`; new `ILoadableFamilyScanner`, `ILoadableFamilyTypeResolver`, `ILoadableFamilyImportOrchestrator`
+* `docs/domain/models/family-manager-loadable.md` — added sections for `LoadableFamilyInfo`, `SelectedElementsAnalysis`, `LoadableFamilyAttributeTask`, `LoadableFamilyImportResult`
+* `docs/domain/interfaces/family-manager-system.md` — `ISystemFamilyRevitOperations.PickSelectedElements`; new `ILoadableFamilyScanner`, `ILoadableFamilyTypeResolver`, `ILoadableFamilyImportOrchestrator` в [`family-manager-loadable.md`](../domain/interfaces/family-manager-loadable.md)
 * `docs/family-manager/README.md` — Phase 22 status entry
 
 ### Removed

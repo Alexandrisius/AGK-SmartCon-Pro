@@ -991,7 +991,7 @@ Diagnostics
 
 - `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` проходит.
 - Ручная сборка по правилам multi-version не ломается.
-- `docs/domain/models.md` и `docs/domain/interfaces.md` обновлены.
+- `docs/domain/models/family-manager.md` и `docs/domain/interfaces/family-manager.md` обновлены.
 - ADR добавлен.
 
 ---
@@ -1107,8 +1107,8 @@ Diagnostics
 ## 16. Документация, которую нужно обновить при реализации
 
 - `docs/adr/XXX-familymanager-attribute-extraction.md` — новое ADR.
-- `docs/domain/models.md` — новые модели.
-- `docs/domain/interfaces.md` — новые интерфейсы.
+- `docs/domain/models/family-manager.md` — новые модели.
+- `docs/domain/interfaces/family-manager.md` — новые интерфейсы.
 - `docs/family-manager/README.md` — ссылка на новую фичу.
 - `docs/family-manager/01-mvp/04-domain-model.pplx.md` — уточнить атрибутную модель.
 - `docs/family-manager/01-mvp/05-metadata-schema.pplx.md` — schema v6.

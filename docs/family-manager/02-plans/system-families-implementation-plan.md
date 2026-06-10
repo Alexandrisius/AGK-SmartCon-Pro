@@ -211,9 +211,9 @@ public record CreateCleanProjectResult(
     string? CategoryName = null);
 ```
 
-### 4.3. Обновление docs/domain/models.md
+### 4.3. Обновление docs/domain/models/system-families.md
 
-**ОБЯЗАТЕЛЬНО** добавить новые модели в `docs/domain/models.md` после реализации.
+**ОБЯЗАТЕЛЬНО** добавить новые модели в `docs/domain/models/system-families.md` после реализации.
 
 ---
 
@@ -274,9 +274,9 @@ public sealed record FamilyPlacementDragData(
     string FamilySource = "loadable");  // NEW
 ```
 
-### 5.3. Обновление docs/domain/interfaces.md
+### 5.3. Обновление docs/domain/interfaces/family-manager-system.md
 
-**ОБЯЗАТЕЛЬНО** добавить новые интерфейсы в `docs/domain/interfaces.md` после реализации.
+**ОБЯЗАТЕЛЬНО** добавить новые интерфейсы в `docs/domain/interfaces/family-manager-system.md` после реализации.
 
 ---
 
@@ -1458,8 +1458,8 @@ public const string FM_LoadActiveSystemFamily = "FM_LoadActiveSystemFamily";
 
 ### Этап 6: Документация
 28. ✅ Создать ADR `docs/adr/024-system-families.md`
-29. ✅ Обновить `docs/domain/models.md`
-30. ✅ Обновить `docs/domain/interfaces.md`
+29. ✅ Обновить `docs/domain/models/system-families.md`
+30. ✅ Обновить `docs/domain/interfaces/family-manager-system.md`
 
 ### Этап 7: Тестирование
 31. ✅ Собрать R25: `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25`
@@ -1537,8 +1537,8 @@ public const string FM_LoadActiveSystemFamily = "FM_LoadActiveSystemFamily";
 - `docs/family-manager/02-spikes/01-pipe-import-placement-spike.md` — spike E-1 (опыт)
 - `docs/invariants.md` — жёсткие правила I-01..I-17
 - `docs/architecture/dependency-rule.md` — правило зависимостей
-- `docs/domain/models.md` — доменные модели
-- `docs/domain/interfaces.md` — интерфейсы
+- `docs/domain/models/README.md` — доменные модели (индекс)
+- `docs/domain/interfaces/README.md` — интерфейсы (индекс)
 
 ---
 

@@ -357,8 +357,8 @@ Revit API НЕ предоставляет прямого доступа к Type 
 
 - `docs/invariants.md` — I-01 (ExternalEvent), I-03b (Transaction для family doc), I-09 (Dependency Rule), I-16 (ReadOnly Storage)
 - `docs/architecture/dependency-rule.md` — Правило зависимостей между слоями
-- `docs/domain/models.md` — FamilyTypeDescriptor, ExtractedAttributeValue
-- `docs/domain/interfaces.md` — IFamilyLoadService, IFamilyPlacementDragService
+- `docs/domain/models/family-manager.md` — FamilyTypeDescriptor, ExtractedAttributeValue
+- `docs/domain/interfaces/family-manager.md` — IFamilyLoadService, IFamilyPlacementDragService
 - `docs/family-manager/README.md` — Архитектура модуля FamilyManager
 
 ---

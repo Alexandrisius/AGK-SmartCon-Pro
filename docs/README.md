@@ -36,8 +36,9 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`domain/models.md`](domain/models.md) | Все доменные классы с полными сигнатурами | При работе с моделями данных |
-| [`domain/interfaces.md`](domain/interfaces.md) | Все интерфейсы-контракты с сигнатурами методов | При реализации или вызове сервисов |
+| [`domain/README.md`](domain/README.md) | Индекс доменной документации | При навигации по доменным моделям/интерфейсам |
+| [`domain/models/`](domain/models/README.md) | Доменные классы (модели), разбиты по модулям | При работе с моделями данных |
+| [`domain/interfaces/`](domain/interfaces/README.md) | Интерфейсы-контракты, разбиты по модулям | При реализации или вызове сервисов |
 | [`domain/glossary.md`](domain/glossary.md) | Единый словарь терминов проекта | При любых сомнениях в терминологии |
 
 ### PipeConnect (флагманский модуль)
@@ -82,8 +83,8 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 2. **Загрузи** [`invariants.md`](invariants.md) — жёсткие правила, обязательные всегда
 3. **Загрузи** [`architecture/dependency-rule.md`](architecture/dependency-rule.md) — чтобы понимать куда класть код
 4. **По задаче** загружай нужные документы из карты выше
-5. **Не создавай** новые доменные классы без обновления [`domain/models.md`](domain/models.md)
-6. **Не создавай** новые интерфейсы без обновления [`domain/interfaces.md`](domain/interfaces.md)
+5. **Не создавай** новые доменные классы без обновления [`domain/models/<module>.md`](domain/models/README.md)
+6. **Не создавай** новые интерфейсы без обновления [`domain/interfaces/<module>.md`](domain/interfaces/README.md)
 
 ---
 

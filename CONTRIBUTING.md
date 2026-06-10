@@ -157,8 +157,8 @@ Key invariants (see `docs/invariants.md`, I-01 through I-16):
 
 ## Adding Code
 
-- New domain classes → update `docs/domain/models.md`
-- New interfaces → update `docs/domain/interfaces.md`
+- New domain classes → update `docs/domain/models/<module>.md` (see `docs/domain/models/README.md`)
+- New interfaces → update `docs/domain/interfaces/<module>.md` (see `docs/domain/interfaces/README.md`)
 - Architectural decisions → create ADR in `docs/adr/`
 - Follow MVVM strictly in UI: `.xaml.cs` contains only `DataContext = viewModel`
 

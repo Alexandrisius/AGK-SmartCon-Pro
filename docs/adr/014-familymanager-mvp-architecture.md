@@ -89,7 +89,7 @@ ViewModel **строго** не содержит `Document`, `Element`, `Family`
 
 ## Обновления документации
 
-- `docs/domain/models.md` — добавлены FamilyManager модели
-- `docs/domain/interfaces.md` — добавлены FamilyManager интерфейсы
+- `docs/domain/models/family-manager.md` — добавлены FamilyManager модели
+- `docs/domain/interfaces/family-manager.md` — добавлены FamilyManager интерфейсы
 - `docs/architecture/solution-structure.md` — добавлен `SmartCon.FamilyManager`
 - `docs/architecture/dependency-rule.md` — добавлена строка FamilyManager в матрицу

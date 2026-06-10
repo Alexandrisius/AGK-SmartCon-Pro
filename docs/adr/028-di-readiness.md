@@ -155,7 +155,7 @@ public ShareProjectCommand(IShareProjectSettingsRepository settingsRepo, ...)
 - [ADR-025](025-refactoring-migration-backlog.md) — M-019-001..005 (5 миграций)
 - [ADR-027](027-placed-families-v2.md) — DI patterns в новом коде
 - [docs/architecture/dependency-injection.md](../architecture/dependency-injection.md) — TBD
-- [docs/domain/interfaces.md](../domain/interfaces.md) — IClock, IIdGenerator, IDispatcher
+- [docs/domain/interfaces/cross-cutting.md](../domain/interfaces/cross-cutting.md) — IClock, IIdGenerator, IDispatcher
 - [.agents/skills/revit-api-best-practice](../../.agents/skills/revit-api-best-practice/SKILL.md) — DI в Revit context
 
 ## Audit method

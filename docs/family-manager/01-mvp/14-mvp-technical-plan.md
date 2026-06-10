@@ -394,8 +394,8 @@ FamilyCatalogQueryValidator.cs — валидация FamilyCatalogQuery
 
 #### 12B-4. Обновить документацию
 
-- `docs/domain/models.md` — добавить секцию FamilyManager.
-- `docs/domain/interfaces.md` — добавить секцию FamilyManager.
+- `docs/domain/models/family-manager.md` — добавить секцию FamilyManager.
+- `docs/domain/interfaces/family-manager.md` — добавить секцию FamilyManager.
 - `docs/domain/glossary.md` — добавить термины FamilyManager.
 
 **Acceptance:**
@@ -1149,8 +1149,8 @@ ViewModels/
 
 #### 12I-1. Обновить документы
 
-- `docs/domain/models.md` — добавить FamilyManager модели.
-- `docs/domain/interfaces.md` — добавить FamilyManager интерфейсы.
+- `docs/domain/models/family-manager.md` — добавить FamilyManager модели.
+- `docs/domain/interfaces/family-manager.md` — добавить FamilyManager интерфейсы.
 - `docs/roadmap.md` — добавить Phase 12.
 - `docs/README.md` — обновить индекс.
 - `docs/architecture/solution-structure.md` — добавить `SmartCon.FamilyManager`.
