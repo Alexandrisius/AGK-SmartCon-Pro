@@ -80,7 +80,8 @@ public sealed partial class FamilyManagerMainViewModel
                             path, SafeFileName.GetBaseName(path), sha256.Sha256, revitVersion, fileInfo.Length,
                             FamilyBatchImportStatus.Duplicate,
                             existingByHash.CatalogItemId, existingByHash.VersionLabel,
-                            categoryId, categoryName));
+                            categoryId, categoryName,
+                            TypeCount: null));
                         continue;
                     }
 
@@ -108,14 +109,16 @@ public sealed partial class FamilyManagerMainViewModel
                             path, SafeFileName.GetBaseName(path), sha256.Sha256, revitVersion, fileInfo.Length,
                             FamilyBatchImportStatus.Existing,
                             forcedExistingItemId ?? existingByName!.Id, existingByName?.CurrentVersionLabel,
-                            existingCategoryId ?? categoryId, existingCategoryName ?? categoryName));
+                            existingCategoryId ?? categoryId, existingCategoryName ?? categoryName,
+                            TypeCount: null));
                     }
                     else
                     {
                         items.Add(new FamilyBatchImportItem(
                             path, SafeFileName.GetBaseName(path), sha256.Sha256, revitVersion, fileInfo.Length,
                             FamilyBatchImportStatus.New,
-                            null, null, categoryId, categoryName));
+                            null, null, categoryId, categoryName,
+                            TypeCount: null));
                     }
                 }
                 catch (Exception ex)
@@ -123,7 +126,8 @@ public sealed partial class FamilyManagerMainViewModel
                     SmartConLogger.Warn($"Failed to analyze file '{path}': {ex.Message}");
                     items.Add(new FamilyBatchImportItem(
                         path, SafeFileName.GetBaseName(path), string.Empty, 0, 0,
-                        FamilyBatchImportStatus.Error));
+                        FamilyBatchImportStatus.Error,
+                        TypeCount: null));
                 }
             }
 

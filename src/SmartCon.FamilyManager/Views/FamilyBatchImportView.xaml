@@ -25,6 +25,7 @@
             <converters:FamilyBatchImportActionConverter x:Key="ActionConverter"/>
             <converters:FamilyBatchImportStatusConverter x:Key="StatusConverter"/>
             <converters:FileSizeToMbConverter x:Key="FileSizeConverter"/>
+            <converters:TypeCountToDisplayConverter x:Key="TypeCountConverter"/>
             <Style x:Key="CenterCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                 <Setter Property="HorizontalAlignment" Value="Center"/>
                 <Setter Property="VerticalAlignment" Value="Center"/>
@@ -95,21 +96,11 @@
                                         IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
                     <DataGridTextColumn x:Name="ColTypeCount"
-                                        Binding="{Binding TypeCount}"
+                                        Binding="{Binding TypeCount, Converter={StaticResource TypeCountConverter}}"
                                         Width="Auto"
                                         MinWidth="50"
                                         IsReadOnly="True"
-                                        ElementStyle="{StaticResource CenterCell}">
-                        <DataGridTextColumn.CellStyle>
-                            <Style TargetType="DataGridCell" BasedOn="{StaticResource CompactDataGridCell}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding FamilySource}" Value="loadable">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGridTextColumn.CellStyle>
-                    </DataGridTextColumn>
+                                        ElementStyle="{StaticResource CenterCell}"/>
                     <DataGridTextColumn x:Name="ColStatus"
                                         Binding="{Binding Status, Converter={StaticResource StatusConverter}}"
                                         Width="Auto"
@@ -177,16 +168,16 @@
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Margin="0,8,0,0">
-            <Button Content="{loc:Loc FM_BatchImport_Cancel}"
-                    Command="{Binding CancelCommand}"
-                    IsCancel="True"
-                    Style="{DynamicResource SecondaryButton}"
-                    Margin="0,0,8,0"
-                    Width="80" Height="28"/>
             <Button Content="{loc:Loc FM_BatchImport_Load}"
                     Command="{Binding ImportCommand}"
                     IsDefault="True"
                     Style="{DynamicResource PrimaryButton}"
+                    Width="80" Height="28"/>
+            <Button Content="{loc:Loc FM_BatchImport_Cancel}"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"
+                    Style="{DynamicResource SecondaryButton}"
+                    Margin="8,0,0,0"
                     Width="80" Height="28"/>
         </StackPanel>
     </Grid>

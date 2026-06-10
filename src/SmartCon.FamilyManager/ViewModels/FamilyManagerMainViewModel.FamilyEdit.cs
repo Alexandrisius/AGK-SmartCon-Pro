@@ -398,7 +398,7 @@ public sealed partial class FamilyManagerMainViewModel
             existingCategoryId,
             existingCategoryName,
             FamilySource: "loadable",
-            TypeCount: 0,
+            TypeCount: null,
             RevitCategory: null,
             OriginalSourcePath: preparation.OriginalRfaPath);
 
@@ -473,7 +473,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (systemItems.Count > 0)
         {
             var sysResult = await _systemFamilyImportOrchestrator.ImportBatchItemsAsync(systemItems);
-            systemTotalTypes = systemItems.Sum(i => i.TypeCount);
+            systemTotalTypes = systemItems.Sum(i => i.TypeCount ?? 0);
             SmartConLogger.Info(
                 $"System: imported={sysResult.Success}, types={systemTotalTypes}, tasks={sysResult.ExtractionTasks.Count}");
 
@@ -489,7 +489,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             var loadResult = await _loadableFamilyImportOrchestrator.ImportAndPersistTypesAsync(
                 loadableItems, CurrentRevitVersion, defaultCategoryId);
-            loadableTotalTypes = loadableItems.Sum(i => i.TypeCount);
+            loadableTotalTypes = loadableItems.Sum(i => i.TypeCount ?? 0);
             loadableAttributeTasks = loadResult.AttributeTasks;
             SmartConLogger.Info(
                 $"Loadable: imported={loadResult.ImportedCount}, skipped={loadResult.SkippedCount}, attrTasks={loadableAttributeTasks.Count}");

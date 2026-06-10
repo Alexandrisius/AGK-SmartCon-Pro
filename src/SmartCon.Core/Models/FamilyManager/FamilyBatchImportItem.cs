@@ -15,7 +15,7 @@ public sealed record FamilyBatchImportItem(
     string? TargetCategoryId = null,
     string? TargetCategoryName = null,
     string FamilySource = "loadable",
-    int TypeCount = 0,
+    int? TypeCount = null,
     string? RevitCategory = null,
     string? OriginalSourcePath = null)
 {

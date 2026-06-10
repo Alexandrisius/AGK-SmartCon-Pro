@@ -15,7 +15,10 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public int RevitMajorVersion { get; }
     public long FileSizeBytes { get; }
     public string FamilySource { get; }
-    public int TypeCount { get; }
+
+    [ObservableProperty]
+    private int? _typeCount;
+
     public string? RevitCategory { get; }
 
     [ObservableProperty]
@@ -55,7 +58,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         RevitMajorVersion = item.RevitMajorVersion;
         FileSizeBytes = item.FileSizeBytes;
         FamilySource = item.FamilySource;
-        TypeCount = item.TypeCount;
+        _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;
         Status = item.Status;
         ExistingCatalogItemId = item.ExistingCatalogItemId;
