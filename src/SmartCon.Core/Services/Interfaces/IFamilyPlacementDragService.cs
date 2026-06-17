@@ -33,4 +33,11 @@ public interface IFamilyPlacementDragService
     /// The argument is the status message. Subscribe to show status in UI.
     /// </summary>
     event Action<string>? PlacementStatusMessage;
+
+    /// <summary>
+    /// Fired when Revit API asks how to load a conflicting shared nested family.
+    /// The handler returns the user's choice from a dialog. Subscribers MUST call
+    /// the dialog on Revit main thread and block until user decides.
+    /// </summary>
+    event Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? SharedFamilyDecisionRequested;
 }

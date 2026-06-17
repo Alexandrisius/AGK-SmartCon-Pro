@@ -135,6 +135,7 @@ public static class ServiceRegistrar
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
+            presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());

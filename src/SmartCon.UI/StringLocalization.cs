@@ -484,5 +484,18 @@ public static class StringLocalization
         public const string FM_FindInCatalog_NoSelection = "FM_FindInCatalog_NoSelection";
         public const string FM_FindInCatalog_NotFound = "FM_FindInCatalog_NotFound";
         public const string FM_FindInCatalog_Found = "FM_FindInCatalog_Found";
+
+        public const string FM_LoadShared_DialogTitle = "FM_LoadShared_DialogTitle";
+        public const string FM_LoadShared_Header = "FM_LoadShared_Header";
+        public const string FM_LoadShared_Message = "FM_LoadShared_Message";
+        public const string FM_LoadShared_UseProject = "FM_LoadShared_UseProject";
+        public const string FM_LoadShared_UseProjectHint = "FM_LoadShared_UseProjectHint";
+        public const string FM_LoadShared_OverwriteParams = "FM_LoadShared_OverwriteParams";
+        public const string FM_LoadShared_OverwriteParamsHint = "FM_LoadShared_OverwriteParamsHint";
+        public const string FM_LoadShared_OverwriteAll = "FM_LoadShared_OverwriteAll";
+        public const string FM_LoadShared_OverwriteAllHint = "FM_LoadShared_OverwriteAllHint";
+        public const string FM_LoadShared_InUseWarning = "FM_LoadShared_InUseWarning";
+        public const string FM_LoadShared_Apply = "FM_LoadShared_Apply";
+        public const string FM_LoadShared_Skip = "FM_LoadShared_Skip";
     }
 }

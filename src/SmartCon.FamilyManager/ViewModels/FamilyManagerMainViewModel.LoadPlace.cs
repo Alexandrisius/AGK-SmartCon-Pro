@@ -73,7 +73,12 @@ public sealed partial class FamilyManagerMainViewModel
                 }
 
                 var loadOptions = FamilyLoadOptions.Default with { PreferredName = selectedName, OverwriteParameterValues = overwriteParameterValues };
-                var result = await _loadService.LoadFamilyAsync(resolved, loadOptions, ct: CancellationToken.None).ConfigureAwait(true);
+                var result = await _loadService.LoadFamilyAsync(
+                    resolved,
+                    loadOptions,
+                    onStatusMessage: null,
+                    onSharedDecision: request => _dialogService.ShowSharedFamiliesLoadModeDialog(request),
+                    ct: CancellationToken.None).ConfigureAwait(true);
 
                 if (result.Success)
                 {
@@ -180,14 +185,27 @@ public sealed partial class FamilyManagerMainViewModel
                     }
 
                     FamilyLoadResult result;
+                    Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice> sharedDecision =
+                        request => _dialogService.ShowSharedFamiliesLoadModeDialog(request);
+
                     if (isVirtual)
                     {
                         var options = FamilyLoadOptions.Default with { PreferredName = familyName };
-                        result = await _loadService.LoadFamilyAsync(resolved, options, msg => StatusMessage = msg, CancellationToken.None).ConfigureAwait(true);
+                        result = await _loadService.LoadFamilyAsync(
+                            resolved,
+                            options,
+                            onStatusMessage: msg => StatusMessage = msg,
+                            onSharedDecision: sharedDecision,
+                            ct: CancellationToken.None).ConfigureAwait(true);
                     }
                     else
                     {
-                        result = await _loadService.LoadFamilySymbolAsync(resolved.AbsolutePath, typeName, msg => StatusMessage = msg, CancellationToken.None).ConfigureAwait(true);
+                        result = await _loadService.LoadFamilySymbolAsync(
+                            resolved.AbsolutePath,
+                            typeName,
+                            onStatusMessage: msg => StatusMessage = msg,
+                            onSharedDecision: sharedDecision,
+                            ct: CancellationToken.None).ConfigureAwait(true);
                     }
 
                     if (!result.Success)

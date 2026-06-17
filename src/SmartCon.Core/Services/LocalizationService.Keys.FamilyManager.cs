@@ -285,5 +285,41 @@ public static partial class LocalizationService
         ru["FM_AttrStatus_UnsupportedType"] = "Неподдерживаемый тип"; en["FM_AttrStatus_UnsupportedType"] = "Unsupported type";
         ru["FM_AttrStatus_ReadError"] = "Ошибка чтения"; en["FM_AttrStatus_ReadError"] = "Read error";
         ru["FM_AttrStatus_NotInFamily"] = "Нет в семействе"; en["FM_AttrStatus_NotInFamily"] = "Not in family";
+
+        ru["FM_LoadShared_DialogTitle"] = "Общее вложенное семейство — режим загрузки";
+        en["FM_LoadShared_DialogTitle"] = "Shared nested family — loading mode";
+
+        ru["FM_LoadShared_Header"] = "Загрузка общего вложенного семейства";
+        en["FM_LoadShared_Header"] = "Loading shared nested family";
+
+        ru["FM_LoadShared_Message"] = "Семейство «{0}» уже загружено в проект, но в загружаемой версии оно изменено. Выберите режим загрузки:";
+        en["FM_LoadShared_Message"] = "Family \"{0}\" is already loaded in the project, but it has been modified in the loaded version. Choose a loading mode:";
+
+        ru["FM_LoadShared_UseProject"] = "Использовать версию из проекта";
+        en["FM_LoadShared_UseProject"] = "Use project version";
+
+        ru["FM_LoadShared_UseProjectHint"] = "Оставить без изменений. Существующие типы и параметры в проекте сохранятся.";
+        en["FM_LoadShared_UseProjectHint"] = "Leave unchanged. Existing types and parameters in the project will be preserved.";
+
+        ru["FM_LoadShared_OverwriteParams"] = "Заменить параметры";
+        en["FM_LoadShared_OverwriteParams"] = "Overwrite parameters";
+
+        ru["FM_LoadShared_OverwriteParamsHint"] = "Загрузить новую версию семейства, параметры существующих типов будут обновлены.";
+        en["FM_LoadShared_OverwriteParamsHint"] = "Load the new family version, parameter values of existing types will be overwritten.";
+
+        ru["FM_LoadShared_OverwriteAll"] = "Заменить всё";
+        en["FM_LoadShared_OverwriteAll"] = "Replace everything";
+
+        ru["FM_LoadShared_OverwriteAllHint"] = "Полная перезапись семейства и всех его типов на новую версию.";
+        en["FM_LoadShared_OverwriteAllHint"] = "Full overwrite of the family and all its types with the new version.";
+
+        ru["FM_LoadShared_InUseWarning"] = "⚠ В проекте размещены экземпляры этого семейства. Перезапись может повлиять на них.";
+        en["FM_LoadShared_InUseWarning"] = "⚠ Instances of this family are placed in the project. Overwrite may affect them.";
+
+        ru["FM_LoadShared_Apply"] = "Применить";
+        en["FM_LoadShared_Apply"] = "Apply";
+
+        ru["FM_LoadShared_Skip"] = "Пропущено: {0}";
+        en["FM_LoadShared_Skip"] = "Skipped: {0}";
     }
 }

@@ -26,6 +26,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     public event Action<string>? PlacementFailed;
     public event Action<string>? PlacementSucceeded;
     public event Action<string>? PlacementStatusMessage;
+    public event Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? SharedFamilyDecisionRequested;
 
     public RevitFamilyPlacementDragService(
         IRevitUIContext revitUIContext,
@@ -63,7 +64,8 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
                 OnPlacementCompleted,
                 OnPlacementFailed,
                 OnPlacementSucceeded,
-                OnPlacementStatusMessage);
+                OnPlacementStatusMessage,
+                OnSharedFamilyDecisionRequested);
 
             UIApplication.DoDragDrop(data, handler);
         }
@@ -92,5 +94,10 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private void OnPlacementStatusMessage(string statusMessage)
     {
         PlacementStatusMessage?.Invoke(statusMessage);
+    }
+
+    private SharedFamiliesLoadChoice OnSharedFamilyDecisionRequested(SharedFamilyDecisionRequest request)
+    {
+        return SharedFamilyDecisionRequested?.Invoke(request) ?? SharedFamiliesLoadChoice.UseProject;
     }
 }

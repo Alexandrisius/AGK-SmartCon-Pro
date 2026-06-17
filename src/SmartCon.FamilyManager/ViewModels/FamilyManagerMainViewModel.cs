@@ -148,6 +148,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _placementDragService.PlacementFailed += OnPlacementFailed;
         _placementDragService.PlacementSucceeded += OnPlacementSucceeded;
         _placementDragService.PlacementStatusMessage += OnPlacementStatusMessage;
+        _placementDragService.SharedFamilyDecisionRequested += OnSharedFamilyDecisionRequested;
 
         DetectRevitVersion();
         FireAndForget(InitializeAsync(), nameof(InitializeAsync));
@@ -632,6 +633,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         SmartConLogger.Info($"{statusMessage}");
     }
 
+    private SharedFamiliesLoadChoice OnSharedFamilyDecisionRequested(SharedFamilyDecisionRequest request)
+    {
+        return _dialogService.ShowSharedFamiliesLoadModeDialog(request);
+    }
+
     public void Dispose()
     {
         using var _scope = SmartConLogger.BeginScope("FMVM",
@@ -642,6 +648,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _placementDragService.PlacementFailed -= OnPlacementFailed;
         _placementDragService.PlacementSucceeded -= OnPlacementSucceeded;
         _placementDragService.PlacementStatusMessage -= OnPlacementStatusMessage;
+        _placementDragService.SharedFamilyDecisionRequested -= OnSharedFamilyDecisionRequested;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
         if (_sessionStart != DateTime.MinValue)

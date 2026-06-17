@@ -627,11 +627,58 @@ public sealed record ActiveFamilyPreparationResult(
 public sealed record FamilyLoadOptions(
     bool OverwriteExisting = false,
     bool UpdateFamilyIfChanged = false,
-    string? PreferredName = null)
+    string? PreferredName = null,
+    bool OverwriteParameterValues = true)
 {
     public static FamilyLoadOptions Default { get; } = new();
 }
 ```
+
+---
+
+## SharedFamiliesLoadChoice
+
+Решение пользователя о способе загрузки одного общего вложенного семейства (shared nested), которое уже есть в проекте, но в загружаемой версии `.rfa` оно изменено. Используется в диалоге `SharedFamiliesLoadModeDialogView` (issue #67).
+
+**Файл:** `SharedFamiliesLoadChoice.cs`
+
+```csharp
+public enum SharedFamiliesLoadChoice
+{
+    UseProject = 0,            // FamilySource.Project — оставить проектную версию
+    OverwriteParameters = 1,   // FamilySource.Family + overwrite=true — обновить параметры
+    OverwriteAll = 2           // FamilySource.Family + overwrite=true — полная перезапись
+}
+```
+
+Соответствие API Revit:
+
+| Choice | `FamilySource` | `overwriteParameterValues` |
+|---|---|---|
+| `UseProject` | `FamilySource.Project` | `false` |
+| `OverwriteParameters` | `FamilySource.Family` | `true` |
+| `OverwriteAll` | `FamilySource.Family` | `true` |
+
+---
+
+## SharedFamilyDecisionRequest
+
+Запрос на решение, передаваемый из `IFamilyLoadOptions.OnSharedFamilyFound` в UI-слой через `IFamilyManagerDialogService.ShowSharedFamiliesLoadModeDialog`.
+
+**Файл:** `SharedFamilyDecisionRequest.cs`
+
+```csharp
+public sealed record SharedFamilyDecisionRequest(
+    string SharedFamilyName,
+    bool IsFamilyInUse,
+    string ParentFamilyName);
+```
+
+| Поле | Назначение |
+|---|---|
+| `SharedFamilyName` | Имя конфликтующего shared nested (в Revit 2024.3+ это nested; в более ранних — parent, REVIT-198137) |
+| `IsFamilyInUse` | Размещены ли экземпляры в проекте (влияет на текст предупреждения) |
+| `ParentFamilyName` | Имя родительского семейства для caption диалога |
 
 ---
 
