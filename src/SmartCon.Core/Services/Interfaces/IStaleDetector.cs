@@ -50,6 +50,15 @@ public interface IStaleDetector
     FamilyStaleSnapshot? GetCachedSnapshot();
 
     /// <summary>
+    /// Returns a snapshot that is the <em>logical merge</em> of the current cached
+    /// snapshot with the supplied <paramref name="newResults"/>: existing entries
+    /// are preserved, entries for the same catalog item ID are overwritten by the
+    /// fresh result. Used by the VM to update the tree with the COMPLETE picture
+    /// of stale markers (not just the ones from the latest Check call).
+    /// </summary>
+    FamilyStaleSnapshot? GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults);
+
+    /// <summary>
     /// Removes the given catalog item IDs from the snapshot. Used after a successful
     /// Update so the next <c>Check</c> re-evaluates them from scratch instead of
     /// showing the stale marker indefinitely.

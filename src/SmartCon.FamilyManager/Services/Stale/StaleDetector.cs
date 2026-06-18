@@ -243,6 +243,15 @@ internal sealed class StaleDetector : IStaleDetector
         lock (_cacheLock) return _cachedSnapshot;
     }
 
+    public FamilyStaleSnapshot? GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults)
+    {
+        lock (_cacheLock)
+        {
+            if (_cachedSnapshot is null) return null;
+            return StaleSnapshotLogic.MergeInto(_cachedSnapshot, newResults, _clock.UtcNow);
+        }
+    }
+
     public void MarkUpdated(IReadOnlyCollection<string> catalogItemIds)
     {
         if (catalogItemIds is null || catalogItemIds.Count == 0) return;

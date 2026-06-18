@@ -53,4 +53,35 @@ public static class StaleSnapshotLogic
         if (removed == 0) return existing;
         return new FamilyStaleSnapshot(dict, now);
     }
+
+    /// <summary>
+    /// Return the subset of <paramref name="allStaleIds"/> that belongs to the
+    /// given category subtree. Used by 'Update category' to scope the batch to
+    /// the clicked category instead of every stale family in the snapshot.
+    /// </summary>
+    /// <param name="allStaleIds">All stale catalog item IDs in the snapshot.</param>
+    /// <param name="categoryMap">
+    /// Map produced by <c>IStaleCategoryAggregator.BuildCatalogToCategoryMap</c>:
+    /// catalogItemId -> set of category IDs it belongs to (recursively expanded).
+    /// </param>
+    /// <param name="subtreeCategoryIds">
+    /// Flat list of category IDs that make up the clicked subtree (the category
+    /// itself + all descendants).
+    /// </param>
+    public static IReadOnlyList<string> FilterStaleBySubtree(
+        IReadOnlyList<string> allStaleIds,
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>> categoryMap,
+        IReadOnlyCollection<string> subtreeCategoryIds)
+    {
+        var result = new List<string>();
+        foreach (var id in allStaleIds)
+        {
+            if (categoryMap.TryGetValue(id, out var owners) &&
+                owners.Any(o => subtreeCategoryIds.Contains(o)))
+            {
+                result.Add(id);
+            }
+        }
+        return result;
+    }
 }

@@ -193,17 +193,34 @@ public sealed partial class FamilyManagerMainViewModel
                 return;
             }
 
-            var staleIds = snapshot.Results.Values
-                .Where(r => r.IsStale)
-                .Select(r => r.CatalogItemId)
+            // 1) Determine which catalog item IDs belong to this category subtree.
+            //    Without this filter the batch would include stale families from
+            //    every other category checked in the session (e.g. all 42
+            //    uncategorized stale families when the user clicks 'Update' on
+            //    a 2-family category).
+            var rootCategories = TreeNodes.OfType<CategoryNodeViewModel>().ToList();
+            var adapterRoots = CategoryTreeAdapter.AdaptRoots(rootCategories);
+            var subCategoryIds = new HashSet<string>(
+                ExpandCategorySubtree(category),
+                StringComparer.Ordinal);
+            var allStaleIds = snapshot.Results
+                .Where(r => r.Value.IsStale)
+                .Select(r => r.Key)
                 .ToList();
-            if (staleIds.Count == 0)
+            var categoryMap = _staleAggregator.BuildCatalogToCategoryMap(
+                allStaleIds, adapterRoots);
+            var staleIdsInSubtree = StaleSnapshotLogic.FilterStaleBySubtree(
+                allStaleIds, categoryMap, subCategoryIds);
+            if (staleIdsInSubtree.Count == 0)
             {
-                SmartConLogger.Info("UpdateCategory: snapshot has no stale items. [Action: no-op]");
+                SmartConLogger.Info(
+                    $"UpdateCategory: no stale items in '{category.CategoryId}' (snapshot has " +
+                    $"{snapshot.Results.Count(r => r.Value.IsStale)} stale total). " +
+                    "[Action: no-op]");
                 return;
             }
 
-            var request = new StaleUpdateRequest(staleIds, overwriteParameterValues);
+            var request = new StaleUpdateRequest(staleIdsInSubtree, overwriteParameterValues);
             var progress = new Progress<StaleBatchUpdateProgress>(p =>
             {
                 StaleCheckMessage = $"{p.Completed}/{p.Total}: {p.CurrentFamilyName}";
@@ -222,7 +239,7 @@ public sealed partial class FamilyManagerMainViewModel
                 StatusMessage = $"«{category.DisplayName}»: обновлено {result.SuccessCount} из {result.TotalRequested}, ошибок: {result.FailedCount}";
             }
             SmartConLogger.Info(
-                $"Batch update: {result.SuccessCount}/{result.TotalRequested} succeeded. " +
+                $"Batch update in '{category.CategoryId}': {result.SuccessCount}/{result.TotalRequested} succeeded. " +
                 $"Failed: [{string.Join(", ", result.FailedCatalogItemIds)}]");
 
             // Remove only the successfully updated items from the snapshot so the
@@ -251,27 +268,43 @@ public sealed partial class FamilyManagerMainViewModel
     /// and <c>IsStale</c> / <c>StaleReason</c> on every affected leaf. Called after
     /// <see cref="IStaleDetector.CheckCategoryAsync"/>.
     /// </summary>
+    /// <remarks>
+    /// The tree's stale indicators must reflect the COMPLETE snapshot, not just the
+    /// families from the latest Check call. Otherwise the second stale category
+    /// loses its marker the moment the user runs Check on the first one. We use
+    /// <see cref="IStaleDetector.GetMergedSnapshot"/> to fold the new results into
+    /// the existing cache and roll up the per-category stats from there.
+    /// </remarks>
     internal async Task ApplyStaleResultsToTreeAsync(
         IReadOnlyList<StaleCheckResult> results,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
+        // 0) Get the complete picture: existing snapshot + fresh results.
+        //    Returns null only if the cache has been invalidated (DB switch,
+        //    explicit InvalidateCache) — in that case we have nothing to apply.
+        var merged = _staleDetector.GetMergedSnapshot(results);
+        if (merged is null) return;
+
+        // 1) Collect all stale IDs from the merged snapshot — covers every
+        //    category that was checked in this session.
         var staleIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var r in results)
+        foreach (var r in merged.Results.Values)
         {
             if (r.IsStale) staleIds.Add(r.CatalogItemId);
         }
 
-        // 1) Build reverse map: catalogItemId -> [categoryId, ...] recursively.
+        // 2) Build reverse map: catalogItemId -> [categoryId, ...] recursively.
         var rootCategories = TreeNodes.OfType<CategoryNodeViewModel>().ToList();
         var adapterRoots = CategoryTreeAdapter.AdaptRoots(rootCategories);
         var categoryMap = _staleAggregator.BuildCatalogToCategoryMap(
             staleIds, adapterRoots);
 
-        // 2) Per category: HasStale + StaleCount (single pass via aggregator).
+        // 3) Per category: HasStale + StaleCount from the merged snapshot.
         var allCategories = EnumerateAllCategories(rootCategories).ToList();
-        var perCategory = _staleAggregator.AggregateByCategory(results, categoryMap, staleIds);
+        var perCategory = _staleAggregator.AggregateByCategory(
+            merged.Results.Values.ToList(), categoryMap, staleIds);
         foreach (var category in allCategories)
         {
             if (perCategory.TryGetValue(category.CategoryId, out var stats))
@@ -286,19 +319,17 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }
 
-        // 3) Per leaf: IsStale + StaleReason.
-        var byCatalog = results.ToDictionary(r => r.CatalogItemId, StringComparer.Ordinal);
+        // 4) Per leaf: IsStale + StaleReason from the merged snapshot.
+        //    (Use merged, not just new results — leaves in OTHER categories that
+        //    were checked in an earlier Check must keep their markers.)
         foreach (var leaf in EnumerateAllLeaves(rootCategories))
         {
-            if (byCatalog.TryGetValue(leaf.CatalogItemId, out var r))
+            if (merged.Results.TryGetValue(leaf.CatalogItemId, out var r))
             {
                 leaf.IsStale = r.IsStale;
                 leaf.StaleReason = r.Reason;
             }
         }
-
-        // 4) Detector cache is preserved so subsequent LoadTreeAsync / Refresh
-        //    can re-apply the same IsStale markers to the new TreeNodes.
 
         await Task.CompletedTask;
     }
