@@ -101,27 +101,34 @@ public sealed partial class FamilyManagerMainViewModel
                     };
                     StatusMessage = msg;
 
-                    var projectPath = _revitContext.GetDocument().PathName;
-                    var loadedVersionLabel = SelectedItem?.VersionLabel;
+                    var loadedFamilyId = await _awaitableEvent.RaiseAsync(
+                        _ =>
+                        {
+                            var docForFind = _revitContext.GetDocument();
+                            var loadedFamily = FindFamilyInDocument(docForFind, loadedName);
+                            return loadedFamily?.Id;
+                        }, CancellationToken.None).ConfigureAwait(true);
 
-                    var usage = new ProjectFamilyUsage(
-                        Id: Guid.NewGuid().ToString(),
-                        CatalogItemId: selectedId,
-                        VersionId: resolved.VersionId,
-                        LoadedVersionLabel: loadedVersionLabel,
-                        ProjectName: "Active Project",
-                        ProjectPath: projectPath,
-                        RevitMajorVersion: targetRevit,
-                        Action: "Load",
-                        CreatedAtUtc: DateTimeOffset.UtcNow);
-
-                    InvalidateLoadedFamilyNamesCache();
-
-                    FireAndForget(async () =>
+                    if (loadedFamilyId is not null)
                     {
-                        await _usageRepo.RecordUsageAsync(usage, CancellationToken.None);
-                        await LoadTreeAsync();
-                    }, nameof(ExecuteLoadOrUpdateAsync));
+                        var familyVersion = new FamilyVersion(
+                            SchemaVersion: FamilyVersion.CurrentSchemaVersion,
+                            CatalogItemId: selectedId,
+                            VersionLabel: resolved.VersionLabel ?? string.Empty,
+                            LoadedAtUtc: _clock.UtcNow,
+                            SourceRevitVersion: targetRevit);
+
+                        await _awaitableEvent.RaiseAsyncTask(_ =>
+                        {
+                            var doc = _revitContext.GetDocument();
+                            _versionStore.WriteToLoadedFamily(doc, loadedFamilyId, familyVersion);
+                            return Task.CompletedTask;
+                        }, CancellationToken.None).ConfigureAwait(true);
+                    }
+
+                    _staleDetector.InvalidateCache();
+                    InvalidateLoadedFamilyNamesCache();
+                    await LoadTreeAsync().ConfigureAwait(true);
                 }
                 else
                 {
@@ -224,28 +231,37 @@ public sealed partial class FamilyManagerMainViewModel
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
                         familyName);
 
-                    // Record usage analytics
-                    var resolvedForUsage = await _fileResolver
+                    // Persist fresh ES marker for the loaded family (Phase 24).
+                    var resolvedForMarker = await _fileResolver
                         .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None)
                         .ConfigureAwait(true);
 
-                    var projectPath = _revitContext.GetDocument().PathName;
-                    var usage = new ProjectFamilyUsage(
-                        Id: Guid.NewGuid().ToString(),
-                        CatalogItemId: catalogItemId,
-                        VersionId: resolvedForUsage.VersionId,
-                        LoadedVersionLabel: resolvedForUsage.VersionLabel,
-                        ProjectName: "Active Project",
-                        ProjectPath: projectPath,
-                        RevitMajorVersion: targetRevit,
-                        Action: "Place",
-                        CreatedAtUtc: DateTimeOffset.UtcNow);
+                    var loadedFamilyId = await _awaitableEvent.RaiseAsync(
+                        _ =>
+                        {
+                            var docForFind = _revitContext.GetDocument();
+                            var loadedFamily = FindFamilyInDocument(docForFind, familyName);
+                            return loadedFamily?.Id;
+                        }, CancellationToken.None).ConfigureAwait(true);
 
-                    FireAndForget(async () =>
+                    if (loadedFamilyId is not null)
                     {
-                        try { await _usageRepo.RecordUsageAsync(usage, CancellationToken.None); }
-                        catch { /* ignored */ }
-                    }, nameof(PlaceTypeAsync));
+                        var familyVersion = new FamilyVersion(
+                            SchemaVersion: FamilyVersion.CurrentSchemaVersion,
+                            CatalogItemId: catalogItemId,
+                            VersionLabel: resolvedForMarker.VersionLabel ?? string.Empty,
+                            LoadedAtUtc: _clock.UtcNow,
+                            SourceRevitVersion: targetRevit);
+
+                        await _awaitableEvent.RaiseAsyncTask(_ =>
+                        {
+                            var doc = _revitContext.GetDocument();
+                            _versionStore.WriteToLoadedFamily(doc, loadedFamilyId, familyVersion);
+                            return Task.CompletedTask;
+                        }, CancellationToken.None).ConfigureAwait(true);
+
+                        _staleDetector.InvalidateCache();
+                    }
                 }
                 else
                 {

@@ -407,24 +407,6 @@ public interface IFamilyDataImportService
 
 ---
 
-## IProjectFamilyUsageRepository
-
-Хранение истории использования семейств в проектах. Пишет в локальный SQLite, не зависит от Revit API.
-
-**Файл:** `IProjectFamilyUsageRepository.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalProjectFamilyUsageRepository.cs`
-
-```csharp
-public interface IProjectFamilyUsageRepository
-{
-    Task RecordUsageAsync(ProjectFamilyUsage usage, CancellationToken ct = default);
-    Task<IReadOnlyList<ProjectFamilyUsage>> GetUsageForItemAsync(string catalogItemId, CancellationToken ct = default);
-    Task<IReadOnlyList<ProjectFamilyUsage>> GetUsageForProjectAsync(string projectFingerprint, CancellationToken ct = default);
-}
-```
-
----
-
 ## IDatabaseManager
 
 Управление подключениями к базам данных каталога. Registry хранится в `%APPDATA%\SmartCon\FamilyManager\registry.json`.
@@ -672,6 +654,105 @@ public interface IFamilyManagerAwaitableEvent
 - **Не thread-safe для re-entrant вызовов** — один `Raise` должен полностью завершиться до следующего.
 - `object` (а не `UIApplication`) сохраняет `SmartCon.Core` независимым от `RevitAPIUI` (I-09).
 - Дополнительный overload `RaiseAsyncTask(Func<object, Task>, CancellationToken)` (Phase 4c) — для async delegate-ов. Использует `BridgeAsyncResult` (TaskCompletionSource + try/catch/OperationCanceledException). Continuation через `RunContinuationsAsynchronously`. **Отдельный name, не overload**, чтобы избежать implicit conversion C# statement lambda → `Func<object, Task>` ambiguity.
+
+---
+
+## IFamilyVersionStore
+
+CRUD для ES-маркера `SmartCon.FamilyVersion.v1` (ADR-030). Маркер хранится на `Family` для загруженных семейств и на `OwnerFamily` для открытого `.rfa`. Все методы синхронные — вызываются из Revit main thread (I-01) внутри транзакции `ITransactionService` (I-03). Исключение: `WriteToRfaFileAsync` использует прямой `new Transaction(familyDoc, ...)` (I-03b exception для family-документов).
+
+**Файл:** `IFamilyVersionStore.cs`
+
+```csharp
+public interface IFamilyVersionStore
+{
+    FamilyVersion? ReadFromLoadedFamily(Document doc, ElementId familyId);
+    Task<FamilyVersion?> ReadFromRfaFileAsync(string rfaFilePath, CancellationToken ct);
+    void WriteToLoadedFamily(Document doc, ElementId familyId, FamilyVersion version);
+    Task WriteToRfaFileAsync(string rfaFilePath, FamilyVersion version, CancellationToken ct);
+    IReadOnlyDictionary<ElementId, FamilyVersion?> ReadManyFromDocument(
+        Document doc, IEnumerable<ElementId> familyIds);
+}
+```
+
+---
+
+## IStaleDetector
+
+On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69). Все проверки читают ES-маркер через `IFamilyVersionStore` (без I/O на `.rfa` файлы). `CheckCategoryAsync` обновляет сессионный снимок, `CheckFamilyAsync` — нет. `GetCachedSnapshot` / `InvalidateCache` — сессионный кеш (D-10, инвалидируется при Load/Update/Edit/смене БД).
+
+**Файл:** `IStaleDetector.cs`
+
+```csharp
+public interface IStaleDetector
+{
+    Task<StaleCheckResult> CheckFamilyAsync(
+        string catalogItemId,
+        string familyName,
+        Document doc,
+        ElementId familyId,
+        CancellationToken ct);
+
+    Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
+        string? categoryId,
+        bool recursive,
+        Document doc,
+        CancellationToken ct);
+
+    FamilyStaleSnapshot? GetCachedSnapshot();
+    void InvalidateCache();
+}
+```
+
+---
+
+## IStaleFamilyUpdater
+
+Обновление семейств в активном проекте — перезагрузка текущей версии из каталога (ADR-030, Issue #69 AC). После успешного обновления пишет новый `FamilyVersion`-маркер через `IFamilyVersionStore`. Хост **обязан** вызвать `IStaleDetector.InvalidateCache()` после. `UpdateBatchAsync` обрабатывает семейства последовательно и отчитывается о прогрессе через `IProgress<>`.
+
+**Файл:** `IStaleFamilyUpdater.cs`
+
+```csharp
+public interface IStaleFamilyUpdater
+{
+    Task<bool> UpdateFamilyAsync(
+        string catalogItemId,
+        bool overwriteParameterValues,
+        CancellationToken ct);
+
+    Task<StaleBatchUpdateResult> UpdateBatchAsync(
+        StaleUpdateRequest request,
+        IProgress<StaleBatchUpdateProgress>? progress = null,
+        CancellationToken ct = default);
+}
+```
+
+---
+
+## IStaleCategoryAggregator
+
+Чистая логика агрегации результатов проверки по дереву категорий (ADR-030). Используется `MainViewModel.ApplyStaleResultsToTreeAsync` для обновления `CategoryNodeViewModel.HasStale` и `StaleCount` после stale check. Вспомогательный интерфейс `ICategoryNodeInfo` абстрагирует `CategoryNodeViewModel`, сохраняя Core независимым от UI (I-09) — реализации лежат в `SmartCon.FamilyManager` (adapter поверх `CategoryNodeViewModel`).
+
+**Файл:** `IStaleCategoryAggregator.cs`
+
+```csharp
+public interface IStaleCategoryAggregator
+{
+    IReadOnlyDictionary<string, bool> AggregateByCategory(
+        IReadOnlyList<StaleCheckResult> results,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> categoryIndex);
+
+    IReadOnlyDictionary<string, IReadOnlyCollection<string>> BuildCatalogToCategoryMap(
+        IEnumerable<string> catalogItemIds,
+        IEnumerable<ICategoryNodeInfo> rootNodes);
+}
+
+public interface ICategoryNodeInfo
+{
+    string CategoryId { get; }
+    IReadOnlyList<ICategoryNodeInfo> Children { get; }
+}
+```
 
 ---
 

@@ -1,5 +1,6 @@
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
+using SmartCon.FamilyManager.Services.Stale;
 
 namespace SmartCon.FamilyManager.Services;
 
@@ -9,7 +10,6 @@ public sealed record FamilyManagerServices(
     IFamilyImportService ImportService,
     IFamilyFileResolver FileResolver,
     IFamilyLoadService LoadService,
-    IProjectFamilyUsageRepository UsageRepo,
     IFamilyManagerDialogService DialogService,
     IFamilyManagerAwaitableEvent AwaitableEvent,
     IFamilyManagerViewModelFactory ViewModelFactory,
@@ -35,4 +35,9 @@ public sealed record FamilyManagerServices(
     IActiveDocumentClassifier ActiveDocumentClassifier,
     IActiveImportCleanupService ActiveImportCleanupService,
     ILoadableFamilyScanner LoadableFamilyScanner,
-    ILoadableFamilyImportOrchestrator LoadableFamilyImportOrchestrator);
+    ILoadableFamilyImportOrchestrator LoadableFamilyImportOrchestrator,
+    IFamilyVersionStore VersionStore,
+    IStaleDetector StaleDetector,
+    IStaleFamilyUpdater StaleUpdater,
+    IStaleCategoryAggregator StaleCategoryAggregator,
+    IClock Clock);

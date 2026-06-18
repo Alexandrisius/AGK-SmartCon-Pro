@@ -55,6 +55,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV9Async(connection, ct);
         await MigrateV10Async(connection, ct);
         await MigrateV11Async(connection, ct);
+        await MigrateV12Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -375,6 +376,31 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
 
         using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = "UPDATE schema_info SET value = '11' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV12Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 12) return;
+
+        // 1. Drop the project_usage lookup index (Phase 23 era).
+        using (var dropIdxCmd = connection.CreateCommand())
+        {
+            dropIdxCmd.CommandText = FamilyCatalogSql.MigrateV12DropProjectUsageIndex;
+            await dropIdxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // 2. Drop the project_usage table (SSOT is now ExtensibleStorage on .rfa, ADR-030).
+        using (var dropCmd = connection.CreateCommand())
+        {
+            dropCmd.CommandText = FamilyCatalogSql.MigrateV12DropProjectUsageTable;
+            await dropCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // 3. Bump schema version.
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '12' WHERE key = 'schema_version'";
         await versionCmd.ExecuteNonQueryAsync(ct);
     }
 

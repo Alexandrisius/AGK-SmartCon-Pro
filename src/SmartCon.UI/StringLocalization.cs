@@ -317,6 +317,17 @@ public static class StringLocalization
         public const string FM_Update = "FM_Update";
         public const string FM_UpdateKeepParams = "FM_UpdateKeepParams";
         public const string FM_UpdateOverwriteParams = "FM_UpdateOverwriteParams";
+        public const string FM_UpdateBatchAllStale = "FM_UpdateBatchAllStale";
+        public const string FM_Check = "FM_Check";
+        public const string FM_Stale = "FM_Stale";
+        public const string FM_StaleTooltipNone = "FM_StaleTooltipNone";
+        public const string FM_StaleTooltipNoES = "FM_StaleTooltipNoES";
+        public const string FM_StaleTooltipMismatch = "FM_StaleTooltipMismatch";
+        public const string FM_StaleTooltipRevitVer = "FM_StaleTooltipRevitVer";
+        public const string FM_StaleTooltipNotInCatalog = "FM_StaleTooltipNotInCatalog";
+        public const string FM_StaleCheckInProgress = "FM_StaleCheckInProgress";
+        public const string FM_StaleCategoryTooltipOne = "FM_StaleCategoryTooltipOne";
+        public const string FM_StaleCategoryTooltipMany = "FM_StaleCategoryTooltipMany";
         public const string FM_UpdateSuccess = "FM_UpdateSuccess";
         public const string FM_UpdateIdentical = "FM_UpdateIdentical";
         public const string FM_UpdateIdenticalCurrent = "FM_UpdateIdenticalCurrent";

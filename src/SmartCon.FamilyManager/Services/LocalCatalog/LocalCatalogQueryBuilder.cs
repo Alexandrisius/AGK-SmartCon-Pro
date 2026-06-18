@@ -22,7 +22,11 @@ internal static class LocalCatalogQueryBuilder
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(query.CategoryFilter))
+        if (query.IncludeUncategorized)
+        {
+            conditions.Add("(ci.category_id IS NULL OR ci.category_id = '')");
+        }
+        else if (!string.IsNullOrWhiteSpace(query.CategoryFilter))
         {
             var paramName = $"@category_{paramIndex++}";
             conditions.Add($"""

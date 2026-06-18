@@ -9,6 +9,7 @@ using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services;
+using SmartCon.FamilyManager.Services.Stale;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -23,7 +24,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyImportService _importService;
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IFamilyLoadService _loadService;
-    private readonly IProjectFamilyUsageRepository _usageRepo;
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerAwaitableEvent _awaitableEvent;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
@@ -50,6 +50,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IActiveImportCleanupService _activeImportCleanupService;
     private readonly ILoadableFamilyScanner _loadableFamilyScanner;
     private readonly ILoadableFamilyImportOrchestrator _loadableFamilyImportOrchestrator;
+    private readonly IFamilyVersionStore _versionStore;
+    private readonly IStaleDetector _staleDetector;
+    private readonly IStaleFamilyUpdater _staleUpdater;
+    private readonly IStaleCategoryAggregator _staleAggregator;
+    private readonly IClock _clock;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -58,6 +63,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
     private HashSet<string>? _loadedFamilyNamesCache;
     private string? _loadedFamilyNamesCacheProjectPath;
+
+    // ── Stale detection session cache (Phase 24 / ADR-030) ─────────────
+    [ObservableProperty] private bool _isStaleCheckInProgress;
+    [ObservableProperty] private string? _staleCheckMessage;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSearchNotEmpty))]
@@ -68,7 +77,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private FamilyCatalogItemRow? _selectedItem;
     [ObservableProperty] private ObservableCollection<CatalogTreeNodeViewModel> _treeNodes = [];
     [ObservableProperty] private CatalogTreeNodeViewModel? _selectedTreeNode;
-    [ObservableProperty] private bool _isSelectedFamilyStale;
     [ObservableProperty] private bool _isLoading;
     private string? _cachedProjectPath;
     [ObservableProperty] private string _statusMessage = string.Empty;
@@ -114,7 +122,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _importService = services.ImportService;
         _fileResolver = services.FileResolver;
         _loadService = services.LoadService;
-        _usageRepo = services.UsageRepo;
         _dialogService = services.DialogService;
         _awaitableEvent = services.AwaitableEvent;
         _viewModelFactory = services.ViewModelFactory;
@@ -141,6 +148,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _activeImportCleanupService = services.ActiveImportCleanupService;
         _loadableFamilyScanner = services.LoadableFamilyScanner;
         _loadableFamilyImportOrchestrator = services.LoadableFamilyImportOrchestrator;
+        _versionStore = services.VersionStore;
+        _staleDetector = services.StaleDetector;
+        _staleUpdater = services.StaleUpdater;
+        _staleAggregator = services.StaleCategoryAggregator;
+        _clock = services.Clock;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -363,44 +375,40 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Tags = leaf.Tags,
                 Description = leaf.Description,
             };
-                IsSelectedFamilyStale = leaf.IsStale;
-                CanPlaceType = false;
+            CanPlaceType = false;
+            LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
+        }
+        else if (value is FamilyTypeNodeViewModel typeNode)
+        {
+            var parent = FindParentOf(TreeNodes, typeNode);
+            if (parent is FamilyLeafNodeViewModel parentLeaf)
+            {
+                SelectedItem = new FamilyCatalogItemRow
+                {
+                    Id = parentLeaf.CatalogItemId,
+                    Name = parentLeaf.DisplayName,
+                    CategoryId = parentLeaf.CategoryId,
+                    CategoryName = parentLeaf.CategoryPath,
+                    Manufacturer = parentLeaf.Manufacturer,
+                    ContentStatus = parentLeaf.ContentStatus,
+                    VersionLabel = parentLeaf.VersionLabel,
+                    UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
+                    Tags = parentLeaf.Tags,
+                    Description = parentLeaf.Description,
+                };
+                CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
+                PlaceTypeCommand.NotifyCanExecuteChanged();
                 LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
             }
-            else if (value is FamilyTypeNodeViewModel typeNode)
-            {
-                var parent = FindParentOf(TreeNodes, typeNode);
-                if (parent is FamilyLeafNodeViewModel parentLeaf)
-                {
-                    SelectedItem = new FamilyCatalogItemRow
-                    {
-                        Id = parentLeaf.CatalogItemId,
-                        Name = parentLeaf.DisplayName,
-                        CategoryId = parentLeaf.CategoryId,
-                        CategoryName = parentLeaf.CategoryPath,
-                        Manufacturer = parentLeaf.Manufacturer,
-                        ContentStatus = parentLeaf.ContentStatus,
-                        VersionLabel = parentLeaf.VersionLabel,
-                        UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
-                        Tags = parentLeaf.Tags,
-                        Description = parentLeaf.Description,
-                    };
-                    IsSelectedFamilyStale = parentLeaf.IsStale;
-                    CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
-                    PlaceTypeCommand.NotifyCanExecuteChanged();
-                    LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
-                }
             else
             {
                 SelectedItem = null;
-                IsSelectedFamilyStale = false;
                 CanPlaceType = false;
             }
         }
         else
         {
             SelectedItem = null;
-            IsSelectedFamilyStale = false;
             CanPlaceType = false;
         }
 

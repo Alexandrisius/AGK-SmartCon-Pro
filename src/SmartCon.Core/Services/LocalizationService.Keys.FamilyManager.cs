@@ -90,6 +90,17 @@ public static partial class LocalizationService
         ru["FM_Update"] = "Обновить"; en["FM_Update"] = "Update";
         ru["FM_UpdateKeepParams"] = "Сохранить параметры"; en["FM_UpdateKeepParams"] = "Keep instance parameters";
         ru["FM_UpdateOverwriteParams"] = "Перезаписать параметры"; en["FM_UpdateOverwriteParams"] = "Overwrite parameters";
+        ru["FM_UpdateBatchAllStale"] = "Пакетное обновление всех устаревших"; en["FM_UpdateBatchAllStale"] = "Batch update all stale";
+        ru["FM_Check"] = "Проверить"; en["FM_Check"] = "Check";
+        ru["FM_Stale"] = "Устарело"; en["FM_Stale"] = "Stale";
+        ru["FM_StaleTooltipNone"] = "Актуальная версия"; en["FM_StaleTooltipNone"] = "Up to date";
+        ru["FM_StaleTooltipNoES"] = "Нет маркера версии (загружено до 2.0)"; en["FM_StaleTooltipNoES"] = "No version marker (loaded before 2.0)";
+        ru["FM_StaleTooltipMismatch"] = "Версия в проекте отличается от каталога"; en["FM_StaleTooltipMismatch"] = "Project version differs from catalog";
+        ru["FM_StaleTooltipRevitVer"] = "Загружено в другой версии Revit"; en["FM_StaleTooltipRevitVer"] = "Loaded in a different Revit version";
+        ru["FM_StaleTooltipNotInCatalog"] = "Семейство не найдено в каталоге FM"; en["FM_StaleTooltipNotInCatalog"] = "Family not found in FM catalog";
+        ru["FM_StaleCheckInProgress"] = "Проверка…"; en["FM_StaleCheckInProgress"] = "Checking…";
+        ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
+        ru["FM_StaleCategoryTooltipMany"] = "{0} устаревших семейств"; en["FM_StaleCategoryTooltipMany"] = "{0} stale families";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
         ru["FM_UpdateIdenticalCurrent"] = "Этот файл уже является текущей версией семейства"; en["FM_UpdateIdenticalCurrent"] = "This file is already the current version of this family";

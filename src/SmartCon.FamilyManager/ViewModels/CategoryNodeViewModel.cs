@@ -22,6 +22,12 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
 
     [ObservableProperty] private int _familyCount;
 
+    /// <summary>Roll-up: true if any leaf under this category is stale (recursive).</summary>
+    [ObservableProperty] private bool _hasStale;
+
+    /// <summary>Roll-up: number of stale leaves under this category (recursive).</summary>
+    [ObservableProperty] private int _staleCount;
+
     public CategoryNodeViewModel(CategoryNode node)
     {
         CategoryId = node.Id;

@@ -841,26 +841,6 @@ public sealed record FamilyParameterDescriptor(
 
 ---
 
-## ProjectFamilyUsage
-
-Запись истории использования семейства в проекте Revit.
-
-**Файл:** `ProjectFamilyUsage.cs`
-
-```csharp
-public sealed record ProjectFamilyUsage(
-    string Id,
-    string CatalogItemId,
-    string? VersionId,
-    string? ProjectName,
-    string? ProjectPath,
-    int? RevitMajorVersion,
-    string Action,
-    DateTimeOffset CreatedAtUtc);
-```
-
----
-
 ## FamilyCatalogQuery
 
 Параметры запроса поиска по каталогу с пагинацией и фильтрацией.
@@ -936,3 +916,107 @@ public sealed record SelectedElementsAnalysis(
 ```
 
 > **Note:** Модель `SelectedElementsAnalysis` живёт в `Core/Models/FamilyManager/`, но относится к flow пикера (объединяет system + loadable). Задокументирована здесь вместе с loadable.
+
+---
+
+## FamilyVersion
+
+Per-family version marker, хранимый в ExtensibleStorage (Schema `SmartCon.FamilyVersion.v1`, ADR-030). Содержит ID записи каталога, метку загруженной версии, время загрузки в проект и версию Revit, которой загружали. `CurrentSchemaVersion` — номер текущей схемы payload (используется при будущих миграциях). `Empty` — sentinel для «маркер не прочитан».
+
+**Файл:** `FamilyVersion.cs`
+
+```csharp
+public sealed record FamilyVersion(
+    int SchemaVersion,
+    string CatalogItemId,
+    string VersionLabel,
+    DateTimeOffset LoadedAtUtc,
+    int SourceRevitVersion)
+{
+    public const int CurrentSchemaVersion = 1;
+
+    public static FamilyVersion Empty { get; } =
+        new(0, string.Empty, string.Empty, DateTimeOffset.MinValue, 0);
+}
+```
+
+---
+
+## StaleCheckResult
+
+Результат проверки актуальности одного семейства (Issue #69, ADR-030). Содержит enum `StaleReason` (причина, по которой семейство считается устаревшим: `NoEntityStorage` для семейств без ES-маркера, `VersionMismatch`, `RevitVersionMismatch`, `NotInCatalog`) и record `StaleCheckResult` с версиями из каталога и из ES.
+
+**Файл:** `StaleCheckResult.cs`
+
+```csharp
+public enum StaleReason
+{
+    None = 0,
+    NoEntityStorage = 1,
+    VersionMismatch = 2,
+    RevitVersionMismatch = 3,
+    NotInCatalog = 4
+}
+
+public sealed record StaleCheckResult(
+    string CatalogItemId,
+    string FamilyName,
+    string? CurrentVersionLabel,
+    string? LoadedVersionLabel,
+    bool IsStale,
+    StaleReason Reason);
+```
+
+---
+
+## StaleUpdateRequest
+
+Параметры операции обновления устаревших семейств (одиночного или пакетного). `OverwriteParameterValues` пробрасывается в `FamilyLoadOptions.OverwriteParameterValues`. `Recursive` зарезервирован для будущего использования (сейчас всегда `true`).
+
+**Файл:** `StaleUpdateRequest.cs`
+
+```csharp
+public sealed record StaleUpdateRequest(
+    IReadOnlyList<string> CatalogItemIds,
+    bool OverwriteParameterValues,
+    bool Recursive = true);
+```
+
+---
+
+## StaleBatchUpdateResult
+
+Агрегированный результат пакетного обновления (record `StaleBatchUpdateResult` со счётчиками и списком failed ID для retry) и payload прогресса (record `StaleBatchUpdateProgress`) для `IProgress<>` callback.
+
+**Файл:** `StaleBatchUpdateResult.cs`
+
+```csharp
+public sealed record StaleBatchUpdateResult(
+    int TotalRequested,
+    int SuccessCount,
+    int FailedCount,
+    IReadOnlyList<string> FailedCatalogItemIds);
+
+public sealed record StaleBatchUpdateProgress(
+    int Completed,
+    int Total,
+    string CurrentFamilyName);
+```
+
+---
+
+## FamilyStaleSnapshot
+
+Сессионный снимок результатов проверки актуальности (ADR-030, D-06). Заполняется `IStaleDetector` и инвалидируется при Load/Update/Edit и смене БД. Используется VM для обновления индикаторов категорий без повторного чтения ES. `Empty` — sentinel для «снимок ещё не построен».
+
+**Файл:** `FamilyStaleSnapshot.cs`
+
+```csharp
+public sealed record FamilyStaleSnapshot(
+    IReadOnlyDictionary<string, StaleCheckResult> Results,
+    DateTimeOffset CheckedAtUtc)
+{
+    public static FamilyStaleSnapshot Empty { get; } =
+        new(new Dictionary<string, StaleCheckResult>(), DateTimeOffset.MinValue);
+}
+```

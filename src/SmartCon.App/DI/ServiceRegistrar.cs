@@ -31,6 +31,9 @@ using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
 using SmartCon.Revit.Transform;
 using SmartCon.Revit.Updates;
+using StaleCategoryAggregator = SmartCon.FamilyManager.Services.Stale.StaleCategoryAggregator;
+using StaleDetector = SmartCon.FamilyManager.Services.Stale.StaleDetector;
+using StaleFamilyUpdater = SmartCon.FamilyManager.Services.Stale.StaleFamilyUpdater;
 using ShareSettingsView = SmartCon.ProjectManagement.Views.ShareSettingsView;
 using ShareSettingsViewModel = SmartCon.ProjectManagement.ViewModels.ShareSettingsViewModel;
 
@@ -165,7 +168,6 @@ public static class ServiceRegistrar
         services.AddSingleton<Sha256FileHasher>();
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();
-        services.AddSingleton<IProjectFamilyUsageRepository, LocalProjectFamilyUsageRepository>();
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
         services.AddSingleton<LocalAttributeDefinitionRepository>();
@@ -203,6 +205,12 @@ public static class ServiceRegistrar
         services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
+
+        // --- FamilyManager Stale Detection (Phase 24 / ADR-030) ---
+        services.AddSingleton<IFamilyVersionStore, RevitFamilyVersionStore>();
+        services.AddSingleton<IStaleDetector, StaleDetector>();
+        services.AddSingleton<IStaleFamilyUpdater, StaleFamilyUpdater>();
+        services.AddSingleton<IStaleCategoryAggregator, StaleCategoryAggregator>();
 
         services.AddSingleton<FamilyManagerMainViewModel>();
         services.AddSingleton<FamilyManagerPaneControl>();
