@@ -121,6 +121,14 @@ public sealed partial class FamilyManagerMainViewModel
             }
 
             TreeNodes = rootNodes;
+
+            // Re-apply per-category roll-up from the cached snapshot. BuildCategoryNode
+            // only sets IsStale on leaves; the HasStale/StaleCount on category nodes
+            // defaults to false. Without this call, every LoadTreeAsync (including
+            // the one triggered by 'Update on a single family') would wipe the
+            // HasStale indicator on every category — even ones whose stale markers
+            // are still perfectly valid in the snapshot.
+            await ApplyStaleResultsToTreeAsync(Array.Empty<StaleCheckResult>(), ct).ConfigureAwait(true);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
