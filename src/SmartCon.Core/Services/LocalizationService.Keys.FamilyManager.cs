@@ -99,6 +99,7 @@ public static partial class LocalizationService
         ru["FM_StaleTooltipRevitVer"] = "Загружено в другой версии Revit"; en["FM_StaleTooltipRevitVer"] = "Loaded in a different Revit version";
         ru["FM_StaleTooltipNotInCatalog"] = "Семейство не найдено в каталоге FM"; en["FM_StaleTooltipNotInCatalog"] = "Family not found in FM catalog";
         ru["FM_StaleCheckInProgress"] = "Проверка…"; en["FM_StaleCheckInProgress"] = "Checking…";
+        ru["FM_StaleUpdateInProgress"] = "Обновление…"; en["FM_StaleUpdateInProgress"] = "Updating…";
         ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
         ru["FM_StaleCategoryTooltipMany"] = "{0} устаревших семейств"; en["FM_StaleCategoryTooltipMany"] = "{0} stale families";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";

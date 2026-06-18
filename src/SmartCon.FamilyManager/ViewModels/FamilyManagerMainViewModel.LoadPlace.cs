@@ -101,30 +101,12 @@ public sealed partial class FamilyManagerMainViewModel
                     };
                     StatusMessage = msg;
 
-                    var loadedFamilyId = await _awaitableEvent.RaiseAsync(
-                        _ =>
-                        {
-                            var docForFind = _revitContext.GetDocument();
-                            var loadedFamily = FindFamilyInDocument(docForFind, loadedName);
-                            return loadedFamily?.Id;
-                        }, CancellationToken.None).ConfigureAwait(true);
-
-                    if (loadedFamilyId is not null)
-                    {
-                        var familyVersion = new FamilyVersion(
-                            SchemaVersion: FamilyVersion.CurrentSchemaVersion,
-                            CatalogItemId: selectedId,
-                            VersionLabel: resolved.VersionLabel ?? string.Empty,
-                            LoadedAtUtc: _clock.UtcNow,
-                            SourceRevitVersion: targetRevit);
-
-                        await _awaitableEvent.RaiseAsyncTask(_ =>
-                        {
-                            var doc = _revitContext.GetDocument();
-                            _versionStore.WriteToLoadedFamily(doc, loadedFamilyId, familyVersion);
-                            return Task.CompletedTask;
-                        }, CancellationToken.None).ConfigureAwait(true);
-                    }
+                    await _versionWriter.WriteVersionMarkerAsync(
+                        selectedId,
+                        loadedName,
+                        resolved.VersionLabel,
+                        targetRevit,
+                        CancellationToken.None).ConfigureAwait(true);
 
                     _staleDetector.InvalidateCache();
                     InvalidateLoadedFamilyNamesCache();
@@ -236,32 +218,14 @@ public sealed partial class FamilyManagerMainViewModel
                         .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None)
                         .ConfigureAwait(true);
 
-                    var loadedFamilyId = await _awaitableEvent.RaiseAsync(
-                        _ =>
-                        {
-                            var docForFind = _revitContext.GetDocument();
-                            var loadedFamily = FindFamilyInDocument(docForFind, familyName);
-                            return loadedFamily?.Id;
-                        }, CancellationToken.None).ConfigureAwait(true);
+                    await _versionWriter.WriteVersionMarkerAsync(
+                        catalogItemId,
+                        familyName,
+                        resolvedForMarker.VersionLabel,
+                        targetRevit,
+                        CancellationToken.None).ConfigureAwait(true);
 
-                    if (loadedFamilyId is not null)
-                    {
-                        var familyVersion = new FamilyVersion(
-                            SchemaVersion: FamilyVersion.CurrentSchemaVersion,
-                            CatalogItemId: catalogItemId,
-                            VersionLabel: resolvedForMarker.VersionLabel ?? string.Empty,
-                            LoadedAtUtc: _clock.UtcNow,
-                            SourceRevitVersion: targetRevit);
-
-                        await _awaitableEvent.RaiseAsyncTask(_ =>
-                        {
-                            var doc = _revitContext.GetDocument();
-                            _versionStore.WriteToLoadedFamily(doc, loadedFamilyId, familyVersion);
-                            return Task.CompletedTask;
-                        }, CancellationToken.None).ConfigureAwait(true);
-
-                        _staleDetector.InvalidateCache();
-                    }
+                    _staleDetector.InvalidateCache();
                 }
                 else
                 {
@@ -273,7 +237,8 @@ public sealed partial class FamilyManagerMainViewModel
             catch (Exception ex)
             {
                 using var _scope = SmartConLogger.BeginScope("PlaceType", ("CatalogItemId", catalogItemId));
-                SmartConLogger.Warn($"failed: {ex.Message}");
+                SmartConLogger.Warn(
+                    $"PlaceType failed: {ex.Message}. [Action: report to user, retry from context menu]");
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                     ex.Message);

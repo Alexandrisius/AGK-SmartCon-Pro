@@ -40,4 +40,6 @@ public sealed record FamilyManagerServices(
     IStaleDetector StaleDetector,
     IStaleFamilyUpdater StaleUpdater,
     IStaleCategoryAggregator StaleCategoryAggregator,
+    IFamilyFinder FamilyFinder,
+    IFamilyVersionWriter VersionWriter,
     IClock Clock);

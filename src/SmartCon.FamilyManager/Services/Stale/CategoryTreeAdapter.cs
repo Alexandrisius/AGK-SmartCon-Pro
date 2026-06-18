@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.ViewModels;
 

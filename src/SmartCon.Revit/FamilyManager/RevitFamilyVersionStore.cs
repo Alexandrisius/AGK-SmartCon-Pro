@@ -93,8 +93,8 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
             var schema = FamilyVersionSchema.GetOrCreate();
             using var entity = new Entity(schema);
             entity.Set(FamilyVersionSchema.FieldSchemaVersion, FamilyVersion.CurrentSchemaVersion);
-            entity.Set(FamilyVersionSchema.FieldCatalogItemId, version.CatalogItemId ?? string.Empty);
-            entity.Set(FamilyVersionSchema.FieldVersionLabel, version.VersionLabel ?? string.Empty);
+            entity.Set(FamilyVersionSchema.FieldCatalogItemId, version.CatalogItemId);
+            entity.Set(FamilyVersionSchema.FieldVersionLabel, version.VersionLabel);
             entity.Set(FamilyVersionSchema.FieldLoadedAtUtc, version.LoadedAtUtc.ToString("o"));
             entity.Set(FamilyVersionSchema.FieldSourceRevitVersion, version.SourceRevitVersion);
             family.SetEntity(entity);

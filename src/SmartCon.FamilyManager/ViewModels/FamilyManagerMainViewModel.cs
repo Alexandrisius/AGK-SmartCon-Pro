@@ -50,10 +50,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IActiveImportCleanupService _activeImportCleanupService;
     private readonly ILoadableFamilyScanner _loadableFamilyScanner;
     private readonly ILoadableFamilyImportOrchestrator _loadableFamilyImportOrchestrator;
-    private readonly IFamilyVersionStore _versionStore;
     private readonly IStaleDetector _staleDetector;
     private readonly IStaleFamilyUpdater _staleUpdater;
     private readonly IStaleCategoryAggregator _staleAggregator;
+    private readonly IFamilyFinder _familyFinder;
+    private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
@@ -148,10 +149,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _activeImportCleanupService = services.ActiveImportCleanupService;
         _loadableFamilyScanner = services.LoadableFamilyScanner;
         _loadableFamilyImportOrchestrator = services.LoadableFamilyImportOrchestrator;
-        _versionStore = services.VersionStore;
         _staleDetector = services.StaleDetector;
         _staleUpdater = services.StaleUpdater;
         _staleAggregator = services.StaleCategoryAggregator;
+        _familyFinder = services.FamilyFinder;
+        _versionWriter = services.VersionWriter;
         _clock = services.Clock;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;

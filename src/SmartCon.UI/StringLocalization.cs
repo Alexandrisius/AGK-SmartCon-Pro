@@ -326,6 +326,7 @@ public static class StringLocalization
         public const string FM_StaleTooltipRevitVer = "FM_StaleTooltipRevitVer";
         public const string FM_StaleTooltipNotInCatalog = "FM_StaleTooltipNotInCatalog";
         public const string FM_StaleCheckInProgress = "FM_StaleCheckInProgress";
+        public const string FM_StaleUpdateInProgress = "FM_StaleUpdateInProgress";
         public const string FM_StaleCategoryTooltipOne = "FM_StaleCategoryTooltipOne";
         public const string FM_StaleCategoryTooltipMany = "FM_StaleCategoryTooltipMany";
         public const string FM_UpdateSuccess = "FM_UpdateSuccess";

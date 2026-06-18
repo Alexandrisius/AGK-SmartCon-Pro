@@ -1020,3 +1020,24 @@ public sealed record FamilyStaleSnapshot(
         new(new Dictionary<string, StaleCheckResult>(), DateTimeOffset.MinValue);
 }
 ```
+
+---
+
+## CategoryStaleStats
+
+Per-category roll-up статистика для stale detection (ADR-030 Phase 24). Возвращается из `IStaleCategoryAggregator.AggregateByCategory` и маппится на `CategoryNodeViewModel.HasStale` / `StaleCount`.
+
+**Файл:** `CategoryStaleStats.cs` (в `SmartCon.Core/Services/Interfaces/`, рядом с `IStaleCategoryAggregator`)
+
+```csharp
+public sealed record CategoryStaleStats(bool HasStale, int StaleCount)
+{
+    public static CategoryStaleStats Empty { get; } = new(false, 0);
+}
+```
+
+**Семантика:**
+- `HasStale = true` если любое catalog item, привязанное к этой категории (с recursive parent expansion), stale.
+- `StaleCount` — количество stale items **напрямую** в этой категории (не считая подкатегории — это encoded в `HasStale` родителя).
+- `Empty` — дефолт для категории без stale items (используется в `AggregateByCategory`).
+

@@ -1,4 +1,3 @@
-using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -19,8 +18,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerAwaitableEvent _awaitable;
     private readonly IRevitContext _revitContext;
+    private readonly IFamilyFinder _familyFinder;
+    private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
-    private readonly IDispatcher _dispatcher;
 
     public StaleFamilyUpdater(
         IFamilyLoadService loadService,
@@ -29,8 +29,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         IFamilyManagerDialogService dialogService,
         IFamilyManagerAwaitableEvent awaitable,
         IRevitContext revitContext,
-        IClock clock,
-        IDispatcher dispatcher)
+        IFamilyFinder familyFinder,
+        IFamilyVersionWriter versionWriter,
+        IClock clock)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(loadService);
@@ -39,8 +40,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         ArgumentNullException.ThrowIfNull(dialogService);
         ArgumentNullException.ThrowIfNull(awaitable);
         ArgumentNullException.ThrowIfNull(revitContext);
+        ArgumentNullException.ThrowIfNull(familyFinder);
+        ArgumentNullException.ThrowIfNull(versionWriter);
         ArgumentNullException.ThrowIfNull(clock);
-        ArgumentNullException.ThrowIfNull(dispatcher);
 #else
         if (loadService is null) throw new ArgumentNullException(nameof(loadService));
         if (fileResolver is null) throw new ArgumentNullException(nameof(fileResolver));
@@ -48,8 +50,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         if (dialogService is null) throw new ArgumentNullException(nameof(dialogService));
         if (awaitable is null) throw new ArgumentNullException(nameof(awaitable));
         if (revitContext is null) throw new ArgumentNullException(nameof(revitContext));
+        if (familyFinder is null) throw new ArgumentNullException(nameof(familyFinder));
+        if (versionWriter is null) throw new ArgumentNullException(nameof(versionWriter));
         if (clock is null) throw new ArgumentNullException(nameof(clock));
-        if (dispatcher is null) throw new ArgumentNullException(nameof(dispatcher));
 #endif
         _loadService = loadService;
         _fileResolver = fileResolver;
@@ -57,8 +60,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         _dialogService = dialogService;
         _awaitable = awaitable;
         _revitContext = revitContext;
+        _familyFinder = familyFinder;
+        _versionWriter = versionWriter;
         _clock = clock;
-        _dispatcher = dispatcher;
     }
 
     public async Task<bool> UpdateFamilyAsync(
@@ -81,11 +85,6 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         IProgress<StaleBatchUpdateProgress>? progress = null,
         CancellationToken ct = default)
     {
-        using var _scope = SmartConLogger.BeginScope(
-            "StaleDetection",
-            ("Method", nameof(UpdateBatchAsync)),
-            ("Count", request?.CatalogItemIds?.Count ?? 0));
-
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(request);
 #else
@@ -95,6 +94,11 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         {
             return new StaleBatchUpdateResult(0, 0, 0, []);
         }
+
+        using var _scope = SmartConLogger.BeginScope(
+            "StaleDetection",
+            ("Method", nameof(UpdateBatchAsync)),
+            ("Count", request.CatalogItemIds.Count));
 
         var total = request.CatalogItemIds.Count;
         var success = 0;
@@ -129,14 +133,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         // Note: caller (UpdateFamilyAsync or UpdateBatchAsync) already opened BeginScope.
         try
         {
-            var targetRevit = 0;
-            try
-            {
-                if (int.TryParse(_revitContext.GetRevitVersion(), out var v)) targetRevit = v;
-            }
-            catch
-            {
-            }
+            var targetRevit = ResolveTargetRevit(catalogItemId);
 
             var resolved = await _fileResolver
                 .ResolveForLoadAsync(catalogItemId, targetRevit, ct)
@@ -157,36 +154,23 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                     loadOptions,
                     onStatusMessage: null,
                     onSharedDecision: req => _dialogService.ShowSharedFamiliesLoadModeDialog(req),
-                    ct: CancellationToken.None).GetAwaiter().GetResult(),
+                    ct: ct).GetAwaiter().GetResult(),
                 ct).ConfigureAwait(true);
 
             if (!result.Success) return (false, result.FamilyName);
 
-            // Persist fresh marker.
-            var version = new FamilyVersion(
-                SchemaVersion: FamilyVersion.CurrentSchemaVersion,
-                CatalogItemId: catalogItemId,
-                VersionLabel: resolved.VersionLabel ?? string.Empty,
-                LoadedAtUtc: _clock.UtcNow,
-                SourceRevitVersion: targetRevit);
-
-            await _awaitable.RaiseAsyncTask(_ =>
-            {
-                var doc = _revitContext.GetDocument();
-                var family = FindFamilyByName(doc, result.FamilyName ?? resolved.VersionLabel ?? string.Empty);
-                if (family is null) return Task.CompletedTask;
-                _versionStore.WriteToLoadedFamily(doc, family.Id, version);
-                return Task.CompletedTask;
-            }, ct).ConfigureAwait(true);
+            // Persist fresh marker via shared helper (also used by LoadPlace partial).
+            await _versionWriter.WriteVersionMarkerAsync(
+                catalogItemId,
+                result.FamilyName ?? resolved.VersionLabel ?? string.Empty,
+                resolved.VersionLabel,
+                targetRevit,
+                ct).ConfigureAwait(true);
 
             return (true, result.FamilyName);
         }
         catch (Exception ex)
         {
-            using var _scope = SmartConLogger.BeginScope(
-                "StaleDetection",
-                ("Method", nameof(UpdateFamilyCoreAsync)),
-                ("CatalogItemId", catalogItemId));
             SmartConLogger.Warn(
                 $"UpdateFamily[{catalogItemId}]: failed: {ex.Message}. " +
                 "[Action: family skipped, batch continues]");
@@ -194,14 +178,22 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         }
     }
 
-    private static Autodesk.Revit.DB.Family? FindFamilyByName(Document doc, string familyName)
+    private int ResolveTargetRevit(string catalogItemId)
     {
-        if (doc is null || string.IsNullOrEmpty(familyName)) return null;
-        using var collector = new FilteredElementCollector(doc).OfClass(typeof(Autodesk.Revit.DB.Family));
-        foreach (Autodesk.Revit.DB.Family f in collector)
+        try
         {
-            if (string.Equals(f.Name, familyName, StringComparison.Ordinal)) return f;
+            if (int.TryParse(_revitContext.GetRevitVersion(), out var v)) return v;
+            SmartConLogger.Warn(
+                $"ResolveTargetRevit[{catalogItemId}]: Revit version is not a number. " +
+                "[Action: targetRevit=0 fallback, version mismatch detection disabled for this batch]");
+            return 0;
         }
-        return null;
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"ResolveTargetRevit[{catalogItemId}]: failed: {ex.Message}. " +
+                "[Action: targetRevit=0 fallback, version mismatch detection disabled for this batch]");
+            return 0;
+        }
     }
 }

@@ -659,7 +659,7 @@
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
                             
-                            <TextBlock Text=" [Устарело]"
+                            <TextBlock Text="{loc:Loc FM_Stale}"
                                        Foreground="{DynamicResource WarningBrush}"
                                        FontSize="10"
                                        VerticalAlignment="Center"

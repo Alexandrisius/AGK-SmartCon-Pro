@@ -26,6 +26,17 @@ internal static class LocalCatalogQueryBuilder
         {
             conditions.Add("(ci.category_id IS NULL OR ci.category_id = '')");
         }
+        else if (query.CategoryIdsFilter is { Count: > 0 })
+        {
+            var placeholders = new List<string>(query.CategoryIdsFilter.Count);
+            foreach (var cid in query.CategoryIdsFilter)
+            {
+                var paramName = $"@category_{paramIndex++}";
+                placeholders.Add(paramName);
+                parameters.Add(new SqliteParameter(paramName, cid));
+            }
+            conditions.Add($"ci.category_id IN ({string.Join(", ", placeholders)})");
+        }
         else if (!string.IsNullOrWhiteSpace(query.CategoryFilter))
         {
             var paramName = $"@category_{paramIndex++}";

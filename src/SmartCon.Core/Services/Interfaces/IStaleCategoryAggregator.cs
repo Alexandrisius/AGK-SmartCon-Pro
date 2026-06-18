@@ -10,17 +10,24 @@ namespace SmartCon.Core.Services.Interfaces;
 public interface IStaleCategoryAggregator
 {
     /// <summary>
-    /// Roll-up: for each category in <paramref name="categoryIndex"/>, returns
-    /// <c>true</c> if any catalog item assigned to that category is stale.
+    /// Roll-up: for each category in <paramref name="categoryMap"/>, compute
+    /// <see cref="CategoryStaleStats"/> (HasStale + StaleCount).
+    /// Single pass: O(n + m) where n = number of stale items, m = number of
+    /// category memberships.
     /// </summary>
     /// <param name="results">Stale check results from the detector.</param>
-    /// <param name="categoryIndex">
-    /// Maps catalog item ID to the list of category IDs it belongs to
-    /// (with recursive parent expansion if requested).
+    /// <param name="categoryMap">
+    /// Maps catalog item ID to the collection of category IDs it belongs to
+    /// (with recursive parent expansion).
     /// </param>
-    IReadOnlyDictionary<string, bool> AggregateByCategory(
+    /// <param name="staleIds">
+    /// Pre-computed set of stale catalog item IDs (the caller already builds this
+    /// for the leaf walk; the aggregator reuses it to avoid a second scan).
+    /// </param>
+    IReadOnlyDictionary<string, CategoryStaleStats> AggregateByCategory(
         IReadOnlyList<StaleCheckResult> results,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> categoryIndex);
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>> categoryMap,
+        IReadOnlyCollection<string> staleIds);
 
     /// <summary>
     /// Build a reverse map: for each catalog item ID, the collection of category IDs it

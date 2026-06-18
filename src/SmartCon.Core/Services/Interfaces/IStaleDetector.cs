@@ -22,16 +22,22 @@ public interface IStaleDetector
         CancellationToken ct);
 
     /// <summary>
-    /// Check every family in the given category (recursively into sub-categories).
-    /// Updates the session snapshot on success.
+    /// Check every family in the given categories. Updates the session snapshot on success.
     /// </summary>
-    /// <param name="categoryId">Category ID to check. <c>null</c> means uncategorized.</param>
-    /// <param name="recursive">If true, sub-categories are included.</param>
+    /// <param name="categoryIds">
+    /// Flat list of category IDs to check. The caller is responsible for expanding the
+    /// category tree (recursive=true) before calling — <see cref="IStaleDetector"/> does
+    /// not know about the category hierarchy.
+    /// <list type="bullet">
+    ///   <item><description><c>null</c> — check items in any category (root "Check all").</description></item>
+    ///   <item><description>Single element <c>"__no_category__"</c> — check uncategorized items.</description></item>
+    ///   <item><description>Multiple elements — check items in any of the listed categories.</description></item>
+    /// </list>
+    /// </param>
     /// <param name="doc">Active Revit document.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
-        string? categoryId,
-        bool recursive,
+        IReadOnlyList<string>? categoryIds,
         Document doc,
         CancellationToken ct);
 

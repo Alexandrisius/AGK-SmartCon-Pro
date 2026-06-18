@@ -757,3 +757,43 @@ public interface ICategoryNodeInfo
 **FamilyManagerServices Aggregate (Phase 4b):**
 
 `public sealed record FamilyManagerServices(...)` с 30 readonly properties, заменяет 30-param ctor `FamilyManagerMainViewModel`. **Файл:** `SmartCon.FamilyManager/ViewModels/FamilyManagerServices.cs`. **DI:** `AddSingleton<FamilyManagerServices>()` (auto-resolve).
+
+---
+
+## IFamilyFinder
+
+Поиск загруженного `Family` элемента в активном проекте по имени (ADR-030 Phase 24, I-09 compliance). Вынесен из VM в Core/Revit, чтобы `FamilyManagerMainViewModel` не зависел от `Autodesk.Revit.DB`. Реализация — `RevitFamilyFinder` в `SmartCon.Revit/FamilyManager/` использует `FilteredElementCollector.OfClass(Family)`.
+
+**Файл:** `IFamilyFinder.cs`
+
+```csharp
+public interface IFamilyFinder
+{
+    ElementId? FindByName(Document doc, string familyName);
+}
+```
+
+**Threading:** вызывается только на Revit main thread (I-01). VM оборачивает в `_awaitableEvent.RaiseAsync`.
+
+---
+
+## IFamilyVersionWriter
+
+Единая точка записи `FamilyVersion` маркера в ExtensibleStorage (ADR-030 Phase 24). Раньше дублировалось в `LoadPlace` (2 места) и `StaleFamilyUpdater` (1 место). Теперь — один helper.
+
+**Файл:** `IFamilyVersionWriter.cs`
+
+```csharp
+public interface IFamilyVersionWriter
+{
+    Task WriteVersionMarkerAsync(
+        string catalogItemId,
+        string familyName,
+        string? versionLabel,
+        int targetRevit,
+        CancellationToken ct);
+}
+```
+
+**Реализация:** `FamilyVersionWriter` (в `SmartCon.FamilyManager/Services/Stale/`). Внутри — `RaiseAsyncTask` для `FindByName` + `WriteToLoadedFamily` на Revit main thread. No-op если семейство не загружено в проект (например, при `LoadFamilySymbol` без `LoadFamily`).
+

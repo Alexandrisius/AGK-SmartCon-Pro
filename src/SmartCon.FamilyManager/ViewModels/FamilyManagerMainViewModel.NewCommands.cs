@@ -22,7 +22,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (category is null) return;
         IsStaleCheckInProgress = true;
-        StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress) ?? "Проверка…";
+        StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -30,25 +30,32 @@ public sealed partial class FamilyManagerMainViewModel
                 ("Method", nameof(CheckCategoryAsync)),
                 ("CategoryId", category.CategoryId));
 
+            // Expand the category subtree to a flat list of category IDs so the
+            // detector sees one consistent contract (no recursive flag, no tree access).
+            var subCategoryIds = ExpandCategorySubtree(category);
+
             var doc = _revitContext.GetDocument();
             var results = await _staleDetector.CheckCategoryAsync(
-                category.CategoryId, recursive: true, doc, CancellationToken.None)
+                subCategoryIds, doc, CancellationToken.None)
                 .ConfigureAwait(true);
 
             await ApplyStaleResultsToTreeAsync(results, CancellationToken.None).ConfigureAwait(true);
 
             var staleCount = results.Count(r => r.IsStale);
             var totalLoaded = results.Count;
+            var totalInTree = EnumerateAllLeaves(TreeNodes.OfType<CategoryNodeViewModel>()).Count();
             if (totalLoaded == 0)
             {
-                StatusMessage = $"«{category.DisplayName}»: в проекте нет загруженных семейств этой категории";
+                StatusMessage = totalInTree == 0
+                    ? $"«{category.DisplayName}»: в каталоге нет семейств этой категории"
+                    : $"«{category.DisplayName}»: семейства в каталоге есть, но ни одно не загружено в проект";
             }
             else
             {
                 StatusMessage = $"«{category.DisplayName}»: проверено {totalLoaded}, устарело {staleCount}";
             }
             SmartConLogger.Info(
-                $"Check completed: {staleCount} stale of {totalLoaded} families in category '{category.CategoryId}'.");
+                $"Check completed: {staleCount} stale of {totalLoaded} families in category '{category.CategoryId}' (subtree={subCategoryIds.Count}).");
         }
         catch (Exception ex)
         {
@@ -64,6 +71,26 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
+    private static IReadOnlyList<string> ExpandCategorySubtree(CategoryNodeViewModel root)
+    {
+        var result = new List<string> { root.CategoryId };
+        var stack = new Stack<CategoryNodeViewModel>();
+        foreach (var child in root.Children.OfType<CategoryNodeViewModel>())
+        {
+            stack.Push(child);
+        }
+        while (stack.Count > 0)
+        {
+            var node = stack.Pop();
+            result.Add(node.CategoryId);
+            foreach (var child in node.Children.OfType<CategoryNodeViewModel>())
+            {
+                stack.Push(child);
+            }
+        }
+        return result;
+    }
+
     private bool CanCheckCategory(CategoryNodeViewModel? category) =>
         category != null && !IsStaleCheckInProgress;
 
@@ -72,7 +99,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (family is null) return;
         IsStaleCheckInProgress = true;
-        StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress) ?? "Проверка…";
+        StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -82,7 +109,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             var doc = _revitContext.GetDocument();
             var familyId = await _awaitableEvent.RaiseAsync(
-                _ => FindFamilyInDocument(doc, family.DisplayName)?.Id,
+                _ => _familyFinder.FindByName(doc, family.DisplayName),
                 CancellationToken.None).ConfigureAwait(true);
 
             if (familyId is null)
@@ -103,7 +130,7 @@ public sealed partial class FamilyManagerMainViewModel
             _staleDetector.InvalidateCache();
 
             StatusMessage = result.IsStale
-                ? $"«{family.DisplayName}»: устарело — {ReasonToText(result.Reason)}"
+                ? $"«{family.DisplayName}»: устарело — {result.Reason}"
                 : $"«{family.DisplayName}»: актуально";
             SmartConLogger.Info(
                 $"Check completed: '{family.DisplayName}' IsStale={result.IsStale} Reason={result.Reason}.");
@@ -121,15 +148,6 @@ public sealed partial class FamilyManagerMainViewModel
             NotifyCheckCommands();
         }
     }
-
-    private static string ReasonToText(StaleReason reason) => reason switch
-    {
-        StaleReason.NoEntityStorage => "нет маркера версии",
-        StaleReason.VersionMismatch => "версия в каталоге новее",
-        StaleReason.RevitVersionMismatch => "другая версия Revit",
-        StaleReason.NotInCatalog => "не найдено в каталоге",
-        _ => "обновите семейство",
-    };
 
     private bool CanCheckFamily(FamilyLeafNodeViewModel? family) =>
         family != null && !IsStaleCheckInProgress;
@@ -157,7 +175,7 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task UpdateCategoryStaleAsync(CategoryNodeViewModel category, bool overwriteParameterValues)
     {
         IsStaleCheckInProgress = true;
-        StaleCheckMessage = "Обновление…";
+        StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleUpdateInProgress);
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -233,53 +251,53 @@ public sealed partial class FamilyManagerMainViewModel
         IReadOnlyList<StaleCheckResult> results,
         CancellationToken ct)
     {
-            var staleIds = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var r in results)
-            {
-                if (r.IsStale) staleIds.Add(r.CatalogItemId);
-            }
+        ct.ThrowIfCancellationRequested();
 
-            // 1) Build reverse map: catalogItemId -> [categoryId, ...] recursively.
-            var rootCategories = TreeNodes.OfType<CategoryNodeViewModel>().ToList();
-            var adapterRoots = CategoryTreeAdapter.AdaptRoots(rootCategories);
-            var categoryMap = _staleAggregator.BuildCatalogToCategoryMap(
-                staleIds, adapterRoots);
-
-            // 2) Per category: HasStale + StaleCount.
-            foreach (var category in EnumerateAllCategories(rootCategories))
-            {
-                var hasStale = false;
-                var staleCount = 0;
-                foreach (var kvp in categoryMap)
-                {
-                    var catalogId = kvp.Key;
-                    var categories = kvp.Value;
-                    if (!categories.Contains(category.CategoryId)) continue;
-                    if (!staleIds.Contains(catalogId)) continue;
-                    hasStale = true;
-                    staleCount++;
-                }
-
-                category.HasStale = hasStale;
-                category.StaleCount = staleCount;
-            }
-
-            // 3) Per leaf: IsStale + StaleReason.
-            var byCatalog = results.ToDictionary(r => r.CatalogItemId, StringComparer.Ordinal);
-            foreach (var leaf in EnumerateAllLeaves(rootCategories))
-            {
-                if (byCatalog.TryGetValue(leaf.CatalogItemId, out var r))
-                {
-                    leaf.IsStale = r.IsStale;
-                    leaf.StaleReason = r.Reason;
-                }
-            }
-
-            // 4) Detector cache is preserved so subsequent LoadTreeAsync / Refresh
-            //    can re-apply the same IsStale markers to the new TreeNodes.
-
-            await Task.CompletedTask;
+        var staleIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var r in results)
+        {
+            if (r.IsStale) staleIds.Add(r.CatalogItemId);
         }
+
+        // 1) Build reverse map: catalogItemId -> [categoryId, ...] recursively.
+        var rootCategories = TreeNodes.OfType<CategoryNodeViewModel>().ToList();
+        var adapterRoots = CategoryTreeAdapter.AdaptRoots(rootCategories);
+        var categoryMap = _staleAggregator.BuildCatalogToCategoryMap(
+            staleIds, adapterRoots);
+
+        // 2) Per category: HasStale + StaleCount (single pass via aggregator).
+        var allCategories = EnumerateAllCategories(rootCategories).ToList();
+        var perCategory = _staleAggregator.AggregateByCategory(results, categoryMap, staleIds);
+        foreach (var category in allCategories)
+        {
+            if (perCategory.TryGetValue(category.CategoryId, out var stats))
+            {
+                category.HasStale = stats.HasStale;
+                category.StaleCount = stats.StaleCount;
+            }
+            else
+            {
+                category.HasStale = false;
+                category.StaleCount = 0;
+            }
+        }
+
+        // 3) Per leaf: IsStale + StaleReason.
+        var byCatalog = results.ToDictionary(r => r.CatalogItemId, StringComparer.Ordinal);
+        foreach (var leaf in EnumerateAllLeaves(rootCategories))
+        {
+            if (byCatalog.TryGetValue(leaf.CatalogItemId, out var r))
+            {
+                leaf.IsStale = r.IsStale;
+                leaf.StaleReason = r.Reason;
+            }
+        }
+
+        // 4) Detector cache is preserved so subsequent LoadTreeAsync / Refresh
+        //    can re-apply the same IsStale markers to the new TreeNodes.
+
+        await Task.CompletedTask;
+    }
 
     private void NotifyCheckCommands()
     {
@@ -317,18 +335,5 @@ public sealed partial class FamilyManagerMainViewModel
                 else if (child is CategoryNodeViewModel sub) stack.Push(sub);
             }
         }
-    }
-
-    private static Autodesk.Revit.DB.Family? FindFamilyInDocument(
-        Autodesk.Revit.DB.Document doc, string familyName)
-    {
-        if (doc is null || string.IsNullOrEmpty(familyName)) return null;
-        using var collector = new Autodesk.Revit.DB.FilteredElementCollector(doc)
-            .OfClass(typeof(Autodesk.Revit.DB.Family));
-        foreach (Autodesk.Revit.DB.Family f in collector)
-        {
-            if (string.Equals(f.Name, familyName, StringComparison.Ordinal)) return f;
-        }
-        return null;
     }
 }

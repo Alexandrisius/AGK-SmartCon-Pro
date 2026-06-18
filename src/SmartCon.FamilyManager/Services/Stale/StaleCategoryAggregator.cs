@@ -1,6 +1,5 @@
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
-using SmartCon.FamilyManager.ViewModels;
 
 namespace SmartCon.FamilyManager.Services.Stale;
 
@@ -11,28 +10,31 @@ namespace SmartCon.FamilyManager.Services.Stale;
 /// </summary>
 internal sealed class StaleCategoryAggregator : IStaleCategoryAggregator
 {
-    public IReadOnlyDictionary<string, bool> AggregateByCategory(
+    public IReadOnlyDictionary<string, CategoryStaleStats> AggregateByCategory(
         IReadOnlyList<StaleCheckResult> results,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> categoryIndex)
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>> categoryMap,
+        IReadOnlyCollection<string> staleIds)
     {
-        var staleIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var r in results)
-        {
-            if (r.IsStale) staleIds.Add(r.CatalogItemId);
-        }
+        var staleSet = staleIds as IReadOnlyCollection<string> is null
+            ? new HashSet<string>(staleIds, StringComparer.Ordinal)
+            : new HashSet<string>(staleIds, StringComparer.Ordinal);
 
-        var hasStale = new Dictionary<string, bool>(StringComparer.Ordinal);
-        foreach (var kvp in categoryIndex)
+        var perCategory = new Dictionary<string, CategoryStaleStats>(StringComparer.Ordinal);
+
+        foreach (var catalogId in staleSet)
         {
-            var catalogItemId = kvp.Key;
-            var categoryIds = kvp.Value;
-            if (!staleIds.Contains(catalogItemId)) continue;
+            if (!categoryMap.TryGetValue(catalogId, out var categoryIds)) continue;
             foreach (var catId in categoryIds)
             {
-                hasStale[catId] = true;
+                var current = perCategory.TryGetValue(catId, out var s)
+                    ? s
+                    : CategoryStaleStats.Empty;
+                perCategory[catId] = new CategoryStaleStats(
+                    HasStale: true,
+                    StaleCount: current.StaleCount + 1);
             }
         }
-        return hasStale;
+        return perCategory;
     }
 
     public IReadOnlyDictionary<string, IReadOnlyCollection<string>> BuildCatalogToCategoryMap(
