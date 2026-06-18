@@ -108,7 +108,10 @@ public sealed partial class FamilyManagerMainViewModel
                         targetRevit,
                         CancellationToken.None).ConfigureAwait(true);
 
-                    _staleDetector.InvalidateCache();
+                    // Drop only this family from the snapshot so the next Check
+                    // re-evaluates it from scratch. Other categories' stale markers
+                    // (and the families that were not updated) stay intact.
+                    _staleDetector.MarkUpdated([selectedId]);
                     InvalidateLoadedFamilyNamesCache();
                     await LoadTreeAsync().ConfigureAwait(true);
                 }
@@ -225,7 +228,9 @@ public sealed partial class FamilyManagerMainViewModel
                         targetRevit,
                         CancellationToken.None).ConfigureAwait(true);
 
-                    _staleDetector.InvalidateCache();
+                    // Drop only this family from the snapshot (same rationale
+                    // as ExecuteLoadOrUpdateAsync above).
+                    _staleDetector.MarkUpdated([catalogItemId]);
                 }
                 else
                 {

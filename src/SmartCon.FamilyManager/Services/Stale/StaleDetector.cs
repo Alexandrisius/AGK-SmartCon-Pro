@@ -105,7 +105,12 @@ internal sealed class StaleDetector : IStaleDetector
         // leaving all other entries intact.
         lock (_cacheLock)
         {
+            var before = _cachedSnapshot?.Results.Count ?? 0;
             _cachedSnapshot = StaleSnapshotLogic.MergeInto(_cachedSnapshot, new[] { result }, _clock.UtcNow);
+            SmartConLogger.Info(
+                $"CheckFamily: upserted entry for '{result.CatalogItemId}' " +
+                $"(IsStale={result.IsStale}). " +
+                $"Snapshot size: {before} -> {_cachedSnapshot.Results.Count}.");
         }
         return result;
     }
@@ -222,7 +227,12 @@ internal sealed class StaleDetector : IStaleDetector
         // 6) Merge into session cache: existing entries for OTHER families are preserved.
         lock (_cacheLock)
         {
+            var before = _cachedSnapshot?.Results.Count ?? 0;
             _cachedSnapshot = StaleSnapshotLogic.MergeInto(_cachedSnapshot, results, _clock.UtcNow);
+            var staleNow = results.Count(r => r.IsStale);
+            SmartConLogger.Info(
+                $"CheckCategory: merged {results.Count} results ({staleNow} stale). " +
+                $"Snapshot size: {before} -> {_cachedSnapshot.Results.Count}.");
         }
 
         return results;
@@ -239,11 +249,18 @@ internal sealed class StaleDetector : IStaleDetector
         lock (_cacheLock)
         {
             if (_cachedSnapshot is null) return;
+            var before = _cachedSnapshot.Results.Count;
             var updated = StaleSnapshotLogic.RemoveFrom(_cachedSnapshot, catalogItemIds, _clock.UtcNow);
-            if (ReferenceEquals(updated, _cachedSnapshot)) return;
+            if (ReferenceEquals(updated, _cachedSnapshot))
+            {
+                SmartConLogger.Info(
+                    $"MarkUpdated: none of {catalogItemIds.Count} IDs were in snapshot. " +
+                    $"Snapshot size: {before} (unchanged).");
+                return;
+            }
             _cachedSnapshot = updated;
             SmartConLogger.Info(
-                $"MarkUpdated: removed {catalogItemIds.Count} requested entries from snapshot. " +
+                $"MarkUpdated: removed {before - _cachedSnapshot.Results.Count} entries. " +
                 $"Snapshot size: {_cachedSnapshot.Results.Count}.");
         }
     }
