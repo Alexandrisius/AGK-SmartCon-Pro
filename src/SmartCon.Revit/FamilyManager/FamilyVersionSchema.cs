@@ -45,7 +45,30 @@ internal static class FamilyVersionSchema
     /// </summary>
     public static Schema GetOrCreate()
     {
-        return Schema.Lookup(SchemaGuid) ?? Build();
+        var existing = Schema.Lookup(SchemaGuid);
+        if (existing is not null)
+        {
+            SmartConLogger.Debug(
+                $"FamilyVersionSchema.GetOrCreate: found existing schema {SchemaName} (Guid={SchemaGuid}).");
+            return existing;
+        }
+        SmartConLogger.Info(
+            $"FamilyVersionSchema.GetOrCreate: schema {SchemaName} (Guid={SchemaGuid}) not found, " +
+            "creating new one.");
+        try
+        {
+            var built = Build();
+            SmartConLogger.Info(
+                $"FamilyVersionSchema.GetOrCreate: schema {SchemaName} created successfully.");
+            return built;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"FamilyVersionSchema.GetOrCreate: FAILED to build schema {SchemaName}: " +
+                $"{ex.GetType().Name}: {ex.Message}. [Action: ES read/write will fail at runtime]");
+            throw;
+        }
     }
 
     private static Schema Build()
