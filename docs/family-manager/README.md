@@ -64,15 +64,15 @@ FamilyManager не хранит каталог, `.rfa`, metadata, теги, prev
 
 ExtensibleStorage остаётся паттерном существующих модулей smartCon, но не является data plane FamilyManager.
 
-### Исключение: `SmartCon.FamilyVersion.v1` (Phase 24)
+### Исключение: `SmartCon_FamilyVersion_v1` (Phase 24)
 
-**Единственное исключение** из правила — маркер версии в самом `.rfa` файле, введённый в Phase 24 (см. [ADR-030](../adr/030-phase-24-stale-detection-v2.md)). Хранит **только** метаданные момента загрузки (CatalogItemId, VersionLabel, LoadedAtUtc, SourceRevitVersion), а не каталожные данные.
+**Единственное исключение** из правила — маркер версии на `Family` элементе в проекте Revit, введённый в Phase 24 (см. [ADR-030](../adr/030-phase-24-stale-detection-v2.md)). Хранит **только** метаданные момента загрузки (CatalogItemId, VersionLabel, LoadedAtUtc, SourceRevitVersion), а не каталожные данные. Не пишется в `.rfa` файлы (over-engineered — см. ADR-030 §2).
 
 **Что остаётся запрещено:**
 - Каталог (`catalog_items`, `catalog_versions`, `family_files`, `family_assets`) — в SQLite
 - Метаданные (manufacturer, tags, description, preview) — в SQLite/managed storage
 - История загрузок, избранное — в SQLite
-- Любые новые ES Schema для FamilyManager (кроме `FamilyVersion.v1`)
+- Любые новые ES Schema для FamilyManager (кроме `SmartCon_FamilyVersion_v1`)
 
 **Обоснование исключения:** см. [ADR-030 §Решение](../adr/030-phase-24-stale-detection-v2.md).
 
@@ -120,13 +120,13 @@ ExtensibleStorage остаётся паттерном существующих �
 - Всего: 1219/1219 тестов зелёные (1215 до + 4 новых)
 - 19 новых тестов: 12 sidecar + 1 preparer + 5 TypeCatalog + 1 прочий
 
-**Phase 24 (FamilyManager Stale Detection v2 — On-Demand) — PLANNED (2026-06-18).**
+**Phase 24 (FamilyManager Stale Detection v2 — On-Demand) — ЗАВЕРШЕНА (2026-06-18).**
 
 - ADR-030 принят: `docs/adr/030-phase-24-stale-detection-v2.md` — override ADR-014 §FM-007 (запрет ExtensibleStorage)
-- Новая ES Schema `SmartCon.FamilyVersion.v1` на самом `.rfa` файле (per-family маркер версии)
+- Новая ES Schema `SmartCon_FamilyVersion_v1` на `Family` элементе в проекте (per-family маркер версии; **не** на `.rfa` файле — over-engineered)
 - VendorId workaround: `AGKSMARTCON` (9 chars) + `AccessLevel.Public/Public` — как в `FittingMappingSchema`
-- 4 простых поля: `SchemaVersion`, `CatalogItemId`, `VersionLabel`, `LoadedAtUtc`, `SourceRevitVersion`
-- Семейство «несёт с собой» маркер версии — работает при cross-project, multi-user, backup
+- 5 простых полей: `SchemaVersion`, `CatalogItemId`, `VersionLabel`, `LoadedAtUtc`, `SourceRevitVersion`
+- Маркер живёт пока Family загружена в проект — мгновенный read через `Family.GetEntity`
 - 4 новых интерфейса в Core: `IFamilyVersionStore`, `IStaleDetector`, `IStaleFamilyUpdater`, `IStaleCategoryAggregator`
 - 4 новые модели в Core: `FamilyVersion`, `StaleCheckResult` (+ `StaleReason` enum), `StaleUpdateRequest`, `FamilyStaleSnapshot`
 - UI: ПКМ "Проверить" на категории (рекурсивно) и на семействе, ПКМ "Обновить" с подменю (с перезаписью/без/пакетное), roll-up `⚠` индикация на leaf + категориях

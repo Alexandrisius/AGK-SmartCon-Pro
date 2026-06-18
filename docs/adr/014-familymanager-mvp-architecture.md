@@ -63,11 +63,7 @@ ViewModel **строго** не содержит `Document`, `Element`, `Family`
 
 ### FM-007: Project usage DB
 
-История использования семейств в проектах:
-- `IProjectFamilyUsageRepository` — CRUD для usage-записей
-- Хранится в той же SQLite БД (таблица `project_usage`)
-- **Не привязана** к `Document` или `ExtensibleStorage` (ADR-FM-007 запрет; **override см. ADR-030** для маркера `SmartCon.FamilyVersion.v1` на `.rfa`)
-- Поля: `project_name`, `family_id`, `used_at`, `revit_version`
+История использования семейств в проектах: **УДАЛЕНО в Phase 24** — см. [ADR-030](030-phase-24-stale-detection-v2.md). Версия семейства теперь хранится в ES на `Family` элементе в проекте (`SmartCon_FamilyVersion_v1`).
 
 ## Consequences
 
@@ -83,7 +79,7 @@ ViewModel **строго** не содержит `Document`, `Element`, `Family`
 - Project usage не синхронизируется между машинами в MVP (локальная БД)
 
 **Альтернативы рассмотренные:**
-1. **ExtensibleStorage для catalog** — отклонено (ADR-FM-007, жёсткий запрет). **Исключение:** маркер `SmartCon.FamilyVersion.v1` на `.rfa` — см. [ADR-030](030-phase-24-stale-detection-v2.md).
+1. **ExtensibleStorage для catalog** — отклонено (ADR-FM-007, жёсткий запрет). **Исключение (Phase 24):** маркер `SmartCon_FamilyVersion_v1` на `Family` элементе в проекте — см. [ADR-030](030-phase-24-stale-detection-v2.md).
 2. **EF Core + Migrations** — отклонено (лишняя зависимость, ручные скрипты проще для MVP)
 3. **Прямая ссылка на SmartCon.Revit** — отклонено (нарушает dependency-rule)
 

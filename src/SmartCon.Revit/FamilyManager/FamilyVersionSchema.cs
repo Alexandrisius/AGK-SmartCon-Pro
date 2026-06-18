@@ -4,9 +4,8 @@ namespace SmartCon.Revit.FamilyManager;
 
 /// <summary>
 /// ExtensibleStorage schema for the per-family version marker (ADR-030, Phase 24).
-/// Stored on the <c>Family</c> element inside the project document and on
-/// <c>Family.OwnerFamily</c> inside an opened <c>.rfa</c> file. Replaces the
-/// <c>project_usage</c> SQLite table from Phase 23.
+/// Stored on the <c>Family</c> element inside the project document. Replaces
+/// the <c>project_usage</c> SQLite table from Phase 23.
 /// </summary>
 /// <remarks>
 /// <para>Schema lifetime: the schema is registered lazily via
@@ -56,7 +55,7 @@ internal static class FamilyVersionSchema
         builder.SetSchemaName(SchemaName);
         builder.SetDocumentation(
             "Per-family version marker for SmartCon FamilyManager (Phase 24, ADR-030). " +
-            "Stored on the Family element / .rfa file. Used for on-demand stale detection.");
+            "Stored on the Family element in the project document. Used for on-demand stale detection.");
 
         // ReadAccess=Public and WriteAccess=Public — intentional workaround:
         // VendorId in .addin equals "AGK" (3 chars), it is invalid for the

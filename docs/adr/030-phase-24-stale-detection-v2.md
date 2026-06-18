@@ -50,21 +50,22 @@ loadedVersionLabel != item.CurrentVersionLabel  // ← ВСЕГДА false
 
 **Версия 2.0.0** (несовместимо с 1.x). Удаляется таблица `project_usage` (V12 миграция — clean slate). Семейства без маркера версии считаются устаревшими. История загрузок теряется (per design — пользователь подтвердил, реальных пользователей нет).
 
-### 2. Single Source of Truth = сам `.rfa` файл (ES Schema)
+### 2. Single Source of Truth = Family в project document (ES Schema)
 
-Создаётся новая **ExtensibleStorage Schema** `SmartCon.FamilyVersion.v1`, которая пишется **на сам `Family` элемент** в Revit (per-family). Семейство «несёт с собой» маркер версии каталога при загрузке.
+Создаётся новая **ExtensibleStorage Schema** `SmartCon_FamilyVersion_v1`, которая пишется **на сам `Family` элемент** в проекте Revit (per-family). Семейство «несёт с собой» маркер версии каталога пока оно загружено в проекте.
+
+**Почему НЕ в `.rfa` файле:** первоначальная идея (см. ADR draft rev.1) хранить маркер на `OwnerFamily` в `.rfa` отвергнута как over-engineered — для stale detection достаточно знать версию в проекте, `.rfa` открывать не нужно (дорого: ~200 мс на файл через `app.OpenDocumentFile`). Каталог SQLite остаётся source of truth для версии; ES на Family в проекте — локальный кеш для мгновенного сравнения.
 
 **Преимущества подхода:**
 
-| Аспект | SQLite `project_usage` (старое) | ES в `.rfa` (новое) |
+| Аспект | SQLite `project_usage` (старое) | ES на Family в проекте (новое) |
 |---|---|---|
-| Travel with `.rfa` | ❌ Нет (локальная БД) | ✅ Да |
-| Работает без SmartCon | ❌ | ✅ Read-only |
-| Multi-project | ⚠️ Нужен fingerprint | ✅ Один маркер на семейство |
-| Multi-user | ⚠️ Локальная история | ✅ Один и тот же `.rfa` |
-| Crash recovery | ⚠️ Нужен sync | ✅ Встроено |
+| Скорость check | ❌ SQL запрос + сопоставление | ✅ In-memory `Family.GetEntity` |
+| Работает для семейств вне плагина | ❌ Нет записи в `project_usage` | ✅ Любая `Family` имеет ES |
+| Multi-project | ❌ Нужен fingerprint | ✅ Каждый проект свой ES |
+| Overhead | ⚠️ JOIN на каждую проверку | ✅ Один `Entity.Get<T>` per family |
 
-**Семантика маркера:** "это семейство было загружено из каталога, версия `v2`, в момент `T`, в Revit `2025`". Если версия в каталоге изменилась → семейство **stale**.
+**Семантика маркера:** "это семейство в проекте было загружено из каталога, версия `v2`, в момент `T`, в Revit `2025`". Если версия в каталоге изменилась → семейство **stale**.
 
 ### 3. Семантика "stale" (4 причины)
 
@@ -140,7 +141,7 @@ src/SmartCon.Core/Models/FamilyManager/
 
 ```
 src/SmartCon.Core/Services/Interfaces/
-├── IFamilyVersionStore.cs           # CRUD маркера на Family element / .rfa file
+├── IFamilyVersionStore.cs           # CRUD маркера на Family element в project
 ├── IStaleDetector.cs                # On-demand проверка, кеш
 ├── IStaleFamilyUpdater.cs           # Single + Batch update
 └── IStaleCategoryAggregator.cs      # Roll-up HasStale по категориям (pure logic)
@@ -198,31 +199,9 @@ public void WriteToLoadedFamily(Document doc, ElementId familyId, FamilyVersion 
     });
 }
 
-// WRITE в .rfa файл — I-03b исключение (family document, не ITransactionService)
-public async Task WriteToRfaFileAsync(string rfaFilePath, FamilyVersion version, CancellationToken ct)
-{
-    var familyDoc = app.OpenDocumentFile(rfaFilePath);
-    try
-    {
-        using (var tx = new Transaction(familyDoc, "SmartCon: Write FamilyVersion"))  // I-03b
-        {
-            tx.Start();
-            var family = familyDoc.OwnerFamily;
-            var schema = FamilyVersionSchema.GetOrCreate();
-            using var entity = new Entity(schema);
-            // ... entity.Set(...) ...
-            family.SetEntity(entity);
-            tx.Commit();
-        }
-        familyDoc.Save();
-    }
-    finally
-    {
-        try { familyDoc.Close(true); } catch { }  // COM cleanup
-        try { Marshal.ReleaseComObject(familyDoc); } catch { }  // REVIT-237190 workaround
-    }
-}
 ```
+
+> **Note:** исходно планировался аналогичный метод `WriteToRfaFileAsync` для записи маркера в `.rfa` файл, но отвергнут — over-engineered, см. §2.
 
 **`StaleDetector.CheckCategoryAsync`** — главный метод:
 
@@ -360,7 +339,7 @@ UPDATE schema_info SET value = '12' WHERE key = 'schema_version';
 
 - ✅ Stale detection **наконец работает** (в отличие от текущей сломанной логики)
 - ✅ Семейство «несёт с собой» маркер версии — работает при cross-project, multi-user, backup
-- ✅ Stale-маркер в `.rfa` путешествует с файлом (ISO 19650 Published-зона)
+- ✅ ES на `Family` в проекте — мгновенный read (in-memory `Family.GetEntity`), без SQL JOIN
 - ✅ On-demand модель = полный контроль пользователя, нет race conditions
 - ✅ Удаление `project_usage` — чистая схема v12, нет legacy кода
 - ✅ Пакетное обновление категории = одна команда вместо N ручных
@@ -370,7 +349,7 @@ UPDATE schema_info SET value = '12' WHERE key = 'schema_version';
 
 - ❌ **Breaking change 2.0.0** — пользователи 1.x теряют историю загрузок (per design — тестовая группа)
 - ❌ Семейства загруженные **не через плагин** = stale (per design — Issue #69)
-- ❌ ES на `Family` = `Marshal.ReleaseComObject` нужен при записи в `.rfa` (REVIT-237190 workaround)
+- ❌ ES живёт только пока семейство загружено в проект — при удалении Family из проекта ES теряется (но это OK: stale detection нужна только для загруженных семейств)
 - ❌ Override ADR-014 §FM-007 — исключение из правил проекта, требует внимательного code review
 - ❌ 4 новых интерфейса + 4 реализации + V12 миграция + UI = большой PR (план разбит на коммиты, см. детальный план)
 
@@ -406,7 +385,6 @@ UPDATE schema_info SET value = '12' WHERE key = 'schema_version';
 ### Revit API (MCP / Jeremy Tammik)
 
 - `blog.autodesk.io/extensible-storage/` — базовый обзор ExtensibleStorage (Schema, Entity, Field, SchemaBuilder)
-- `jeremytammik.github.io/tbc/a/1198_estorage_owner_family.htm` — **Jeremy Tammik: хранение ES на `OwnerFamily` через `doc.OwnerFamily`**
 - `jeremytammik.github.io/tbc/a/0950_vc_estore_extension.htm` — паттерн Family.GetEntity + Family.SetEntity
 - `jeremytammik.github.io/tbc/a/0587_extensible_storage_map.htm` — `IDictionary` vs `Dictionary` для Map fields
 - `twentytwo.space/2021/02/27/revit-api-extensible-storage-schema/` — простой пример с Create/Read Schema
@@ -419,8 +397,8 @@ UPDATE schema_info SET value = '12' WHERE key = 'schema_version';
 
 ### Известные баги
 
-- `REVIT-237190` — Family Upgrade Freeze в Revit 2023 < 2023.1.8, 2025 < 2025.4.3, 2026 < 2026.3. Workaround: `Marshal.ReleaseComObject(familyDoc)`.
 - `REVIT-198137` — `sharedFamily` приходит как parent в `OnSharedFamilyFound` (Revit ≤ 2024.2). Не применимо к Phase 24.
+- `REVIT-237190` (Family Upgrade Freeze) — отвергнут как источник workaround, так как Phase 24 **не пишет в `.rfa` файлы** (см. §2).
 
 ## Phase 24 — статус
 

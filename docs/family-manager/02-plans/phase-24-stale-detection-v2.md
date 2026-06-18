@@ -9,7 +9,7 @@
 
 ## 1. Обзор
 
-Реализация on-demand stale detection через маркер версии в `.rfa` файле (ExtensibleStorage Schema `SmartCon.FamilyVersion.v1`). Заменяет сломанную pull-based логику (баг: `Tree.cs:143 == LoadPlace.cs:105` → stale никогда не показывался).
+Реализация on-demand stale detection через маркер версии на `Family` элементе в проекте Revit (ExtensibleStorage Schema `SmartCon_FamilyVersion_v1`). Заменяет сломанную pull-based логику (баг: `Tree.cs:143 == LoadPlace.cs:105` → stale никогда не показывался).
 
 **Ключевые решения:** см. [ADR-030 §Решение](../../adr/030-phase-24-stale-detection-v2.md).
 
@@ -137,9 +137,7 @@ namespace SmartCon.Core.Services.Interfaces;
 public interface IFamilyVersionStore
 {
     FamilyVersion? ReadFromLoadedFamily(Document doc, ElementId familyId);
-    Task<FamilyVersion?> ReadFromRfaFileAsync(string rfaFilePath, CancellationToken ct);
     void WriteToLoadedFamily(Document doc, ElementId familyId, FamilyVersion version);
-    Task WriteToRfaFileAsync(string rfaFilePath, FamilyVersion version, CancellationToken ct);
     IReadOnlyDictionary<ElementId, FamilyVersion?> ReadManyFromDocument(
         Document doc, IEnumerable<ElementId> familyIds);
 }
@@ -227,7 +225,7 @@ internal static class FamilyVersionSchema
     // ⚠️ ЗАФИКСИРОВАТЬ ОДИН РАЗ при первом коммите. Смена GUID = потеря данных.
     public static readonly Guid SchemaGuid = new("<ЗАФИКСИРОВАННЫЙ-GUID>");
 
-    public const string SchemaName = "SmartCon.FamilyVersion.v1";
+    public const string SchemaName = "SmartCon_FamilyVersion_v1";
     public const string VendorId = "AGKSMARTCON";  // 9 chars, ≥4 required by API
 
     public const string FieldSchemaVersion = "SchemaVersion";
@@ -243,7 +241,7 @@ internal static class FamilyVersionSchema
         using var builder = new SchemaBuilder(SchemaGuid);
         builder.SetVendorId(VendorId);
         builder.SetSchemaName(SchemaName);
-        builder.SetDocumentation("Family version marker for SmartCon FamilyManager (Phase 24, ADR-030). Stored on Family element / .rfa file.");
+        builder.SetDocumentation("Family version marker for SmartCon FamilyManager (Phase 24, ADR-030). Stored on Family element in project.");
 
         // Public+Public — workaround для .addin VendorId="AGK" (3 chars < 4 required).
         // Защита через уникальный GUID. (Аналогично FittingMappingSchema.cs:57-66.)
@@ -262,7 +260,7 @@ internal static class FamilyVersionSchema
 
 ### 3.11 `src/SmartCon.Revit/FamilyManager/RevitFamilyVersionStore.cs` (C5)
 
-**Зависимости:** `ITransactionService`, `IRevitContext`
+**Зависимости:** `ITransactionService`
 
 **Ключевые методы:**
 
@@ -270,12 +268,10 @@ internal static class FamilyVersionSchema
 public sealed class RevitFamilyVersionStore : IFamilyVersionStore
 {
     private readonly ITransactionService _tx;
-    private readonly IRevitContext _revitContext;
 
-    public RevitFamilyVersionStore(ITransactionService tx, IRevitContext revitContext)
+    public RevitFamilyVersionStore(ITransactionService tx)
     {
         _tx = tx;
-        _revitContext = revitContext;
     }
 
     public FamilyVersion? ReadFromLoadedFamily(Document doc, ElementId familyId)
@@ -322,50 +318,6 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
             entity.Set(FamilyVersionSchema.FieldSourceRevitVersion, version.SourceRevitVersion);
             family.SetEntity(entity);
         });
-    }
-
-    public async Task WriteToRfaFileAsync(string rfaFilePath, FamilyVersion version, CancellationToken ct)
-    {
-        var app = _revitContext.GetDocument().Application;
-        Document? familyDoc = null;
-        try
-        {
-            familyDoc = app.OpenDocumentFile(rfaFilePath);
-            if (familyDoc is null || !familyDoc.IsFamilyDocument)
-            {
-                using var _scope = SmartConLogger.BeginScope(
-                    "StaleDetection", ("Method", nameof(WriteToRfaFileAsync)));
-                SmartConLogger.Warn(
-                    $"{Path.GetFileName(rfaFilePath)}: not a family document. [Action: skip]");
-                return;
-            }
-
-            // I-03b: family document — прямая Transaction
-            using (var familyTx = new Transaction(familyDoc, "SmartCon: Write FamilyVersion"))
-            {
-                familyTx.Start();
-                var family = familyDoc.OwnerFamily;
-                var schema = FamilyVersionSchema.GetOrCreate();
-                using var entity = new Entity(schema);
-                entity.Set(FamilyVersionSchema.FieldSchemaVersion, FamilyVersion.CurrentSchemaVersion);
-                entity.Set(FamilyVersionSchema.FieldCatalogItemId, version.CatalogItemId);
-                entity.Set(FamilyVersionSchema.FieldVersionLabel, version.VersionLabel);
-                entity.Set(FamilyVersionSchema.FieldLoadedAtUtc, version.LoadedAtUtc.ToString("o"));
-                entity.Set(FamilyVersionSchema.FieldSourceRevitVersion, version.SourceRevitVersion);
-                family.SetEntity(entity);
-                familyTx.Commit();
-            }
-
-            familyDoc.Save();
-        }
-        finally
-        {
-            if (familyDoc != null)
-            {
-                try { familyDoc.Close(true); } catch { }
-                try { Marshal.ReleaseComObject(familyDoc); } catch { }  // REVIT-237190
-            }
-        }
     }
 
     public IReadOnlyDictionary<ElementId, FamilyVersion?> ReadManyFromDocument(
@@ -1194,7 +1146,7 @@ internal sealed class InMemoryStaleDetector : IStaleDetector
 |---|---|---|
 | I-01 | Revit API однопоточен | `IFamilyManagerAwaitableEvent.RaiseAsync` для всех `doc.GetElement`, `Family.GetEntity` |
 | I-03 | Транзакции через `ITransactionService` | `RevitFamilyVersionStore.WriteToLoadedFamily` использует `_tx.RunInTransaction` |
-| I-03b | Family document — `new Transaction(familyDoc, ...)` | `RevitFamilyVersionStore.WriteToRfaFileAsync` использует `new Transaction(familyDoc, ...)` напрямую |
+| I-03b | Family document — `new Transaction(familyDoc, ...)` | **Не используется в Phase 24** (маркер пишется только в проектный документ; см. ADR-030 §2) |
 | I-05 | Не хранить `Element`/`Connector` между транзакциями | Только `ElementId` в Core (`LoadPlace.cs` хранит `ElementId` в ES, не сам `Family`) |
 | I-07 | IFailuresPreprocessor | Через существующий `ITransactionService` (уже подключён) |
 | I-09 | Core без Revit API вызовов | Все 4 интерфейса и модели — pure C#. `Document`/`ElementId` — как opaque parameters |

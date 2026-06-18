@@ -659,7 +659,7 @@ public interface IFamilyManagerAwaitableEvent
 
 ## IFamilyVersionStore
 
-CRUD для ES-маркера `SmartCon.FamilyVersion.v1` (ADR-030). Маркер хранится на `Family` для загруженных семейств и на `OwnerFamily` для открытого `.rfa`. Все методы синхронные — вызываются из Revit main thread (I-01) внутри транзакции `ITransactionService` (I-03). Исключение: `WriteToRfaFileAsync` использует прямой `new Transaction(familyDoc, ...)` (I-03b exception для family-документов).
+CRUD для ES-маркера `SmartCon_FamilyVersion_v1` (ADR-030). Маркер хранится на `Family` для загруженных семейств в активном проекте. Все методы синхронные — вызываются из Revit main thread (I-01), запись обёрнута в транзакцию `ITransactionService` (I-03).
 
 **Файл:** `IFamilyVersionStore.cs`
 
@@ -667,9 +667,7 @@ CRUD для ES-маркера `SmartCon.FamilyVersion.v1` (ADR-030). Марке�
 public interface IFamilyVersionStore
 {
     FamilyVersion? ReadFromLoadedFamily(Document doc, ElementId familyId);
-    Task<FamilyVersion?> ReadFromRfaFileAsync(string rfaFilePath, CancellationToken ct);
     void WriteToLoadedFamily(Document doc, ElementId familyId, FamilyVersion version);
-    Task WriteToRfaFileAsync(string rfaFilePath, FamilyVersion version, CancellationToken ct);
     IReadOnlyDictionary<ElementId, FamilyVersion?> ReadManyFromDocument(
         Document doc, IEnumerable<ElementId> familyIds);
 }
@@ -679,7 +677,7 @@ public interface IFamilyVersionStore
 
 ## IStaleDetector
 
-On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69). Все проверки читают ES-маркер через `IFamilyVersionStore` (без I/O на `.rfa` файлы). `CheckCategoryAsync` обновляет сессионный снимок, `CheckFamilyAsync` — нет. `GetCachedSnapshot` / `InvalidateCache` — сессионный кеш (D-10, инвалидируется при Load/Update/Edit/смене БД).
+On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69). Все проверки читают ES-маркер через `IFamilyVersionStore.ReadManyFromDocument` (batch, in-memory). `CheckCategoryAsync` обновляет сессионный снимок, `CheckFamilyAsync` — нет. `GetCachedSnapshot` / `InvalidateCache` — сессионный кеш (D-10, инвалидируется при Load/Update/Edit/смене БД).
 
 **Файл:** `IStaleDetector.cs`
 
