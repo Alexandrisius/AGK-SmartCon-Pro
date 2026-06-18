@@ -35,3 +35,8 @@
 | [022](022-familymanager-rbac.md) | FamilyManager RBAC — Role-Based Access Control для локальных каталогов | accepted | 2026-05-16 |
 | [023](023-familymanager-type-centric-workflow.md) | FamilyManager Type-Centric Workflow — Type Catalog, virtual types, per-type loading | accepted | 2026-06-04 |
 | [024](024-active-family-import-preparer.md) | Active Family Import Preparer — Sidecar (.txt) preservation + new preparer/locator/classifier/cleanup services | accepted | 2026-06-05 |
+| [025](025-refactoring-migration-backlog.md) | Refactoring Migration Backlog | accepted | 2026-06-09 |
+| [026](026-logging-migration.md) | Logging Migration Plan (Phase 0 + Phase 1) | accepted | 2026-06-09 |
+| [027](027-placed-families-v2.md) | Placed Families v2 | accepted | 2026-06-12 |
+| [028](028-di-readiness.md) | DI Readiness | accepted | 2026-06-13 |
+| [029](029-shared-nested-load-dialog.md) | Shared nested families — user dialog for load mode (Issue #67) | accepted | 2026-06-17 |

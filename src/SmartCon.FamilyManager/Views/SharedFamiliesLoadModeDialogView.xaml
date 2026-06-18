@@ -1,0 +1,107 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.SharedFamiliesLoadModeDialogView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        Title="{Binding Title}"
+        Width="500" SizeToContent="Height"
+        MinWidth="460"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Margin="0,0,0,12"
+                   Text="{loc:Loc FM_LoadShared_Header}"
+                   FontSize="14" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+        <Border Grid.Row="1" Padding="10,8" Margin="0,0,0,12"
+                Background="#FFF8E1"
+                BorderBrush="{DynamicResource WarningBrush}"
+                BorderThickness="1" CornerRadius="4">
+            <TextBlock Text="{Binding Message}"
+                       TextWrapping="Wrap" FontSize="12"
+                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+        </Border>
+
+        <TextBlock Grid.Row="2" Margin="0,0,0,12"
+                   FontFamily="Consolas, Cascadia Code, Segoe UI Mono, Courier New"
+                   FontSize="13" FontWeight="SemiBold"
+                   Foreground="{DynamicResource AccentBrush}"
+                   Text="{Binding SharedFamilyName}"
+                   TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="3" Margin="0,0,0,12">
+            <RadioButton Content="{loc:Loc FM_LoadShared_UseProject}"
+                         IsChecked="{Binding IsUseProjectSelected, Mode=TwoWay}"
+                         FontSize="12"
+                         Margin="0,0,0,8"
+                         Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <RadioButton Content="{loc:Loc FM_LoadShared_OverwriteParams}"
+                         IsChecked="{Binding IsOverwriteParamsSelected, Mode=TwoWay}"
+                         FontSize="12"
+                         Margin="0,0,0,8"
+                         Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <RadioButton Content="{loc:Loc FM_LoadShared_OverwriteAll}"
+                         IsChecked="{Binding IsOverwriteAllSelected, Mode=TwoWay}"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextPrimaryBrush}"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="4" Margin="26,0,0,8" FontSize="11"
+                   TextWrapping="Wrap" MaxWidth="440"
+                   Foreground="{DynamicResource TextSecondaryBrush}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Text" Value="{loc:Loc FM_LoadShared_UseProjectHint}"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsOverwriteParamsSelected}" Value="True">
+                            <Setter Property="Text" Value="{loc:Loc FM_LoadShared_OverwriteParamsHint}"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsOverwriteAllSelected}" Value="True">
+                            <Setter Property="Text" Value="{loc:Loc FM_LoadShared_OverwriteAllHint}"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <TextBlock Grid.Row="5" Margin="0,0,0,12" FontSize="11"
+                   TextWrapping="Wrap" MaxWidth="440"
+                   Foreground="{DynamicResource WarningBrush}"
+                   Text="{Binding InUseWarning}"
+                   Visibility="{Binding IsFamilyInUse, Converter={StaticResource BoolToVis}}"/>
+
+        <StackPanel Grid.Row="6" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="{loc:Loc FM_LoadShared_Apply}"
+                    Command="{Binding ApplyCommand}"
+                    Width="100" Height="28"
+                    IsDefault="True"
+                    Style="{DynamicResource PrimaryButton}"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

@@ -23,6 +23,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly Action<string>? _onError;
     private readonly Action<string>? _onSuccess;
     private readonly Action<string>? _onStatusMessage;
+    private readonly Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? _onSharedDecision;
 
     public FamilyPlacementDropHandler(
         IFamilySearchService searchService,
@@ -35,7 +36,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         Action? onCompleted = null,
         Action<string>? onError = null,
         Action<string>? onSuccess = null,
-        Action<string>? onStatusMessage = null)
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null)
     {
         _searchService = searchService;
         _fileResolver = fileResolver;
@@ -48,6 +50,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _onError = onError;
         _onSuccess = onSuccess;
         _onStatusMessage = onStatusMessage;
+        _onSharedDecision = onSharedDecision;
     }
 
     public void Execute(UIDocument document, object data)
@@ -96,11 +99,21 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                 if (dragData.IsVirtual)
                 {
                     var options = FamilyLoadOptions.Default with { PreferredName = familyName };
-                    result = _loadService.LoadFamilyAsync(resolved, options, _onStatusMessage, CancellationToken.None).GetAwaiter().GetResult();
+                    result = _loadService.LoadFamilyAsync(
+                        resolved,
+                        options,
+                        onStatusMessage: _onStatusMessage,
+                        onSharedDecision: _onSharedDecision,
+                        ct: CancellationToken.None).GetAwaiter().GetResult();
                 }
                 else
                 {
-                    result = _loadService.LoadFamilySymbolAsync(resolved.AbsolutePath, typeName, _onStatusMessage, CancellationToken.None).GetAwaiter().GetResult();
+                    result = _loadService.LoadFamilySymbolAsync(
+                        resolved.AbsolutePath,
+                        typeName,
+                        onStatusMessage: _onStatusMessage,
+                        onSharedDecision: _onSharedDecision,
+                        ct: CancellationToken.None).GetAwaiter().GetResult();
                 }
 
                 if (!result.Success)

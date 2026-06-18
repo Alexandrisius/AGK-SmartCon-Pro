@@ -195,17 +195,31 @@ public interface IFamilyAssetService
 Загрузка семейства в проект Revit. **Не содержит `Document` в параметрах** — Document получается через `IRevitContext` в реализации.
 **Вызывать только из ExternalEvent handler (I-01).**
 
+С версии Issue #67 поддерживает опциональный callback `onSharedDecision` для интерактивного выбора режима загрузки общих вложенных семейств (shared nested). Если callback не передан, используется безопасный дефолт `UseProject` (back-compat).
+
 **Файл:** `IFamilyLoadService.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyLoadService.cs`
 
 ```csharp
 public interface IFamilyLoadService
 {
-    Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, Action<string>? onStatusMessage = null, CancellationToken ct = default);
+    Task<FamilyLoadResult> LoadFamilyAsync(
+        FamilyResolvedFile file, FamilyLoadOptions options,
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        CancellationToken ct = default);
 
-    Task<FamilyLoadResult> LoadFamilySymbolAsync(string filePath, string typeName, Action<string>? onStatusMessage = null, CancellationToken ct = default);
+    Task<FamilyLoadResult> LoadFamilySymbolAsync(
+        string filePath, string typeName,
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        CancellationToken ct = default);
 }
 ```
+
+`onSharedDecision` вызывается один раз для каждого конфликтующего shared nested
+(когда Revit сообщает `OnSharedFamilyFound`). Должен блокировать вызывающий поток
+(Revit main thread) до ответа пользователя через WPF `ShowDialog`.
 
 ---
 
@@ -238,8 +252,16 @@ public interface IFamilyPlacementDragService
 {
     void StartPlacementDrag(FamilyPlacementDragData data);
     event Action? PlacementCompleted;
+    event Action<string>? PlacementFailed;
+    event Action<string>? PlacementSucceeded;
+    event Action<string>? PlacementStatusMessage;
+    event Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? SharedFamilyDecisionRequested;
 }
 ```
+
+`SharedFamilyDecisionRequested` (issue #67) срабатывает когда drop-handler загружает
+семейство с конфликтующим shared nested. Подписчик (FamilyManagerMainViewModel)
+обязан вызвать WPF-диалог на Revit main thread и вернуть выбор пользователя.
 
 ---
 
@@ -464,8 +486,14 @@ public interface IFamilyManagerDialogService
     string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null);
     bool? ShowPresetEditor(object viewModel);
     bool? ShowAttributeLibrary(object viewModel);
+    SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request);
 }
 ```
+
+`ShowSharedFamiliesLoadModeDialog` показывает диалог с 3 radio-button (issue #67)
+и возвращает выбор пользователя. **Должен вызываться на Revit main thread.**
+При отмене пользователем возвращает `SharedFamiliesLoadChoice.UseProject` как
+безопасный дефолт.
 
 ---
 

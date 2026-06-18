@@ -368,7 +368,8 @@ public sealed class CtcFamilyWriter(
     {
         public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
         {
-            overwriteParameterValues = true;
+            SmartConLogger.Info($"CTC LoadFamily.OnFamilyFound: familyInUse={familyInUse}, keep user params");
+            overwriteParameterValues = false;
             return true;
         }
 
@@ -376,8 +377,10 @@ public sealed class CtcFamilyWriter(
             Autodesk.Revit.DB.Family sharedFamily, bool familyInUse,
             out FamilySource source, out bool overwriteParameterValues)
         {
-            source = FamilySource.Family;
-            overwriteParameterValues = true;
+            var familyName = sharedFamily?.Name ?? "<null>";
+            SmartConLogger.Info($"CTC LoadFamily.OnSharedFamilyFound: '{familyName}', familyInUse={familyInUse}, keep project version");
+            source = FamilySource.Project;
+            overwriteParameterValues = false;
             return true;
         }
     }
