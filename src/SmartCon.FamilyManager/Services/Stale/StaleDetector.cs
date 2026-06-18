@@ -57,10 +57,6 @@ internal sealed class StaleDetector : IStaleDetector
         ElementId familyId,
         CancellationToken ct)
     {
-        SmartConLogger.Debug(
-            $"StaleDetector.CheckFamilyAsync: ENTER catalogItemId='{catalogItemId}', " +
-            $"familyName='{familyName}', doc.IsNull={doc is null}, " +
-            $"familyId.IsNull={familyId is null}");
         using var _scope = SmartConLogger.BeginScope(
             "StaleDetection",
             ("Method", nameof(CheckFamilyAsync)),
@@ -73,9 +69,6 @@ internal sealed class StaleDetector : IStaleDetector
         if (doc is null) throw new ArgumentNullException(nameof(doc));
         if (familyId is null) throw new ArgumentNullException(nameof(familyId));
 #endif
-
-        SmartConLogger.Debug(
-            $"StaleDetector.CheckFamilyAsync: schema lookup starting for '{catalogItemId}'.");
 
         var catalogItem = await _catalog.GetItemAsync(catalogItemId, ct).ConfigureAwait(false);
         StaleCheckResult result;
@@ -130,9 +123,6 @@ internal sealed class StaleDetector : IStaleDetector
         var scopeCategoryIds = categoryIds is null
             ? "<all>"
             : string.Join(",", categoryIds);
-        SmartConLogger.Debug(
-            $"StaleDetector.CheckCategoryAsync: ENTER categoryIds=[{scopeCategoryIds}], " +
-            $"doc.IsNull={doc is null}");
         using var _scope = SmartConLogger.BeginScope(
             "StaleDetection",
             ("Method", nameof(CheckCategoryAsync)),

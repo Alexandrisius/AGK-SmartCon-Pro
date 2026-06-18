@@ -46,12 +46,7 @@ internal static class FamilyVersionSchema
     public static Schema GetOrCreate()
     {
         var existing = Schema.Lookup(SchemaGuid);
-        if (existing is not null)
-        {
-            SmartConLogger.Debug(
-                $"FamilyVersionSchema.GetOrCreate: found existing schema {SchemaName} (Guid={SchemaGuid}).");
-            return existing;
-        }
+        if (existing is not null) return existing;
         SmartConLogger.Info(
             $"FamilyVersionSchema.GetOrCreate: schema {SchemaName} (Guid={SchemaGuid}) not found, " +
             "creating new one.");

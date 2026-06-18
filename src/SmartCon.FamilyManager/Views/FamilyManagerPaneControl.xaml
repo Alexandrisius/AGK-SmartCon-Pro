@@ -502,16 +502,19 @@
                         <MenuItem Header="{loc:Loc FM_UpdateKeepParams}"
                                   Command="{Binding UpdateCategoryKeepParamsCommand}"
                                   CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
                                   Style="{StaticResource ModernMenuItem}" />
                         <MenuItem Header="{loc:Loc FM_UpdateOverwriteParams}"
                                   Command="{Binding UpdateCategoryOverwriteParamsCommand}"
                                   CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
                                   Style="{StaticResource ModernMenuItem}" />
                     </MenuItem>
 
                     <MenuItem Header="{loc:Loc FM_Check}"
                               Command="{Binding CheckCategoryCommand}"
                               CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                              behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
                               Style="{StaticResource ModernMenuItem}" />
                 </ContextMenu>
 
@@ -566,6 +569,7 @@
                     <MenuItem Header="{loc:Loc FM_Check}"
                               Command="{Binding CheckFamilyCommand}"
                               CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                              behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
                               Style="{StaticResource ModernMenuItem}" />
                     <MenuItem Header="{loc:Loc FM_Properties}"
                               Command="{Binding OpenPropertiesCommand}"

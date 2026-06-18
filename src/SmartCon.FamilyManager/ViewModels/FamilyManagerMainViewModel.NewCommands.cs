@@ -22,9 +22,6 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (category is null) return;
         IsStaleCheckInProgress = true;
-        SmartConLogger.Debug(
-            $"CheckCategoryAsync START: IsStaleCheckInProgress=true (was false). " +
-            $"CategoryId={category.CategoryId}");
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
         try
         {
@@ -96,12 +93,7 @@ public sealed partial class FamilyManagerMainViewModel
 
     private bool CanCheckCategory(CategoryNodeViewModel? category)
     {
-        var result = category != null && !IsStaleCheckInProgress;
-        SmartConLogger.Debug(
-            $"CanCheckCategory: result={result}, category={category?.CategoryId ?? "<null>"}, " +
-            $"paramType={category?.GetType().Name ?? "<null>"}, " +
-            $"IsStaleCheckInProgress={IsStaleCheckInProgress}");
-        return result;
+        return category != null && !IsStaleCheckInProgress;
     }
 
     [RelayCommand(CanExecute = nameof(CanCheckFamily))]
@@ -109,9 +101,6 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (family is null) return;
         IsStaleCheckInProgress = true;
-        SmartConLogger.Debug(
-            $"CheckFamilyAsync START: IsStaleCheckInProgress=true (was false). " +
-            $"CatalogItemId={family.CatalogItemId}");
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
         try
         {
@@ -158,21 +147,13 @@ public sealed partial class FamilyManagerMainViewModel
         finally
         {
             IsStaleCheckInProgress = false;
-            SmartConLogger.Debug("CheckFamilyAsync END: IsStaleCheckInProgress=false (finally)");
             StaleCheckMessage = null;
             NotifyCheckCommands();
         }
     }
 
-    private bool CanCheckFamily(FamilyLeafNodeViewModel? family)
-    {
-        var result = family != null && !IsStaleCheckInProgress;
-        SmartConLogger.Debug(
-            $"CanCheckFamily: result={result}, family={family?.CatalogItemId ?? "<null>"}, " +
-            $"paramType={family?.GetType().Name ?? "<null>"}, " +
-            $"IsStaleCheckInProgress={IsStaleCheckInProgress}");
-        return result;
-    }
+    private bool CanCheckFamily(FamilyLeafNodeViewModel? family) =>
+        family != null && !IsStaleCheckInProgress;
 
     [RelayCommand(CanExecute = nameof(CanUpdateCategoryOverwrite))]
     private Task UpdateCategoryOverwriteParamsAsync(CategoryNodeViewModel? category)
@@ -282,7 +263,6 @@ public sealed partial class FamilyManagerMainViewModel
         finally
         {
             IsStaleCheckInProgress = false;
-            SmartConLogger.Debug("UpdateCategoryStaleAsync END: IsStaleCheckInProgress=false (finally)");
             StaleCheckMessage = null;
             NotifyCheckCommands();
         }
