@@ -8,8 +8,10 @@ namespace SmartCon.FamilyManager.Services.Stale;
 /// <summary>
 /// On-demand stale detector (ADR-030, Issue #69). Reads <see cref="FamilyVersion"/>
 /// markers from the active project via <see cref="IFamilyVersionStore"/> and compares
-/// them with the catalog. Maintains a session-scoped cache invalidated on
-/// Load/Update/Edit/DB-switch (D-10).
+/// them with the catalog. Maintains a session-scoped cache that is **merged** on each
+/// <c>Check</c> (other categories are preserved) and **pruned** on successful Update
+/// (only the updated families are dropped). Edit / DB-switch invalidate the whole cache
+/// (D-10).
 /// </summary>
 internal sealed class StaleDetector : IStaleDetector
 {
@@ -69,32 +71,43 @@ internal sealed class StaleDetector : IStaleDetector
 #endif
 
         var catalogItem = await _catalog.GetItemAsync(catalogItemId, ct).ConfigureAwait(false);
+        StaleCheckResult result;
         if (catalogItem is null)
         {
-            return new StaleCheckResult(catalogItemId, familyName, null, null, true, StaleReason.NotInCatalog);
+            result = new StaleCheckResult(catalogItemId, familyName, null, null, true, StaleReason.NotInCatalog);
         }
-
-        // ES read must run on Revit main thread (I-01). Use RaiseAsync to marshal.
-        var loaded = await _awaitable.RaiseAsync(
-            _ => _store.ReadFromLoadedFamily(doc, familyId),
-            ct).ConfigureAwait(true);
-
-        if (loaded is null)
+        else
         {
-            return new StaleCheckResult(
-                catalogItemId, familyName,
-                catalogItem.CurrentVersionLabel, null,
-                IsStale: true, Reason: StaleReason.NoEntityStorage);
+            // ES read must run on Revit main thread (I-01). Use RaiseAsync to marshal.
+            var loaded = await _awaitable.RaiseAsync(
+                _ => _store.ReadFromLoadedFamily(doc, familyId),
+                ct).ConfigureAwait(true);
+
+            if (loaded is null)
+            {
+                result = new StaleCheckResult(
+                    catalogItemId, familyName,
+                    catalogItem.CurrentVersionLabel, null,
+                    IsStale: true, Reason: StaleReason.NoEntityStorage);
+            }
+            else
+            {
+                var targetRevit = ResolveTargetRevit();
+                var reason = ComputeReason(loaded, catalogItem, targetRevit);
+                result = new StaleCheckResult(
+                    catalogItemId, familyName,
+                    catalogItem.CurrentVersionLabel, loaded.VersionLabel,
+                    IsStale: reason != StaleReason.None, Reason: reason);
+            }
         }
 
-        var targetRevit = ResolveTargetRevit();
-        var reason = ComputeReason(loaded, catalogItem, targetRevit);
-        var isStale = reason != StaleReason.None;
-
-        return new StaleCheckResult(
-            catalogItemId, familyName,
-            catalogItem.CurrentVersionLabel, loaded.VersionLabel,
-            isStale, reason);
+        // Single-family check updates the snapshot entry for this family only,
+        // leaving all other entries intact.
+        lock (_cacheLock)
+        {
+            _cachedSnapshot = StaleSnapshotLogic.MergeInto(_cachedSnapshot, new[] { result }, _clock.UtcNow);
+        }
+        return result;
     }
 
     public async Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
@@ -206,11 +219,11 @@ internal sealed class StaleDetector : IStaleDetector
             }
         }
 
-        // 6) Update session cache.
-        var snapshot = new FamilyStaleSnapshot(
-            results.ToDictionary(r => r.CatalogItemId, StringComparer.Ordinal),
-            _clock.UtcNow);
-        lock (_cacheLock) _cachedSnapshot = snapshot;
+        // 6) Merge into session cache: existing entries for OTHER families are preserved.
+        lock (_cacheLock)
+        {
+            _cachedSnapshot = StaleSnapshotLogic.MergeInto(_cachedSnapshot, results, _clock.UtcNow);
+        }
 
         return results;
     }
@@ -218,6 +231,21 @@ internal sealed class StaleDetector : IStaleDetector
     public FamilyStaleSnapshot? GetCachedSnapshot()
     {
         lock (_cacheLock) return _cachedSnapshot;
+    }
+
+    public void MarkUpdated(IReadOnlyCollection<string> catalogItemIds)
+    {
+        if (catalogItemIds is null || catalogItemIds.Count == 0) return;
+        lock (_cacheLock)
+        {
+            if (_cachedSnapshot is null) return;
+            var updated = StaleSnapshotLogic.RemoveFrom(_cachedSnapshot, catalogItemIds, _clock.UtcNow);
+            if (ReferenceEquals(updated, _cachedSnapshot)) return;
+            _cachedSnapshot = updated;
+            SmartConLogger.Info(
+                $"MarkUpdated: removed {catalogItemIds.Count} requested entries from snapshot. " +
+                $"Snapshot size: {_cachedSnapshot.Results.Count}.");
+        }
     }
 
     public void InvalidateCache()

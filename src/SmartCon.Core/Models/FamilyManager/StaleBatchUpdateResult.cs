@@ -6,11 +6,17 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="TotalRequested">Total number of catalog items requested.</param>
 /// <param name="SuccessCount">Number of items successfully updated.</param>
 /// <param name="FailedCount">Number of items that failed.</param>
+/// <param name="SuccessCatalogItemIds">
+/// Catalog item IDs that were successfully updated. Used by the caller to
+/// remove the corresponding entries from the stale snapshot (so the next
+/// <c>Check</c> re-evaluates them from scratch).
+/// </param>
 /// <param name="FailedCatalogItemIds">Catalog item IDs that failed (for retry).</param>
 public sealed record StaleBatchUpdateResult(
     int TotalRequested,
     int SuccessCount,
     int FailedCount,
+    IReadOnlyList<string> SuccessCatalogItemIds,
     IReadOnlyList<string> FailedCatalogItemIds);
 
 /// <summary>

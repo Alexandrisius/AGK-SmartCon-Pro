@@ -92,7 +92,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 #endif
         if (request.CatalogItemIds is null || request.CatalogItemIds.Count == 0)
         {
-            return new StaleBatchUpdateResult(0, 0, 0, []);
+            return new StaleBatchUpdateResult(0, 0, 0, [], []);
         }
 
         using var _scope = SmartConLogger.BeginScope(
@@ -101,7 +101,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             ("Count", request.CatalogItemIds.Count));
 
         var total = request.CatalogItemIds.Count;
-        var success = 0;
+        var successIds = new List<string>();
         var failedIds = new List<string>();
 
         for (var i = 0; i < total; i++)
@@ -111,13 +111,18 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
             var (ok, familyName) = await UpdateFamilyCoreAsync(id, request.OverwriteParameterValues, ct)
                 .ConfigureAwait(true);
-            if (ok) success++;
+            if (ok) successIds.Add(id);
             else failedIds.Add(id);
 
             progress?.Report(new StaleBatchUpdateProgress(i + 1, total, familyName ?? id));
         }
 
-        return new StaleBatchUpdateResult(total, success, failedIds.Count, failedIds);
+        return new StaleBatchUpdateResult(
+            TotalRequested: total,
+            SuccessCount: successIds.Count,
+            FailedCount: failedIds.Count,
+            SuccessCatalogItemIds: successIds,
+            FailedCatalogItemIds: failedIds);
     }
 
     private async Task<(bool success, string? familyName)> UpdateFamilyCoreAsync(

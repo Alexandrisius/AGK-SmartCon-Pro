@@ -12,7 +12,7 @@ public interface IStaleDetector
 {
     /// <summary>
     /// Check a single family against the catalog. Returns a <see cref="StaleCheckResult"/>.
-    /// Does not modify the session snapshot.
+    /// Updates the session snapshot for this family (overwrite, not merge).
     /// </summary>
     Task<StaleCheckResult> CheckFamilyAsync(
         string catalogItemId,
@@ -22,7 +22,9 @@ public interface IStaleDetector
         CancellationToken ct);
 
     /// <summary>
-    /// Check every family in the given categories. Updates the session snapshot on success.
+    /// Check every family in the given categories. Merges results into the session snapshot
+    /// (existing entries for other categories are preserved; entries for checked families
+    /// are overwritten with the fresh result).
     /// </summary>
     /// <param name="categoryIds">
     /// Flat list of category IDs to check. The caller is responsible for expanding the
@@ -48,8 +50,17 @@ public interface IStaleDetector
     FamilyStaleSnapshot? GetCachedSnapshot();
 
     /// <summary>
+    /// Removes the given catalog item IDs from the snapshot. Used after a successful
+    /// Update so the next <c>Check</c> re-evaluates them from scratch instead of
+    /// showing the stale marker indefinitely.
+    /// </summary>
+    void MarkUpdated(IReadOnlyCollection<string> catalogItemIds);
+
+    /// <summary>
     /// Clears the session-scoped snapshot. Called by the host after
-    /// Load/Update/Edit/DB-switch operations (D-10).
+    /// Edit / DB-switch operations (D-10). Use <see cref="MarkUpdated"/>
+    /// for individual items that were just updated — that keeps the rest
+    /// of the snapshot intact.
     /// </summary>
     void InvalidateCache();
 }

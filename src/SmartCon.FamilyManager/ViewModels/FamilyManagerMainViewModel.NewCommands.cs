@@ -127,7 +127,8 @@ public sealed partial class FamilyManagerMainViewModel
 
             family.IsStale = result.IsStale;
             family.StaleReason = result.Reason;
-            _staleDetector.InvalidateCache();
+            // Note: CheckFamilyAsync already updates the snapshot for this family only;
+            // no InvalidateCache — other categories' stale markers must stay intact.
 
             StatusMessage = result.IsStale
                 ? $"«{family.DisplayName}»: устарело — {result.Reason}"
@@ -224,7 +225,10 @@ public sealed partial class FamilyManagerMainViewModel
                 $"Batch update: {result.SuccessCount}/{result.TotalRequested} succeeded. " +
                 $"Failed: [{string.Join(", ", result.FailedCatalogItemIds)}]");
 
-            _staleDetector.InvalidateCache();
+            // Remove only the successfully updated items from the snapshot so the
+            // next Check re-evaluates them from scratch. Other categories' markers
+            // (and the families that FAILED to update) stay intact.
+            _staleDetector.MarkUpdated(result.SuccessCatalogItemIds);
             await LoadTreeAsync().ConfigureAwait(true);
         }
         catch (Exception ex)

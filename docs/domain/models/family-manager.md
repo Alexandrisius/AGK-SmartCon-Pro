@@ -1041,3 +1041,32 @@ public sealed record CategoryStaleStats(bool HasStale, int StaleCount)
 - `StaleCount` — количество stale items **напрямую** в этой категории (не считая подкатегории — это encoded в `HasStale` родителя).
 - `Empty` — дефолт для категории без stale items (используется в `AggregateByCategory`).
 
+---
+
+## StaleSnapshotLogic
+
+Pure static helper для merge / prune snapshot (ADR-030 Phase 24, fix-merge-snapshot bug). Вынесен в Core чтобы unit-тесты могли проверить логику merge без поднятия Revit API.
+
+**Файл:** `StaleSnapshotLogic.cs` (в `SmartCon.Core/Services/Interfaces/`)
+
+```csharp
+public static class StaleSnapshotLogic
+{
+    public static FamilyStaleSnapshot MergeInto(
+        FamilyStaleSnapshot? existing,
+        IReadOnlyList<StaleCheckResult> newResults,
+        DateTimeOffset now);
+
+    public static FamilyStaleSnapshot RemoveFrom(
+        FamilyStaleSnapshot? existing,
+        IReadOnlyCollection<string> catalogItemIds,
+        DateTimeOffset now);
+}
+```
+
+**Семантика (исправляет баг «Проверить на одной папке теряет stale на другой»):**
+
+- `MergeInto`: **добавляет/перезаписывает** entries из `newResults` в существующий snapshot. Entries для **других** catalog item IDs (других категорий) сохраняются. Это значит что `CheckCategory(catA)` затем `CheckCategory(catB)` сохраняет stale маркеры обеих категорий.
+- `RemoveFrom`: **удаляет** entries по `catalogItemIds`. Возвращает тот же snapshot instance если ничего не удалено (zero-allocation). Используется после успешного Update — stale маркер удаляется, остальные сохраняются.
+- Both methods **не мутируют** входной snapshot — создаётся новый `FamilyStaleSnapshot`.
+
