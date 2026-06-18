@@ -99,6 +99,7 @@ public sealed partial class FamilyManagerMainViewModel
         var result = category != null && !IsStaleCheckInProgress;
         SmartConLogger.Debug(
             $"CanCheckCategory: result={result}, category={category?.CategoryId ?? "<null>"}, " +
+            $"paramType={category?.GetType().Name ?? "<null>"}, " +
             $"IsStaleCheckInProgress={IsStaleCheckInProgress}");
         return result;
     }
@@ -168,6 +169,7 @@ public sealed partial class FamilyManagerMainViewModel
         var result = family != null && !IsStaleCheckInProgress;
         SmartConLogger.Debug(
             $"CanCheckFamily: result={result}, family={family?.CatalogItemId ?? "<null>"}, " +
+            $"paramType={family?.GetType().Name ?? "<null>"}, " +
             $"IsStaleCheckInProgress={IsStaleCheckInProgress}");
         return result;
     }

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using SmartCon.Core.Logging;
 
 namespace SmartCon.UI.Behaviors;
 
@@ -73,6 +74,11 @@ public static class TreeViewBehaviors
         var treeViewItem = FindAncestor<TreeViewItem>(dep);
         if (treeViewItem is null) return;
 
+        var dcType = treeViewItem.DataContext?.GetType().Name ?? "<null>";
+        SmartConLogger.Debug(
+            $"RightClickSelect: setting IsSelected=true on TreeViewItem " +
+            $"(DataContext type={dcType}, hash={treeViewItem.DataContext?.GetHashCode()}). " +
+            "This happens BEFORE ContextMenu opens.");
         treeViewItem.IsSelected = true;
         e.Handled = true;
     }
