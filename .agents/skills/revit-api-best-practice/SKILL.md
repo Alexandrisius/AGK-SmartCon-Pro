@@ -169,6 +169,34 @@ private void OpenDialog()
 **Fix:** Never log or do I/O inside `RunInTransaction`/`RunAndRollback` callbacks. Log before/after only.  
 **Details:** [Transaction Callback Freeze](references/transaction-callback-freeze.md)
 
+### WPF DockablePane Freeze in net48 — `FireAndForget` + null `Application.Current?.Dispatcher`
+
+**Affected:** Revit 2019-2024 (net48) when a `FireAndForget` (`Task.Run + ConfigureAwait(false)`) lambda updates the WPF TreeView after a save. **Does not** affect Revit 2025-2026 (net8.0-windows) because `Application.Current` is non-null there.
+
+**Symptoms:** After triggering an import (or any FireAndForget that updates the tree), the **LMB does not respond** on the tree, drag-select is broken, the freeze **resolves on right-click** until the next operation. In Revit 2025 (net8) the same code works fine.
+
+**Two-part root cause:**
+1. `Application.Current?.Dispatcher` is **null** in net48 Revit add-ins (WPF `Application` is not created; `IExternalApplication` is used instead). The `if (dispatcher is { HasShutdownStarted: false })` check is false, the `if` body silently never runs, `LoadTreeAsync` is never invoked. See [lepoco/wpfui#662](https://github.com/lepoco/wpfui/issues/662).
+2. `Task.Run + ConfigureAwait(false)` inside `FireAndForget` drops the UI `SynchronizationContext`, so even if Part 1 were fixed the `TreeNodes = ...` setter would run on a thread pool thread. Combined with double `LoadTreeAsync` around save (~15ms of main-thread work in net48), the WPF render thread falls behind and the tree appears frozen until the next right-click forces a repaint.
+
+**Fix (two rules):**
+1. **Capture the dispatcher in the VM ctor** (which runs on the UI thread):
+   ```csharp
+   _uiDispatcher = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
+   ```
+   `Dispatcher.CurrentDispatcher` from a thread-pool FireAndForget lambda is wrong — it creates a brand-new dispatcher for that thread. Capture in the ctor is the only correct way.
+2. **Marshal explicitly from FireAndForget back to the UI thread:**
+   ```csharp
+   if (!_uiDispatcher.HasShutdownStarted)
+   {
+       await _uiDispatcher.InvokeAsync(() => LoadTreeAsync());
+   }
+   ```
+
+**Plus three supporting rules:** (a) no double `LoadTreeAsync` around save — one is enough; (b) minimize `using var _measure = SmartConLogger.Measure(...)` and `Debug` on the UI thread (Rule 4 of `transaction-callback-freeze.md`); (c) don't try to "optimize" `TreeNodes = rootNodes` to `Clear() + foreach Add()` in net48 — it breaks the display.
+
+**Decision and full post-mortem:** [`docs/adr/031-fireandforget-ui-marshalling.md`](../../docs/adr/031-fireandforget-ui-marshalling.md). Implementation details, diagnostic recipe (compare net8 vs net48 logs side-by-side, look for `LoadTreeAsync: finally`), and 9 Exa sources: [`revit-wpf-compat` → `references/fireandforget-freeze-net48.md`](../../.agents/skills/revit-wpf-compat/references/fireandforget-freeze-net48.md).
+
 ### WPF Render Thread Freeze from PropertyChanged Before MFC Dialog
 
 **Affected:** WPF DockablePane with `PropertyChanged` before `ExternalEvent.Raise()` that triggers MFC family upgrade dialog  

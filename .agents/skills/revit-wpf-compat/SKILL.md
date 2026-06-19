@@ -1,6 +1,6 @@
 ---
 name: revit-wpf-compat
-description: "Net48/net8 WPF compatibility rules for Revit plugins. Use when writing WPF code, creating dialogs, showing windows, using Dispatcher, accessing Application.Current, debugging net48-only crashes in Revit add-ins, OR when a ContextMenu MenuItem is greyed out in net48 but works in net8 — see §'dotnet/wpf#4078 — MenuItem CommandParameter ignored in net48' for the documented bug and the MenuItemCommandParameterRequery workaround."
+description: "Net48/net8 WPF compatibility rules for Revit plugins. Use when writing WPF code, creating dialogs, showing windows, using Dispatcher, accessing Application.Current, debugging net48-only crashes in Revit add-ins, when the WPF DockablePane freezes after a FireAndForget import (LMB dead, RMB unfreezes), OR when a ContextMenu MenuItem is greyed out in net48 but works in net8 — see §'dotnet/wpf#4078 — MenuItem CommandParameter ignored in net48' for the documented bug and the MenuItemCommandParameterRequery workaround."
 ---
 
 # Revit WPF net48/net8 Compatibility
@@ -71,6 +71,30 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24   # net48
 
 If it compiles on R25 but crashes on R24 — it's likely one of the patterns above.
 
+## `Application.Current?.Dispatcher` is ALSO null in net48 — capture in ctor
+
+The forbidden patterns above show the **direct** `Application.Current.Dispatcher` form. The **null-conditional** form `Application.Current?.Dispatcher` looks safer but is the same bug:
+
+- In net48, `Application.Current` is null → `Application.Current?.Dispatcher` is null → any `if (dispatcher is { HasShutdownStarted: false })` check is **false** → the `if` body silently never runs.
+- In net8, `Application.Current` is non-null → the same code works → the bug never reproduces there.
+- This is a **net48-only** silent failure. The user sees a freeze (right-click unfreezes), not an exception.
+
+The fix is to **capture the dispatcher in the VM ctor** (which runs on the UI thread) and use the captured instance everywhere:
+
+```csharp
+public FamilyManagerMainViewModel(...)
+{
+    // Application.Current?.Dispatcher is null in net48; Dispatcher.CurrentDispatcher
+    // from the UI thread ctor is always reliable.
+    _uiDispatcher = System.Windows.Application.Current?.Dispatcher
+        ?? Dispatcher.CurrentDispatcher;
+}
+```
+
+This is the **only** safe pattern in net48. `Dispatcher.CurrentDispatcher` from a thread-pool `FireAndForget` lambda is wrong — it creates a brand-new dispatcher for that thread, not the UI one. Capture in the ctor.
+
+**Full case study** (FamilyManager freeze after import, 2026-06-19): [`references/fireandforget-freeze-net48.md`](references/fireandforget-freeze-net48.md) — root cause, fix, the 5 supporting rules (capture-in-ctor, explicit marshal, no double `LoadTreeAsync`, minimize `Measure`/`Debug` on UI thread, don't try `Clear() + Add()` instead of `TreeNodes = rootNodes`), and the diagnostic recipe. The decision and full post-mortem are in [`docs/adr/031-fireandforget-ui-marshalling.md`](../../docs/adr/031-fireandforget-ui-marshalling.md).
+
 ## dotnet/wpf#4078 — MenuItem CommandParameter ignored in net48
 
 **Symptoms:**
@@ -125,4 +149,5 @@ When WPF creates a `MenuItem` inside a freshly-shown `ContextMenu`, it sets the 
 ## References
 
 - `references/known-bugs.md` — detailed bug patterns with symptoms, root cause, and fixes (now includes BUG-009 for this issue)
+- `references/fireandforget-freeze-net48.md` — **`Application.Current?.Dispatcher` is also null in net48**; capture dispatcher in VM ctor; the freeze-after-import symptoms (LMB dead, RMB unfreezes, types don't appear). Decision in [`docs/adr/031-fireandforget-ui-marshalling.md`](../../docs/adr/031-fireandforget-ui-marshalling.md).
 - `smartcon-logging` skill, §"Debug.* configurations are NOT Debug" — the diagnostic `[DBG]` lines in this recipe only appear if the deployed DLL was actually built with the `DEBUG` symbol. In custom `Debug.Rxx` configurations that requires the `Directory.Build.props` block documented in that skill.
