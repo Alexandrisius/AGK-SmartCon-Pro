@@ -21,7 +21,10 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty]
     private bool _isStale;
 
-    public FamilyLeafNodeViewModel(FamilyCatalogItemRow row, bool isStale = false)
+    [ObservableProperty]
+    private StaleReason _staleReason;
+
+    public FamilyLeafNodeViewModel(FamilyCatalogItemRow row, bool isStale = false, StaleReason staleReason = StaleReason.None)
     {
         CatalogItemId = row.Id;
         CategoryId = row.CategoryId;
@@ -35,5 +38,6 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         Description = row.Description;
         FamilySource = row.FamilySource;
         _isStale = isStale;
+        _staleReason = staleReason;
     }
 }

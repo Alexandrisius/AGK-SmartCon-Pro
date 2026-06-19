@@ -60,9 +60,21 @@
 
 ## Жёсткий запрет
 
-FamilyManager не хранит каталог, `.rfa`, версии, metadata, теги, preview, search index, usage history или избранное в ExtensibleStorage.
+FamilyManager не хранит каталог, `.rfa`, metadata, теги, preview, search index, usage history или избранное в ExtensibleStorage.
 
 ExtensibleStorage остаётся паттерном существующих модулей smartCon, но не является data plane FamilyManager.
+
+### Исключение: `SmartCon_FamilyVersion_v1` (Phase 24)
+
+**Единственное исключение** из правила — маркер версии на `Family` элементе в проекте Revit, введённый в Phase 24 (см. [ADR-030](../adr/030-phase-24-stale-detection-v2.md)). Хранит **только** метаданные момента загрузки (CatalogItemId, VersionLabel, LoadedAtUtc, SourceRevitVersion), а не каталожные данные. Не пишется в `.rfa` файлы (over-engineered — см. ADR-030 §2).
+
+**Что остаётся запрещено:**
+- Каталог (`catalog_items`, `catalog_versions`, `family_files`, `family_assets`) — в SQLite
+- Метаданные (manufacturer, tags, description, preview) — в SQLite/managed storage
+- История загрузок, избранное — в SQLite
+- Любые новые ES Schema для FamilyManager (кроме `SmartCon_FamilyVersion_v1`)
+
+**Обоснование исключения:** см. [ADR-030 §Решение](../adr/030-phase-24-stale-detection-v2.md).
 
 ## Перед стартом реализации
 
@@ -107,3 +119,22 @@ ExtensibleStorage остаётся паттерном существующих �
 - 4 новых unit-теста для `LoadableFamilyInfo`. Тесты для `SelectedElementsAnalysis` невозможны (record содержит `BuiltInCategory` value-type, требует `RevitAPI.dll` в test bin)
 - Всего: 1219/1219 тестов зелёные (1215 до + 4 новых)
 - 19 новых тестов: 12 sidecar + 1 preparer + 5 TypeCatalog + 1 прочий
+
+**Phase 24 (FamilyManager Stale Detection v2 — On-Demand) — ЗАВЕРШЕНА (2026-06-18).**
+
+- ADR-030 принят: `docs/adr/030-phase-24-stale-detection-v2.md` — override ADR-014 §FM-007 (запрет ExtensibleStorage)
+- Новая ES Schema `SmartCon_FamilyVersion_v1` на `Family` элементе в проекте (per-family маркер версии; **не** на `.rfa` файле — over-engineered)
+- VendorId workaround: `AGKSMARTCON` (9 chars) + `AccessLevel.Public/Public` — как в `FittingMappingSchema`
+- 5 простых полей: `SchemaVersion`, `CatalogItemId`, `VersionLabel`, `LoadedAtUtc`, `SourceRevitVersion`
+- Маркер живёт пока Family загружена в проект — мгновенный read через `Family.GetEntity`
+- 4 новых интерфейса в Core: `IFamilyVersionStore`, `IStaleDetector`, `IStaleFamilyUpdater`, `IStaleCategoryAggregator`
+- 4 новые модели в Core: `FamilyVersion`, `StaleCheckResult` (+ `StaleReason` enum), `StaleUpdateRequest`, `FamilyStaleSnapshot`
+- UI: ПКМ "Проверить" на категории (рекурсивно) и на семействе, ПКМ "Обновить" с подменю (с перезаписью/без/пакетное), roll-up `⚠` индикация на leaf + категориях
+- On-demand модель: единственный триггер — ПКМ "Проверить". НЕТ push events (Phase 23 отвергнут)
+- Refresh кнопка ↻ — **только каталог** (НЕ stale)
+- Кеш `FamilyStaleSnapshot` на сессию, инвалидируется при Load/Update/Edit/смена БД
+- Производительность: < 200 мс на 30 семейств (target Issue #69: < 500 мс)
+- SQLite schema **v12**: `DROP TABLE project_usage` + `DROP INDEX ix_project_usage_lookup` (clean slate)
+- Breaking change `2.0.0` — pre-release `2.0.0-beta.1` (ADR-021)
+- Доступно всем ролям (это операция в активном проекте, не каталог)
+- Детальный план: `docs/family-manager/02-plans/phase-24-stale-detection-v2.md`

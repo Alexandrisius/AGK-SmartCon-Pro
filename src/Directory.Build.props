@@ -67,6 +67,37 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
+  <!-- ============================================================
+       DEBUG / TRACE symbols for custom Debug.* configurations
+       ============================================================
+       Microsoft.NET.Sdk auto-defines DEBUG + TRACE only for the base
+       "Debug" Configuration. Custom names like "Debug.R21" / "Debug.R25"
+       look like Debug builds by name, but unless we explicitly add the
+       symbols here the compiler falls back to Release semantics:
+
+         * DefineConstants has no DEBUG   ->   `#if DEBUG` branches go cold
+         * Optimize defaults to true      ->   dead-code elim + no PDB
+         * No `#if DEBUG` in SmartConLogger => _defaultMinLevel = Info
+                                            => all Debug(...) calls dropped
+
+       Symptom: log file is filled with [INF] but [DBG] lines are never
+       written even though we deploy bin/Debug.R21/ output. The fix is
+       to inject DEBUG/TRACE for every Configuration starting with "Debug".
+       Release.* intentionally stays without DEBUG so the compiler still
+       prunes the logger and other #[Conditional("DEBUG")] code. -->
+  <PropertyGroup Condition="$(Configuration.StartsWith('Debug'))">
+    <DefineConstants>$(DefineConstants);DEBUG;TRACE</DefineConstants>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(Configuration.StartsWith('Release'))">
+    <Optimize>true</Optimize>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
   <!-- C# polyfill: позволяет record, init, required на net48 -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
     <NoWarn>$(NoWarn);CS0436;CS1998</NoWarn>

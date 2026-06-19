@@ -1,6 +1,4 @@
-using System;
 using System.Collections.ObjectModel;
-using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -18,24 +16,6 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
-            // Cleanup old usage records (older than 90 days)
-            FireAndForget(async () =>
-            {
-                try
-                {
-                    var deleted = await _usageRepo.DeleteOldUsagesAsync(TimeSpan.FromDays(90), CancellationToken.None);
-                    if (deleted > 0)
-                    {
-                        using var _scope = SmartConLogger.BeginScope("Cleanup", ("Source", "LoadTreeAsync"));
-                        SmartConLogger.Info($"Deleted {deleted} old project_usage records");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn($"Cleanup.LoadTreeAsync: failed: {ex.Message}");
-                }
-            }, nameof(LoadTreeAsync));
-
             IReadOnlyList<Core.Models.FamilyManager.CategoryNode> categories = [];
             try
             {
@@ -82,23 +62,9 @@ public sealed partial class FamilyManagerMainViewModel
                 }
             }
 
-            // Stale marker: use pre-loaded family names cache (filled via ExternalEvent on Refresh)
-            Dictionary<string, string?> loadedVersionLabels = new();
-            HashSet<string> loadedFamilyNames = _loadedFamilyNamesCache ?? new HashSet<string>();
-            try
-            {
-                if (!string.IsNullOrEmpty(_cachedProjectPath))
-                {
-                    var familyIds = results.Select(r => r.Id).ToList();
-                    loadedVersionLabels = (Dictionary<string, string?>)
-                        await _usageRepo.GetLoadedVersionLabelsAsync(_cachedProjectPath!, familyIds, ct);
-                }
-            }
-            catch (Exception ex)
-            {
-                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "StaleCheck"));
-                SmartConLogger.Warn($"failed: {ex.Message}");
-            }
+            // Phase 24: stale markers come from the detector snapshot (ADR-030).
+            // The tree is initially fresh; users run Проверить to populate stale markers.
+            var staleSnapshot = _staleDetector.GetCachedSnapshot();
 
             var itemsByCategory = results
                 .GroupBy(i => i.CategoryId ?? string.Empty)
@@ -106,7 +72,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             foreach (var catNode in tree.GetRootNodes())
             {
-                var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds, loadedVersionLabels, loadedFamilyNames);
+                var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds, staleSnapshot);
                 if (catVm is CategoryNodeViewModel) rootNodes.Add(catVm);
             }
 
@@ -119,17 +85,10 @@ public sealed partial class FamilyManagerMainViewModel
                 fullPath: noCatLabel);
             foreach (var item in uncategorized)
             {
-                bool isStale = false;
-                string? loadedVersionLabel = null;
-                bool isActuallyLoaded = loadedFamilyNames.Contains(item.Name);
-                if (loadedVersionLabels is not null &&
-                    loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
-                    loadedVersionLabel is not null &&
-                    loadedVersionLabel != item.CurrentVersionLabel &&
-                    isActuallyLoaded)
-                {
-                    isStale = true;
-                }
+                StaleCheckResult? staleResult = null;
+                staleSnapshot?.Results.TryGetValue(item.Id, out staleResult);
+                var isStale = staleResult?.IsStale ?? false;
+                var staleReason = staleResult?.Reason ?? StaleReason.None;
 
                 _noCategoryNode.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
                 {
@@ -145,7 +104,7 @@ public sealed partial class FamilyManagerMainViewModel
                     Tags = item.Tags,
                     Description = item.Description,
                     FamilySource = item.FamilySource,
-                }, isStale: isStale));
+                }, isStale: isStale, staleReason: staleReason));
             }
             _noCategoryNode.FamilyCount = uncategorized.Count;
             if (!expandAll && expandedIds.Contains("__no_category__")) _noCategoryNode.IsExpanded = true;
@@ -162,6 +121,14 @@ public sealed partial class FamilyManagerMainViewModel
             }
 
             TreeNodes = rootNodes;
+
+            // Re-apply per-category roll-up from the cached snapshot. BuildCategoryNode
+            // only sets IsStale on leaves; the HasStale/StaleCount on category nodes
+            // defaults to false. Without this call, every LoadTreeAsync (including
+            // the one triggered by 'Update on a single family') would wipe the
+            // HasStale indicator on every category — even ones whose stale markers
+            // are still perfectly valid in the snapshot.
+            await ApplyStaleResultsToTreeAsync(Array.Empty<StaleCheckResult>(), ct).ConfigureAwait(true);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -176,14 +143,20 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    private CatalogTreeNodeViewModel? BuildCategoryNode(CategoryTree tree, CategoryNode catNode, IReadOnlyDictionary<string, List<FamilyCatalogItem>> itemsByCategory, bool expandAll, HashSet<string>? expandedIds = null, IReadOnlyDictionary<string, string?>? loadedVersionLabels = null, HashSet<string>? loadedFamilyNames = null)
+    private CatalogTreeNodeViewModel? BuildCategoryNode(
+        CategoryTree tree,
+        CategoryNode catNode,
+        IReadOnlyDictionary<string, List<FamilyCatalogItem>> itemsByCategory,
+        bool expandAll,
+        HashSet<string>? expandedIds = null,
+        FamilyStaleSnapshot? staleSnapshot = null)
     {
         var vm = new CategoryNodeViewModel(catNode);
         var familyCount = 0;
 
         foreach (var child in tree.GetChildren(catNode.Id))
         {
-            var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds, loadedVersionLabels, loadedFamilyNames);
+            var childVm = BuildCategoryNode(tree, child, itemsByCategory, expandAll, expandedIds, staleSnapshot);
             if (childVm is CategoryNodeViewModel childCat)
             {
                 vm.Children.Add(childVm);
@@ -196,17 +169,10 @@ public sealed partial class FamilyManagerMainViewModel
             familyCount += items.Count;
             foreach (var item in items)
             {
-                bool isStale = false;
-                string? loadedVersionLabel = null;
-                bool isActuallyLoaded = loadedFamilyNames?.Contains(item.Name) ?? false;
-                if (loadedVersionLabels is not null &&
-                    loadedVersionLabels.TryGetValue(item.Id, out loadedVersionLabel) &&
-                    loadedVersionLabel is not null &&
-                    loadedVersionLabel != item.CurrentVersionLabel &&
-                    isActuallyLoaded)
-                {
-                    isStale = true;
-                }
+                StaleCheckResult? staleResult = null;
+                staleSnapshot?.Results.TryGetValue(item.Id, out staleResult);
+                var isStale = staleResult?.IsStale ?? false;
+                var staleReason = staleResult?.Reason ?? StaleReason.None;
 
                 vm.Children.Add(new FamilyLeafNodeViewModel(new FamilyCatalogItemRow
                 {
@@ -222,7 +188,7 @@ public sealed partial class FamilyManagerMainViewModel
                     Tags = item.Tags,
                     Description = item.Description,
                     FamilySource = item.FamilySource,
-                }, isStale: isStale));
+                }, isStale: isStale, staleReason: staleReason));
             }
         }
 

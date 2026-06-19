@@ -226,3 +226,44 @@ Before committing WPF-related code, verify:
 - [ ] All DragDrop event handlers wrapped in try-catch (net48 crash prevention)
 - [ ] `e.OriginalSource as DependencyObject` always null-checked before use
 - [ ] UseWindowsForms ambiguity resolved via `using` aliases
+- [ ] Every `MenuItem` inside a `ContextMenu` that has a bound `CommandParameter` carries `behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"` (see BUG-009)
+
+---
+
+## BUG-009: ContextMenu MenuItem greyed out in net48 only (dotnet/wpf#4078)
+
+**Symptom:** A `MenuItem` inside a `ContextMenu` is **permanently greyed out** in Revit 2019-2024 (net48) but works perfectly in Revit 2025-2026 (net8.0-windows). Other `MenuItem`s in the same `ContextMenu` (those without a bound `CommandParameter`, or with a static literal like `CommandParameter="Image"`) are unaffected. First click after a fresh app start may work once, but subsequent right-clicks keep the menu item disabled.
+
+**Diagnostic shape in `smartcon.log`:**
+
+```text
+[DBG]  RightClickSelect: setting IsSelected=true on TreeViewItem (DataContext type=CategoryNodeViewModel, hash=…).
+[DBG]  CanCheckCategory: result=False, category=<null>, paramType=<null>, IsStaleCheckInProgress=False    ← BUG
+[DBG]  CanCheckCategory: result=True,  category=<guid>, paramType=CategoryNodeViewModel, IsStaleCheckInProgress=False   ← expected in net8, MISSING in net48
+```
+
+The first `CanExecute` call passes `null` because WPF has not yet resolved the `CommandParameter` binding. In .NET Core 3.1+ a second `CanExecute` call follows once the binding resolves; in .NET Framework 4.8 that second call never happens.
+
+**Root cause:** This is `dotnet/wpf#4078` ("MenuItem: CommandParameters are ignored"), originally reported as #316 in 2008 and tracked through #3452 and #4472. The fix landed in PR #4217 (merged 2022-07-21) which adds a `PropertyChangedCallback` to `MenuItem.CommandParameterProperty` calling `item.UpdateCanExecute()` when the parameter is set. That fix is in .NET Core 3.1+ / .NET 5+ / .NET 6+ / .NET 7+ / .NET 8+, but **was never backported to .NET Framework 4.x**.
+
+**Why `CommandManager.InvalidateRequerySuggested()` does NOT help:** already-shown `ContextMenu` items cache their `CanExecute` state and stop re-evaluating after the first show. Verified empirically on 2026-06-19 (production log) and confirmed in [StackOverflow 37988297](https://stackoverflow.com/questions/37988297/canexecute-not-raised-when-context-menu-opens).
+
+**Fix:** use the `MenuItemCommandParameterRequery` attached property at `src/SmartCon.UI/Behaviors/MenuItemCommandParameterRequery.cs`. It hooks into `MenuItem.CommandParameter` changes via `DependencyPropertyDescriptor` and briefly null-and-reassigns `MenuItem.Command` — this triggers WPF's internal `OnCommandChanged` → `UpdateCanExecute()` path, which is identical in effect to the upstream `PropertyChangedCallback` from PR #4217.
+
+```xml
+<MenuItem Header="{loc:Loc FM_Check}"
+          CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+          Command="{Binding CheckCategoryCommand}"
+          behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True" />
+```
+
+`MenuItem.UpdateCanExecute` is `internal` in WPF, so we cannot subclass `MenuItem` and call it from another assembly — the null/reassign hack is the next cleanest option. Order properties as `CommandParameter` BEFORE `Command` in XAML for clarity (it is not load-bearing once the attached property is in place, but matches the order PR #4217 effectively produces at runtime).
+
+**Files:** `src/SmartCon.UI/Behaviors/MenuItemCommandParameterRequery.cs` (new); `src/SmartCon.FamilyManager/Views/FamilyManagerPaneControl.xaml` (4 `MenuItem`s updated: `CheckCategoryCommand`, `CheckFamilyCommand`, `UpdateCategoryKeepParamsCommand`, `UpdateCategoryOverwriteParamsCommand`); `src/SmartCon.UI/Behaviors/TreeViewBehaviors.cs` (RightClickSelect now logs the hit `DataContext` type/hash, and the comment block above `OnTreeViewPreviewMouseRightButtonDown` documents the WPF bug + WPF fix + our hardening).
+
+**Sources:**
+- `https://github.com/dotnet/wpf/issues/4078` — original report
+- `https://github.com/dotnet/wpf/issues/316` — 2008 ancestor
+- `https://github.com/dotnet/wpf/pull/4217` — the fix (not in net48)
+- `https://stackoverflow.com/questions/335849` — workaround: swap XAML order
+- `https://stackoverflow.com/questions/3027224` — two known ContextMenu `CanExecute` bugs

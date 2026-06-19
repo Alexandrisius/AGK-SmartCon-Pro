@@ -8,4 +8,6 @@ public sealed record FamilyCatalogQuery(
     string? ManufacturerFilter,
     FamilyCatalogSort Sort,
     int Offset,
-    int Limit);
+    int Limit,
+    bool IncludeUncategorized = false,
+    IReadOnlyList<string>? CategoryIdsFilter = null);

@@ -30,6 +30,9 @@ public sealed partial class FamilyManagerMainViewModel
 
     private void OnActiveDatabaseChanged(object? sender, string connectionId)
     {
+        // D-10: stale cache is per-DB. Snapshot from the previous DB must not leak
+        // into the new tree (different catalog items, different versions).
+        _staleDetector.InvalidateCache();
         RefreshConnections();
         _ = RefreshTreeViaExternalEventAsync();
     }

@@ -19,7 +19,9 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private readonly IFamilyLoadService _loadService;
     private readonly IFamilyPlacementService _placementService;
     private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
-    private readonly IProjectFamilyUsageRepository _usageRepo;
+    private readonly IFamilyVersionStore _versionStore;
+    private readonly IStaleDetector _staleDetector;
+    private readonly IClock _clock;
     private readonly IWindowFocusService? _windowFocusService;
 
     public event Action? PlacementCompleted;
@@ -35,7 +37,9 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         IFamilyLoadService loadService,
         IFamilyPlacementService placementService,
         ISystemFamilyPlacementService systemFamilyPlacementService,
-        IProjectFamilyUsageRepository usageRepo,
+        IFamilyVersionStore versionStore,
+        IStaleDetector staleDetector,
+        IClock clock,
         IWindowFocusService? windowFocusService = null)
     {
         _revitUIContext = revitUIContext;
@@ -44,7 +48,9 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         _loadService = loadService;
         _placementService = placementService;
         _systemFamilyPlacementService = systemFamilyPlacementService;
-        _usageRepo = usageRepo;
+        _versionStore = versionStore;
+        _staleDetector = staleDetector;
+        _clock = clock;
         _windowFocusService = windowFocusService;
     }
 
@@ -59,7 +65,9 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
                 _loadService,
                 _placementService,
                 _systemFamilyPlacementService,
-                _usageRepo,
+                _versionStore,
+                _staleDetector,
+                _clock,
                 data.TargetRevitVersion,
                 OnPlacementCompleted,
                 OnPlacementFailed,

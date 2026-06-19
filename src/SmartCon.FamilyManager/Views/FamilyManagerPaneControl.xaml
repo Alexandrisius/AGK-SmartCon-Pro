@@ -18,7 +18,8 @@
             </ResourceDictionary.MergedDictionaries>
 
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
-            <converters:BoolToStaleForegroundConverter x:Key="StaleForegroundConverter"/>
+            <converters:StaleCountToTooltipConverter x:Key="StaleCountToTooltipConverter"/>
+            <converters:StaleReasonToTooltipConverter x:Key="StaleReasonToTooltipConverter"/>
 
             <Style x:Key="DangerIconButton" TargetType="Button">
                 <Setter Property="Background" Value="Transparent"/>
@@ -486,6 +487,35 @@
                     <MenuItem Header="{loc:Loc FM_ImportToCategory}"
                               Command="{Binding ImportFileToCategoryCommand}"
                               Style="{StaticResource ModernMenuItem}" />
+
+                    <MenuItem Header="{loc:Loc FM_Update}">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.HasStale, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                        <MenuItem Header="{loc:Loc FM_UpdateKeepParams}"
+                                  Command="{Binding UpdateCategoryKeepParamsCommand}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
+                                  Style="{StaticResource ModernMenuItem}" />
+                        <MenuItem Header="{loc:Loc FM_UpdateOverwriteParams}"
+                                  Command="{Binding UpdateCategoryOverwriteParamsCommand}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
+                                  Style="{StaticResource ModernMenuItem}" />
+                    </MenuItem>
+
+                    <MenuItem Header="{loc:Loc FM_Check}"
+                              Command="{Binding CheckCategoryCommand}"
+                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                              behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
+                              Style="{StaticResource ModernMenuItem}" />
                 </ContextMenu>
 
                 <ContextMenu x:Key="FamilyLeafNodeContextMenu" Style="{StaticResource ModernContextMenu}"
@@ -497,7 +527,7 @@
                             <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
                                 <Setter Property="Visibility" Value="Visible"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsSelectedFamilyStale}" Value="True">
+                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.IsStale, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -509,7 +539,7 @@
                             <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsSelectedFamilyStale}" Value="True">
+                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.IsStale, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="True">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -536,6 +566,11 @@
                             </Style>
                         </MenuItem.Style>
                     </MenuItem>
+                    <MenuItem Header="{loc:Loc FM_Check}"
+                              Command="{Binding CheckFamilyCommand}"
+                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                              behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
+                              Style="{StaticResource ModernMenuItem}" />
                     <MenuItem Header="{loc:Loc FM_Properties}"
                               Command="{Binding OpenPropertiesCommand}"
                               Style="{StaticResource ModernMenuItem}" />
@@ -599,6 +634,13 @@
                             <TextBlock Text="{Binding DisplayName}"
                                        FontWeight="SemiBold" FontSize="12"
                                        VerticalAlignment="Center"/>
+                            <TextBlock Text=" ⚠"
+                                       Foreground="{DynamicResource WarningBrush}"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="4,0,0,0"
+                                       Visibility="{Binding HasStale, Converter={StaticResource BoolToVis}}"
+                                       ToolTip="{Binding StaleCount, Converter={StaticResource StaleCountToTooltipConverter}}"/>
                             <TextBlock Text="{Binding FamilyCount, StringFormat=' ({0})'}"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="11" VerticalAlignment="Center"
@@ -621,12 +663,13 @@
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
                             
-                            <TextBlock Text=" [Устарело]"
+                            <TextBlock Text="{loc:Loc FM_Stale}"
                                        Foreground="{DynamicResource WarningBrush}"
                                        FontSize="10"
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"
-                                       Visibility="{Binding IsStale, Converter={StaticResource BoolToVis}}"/>
+                                       Visibility="{Binding IsStale, Converter={StaticResource BoolToVis}}"
+                                       ToolTip="{Binding StaleReason, Converter={StaticResource StaleReasonToTooltipConverter}}"/>
                         </StackPanel>
                     </Grid>
                 </HierarchicalDataTemplate>

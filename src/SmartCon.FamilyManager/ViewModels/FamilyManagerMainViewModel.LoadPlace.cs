@@ -101,27 +101,19 @@ public sealed partial class FamilyManagerMainViewModel
                     };
                     StatusMessage = msg;
 
-                    var projectPath = _revitContext.GetDocument().PathName;
-                    var loadedVersionLabel = SelectedItem?.VersionLabel;
+                    await _versionWriter.WriteVersionMarkerAsync(
+                        selectedId,
+                        loadedName,
+                        resolved.VersionLabel,
+                        targetRevit,
+                        CancellationToken.None).ConfigureAwait(true);
 
-                    var usage = new ProjectFamilyUsage(
-                        Id: Guid.NewGuid().ToString(),
-                        CatalogItemId: selectedId,
-                        VersionId: resolved.VersionId,
-                        LoadedVersionLabel: loadedVersionLabel,
-                        ProjectName: "Active Project",
-                        ProjectPath: projectPath,
-                        RevitMajorVersion: targetRevit,
-                        Action: "Load",
-                        CreatedAtUtc: DateTimeOffset.UtcNow);
-
+                    // Drop only this family from the snapshot so the next Check
+                    // re-evaluates it from scratch. Other categories' stale markers
+                    // (and the families that were not updated) stay intact.
+                    _staleDetector.MarkUpdated([selectedId]);
                     InvalidateLoadedFamilyNamesCache();
-
-                    FireAndForget(async () =>
-                    {
-                        await _usageRepo.RecordUsageAsync(usage, CancellationToken.None);
-                        await LoadTreeAsync();
-                    }, nameof(ExecuteLoadOrUpdateAsync));
+                    await LoadTreeAsync().ConfigureAwait(true);
                 }
                 else
                 {
@@ -224,28 +216,26 @@ public sealed partial class FamilyManagerMainViewModel
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadAndPlaceSuccess) ?? "Family \"{0}\" — click to place",
                         familyName);
 
-                    // Record usage analytics
-                    var resolvedForUsage = await _fileResolver
+                    // Persist fresh ES marker for the loaded family (Phase 24).
+                    var resolvedForMarker = await _fileResolver
                         .ResolveForLoadAsync(catalogItemId, targetRevit, CancellationToken.None)
                         .ConfigureAwait(true);
 
-                    var projectPath = _revitContext.GetDocument().PathName;
-                    var usage = new ProjectFamilyUsage(
-                        Id: Guid.NewGuid().ToString(),
-                        CatalogItemId: catalogItemId,
-                        VersionId: resolvedForUsage.VersionId,
-                        LoadedVersionLabel: resolvedForUsage.VersionLabel,
-                        ProjectName: "Active Project",
-                        ProjectPath: projectPath,
-                        RevitMajorVersion: targetRevit,
-                        Action: "Place",
-                        CreatedAtUtc: DateTimeOffset.UtcNow);
+                    await _versionWriter.WriteVersionMarkerAsync(
+                        catalogItemId,
+                        familyName,
+                        resolvedForMarker.VersionLabel,
+                        targetRevit,
+                        CancellationToken.None).ConfigureAwait(true);
 
-                    FireAndForget(async () =>
-                    {
-                        try { await _usageRepo.RecordUsageAsync(usage, CancellationToken.None); }
-                        catch { /* ignored */ }
-                    }, nameof(PlaceTypeAsync));
+                    // Drop only this family from the snapshot (same rationale
+                    // as ExecuteLoadOrUpdateAsync above).
+                    _staleDetector.MarkUpdated([catalogItemId]);
+                    // Rebuild the tree so the leaf's IsStale flag drops and
+                    // the category's HasStale / StaleCount roll-up updates.
+                    // Without this, the leaf stays "stale" in the UI until
+                    // the next Check or full tree reload.
+                    await LoadTreeAsync().ConfigureAwait(true);
                 }
                 else
                 {
@@ -257,7 +247,8 @@ public sealed partial class FamilyManagerMainViewModel
             catch (Exception ex)
             {
                 using var _scope = SmartConLogger.BeginScope("PlaceType", ("CatalogItemId", catalogItemId));
-                SmartConLogger.Warn($"failed: {ex.Message}");
+                SmartConLogger.Warn(
+                    $"PlaceType failed: {ex.Message}. [Action: report to user, retry from context menu]");
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                     ex.Message);

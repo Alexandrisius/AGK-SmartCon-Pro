@@ -40,3 +40,4 @@
 | [027](027-placed-families-v2.md) | Placed Families v2 | accepted | 2026-06-12 |
 | [028](028-di-readiness.md) | DI Readiness | accepted | 2026-06-13 |
 | [029](029-shared-nested-load-dialog.md) | Shared nested families — user dialog for load mode (Issue #67) | accepted | 2026-06-17 |
+| [030](030-phase-24-stale-detection-v2.md) | Stale Detection v2 — On-Demand Family Version Marker via ExtensibleStorage on Family element in project (Issue #69) | accepted | 2026-06-18 |

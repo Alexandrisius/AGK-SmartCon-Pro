@@ -1,3 +1,4 @@
+using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -17,7 +18,9 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly IFamilyLoadService _loadService;
     private readonly IFamilyPlacementService _placementService;
     private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
-    private readonly IProjectFamilyUsageRepository _usageRepo;
+    private readonly IFamilyVersionStore _versionStore;
+    private readonly IStaleDetector _staleDetector;
+    private readonly IClock _clock;
     private readonly int _targetRevitVersion;
     private readonly Action? _onCompleted;
     private readonly Action<string>? _onError;
@@ -31,7 +34,9 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         IFamilyLoadService loadService,
         IFamilyPlacementService placementService,
         ISystemFamilyPlacementService systemFamilyPlacementService,
-        IProjectFamilyUsageRepository usageRepo,
+        IFamilyVersionStore versionStore,
+        IStaleDetector staleDetector,
+        IClock clock,
         int targetRevitVersion,
         Action? onCompleted = null,
         Action<string>? onError = null,
@@ -44,7 +49,9 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _loadService = loadService;
         _placementService = placementService;
         _systemFamilyPlacementService = systemFamilyPlacementService;
-        _usageRepo = usageRepo;
+        _versionStore = versionStore;
+        _staleDetector = staleDetector;
+        _clock = clock;
         _targetRevitVersion = targetRevitVersion;
         _onCompleted = onCompleted;
         _onError = onError;
@@ -138,7 +145,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
 
             if (resolved is not null)
             {
-                RecordUsage(document, dragData, resolved);
+                WriteVersionMarker(document.Document, dragData, resolved);
                 _onSuccess?.Invoke($"Семейство '{familyName}' загружено и активировано для размещения");
             }
             else
@@ -154,28 +161,46 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         }
     }
 
-    private void RecordUsage(UIDocument document, FamilyPlacementDragData dragData, FamilyResolvedFile? resolved)
+    private void WriteVersionMarker(Document document, FamilyPlacementDragData dragData, FamilyResolvedFile? resolved)
     {
         try
         {
-            var projectPath = document.Document.PathName;
+            var familyName = dragData.FamilyName;
+            var loadedFamily = FindFamilyByName(document, familyName);
+            if (loadedFamily is null) return;
 
-            var usage = new ProjectFamilyUsage(
-                Id: Guid.NewGuid().ToString(),
+            var version = new FamilyVersion(
+                SchemaVersion: FamilyVersion.CurrentSchemaVersion,
                 CatalogItemId: dragData.CatalogItemId,
-                VersionId: resolved?.VersionId,
-                LoadedVersionLabel: resolved?.VersionLabel,
-                ProjectName: "Active Project",
-                ProjectPath: projectPath,
-                RevitMajorVersion: _targetRevitVersion,
-                Action: "Place",
-                CreatedAtUtc: DateTimeOffset.UtcNow);
+                VersionLabel: resolved?.VersionLabel ?? string.Empty,
+                LoadedAtUtc: _clock.UtcNow,
+                SourceRevitVersion: _targetRevitVersion);
 
-            _ = Task.Run(() => _usageRepo.RecordUsageAsync(usage, CancellationToken.None));
+            _versionStore.WriteToLoadedFamily(document, loadedFamily.Id, version);
+            // Targeted drop: only the placed family leaves the snapshot, every
+            // other stale entry is preserved. The InvalidateCache() we used
+            // before wiped the entire session snapshot, so a user who
+            // previously ran Check on a different category would have lost
+            // all their staleness markers until the next Check.
+            _staleDetector.MarkUpdated([dragData.CatalogItemId]);
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"FamilyPlacementDropHandler: Failed to record usage — {ex.Message}");
+            SmartConLogger.Warn($"FamilyPlacementDropHandler: Failed to write FamilyVersion marker — {ex.Message}");
         }
+    }
+
+    private static Autodesk.Revit.DB.Family? FindFamilyByName(Document document, string familyName)
+    {
+        if (document is null || string.IsNullOrEmpty(familyName)) return null;
+        using var collector = new FilteredElementCollector(document).OfClass(typeof(Autodesk.Revit.DB.Family));
+        foreach (Autodesk.Revit.DB.Family f in collector)
+        {
+            // Case-insensitive to match the rest of the project
+            // (IFamilyFinder.FindByName, IFamilySearchService) so a family
+            // loaded with different casing still receives the marker.
+            if (string.Equals(f.Name, familyName, StringComparison.OrdinalIgnoreCase)) return f;
+        }
+        return null;
     }
 }

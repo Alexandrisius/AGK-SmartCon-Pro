@@ -364,6 +364,14 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_catalog_items_family_source ON catalog_items (family_source)
         """;
 
+    public const string MigrateV12DropProjectUsageIndex = """
+        DROP INDEX IF EXISTS ix_project_usage_lookup
+        """;
+
+    public const string MigrateV12DropProjectUsageTable = """
+        DROP TABLE IF EXISTS project_usage
+        """;
+
     public const string CreateIndexes = """
         CREATE INDEX IF NOT EXISTS ix_catalog_items_normalized_name ON catalog_items (normalized_name);
         CREATE INDEX IF NOT EXISTS ix_catalog_items_category ON catalog_items (category_name);
@@ -376,10 +384,6 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_files_revit ON family_files (revit_major_version);
         CREATE INDEX IF NOT EXISTS ix_catalog_tags_item ON catalog_tags (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_catalog_tags_normalized ON catalog_tags (normalized_tag);
-        CREATE INDEX IF NOT EXISTS ix_project_usage_item ON project_usage (catalog_item_id);
-        CREATE INDEX IF NOT EXISTS ix_project_usage_path ON project_usage (project_path);
-        CREATE INDEX IF NOT EXISTS ix_project_usage_created ON project_usage (created_at_utc);
-        CREATE INDEX IF NOT EXISTS ix_project_usage_lookup ON project_usage (project_path, catalog_item_id, created_at_utc DESC);
         CREATE INDEX IF NOT EXISTS ix_family_assets_item ON family_assets (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_family_assets_type ON family_assets (asset_type);
         CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id);

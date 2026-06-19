@@ -108,6 +108,13 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
             enqueuedAt);
         _queue.Enqueue(entry);
 
+        // Register cancellation so the awaiter wakes up even if the queue
+        // never gets drained (e.g. Revit is busy, a modal dialog is open).
+        // Without this the task would only complete when the action runs,
+        // and ct.IsCancellationRequested would not be honoured at the
+        // awaiter level until then.
+        RegisterCancellation(tcs, ct);
+
         SmartConLogger.Debug(
             $"[AwaitableEvent] RaiseAsync: enqueued (pending={_queue.Count})");
         _onRaise!.Invoke();
@@ -144,6 +151,8 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
             enqueuedAt);
         _queue.Enqueue(entry);
 
+        RegisterCancellation(tcs, ct);
+
         SmartConLogger.Debug(
             $"[AwaitableEvent] RaiseAsync<{typeof(T).Name}>: enqueued (pending={_queue.Count})");
         _onRaise!.Invoke();
@@ -159,7 +168,22 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
     /// </summary>
     public void ProcessQueue(object revitApp)
     {
-        _contextWriter.SetContext(revitApp);
+        try
+        {
+            _contextWriter.SetContext(revitApp);
+        }
+        catch (Exception ex)
+        {
+            // SetContext throws InvalidOperationException if the host never
+            // supplied a valid UIApplication. We log and continue draining
+            // the queue anyway — actions that need the context will fail
+            // individually and surface as exceptions on their awaiter.
+            SmartConLogger.Warn(
+                $"[AwaitableEvent] SetContext failed: {ex.GetType().Name}: " +
+                $"{ex.Message}. [Action: actions that need the Revit " +
+                "context will fail; check the host's IExternalEventHandler " +
+                "wiring]");
+        }
 
         var processed = 0;
         while (_queue.TryDequeue(out var entry))
@@ -201,6 +225,26 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
                 "FamilyManagerAwaitableEvent is not initialized. " +
                 "Call Initialize(onRaise) at startup before RaiseAsync.");
         }
+    }
+
+    /// <summary>
+    /// Hooks a cancellation token so the awaiter completes with
+    /// <see cref="TaskStatus.Canceled"/> even if the action never gets
+    /// dequeued. Without this, a busy Revit that never drains the queue
+    /// would block the awaiter indefinitely even after the caller asked
+    /// for cancellation.
+    /// </summary>
+    private static void RegisterCancellation<T>(TaskCompletionSource<T> tcs, CancellationToken ct)
+    {
+        if (!ct.CanBeCanceled) return;
+        // Note: CancellationTokenRegistration is intentionally not stored
+        // or disposed. The caller owns the CancellationTokenSource and is
+        // expected to dispose it shortly after the awaited task completes
+        // (or after Cancel). For per-call tokens (the typical pattern) the
+        // registration's lifetime is bounded by the source's lifetime, so
+        // not disposing here is safe. Storing the registration in a using
+        // block would also work but adds a small allocation per call.
+        ct.Register(() => tcs.TrySetCanceled(ct));
     }
 
     /// <summary>
@@ -274,6 +318,13 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
         };
 
         _queue.Enqueue(new Entry(asyncWrapper, enqueuedAt));
+
+        // Same cancellation wiring as the other two overloads: wake the
+        // awaiter even when the queue never drains. Without this, a busy
+        // Revit (or a long-running previous action) would block the awaiter
+        // indefinitely even after the caller asked to cancel.
+        RegisterCancellation(tcs, ct);
+
         SmartConLogger.Debug(
             $"[AwaitableEvent] RaiseAsync(async): enqueued (pending={_queue.Count})");
         _onRaise!.Invoke();

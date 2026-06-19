@@ -67,6 +67,6 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("11", version);
+        Assert.Equal("12", version);
     }
 }

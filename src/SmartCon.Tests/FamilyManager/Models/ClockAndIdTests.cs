@@ -1,4 +1,5 @@
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Tests.TestDoubles;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.Models;
@@ -24,13 +25,6 @@ public sealed class ClockTests
         IClock clock = new FakeClock(fixedValue);
 
         Assert.Equal(fixedValue, clock.UtcNow);
-    }
-
-    private sealed class FakeClock : IClock
-    {
-        public FakeClock(DateTimeOffset value) => _value = value;
-        private readonly DateTimeOffset _value;
-        public DateTimeOffset UtcNow => _value;
     }
 }
 
