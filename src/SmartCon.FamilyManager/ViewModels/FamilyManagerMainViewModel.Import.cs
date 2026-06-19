@@ -158,7 +158,9 @@ public sealed partial class FamilyManagerMainViewModel
                 await LoadTreeAsync();
             }
 
-            await LoadTreeAsync();
+            // Single LoadTreeAsync: types appear after save via dispatcher.
+            // Double call (before+after) doubled main-thread work in net48 and
+            // caused WPF render thread to fall behind — see ADR-031.
 
             // Auto-clear status after 10 seconds
             FireAndForget(async () =>
@@ -227,7 +229,6 @@ public sealed partial class FamilyManagerMainViewModel
             // The save runs in Task.Run (ConfigureAwait(false) inside FireAndForget),
             // so TreeNodes setter must be marshalled to the dispatcher explicitly —
             // ConfigureAwait(false) drops the UI SyncContext that LoadTreeAsync needs.
-            SmartConLogger.Debug($"ExtractTypesForImportedFamilies: enqueueing FireAndForget save for {extractionResults.Count} item(s)");
             FireAndForget(async () =>
             {
                 try
@@ -254,10 +255,15 @@ public sealed partial class FamilyManagerMainViewModel
 
                 try
                 {
-                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
-                    if (dispatcher is { HasShutdownStarted: false })
+                    var dispatcher = _uiDispatcher;
+                    SmartConLogger.Debug($"ExtractTypesForImportedFamilies: save complete on thread {Environment.CurrentManagedThreadId}, _uiDispatcher thread={dispatcher.Thread.ManagedThreadId}, HasShutdownStarted={dispatcher.HasShutdownStarted}");
+                    if (!dispatcher.HasShutdownStarted)
                     {
+                        var beforeThread = Environment.CurrentManagedThreadId;
+                        var dispatcherThread = dispatcher.Thread.ManagedThreadId;
+                        SmartConLogger.Debug($"ExtractTypesForImportedFamilies: about to dispatcher.InvokeAsync(LoadTreeAsync) — caller thread={beforeThread}, dispatcher thread={dispatcherThread}, same={(beforeThread == dispatcherThread)}");
                         await dispatcher.InvokeAsync(() => LoadTreeAsync());
+                        SmartConLogger.Debug($"ExtractTypesForImportedFamilies: dispatcher.InvokeAsync(LoadTreeAsync) returned on thread {Environment.CurrentManagedThreadId}");
                     }
                 }
                 catch (Exception ex)

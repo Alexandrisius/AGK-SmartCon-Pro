@@ -13,8 +13,6 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand]
     private async Task LoadTreeAsync(CancellationToken ct = default)
     {
-        using var _measure = SmartConLogger.Measure("LoadTreeAsync");
-        SmartConLogger.Debug($"LoadTreeAsync: start (search='{SearchText}')");
         IsLoading = true;
         try
         {
@@ -142,6 +140,7 @@ public sealed partial class FamilyManagerMainViewModel
         finally
         {
             IsLoading = false;
+            SmartConLogger.Debug($"LoadTreeAsync: finally thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Threading;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Common;
@@ -56,6 +57,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyFinder _familyFinder;
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
+    private readonly Dispatcher _uiDispatcher;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -155,6 +157,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _familyFinder = services.FamilyFinder;
         _versionWriter = services.VersionWriter;
         _clock = services.Clock;
+
+        // Application.Current?.Dispatcher is null in Revit addins (especially net48)
+        // because WPF Application is not auto-created. Dispatcher.CurrentDispatcher
+        // is reliable when called on the UI thread (ctor) — returns the UI thread's
+        // dispatcher which can be used to marshal back from background threads.
+        _uiDispatcher = System.Windows.Application.Current?.Dispatcher
+            ?? Dispatcher.CurrentDispatcher;
+        SmartConLogger.Debug($"FamilyManagerMainViewModel.ctor: _uiDispatcher captured thread={_uiDispatcher.Thread.ManagedThreadId}, Application.Current={(System.Windows.Application.Current is null ? "<null>" : "exists")}");
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -555,8 +565,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 catch { }
             });
 
-            var dispatcher = System.Windows.Application.Current?.Dispatcher
-                ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            var dispatcher = _uiDispatcher;
 
             dispatcher?.BeginInvoke(new Action(async () =>
             {
@@ -608,12 +617,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         {
             InvalidateLoadedFamilyNamesCache();
 
-            var dispatcher = System.Windows.Application.Current?.Dispatcher
-                ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
-
-            if (dispatcher != null && !dispatcher.HasShutdownStarted)
+            if (!_uiDispatcher.HasShutdownStarted)
             {
-                _ = dispatcher.InvokeAsync(() => LoadTreeAsync());
+                _ = _uiDispatcher.InvokeAsync(() => LoadTreeAsync());
             }
         }
         catch (Exception ex)

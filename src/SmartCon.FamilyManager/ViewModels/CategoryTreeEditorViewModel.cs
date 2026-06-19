@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Common;
@@ -68,8 +69,11 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         if (value is not null)
         {
             SelectedCategoryPath = BuildCategoryPath(value);
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher is { HasShutdownStarted: false })
+            // OnSelectedNodeChanged fires on the UI thread (PropertyChanged setter),
+            // so Dispatcher.CurrentDispatcher returns the UI thread dispatcher.
+            var dispatcher = System.Windows.Application.Current?.Dispatcher
+                ?? Dispatcher.CurrentDispatcher;
+            if (!dispatcher.HasShutdownStarted)
             {
                 _ = dispatcher.InvokeAsync(() => LoadAttributesForCategoryAsync(value));
             }
