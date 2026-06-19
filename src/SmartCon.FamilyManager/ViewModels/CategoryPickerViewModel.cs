@@ -114,8 +114,11 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
     partial void OnSearchTextChanged(string value)
     {
-        SmartConLogger.Debug("CategoryPicker: FireAndForget.LoadTreeAsync (before)");
-        FireAndForget(() => LoadTreeAsync(), nameof(LoadTreeAsync));
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is { HasShutdownStarted: false })
+        {
+            _ = dispatcher.InvokeAsync(() => LoadTreeAsync());
+        }
     }
 
     [RelayCommand]

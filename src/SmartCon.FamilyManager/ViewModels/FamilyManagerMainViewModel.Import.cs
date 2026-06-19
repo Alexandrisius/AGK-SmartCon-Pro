@@ -223,7 +223,11 @@ public sealed partial class FamilyManagerMainViewModel
                 SmartConLogger.Warn($"ExtractTypesForImportedFamilies extraction failed: {ex.Message}");
             }
 
-            // FireAndForget: SQLite save + tree reload (non-critical post-processing)
+            // FireAndForget: SQLite save + tree reload on UI thread.
+            // The save runs in Task.Run (ConfigureAwait(false) inside FireAndForget),
+            // so TreeNodes setter must be marshalled to the dispatcher explicitly —
+            // ConfigureAwait(false) drops the UI SyncContext that LoadTreeAsync needs.
+            SmartConLogger.Debug($"ExtractTypesForImportedFamilies: enqueueing FireAndForget save for {extractionResults.Count} item(s)");
             FireAndForget(async () =>
             {
                 try
@@ -241,10 +245,24 @@ public sealed partial class FamilyManagerMainViewModel
                                 catalogItemId, result, versionId, fileId, CancellationToken.None);
                         }
                     }
+                    SmartConLogger.Debug($"ExtractTypesForImportedFamilies: save complete, scheduling UI tree refresh");
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"ExtractTypesForImportedFamilies save failed: {ex.Message}");
+                    SmartConLogger.Warn($"ExtractTypesForImportedFamilies save failed: {ex.Message} [Action: типы могут быть неполными; нажмите Refresh]");
+                }
+
+                try
+                {
+                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                    if (dispatcher is { HasShutdownStarted: false })
+                    {
+                        await dispatcher.InvokeAsync(() => LoadTreeAsync());
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Tree reload after extract failed: {ex.Message} [Action: нажмите Refresh чтобы обновить дерево]");
                 }
             }, nameof(ExtractTypesForImportedFamilies));
         });

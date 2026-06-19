@@ -613,15 +613,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
             if (dispatcher != null && !dispatcher.HasShutdownStarted)
             {
-                dispatcher.BeginInvoke(new Action(() =>
-                {
-                    FireAndForget(async () => await LoadTreeAsync(), nameof(LoadTreeAsync));
-                }));
+                _ = dispatcher.InvokeAsync(() => LoadTreeAsync());
             }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"OnPlacementCompleted dispatcher invoke failed: {ex.Message}");
+            SmartConLogger.Warn($"OnPlacementCompleted dispatcher invoke failed: {ex.Message} [Action: нажмите Refresh чтобы обновить дерево]");
         }
     }
 

@@ -68,9 +68,11 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         if (value is not null)
         {
             SelectedCategoryPath = BuildCategoryPath(value);
-            SmartConLogger.Debug("CategoryTreeEditor: FireAndForget.LoadAttributesForCategoryAsync");
-            SmartConLogger.Debug("[ThreadPool] CategoryTreeEditor.Before.FireAndForget");
-            FireAndForget(() => LoadAttributesForCategoryAsync(value), nameof(LoadAttributesForCategoryAsync));
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is { HasShutdownStarted: false })
+            {
+                _ = dispatcher.InvokeAsync(() => LoadAttributesForCategoryAsync(value));
+            }
         }
         else
         {
