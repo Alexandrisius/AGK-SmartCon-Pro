@@ -231,6 +231,11 @@ public sealed partial class FamilyManagerMainViewModel
                     // Drop only this family from the snapshot (same rationale
                     // as ExecuteLoadOrUpdateAsync above).
                     _staleDetector.MarkUpdated([catalogItemId]);
+                    // Rebuild the tree so the leaf's IsStale flag drops and
+                    // the category's HasStale / StaleCount roll-up updates.
+                    // Without this, the leaf stays "stale" in the UI until
+                    // the next Check or full tree reload.
+                    await LoadTreeAsync().ConfigureAwait(true);
                 }
                 else
                 {

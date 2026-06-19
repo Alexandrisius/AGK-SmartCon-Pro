@@ -18,7 +18,6 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerAwaitableEvent _awaitable;
     private readonly IRevitContext _revitContext;
-    private readonly IFamilyFinder _familyFinder;
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
 
@@ -29,7 +28,6 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         IFamilyManagerDialogService dialogService,
         IFamilyManagerAwaitableEvent awaitable,
         IRevitContext revitContext,
-        IFamilyFinder familyFinder,
         IFamilyVersionWriter versionWriter,
         IClock clock)
     {
@@ -40,7 +38,6 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         ArgumentNullException.ThrowIfNull(dialogService);
         ArgumentNullException.ThrowIfNull(awaitable);
         ArgumentNullException.ThrowIfNull(revitContext);
-        ArgumentNullException.ThrowIfNull(familyFinder);
         ArgumentNullException.ThrowIfNull(versionWriter);
         ArgumentNullException.ThrowIfNull(clock);
 #else
@@ -50,7 +47,6 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         if (dialogService is null) throw new ArgumentNullException(nameof(dialogService));
         if (awaitable is null) throw new ArgumentNullException(nameof(awaitable));
         if (revitContext is null) throw new ArgumentNullException(nameof(revitContext));
-        if (familyFinder is null) throw new ArgumentNullException(nameof(familyFinder));
         if (versionWriter is null) throw new ArgumentNullException(nameof(versionWriter));
         if (clock is null) throw new ArgumentNullException(nameof(clock));
 #endif
@@ -60,7 +56,6 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         _dialogService = dialogService;
         _awaitable = awaitable;
         _revitContext = revitContext;
-        _familyFinder = familyFinder;
         _versionWriter = versionWriter;
         _clock = clock;
     }
@@ -92,7 +87,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 #endif
         if (request.CatalogItemIds is null || request.CatalogItemIds.Count == 0)
         {
-            return new StaleBatchUpdateResult(0, 0, 0, [], []);
+            return new StaleBatchUpdateResult(0, 0, 0, 0, [], []);
         }
 
         using var _scope = SmartConLogger.BeginScope(
@@ -103,6 +98,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         var total = request.CatalogItemIds.Count;
         var successIds = new List<string>();
         var failedIds = new List<string>();
+        var processed = 0;
 
         for (var i = 0; i < total; i++)
         {
@@ -113,14 +109,16 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 .ConfigureAwait(true);
             if (ok) successIds.Add(id);
             else failedIds.Add(id);
+            processed++;
 
-            progress?.Report(new StaleBatchUpdateProgress(i + 1, total, familyName ?? id));
+            progress?.Report(new StaleBatchUpdateProgress(processed, total, familyName ?? id));
         }
 
         return new StaleBatchUpdateResult(
             TotalRequested: total,
             SuccessCount: successIds.Count,
             FailedCount: failedIds.Count,
+            SkippedCount: total - processed,
             SuccessCatalogItemIds: successIds,
             FailedCatalogItemIds: failedIds);
     }
@@ -143,11 +141,18 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             var resolved = await _fileResolver
                 .ResolveForLoadAsync(catalogItemId, targetRevit, ct)
                 .ConfigureAwait(true);
-            if (string.IsNullOrEmpty(resolved.AbsolutePath)) return (false, null);
+            if (string.IsNullOrEmpty(resolved.AbsolutePath))
+            {
+                SmartConLogger.Warn(
+                    $"UpdateFamily[{catalogItemId}]: fileResolver returned empty path. " +
+                    "[Action: catalog item is not available on disk for the current Revit " +
+                    "version; the family will be skipped and the next Check will mark it " +
+                    "stale again]");
+                return (false, null);
+            }
 
             var loadOptions = FamilyLoadOptions.Default with
             {
-                PreferredName = null,
                 OverwriteParameterValues = overwriteParameterValues,
             };
 
@@ -164,15 +169,54 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
             if (!result.Success) return (false, result.FamilyName);
 
-            // Persist fresh marker via shared helper (also used by LoadPlace partial).
-            await _versionWriter.WriteVersionMarkerAsync(
-                catalogItemId,
-                result.FamilyName ?? resolved.VersionLabel ?? string.Empty,
-                resolved.VersionLabel,
-                targetRevit,
-                ct).ConfigureAwait(true);
+            // Persist fresh marker via shared helper. The family has already been
+            // loaded into Revit at this point; if the marker write fails (ES
+            // storage error, Revit main thread timeout) we still treat the
+            // update as SUCCESS. Otherwise the snapshot would keep the entry
+            // and the user would be prompted to update again on the next Check,
+            // re-running LoadFamily with overwriteParameterValues=true and
+            // corrupting any parameters the user edited in the meantime.
+            // A failed marker write is logged at Warn so the operator can
+            // investigate, but the in-Revit state is the source of truth.
+            try
+            {
+                await _versionWriter.WriteVersionMarkerAsync(
+                    catalogItemId,
+                    result.FamilyName ?? resolved.VersionLabel ?? string.Empty,
+                    resolved.VersionLabel,
+                    targetRevit,
+                    ct).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                // OCE is a normal control flow (caller requested cancellation).
+                // Re-raise so the outer catch in this method re-throws it
+                // cleanly, and the caller's CancellationToken is honoured.
+                // The family has already been loaded into Revit, but the
+                // marker was not written, so on the next Check it will
+                // appear stale again — which is the correct outcome for a
+                // cancelled operation.
+                throw;
+            }
+            catch (Exception markerEx)
+            {
+                SmartConLogger.Warn(
+                    $"UpdateFamily[{catalogItemId}]: family was loaded into Revit but " +
+                    $"ES marker write failed: {markerEx.GetType().Name}: {markerEx.Message}. " +
+                    "The family is treated as updated (its in-Revit state is the " +
+                    "source of truth); the snapshot will reflect this on the next " +
+                    "tree rebuild. [Action: if the family re-appears as stale, check " +
+                    "ES schema registration and Revit version reads]");
+            }
 
             return (true, result.FamilyName);
+        }
+        catch (OperationCanceledException)
+        {
+            // OCE is a normal control flow (caller requested cancellation) -
+            // do not treat as a failure and do not pollute the log with a Warn.
+            // Re-raise so the caller's CancellationToken is honoured.
+            throw;
         }
         catch (Exception ex)
         {

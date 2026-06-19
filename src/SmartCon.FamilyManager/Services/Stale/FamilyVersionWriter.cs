@@ -53,8 +53,10 @@ internal sealed class FamilyVersionWriter : IFamilyVersionWriter
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(catalogItemId);
+        ArgumentNullException.ThrowIfNull(familyName);
 #else
         if (catalogItemId is null) throw new ArgumentNullException(nameof(catalogItemId));
+        if (familyName is null) throw new ArgumentNullException(nameof(familyName));
 #endif
 
         var version = new FamilyVersion(

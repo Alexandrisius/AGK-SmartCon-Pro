@@ -177,7 +177,12 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                 SourceRevitVersion: _targetRevitVersion);
 
             _versionStore.WriteToLoadedFamily(document, loadedFamily.Id, version);
-            _staleDetector.InvalidateCache();
+            // Targeted drop: only the placed family leaves the snapshot, every
+            // other stale entry is preserved. The InvalidateCache() we used
+            // before wiped the entire session snapshot, so a user who
+            // previously ran Check on a different category would have lost
+            // all their staleness markers until the next Check.
+            _staleDetector.MarkUpdated([dragData.CatalogItemId]);
         }
         catch (Exception ex)
         {
@@ -191,7 +196,10 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         using var collector = new FilteredElementCollector(document).OfClass(typeof(Autodesk.Revit.DB.Family));
         foreach (Autodesk.Revit.DB.Family f in collector)
         {
-            if (string.Equals(f.Name, familyName, StringComparison.Ordinal)) return f;
+            // Case-insensitive to match the rest of the project
+            // (IFamilyFinder.FindByName, IFamilySearchService) so a family
+            // loaded with different casing still receives the marker.
+            if (string.Equals(f.Name, familyName, StringComparison.OrdinalIgnoreCase)) return f;
         }
         return null;
     }

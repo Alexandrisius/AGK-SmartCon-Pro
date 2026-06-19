@@ -41,6 +41,7 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
     {
         if (doc is null) return null;
         if (familyId is null) return null;
+        if (familyId == ElementId.InvalidElementId) return null;
 
         try
         {
@@ -85,6 +86,9 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
         if (version is null) throw new ArgumentNullException(nameof(version));
 #endif
 
+        if (familyId == ElementId.InvalidElementId)
+            throw new ArgumentException("Cannot write FamilyVersion marker to an invalid ElementId", nameof(familyId));
+
         _tx.RunInTransaction(doc, "SmartCon: Write FamilyVersion", txDoc =>
         {
             var family = txDoc.GetElement(familyId) as Autodesk.Revit.DB.Family;
@@ -115,9 +119,11 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
         var schema = FamilyVersionSchema.GetOrCreate();
         var result = new Dictionary<ElementId, FamilyVersion?>();
         var counter = new HotLoopCounter(sampleEvery: 32);
-
+        var count = 0;
         foreach (var id in familyIds)
         {
+            if (id is null) continue;
+            if (id == ElementId.InvalidElementId) continue;
             try
             {
                 var family = doc.GetElement(id) as Autodesk.Revit.DB.Family;
@@ -156,6 +162,15 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
                 }
                 result[id] = null;
             }
+            count++;
+        }
+        // Final progress log so a large batch (10k+ IDs) does not stay
+        // silent in the log when no exception was thrown. Counter only logs
+        // on sampled values; we want a final line for the happy path.
+        if (count > 32)
+        {
+            SmartConLogger.Debug(
+                $"ReadManyFromDocument: processed {count} families");
         }
         return result;
     }
@@ -176,8 +191,17 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
 
             return new FamilyVersion(schemaVersion, catalogItemId, versionLabel, loadedAt, sourceRevit);
         }
-        catch
+        catch (Exception ex)
         {
+            // Logged so a future schema-rewrite bug does not silently lose
+            // data; previously the catch was a bare 'catch' which made the
+            // bad data impossible to diagnose. We still return null so the
+            // caller treats the family as having no marker.
+            SmartConLogger.Warn(
+                $"ReadEntity: failed to deserialize FamilyVersion: " +
+                $"{ex.GetType().Name}: {ex.Message}. " +
+                "[Action: ES marker is corrupt; the family will be treated as " +
+                "fresh-loaded on the next stale check]");
             return null;
         }
     }

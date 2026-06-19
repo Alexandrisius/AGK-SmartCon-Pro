@@ -22,11 +22,19 @@ internal static class LocalCatalogQueryBuilder
             }
         }
 
+        // Category filters are composed with OR, not chained with else-if.
+        // The caller may legitimately want to combine them — e.g.
+        // ["__no_category__", "real-id-1", "real-id-2"] should match BOTH
+        // uncategorized rows AND rows in the two named categories. Using
+        // else-if would silently drop the IN-clause when IncludeUncategorized
+        // is set, and would also drop the recursive CategoryFilter when
+        // CategoryIdsFilter is set. Each condition is a separate SQL predicate
+        // that contributes one AND to the final WHERE.
         if (query.IncludeUncategorized)
         {
             conditions.Add("(ci.category_id IS NULL OR ci.category_id = '')");
         }
-        else if (query.CategoryIdsFilter is { Count: > 0 })
+        if (query.CategoryIdsFilter is { Count: > 0 })
         {
             var placeholders = new List<string>(query.CategoryIdsFilter.Count);
             foreach (var cid in query.CategoryIdsFilter)
@@ -37,7 +45,7 @@ internal static class LocalCatalogQueryBuilder
             }
             conditions.Add($"ci.category_id IN ({string.Join(", ", placeholders)})");
         }
-        else if (!string.IsNullOrWhiteSpace(query.CategoryFilter))
+        if (!string.IsNullOrWhiteSpace(query.CategoryFilter))
         {
             var paramName = $"@category_{paramIndex++}";
             conditions.Add($"""

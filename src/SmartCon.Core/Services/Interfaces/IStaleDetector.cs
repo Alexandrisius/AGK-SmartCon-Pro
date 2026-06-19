@@ -33,11 +33,24 @@ public interface IStaleDetector
     /// <list type="bullet">
     ///   <item><description><c>null</c> — check items in any category (root "Check all").</description></item>
     ///   <item><description>Single element <c>"__no_category__"</c> — check uncategorized items.</description></item>
-    ///   <item><description>Multiple elements — check items in any of the listed categories.</description></item>
+    ///   <item><description>Single element with a real category ID — check that category only.</description></item>
+    ///   <item><description>Multiple elements — check items in any of the listed categories
+    ///     (including <c>"__no_category__"</c>, in which case uncategorized items are
+    ///     included in addition to the real categories).</description></item>
     /// </list>
     /// </param>
     /// <param name="doc">Active Revit document.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="ct">Cancellation token. Honoured between every <c>await</c>
+    /// boundary AND between major steps (catalog read, Revit collector, ES read).
+    /// Cancellation throws <see cref="OperationCanceledException"/>.</param>
+    /// <remarks>
+    /// If two families in the project share a <c>Name</c> (rare — duplicate
+    /// loadable variants), the first match is used and a <c>Warn</c> is written
+    /// to <c>smartcon.log</c>. The version marker is then written to the
+    /// first-match <see cref="ElementId"/>, which may not be the one the
+    /// user intended. The duplicate must be resolved by the operator before
+    /// stale-detection results are trustworthy.
+    /// </remarks>
     Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
         IReadOnlyList<string>? categoryIds,
         Document doc,
@@ -63,6 +76,10 @@ public interface IStaleDetector
     /// Update so the next <c>Check</c> re-evaluates them from scratch instead of
     /// showing the stale marker indefinitely.
     /// </summary>
+    /// <param name="catalogItemIds">Catalog item IDs to drop. <c>null</c> or empty
+    /// collection is a no-op. The same collection is also used by
+    /// <see cref="IStaleCategoryAggregator.FilterStaleBySubtree"/> so the two
+    /// are consistent.</param>
     void MarkUpdated(IReadOnlyCollection<string> catalogItemIds);
 
     /// <summary>

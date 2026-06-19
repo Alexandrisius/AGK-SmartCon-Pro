@@ -136,10 +136,22 @@ internal sealed class StaleDetector : IStaleDetector
 
         // 1) Read catalog items for the given categories (SQLite, async, no Revit API).
         // "__no_category__" is the synthetic ID for the uncategorized node;
-        // the actual SQL filter must match NULL/empty category_id.
-        var includeUncategorized = categoryIds is { Count: 1 } && categoryIds[0] == "__no_category__";
-        var hasFilter = categoryIds is { Count: > 0 } && !includeUncategorized;
-        var singleCategoryId = hasFilter && categoryIds!.Count == 1 ? categoryIds[0] : null;
+        // the actual SQL filter must match NULL/empty category_id. If the list
+        // contains BOTH "__no_category__" and real categories, IncludeUncategorized
+        // is true AND CategoryIdsFilter carries the real IDs — the SQL builder
+        // (LocalCatalogQueryBuilder) now composes them with OR, not else-if.
+        // For "Check all" (categoryIds == null), IncludeUncategorized stays
+        // false so every catalog row is matched.
+        var hasUncategorized = categoryIds is { Count: > 0 } &&
+            categoryIds.Any(id => id == "__no_category__");
+        var hasFilter = categoryIds is { Count: > 0 };
+        var singleCategoryId = hasFilter && categoryIds!.Count == 1 && !hasUncategorized
+            ? categoryIds[0]
+            : null;
+        var realCategoryIds = hasFilter
+            ? categoryIds!.Where(id => id != "__no_category__").ToList()
+            : null;
+        var hasRealFilter = realCategoryIds is { Count: > 0 };
 
         var query = new FamilyCatalogQuery(
             SearchText: null,
@@ -150,24 +162,55 @@ internal sealed class StaleDetector : IStaleDetector
             Sort: FamilyCatalogSort.NameAsc,
             Offset: 0,
             Limit: int.MaxValue,
-            IncludeUncategorized: includeUncategorized,
-            CategoryIdsFilter: hasFilter && categoryIds!.Count > 1 ? categoryIds : null);
+            IncludeUncategorized: hasUncategorized,
+            CategoryIdsFilter: hasRealFilter ? realCategoryIds : null);
         var catalogItems = await _catalog.SearchAsync(query, ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         if (catalogItems.Count == 0) return Array.Empty<StaleCheckResult>();
 
         // 2) Collect Family element ids from the active document on the Revit thread.
+        // Two families with the same Name are rare but possible (e.g. two
+        // loadable variants both loaded). We use a list, log a warning, and
+        // return all candidates — the catalog item matches the FIRST one, but
+        // the operator is told there is an ambiguity. Without this, multiple
+        // matches silently overwrite each other.
         var familyIds = await _awaitable.RaiseAsync(
             _ =>
             {
-                var map = new Dictionary<string, (string FamilyName, ElementId Id)>(StringComparer.Ordinal);
+                var map = new Dictionary<string, List<(string FamilyName, ElementId Id)>>(StringComparer.Ordinal);
                 using var collector = new FilteredElementCollector(doc).OfClass(typeof(Autodesk.Revit.DB.Family));
                 foreach (Autodesk.Revit.DB.Family f in collector)
                 {
                     if (f is null || f.Name is null) continue;
-                    map[f.Name] = (f.Name, f.Id);
+                    if (!map.TryGetValue(f.Name, out var list))
+                    {
+                        list = new List<(string, ElementId)>();
+                        map[f.Name] = list;
+                    }
+                    list.Add((f.Name, f.Id));
+                }
+                foreach (var kvp in map)
+                {
+                    if (kvp.Value.Count > 1)
+                    {
+                        var firstId = kvp.Value[0].Id;
+#if NET8_0_OR_GREATER
+                        var firstIdValue = firstId.Value;
+#else
+#pragma warning disable CS0618 // IntegerValue is deprecated in Revit 2024; removed in 2025. Use Value when available.
+                        var firstIdValue = firstId.IntegerValue;
+#pragma warning restore CS0618
+#endif
+                        SmartConLogger.Warn(
+                            $"CheckCategory: family name '{kvp.Value[0].FamilyName}' matches {kvp.Value.Count} " +
+                            $"Family elements in the project; the first match (ElementId=" +
+                            $"{firstIdValue}) will be used. " +
+                            "[Action: rename one of the families to remove the ambiguity]");
+                    }
                 }
                 return map;
             }, ct).ConfigureAwait(true);
+        ct.ThrowIfCancellationRequested();
 
         // 3) Match catalog items to Revit Family elements by name (left join).
         var matched = new List<(FamilyCatalogItem Item, string FamilyName, ElementId Id)>();
@@ -179,9 +222,9 @@ internal sealed class StaleDetector : IStaleDetector
                 SmartConLogger.Debug(
                     $"Matching {matchCounter.Count}/{catalogItems.Count}: '{item.Name}'.");
             }
-            if (familyIds.TryGetValue(item.Name, out var hit))
+            if (familyIds.TryGetValue(item.Name, out var hits) && hits.Count > 0)
             {
-                matched.Add((item, hit.FamilyName, hit.Id));
+                matched.Add((item, hits[0].FamilyName, hits[0].Id));
             }
         }
 
@@ -281,12 +324,51 @@ internal sealed class StaleDetector : IStaleDetector
 
     private int ResolveTargetRevit()
     {
-        var text = _revitContext.GetRevitVersion();
-        return int.TryParse(text, out var v) ? v : 0;
+        string text;
+        try
+        {
+            text = _revitContext.GetRevitVersion();
+        }
+        catch (Exception ex)
+        {
+            // IRevitContext throws InvalidOperationException if SetContext was
+            // never called. The same defensiveness StaleFamilyUpdater applies.
+            // Returning 0 means "unknown target" — ComputeReason will then
+            // treat the family as not-stale on the version axis, which is the
+            // conservative choice (we don't want to lie about staleness when
+            // we genuinely don't know which Revit we are in).
+            SmartConLogger.Warn(
+                $"ResolveTargetRevit: IRevitContext.GetRevitVersion threw " +
+                $"{ex.GetType().Name}: {ex.Message}. " +
+                "[Action: report this warning — target Revit version is unknown " +
+                "and StaleReason.RevitVersionMismatch will be skipped until the " +
+                "context is initialised]");
+            return 0;
+        }
+        if (int.TryParse(text, out var v)) return v;
+        SmartConLogger.Warn(
+            $"ResolveTargetRevit: IRevitContext.GetRevitVersion returned " +
+            $"'{text}' which is not a valid year integer. " +
+            "[Action: report this warning — RevitVersionMismatch will be skipped " +
+            "for this session]");
+        return 0;
     }
 
     private static StaleReason ComputeReason(FamilyVersion loaded, FamilyCatalogItem item, int targetRevit)
     {
+        // Defensive: a marker for a different catalog ID would yield a false
+        // "not stale" verdict. This is rare (would require manually-written ES
+        // data with the wrong GUID) but cheap to guard.
+        if (!string.IsNullOrEmpty(loaded.CatalogItemId) &&
+            !string.Equals(loaded.CatalogItemId, item.Id, StringComparison.Ordinal))
+        {
+            SmartConLogger.Warn(
+                $"ComputeReason: ES marker CatalogItemId='{loaded.CatalogItemId}' " +
+                $"does not match catalog id '{item.Id}'. " +
+                "[Action: ES data is corrupted for this family; treat as stale]");
+            return StaleReason.VersionMismatch;
+        }
+
         if (!string.IsNullOrEmpty(item.CurrentVersionLabel) &&
             !string.Equals(loaded.VersionLabel, item.CurrentVersionLabel, StringComparison.Ordinal))
         {
