@@ -67,13 +67,18 @@ public sealed class PipeConnectSessionBuilder(
         var virtualCtcStore = new VirtualCtcStore();
 
         // ── S1.1: Dynamic connector type ─────────────────────────────────────
-        if (!IsKnownTypeCode(dynamicProxy.ConnectionTypeCode))
+        if (!IsKnownTypeDefinition(dynamicProxy))
         {
             var result = EnsureTypeCode(doc, dynamicProxy, virtualCtcStore);
             if (result is null) return null;
             dynamicProxy = connectorSvc.GetNearestFreeConnector(
                 doc, dynamicProxy.OwnerElementId, dynamicProxy.Origin) ?? dynamicProxy;
-            dynamicProxy = dynamicProxy with { ConnectionTypeCode = new ConnectionTypeCode(result.Code) };
+            dynamicProxy = dynamicProxy with
+            {
+                ConnectionTypeCode = new ConnectionTypeCode(result.Code),
+                ConnectionName = result.Name,
+                ConnectionDescription = result.Description,
+            };
         }
 
         // ── S2: Static element ───────────────────────────────────────────────
@@ -91,13 +96,18 @@ public sealed class PipeConnectSessionBuilder(
         }
 
         // ── S2.1: Static connector type ──────────────────────────────────────
-        if (!IsKnownTypeCode(staticProxy.ConnectionTypeCode))
+        if (!IsKnownTypeDefinition(staticProxy))
         {
             var result = EnsureTypeCode(doc, staticProxy, virtualCtcStore);
             if (result is null) return null;
             staticProxy = connectorSvc.GetNearestFreeConnector(
                 doc, staticProxy.OwnerElementId, staticProxy.Origin) ?? staticProxy;
-            staticProxy = staticProxy with { ConnectionTypeCode = new ConnectionTypeCode(result.Code) };
+            staticProxy = staticProxy with
+            {
+                ConnectionTypeCode = new ConnectionTypeCode(result.Code),
+                ConnectionName = result.Name,
+                ConnectionDescription = result.Description,
+            };
         }
 
         // ── S3: alignment (pure math) ────────────────────────────────────────
@@ -152,11 +162,10 @@ public sealed class PipeConnectSessionBuilder(
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
-    private bool IsKnownTypeCode(ConnectionTypeCode code)
+    private bool IsKnownTypeDefinition(ConnectorProxy proxy)
     {
-        if (!code.IsDefined) return false;
-        var types = mappingRepo.GetConnectorTypes();
-        return types.Any(t => t.Code == code.Value);
+        var parsed = ConnectorDescription.FromProxy(proxy);
+        return ConnectorDescription.IsKnownTypeDefinition(parsed, mappingRepo.GetConnectorTypes());
     }
 
     private ConnectorTypeDefinition? EnsureTypeCode(

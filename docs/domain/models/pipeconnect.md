@@ -23,6 +23,8 @@ public sealed record ConnectorProxy
     public double Radius { get; init; }               // Internal Units
     public Domain Domain { get; init; }                // DomainPiping, DomainHvac, etc.
     public ConnectionTypeCode ConnectionTypeCode { get; init; }
+    public string ConnectionName { get; init; } = "";        // issue #64: имя из "code.name.description"
+    public string ConnectionDescription { get; init; } = ""; // issue #64: описание (с точками)
     public bool IsFree { get; init; }                 // AllRefs.IsEmpty == true
 }
 ```
@@ -31,7 +33,8 @@ public sealed record ConnectorProxy
 
 ## ConnectionTypeCode
 
-Строго типизированная обёртка над кодом из поля `Connector.Description`.
+Строго типизированная обёртка над **числовым кодом** из поля `Connector.Description`.
+Парсит только первый сегмент до `.` (для полного разбора см. `ConnectorDescription`).
 
 **Файл:** `SmartCon.Core/Models/ConnectionTypeCode.cs`
 
@@ -42,10 +45,58 @@ public readonly record struct ConnectionTypeCode(int Value)
     public bool IsDefined => Value != 0;
     public override string ToString() => Value.ToString();
 
+    // Парсит "1.Резьба.ГОСТ 6357" → Code=1 (только число).
+    // Для полного разбора code+name+description используйте ConnectorDescription.Parse.
     public static ConnectionTypeCode Parse(string? raw) =>
-        int.TryParse(raw, out var v) && v != 0 ? new(v) : Undefined;
+        int.TryParse(raw?.Split('.')[0].Trim(), out var v) && v != 0 ? new(v) : Undefined;
 }
 ```
+
+> **Используется в 40+ hot-path местах** (CtcGuesser, FittingMapper, FittingInsertService,
+> CtcGuessService, CtcFamilyWriter, FittingCardBuilder, ConnectExecutor, тесты) — везде, где
+> достаточно **только числового кода** для сравнения.
+
+---
+
+## ConnectorDescription
+
+Полная распарсенная тройка `code.name.description` из строки описания коннектора.
+Используется для верификации против пользовательского маппинга (issue #64).
+
+**Файл:** `SmartCon.Core/Models/ConnectorDescription.cs`
+
+```csharp
+public sealed record ConnectorDescription(
+    ConnectionTypeCode Code,
+    string Name,
+    string Description)
+{
+    public static readonly ConnectorDescription Undefined = new(ConnectionTypeCode.Undefined, "", "");
+
+    public bool IsDefined => Code.IsDefined;
+
+    // Парсит "1.Резьба наружная.ГОСТ 6357-81 §4.2.5" → (Code=1, Name="Резьба наружная", Description="ГОСТ 6357-81 §4.2.5")
+    // Третий сегмент может содержать точки (ГОСТы, разделы) — Split с count=3 сохраняет остаток.
+    public static ConnectorDescription Parse(string? raw);
+
+    // Строит описание из ConnectorProxy (для повторного парсинга после обновления через MiniTypeSelector).
+    public static ConnectorDescription FromProxy(ConnectorProxy proxy);
+
+    // Сравнение с ConnectorTypeDefinition из маппинга:
+    // Trim + OrdinalIgnoreCase для всех 3 полей, пустое != непустое (строго).
+    public bool Matches(ConnectorTypeDefinition definition);
+
+    // Полная проверка: парсинг proxy и поиск хотя бы одного совпадения в mapping.
+    // Issue #64: если code=1 совпадает, но name/description отличаются → false → MiniTypeSelector вызывается.
+    public static bool IsKnownTypeDefinition(
+        ConnectorDescription parsed,
+        IReadOnlyList<ConnectorTypeDefinition> mapping);
+}
+```
+
+> **Почему отдельный record от `ConnectionTypeCode`?** `ConnectionTypeCode` — 4-байтовый
+> value type, используемый в 40+ hot-path сравнениях, где достаточно числа. Этот record
+> несёт полную тройку и используется только в `PipeConnectSessionBuilder.IsKnownTypeDefinition`.
 
 ---
 
@@ -64,6 +115,10 @@ public sealed record ConnectorTypeDefinition
     public string Description { get; init; } = string.Empty;  // подробное описание
 }
 ```
+
+Записывается в `ALL_MODEL_DESCRIPTION` типоразмера трубы или `Connector.Description` фитинга
+в формате `"{Code}.{Name}.{Description}"` через `RevitFamilyConnectorService.SetConnectorTypeCode`.
+Тот же формат читает `ConnectorDescription.Parse`.
 
 ---
 

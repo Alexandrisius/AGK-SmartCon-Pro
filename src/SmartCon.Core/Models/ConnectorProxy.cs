@@ -34,6 +34,22 @@ public sealed record ConnectorProxy
     /// <summary>Connection type code parsed from Description.</summary>
     public required ConnectionTypeCode ConnectionTypeCode { get; init; }
 
+    /// <summary>
+    /// Name segment of the connector description (e.g. "Резьба наружная" in
+    /// "1.Резьба наружная.ГОСТ 6357"). Empty when the connector only has a
+    /// numeric code, or when parsing was not possible. Used by
+    /// <c>PipeConnectSessionBuilder.IsKnownTypeDefinition</c> for full
+    /// (code+name+description) match against the mapping (issue #64).
+    /// </summary>
+    public string ConnectionName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Description segment of the connector description (e.g. "ГОСТ 6357-81 §4.2"
+    /// in "1.Резьба наружная.ГОСТ 6357-81 §4.2"). May contain dots — preserved
+    /// verbatim. Empty when absent. See <see cref="ConnectionName"/> for context.
+    /// </summary>
+    public string ConnectionDescription { get; init; } = string.Empty;
+
     /// <summary>Whether this connector is unconnected.</summary>
     public required bool IsFree { get; init; }
 
