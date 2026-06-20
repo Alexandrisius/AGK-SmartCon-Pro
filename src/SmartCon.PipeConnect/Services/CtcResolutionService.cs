@@ -4,8 +4,6 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 
-using static SmartCon.Core.Units;
-
 namespace SmartCon.PipeConnect.Services;
 
 /// <summary>
@@ -80,14 +78,17 @@ public sealed class CtcResolutionService(
 
                 if (right.Conn is not null)
                 {
-                    double score = System.Math.Abs(left.Conn.Radius - staticConnector.Radius);
+                    double score = left.Conn.Origin.DistanceTo(staticConnector.Origin);
                     validPairs.Add((left.Conn, right.Conn, score));
                 }
             }
 
             if (validPairs.Count > 0)
             {
-                var best = validPairs.OrderBy(p => p.Score).First();
+                var best = validPairs
+                    .OrderBy(p => p.Score)
+                    .ThenBy(p => p.Fc1.ConnectorIndex)
+                    .First();
                 return (best.Fc1, best.Fc2);
             }
         }

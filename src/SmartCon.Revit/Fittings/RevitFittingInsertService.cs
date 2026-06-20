@@ -102,15 +102,17 @@ public sealed class RevitFittingInsertService : IFittingInsertService
 
                     if (right.Conn is not null)
                     {
-                        double staticR = staticProxy.Radius;
-                        double score = System.Math.Abs(left.Conn.Radius - staticR);
+                        double score = left.Conn.Origin.DistanceTo(staticProxy.Origin);
                         validPairs.Add((left.Conn, right.Conn, score));
                     }
                 }
 
                 if (validPairs.Count > 0)
                 {
-                    var best = validPairs.OrderBy(p => p.Score).First();
+                    var best = validPairs
+                        .OrderBy(p => p.Score)
+                        .ThenBy(p => p.Fc1.Id)
+                        .First();
                     fitConn1 = best.Fc1;
                     fitConn2 = best.Fc2;
                     SmartConLogger.Info($"Strategy 0 (direct-connect rules): " +
