@@ -170,3 +170,57 @@ public static class JsonOptions
     public static JsonSerializerOptions RelaxedWriteIndented { get; } // JavaScriptEncoder.UnsafeRelaxedJsonEscaping (кириллица)
 }
 ```
+
+---
+
+## ITypeCatalogValueApplier (Phase 25 / ADR-032)
+
+Парсит сырое строковое значение из Type Catalog (`.txt`) в типизированное значение, соответствующее RevitAPI `StorageType`. Pure C# — без зависимости от RevitAPI в Core, что позволяет unit-тестировать в test bin (RevitAPI имеет `ExcludeAssets=runtime` — см. skill `smartcon-testing` §"What cannot be mocked").
+
+**Файл:** `ITypeCatalogValueApplier.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/TypeCatalogValueApplier.cs`
+
+```csharp
+public sealed record TypeCatalogValueApplyResult(
+    TypeCatalogValueApplyStatus Status,
+    object? Value,         // string | double | int | long (ElementId raw id)
+    string? Error);
+
+public enum TypeCatalogValueApplyStatus
+{
+    Success,
+    InvalidFormat,
+    UnsupportedStorageType,
+}
+
+/// <summary>
+/// Integer codes matching Revit API <c>StorageType</c> enum exactly. The underlying
+/// integer values are STABLE across all Revit versions (2019 through 2026+):
+/// <c>None=0, Integer=1, Double=2, String=3, ElementId=4</c>. Confirmed via
+/// <see href="https://www.revitapidocs.com/2025/3dbebcb8-792b-a3dd-fe63-faaa05704f3c.htm"/>.
+/// </summary>
+public enum StorageTypeCode
+{
+    StgNone = 0,
+    StgInt = 1,        // StorageType.Integer
+    StgNumber = 2,     // StorageType.Double
+    StgText = 3,       // StorageType.String
+    StgElementId = 4,
+}
+
+public interface ITypeCatalogValueApplier
+{
+    TypeCatalogValueApplyResult Apply(string? rawValue, StorageTypeCode storageType);
+}
+```
+
+**Стратегия парсинга:**
+- `StgText` — value возвращается как есть
+- `StgInt` — `int.TryParse` с `InvariantCulture`
+- `StgNumber` — `InvariantCulture` → fallback на `CurrentCulture` (для русской локали с запятой)
+- `StgElementId` — `long.TryParse` с `InvariantCulture` (raw id, оборачивается в `new ElementId(id)` на стороне вызывающего кода)
+- Прочее — `UnsupportedStorageType`
+
+**Имена членов `StorageTypeCode` используют префикс `Stg`** (storage) чтобы избежать CA1720 (имя члена совпадает с именем типа — `Integer`/`String`/`Double` запрещены).
+
+**Хронология:** значения `StorageType` enum были **стабильны с Revit 2015 по 2026** (None=0, Integer=1, Double=2, String=3, ElementId=4). В `revitapidocs.com/2025` Autodesk явно указал underlying values для всех членов enum. Маппинг выполняется через `(int)param.StorageType` → `StorageTypeCode` напрямую, без runtime switch по версии. Подтверждено через exa search и revitapidocs.com.

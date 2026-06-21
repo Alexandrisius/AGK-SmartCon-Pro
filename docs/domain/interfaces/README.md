@@ -18,4 +18,4 @@ module: interfaces-index
 | [`family-manager-system.md`](family-manager-system.md) | ISystemFamilyRevitOperations, ISystemFamilyIsolationProjectService, ISystemFamilyAttributeExtractor | `SmartCon.Core/Services/Interfaces/` (root) |
 | [`drag-drop-contracts.md`](drag-drop-contracts.md) | IDragInfo, IDropInfo (минимальные контракты для WPF drag-drop) | `SmartCon.Core/Services/Interfaces/` (root) |
 | [`ui-contracts.md`](ui-contracts.md) | IObservableRequestClose, ICloseAwareViewModel, ISaveableViewModel | `SmartCon.Core/Services/Interfaces/` (root) |
-| [`cross-cutting.md`](cross-cutting.md) | IClock, IIdGenerator, IDispatcher, ILocalCatalogMigrator, Guard, JsonOptions, SqliteConnectionExtensions | `SmartCon.Core/Services/Interfaces/` (root) + `Core/Compatibility/`, `Core/Data/` |
+| [`cross-cutting.md`](cross-cutting.md) | IClock, IIdGenerator, IDispatcher, ILocalCatalogMigrator, Guard, JsonOptions, SqliteConnectionExtensions, ITypeCatalogValueApplier, StorageTypeCode | `SmartCon.Core/Services/Interfaces/` (root) + `Core/Compatibility/`, `Core/Data/` |

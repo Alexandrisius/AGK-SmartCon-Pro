@@ -350,6 +350,18 @@ public sealed record FamilyExtractionResult(
 public interface IFamilyDataExtractionService
 {
     FamilyExtractionResult Extract(string rfaFilePath, IReadOnlyList<string> expectedParameterNames);
+    FamilyExtractionResult Extract(Autodesk.Revit.DB.Document familyDocument, IReadOnlyList<string> expectedParameterNames);
+
+    /// <summary>
+    /// Single entry point for all managed-storage import paths. Opens the
+    /// .rfa via Revit API, runs Type Catalog simulation when a .txt sidecar
+    /// is present (ADR-032), and closes the document in a finally block.
+    /// Must be called on the Revit UI thread.
+    /// </summary>
+    FamilyExtractionResult ExtractFromManagedFile(
+        string managedRfaPath,
+        IReadOnlyList<string> expectedParameterNames,
+        CancellationToken ct = default);
 }
 ```
 

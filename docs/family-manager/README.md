@@ -138,3 +138,16 @@ ExtensibleStorage остаётся паттерном существующих �
 - Breaking change `2.0.0` — pre-release `2.0.0-beta.1` (ADR-021)
 - Доступно всем ролям (это операция в активном проекте, не каталог)
 - Детальный план: `docs/family-manager/02-plans/phase-24-stale-detection-v2.md`
+
+**Phase 25 (FamilyManager Type Catalog Simulation — Issue #66) — ЗАВЕРШЕНА (2026-06-21).**
+- ADR-032 принят: `docs/adr/032-type-catalog-simulation.md` — симуляция типов из `.txt` каталога через `Document.Regenerate()` для вычисления формул
+- Новый сервис: `ITypeCatalogValueApplier` (pure C#) + `StorageTypeCode` enum в Core — парсит значения из `.txt` в типизированные; Revit API не требуется в runtime, что позволяет unit-тесты в test bin
+- 19 unit-тестов для `TypeCatalogValueApplier` (Text / Int / Number / ElementId / InvalidFormat / Unsupported / null-safety / culture fallback)
+- `IFamilyDataExtractionService.ExtractFromManagedFile(path, names, ct)` — единая точка входа для всех 3 call site (`FamilyEdit.cs:532, :586`, `Import.cs:216`)
+- Encoding detection: UTF-8 strict → `UtfUnknown.CharsetDetector` (Mozilla Universal Charset Detector, confidence > 0.7) → fallback на system ANSI; критично для русских библиотек Autodesk (Windows-1251)
+- Per-type и per-parameter изоляция ошибок: битый типоразмер / параметр не валит остальные, ошибки логируются с `[Action: ...]`, **NO** диалог Revit
+- `tx.RollBack()` в `finally` гарантирует неизменность `.rfa` файла на диске
+- `__SCAT__` префикс для временных типов (исключает коллизии с дефолтным типом)
+- Логирование по skill `smartcon-logging`: `BeginScope("TypeCatalogSim", ...)` + START/END `Info` маркеры; все `Warn` заканчиваются `[Action: ...]` (L9)
+- Multi-version support: R19/R21/R24/R25 собираются 0 warnings / 0 errors
+- Все 1365 тестов зелёные (1346 baseline + 19 новых для `TypeCatalogValueApplier`)

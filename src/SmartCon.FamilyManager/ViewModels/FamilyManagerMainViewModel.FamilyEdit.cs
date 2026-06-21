@@ -529,7 +529,7 @@ public sealed partial class FamilyManagerMainViewModel
                     continue;
                 }
 
-                var extraction = _extractionService.Extract(task.ManagedRfaPath, Array.Empty<string>());
+                var extraction = await ExtractFromManagedFileAsync(task.ManagedRfaPath, Array.Empty<string>(), CancellationToken.None);
                 if (extraction.Success)
                 {
                     if (task.HasTypeCatalog)
@@ -583,7 +583,7 @@ public sealed partial class FamilyManagerMainViewModel
                 var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
                 var hasTypeCatalog = File.Exists(txtPath);
 
-                var extraction = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());
+                var extraction = await ExtractFromManagedFileAsync(resolved.AbsolutePath, Array.Empty<string>(), CancellationToken.None);
                 if (extraction.Success)
                 {
                     extractionResults.Add((catalogItemId, extraction, item.VersionId, item.FileId, hasTypeCatalog));

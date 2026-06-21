@@ -98,8 +98,8 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | SmartCon.App | ✅ Полный | Ribbon, DI, ExternalEvents, Updater |
 | SmartCon.PipeConnect | ✅ Полный | PipeConnect: 5 partial VM, 12 сервисов, 6 окон |
 | SmartCon.ProjectManagement | ✅ Реализован | Share Project: ISO 19650, ADR-013 |
-| SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015, Stale Detection v2 (ADR-030) |
-| SmartCon.Tests | ✅ 1068 тестов, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
+| SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015, Stale Detection v2 (ADR-030), Type Catalog Simulation (ADR-032) |
+| SmartCon.Tests | ✅ 1365 тестов, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
 
 **Phase 11 (ProjectManagement) завершена (2026-04-25):** Share Project, Field Library, FileNameParser с валидацией, 12-категорийная очистка модели, 716 тестов.
 
@@ -120,3 +120,5 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 **Phase 20 (FamilyManager RBAC) завершена (2026-05-16):** ADR-022, Role-Based Access Control для локальных каталогов, DbUser/DbUserRole, Profile dialog, ownership transfer.
 
 **Phase 24 (FamilyManager Stale Detection v2) завершена (2026-06-18):** ADR-030, on-demand stale detection через `SmartCon_FamilyVersion_v1` ExtensibleStorage Schema на `Family` элементе в проекте (не на `.rfa` — over-engineered, см. ADR-030 §2), override ADR-014 §FM-007 (см. [ADR-030](adr/030-phase-24-stale-detection-v2.md) и [план реализации](family-manager/02-plans/phase-24-stale-detection-v2.md)). Schema v12: drop table `project_usage` (clean slate, breaking change 2.0.0). ПКМ "Проверить" на категории/семействе, пакетное обновление, roll-up индикация на категориях.
+
+**Phase 25 (FamilyManager Type Catalog Simulation — Issue #66) завершена (2026-06-21):** ADR-032, симуляция типов из `.txt` каталога через `Document.Regenerate()` для вычисления формул. Новый сервис `ITypeCatalogValueApplier` (pure C#), единая точка входа `IFamilyDataExtractionService.ExtractFromManagedFile(path, names, ct)`, per-type/per-parameter изоляция ошибок, `__SCAT__` префикс временных типов, encoding detection через UTF.Unknown, `tx.RollBack()` гарантирует неизменность `.rfa`. Поддержка R19/R21/R24/R25.

@@ -213,7 +213,7 @@ public sealed partial class FamilyManagerMainViewModel
                     var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
                     var hasTypeCatalog = File.Exists(txtPath);
 
-                    var extractionResult = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());
+                    var extractionResult = await ExtractFromManagedFileAsync(resolved.AbsolutePath, Array.Empty<string>(), CancellationToken.None);
                     if (extractionResult.Success)
                     {
                         extractionResults.Add((catalogItemId, extractionResult, item.VersionId, item.FileId, hasTypeCatalog));

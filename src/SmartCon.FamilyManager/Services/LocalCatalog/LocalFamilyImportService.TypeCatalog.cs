@@ -131,7 +131,6 @@ internal sealed partial class LocalFamilyImportService
             await _runRepository.CreateRunAsync(run, ct);
 
             var types = new List<FamilyTypeDescriptor>();
-            var values = new List<ExtractedAttributeValue>();
             var seenTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var duplicateCount = 0;
 
@@ -145,15 +144,29 @@ internal sealed partial class LocalFamilyImportService
                     continue;
                 }
 
-                var typeId = Guid.NewGuid().ToString();
                 types.Add(new FamilyTypeDescriptor(
-                    typeId,
+                    Guid.NewGuid().ToString(),
                     catalogItemId,
                     entry.TypeName,
                     types.Count,
                     versionId,
                     null,
                     runId));
+            }
+
+            if (duplicateCount > 0)
+            {
+                SmartConLogger.Info($"Skipped {duplicateCount} duplicate type(s), imported {types.Count} unique types");
+            }
+
+            var typeIdsByName = await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, null, runId, types, ct);
+
+            var values = new List<ExtractedAttributeValue>();
+            for (var i = 0; i < parseResult.Entries.Count; i++)
+            {
+                var entry = parseResult.Entries[i];
+                if (!seenTypeNames.Contains(entry.TypeName)) continue;
+                if (!typeIdsByName.TryGetValue(entry.TypeName, out var typeId)) continue;
 
                 foreach (var param in entry.ParameterValues)
                 {
@@ -179,12 +192,6 @@ internal sealed partial class LocalFamilyImportService
                 }
             }
 
-            if (duplicateCount > 0)
-            {
-                SmartConLogger.Info($"Skipped {duplicateCount} duplicate type(s), imported {types.Count} unique types");
-            }
-
-            await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, null, runId, types, ct);
             await _valueRepository.ReplaceSnapshotAsync(catalogItemId, versionId, runId, values, ct);
 
             SmartConLogger.Info($"Imported {types.Count} types from '{Path.GetFileName(sourceTxtPath)}' for catalog item {catalogItemId}");

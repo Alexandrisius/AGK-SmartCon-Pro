@@ -404,3 +404,20 @@ Enum поддерживаемых языков UI (en, ru).
 Константы ключей локализации модуля ProjectManagement.
 
 **Файл:** `SmartCon.Core/Localization/LocalizationService.Keys.ProjectManagement.cs`
+
+---
+
+## TypeCatalogValueApplier (Phase 25 / ADR-032)
+
+Pure C# реализация `ITypeCatalogValueApplier`. Парсит сырое значение из Type Catalog (`.txt`) в типизированное значение, совместимое с Revit `StorageType`. Не вызывает Revit API — принимает `StorageTypeCode` (int-backed enum в Core) как opaque parameter. Это позволяет unit-тестирование без зависимости от Revit.
+
+**Файл:** `SmartCon.Core/Services/Implementation/TypeCatalogValueApplier.cs`
+
+Логика:
+- `StgText` → return as-is
+- `StgInt` → `int.Parse(Invariant)`
+- `StgNumber` → `double.Parse(Invariant)` → fallback `CurrentCulture` (важно для русской локали)
+- `StgElementId` → `long.Parse(Invariant)` (raw id, оборачивается в `new ElementId(id)` вызывающим кодом)
+- Прочее → `UnsupportedStorageType`
+
+**Тестирование:** 19 unit-тестов в `src/SmartCon.Tests/Core/Services/TypeCatalogValueApplierTests.cs` покрывают все ветки + null-safety + culture fallback + негативные кейсы (InvalidFormat для разных StorageType).

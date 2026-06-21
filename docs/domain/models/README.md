@@ -22,4 +22,4 @@ module: models-index
 | [`formula-engine.md`](formula-engine.md) | AST парсер формул Revit: Token, AstNode, Solver | `SmartCon.Core/Math/FormulaEngine/` |
 | [`math-utilities.md`](math-utilities.md) | Vec3, ConnectorAligner, VectorUtils, BestSizeMatcher | `SmartCon.Core/Math/` |
 | [`updates.md`](updates.md) | Автообновление через GitHub: PendingUpdate, SemVersion, UpdateInfo | `SmartCon.Core/Models/` (root) |
-| [`cross-cutting.md`](cross-cutting.md) | CtcGuesser, ElementIdEqualityComparer, FamilyMetadataFormat, JsonOptions, ILocalCatalogMigrator | `SmartCon.Core/Models/` + `Core/Services/` |
+| [`cross-cutting.md`](cross-cutting.md) | CtcGuesser, ElementIdEqualityComparer, FamilyMetadataFormat, JsonOptions, ILocalCatalogMigrator, TypeCatalogValueApplier, TypeCatalogValueApplyResult, TypeCatalogValueApplyStatus | `SmartCon.Core/Models/` + `Core/Services/` |

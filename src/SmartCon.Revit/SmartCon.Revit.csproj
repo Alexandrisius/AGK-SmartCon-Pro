@@ -28,4 +28,8 @@
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="UTF.Unknown" />
+  </ItemGroup>
+
 </Project>

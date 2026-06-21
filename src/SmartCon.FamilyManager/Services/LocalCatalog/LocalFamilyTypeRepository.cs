@@ -156,11 +156,13 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
         }
     }
 
-    public async Task SaveTypesForRunAsync(string catalogItemId, string? versionId, string? fileId, string runId, IReadOnlyList<FamilyTypeDescriptor> types, CancellationToken ct = default)
+    public async Task<IReadOnlyDictionary<string, string>> SaveTypesForRunAsync(string catalogItemId, string? versionId, string? fileId, string runId, IReadOnlyList<FamilyTypeDescriptor> types, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
         using var tx = connection.BeginTransaction();
+
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
@@ -176,6 +178,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                         file_id = excluded.file_id,
                         extraction_run_id = excluded.extraction_run_id,
                         type_unique_id = COALESCE(excluded.type_unique_id, family_types.type_unique_id)
+                    RETURNING id
                     """;
                 upsertCmd.Parameters.Add(new SqliteParameter("@id", types[i].Id));
                 upsertCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
@@ -185,10 +188,18 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                 upsertCmd.Parameters.Add(new SqliteParameter("@fileId", (object?)fileId ?? DBNull.Value));
                 upsertCmd.Parameters.Add(new SqliteParameter("@runId", runId));
                 upsertCmd.Parameters.Add(new SqliteParameter("@uniqueId", (object?)types[i].UniqueId ?? DBNull.Value));
-                await upsertCmd.ExecuteNonQueryAsync(ct);
+                var returnedId = await upsertCmd.ExecuteScalarAsync(ct);
+                if (returnedId is null || returnedId is DBNull)
+                {
+                    throw new InvalidOperationException(
+                        $"SaveTypesForRunAsync: RETURNING id returned null for type '{types[i].Name}' " +
+                        $"(catalog_item_id='{catalogItemId}'). Possible SQLite version < 3.35.");
+                }
+                result[types[i].Name] = (string)returnedId;
             }
 
             tx.Commit();
+            return result;
         }
         catch
         {
