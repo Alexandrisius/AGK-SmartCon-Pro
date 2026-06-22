@@ -1,6 +1,6 @@
 # ADR-033: Bake-in Type Catalog в .rfa при импорте
 
-**Status:** accepted
+**Status:** implemented
 **Date:** 2026-06-22
 **Phase:** 25
 **Issue:** [#74](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/74)
@@ -193,3 +193,15 @@ ADR-032 решает issue #66 через **simulation**: при чтении ma
 - **`SetFormula(param, null)` на параметрах с циклическими зависимостями** может бросить `InvalidOperationException`. Митигация: топологический порядок восстановления.
 - **Кириллические имена параметров** — `FormulaSolver.Tokenizer` поддерживает Cyrillic; но trailing soft-sign и другие edge cases могут потребовать дополнительной проверки на реальных семействах.
 - **Family type parameters (nested family types)** — не тестировались; формулы на них могут вести себя иначе.
+
+## Freeze workaround: REVIT-236376 / REVIT-237190
+
+Bake-in выполняет `OpenDocumentFile` + `SaveAs` + `Close` для каждого импортируемого `.rfa`. На R2023 (net48) / Windows 11 family upgrade dialog от Revit может оставлять WPF render thread позади UI thread — DockablePane "замерзает" (LMB не работает, выпадающие списки и ПКМ возвращают UI к жизни). Это известный системный баг Autodesk, не наша регрессия — присутствовал ещё до bake-in, на 5fb16890.
+
+**Workaround:** после каждого `Close` в `RevitFamilyTypeCatalogBaker.BakeAsync` и `RevitFamilyDataExtractionService.Extract*` вызываем `RevitBalloonNudge.Nudge(...)`. Он показывает near-invisible InfoCenter balloon через `AdWindows.dll`, чьё собственное Win32-окно инициирует focus event — то же самое, что делает ПКМ пользователя на панели. Это community-confirmed workaround (Fausto Mendez, Autodesk Community "Loading a rfa file into a document using LoadFamily() freezes Revit UI").
+
+**Альтернативы, которые НЕ сработали в нашем тестировании:**
+- `BringWindowToTop + SetForegroundWindow + SetFocus` (Win32 focus flip)
+- `Dispatcher.BeginInvoke(ApplicationIdle)` + `InvalidateVisual + UpdateLayout` (WPF pump)
+
+**См. также:** REVIT-236376, REVIT-237190 в Autodesk JIRA; официальный fix для R2023 — update 2023.1.8 ("Fixed an issue that Revit UI became unresponsive in some cases with Windows 11"). Реализация: `src/SmartCon.Revit/Util/RevitBalloonNudge.cs`.

@@ -4,6 +4,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Util;
 
 namespace SmartCon.Revit.FamilyManager;
 
@@ -128,6 +129,15 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
                     // returns false; Close(false) above is the real lifetime-end.
                     try { Marshal.ReleaseComObject(familyDoc); } catch { /* ignore */ }
                 }
+
+                // Freeze workaround (REVIT-236376 / REVIT-237190): family upgrade
+                // dialog leaves the WPF render thread behind the UI thread. Show
+                // a near-invisible InfoCenter balloon to force a Win32 focus event
+                // that re-syncs them — the same recovery that happens when the
+                // user right-clicks on the DockablePane. See REVIT API forum
+                // "Loading a rfa file into a document using LoadFamily() freezes
+                // Revit UI" for the community-confirmed workaround.
+                RevitBalloonNudge.Nudge($"SmartCon: baked {Path.GetFileName(sourceRfaPath)}");
             }
         }, ct).ConfigureAwait(false);
     }

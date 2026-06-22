@@ -4,6 +4,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Util;
 
 namespace SmartCon.Revit.FamilyManager;
 
@@ -80,6 +81,12 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                         $"Marshal.ReleaseComObject skipped (RevitAPI doc is not a real COM object): {ex.Message}");
                 }
             }
+
+            // Freeze workaround (REVIT-236376 / REVIT-237190): force a Win32
+            // focus event via an InfoCenter balloon so the WPF render thread
+            // re-syncs with the UI thread after the family upgrade dialog
+            // closes. See RevitBalloonNudge.cs for the rationale.
+            RevitBalloonNudge.Nudge($"SmartCon: extracted {Path.GetFileName(rfaFilePath)}");
         }
     }
 
@@ -207,6 +214,11 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             {
                 SmartConLogger.Freeze($"Extract: Close/Release failed - {ex.GetType().Name}: {ex.Message}");
             }
+
+            // Freeze workaround (REVIT-236376 / REVIT-237190): see
+            // RevitBalloonNudge.cs — force a Win32 focus event after every
+            // OpenDocumentFile + Close cycle so the WPF render thread resyncs.
+            RevitBalloonNudge.Nudge($"SmartCon: extracted {Path.GetFileName(managedRfaPath)}");
         }
     }
 
