@@ -788,12 +788,43 @@ public sealed record FamilyTypeCatalogBakingResult(
 
 ```csharp
 public sealed record TypeCatalogParseResult(
-    IReadOnlyList<string> ParameterNames,
+    IReadOnlyList<TypeCatalogColumn> Columns,
     IReadOnlyList<TypeCatalogEntry> Entries)
 {
+    public IReadOnlyList<string> ParameterNames => Columns.Select(c => c.Name).ToList();
     public bool HasEntries => Entries.Count > 0;
+    public TypeCatalogColumn? FindColumn(string parameterName);
 }
 ```
+
+`Columns` хранит header колонок вместе с `##TYPE##UNITS` annotation из Revit Type Catalog
+specification. `ParameterNames` остался как backward-compatible helper для мест,
+где нужен только список имён (formula-variable lookup). `FindColumn` используется
+baker'ом для unit conversion перед `FamilyManager.Set`. См. ADR-033 BAKE-006.
+
+---
+
+## TypeCatalogColumn
+
+Один столбец из header Type Catalog (.txt). Хранит имя параметра и опциональные
+annotation `##TYPE##UNITS` (например `LENGTH##MILLIMETERS`), которые говорят Revit
+о единицах измерения значений в колонке.
+
+**Файл:** `TypeCatalogColumn.cs`
+
+```csharp
+public sealed record TypeCatalogColumn(
+    string Name,
+    string? TypeAnnotation,
+    string? UnitAnnotation)
+{
+    public bool HasUnitAnnotation => !string.IsNullOrEmpty(UnitAnnotation);
+}
+```
+
+Используется baker'ом через `RevitUnitsCompat.CatalogCellToInternalUnits` для
+конвертации raw значения в Revit internal units перед записью в параметр семейства.
+См. ADR-033 BAKE-006..009.
 
 ---
 

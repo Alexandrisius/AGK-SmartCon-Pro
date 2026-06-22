@@ -17,10 +17,10 @@ public static class TypeCatalogParser
         var delimiter = DetectDelimiter(records[0]);
         var headerFields = SplitCsvFields(records[0], delimiter);
 
-        var parameterNames = headerFields
+        var columns = headerFields
             .Skip(1)
-            .Select(h => h.Split(new[] { "##" }, StringSplitOptions.None)[0].Trim())
-            .Where(h => !string.IsNullOrEmpty(h))
+            .Select(ParseHeaderField)
+            .Where(c => !string.IsNullOrEmpty(c.Name))
             .ToList();
 
         var entries = new List<TypeCatalogEntry>();
@@ -35,17 +35,52 @@ public static class TypeCatalogParser
                 continue;
 
             var paramValues = new Dictionary<string, string>(StringComparer.Ordinal);
-            for (var j = 1; j < fields.Count && j - 1 < parameterNames.Count; j++)
+            for (var j = 1; j < fields.Count && j - 1 < columns.Count; j++)
             {
-                var paramName = parameterNames[j - 1];
+                var column = columns[j - 1];
                 var value = fields[j].Trim();
-                paramValues[paramName] = value;
+                paramValues[column.Name] = value;
             }
 
             entries.Add(new TypeCatalogEntry(typeName, paramValues));
         }
 
-        return new TypeCatalogParseResult(parameterNames, entries);
+        return new TypeCatalogParseResult(columns, entries);
+    }
+
+    /// <summary>
+    /// Парсит один столбец header. Поддерживает формат <c>Name##TYPE##UNITS</c>
+    /// из Revit Type Catalog specification.
+    /// <para>
+    /// Примеры:
+    /// <list type="bullet">
+    ///   <item><c>Width##length##millimeters</c> → <c>("Width", "length", "millimeters")</c></item>
+    ///   <item><c>Manufacturer##other##</c> → <c>("Manufacturer", "other", null)</c> (пустая UNITS)</item>
+    ///   <item><c>Material</c> → <c>("Material", null, null)</c> (без annotation)</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    private static TypeCatalogColumn ParseHeaderField(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new TypeCatalogColumn(string.Empty, null, null);
+
+        var parts = raw.Split(new[] { "##" }, StringSplitOptions.None);
+        var name = parts[0].Trim();
+
+        string? typeAnn = null;
+        if (parts.Length > 1 && !string.IsNullOrWhiteSpace(parts[1]))
+        {
+            typeAnn = parts[1].Trim();
+        }
+
+        string? unitAnn = null;
+        if (parts.Length > 2 && !string.IsNullOrWhiteSpace(parts[2]))
+        {
+            unitAnn = parts[2].Trim();
+        }
+
+        return new TypeCatalogColumn(name, typeAnn, unitAnn);
     }
 
     private static char DetectDelimiter(string firstRecord)

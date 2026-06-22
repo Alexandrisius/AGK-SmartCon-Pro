@@ -4,6 +4,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Compatibility;
 using SmartCon.Revit.Util;
 
 namespace SmartCon.Revit.FamilyManager;
@@ -149,10 +150,13 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
     {
         var fm = familyDoc.FamilyManager;
         var catalogParamNames = new HashSet<string>(catalog.ParameterNames, StringComparer.OrdinalIgnoreCase);
+        var catalogColumnsByName = catalog.Columns
+            .ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
 
         var paramMap = BuildParameterMap(fm);
         var formulaState = CollectFormulaState(fm, paramMap, catalogParamNames);
 
+        BakeStats stats = BakeStats.Empty;
         var txOk = _transactionService.RunInTransaction(familyDoc, BakeTransactionName, _ =>
         {
             EnsureCurrentType(fm);
@@ -161,20 +165,24 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
             RemoveOtherTypes(fm, anchor);
 
             DisableFormulas(fm, formulaState);
-            var createdCount = CreateCatalogTypes(fm, catalog, paramMap, ct);
+            stats = CreateCatalogTypes(fm, catalog, paramMap, catalogColumnsByName, ct);
             RemoveAnchorType(fm);
             RestoreFormulas(fm, formulaState);
 
             familyDoc.Regenerate();
-
-            SmartConLogger.Info(
-                $"Type Catalog baked: created {createdCount} type(s), restored {formulaState.Count} formula(s)");
         });
 
         if (!txOk)
         {
             return Failure("Transaction failed while baking Type Catalog; see log for details");
         }
+
+        // Один Info summary вместо per-param Debug — горячий цикл (до ~500 итераций на bake),
+        // который раньше генерировал 120-500 строк [CatalogSet] / [UnitConvert] Debug на импорт.
+        SmartConLogger.Info(
+            $"Type Catalog baked: created {stats.CreatedCount} type(s), " +
+            $"{stats.Converted} unit(s) converted, {stats.Failed} unit(s) failed, " +
+            $"restored {formulaState.Count} formula(s)");
 
         return new FamilyTypeCatalogBakingResult(
             Success: true,
@@ -340,14 +348,16 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
         }
     }
 
-    private int CreateCatalogTypes(
+    private BakeStats CreateCatalogTypes(
         Autodesk.Revit.DB.FamilyManager fm,
         TypeCatalogParseResult catalog,
         Dictionary<string, FamilyParameter> paramMap,
+        Dictionary<string, TypeCatalogColumn> catalogColumnsByName,
         CancellationToken ct)
     {
         var createdCount = 0;
-        var catalogParamNames = new HashSet<string>(catalog.ParameterNames, StringComparer.OrdinalIgnoreCase);
+        var unitConverted = 0;
+        var unitFailed = 0;
 
         foreach (var entry in catalog.Entries)
         {
@@ -361,19 +371,24 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
             }
 
             fm.CurrentType = newType;
-            ApplyCatalogValues(fm, entry, paramMap, catalogParamNames);
+            var entryStats = ApplyCatalogValues(fm, entry, paramMap, catalogColumnsByName);
+            unitConverted += entryStats.Converted;
+            unitFailed += entryStats.Failed;
             createdCount++;
         }
 
-        return createdCount;
+        return new BakeStats(createdCount, unitConverted, unitFailed);
     }
 
-    private void ApplyCatalogValues(
+    private BakeStats ApplyCatalogValues(
         Autodesk.Revit.DB.FamilyManager fm,
         TypeCatalogEntry entry,
         Dictionary<string, FamilyParameter> paramMap,
-        HashSet<string> catalogParamNames)
+        Dictionary<string, TypeCatalogColumn> catalogColumnsByName)
     {
+        var unitConverted = 0;
+        var unitFailed = 0;
+
         foreach (var kvp in entry.ParameterValues)
         {
             var columnName = kvp.Key;
@@ -381,6 +396,8 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
 
             if (!paramMap.TryGetValue(columnName, out var param) || param is null)
             {
+                // Skip-debug: срабатывает только когда column .txt не имеет соответствующего
+                // параметра в .rfa (не hot path — обычно 0 случаев на корректный каталог).
                 SmartConLogger.Debug($"Skip(no-param): type='{entry.TypeName}' param='{columnName}'");
                 continue;
             }
@@ -411,12 +428,23 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
 
             try
             {
-                var valueBefore = ReadParameterValue(fm.CurrentType!, param);
-                ApplyTypedValue(fm, param, applyResult.Value);
-                var valueAfter = ReadParameterValue(fm.CurrentType!, param);
-                SmartConLogger.Debug(
-                    $"[CatalogSet] type='{entry.TypeName}' param='{columnName}' " +
-                    $"raw='{rawValue}' before={FormatValue(valueBefore)} after={FormatValue(valueAfter)}");
+                var conversionResult = TryConvertUnit(
+                    param, applyResult.Value, columnName, entry.TypeName, catalogColumnsByName);
+
+                switch (conversionResult.Outcome)
+                {
+                    case UnitConversionOutcome.Skipped:
+                        ApplyTypedValue(fm, param, conversionResult.FinalValue);
+                        break;
+                    case UnitConversionOutcome.Converted:
+                        ApplyTypedValue(fm, param, conversionResult.FinalValue);
+                        unitConverted++;
+                        break;
+                    case UnitConversionOutcome.Failed:
+                        // Warn уже залогирован в TryConvertUnit.
+                        unitFailed++;
+                        break;
+                }
             }
             catch (Exception ex)
             {
@@ -425,6 +453,55 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
                     $"ex={ex.GetType().Name}: {ex.Message} [Action: skipping parameter, continuing with type]");
             }
         }
+
+        return new BakeStats(CreatedCount: 0, Converted: unitConverted, Failed: unitFailed);
+    }
+
+    /// <summary>
+    /// Конвертирует Double значение в Revit internal units, если column header
+    /// содержит <c>##UNIT##</c> annotation. Для Integer/String/ElementId — без изменений.
+    /// Возвращает <see cref="UnitConversionResult"/> с одним из трёх исходов:
+    /// <list type="bullet">
+    ///   <item><see cref="UnitConversionOutcome.Skipped"/> — не Double или нет annotation; вернуть значение как есть.</item>
+    ///   <item><see cref="UnitConversionOutcome.Converted"/> — успешная конверсия; вернуть конвертированное.</item>
+    ///   <item><see cref="UnitConversionOutcome.Failed"/> — unit annotation не распознана; caller skip parameter.</item>
+    /// </list>
+    /// </summary>
+    private static UnitConversionResult TryConvertUnit(
+        FamilyParameter param,
+        object? applyResultValue,
+        string columnName,
+        string entryTypeName,
+        Dictionary<string, TypeCatalogColumn> catalogColumnsByName)
+    {
+        if (applyResultValue is null)
+            return UnitConversionResult.Failed();
+
+        // Unit conversion только для Double storage type с явной ##UNIT## annotation.
+        if (param.StorageType != StorageType.Double)
+            return UnitConversionResult.Skipped(applyResultValue);
+
+        if (!catalogColumnsByName.TryGetValue(columnName, out var column) || column is null)
+            return UnitConversionResult.Skipped(applyResultValue);
+
+        if (!column.HasUnitAnnotation)
+            return UnitConversionResult.Skipped(applyResultValue);
+
+        var rawDouble = (double)applyResultValue;
+        var internalValue = RevitUnitsCompat.CatalogCellToInternalUnits(
+            rawDouble, column.UnitAnnotation, param);
+
+        if (internalValue is null)
+        {
+            SmartConLogger.Warn(
+                $"Unit annotation '{column.UnitAnnotation}' (##TYPE##={column.TypeAnnotation ?? "<none>"}) " +
+                $"not recognized for type='{entryTypeName}' param='{columnName}' " +
+                $"[Action: verify the .txt header matches Revit Type Catalog spec, " +
+                $"or remove the ##TYPE##UNITS annotation to use project display units]");
+            return UnitConversionResult.Failed();
+        }
+
+        return UnitConversionResult.Converted(internalValue.Value);
     }
 
     private static void RestoreFormulas(Autodesk.Revit.DB.FamilyManager fm, List<FormulaParameterState> states)
@@ -593,4 +670,31 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
         string ParameterName,
         string Formula,
         IReadOnlyList<string> ReferencedVariables);
+
+    /// <summary>
+    /// Aggregated bake statistics returned by <see cref="CreateCatalogTypes"/> and
+    /// forwarded to <see cref="BakeInFamilyDocument"/> for the final Info summary.
+    /// Заменяет per-param Debug (C7 — hot loops &gt;100 iter запрещают Debug).
+    /// </summary>
+    private readonly record struct BakeStats(int CreatedCount, int Converted, int Failed)
+    {
+        public static BakeStats Empty => new(0, 0, 0);
+    }
+
+    private enum UnitConversionOutcome
+    {
+        /// <summary>Не Double или нет annotation — применять как есть.</summary>
+        Skipped,
+        /// <summary>Успешная конверсия mm/in/ft/etc. → Revit internal units.</summary>
+        Converted,
+        /// <summary>Annotation не распознана или несовместима со spec параметра — caller skip.</summary>
+        Failed,
+    }
+
+    private readonly record struct UnitConversionResult(UnitConversionOutcome Outcome, object? FinalValue)
+    {
+        public static UnitConversionResult Skipped(object finalValue) => new(UnitConversionOutcome.Skipped, finalValue);
+        public static UnitConversionResult Converted(double internalValue) => new(UnitConversionOutcome.Converted, internalValue);
+        public static UnitConversionResult Failed() => new(UnitConversionOutcome.Failed, null);
+    }
 }

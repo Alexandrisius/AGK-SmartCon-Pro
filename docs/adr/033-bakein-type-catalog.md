@@ -205,3 +205,65 @@ Bake-in выполняет `OpenDocumentFile` + `SaveAs` + `Close` для каж
 - `Dispatcher.BeginInvoke(ApplicationIdle)` + `InvalidateVisual + UpdateLayout` (WPF pump)
 
 **См. также:** REVIT-236376, REVIT-237190 в Autodesk JIRA; официальный fix для R2023 — update 2023.1.8 ("Fixed an issue that Revit UI became unresponsive in some cases with Windows 11"). Реализация: `src/SmartCon.Revit/Util/RevitBalloonNudge.cs`.
+
+## Unit conversion для Type Catalog (.txt) колонок
+
+### BAKE-006: Контекст проблемы
+
+Revit Type Catalog header использует стандартный формат `parameter##TYPE##UNITS`, где `TYPE` (LENGTH/ANGLE/AREA/...) и `UNITS` (MILLIMETERS/INCHES/DEGREES/...) сообщают Revit, в каких единицах записаны значения колонки. Например:
+
+```
+,Manufacturer##other##,Length##length##centimeters,Width##length##centimeters,Height##length##centimeters
+MA36x30,Revit,36.5,2.75,30
+```
+
+В BAKE-001..005 парсер отбрасывал annotation (`Split("##")[0]`), и baker передавал raw double в `FamilyManager.Set(param, value)`. Revit API ожидает **internal units** (футы для length, радианы для angle), поэтому:
+
+- `.txt` `Width##length##centimeters,100` → Revit получал `100 футов ≈ 30.5 м` вместо `100 см = 1 м`.
+- Вентиляторы и трубы получались размером с дом.
+
+### BAKE-007: Решение — парсить `##TYPE##UNITS` и конвертировать через `UnitUtils.ConvertToInternalUnits`
+
+**Шаг 1: расширен парсер** — `TypeCatalogColumn { Name, TypeAnnotation, UnitAnnotation }` вместо простого `string`. Старый `ParameterNames` сохранён как backward-compatible helper.
+
+**Шаг 2: новый `RevitUnitsCompat.CatalogCellToInternalUnits`** — конвертирует raw double в Revit internal units с учётом:
+
+- Маппинг unit annotation → `UnitTypeId` (R21+) / `DisplayUnitType` (R19-R20). Поддержка: `millimeters`/`mm`, `centimeters`/`cm`, `meters`/`m`, `inches`/`in`, `feet`/`ft`, `degrees`/`radians`, `square_*`, `cubic_*`, `watts`/`kilowatts`. Case-insensitive. Tolerates typo `milimeters` (sic — встречается в Autodesk docs).
+- Валидация `IsValidUnit(targetSpec, sourceUnit)`: source unit должен быть валиден для spec целевого параметра. Если в `.txt` указан `LENGTH##MILLIMETERS`, а параметр — `ANGLE` → параметр skip + warn.
+- Если unit annotation не распознана → возвращает `null` → caller skip parameter.
+
+**Шаг 3: baker вызывает конвертацию** — в `RevitFamilyTypeCatalogBaker.ApplyCatalogValues` для каждого `StorageType.Double` параметра:
+
+```csharp
+if (param.StorageType == StorageType.Double && column.HasUnitAnnotation)
+{
+    var internalValue = RevitUnitsCompat.CatalogCellToInternalUnits(
+        rawDouble, column.UnitAnnotation, param);
+    if (internalValue is null) { /* skip + warn */ }
+    else ApplyTypedValue(fm, param, internalValue);
+}
+```
+
+`FamilyParameter.GetUnitTypeId()` (R21+) / `param.DisplayUnitType` (R19-R20) → определяет spec параметра (Length/Angle/...) для валидации. Для dimensionless (Number) параметров conversion не выполняется.
+
+### BAKE-008: Кросс-версионная поддержка
+
+- **R21-R25 (UnitTypeId / ForgeTypeId)**: основной путь, все актуальные spec/unit mappings.
+- **R19-R20 (DisplayUnitType)**: `DisplayUnitType.DUT_*` enum + heuristic-валидация по категории (length/angle).
+- Условная компиляция: `#if REVIT2021_OR_GREATER` для разделения путей.
+- `UnitTypeId.SquareCentimeters/CubicCentimeters/SquareInches/CubicInches` доступны только с R2022 → `#if REVIT2022_OR_GREATER`.
+- `UnitTypeId.Grads` удалён в R2025 → не поддерживается (аннотация `grads` будет skip parameter).
+
+### BAKE-009: Backward compatibility
+
+- Если column в `.txt` без `##TYPE##UNITS` annotation → Revit по умолчанию использует **project display units** для интерпретации. Наш baker НЕ конвертирует (нет annotation) — передаёт raw double. Это сохраняет совместимость со старыми `.txt`, где авторы записывали значения в project units вручную.
+- Если column с annotation, но unit не распознан → warn + skip parameter (не ломаем импорт).
+- Если column с annotation, но annotation не совпадает с spec параметра (LENGTH##MILLIMETERS на Angle-параметре) → warn + skip parameter.
+
+### Sources
+
+- [Revit Family Type Catalog specification](https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-B6CEE6F4-3E5E-44D8-BF00-7E62E78B6B8E) — официальная справка Autodesk по формату header колонок.
+- [Autodesk Community: "Invalid column unit type DECIMAL-DEGREES when importing a family"](https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/Invalid-column-unit-type-DECIMAL-DEGREES-when-importing-a-family-along-with-the-corresponding-type-catalog-in-Revit-2021.html) — описание валидации unit annotation в Revit 2021+.
+- [Autodesk Revit API — `UnitUtils.ConvertToInternalUnits`](https://www.revitapidocs.com/2025/f48a4a13-0a30-93fb-0583-72a15d90348b.htm).
+- [Autodesk Revit API — `UnitUtils.IsValidUnit`](https://www.revitapidocs.com/2025/c12e7088-0e8a-0247-b3d6-2a3d6d57b09f.htm).
+- [Autodesk Revit API — `FamilyParameter.GetUnitTypeId`](https://www.revitapidocs.com/2025/25dccc46-0885-7983-6d0d-87b94c153b8d.htm).
