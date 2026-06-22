@@ -231,6 +231,8 @@ public sealed partial class FamilyManagerMainViewModel
             // ConfigureAwait(false) drops the UI SyncContext that LoadTreeAsync needs.
             FireAndForget(async () =>
             {
+                SmartConLogger.FreezeThreadPool("ExtractTypesForImportedFamilies.start");
+                var saveSw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
                     foreach (var (catalogItemId, result, versionId, fileId, hasTypeCatalog) in extractionResults)
@@ -246,28 +248,39 @@ public sealed partial class FamilyManagerMainViewModel
                                 catalogItemId, result, versionId, fileId, CancellationToken.None);
                         }
                     }
+                    saveSw.Stop();
+                    SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: Save took {saveSw.ElapsedMilliseconds}ms, count={extractionResults.Count}");
                     SmartConLogger.Debug($"ExtractTypesForImportedFamilies: save complete, scheduling UI tree refresh");
                 }
                 catch (Exception ex)
                 {
+                    saveSw.Stop();
+                    SmartConLogger.FreezeFail("ExtractTypesForImportedFamilies.Save", $"after {saveSw.ElapsedMilliseconds}ms: {ex.Message}");
                     SmartConLogger.Warn($"ExtractTypesForImportedFamilies save failed: {ex.Message} [Action: типы могут быть неполными; нажмите Refresh]");
                 }
 
                 try
                 {
                     var dispatcher = _uiDispatcher;
+                    SmartConLogger.FreezeThreadPool("ExtractTypesForImportedFamilies.beforeTreeReload");
+                    SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: dispatcher snapshot — thread={dispatcher.Thread.ManagedThreadId}, HasShutdownStarted={dispatcher.HasShutdownStarted}");
                     SmartConLogger.Debug($"ExtractTypesForImportedFamilies: save complete on thread {Environment.CurrentManagedThreadId}, _uiDispatcher thread={dispatcher.Thread.ManagedThreadId}, HasShutdownStarted={dispatcher.HasShutdownStarted}");
                     if (!dispatcher.HasShutdownStarted)
                     {
                         var beforeThread = Environment.CurrentManagedThreadId;
                         var dispatcherThread = dispatcher.Thread.ManagedThreadId;
+                        var treeSw = System.Diagnostics.Stopwatch.StartNew();
+                        SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: about to dispatcher.InvokeAsync(LoadTreeAsync) — caller thread={beforeThread}, dispatcher thread={dispatcherThread}, same={(beforeThread == dispatcherThread)}");
                         SmartConLogger.Debug($"ExtractTypesForImportedFamilies: about to dispatcher.InvokeAsync(LoadTreeAsync) — caller thread={beforeThread}, dispatcher thread={dispatcherThread}, same={(beforeThread == dispatcherThread)}");
                         await dispatcher.InvokeAsync(() => LoadTreeAsync());
+                        treeSw.Stop();
+                        SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: LoadTreeAsync took {treeSw.ElapsedMilliseconds}ms, returned on thread {Environment.CurrentManagedThreadId}");
                         SmartConLogger.Debug($"ExtractTypesForImportedFamilies: dispatcher.InvokeAsync(LoadTreeAsync) returned on thread {Environment.CurrentManagedThreadId}");
                     }
                 }
                 catch (Exception ex)
                 {
+                    SmartConLogger.FreezeFail("ExtractTypesForImportedFamilies.LoadTree", $"{ex.GetType().Name}: {ex.Message}");
                     SmartConLogger.Warn($"Tree reload after extract failed: {ex.Message} [Action: нажмите Refresh чтобы обновить дерево]");
                 }
             }, nameof(ExtractTypesForImportedFamilies));

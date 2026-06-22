@@ -7,7 +7,7 @@ namespace SmartCon.Tests.FamilyManager.Repository;
 
 /// <summary>
 /// Verifies the three-step sidecar (.txt) resolution chain in
-/// <c>LocalFamilyImportService.ImportTypeCatalogIfPresentAsync</c>:
+/// <c>LocalFamilyImportService.PrepareManagedRfaAsync</c>:
 /// 1. sidecar next to the .rfa being imported (filePath);
 /// 2. sidecar next to the ORIGINAL source path (OriginalSourcePath) — this
 ///    is the path that fixes the "Import Active File" bug where the
@@ -36,7 +36,8 @@ public sealed class LocalFamilyImportServiceTypeCatalogTests : IDisposable
             metadataService,
             _fixture.GetTypeRepository(),
             _fixture.GetValueRepository(),
-            _fixture.GetRunRepository());
+            _fixture.GetRunRepository(),
+            _fixture.GetTypeCatalogBaker());
     }
 
     [Fact]
@@ -107,12 +108,14 @@ public sealed class LocalFamilyImportServiceTypeCatalogTests : IDisposable
         Assert.Contains(types, t => t.Name == "DN100");
         Assert.Contains(types, t => t.Name == "DN150");
 
-        // Sidecar must have been copied into managed storage next to the rfa
+        // Managed .rfa must exist and must NOT have a sidecar .txt copied next to it
         var item = await _fixture.GetProvider().GetFileAsync(result.FileId!);
         Assert.NotNull(item);
         var storedRfa = Path.Combine(_fixture.GetDatabaseRoot(), item.RelativePath);
+        Assert.True(File.Exists(storedRfa), $"Expected managed .rfa at '{storedRfa}'");
+
         var storedTxt = Path.ChangeExtension(storedRfa, ".txt");
-        Assert.True(File.Exists(storedTxt), $"Expected sidecar at '{storedTxt}'");
+        Assert.False(File.Exists(storedTxt), $"Sidecar .txt must NOT be copied to managed storage: '{storedTxt}'");
     }
 
     [Fact]

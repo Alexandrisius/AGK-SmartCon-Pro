@@ -1,12 +1,15 @@
 # ADR-032: Type Catalog Simulation — вычисление формул для типов из .txt
 
-**Status:** accepted
+**Status:** superseded by ADR-033
 **Date:** 2026-06-21
 **Phase:** 25
 **Issue:** [#66](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/66)
+**Superseded by:** ADR-033 (Bake-in Type Catalog)
 **Supersedes (partially):** ADR-023 §FM-023-006 — расширяет паттерн Temporary FamilyType с 1 типа на N типов
 
 ## Контекст
+
+> **DEPRECATED:** ADR-032 заменён ADR-033. Для managed `.rfa` Type Catalog теперь запекается (bake-in) при импорте, а не симулируется при чтении. Симуляция остаётся только в истории как промежуточное решение issue #66.
 
 ### 1. Проблема (issue #66)
 

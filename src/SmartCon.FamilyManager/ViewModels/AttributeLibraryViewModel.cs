@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -18,6 +19,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
+    private readonly System.Windows.Threading.Dispatcher _uiDispatcher;
     private readonly List<AttributeDefinitionDraft> _pendingDeletions = [];
     private bool _detached;
 
@@ -42,6 +44,13 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         _dialogService = dialogService;
         _categoryRepository = categoryRepository;
         _metadataMediator = metadataMediator;
+
+        // Application.Current?.Dispatcher is null in Revit addins (especially net48)
+        // because WPF Application is not auto-created. Dispatcher.CurrentDispatcher
+        // is reliable when called on the UI thread (ctor) — returns the UI thread's
+        // dispatcher which can be used to marshal back from background threads.
+        _uiDispatcher = System.Windows.Application.Current?.Dispatcher
+            ?? Dispatcher.CurrentDispatcher;
 
         _metadataMediator.MetadataChanged += OnMetadataChanged;
     }
@@ -87,14 +96,15 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
 
     private void OnMetadataChanged()
     {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
+        if (_uiDispatcher.HasShutdownStarted) return;
+
+        if (_uiDispatcher.CheckAccess())
         {
             _ = RefreshAsync();
         }
         else
         {
-            dispatcher.InvokeAsync(() => _ = RefreshAsync());
+            _ = _uiDispatcher.InvokeAsync(() => _ = RefreshAsync());
         }
     }
 

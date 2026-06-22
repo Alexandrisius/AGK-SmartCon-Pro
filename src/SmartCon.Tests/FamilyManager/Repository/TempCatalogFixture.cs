@@ -1,6 +1,7 @@
 using System.IO;
-using System.Reflection;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.LocalCatalog;
+using SmartCon.Tests.TestDoubles;
 
 namespace SmartCon.Tests.FamilyManager.Repository;
 
@@ -17,6 +18,7 @@ internal sealed class TempCatalogFixture : IDisposable
     private readonly LocalFamilyTypeRepository _typeRepository;
     private readonly LocalAttributeValueRepository _valueRepository;
     private readonly LocalFamilyDataImportRunRepository _runRepository;
+    private readonly IFamilyTypeCatalogBaker _typeCatalogBaker;
 
     public TempCatalogFixture()
     {
@@ -33,6 +35,7 @@ internal sealed class TempCatalogFixture : IDisposable
         _typeRepository = new LocalFamilyTypeRepository(_database);
         _valueRepository = new LocalAttributeValueRepository(_database);
         _runRepository = new LocalFamilyDataImportRunRepository(_database);
+        _typeCatalogBaker = new FakeFamilyTypeCatalogBaker();
 
         _migrator.MigrateAsync().GetAwaiter().GetResult();
     }
@@ -45,6 +48,7 @@ internal sealed class TempCatalogFixture : IDisposable
     public LocalFamilyTypeRepository GetTypeRepository() => _typeRepository;
     public LocalAttributeValueRepository GetValueRepository() => _valueRepository;
     public LocalFamilyDataImportRunRepository GetRunRepository() => _runRepository;
+    public IFamilyTypeCatalogBaker GetTypeCatalogBaker() => _typeCatalogBaker;
 
     public async Task MigrateAsync()
     {

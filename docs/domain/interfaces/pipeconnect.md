@@ -162,6 +162,9 @@ public interface IFormulaSolver
 
     /// Парсинг size_lookup(...) — извлечение имени таблицы и порядка параметров.
     (string TableName, IReadOnlyList<string> ParameterOrder) ParseSizeLookup(string formula);
+
+    /// Извлекает все идентификаторы параметров, на которые ссылается формула.
+    IReadOnlyList<string> ExtractVariables(string formula);
 }
 ```
 

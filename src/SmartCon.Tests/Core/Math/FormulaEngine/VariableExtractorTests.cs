@@ -89,4 +89,44 @@ public sealed class VariableExtractorTests
         var vars = Extract("");
         Assert.Empty(vars);
     }
+
+    [Fact]
+    public void Extract_VariableWithSpace_MergedIntoOneToken()
+    {
+        // Регрессия: импортируемое семейство вентилятора содержало формулу
+        // "ADSK_Номинальная мощность / ADSK_Коэффициент мощности", и без
+        // greedy identifier tokenizer ExtractVariables возвращал [] — из-за
+        // чего ни одна formula не считалась ссылающейся на catalog inputs,
+        // и DisableFormulas/RestoreFormulas не делали ничего.
+        var vars = Extract("ADSK_Номинальная мощность / ADSK_Коэффициент мощности");
+        Assert.Contains("ADSK_Номинальная мощность", vars);
+        Assert.Contains("ADSK_Коэффициент мощности", vars);
+        Assert.Equal(2, vars.Count);
+    }
+
+    [Fact]
+    public void Extract_VariableWithSpace_StopsAtOperator()
+    {
+        // Сразу после identifier — оператор, а не whitespace.
+        var vars = Extract("Присоединительный диаметр / 2");
+        Assert.Single(vars);
+        Assert.Contains("Присоединительный диаметр", vars);
+    }
+
+    [Fact]
+    public void Extract_VariableWithSpace_StopsAtParen()
+    {
+        // sqrt(...) — аргумент тоже может быть identifier с пробелом.
+        var vars = Extract("sqrt(ADSK_Количество фаз числовое)");
+        Assert.Single(vars);
+        Assert.Contains("ADSK_Количество фаз числовое", vars);
+    }
+
+    [Fact]
+    public void Extract_MixedCyrillicAndLatinVariableWithSpace()
+    {
+        var vars = Extract("ADSK_Частота вращения вентилятора / 2");
+        Assert.Single(vars);
+        Assert.Contains("ADSK_Частота вращения вентилятора", vars);
+    }
 }

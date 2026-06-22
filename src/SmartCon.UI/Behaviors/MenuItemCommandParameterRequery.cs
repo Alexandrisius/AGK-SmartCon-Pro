@@ -57,6 +57,14 @@ public static class MenuItemCommandParameterRequery
     private static void OnRequeryOnChangeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not MenuItem menuItem) return;
+        if ((bool)e.OldValue)
+        {
+            // Unwire: detach value-changed handler and Unloaded cleanup
+            var oldDpd = DependencyPropertyDescriptor.FromProperty(
+                MenuItem.CommandParameterProperty, typeof(MenuItem));
+            oldDpd?.RemoveValueChanged(menuItem, OnCommandParameterChanged);
+            menuItem.Unloaded -= OnMenuItemUnloaded;
+        }
         if ((bool)e.NewValue)
         {
             // DependencyPropertyDescriptor wires us into the same CLR change
@@ -65,7 +73,21 @@ public static class MenuItemCommandParameterRequery
             var dpd = DependencyPropertyDescriptor.FromProperty(
                 MenuItem.CommandParameterProperty, typeof(MenuItem));
             dpd?.AddValueChanged(menuItem, OnCommandParameterChanged);
+            // Cleanup safety net: when the MenuItem leaves the visual tree
+            // (e.g. ContextMenu closed and its template is recycled), detach
+            // the value-changed handler. Prevents accumulated handlers across
+            // many right-click cycles in long Revit sessions.
+            menuItem.Unloaded += OnMenuItemUnloaded;
         }
+    }
+
+    private static void OnMenuItemUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem) return;
+        var dpd = DependencyPropertyDescriptor.FromProperty(
+            MenuItem.CommandParameterProperty, typeof(MenuItem));
+        dpd?.RemoveValueChanged(menuItem, OnCommandParameterChanged);
+        menuItem.Unloaded -= OnMenuItemUnloaded;
     }
 
     private static void OnCommandParameterChanged(object? sender, EventArgs e)

@@ -14,6 +14,12 @@ namespace SmartCon.Core.Logging;
 ///     No rotation: this file is intentionally cumulative so we can
 ///     collect statistics on which formulas the PipeConnect module
 ///     encounters and how each one was resolved.</item>
+///   <item><c>freeze-diagnostic.log</c> — append-only trace of UI-blocking
+///     operations: <c>OpenDocumentFile</c> / <c>Close</c> / <c>SaveAs</c>
+///     timings, <see cref="System.Threading.ThreadPool"/> statistics and
+///     dispatcher queue depth. Enabled by callers via <see cref="Freeze"/>;
+///     no per-call min-level filter so freezes can be diagnosed even when
+///     the main <c>smartcon.log</c> is at Info level.</item>
 /// </list>
 /// Active <see cref="LogScope"/> instances decorate every line with
 /// <c>[OpId=… Op=…]</c> for correlation across awaits and threads.
@@ -26,6 +32,7 @@ public static class SmartConLogger
 
     private static readonly string LogPath = Path.Combine(LogDir, "smartcon.log");
     private static readonly string FormulaLogPath = Path.Combine(LogDir, "formula-diagnostic.log");
+    private static readonly string FreezeLogPath = Path.Combine(LogDir, "freeze-diagnostic.log");
 
     private static readonly object _lock = new();
 
@@ -79,6 +86,7 @@ public static class SmartConLogger
 
     private static StreamWriter? _mainWriterField;
     private static StreamWriter? _formulaWriterField;
+    private static StreamWriter? _freezeWriterField;
 
     static SmartConLogger()
     {
@@ -159,6 +167,9 @@ public static class SmartConLogger
         WriteFormula("INF", header);
         WriteFormula("INF", line);
         WriteFormula("INF", header);
+        WriteFreeze("INF", header);
+        WriteFreeze("INF", line);
+        WriteFreeze("INF", header);
     }
 
     /// <summary>
@@ -180,6 +191,9 @@ public static class SmartConLogger
         WriteFormula("INF", header);
         WriteFormula("INF", line);
         WriteFormula("INF", header);
+        WriteFreeze("INF", header);
+        WriteFreeze("INF", line);
+        WriteFreeze("INF", header);
     }
 
     public static void Formula(string message) => WriteFormula("FRM", message);
@@ -192,6 +206,26 @@ public static class SmartConLogger
     public static void FormulaFail(string operation, string formula, string reason)
     {
         WriteFormula("FAIL", $"[{operation}] '{formula}' → {reason}");
+    }
+
+    /// <summary>
+    /// Diagnostic append-only trace used to debug WPF render-thread freezes
+    /// (right-click unfreezes, LMB dead, types don't appear). Unlike
+    /// <see cref="Info"/> / <see cref="Debug"/> there is <b>no min-level
+    /// gate</b> — every call lands in <c>freeze-diagnostic.log</c> so the
+    /// file is useful even when the operator is running with
+    /// <c>SMARTCON_LOG_LEVEL=Info</c>. The file is rotated alongside the
+    /// main log on <see cref="LogSessionStart"/>.
+    /// </summary>
+    public static void Freeze(string message) => WriteFreeze("FRZ", message);
+
+    public static void FreezeOk(string operation, string detail) => WriteFreeze(" OK", $"[{operation}] {detail}");
+    public static void FreezeFail(string operation, string detail) => WriteFreeze("FAIL", $"[{operation}] {detail}");
+    public static void FreezeThreadPool(string tag)
+    {
+        ThreadPool.GetAvailableThreads(out int worker, out int io);
+        ThreadPool.GetMinThreads(out int minWorker, out int minIo);
+        WriteFreeze("THR", $"[{tag}] ThreadPool — Available: {worker}/{minWorker} workers, {io}/{minIo} IO | Min: {minWorker}/{minIo}");
     }
 
     /// <summary>
@@ -312,6 +346,20 @@ public static class SmartConLogger
             {
                 _formulaWriterField ??= CreateWriter(FormulaLogPath);
                 _formulaWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {prefix}{message}");
+            }
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
+    }
+
+    internal static void WriteFreeze(string level, string message)
+    {
+        try
+        {
+            var prefix = ComposeScopePrefix();
+            lock (_lock)
+            {
+                _freezeWriterField ??= CreateWriter(FreezeLogPath);
+                _freezeWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {prefix}{message}");
             }
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }

@@ -35,6 +35,8 @@ FamilyManager (ADR-015/017) хранил каталог семейств как 
 
 **Rationale**: В официальных библиотеках Autodesk `.txt` содержит актуальные данные, `.rfa` — только "пустые" типы-заглушки. Type Catalog редактируется пользователем, `.rfa` — read-only managed storage.
 
+**Update (ADR-033, issue #74):** После запекания каталога в managed `.rfa` source of truth для managed storage становится сам `.rfa` (все типы уже материализованы и формулы вычислены). `.txt` остаётся входными данными только на этапе импорта и больше не хранится как sidecar-файл.
+
 ### FM-023-003: Universal Encoding Detection
 
 Type Catalog файлы приходят в непредсказуемых кодировках (Windows-1251 для русских библиотек, Big5 для китайских, UTF-8 без BOM).

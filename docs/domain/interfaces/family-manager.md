@@ -65,6 +65,26 @@ public interface IFamilyImportService
 
 ---
 
+## IFamilyTypeCatalogBaker
+
+Запекание Type Catalog (.txt) в .rfa при импорте (ADR-033). Реализация выполняет все Revit API вызовы на UI thread.
+
+**Файл:** `IFamilyTypeCatalogBaker.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyTypeCatalogBaker.cs`
+
+```csharp
+public interface IFamilyTypeCatalogBaker
+{
+    Task<FamilyTypeCatalogBakingResult> BakeAsync(
+        string sourceRfaPath,
+        TypeCatalogParseResult catalog,
+        string outputRfaPath,
+        CancellationToken ct = default);
+}
+```
+
+---
+
 ## IFamilyFileResolver
 
 Разрешение путей к файлам семейств из managed storage. Выбирает лучший файл для целевой версии Revit.
@@ -354,8 +374,8 @@ public interface IFamilyDataExtractionService
 
     /// <summary>
     /// Single entry point for all managed-storage import paths. Opens the
-    /// .rfa via Revit API, runs Type Catalog simulation when a .txt sidecar
-    /// is present (ADR-032), and closes the document in a finally block.
+    /// .rfa via Revit API and reads already-baked type data. Type Catalog
+    /// simulation (ADR-032) is replaced by bake-in during import (ADR-033).
     /// Must be called on the Revit UI thread.
     /// </summary>
     FamilyExtractionResult ExtractFromManagedFile(

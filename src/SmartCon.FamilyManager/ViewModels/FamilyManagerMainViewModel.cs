@@ -630,20 +630,50 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private void OnPlacementFailed(string errorMessage)
     {
-        StatusMessage = errorMessage;
+        if (!SetStatusOnUiThread(errorMessage))
+        {
+            return;
+        }
         SmartConLogger.Warn($"{errorMessage}");
     }
 
     private void OnPlacementSucceeded(string successMessage)
     {
-        StatusMessage = successMessage;
+        if (!SetStatusOnUiThread(successMessage))
+        {
+            return;
+        }
         SmartConLogger.Info($"{successMessage}");
     }
 
     private void OnPlacementStatusMessage(string statusMessage)
     {
-        StatusMessage = statusMessage;
+        if (!SetStatusOnUiThread(statusMessage))
+        {
+            return;
+        }
         SmartConLogger.Info($"{statusMessage}");
+    }
+
+    /// <summary>
+    /// Defensive marshaling: these handlers are currently invoked on the Revit
+    /// UI thread by <c>FamilyPlacementDropHandler</c>, but if a future refactor
+    /// moves them to a background thread the unguarded <c>StatusMessage</c>
+    /// setter would raise <c>PropertyChanged</c> on the wrong thread and
+    /// freeze the WPF DockablePane (see <c>revit-api-best-practice</c> skill).
+    /// </summary>
+    private bool SetStatusOnUiThread(string message)
+    {
+        if (_uiDispatcher.HasShutdownStarted) return false;
+        if (_uiDispatcher.CheckAccess())
+        {
+            StatusMessage = message;
+        }
+        else
+        {
+            _ = _uiDispatcher.InvokeAsync(() => StatusMessage = message);
+        }
+        return true;
     }
 
     private SharedFamiliesLoadChoice OnSharedFamilyDecisionRequested(SharedFamilyDecisionRequest request)

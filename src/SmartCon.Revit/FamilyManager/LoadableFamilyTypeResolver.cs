@@ -25,10 +25,15 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
         var rfaFileName = System.IO.Path.GetFileName(rfaFilePath);
         var app = _revitUIContext.GetUIApplication().Application;
         Document? familyDoc = null;
+        var openSw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             using var _scope = SmartConLogger.BeginScope("LoadableFamilyTypeResolver", ("RfaFileName", rfaFileName), ("CatalogItemId", catalogItemId));
+            SmartConLogger.FreezeThreadPool("LoadableResolver.beforeOpen");
+            SmartConLogger.Freeze($"LoadableResolver: Starting OpenDocumentFile for '{rfaFileName}'");
             familyDoc = app.OpenDocumentFile(rfaFilePath);
+            openSw.Stop();
+            SmartConLogger.Freeze($"LoadableResolver: OpenDocumentFile completed in {openSw.ElapsedMilliseconds}ms");
             if (familyDoc is null || !familyDoc.IsFamilyDocument)
             {
                 SmartConLogger.Warn("OpenDocumentFile did not return a family document [Action: Verify file is a valid Revit .rfa, or check Revit version compatibility]");
@@ -87,6 +92,12 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
                     using var _scope = SmartConLogger.BeginScope("LoadableFamilyTypeResolver", ("RfaFileName", rfaFileName), ("Stage", "Close"));
                     SmartConLogger.Warn($"Close failed: {ex.Message} [Action: Safe to ignore — Revit will release the document on its own]");
                 }
+                // See RevitFamilyDataExtractionService — RevitAPI Document is a
+                // managed RCW wrapper, not a real COM object. ReleaseComObject on
+                // it throws ArgumentException and leaves a half-cleaned-up RCW that
+                // the GC finalizer will mishandle, zombifying the WPF render thread
+                // (REVIT-237190). Skip when IsComObject returns false; Close(false)
+                // above is the real lifetime-end.
                 try { Marshal.ReleaseComObject(familyDoc); }
                 catch { }
             }

@@ -423,9 +423,9 @@ public sealed record FamilyImportRequest(
 
 `OriginalSourcePath` — путь к исходному `.rfa` до его копирования в
 temp staging folder (используется пайплайном «Импорт активного
-файла»). Передаётся в `ImportTypeCatalogIfPresentAsync` для поиска
+файла»). Передаётся в `PrepareManagedRfaAsync` для поиска
 Type Catalog sidecar (.txt) рядом с оригиналом, когда рядом с temp
-копией его нет. См. ADR-024.
+копией его нет. См. ADR-024 и ADR-033.
 
 ---
 
@@ -589,7 +589,8 @@ public sealed record FamilyUpdateRequest(
 
 `OriginalSourcePath` (см. ADR-024) — путь к исходному `.rfa` до
 копирования в temp staging folder. Используется для поиска Type
-Catalog sidecar рядом с оригиналом.
+Catalog sidecar рядом с оригиналом при подготовке managed `.rfa`
+(ADR-033).
 
 ---
 
@@ -759,6 +760,22 @@ public sealed record FamilyPlacementDragData(
 public sealed record TypeCatalogEntry(
     string TypeName,
     IReadOnlyDictionary<string, string> ParameterValues);
+```
+
+---
+
+## FamilyTypeCatalogBakingResult
+
+Результат запекания Type Catalog (.txt) в .rfa при импорте (ADR-033).
+
+**Файл:** `FamilyTypeCatalogBakingResult.cs`
+
+```csharp
+public sealed record FamilyTypeCatalogBakingResult(
+    bool Success,
+    string? OutputRfaPath,
+    int BakedTypeCount,
+    string? ErrorMessage);
 ```
 
 ---
