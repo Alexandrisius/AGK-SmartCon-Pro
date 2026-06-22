@@ -1,5 +1,6 @@
 using System.Globalization;
 using Autodesk.Revit.DB;
+using SmartCon.Core.Services.Implementation;
 
 namespace SmartCon.Revit.Compatibility;
 
@@ -93,12 +94,9 @@ public static class RevitUnitsCompat
 
     /// <summary>
     /// Резолвит unit annotation из Type Catalog header в <c>UnitTypeId</c> (R21+) или
-    /// <c>DisplayUnitType</c> (R19-R20). Поддерживает варианты написания:
-    /// <c>millimeters</c>/<c>milimeters</c> (sic — Autodesk docs опечатка)/<c>mm</c>,
-    /// <c>centimeters</c>/<c>cm</c>, <c>meters</c>/<c>m</c>, <c>inches</c>/<c>in</c>,
-    /// <c>feet</c>/<c>ft</c>, <c>degrees</c>/<c>decimal_degrees</c>/<c>deg</c>,
-    /// <c>radians</c>/<c>rad</c>, <c>square_*</c>, <c>cubic_*</c>, <c>watts</c>/<c>kilowatts</c>.
-    /// Case-insensitive. Возвращает sentinel "не определено" если annotation не распознана.
+    /// <c>DisplayUnitType</c> (R19-R20). Pure string-normalization вынесена в
+    /// <see cref="TypeCatalogUnitAlias.Normalize"/> для unit-тестирования без Revit API.
+    /// Здесь только финальный маппинг canonical key → Revit type.
     /// </summary>
 #if REVIT2021_OR_GREATER
     public static ForgeTypeId? ResolveSourceUnitTypeId(string unitAnnotation)
@@ -109,15 +107,9 @@ public static class RevitUnitsCompat
         if (string.IsNullOrWhiteSpace(unitAnnotation))
             return UndefinedUnit();
 
-        // Нормализуем: trim + lowercase, поддерживаем "milimeters" (sic) как алиас для millimeters.
-        var key = unitAnnotation.Trim().ToLowerInvariant();
-        if (key == "milimeters") key = "millimeters";
-        if (key == "milimeter") key = "millimeter";
-        if (key == "centimeter") key = "centimeters";
-        if (key == "decimeter") key = "decimeters";
-        if (key == "meter") key = "meters";
-        if (key == "inch") key = "inches";
-        if (key == "foot") key = "feet";
+        var key = TypeCatalogUnitAlias.Normalize(unitAnnotation);
+        if (key is null)
+            return UndefinedUnit();
 
 #if REVIT2021_OR_GREATER
         return key switch
@@ -130,9 +122,9 @@ public static class RevitUnitsCompat
             "inches" => UnitTypeId.Inches,
             "feet" => UnitTypeId.Feet,
             // Angle
-            "degrees" or "decimal_degrees" => UnitTypeId.Degrees,
+            "degrees" => UnitTypeId.Degrees,
             "radians" => UnitTypeId.Radians,
-            // Grads не существует в R2025+ — пропускаем.
+            // grads не существует в R2025+ — пропускаем (хотя key вернётся "grads" из Normalize).
             // Area — базовые доступны с R21, дополнительные с R22+
             "square_millimeters" => UnitTypeId.SquareMillimeters,
             "square_meters" => UnitTypeId.SquareMeters,
@@ -168,7 +160,7 @@ public static class RevitUnitsCompat
             "inches" => DisplayUnitType.DUT_DECIMAL_INCHES,
             "feet" => DisplayUnitType.DUT_DECIMAL_FEET,
             // Angle
-            "degrees" or "decimal_degrees" => DisplayUnitType.DUT_DECIMAL_DEGREES,
+            "degrees" => DisplayUnitType.DUT_DECIMAL_DEGREES,
             "radians" => DisplayUnitType.DUT_RADIANS,
             "grads" => DisplayUnitType.DUT_GRADS,
             // Area

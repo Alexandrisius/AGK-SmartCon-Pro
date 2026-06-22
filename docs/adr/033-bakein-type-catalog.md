@@ -193,6 +193,7 @@ ADR-032 решает issue #66 через **simulation**: при чтении ma
 - **`SetFormula(param, null)` на параметрах с циклическими зависимостями** может бросить `InvalidOperationException`. Митигация: топологический порядок восстановления.
 - **Кириллические имена параметров** — `FormulaSolver.Tokenizer` поддерживает Cyrillic; но trailing soft-sign и другие edge cases могут потребовать дополнительной проверки на реальных семействах.
 - **Family type parameters (nested family types)** — не тестировались; формулы на них могут вести себя иначе.
+- **Unit conversion testing gap** — `RevitUnitsCompat.ResolveSourceUnitTypeId/DisplayUnitType` + `CatalogCellToInternalUnits` + `TryConvertUnit` не покрыты unit-тестами (sealed native `FamilyParameter` нельзя мокать). Покрыто только pure normalization в `TypeCatalogUnitAlias` (15 unit-тестов в `SmartCon.Tests/Core/Services/TypeCatalogUnitAliasTests.cs`). Mitigations: production log validation через `BakeStats.Converted/Failed` + manual smoke-test. См. `docs/testing/unit-conversion-coverage-gaps.md` для подробностей и backlog (ricaun.RevitTest integration suite).
 
 ## Freeze workaround: REVIT-236376 / REVIT-237190
 
@@ -228,23 +229,38 @@ MA36x30,Revit,36.5,2.75,30
 
 **Шаг 2: новый `RevitUnitsCompat.CatalogCellToInternalUnits`** — конвертирует raw double в Revit internal units с учётом:
 
-- Маппинг unit annotation → `UnitTypeId` (R21+) / `DisplayUnitType` (R19-R20). Поддержка: `millimeters`/`mm`, `centimeters`/`cm`, `meters`/`m`, `inches`/`in`, `feet`/`ft`, `degrees`/`radians`, `square_*`, `cubic_*`, `watts`/`kilowatts`. Case-insensitive. Tolerates typo `milimeters` (sic — встречается в Autodesk docs).
+- Маппинг unit annotation → `UnitTypeId` (R21+) / `DisplayUnitType` (R19-R20).
+  Поддержка (case-insensitive, trim, singular/plural aliases, Autodesk typo `milimeters`):
+  - **Length**: `millimeters`/`millimeter`/`milimeters` (sic)/`mm`, `centimeters`/`centimeter`/`cm`, `decimeters`/`decimeter`/`dm`, `meters`/`meter`/`m`, `inches`/`inch`/`in`, `feet`/`foot`/`ft`
+  - **Angle**: `degrees`/`degree`/`decimal_degrees`/`deg`, `radians`/`radian`/`rad`, `grads`/`grad` (R19-R20 only — `UnitTypeId.Grads` удалён в R2025)
+  - **Area** (базовые с R21, дополнительные с R22+): `square_millimeters`/`square_millimeter`/`sq_mm`, `square_meters`/`square_meter`/`sq_m`, `square_feet`/`square_foot`/`sq_ft`, `square_centimeters`/`square_centimeter`/`sq_cm`, `square_inches`/`square_inch`/`sq_in`
+  - **Volume** (базовые с R21, дополнительные с R22+): `cubic_millimeters`/`cubic_millimeter`/`cu_mm`, `cubic_meters`/`cubic_meter`/`cu_m`, `cubic_feet`/`cubic_foot`/`cu_ft`, `cubic_centimeters`/`cubic_centimeter`/`cu_cm`, `cubic_inches`/`cubic_inch`/`cu_in`
+  - **Power**: `watts`/`watt`/`w`, `kilowatts`/`kilowatt`/`kw`
+  - **Electrical**: `amperes`/`ampere`/`amps`/`amp`/`a`, `volts`/`volt`/`v`
+  - Pure normalization вынесен в `TypeCatalogUnitAlias.Normalize` (SmartCon.Core) — полностью unit-тестируемый.
 - Валидация `IsValidUnit(targetSpec, sourceUnit)`: source unit должен быть валиден для spec целевого параметра. Если в `.txt` указан `LENGTH##MILLIMETERS`, а параметр — `ANGLE` → параметр skip + warn.
 - Если unit annotation не распознана → возвращает `null` → caller skip parameter.
 
-**Шаг 3: baker вызывает конвертацию** — в `RevitFamilyTypeCatalogBaker.ApplyCatalogValues` для каждого `StorageType.Double` параметра:
+**Шаг 3: baker вызывает конвертацию** — в `RevitFamilyTypeCatalogBaker.TryConvertUnit` для каждого `StorageType.Double` параметра используется discriminated union `UnitConversionResult`:
 
 ```csharp
-if (param.StorageType == StorageType.Double && column.HasUnitAnnotation)
+var conversionResult = TryConvertUnit(param, applyResult.Value, columnName, entryTypeName, catalogColumnsByName);
+switch (conversionResult.Outcome)
 {
-    var internalValue = RevitUnitsCompat.CatalogCellToInternalUnits(
-        rawDouble, column.UnitAnnotation, param);
-    if (internalValue is null) { /* skip + warn */ }
-    else ApplyTypedValue(fm, param, internalValue);
+    case UnitConversionOutcome.Skipped:    // нет annotation / non-Double / dimensionless
+        ApplyTypedValue(fm, param, conversionResult.FinalValue);
+        break;
+    case UnitConversionOutcome.Converted: // успешная конверсия → internal units
+        ApplyTypedValue(fm, param, conversionResult.FinalValue);
+        unitConverted++;
+        break;
+    case UnitConversionOutcome.Failed:    // annotation не распознана → warn + skip parameter
+        unitFailed++;
+        break;
 }
 ```
 
-`FamilyParameter.GetUnitTypeId()` (R21+) / `param.DisplayUnitType` (R19-R20) → определяет spec параметра (Length/Angle/...) для валидации. Для dimensionless (Number) параметров conversion не выполняется.
+`FamilyParameter.GetUnitTypeId()` (R21+) / `param.DisplayUnitType` (R19-R20) → определяет spec параметра (Length/Angle/...) для валидации. Для dimensionless (Number) параметров conversion не выполняется (Skipped). Счётчики `unitConverted` и `unitFailed` агрегируются в `BakeStats` и пишутся одним `Info` summary после транзакции (C7 hot-loop rule).
 
 ### BAKE-008: Кросс-версионная поддержка
 

@@ -828,6 +828,41 @@ public sealed record TypeCatalogColumn(
 
 ---
 
+## TypeCatalogUnitAlias
+
+Pure C# маппинг unit annotation из Type Catalog header в canonical key.
+Вынесен из `RevitUnitsCompat.ResolveSourceUnitTypeId` для unit-тестирования
+без Revit API (см. `docs/testing/unit-conversion-coverage-gaps.md`).
+Canonical key (lowercase plural) мапится в `UnitTypeId` (R21+) или
+`DisplayUnitType` (R19-R20) на стороне Revit-слоя.
+
+**Файл:** `TypeCatalogUnitAlias.cs`
+
+```csharp
+public static class TypeCatalogUnitAlias
+{
+    public static string? Normalize(string? rawAnnotation);
+    public static IReadOnlyCollection<string> SupportedAliases { get; }
+}
+```
+
+`Normalize` принимает произвольный вход (null/whitespace возвращают `null`),
+trim'ит, lower-case'ит, и резолвит в canonical key:
+
+- **Length**: `millimeters`/`millimeter`/`milimeters` (Autodesk typo)/`mm`, `centimeters`/`cm`, `decimeters`/`dm`, `meters`/`m`, `inches`/`in`, `feet`/`ft`
+- **Angle**: `degrees`/`degree`/`decimal_degrees`/`deg`, `radians`/`radian`/`rad`, `grads`/`grad` (R19-R20 only)
+- **Area**: `square_millimeters`/`sq_mm`, ..., `square_feet`/`sq_ft`
+- **Volume**: `cubic_millimeters`/`cu_mm`, ..., `cubic_feet`/`cu_ft`
+- **Power**: `watts`/`w`, `kilowatts`/`kw`
+- **Electrical**: `amperes`/`amp`/`amps`/`a`, `volts`/`v`
+
+15 unit-тестов в `TypeCatalogUnitAliasTests.cs` покрывают все aliases + edge cases
+(null/empty/whitespace/unknown).
+
+См. ADR-033 BAKE-007, §Sources + §Risks (unit conversion testing gap).
+
+---
+
 ## FamilyMetadataExtractionResult
 
 Результат извлечения метаданных из `.rfa`. MVP — только файловые метаданные (имя, размер, хеш).

@@ -7,6 +7,17 @@
 **Superseded by:** ADR-033 (Bake-in Type Catalog)
 **Supersedes (partially):** ADR-023 §FM-023-006 — расширяет паттерн Temporary FamilyType с 1 типа на N типов
 
+> **DEPRECATED:** ADR-032 заменён ADR-033. Для managed `.rfa` Type Catalog теперь запекается (bake-in) при импорте, а не симулируется при чтении. Симуляция остаётся только в истории как промежуточное решение issue #66.
+>
+> **Code references устарели.** После ADR-033 simulation-путь не используется в production. Документ сохранён как историческая запись решения issue #66. Следующие компоненты **удалены** или больше **не вызываются**:
+> - `ITypeCatalogSimulationService` (отменённая попытка)
+> - `RevitFamilyDataExtractionService.ExtractWithTypeCatalog` (заменён на чтение уже baked типов)
+> - `__SCAT__` prefix для временных типов
+> - `SilentFailurePreprocessor` (не нужен после bake-in)
+>
+> `IFamilyDataExtractionService.ExtractFromManagedFile(path, names, ct)` остался в API для обратной совместимости, но теперь читает уже baked типы из `.rfa` (без simulation).
+> `HotLoopCounter` остался в `SmartCon.Core/Logging/` как утилита, но больше не используется в Type Catalog path.
+
 ## Контекст
 
 > **DEPRECATED:** ADR-032 заменён ADR-033. Для managed `.rfa` Type Catalog теперь запекается (bake-in) при импорте, а не симулируется при чтении. Симуляция остаётся только в истории как промежуточное решение issue #66.

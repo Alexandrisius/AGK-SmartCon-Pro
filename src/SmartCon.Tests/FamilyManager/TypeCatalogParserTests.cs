@@ -285,4 +285,42 @@ public sealed class TypeCatalogParserTests
         Assert.Equal("length", lengthColumn.TypeAnnotation);
         Assert.Equal("centimeters", lengthColumn.UnitAnnotation);
     }
+
+    [Fact]
+    public void Parse_HeaderWithTypeOnlyAnnotation_HasNullUnitAnnotation()
+    {
+        // Header "Width##length##" — TYPE specified but UNITS missing (just trailing ##).
+        // Per ADR-033 BAKE-009: column without ##UNITS → raw value (project display units).
+        var content = ",Width##length##,Height##length##\nT1,100,200";
+        var result = TypeCatalogParser.Parse(content);
+
+        Assert.Equal(2, result.Columns.Count);
+
+        var width = result.Columns[0];
+        Assert.Equal("Width", width.Name);
+        Assert.Equal("length", width.TypeAnnotation);
+        Assert.Null(width.UnitAnnotation);
+        Assert.False(width.HasUnitAnnotation);
+
+        var height = result.Columns[1];
+        Assert.Equal("Height", height.Name);
+        Assert.Equal("length", height.TypeAnnotation);
+        Assert.Null(height.UnitAnnotation);
+    }
+
+    [Fact]
+    public void Parse_AnnotationWithExtraFields_IgnoresExcessTokens()
+    {
+        // Header "Width##length##millimeters##extra" — extra ## and value ignored.
+        // Split with StringSplitOptions.None keeps all parts; we read parts[0..2].
+        var content = ",Width##length##millimeters##extra\nT1,100";
+        var result = TypeCatalogParser.Parse(content);
+
+        Assert.Single(result.Columns);
+        var width = result.Columns[0];
+        Assert.Equal("Width", width.Name);
+        Assert.Equal("length", width.TypeAnnotation);
+        Assert.Equal("millimeters", width.UnitAnnotation);
+        // "extra" intentionally dropped — parser reads first 3 tokens only.
+    }
 }
