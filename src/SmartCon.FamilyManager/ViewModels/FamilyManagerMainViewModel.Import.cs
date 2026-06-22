@@ -685,8 +685,27 @@ public sealed partial class FamilyManagerMainViewModel
             var activeDoc = _revitContext.GetDocument();
             if (activeDoc is not null)
             {
-                var singleCategory = systemAnalyses.Count == 1;
+                // Use project name as displayName ONLY when the project is a "pure" system-family
+                // mini-rvt: exactly one system category and zero loadable families. In that case
+                // the .rvt was likely named after the category (e.g. "Трубы пластиковые.rvt") and
+                // renaming to "Трубы" on every re-import would be annoying. If the project also
+                // has loadable families, fall back to the category DisplayName ("Трубы", "Гибкие
+                // трубы") so the system family is identified by its category, not the project name.
+                var singleCategory = systemAnalyses.Count == 1 && loadableFamilies.Count == 0;
                 var sourceName = singleCategory ? ResolveActiveProjectDisplayName(activeDoc) : null;
+                if (singleCategory)
+                {
+                    SmartConLogger.Info(
+                        $"[FMImport] Single system category with no loadable families — " +
+                        $"using source file name '{sourceName}' as displayName");
+                }
+                else if (systemAnalyses.Count == 1 && loadableFamilies.Count > 0)
+                {
+                    SmartConLogger.Info(
+                        $"[FMImport] Single system category BUT {loadableFamilies.Count} loadable " +
+                        $"families present — using category DisplayName '{systemAnalyses[0].DisplayName}' " +
+                        $"instead of project name to keep identity stable across re-imports");
+                }
 
                 foreach (var analysis in systemAnalyses)
                 {
