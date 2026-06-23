@@ -65,6 +65,30 @@ public interface IFamilyImportService
 
 ---
 
+## IFamilyTypeCatalogBaker
+
+Запекание Type Catalog (.txt) в .rfa при импорте (ADR-033). Реализация выполняет все Revit API вызовы на UI thread.
+
+**Unit conversion (BAKE-006..009):** baker вызывает `RevitUnitsCompat.CatalogCellToInternalUnits(raw, annotation, param)` для каждой `StorageType.Double` колонки с `##TYPE##UNITS` annotation. Конвертация пропускается для: не-Double storage, dimensionless parameters, отсутствующей annotation (legacy behavior — raw value). На failure path (annotation не распознана) пишется `Warn` + skip parameter, агрегируется в `BakeStats.Failed` для Info summary. На success path значение конвертируется через `UnitUtils.ConvertToInternalUnits` после валидации `UnitUtils.IsValidUnit(targetSpec, sourceUnit)`. Pure normalization вынесен в `TypeCatalogUnitAlias.Normalize` (SmartCon.Core, fully unit-tested).
+
+**Файл:** `IFamilyTypeCatalogBaker.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyTypeCatalogBaker.cs`
+
+```csharp
+public interface IFamilyTypeCatalogBaker
+{
+    Task<FamilyTypeCatalogBakingResult> BakeAsync(
+        string sourceRfaPath,
+        TypeCatalogParseResult catalog,
+        string outputRfaPath,
+        CancellationToken ct = default);
+}
+```
+
+**Зависимости:** `IFamilyManagerAwaitableEvent`, `ITransactionService`, `ITypeCatalogValueApplier`, `IFormulaSolver`. Все Revit API операции маршалятся через `IFamilyManagerAwaitableEvent` callback (I-01).
+
+---
+
 ## IFamilyFileResolver
 
 Разрешение путей к файлам семейств из managed storage. Выбирает лучший файл для целевой версии Revit.
@@ -350,6 +374,18 @@ public sealed record FamilyExtractionResult(
 public interface IFamilyDataExtractionService
 {
     FamilyExtractionResult Extract(string rfaFilePath, IReadOnlyList<string> expectedParameterNames);
+    FamilyExtractionResult Extract(Autodesk.Revit.DB.Document familyDocument, IReadOnlyList<string> expectedParameterNames);
+
+    /// <summary>
+    /// Single entry point for all managed-storage import paths. Opens the
+    /// .rfa via Revit API and reads already-baked type data. Type Catalog
+    /// simulation (ADR-032) is replaced by bake-in during import (ADR-033).
+    /// Must be called on the Revit UI thread.
+    /// </summary>
+    FamilyExtractionResult ExtractFromManagedFile(
+        string managedRfaPath,
+        IReadOnlyList<string> expectedParameterNames,
+        CancellationToken ct = default);
 }
 ```
 

@@ -31,7 +31,8 @@ public sealed class LocalFamilyAssetServiceTests : IDisposable
             metadataService,
             _fixture.GetTypeRepository(),
             _fixture.GetValueRepository(),
-            _fixture.GetRunRepository());
+            _fixture.GetRunRepository(),
+            _fixture.GetTypeCatalogBaker());
     }
 
     private async Task<string> SeedItemAsync(string fileName)

@@ -5,7 +5,7 @@
     <AssemblyName>SmartCon.Revit</AssemblyName>
   </PropertyGroup>
 
-  <!-- RevitAPI + RevitAPIUI: ExcludeAssets=runtime — DLL не копируется в output -->
+  <!-- RevitAPI + RevitAPIUI: ExcludeAssets=runtime - DLL не копируются в output -->
   <ItemGroup>
     <PackageReference Include="Nice3point.Revit.Api.RevitAPI">
       <ExcludeAssets>runtime</ExcludeAssets>
@@ -15,7 +15,28 @@
     </PackageReference>
   </ItemGroup>
 
-  <!-- System.Text.Json: встроен в .NET 8 BCL. Для net48 — NuGet. -->
+  <!-- AdWindows.dll — internal Autodesk library used by the freeze workaround
+       (ShowBalloonTip to nudge the WPF render thread after family upgrade
+       dialog, see REVIT-236376 / REVIT-237190). Lives next to RevitAPI in
+       the Revit install folder. Reference by absolute HintPath so the build
+       only works on machines that have Revit 2023/2025 installed — that is
+       the case for every developer machine and the deployment targets. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="AdWindows">
+      <HintPath>C:\Program Files\Autodesk\Revit 2023\AdWindows.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <Reference Include="AdWindows">
+      <HintPath>C:\Program Files\Autodesk\Revit 2025\AdWindows.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+
+  <!-- System.Text.Json: уже есть в .NET 8 BCL. Для net48 - NuGet. -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="System.Text.Json" />
   </ItemGroup>
@@ -26,6 +47,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="UTF.Unknown" />
   </ItemGroup>
 
 </Project>

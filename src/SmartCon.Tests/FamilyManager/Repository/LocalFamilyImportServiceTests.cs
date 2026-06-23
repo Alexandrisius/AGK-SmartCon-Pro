@@ -25,7 +25,8 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
             metadataService,
             _fixture.GetTypeRepository(),
             _fixture.GetValueRepository(),
-            _fixture.GetRunRepository());
+            _fixture.GetRunRepository(),
+            _fixture.GetTypeCatalogBaker());
     }
 
     [Fact]

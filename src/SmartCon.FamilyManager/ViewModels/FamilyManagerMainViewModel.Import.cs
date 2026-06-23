@@ -213,7 +213,7 @@ public sealed partial class FamilyManagerMainViewModel
                     var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
                     var hasTypeCatalog = File.Exists(txtPath);
 
-                    var extractionResult = _extractionService.Extract(resolved.AbsolutePath, Array.Empty<string>());
+                    var extractionResult = await ExtractFromManagedFileAsync(resolved.AbsolutePath, Array.Empty<string>(), CancellationToken.None);
                     if (extractionResult.Success)
                     {
                         extractionResults.Add((catalogItemId, extractionResult, item.VersionId, item.FileId, hasTypeCatalog));
@@ -231,6 +231,8 @@ public sealed partial class FamilyManagerMainViewModel
             // ConfigureAwait(false) drops the UI SyncContext that LoadTreeAsync needs.
             FireAndForget(async () =>
             {
+                SmartConLogger.FreezeThreadPool("ExtractTypesForImportedFamilies.start");
+                var saveSw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
                     foreach (var (catalogItemId, result, versionId, fileId, hasTypeCatalog) in extractionResults)
@@ -246,28 +248,39 @@ public sealed partial class FamilyManagerMainViewModel
                                 catalogItemId, result, versionId, fileId, CancellationToken.None);
                         }
                     }
+                    saveSw.Stop();
+                    SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: Save took {saveSw.ElapsedMilliseconds}ms, count={extractionResults.Count}");
                     SmartConLogger.Debug($"ExtractTypesForImportedFamilies: save complete, scheduling UI tree refresh");
                 }
                 catch (Exception ex)
                 {
+                    saveSw.Stop();
+                    SmartConLogger.FreezeFail("ExtractTypesForImportedFamilies.Save", $"after {saveSw.ElapsedMilliseconds}ms: {ex.Message}");
                     SmartConLogger.Warn($"ExtractTypesForImportedFamilies save failed: {ex.Message} [Action: типы могут быть неполными; нажмите Refresh]");
                 }
 
                 try
                 {
                     var dispatcher = _uiDispatcher;
+                    SmartConLogger.FreezeThreadPool("ExtractTypesForImportedFamilies.beforeTreeReload");
+                    SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: dispatcher snapshot — thread={dispatcher.Thread.ManagedThreadId}, HasShutdownStarted={dispatcher.HasShutdownStarted}");
                     SmartConLogger.Debug($"ExtractTypesForImportedFamilies: save complete on thread {Environment.CurrentManagedThreadId}, _uiDispatcher thread={dispatcher.Thread.ManagedThreadId}, HasShutdownStarted={dispatcher.HasShutdownStarted}");
                     if (!dispatcher.HasShutdownStarted)
                     {
                         var beforeThread = Environment.CurrentManagedThreadId;
                         var dispatcherThread = dispatcher.Thread.ManagedThreadId;
+                        var treeSw = System.Diagnostics.Stopwatch.StartNew();
+                        SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: about to dispatcher.InvokeAsync(LoadTreeAsync) — caller thread={beforeThread}, dispatcher thread={dispatcherThread}, same={(beforeThread == dispatcherThread)}");
                         SmartConLogger.Debug($"ExtractTypesForImportedFamilies: about to dispatcher.InvokeAsync(LoadTreeAsync) — caller thread={beforeThread}, dispatcher thread={dispatcherThread}, same={(beforeThread == dispatcherThread)}");
                         await dispatcher.InvokeAsync(() => LoadTreeAsync());
+                        treeSw.Stop();
+                        SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: LoadTreeAsync took {treeSw.ElapsedMilliseconds}ms, returned on thread {Environment.CurrentManagedThreadId}");
                         SmartConLogger.Debug($"ExtractTypesForImportedFamilies: dispatcher.InvokeAsync(LoadTreeAsync) returned on thread {Environment.CurrentManagedThreadId}");
                     }
                 }
                 catch (Exception ex)
                 {
+                    SmartConLogger.FreezeFail("ExtractTypesForImportedFamilies.LoadTree", $"{ex.GetType().Name}: {ex.Message}");
                     SmartConLogger.Warn($"Tree reload after extract failed: {ex.Message} [Action: нажмите Refresh чтобы обновить дерево]");
                 }
             }, nameof(ExtractTypesForImportedFamilies));
@@ -672,8 +685,27 @@ public sealed partial class FamilyManagerMainViewModel
             var activeDoc = _revitContext.GetDocument();
             if (activeDoc is not null)
             {
-                var singleCategory = systemAnalyses.Count == 1;
+                // Use project name as displayName ONLY when the project is a "pure" system-family
+                // mini-rvt: exactly one system category and zero loadable families. In that case
+                // the .rvt was likely named after the category (e.g. "Трубы пластиковые.rvt") and
+                // renaming to "Трубы" on every re-import would be annoying. If the project also
+                // has loadable families, fall back to the category DisplayName ("Трубы", "Гибкие
+                // трубы") so the system family is identified by its category, not the project name.
+                var singleCategory = systemAnalyses.Count == 1 && loadableFamilies.Count == 0;
                 var sourceName = singleCategory ? ResolveActiveProjectDisplayName(activeDoc) : null;
+                if (singleCategory)
+                {
+                    SmartConLogger.Info(
+                        $"[FMImport] Single system category with no loadable families — " +
+                        $"using source file name '{sourceName}' as displayName");
+                }
+                else if (systemAnalyses.Count == 1 && loadableFamilies.Count > 0)
+                {
+                    SmartConLogger.Info(
+                        $"[FMImport] Single system category BUT {loadableFamilies.Count} loadable " +
+                        $"families present — using category DisplayName '{systemAnalyses[0].DisplayName}' " +
+                        $"instead of project name to keep identity stable across re-imports");
+                }
 
                 foreach (var analysis in systemAnalyses)
                 {

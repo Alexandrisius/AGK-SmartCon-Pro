@@ -180,7 +180,9 @@ public static class ServiceRegistrar
         services.AddSingleton<LocalFamilyDataImportRunRepository>();
         services.AddSingleton<IFamilyDataImportRunRepository>(sp => sp.GetRequiredService<LocalFamilyDataImportRunRepository>());
         services.AddSingleton<IFamilyManagerMetadataMediator, FamilyManagerMetadataMediator>();
+        services.AddSingleton<ITypeCatalogValueApplier, TypeCatalogValueApplier>();
         services.AddSingleton<IFamilyDataExtractionService, RevitFamilyDataExtractionService>();
+        services.AddSingleton<IFamilyTypeCatalogBaker, RevitFamilyTypeCatalogBaker>();
         services.AddSingleton<FamilyDataImportService>();
         services.AddSingleton<IFamilyDataImportService>(sp => sp.GetRequiredService<FamilyDataImportService>());
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();

@@ -41,3 +41,6 @@
 | [028](028-di-readiness.md) | DI Readiness | accepted | 2026-06-13 |
 | [029](029-shared-nested-load-dialog.md) | Shared nested families — user dialog for load mode (Issue #67) | accepted | 2026-06-17 |
 | [030](030-phase-24-stale-detection-v2.md) | Stale Detection v2 — On-Demand Family Version Marker via ExtensibleStorage on Family element in project (Issue #69) | accepted | 2026-06-18 |
+| [031](031-fireandforget-ui-marshalling.md) | FireAndForget — обязательный UI-marshalling (net48 freeze post-mortem) | accepted | 2026-06-19 |
+| [032](032-type-catalog-simulation.md) | Type Catalog Simulation — вычисление формул для типов из .txt через Document.Regenerate (Issue #66) | superseded by 033 | 2026-06-21 |
+| [033](033-bakein-type-catalog.md) | Bake-in Type Catalog в .rfa при импорте (Issue #74) | accepted | 2026-06-22 |

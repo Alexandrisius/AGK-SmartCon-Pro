@@ -86,6 +86,14 @@ public sealed class FormulaSolver : IFormulaSolver
         return (slNode.TableName, slNode.QueryParameters);
     }
 
+    public IReadOnlyList<string> ExtractVariables(string formula)
+    {
+        if (string.IsNullOrWhiteSpace(formula))
+            return [];
+
+        return ExtractVariablesStatic(formula);
+    }
+
     // ── Static methods (compatibility with MiniFormulaSolver API) ────────
 
     /// <summary>

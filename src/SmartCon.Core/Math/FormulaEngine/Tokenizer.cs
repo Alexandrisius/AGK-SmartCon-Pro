@@ -134,6 +134,24 @@ internal static class Tokenizer
     {
         int start = i;
         while (i < input.Length && IsIdentPart(input[i])) i++;
+        // Revit allows parameter names with spaces (e.g. "ADSK_Номинальная мощность").
+        // Greedily continue the identifier across whitespace if the next non-space
+        // character is still part of the identifier. Stop on operators, parens, commas,
+        // EOF, or any non-identifier character.
+        while (i < input.Length && char.IsWhiteSpace(input[i]))
+        {
+            int j = i;
+            while (j < input.Length && char.IsWhiteSpace(input[j])) j++;
+            if (j < input.Length && IsIdentPart(input[j]))
+            {
+                i = j;
+                while (i < input.Length && IsIdentPart(input[i])) i++;
+            }
+            else
+            {
+                break;
+            }
+        }
         string text = input[start..i];
         return new Token(TokenType.Identifier, text);
     }

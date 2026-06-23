@@ -68,7 +68,8 @@ public class TypeCatalogEncodingTests : IDisposable
             new FileNameOnlyMetadataExtractionService(new Sha256FileHasher()),
             _fixture.GetTypeRepository(),
             _fixture.GetValueRepository(),
-            _fixture.GetRunRepository());
+            _fixture.GetRunRepository(),
+            _fixture.GetTypeCatalogBaker());
 
         var result = await importService.ImportFileAsync(
             new SmartCon.Core.Models.FamilyManager.FamilyImportRequest(rfaPath, 2025, null, null, null),

@@ -14,8 +14,11 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task LoadTreeAsync(CancellationToken ct = default)
     {
         IsLoading = true;
+        var totalSw = System.Diagnostics.Stopwatch.StartNew();
+        var stageSw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
+            stageSw.Restart();
             IReadOnlyList<Core.Models.FamilyManager.CategoryNode> categories = [];
             try
             {
@@ -26,6 +29,7 @@ public sealed partial class FamilyManagerMainViewModel
                 using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "GetAllAsync"));
                 SmartConLogger.Warn($"failed: {ex.Message}");
             }
+            SmartConLogger.Freeze($"LoadTreeAsync: GetAllAsync took {stageSw.ElapsedMilliseconds}ms, categories={categories.Count}");
 
             var tree = new CategoryTree(categories);
 
@@ -39,8 +43,13 @@ public sealed partial class FamilyManagerMainViewModel
                 Offset: 0,
                 Limit: int.MaxValue);
 
+            stageSw.Restart();
             var results = await _catalogProvider.SearchAsync(query, ct);
+            SmartConLogger.Freeze($"LoadTreeAsync: SearchAsync took {stageSw.ElapsedMilliseconds}ms, results={results.Count}");
+
+            stageSw.Restart();
             TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
+            SmartConLogger.Freeze($"LoadTreeAsync: GetItemCountAsync took {stageSw.ElapsedMilliseconds}ms, totalItemCount={TotalItemCount}");
 
             var rootNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
             var expandAll = !string.IsNullOrWhiteSpace(SearchText);
@@ -70,11 +79,18 @@ public sealed partial class FamilyManagerMainViewModel
                 .GroupBy(i => i.CategoryId ?? string.Empty)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
+            stageSw.Restart();
+            var rootCategoryCount = 0;
             foreach (var catNode in tree.GetRootNodes())
             {
                 var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds, staleSnapshot);
-                if (catVm is CategoryNodeViewModel) rootNodes.Add(catVm);
+                if (catVm is CategoryNodeViewModel)
+                {
+                    rootNodes.Add(catVm);
+                    rootCategoryCount++;
+                }
             }
+            SmartConLogger.Freeze($"LoadTreeAsync: BuildCategoryNode took {stageSw.ElapsedMilliseconds}ms, rootCategories={rootCategoryCount}");
 
             var uncategorized = results.Where(r => string.IsNullOrEmpty(r.CategoryId)).ToList();
             var noCatLabel = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
@@ -110,6 +126,7 @@ public sealed partial class FamilyManagerMainViewModel
             if (!expandAll && expandedIds.Contains("__no_category__")) _noCategoryNode.IsExpanded = true;
             rootNodes.Add(_noCategoryNode);
 
+            stageSw.Restart();
             try
             {
                 await AttachCachedTypesAsync(rootNodes, expandedFamilyIds, ct);
@@ -119,8 +136,11 @@ public sealed partial class FamilyManagerMainViewModel
                 using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "AttachCachedTypesAsync"));
                 SmartConLogger.Warn($"failed: {ex.Message}");
             }
+            SmartConLogger.Freeze($"LoadTreeAsync: AttachCachedTypesAsync took {stageSw.ElapsedMilliseconds}ms");
 
+            stageSw.Restart();
             TreeNodes = rootNodes;
+            SmartConLogger.Freeze($"LoadTreeAsync: TreeNodes= took {stageSw.ElapsedMilliseconds}ms (WPF binding sync)");
 
             // Re-apply per-category roll-up from the cached snapshot. BuildCategoryNode
             // only sets IsStale on leaves; the HasStale/StaleCount on category nodes
@@ -128,7 +148,9 @@ public sealed partial class FamilyManagerMainViewModel
             // the one triggered by 'Update on a single family') would wipe the
             // HasStale indicator on every category — even ones whose stale markers
             // are still perfectly valid in the snapshot.
+            stageSw.Restart();
             await ApplyStaleResultsToTreeAsync(Array.Empty<StaleCheckResult>(), ct).ConfigureAwait(true);
+            SmartConLogger.Freeze($"LoadTreeAsync: ApplyStaleResultsToTreeAsync took {stageSw.ElapsedMilliseconds}ms");
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -140,6 +162,8 @@ public sealed partial class FamilyManagerMainViewModel
         finally
         {
             IsLoading = false;
+            totalSw.Stop();
+            SmartConLogger.Freeze($"LoadTreeAsync: TOTAL took {totalSw.ElapsedMilliseconds}ms, thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
             SmartConLogger.Debug($"LoadTreeAsync: finally thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
         }
     }

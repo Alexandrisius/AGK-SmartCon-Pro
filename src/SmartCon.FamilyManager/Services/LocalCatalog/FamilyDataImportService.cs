@@ -123,12 +123,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
             }
         }
 
-        await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, fileId, runId, types, ct);
-
-        var resolvedTypes = await _typeRepository.GetTypesForItemAsync(catalogItemId, ct);
-        var resolvedByName = resolvedTypes
-            .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var typeIdsByName = await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, fileId, runId, types, ct);
 
         var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
         var attrByName = allAttrs.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
@@ -136,7 +131,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
         var values = new List<ExtractedAttributeValue>();
         foreach (var typeData in extractionResult.Types)
         {
-            resolvedByName.TryGetValue(typeData.TypeName, out var typeRecord);
+            typeIdsByName.TryGetValue(typeData.TypeName, out var typeId);
             foreach (var val in typeData.Values)
             {
                 attrByName.TryGetValue(val.ParameterName, out var attrDef);
@@ -145,7 +140,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
                     catalogItemId,
                     versionId,
                     fileId,
-                    typeRecord?.Id,
+                    typeId,
                     attrDef?.Id,
                     null,
                     val.ParameterName,

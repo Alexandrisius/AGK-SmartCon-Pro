@@ -323,36 +323,34 @@ internal sealed partial class LocalFamilyImportService
         }
 
         var absolutePath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
-        var metadata = await _metadataService.ExtractAsync(item.FilePath, ct);
+        var sourceMetadata = await _metadataService.ExtractAsync(item.FilePath, ct);
+        TypeCatalogResolutionResult? catalogResult = null;
 
         try
         {
-            // Copy file over existing
-            await Task.Run(() =>
+            catalogResult = await PrepareManagedRfaAsync(
+                item.FilePath,
+                item.OriginalSourcePath,
+                item.ExistingCatalogItemId!,
+                currentVersion.Id,
+                currentVersion.VersionLabel,
+                absolutePath,
+                ct);
+
+            if (!File.Exists(absolutePath))
             {
-                var existingAttributes = File.GetAttributes(absolutePath);
-                var wasReadOnly = (existingAttributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly;
-                try
-                {
-                    if (wasReadOnly)
-                    {
-                        File.SetAttributes(absolutePath, existingAttributes & ~FileAttributes.ReadOnly);
-                    }
-                    File.Copy(item.FilePath, absolutePath, overwrite: true);
-                }
-                finally
-                {
-                    var currentAttributes = File.GetAttributes(absolutePath);
-                    if (wasReadOnly)
-                    {
-                        File.SetAttributes(absolutePath, currentAttributes | FileAttributes.ReadOnly);
-                    }
-                    else
-                    {
-                        File.SetAttributes(absolutePath, currentAttributes & ~FileAttributes.ReadOnly);
-                    }
-                }
-            }, ct);
+                tx.Rollback();
+                return new FamilyImportResult(
+                    Success: false,
+                    CatalogItemId: item.ExistingCatalogItemId,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: item.FileName,
+                    VersionLabel: null,
+                    ErrorMessage: "Managed family file was not created after Type Catalog processing");
+            }
+
+            var finalMetadata = await _metadataService.ExtractAsync(absolutePath, ct);
 
             // Update family_files
             using var updateFileCmd = connection.CreateCommand();
@@ -362,9 +360,9 @@ internal sealed partial class LocalFamilyImportService
                 WHERE id = @fileId
                 """;
             updateFileCmd.Parameters.Add(new SqliteParameter("@fileId", currentVersion.FileId));
-            updateFileCmd.Parameters.Add(new SqliteParameter("@sha256", metadata.Sha256));
-            updateFileCmd.Parameters.Add(new SqliteParameter("@sizeBytes", metadata.FileSizeBytes));
-            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", metadata.FileName));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@sha256", finalMetadata.Sha256));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@sizeBytes", finalMetadata.FileSizeBytes));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", finalMetadata.FileName));
             updateFileCmd.Parameters.Add(new SqliteParameter("@importedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
             await updateFileCmd.ExecuteNonQueryAsync(ct);
 
@@ -390,14 +388,23 @@ internal sealed partial class LocalFamilyImportService
             throw;
         }
 
-        await ImportTypeCatalogIfPresentAsync(item.FilePath, item.OriginalSourcePath, item.ExistingCatalogItemId!, currentVersion.Id, currentVersion.VersionLabel, ct);
+        if (catalogResult is not null)
+        {
+            await ImportParsedTypeCatalogAsync(
+                catalogResult.ParseResult,
+                catalogResult.SourceTxtPath,
+                item.ExistingCatalogItemId!,
+                currentVersion.Id,
+                currentVersion.VersionLabel,
+                ct);
+        }
 
         return new FamilyImportResult(
             Success: true,
             CatalogItemId: item.ExistingCatalogItemId,
             VersionId: currentVersion.Id,
             FileId: currentVersion.FileId,
-            FileName: metadata.FileName,
+            FileName: sourceMetadata.FileName,
             VersionLabel: currentVersion.VersionLabel,
             ErrorMessage: null,
             WasNewVersion: false);

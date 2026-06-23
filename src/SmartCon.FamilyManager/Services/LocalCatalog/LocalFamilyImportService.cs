@@ -14,6 +14,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
     private readonly LocalCatalogProvider _catalogProvider;
     private readonly StoragePathResolver _pathResolver;
     private readonly IFamilyMetadataExtractionService _metadataService;
+    private readonly IFamilyTypeCatalogBaker _typeCatalogBaker;
     private readonly IRevitFileInfoReader? _fileInfoReader;
 
     public LocalFamilyImportService(
@@ -25,6 +26,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         IFamilyTypeRepository typeRepository,
         IAttributeValueRepository valueRepository,
         IFamilyDataImportRunRepository runRepository,
+        IFamilyTypeCatalogBaker typeCatalogBaker,
         IRevitFileInfoReader? fileInfoReader = null)
     {
         _database = database;
@@ -32,6 +34,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         _catalogProvider = catalogProvider;
         _pathResolver = pathResolver;
         _metadataService = metadataService;
+        _typeCatalogBaker = typeCatalogBaker;
         _typeRepository = typeRepository;
         _valueRepository = valueRepository;
         _runRepository = runRepository;
@@ -59,8 +62,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 ErrorMessage: $"File not found: {filePath}");
         }
 
-        var metadata = await _metadataService.ExtractAsync(filePath, ct);
-        var sha256 = metadata.Sha256;
+        var sourceMetadata = await _metadataService.ExtractAsync(filePath, ct);
+        var sha256 = sourceMetadata.Sha256;
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         var displayName = !string.IsNullOrWhiteSpace(request.FileName)
@@ -80,7 +83,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     CatalogItemId: existingItem.Id,
                     VersionId: existingVersion.Id,
                     FileId: existingVersion.FileId,
-                    FileName: metadata.FileName,
+                    FileName: sourceMetadata.FileName,
                     VersionLabel: existingVersion.VersionLabel,
                     ErrorMessage: null,
                     WasSkippedAsDuplicate: true);
@@ -97,26 +100,41 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ? await GetNextVersionLabelAsync(existingItem.Id, ct)
             : "v1";
 
-        var copyResult = await CopyToManagedStorageAsync(filePath, catalogItemId, versionLabel, revitVersion, metadata, displayName, ct);
-        if (!copyResult.Success)
-            return new FamilyImportResult(
-                Success: false,
-                CatalogItemId: null,
-                VersionId: null,
-                FileId: null,
-                FileName: metadata.FileName,
-                VersionLabel: null,
-                ErrorMessage: copyResult.ErrorMessage);
+        var managedRfaPath = ComputeManagedRfaPath(catalogItemId, versionLabel, sourceMetadata, displayName);
+        var relativePath = _pathResolver.GetRelativePath(managedRfaPath);
 
         try
         {
+            var catalogResult = await PrepareManagedRfaAsync(
+                filePath,
+                request.OriginalSourcePath,
+                catalogItemId,
+                versionId,
+                versionLabel,
+                managedRfaPath,
+                ct);
+
+            if (!File.Exists(managedRfaPath))
+            {
+                return new FamilyImportResult(
+                    Success: false,
+                    CatalogItemId: null,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: sourceMetadata.FileName,
+                    VersionLabel: null,
+                    ErrorMessage: "Managed family file was not created after Type Catalog processing");
+            }
+
+            var finalMetadata = await _metadataService.ExtractAsync(managedRfaPath, ct);
+
             using var connection = _database.CreateConnection();
             await connection.OpenAsync(ct).ConfigureAwait(false);
             using var tx = connection.BeginTransaction();
 
             try
             {
-                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct).ConfigureAwait(false);
+                await InsertFileRecordAsync(connection, fileRecordId, relativePath, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 if (existingItem is null)
                 {
@@ -127,7 +145,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct).ConfigureAwait(false);
                 }
 
-                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct).ConfigureAwait(false);
+                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 if (existingItem is null && request.Tags is not null)
                 {
@@ -145,13 +163,15 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 throw;
             }
 
-            try
+            if (catalogResult is not null)
             {
-                await ImportTypeCatalogIfPresentAsync(filePath, request.OriginalSourcePath, catalogItemId, versionId, versionLabel, ct);
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"Type Catalog import failed for {catalogItemId}: {ex.Message}");
+                await ImportParsedTypeCatalogAsync(
+                    catalogResult.ParseResult,
+                    catalogResult.SourceTxtPath,
+                    catalogItemId,
+                    versionId,
+                    versionLabel,
+                    ct);
             }
 
             return new FamilyImportResult(
@@ -159,14 +179,14 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 CatalogItemId: catalogItemId,
                 VersionId: versionId,
                 FileId: fileRecordId,
-                FileName: metadata.FileName,
+                FileName: finalMetadata.FileName,
                 VersionLabel: versionLabel,
                 ErrorMessage: null,
                 WasNewVersion: existingItem is not null);
         }
         catch
         {
-            CleanupFileAsync(copyResult.RelativePath);
+            CleanupFileAsync(relativePath);
             throw;
         }
     }
@@ -415,8 +435,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 ErrorMessage: $"File not found: {filePath}");
         }
 
-        var metadata = await _metadataService.ExtractAsync(filePath, ct);
-        var sha256 = metadata.Sha256;
+        var sourceMetadata = await _metadataService.ExtractAsync(filePath, ct);
+        var sha256 = sourceMetadata.Sha256;
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         var newName = !string.IsNullOrWhiteSpace(request.FileName)
@@ -433,7 +453,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 CatalogItemId: request.CatalogItemId,
                 VersionId: currentVersion.Id,
                 FileId: currentVersion.FileId,
-                FileName: metadata.FileName,
+                FileName: sourceMetadata.FileName,
                 VersionLabel: currentVersion.VersionLabel,
                 ErrorMessage: null,
                 WasSkippedAsDuplicate: true);
@@ -445,32 +465,47 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var fileRecordId = Guid.NewGuid().ToString();
         var versionId = Guid.NewGuid().ToString();
 
-        var copyResult = await CopyToManagedStorageAsync(filePath, request.CatalogItemId, versionLabel, revitVersion, metadata, newName, ct);
-        if (!copyResult.Success)
-            return new FamilyImportResult(
-                Success: false,
-                CatalogItemId: null,
-                VersionId: null,
-                FileId: null,
-                FileName: metadata.FileName,
-                VersionLabel: null,
-                ErrorMessage: copyResult.ErrorMessage);
+        var managedRfaPath = ComputeManagedRfaPath(request.CatalogItemId, versionLabel, sourceMetadata, newName);
+        var relativePath = _pathResolver.GetRelativePath(managedRfaPath);
 
         try
         {
+            var catalogResult = await PrepareManagedRfaAsync(
+                filePath,
+                request.OriginalSourcePath,
+                request.CatalogItemId,
+                versionId,
+                versionLabel,
+                managedRfaPath,
+                ct);
+
+            if (!File.Exists(managedRfaPath))
+            {
+                return new FamilyImportResult(
+                    Success: false,
+                    CatalogItemId: null,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: sourceMetadata.FileName,
+                    VersionLabel: null,
+                    ErrorMessage: "Managed family file was not created after Type Catalog processing");
+            }
+
+            var finalMetadata = await _metadataService.ExtractAsync(managedRfaPath, ct);
+
             using var connection = _database.CreateConnection();
             await connection.OpenAsync(ct).ConfigureAwait(false);
             using var tx = connection.BeginTransaction();
 
             try
             {
-                await InsertFileRecordAsync(connection, fileRecordId, copyResult.RelativePath!, metadata, revitVersion, now, ct).ConfigureAwait(false);
+                await InsertFileRecordAsync(connection, fileRecordId, relativePath, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
                 await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(request.CategoryId))
                 {
                     await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);
                 }
-                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, metadata, revitVersion, now, ct).ConfigureAwait(false);
+                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
 
                 tx.Commit();
             }
@@ -480,13 +515,15 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 throw;
             }
 
-            try
+            if (catalogResult is not null)
             {
-                await ImportTypeCatalogIfPresentAsync(filePath, request.OriginalSourcePath, request.CatalogItemId, versionId, versionLabel, ct);
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"Type Catalog import failed for {request.CatalogItemId}: {ex.Message}");
+                await ImportParsedTypeCatalogAsync(
+                    catalogResult.ParseResult,
+                    catalogResult.SourceTxtPath,
+                    request.CatalogItemId,
+                    versionId,
+                    versionLabel,
+                    ct);
             }
 
             return new FamilyImportResult(
@@ -494,14 +531,14 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 CatalogItemId: request.CatalogItemId,
                 VersionId: versionId,
                 FileId: fileRecordId,
-                FileName: metadata.FileName,
+                FileName: finalMetadata.FileName,
                 VersionLabel: versionLabel,
                 ErrorMessage: null,
                 WasNewVersion: true);
         }
         catch
         {
-            CleanupFileAsync(copyResult.RelativePath);
+            CleanupFileAsync(relativePath);
             throw;
         }
     }
@@ -509,13 +546,11 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
     private const int CopyMaxRetries = 3;
     private static readonly int[] CopyRetryDelaysMs = [100, 300, 900];
 
-    private async Task<CopyResult> CopyToManagedStorageAsync(string sourcePath, string catalogItemId, string versionLabel, int revitVersion, FamilyMetadataExtractionResult metadata, string? displayName, CancellationToken ct)
+    private string ComputeManagedRfaPath(string catalogItemId, string versionLabel, FamilyMetadataExtractionResult metadata, string? displayName)
     {
         _pathResolver.EnsureFamilyDirectories(catalogItemId, versionLabel);
 
-        var sourceExt = Path.GetExtension(sourcePath);
-        if (string.IsNullOrEmpty(sourceExt))
-            sourceExt = Path.GetExtension(metadata.FileName);
+        var sourceExt = Path.GetExtension(metadata.FileName);
         if (string.IsNullOrEmpty(sourceExt))
             sourceExt = ".rfa";
 
@@ -523,10 +558,12 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             ? SanitizeFileName(displayName) + sourceExt
             : metadata.FileName;
 
-        var absolutePath = _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, destFileName);
-        var fileName = Path.GetFileName(sourcePath);
+        return _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, destFileName);
+    }
 
-        SmartConLogger.Debug($"Copy: source='{fileName}' -> dest='{destFileName}' (displayName='{displayName}')");
+    private static async Task<CopyResult> CopyFileWithRetryAsync(string sourcePath, string destPath, CancellationToken ct)
+    {
+        var fileName = Path.GetFileName(sourcePath);
 
         for (var attempt = 0; attempt < CopyMaxRetries; attempt++)
         {
@@ -536,14 +573,13 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             {
                 await Task.Run(() =>
                 {
-                    // Copy with FileShare.ReadWrite to handle files opened by Revit
                     using var sourceStream = new FileStream(
                         sourcePath,
                         FileMode.Open,
                         FileAccess.Read,
                         FileShare.ReadWrite);
                     using var destStream = new FileStream(
-                        absolutePath,
+                        destPath,
                         FileMode.Create,
                         FileAccess.Write,
                         FileShare.None);
@@ -553,7 +589,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
                 try
                 {
-                    File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttributes.ReadOnly);
+                    File.SetAttributes(destPath, File.GetAttributes(destPath) | FileAttributes.ReadOnly);
                 }
                 catch (IOException attrEx) when (attempt < CopyMaxRetries - 1)
                 {
@@ -562,9 +598,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     continue;
                 }
 
-                var relativePath = _pathResolver.GetRelativePath(absolutePath);
-                SmartConLogger.Debug($"Copied to managed storage (read-only): {absolutePath}");
-                return new CopyResult(true, relativePath, null);
+                SmartConLogger.Debug($"Copied to managed storage (read-only): {destPath}");
+                return new CopyResult(true, null, null);
             }
             catch (IOException) when (attempt < CopyMaxRetries - 1)
             {
