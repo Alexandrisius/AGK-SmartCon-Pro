@@ -38,6 +38,19 @@ namespace SmartCon.UI.Behaviors;
 /// public <c>OnCommandChanged</c> hook which calls
 /// <c>UpdateCanExecute</c> internally - identical to the
 /// <c>PropertyChangedCallback</c> that PR #4217 added upstream.
+///
+/// Important: the subscription is intentionally NOT torn down on
+/// <c>MenuItem.Unloaded</c>. WPF reuses <see cref="MenuItem"/>
+/// instances across <see cref="ContextMenu"/> shows, but the
+/// <c>RequeryOnChange</c> attached property only fires its
+/// <see cref="PropertyMetadata.PropertyChangedCallback"/> when the
+/// value actually changes. If we unsubscribe on <c>Unloaded</c>, the
+/// handler is gone for every subsequent ContextMenu show on the same
+/// MenuItem instance and <c>CanExecute</c> stays stale on .NET
+/// Framework 4.x (which lacks the upstream dotnet/wpf#4217 fix).
+/// See Issue #78 for the 2026-06-22 regression introduced in commit
+/// 8ffe965, where a temporary <c>OnMenuItemUnloaded</c> cleanup
+/// silently disabled the workaround after the first ContextMenu close.
 /// </summary>
 public static class MenuItemCommandParameterRequery
 {
@@ -57,37 +70,12 @@ public static class MenuItemCommandParameterRequery
     private static void OnRequeryOnChangeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not MenuItem menuItem) return;
-        if ((bool)e.OldValue)
-        {
-            // Unwire: detach value-changed handler and Unloaded cleanup
-            var oldDpd = DependencyPropertyDescriptor.FromProperty(
-                MenuItem.CommandParameterProperty, typeof(MenuItem));
-            oldDpd?.RemoveValueChanged(menuItem, OnCommandParameterChanged);
-            menuItem.Unloaded -= OnMenuItemUnloaded;
-        }
         if ((bool)e.NewValue)
         {
-            // DependencyPropertyDescriptor wires us into the same CLR change
-            // notification that WPF uses internally for PropertyMetadata
-            // callbacks. Works on both .NET Framework 4.x and .NET 8.
             var dpd = DependencyPropertyDescriptor.FromProperty(
                 MenuItem.CommandParameterProperty, typeof(MenuItem));
             dpd?.AddValueChanged(menuItem, OnCommandParameterChanged);
-            // Cleanup safety net: when the MenuItem leaves the visual tree
-            // (e.g. ContextMenu closed and its template is recycled), detach
-            // the value-changed handler. Prevents accumulated handlers across
-            // many right-click cycles in long Revit sessions.
-            menuItem.Unloaded += OnMenuItemUnloaded;
         }
-    }
-
-    private static void OnMenuItemUnloaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem menuItem) return;
-        var dpd = DependencyPropertyDescriptor.FromProperty(
-            MenuItem.CommandParameterProperty, typeof(MenuItem));
-        dpd?.RemoveValueChanged(menuItem, OnCommandParameterChanged);
-        menuItem.Unloaded -= OnMenuItemUnloaded;
     }
 
     private static void OnCommandParameterChanged(object? sender, EventArgs e)

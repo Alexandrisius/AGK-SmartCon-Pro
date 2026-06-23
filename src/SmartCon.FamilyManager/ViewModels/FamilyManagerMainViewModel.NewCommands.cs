@@ -91,10 +91,8 @@ public sealed partial class FamilyManagerMainViewModel
         return result;
     }
 
-    private bool CanCheckCategory(CategoryNodeViewModel? category)
-    {
-        return category != null && !IsStaleCheckInProgress;
-    }
+    private bool CanCheckCategory(CategoryNodeViewModel? category) =>
+        category != null && !IsStaleCheckInProgress;
 
     [RelayCommand(CanExecute = nameof(CanCheckFamily))]
     private async Task CheckFamilyAsync(FamilyLeafNodeViewModel? family)
