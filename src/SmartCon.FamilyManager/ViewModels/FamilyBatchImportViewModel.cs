@@ -1,10 +1,8 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
-using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
@@ -37,8 +35,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
 
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
-    private readonly IFamilyCatalogProvider _catalogProvider;
-    private int _statusLookupSeq;
     private bool _disposed;
     private bool _batchApplying;
 
@@ -46,13 +42,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         IReadOnlyList<FamilyBatchImportItem> items,
         IFamilyManagerDialogService dialogService,
         IFamilyManagerViewModelFactory viewModelFactory,
-        IFamilyCatalogProvider catalogProvider,
         string? defaultCategoryId = null,
         string? defaultCategoryName = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
-        _catalogProvider = catalogProvider;
 
         foreach (var item in items)
         {
@@ -64,7 +58,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             var row = new FamilyBatchImportRow(item);
             row.PropertyChanged += OnRowPropertyChanged;
             row.PickCategoryRequested += OnRowPickCategoryRequestedAsync;
-            row.NameChanged += OnRowNameChangedAsync;
             row.ActionChanged += OnRowActionChanged;
             row.CategoryChanged += OnRowCategoryChanged;
             row.SelectionChanged += OnRowSelectionChanged;
@@ -111,7 +104,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"BatchImport.CategoryPicker: failed: {ex.Message}");
+            SmartCon.Core.Logging.SmartConLogger.Error($"BatchImport.CategoryPicker: failed: {ex.Message}");
         }
     }
 
@@ -146,7 +139,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 }
                 else
                 {
-                    SmartConLogger.Debug(
+                    SmartCon.Core.Logging.SmartConLogger.Debug(
                         $"BatchImport.Action: skip apply {newValue} to '{target.FileName}' — not in AvailableActions");
                 }
             }
@@ -187,50 +180,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         return _selectedRows.Where(r => !ReferenceEquals(r, source)).ToList();
     }
 
-    private async Task OnRowNameChangedAsync(FamilyBatchImportRow row)
-    {
-        var seq = System.Threading.Interlocked.Increment(ref _statusLookupSeq);
-        try
-        {
-            await UpdateStatusForRowAsync(row, seq).ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            if (seq == Volatile.Read(ref _statusLookupSeq))
-            {
-                using var _scope = SmartConLogger.BeginScope("BatchImport", ("Method", "UpdateStatusForRow"));
-                SmartConLogger.Warn($"failed: {ex.Message}");
-            }
-        }
-    }
-
-    private async Task UpdateStatusForRowAsync(FamilyBatchImportRow row, int seq)
-    {
-        if (!string.IsNullOrEmpty(row.Sha256))
-        {
-            var existingByHash = await _catalogProvider.FindByHashAsync(row.Sha256, CancellationToken.None).ConfigureAwait(true);
-            if (seq != Volatile.Read(ref _statusLookupSeq)) return;
-            if (existingByHash is not null)
-            {
-                row.SetStatusSilent(FamilyBatchImportStatus.Duplicate, existingByHash.CatalogItemId, existingByHash.VersionLabel);
-                return;
-            }
-        }
-
-        var normalizedName = FamilyNameNormalizer.Normalize(row.FileName);
-        var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None).ConfigureAwait(true);
-        if (seq != Volatile.Read(ref _statusLookupSeq)) return;
-
-        if (existingByName is not null)
-        {
-            row.SetStatusSilent(FamilyBatchImportStatus.Existing, existingByName.Id, existingByName.CurrentVersionLabel);
-        }
-        else
-        {
-            row.SetStatusSilent(FamilyBatchImportStatus.New, null, null);
-        }
-    }
-
     private void OnRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(FamilyBatchImportRow.CanImport))
@@ -248,7 +197,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         {
             row.PropertyChanged -= OnRowPropertyChanged;
             row.PickCategoryRequested -= OnRowPickCategoryRequestedAsync;
-            row.NameChanged -= OnRowNameChangedAsync;
             row.ActionChanged -= OnRowActionChanged;
             row.CategoryChanged -= OnRowCategoryChanged;
             row.SelectionChanged -= OnRowSelectionChanged;
@@ -281,9 +229,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         return Items.Select(r => new FamilyBatchImportItem(
             r.FilePath,
             r.FileName,
-            r.Sha256,
             r.RevitMajorVersion,
-            r.FileSizeBytes,
             r.Status,
             r.ExistingCatalogItemId,
             r.ExistingVersionLabel,

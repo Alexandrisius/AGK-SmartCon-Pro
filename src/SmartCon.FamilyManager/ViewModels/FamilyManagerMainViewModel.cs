@@ -46,9 +46,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly ISystemFamilyIsolationProjectService _systemFamilyIsolationProject;
     private readonly ISystemFamilyAttributeExtractor _systemFamilyAttributeExtractor;
     private readonly ISystemFamilyImportOrchestrator _systemFamilyImportOrchestrator;
-    private readonly IActiveFamilyFilePreparer _activeFamilyFilePreparer;
     private readonly IActiveDocumentClassifier _activeDocumentClassifier;
-    private readonly IActiveImportCleanupService _activeImportCleanupService;
     private readonly ILoadableFamilyScanner _loadableFamilyScanner;
     private readonly ILoadableFamilyImportOrchestrator _loadableFamilyImportOrchestrator;
     private readonly IStaleDetector _staleDetector;
@@ -147,9 +145,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _systemFamilyIsolationProject = services.SystemFamilyIsolationProject;
         _systemFamilyAttributeExtractor = services.SystemFamilyAttributeExtractor;
         _systemFamilyImportOrchestrator = services.SystemFamilyImportOrchestrator;
-        _activeFamilyFilePreparer = services.ActiveFamilyFilePreparer;
         _activeDocumentClassifier = services.ActiveDocumentClassifier;
-        _activeImportCleanupService = services.ActiveImportCleanupService;
         _loadableFamilyScanner = services.LoadableFamilyScanner;
         _loadableFamilyImportOrchestrator = services.LoadableFamilyImportOrchestrator;
         _staleDetector = services.StaleDetector;

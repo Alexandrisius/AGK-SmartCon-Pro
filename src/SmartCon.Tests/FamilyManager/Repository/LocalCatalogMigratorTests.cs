@@ -67,7 +67,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("13", version);
+        Assert.Equal("14", version);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class LocalCatalogMigratorTests
     }
 
     [Fact]
-    public async Task Migrate_ExistingV12Database_UpgradesToV13AndCreatesTable()
+    public async Task Migrate_ExistingV14Database_UpgradesToV14()
     {
         // Simulate an existing V12 database by running the full migration,
         // then manually rewinding the schema_version to 12 and dropping the
@@ -117,7 +117,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("13", version);
+        Assert.Equal("14", version);
 
         using var tableCmd = verify.CreateCommand();
         tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_nested_shared_families'";

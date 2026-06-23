@@ -15,8 +15,8 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         _fixture = new TempCatalogFixture();
 
 
-        var hasher = new Sha256FileHasher();
-        var metadataService = new FileNameOnlyMetadataExtractionService(hasher);
+        
+        var metadataService = new FileMetadataExtractionService();
         _importService = new LocalFamilyImportService(
             _fixture.GetDatabase(),
             _fixture.GetMigrator(),
@@ -62,19 +62,23 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ImportFile_SameNameAndHash_SkipsDuplicate()
+    public async Task ImportFile_SameName_CreatesNewVersion()
     {
-        var content = "SAME_CONTENT_FOR_DUPLICATE"u8.ToArray();
-        var path1 = _fixture.CreateFakeRfaFileWithContent("Family1.rfa", content);
+        // v2.0.0: SHA-256 dedup is gone. Re-importing the same path with the
+        // same content now produces a new version (v2), not a Skip.
+        var content = "SAME_CONTENT_NEW_VERSION"u8.ToArray();
+        var path1 = _fixture.CreateFakeRfaFileWithContent("FamilyV2.rfa", content);
 
         var result1 = await _importService.ImportFileAsync(new FamilyImportRequest(path1, 2025, null, null, null));
-        var result2 = await _importService.ImportFileAsync(new FamilyImportRequest(path1, 2025, null, null, null));
-
         Assert.True(result1.Success);
         Assert.False(result1.WasSkippedAsDuplicate);
+        Assert.Equal("v1", result1.VersionLabel);
 
+        var result2 = await _importService.ImportFileAsync(new FamilyImportRequest(path1, 2025, null, null, null));
         Assert.True(result2.Success);
-        Assert.True(result2.WasSkippedAsDuplicate);
+        Assert.False(result2.WasSkippedAsDuplicate);
+        Assert.Equal("v2", result2.VersionLabel);
+        Assert.Equal(result1.CatalogItemId, result2.CatalogItemId);
         Assert.Equal(result1.CatalogItemId, result2.CatalogItemId);
     }
 

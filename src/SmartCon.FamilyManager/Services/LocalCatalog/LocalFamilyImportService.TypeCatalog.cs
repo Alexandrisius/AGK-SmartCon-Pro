@@ -120,7 +120,6 @@ internal sealed partial class LocalFamilyImportService
             catalogItemId,
             versionId,
             null,
-            null,
             0,
             FamilyDataImportStatus.Succeeded,
             parseResult.Entries.Count,

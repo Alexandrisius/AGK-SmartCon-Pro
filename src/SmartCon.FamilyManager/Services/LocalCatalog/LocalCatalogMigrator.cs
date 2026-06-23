@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
@@ -57,6 +58,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV11Async(connection, ct);
         await MigrateV12Async(connection, ct);
         await MigrateV13Async(connection, ct);
+        await MigrateV14Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -426,6 +428,70 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = "UPDATE schema_info SET value = '13' WHERE key = 'schema_version'";
         await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// v2.0.0 migration v14: drop sha256/size_bytes columns. SQLite 3.35+
+    /// supports ALTER TABLE DROP COLUMN. We drop each column inside a single
+    /// BEGIN IMMEDIATE transaction so partial state is rolled back on
+    /// failure. Indexes on dropped columns are auto-removed by SQLite.
+    /// </summary>
+    private static async Task MigrateV14Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 14) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            // Idempotent index drops first. Even if the columns are already
+            // gone (idempotent retry), the DROP INDEX IF EXISTS won't fail.
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.CommandText = FamilyCatalogSql.MigrateV14DropSha256Indexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Drop columns. SQLite allows DROP COLUMN only if the column
+            // exists and is not referenced by FK / PK. None of our columns
+            // are PK or FK targets, so this is safe.
+            if (await ColumnExistsAsync(connection, "family_files", "size_bytes", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_files DROP COLUMN size_bytes";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "family_files", "sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_files DROP COLUMN sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "catalog_versions", "sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_versions DROP COLUMN sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "family_data_import_runs", "source_sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_data_import_runs DROP COLUMN source_sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.CommandText = "UPDATE schema_info SET value = '14' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v14: dropped sha256/size_bytes columns");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 
     private static async Task MigrateV8Async(SqliteConnection connection, CancellationToken ct)

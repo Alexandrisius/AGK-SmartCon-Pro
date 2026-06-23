@@ -98,7 +98,6 @@ public sealed partial class FamilyManagerMainViewModel
         using var _scope = SmartConLogger.BeginScope("FMImport",
             ("Method", "ImportActiveFileAsync"));
         IsLoading = true;
-        ActiveFamilyPreparationResult? familyPreparation = null;
         var sessionStart = DateTime.Now;
         try
         {
@@ -117,18 +116,7 @@ public sealed partial class FamilyManagerMainViewModel
                     return;
 
                 case ActiveDocumentKind.Family:
-                    familyPreparation = await _activeFamilyFilePreparer.PrepareActiveFamilyAsync();
-                    if (familyPreparation is null)
-                    {
-                        SmartConLogger.Warn("Preparer returned null — aborting");
-                        return;
-                    }
-                    SmartConLogger.Info(
-                        $"Family prepared: tempRfa='{familyPreparation.TempRfaPath}', " +
-                        $"tempTxt='{familyPreparation.TempTxtPath ?? "<none>"}', " +
-                        $"originalRfa='{familyPreparation.OriginalRfaPath ?? "<untitled>"}', " +
-                        $"originalTxt='{familyPreparation.OriginalTxtPath ?? "<none>"}'");
-                    await ProcessFamilyImportAsync(familyPreparation);
+                    await ProcessFamilyImportAsync();
                     break;
 
                 case ActiveDocumentKind.Project:
@@ -204,169 +192,55 @@ public sealed partial class FamilyManagerMainViewModel
         }
         finally
         {
-            var capturedFamilyPath = familyPreparation?.TempRfaPath;
-            if (!string.IsNullOrEmpty(capturedFamilyPath))
-            {
-                SmartConLogger.Info(
-                    $"Cleanup phase 1/2: closing family document at '{capturedFamilyPath}'");
-                await CloseFamilyDocumentAsync(capturedFamilyPath!);
-            }
-            else
-            {
-                SmartConLogger.Debug(
-                    "Cleanup phase 1/2: no family preparation to close (project or abort path)");
-            }
-
-            // Temp folder cleanup runs on the thread pool — it is pure I/O
-            // and does not require the Revit UI thread.
-            SmartConLogger.Debug(
-                "Cleanup phase 2/2: removing temp staging folders");
-            try
-            {
-                await _activeImportCleanupService.CleanupAfterImportAsync();
-                SmartConLogger.Info(
-                    "✓ Cleanup phase 2/2 complete (see details above)");
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"Temp cleanup failed: {ex.Message}");
-            }
-
+            // v2.0.0: no temp staging, no document close. The active family
+            // document remains open across the import — SaveAs into managed
+            // storage does NOT close it. User sees the family file with its
+            // PathName now pointing to the managed copy, but the document is
+            // still editable in-place until they choose to close it.
             IsLoading = false;
             SmartConLogger.LogSessionEnd("ImportActiveFile", sessionStart);
         }
     }
 
     /// <summary>
-    /// Switches focus to the project document and closes the previously
-    /// saved family. Runs on the Revit UI thread via the awaitable
-    /// external event. Tolerates missing documents gracefully (Revit
-    /// may have already closed them).
+    /// v2.0.0: Handle the active family document directly without any temp
+    /// staging. The active document stays open across the import — SaveAs
+    /// into managed storage does NOT close it. If the user cancels the
+    /// batch dialog, the document is left untouched.
     /// </summary>
-    private async Task CloseFamilyDocumentAsync(string capturedFamilyPath)
-    {
-        using var _ = SmartConLogger.BeginScope("FMImport",
-            ("Method", "CloseFamilyDocumentAsync"));
-        try
-        {
-            await _awaitableEvent.RaiseAsync(obj =>
-            {
-                using var _uiScope = SmartConLogger.BeginScope("FMImport",
-                    ("Method", "CloseFamilyDocumentAsync"),
-                    ("Thread", "RevitUI"));
-                var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
-                var app = uiApp.Application;
-                var activeBeforeSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
-                var projectDoc = app.Documents.Cast<Document>()
-                    .FirstOrDefault(d => !d.IsFamilyDocument && !d.IsLinked
-                        && !string.IsNullOrEmpty(d.PathName)
-                        && d.PathName != activeBeforeSwitch);
-
-                SmartConLogger.Info(
-                    $"Cleanup(family): activeBeforeSwitch='{activeBeforeSwitch}', " +
-                    $"projectToSwitch='{projectDoc?.PathName}'");
-
-                if (projectDoc != null)
-                {
-                    try
-                    {
-                        uiApp.OpenAndActivateDocument(projectDoc.PathName);
-                        SmartConLogger.Info(
-                            $"Re-activated project: '{projectDoc.PathName}'");
-                    }
-                    catch (Exception activateEx)
-                    {
-                        SmartConLogger.Warn(
-                            $"Activate project failed: {activateEx.Message}");
-                        try
-                        {
-                            var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
-                            uiApp.PostCommand(closeCmd);
-                        }
-                        catch { }
-                    }
-                }
-                else
-                {
-                    try
-                    {
-                        var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
-                        uiApp.PostCommand(closeCmd);
-                        SmartConLogger.Info(
-                            "No project to switch to — posted Close command");
-                    }
-                    catch (Exception postEx)
-                    {
-                        SmartConLogger.Warn(
-                            $"PostCommand Close failed: {postEx.Message}");
-                    }
-                }
-
-                var activeAfterSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
-                if (!string.IsNullOrEmpty(capturedFamilyPath)
-                    && !string.Equals(activeAfterSwitch, capturedFamilyPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    try
-                    {
-                        var docToClose = app.Documents.Cast<Document>()
-                            .FirstOrDefault(d => string.Equals(
-                                d.PathName, capturedFamilyPath, StringComparison.OrdinalIgnoreCase));
-                        if (docToClose != null && !docToClose.IsLinked)
-                        {
-                            docToClose.Close(false);
-                            SmartConLogger.Debug(
-                                $"✓ Closed family file: {capturedFamilyPath}");
-                        }
-                        else
-                        {
-                            SmartConLogger.Debug(
-                                $"Family document not found in app.Documents (already closed?)");
-                        }
-                    }
-                    catch (Exception closeEx)
-                    {
-                        SmartConLogger.Info(
-                            $"Family close skipped: {closeEx.Message}");
-                    }
-                }
-                else
-                {
-                    SmartConLogger.Debug(
-                        $"Active document switched to '{activeAfterSwitch}' — no need to close family");
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"Document cleanup failed: {ex.Message}");
-        }
-    }
-
-    private async Task ProcessFamilyImportAsync(ActiveFamilyPreparationResult preparation)
+    private async Task ProcessFamilyImportAsync()
     {
         using var _ = SmartConLogger.BeginScope("FMImport",
             ("Method", "ProcessFamilyImportAsync"));
-        var familyRfaPath = preparation.TempRfaPath;
-        SmartConLogger.Debug(
-            $"ProcessFamilyImport: tempRfa='{familyRfaPath}', " +
-            $"originalRfa='{preparation.OriginalRfaPath ?? "<untitled>"}', " +
-            $"tempTxt='{preparation.TempTxtPath ?? "<none>"}'");
 
-        var metadata = await _metadataService.ExtractAsync(familyRfaPath, CancellationToken.None);
-        var revitVersion = _fileInfoReader.ReadRevitVersion(familyRfaPath) ?? CurrentRevitVersion;
-        var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(
-            SafeFileName.GetBaseName(familyRfaPath));
+        // Phase 1 — gather metadata from the active document (UI thread).
+        var snapshot = await _awaitableEvent.RaiseAsync<ActiveFamilySnapshot>(obj =>
+        {
+            var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
+            var doc = uiApp.ActiveUIDocument?.Document;
+            if (doc is null || !doc.IsFamilyDocument)
+            {
+                return new ActiveFamilySnapshot(null, string.Empty, 0, false, null);
+            }
+            var revitVersion = _fileInfoReader.ReadRevitVersion(doc.PathName) ?? CurrentRevitVersion;
+            var baseName = SafeFileName.GetBaseName(
+                string.IsNullOrEmpty(doc.PathName) ? doc.Title : doc.PathName);
+            var hasTypeCatalog = !string.IsNullOrEmpty(doc.PathName)
+                && File.Exists(Path.ChangeExtension(doc.PathName, ".txt"));
+            return new ActiveFamilySnapshot(doc, baseName, revitVersion, hasTypeCatalog, doc.PathName);
+        });
+
+        if (snapshot.Document is null)
+        {
+            SmartConLogger.Warn("No active family document at import time — aborting");
+            return;
+        }
+
+        var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(snapshot.BaseName);
         var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
 
         var existingCategoryId = existingByName?.CategoryId;
         string? existingCategoryName = null;
-
-        // Mirror BuildLoadableFamilyBatchRowAsync: do NOT trust the
-        // denormalised CategoryPath stored in catalog_items — it can
-        // contain the placeholder "Без категории" written by the picker.
-        // Use the categories table as the single source of truth for the
-        // display label (FullPath or Name fallback). Pre-load all
-        // categories in one query so we don't pay an N+1 here.
         if (existingCategoryId is not null)
         {
             try
@@ -386,12 +260,14 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }
 
+        // Phase 2 — show batch dialog with a placeholder FilePath. The actual
+        // managed copy is created only AFTER the user confirms. Cancellation
+        // is safe — no temp file was created.
+        var placeholderFilePath = snapshot.OriginalPathName ?? $"active://{snapshot.BaseName}";
         var item = new FamilyBatchImportItem(
-            familyRfaPath,
-            SafeFileName.GetBaseName(familyRfaPath),
-            metadata.Sha256,
-            revitVersion,
-            new FileInfo(familyRfaPath).Length,
+            placeholderFilePath,
+            snapshot.BaseName,
+            snapshot.RevitVersion,
             existingByName is not null ? FamilyBatchImportStatus.Existing : FamilyBatchImportStatus.New,
             existingByName?.Id,
             existingByName?.CurrentVersionLabel,
@@ -400,12 +276,111 @@ public sealed partial class FamilyManagerMainViewModel
             FamilySource: "loadable",
             TypeCount: null,
             RevitCategory: null,
-            OriginalSourcePath: preparation.OriginalRfaPath);
+            OriginalSourcePath: snapshot.OriginalPathName);
 
-        using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory, _catalogProvider);
-        if (_dialogService.ShowBatchImportDialog(vm) != true) return;
+        using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory);
+        if (_dialogService.ShowBatchImportDialog(vm) != true)
+        {
+            // No cleanup needed — no temp file was created. The active
+            // family document remains open and untouched. (Bug fix: in v1.x
+            // the import flow created a temp file via SaveAs BEFORE the
+            // dialog, so cancelling forced a close on the user's family
+            // document and could discard their edits.)
+            return;
+        }
 
         var selectedItems = vm.GetResultItems();
+        var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
+        if (toImport.Count == 0) return;
+
+        // Phase 3 — compute the target managed path, then call SaveAs on the
+        // active document on the Revit UI thread. The user-selected action
+        // determines whether we create a new version or overwrite current.
+        var isOverwrite = toImport[0].Action == FamilyBatchImportAction.OverwriteCurrent
+            && existingByName is not null;
+        var versionLabel = isOverwrite
+            ? existingByName!.CurrentVersionLabel
+            : (existingByName is null
+                ? "v1"
+                : null /* computed below */);
+
+        var managedRfaPath = await _awaitableEvent.RaiseAsync<string?>(obj =>
+        {
+            try
+            {
+                var dbRoot = _databaseManager.GetActiveDatabasePath();
+                if (string.IsNullOrEmpty(dbRoot))
+                {
+                    SmartConLogger.Error("No active database selected");
+                    return null;
+                }
+
+                var catalogItemId = existingByName?.Id ?? Guid.NewGuid().ToString();
+                var managedDir = Path.Combine(dbRoot, "files", catalogItemId);
+                if (versionLabel is null)
+                {
+                    // IncrementVersion: figure out next version label.
+                    var existingDirs = Directory.Exists(managedDir)
+                        ? Directory.GetDirectories(managedDir)
+                            .Select(p => Path.GetFileName(p) ?? string.Empty)
+                            .ToList()
+                        : new List<string>();
+                    var next = existingDirs
+                        .Where(d => d.StartsWith("v") && d.Length > 1)
+                        .Select(d => int.TryParse(d.Substring(1), out var n) ? n : 0)
+                        .DefaultIfEmpty(0)
+                        .Max() + 1;
+                    versionLabel = $"v{next}";
+                }
+
+                var versionDir = Path.Combine(managedDir, versionLabel);
+                Directory.CreateDirectory(versionDir);
+
+                var invalid = Path.GetInvalidFileNameChars();
+                var safeName = string.Concat(snapshot.BaseName.Select(c => invalid.Contains(c) ? '_' : c));
+                var managedPath = Path.Combine(versionDir, safeName + ".rfa");
+
+                // Read-only managed files: clear before SaveAs (Revit's
+                // SaveAs requires write access on the target).
+                if (File.Exists(managedPath))
+                {
+                    File.SetAttributes(managedPath, File.GetAttributes(managedPath) & ~FileAttributes.ReadOnly);
+                    File.Delete(managedPath);
+                }
+
+                snapshot.Document!.SaveAs(managedPath, new SaveAsOptions { OverwriteExistingFile = true });
+                File.SetAttributes(managedPath, File.GetAttributes(managedPath) | FileAttributes.ReadOnly);
+
+                return managedPath;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Error($"SaveAs to managed storage failed: {ex.Message}");
+                return null;
+            }
+        });
+
+        if (string.IsNullOrEmpty(managedRfaPath))
+        {
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
+            return;
+        }
+
+        // Phase 4 — record the file in the catalog. Reuse ImportFileAsync
+        // with OriginalSourcePath pointing back to the user's original .rfa
+        // (so the .txt Type Catalog sidecar lookup still works).
+        var request = new FamilyImportRequest(
+            FilePath: managedRfaPath!,
+            RevitMajorVersion: snapshot.RevitVersion,
+            Category: toImport[0].TargetCategoryName,
+            Tags: null,
+            Description: null,
+            CategoryId: toImport[0].TargetCategoryId ?? existingCategoryId,
+            FamilySource: "loadable",
+            RevitCategory: null,
+            FileName: snapshot.BaseName,
+            OriginalSourcePath: snapshot.OriginalPathName);
+
         var progress = new Progress<FamilyImportProgress>(p =>
         {
             StatusMessage = string.Format(
@@ -413,19 +388,29 @@ public sealed partial class FamilyManagerMainViewModel
                 p.CurrentFileIndex + 1, p.TotalFiles);
         });
 
-        var importResult = await _importService.ImportBatchAsync(selectedItems, null, progress, CancellationToken.None);
+        var importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
 
-        var successfulItems = importResult.Results
-            .Where(r => r.Success && !r.WasSkippedAsDuplicate).ToList();
+        if (importResult.Success)
+        {
+            await LoadTreeAsync();
+        }
 
-        if (successfulItems.Count > 0) await LoadTreeAsync();
+        await ExtractAttributesForImportedFamilies(new[] { importResult });
 
-        await ExtractAttributesForImportedFamilies(importResult.Results);
-
-        StatusMessage = BuildImportStatusMessage(
-            importResult.SuccessCount, importResult.SkippedCount,
-            importResult.ErrorCount, importResult.TotalFiles);
+        var total = 1;
+        var success = importResult.Success ? 1 : 0;
+        var skipped = 0;
+        var errors = importResult.Success ? 0 : 1;
+        StatusMessage = BuildImportStatusMessage(success, skipped, errors, total);
     }
+
+    /// <summary>Snapshot of an active family document captured on the Revit UI thread.</summary>
+    private sealed record ActiveFamilySnapshot(
+        Document? Document,
+        string BaseName,
+        int RevitVersion,
+        bool HasTypeCatalog,
+        string? OriginalPathName);
 
     private async Task ProcessProjectImportAsync(IReadOnlyList<FamilyBatchImportItem> batchItems)
     {
@@ -454,7 +439,7 @@ public sealed partial class FamilyManagerMainViewModel
         var defaultCategoryName = (string?)null;
 
         using var vm = new FamilyBatchImportViewModel(
-            batchItems, _dialogService, _viewModelFactory, _catalogProvider,
+            batchItems, _dialogService, _viewModelFactory,
             defaultCategoryId, defaultCategoryName);
         if (_dialogService.ShowBatchImportDialog(vm) != true) return;
 
@@ -626,16 +611,11 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 foreach (var (catalogItemId, result, versionId, fileId, hasTypeCatalog) in extractionResults)
                 {
-                    if (hasTypeCatalog)
-                    {
-                        await _dataImportService.MergeMissingValuesAsync(
-                            catalogItemId, result, versionId, fileId, CancellationToken.None);
-                    }
-                    else
-                    {
-                        await _dataImportService.SaveExtractionResultAsync(
-                            catalogItemId, result, versionId, fileId, CancellationToken.None);
-                    }
+                    // v2.0.0: Type Catalog (.txt) no longer stored in managed
+                    // storage. Save unconditionally (ADR-033 bake-in).
+                    _ = hasTypeCatalog; // suppress unused warning
+                    await _dataImportService.SaveExtractionResultAsync(
+                        catalogItemId, result, versionId, fileId, CancellationToken.None);
                 }
             }
             catch (Exception ex)

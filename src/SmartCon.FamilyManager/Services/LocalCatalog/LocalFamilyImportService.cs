@@ -63,31 +63,21 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
 
         var sourceMetadata = await _metadataService.ExtractAsync(filePath, ct);
-        var sha256 = sourceMetadata.Sha256;
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         var displayName = !string.IsNullOrWhiteSpace(request.FileName)
             ? request.FileName!
             : SafeFileName.GetBaseName(filePath);
 
-        SmartConLogger.Debug($"File: {Path.GetFileName(filePath)} -> displayName='{displayName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
+        SmartConLogger.Debug($"File: {Path.GetFileName(filePath)} -> displayName='{displayName}', Revit: R{revitVersion}");
 
         var existingItem = await FindByNameAsync(displayName, ct);
         if (existingItem is not null)
         {
-            var existingVersion = await FindVersionByHashAndRevitAsync(existingItem.Id, sha256, revitVersion, ct);
-            if (existingVersion is not null)
-            {
-                return new FamilyImportResult(
-                    Success: true,
-                    CatalogItemId: existingItem.Id,
-                    VersionId: existingVersion.Id,
-                    FileId: existingVersion.FileId,
-                    FileName: sourceMetadata.FileName,
-                    VersionLabel: existingVersion.VersionLabel,
-                    ErrorMessage: null,
-                    WasSkippedAsDuplicate: true);
-            }
+            // v2.0.0: SHA-256 dedup is gone. Same-name + different content now
+            // produces a new version (vN+1) via GetNextVersionLabelAsync below.
+            // Caller can use OverwriteCurrent action to replace current version
+            // instead of creating a new one.
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -445,28 +435,17 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
 
         var sourceMetadata = await _metadataService.ExtractAsync(filePath, ct);
-        var sha256 = sourceMetadata.Sha256;
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         var newName = !string.IsNullOrWhiteSpace(request.FileName)
             ? request.FileName!
             : SafeFileName.GetBaseName(filePath);
 
-        SmartConLogger.Info($"File: {Path.GetFileName(filePath)} -> newName='{newName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
+        SmartConLogger.Info($"File: {Path.GetFileName(filePath)} -> newName='{newName}', Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
 
-        var currentVersion = await FindCurrentVersionByHashAsync(request.CatalogItemId, sha256, ct);
-        if (currentVersion is not null)
-        {
-            return new FamilyImportResult(
-                Success: true,
-                CatalogItemId: request.CatalogItemId,
-                VersionId: currentVersion.Id,
-                FileId: currentVersion.FileId,
-                FileName: sourceMetadata.FileName,
-                VersionLabel: currentVersion.VersionLabel,
-                ErrorMessage: null,
-                WasSkippedAsDuplicate: true);
-        }
+        // v2.0.0: SHA-256 dedup is gone. UpdateFamilyAsync always creates a new
+        // version (vN+1). Callers that want to replace the current version
+        // should use OverwriteCurrent action via ImportBatchAsync instead.
 
         var versionLabel = await GetNextVersionLabelAsync(request.CatalogItemId, ct);
         var normalizedName = FamilyNameNormalizer.Normalize(newName);
@@ -653,13 +632,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             var absPath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
             if (File.Exists(absPath))
                 File.Delete(absPath);
-            
-            // Also cleanup Type Catalog (.txt) sidecar file
-            var txtPath = Path.ChangeExtension(absPath, ".txt");
-            if (File.Exists(txtPath))
-            {
-                try { File.Delete(txtPath); } catch { /* ignored */ }
-            }
+
+            // v2.0.0: Type Catalog (.txt) is no longer stored in managed
+            // storage — baker (ADR-033) bakes types into the .rfa itself.
         }
         catch
         {

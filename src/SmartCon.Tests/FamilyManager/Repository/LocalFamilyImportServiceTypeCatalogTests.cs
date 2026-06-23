@@ -26,8 +26,8 @@ public sealed class LocalFamilyImportServiceTypeCatalogTests : IDisposable
     {
         _fixture = new TempCatalogFixture();
 
-        var hasher = new Sha256FileHasher();
-        var metadataService = new FileNameOnlyMetadataExtractionService(hasher);
+        
+        var metadataService = new FileMetadataExtractionService();
         _importService = new LocalFamilyImportService(
             _fixture.GetDatabase(),
             _fixture.GetMigrator(),

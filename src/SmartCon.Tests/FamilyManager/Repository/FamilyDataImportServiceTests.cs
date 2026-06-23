@@ -313,22 +313,21 @@ public sealed class FamilyDataImportServiceTests : IDisposable
         await connection.OpenAsync();
 
         using var fCmd = connection.CreateCommand();
-        fCmd.CommandText = "INSERT INTO family_files (id, relative_path, file_name, size_bytes, sha256, revit_major_version, imported_at_utc) VALUES (@id, @relPath, @fileName, @size, @sha, 2025, @importedAt)";
+        // v2.0.0: size_bytes / sha256 dropped from family_files.
+        fCmd.CommandText = "INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc) VALUES (@id, @relPath, @fileName, 2025, @importedAt)";
         fCmd.Parameters.Add(new SqliteParameter("@id", fileId));
         fCmd.Parameters.Add(new SqliteParameter("@relPath", relativePath));
         fCmd.Parameters.Add(new SqliteParameter("@fileName", fileName));
-        fCmd.Parameters.Add(new SqliteParameter("@size", new FileInfo(filePath).Length));
-        fCmd.Parameters.Add(new SqliteParameter("@sha", "fake_hash"));
         fCmd.Parameters.Add(new SqliteParameter("@importedAt", DateTimeOffset.UtcNow.ToString("o")));
         await fCmd.ExecuteNonQueryAsync();
 
         using var vCmd = connection.CreateCommand();
-        vCmd.CommandText = "INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, sha256, revit_major_version, published_at_utc) VALUES (@id, @itemId, @fileId, @label, @sha, 2025, @publishedAt)";
+        // v2.0.0: sha256 dropped from catalog_versions.
+        vCmd.CommandText = "INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc) VALUES (@id, @itemId, @fileId, @label, 2025, @publishedAt)";
         vCmd.Parameters.Add(new SqliteParameter("@id", versionId));
         vCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
         vCmd.Parameters.Add(new SqliteParameter("@fileId", fileId));
         vCmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
-        vCmd.Parameters.Add(new SqliteParameter("@sha", "fake_hash"));
         vCmd.Parameters.Add(new SqliteParameter("@publishedAt", DateTimeOffset.UtcNow.ToString("o")));
         await vCmd.ExecuteNonQueryAsync();
 

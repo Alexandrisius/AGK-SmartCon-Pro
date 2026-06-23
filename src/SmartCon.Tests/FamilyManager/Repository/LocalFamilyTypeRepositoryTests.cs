@@ -17,8 +17,8 @@ public sealed class LocalFamilyTypeRepositoryTests : IDisposable
 
         _repository = new LocalFamilyTypeRepository(_fixture.GetDatabase());
 
-        var hasher = new Sha256FileHasher();
-        var metadataService = new FileNameOnlyMetadataExtractionService(hasher);
+        
+        var metadataService = new FileMetadataExtractionService();
         _importService = new LocalFamilyImportService(
             _fixture.GetDatabase(),
             _fixture.GetMigrator(),

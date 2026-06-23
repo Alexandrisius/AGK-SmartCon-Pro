@@ -165,12 +165,15 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         Document sourceDoc,
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory category,
-        string displayName)
+        string displayName,
+        string managedRvtPath)
     {
         if (sourceDoc is null)
             return new CreateCleanProjectResult(false, null, "sourceDoc is null", 0);
         if (typeUniqueIds is null || typeUniqueIds.Count == 0)
             return new CreateCleanProjectResult(false, null, "No typeUniqueIds provided", 0);
+        if (string.IsNullOrEmpty(managedRvtPath))
+            return new CreateCleanProjectResult(false, null, "managedRvtPath is empty", 0);
 
         var sourceTypeIds = new List<ElementId>();
         foreach (var uid in typeUniqueIds)
@@ -219,21 +222,20 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
             var placedCount = placedInstancesByType.Sum(kv => kv.Value.Count);
 
-            var safeName = SanitizeFileName(displayName) + ".rvt";
-            var tempDir = Path.Combine(
-                Path.GetTempPath(),
-                SystemFamilyTempLayout.TempRoot,
-                SystemFamilyTempLayout.StagingSubdir,
-                Guid.NewGuid().ToString());
-            Directory.CreateDirectory(tempDir);
-
-            var finalPath = Path.Combine(tempDir, safeName);
-            newDoc.SaveAs(finalPath, new SaveAsOptions { OverwriteExistingFile = true });
+            // v2.0.0: SaveAs directly into managed storage, no temp staging.
+            var managedDir = Path.GetDirectoryName(managedRvtPath);
+            if (!string.IsNullOrEmpty(managedDir) && !Directory.Exists(managedDir))
+            {
+                Directory.CreateDirectory(managedDir);
+            }
+            if (File.Exists(managedRvtPath))
+            {
+                File.SetAttributes(managedRvtPath, File.GetAttributes(managedRvtPath) & ~FileAttributes.ReadOnly);
+                File.Delete(managedRvtPath);
+            }
+            newDoc.SaveAs(managedRvtPath, new SaveAsOptions { OverwriteExistingFile = true });
+            File.SetAttributes(managedRvtPath, File.GetAttributes(managedRvtPath) | FileAttributes.ReadOnly);
             newDoc.Close(false);
-            // Defensive ReleaseComObject — required for batch processing of
-            // 100+ system categories to prevent family-upgrade freeze (REVIT-237190).
-            // Document is a RCW; without explicit release the runtime keeps
-            // a reference until GC, which can hang Revit on shutdown.
             try { Marshal.ReleaseComObject(newDoc); } catch { }
             newDoc = null;
 
@@ -241,7 +243,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 $"'{displayName}': copied={copiedTypeIds.Count}, placed={placedCount}");
 
             return new CreateCleanProjectResult(
-                true, finalPath, null, copiedTypeIds.Count, displayName, placedCount);
+                true, managedRvtPath, null, copiedTypeIds.Count, displayName, placedCount);
         }
         catch (Exception ex)
         {

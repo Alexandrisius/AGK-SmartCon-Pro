@@ -6,9 +6,7 @@ namespace SmartCon.Core.Models.FamilyManager;
 public sealed record FamilyBatchImportItem(
     string FilePath,
     string FileName,
-    string Sha256,
     int RevitMajorVersion,
-    long FileSizeBytes,
     FamilyBatchImportStatus Status,
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
@@ -21,9 +19,7 @@ public sealed record FamilyBatchImportItem(
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =
-        Status == FamilyBatchImportStatus.Duplicate
-            ? FamilyBatchImportAction.Skip
-            : FamilyBatchImportAction.IncrementVersion;
+        FamilyBatchImportAction.IncrementVersion;
 
     /// <summary>User-selected target category for this file (overrides dialog-level category).</summary>
     public string? TargetCategoryId { get; set; } = TargetCategoryId;

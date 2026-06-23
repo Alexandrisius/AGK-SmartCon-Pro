@@ -44,7 +44,6 @@ internal static class FamilyCatalogSql
             catalog_item_id TEXT NOT NULL,
             file_id TEXT NOT NULL,
             version_label TEXT NOT NULL,
-            sha256 TEXT NOT NULL,
             revit_major_version INTEGER NOT NULL,
             types_count INTEGER,
             parameters_count INTEGER,
@@ -60,8 +59,6 @@ internal static class FamilyCatalogSql
             id TEXT PRIMARY KEY,
             relative_path TEXT NOT NULL,
             file_name TEXT NOT NULL,
-            size_bytes INTEGER NOT NULL,
-            sha256 TEXT NOT NULL,
             revit_major_version INTEGER NOT NULL,
             imported_at_utc TEXT NOT NULL
         )
@@ -200,7 +197,6 @@ internal static class FamilyCatalogSql
             catalog_item_id TEXT NOT NULL,
             version_id TEXT,
             file_id TEXT,
-            source_sha256 TEXT,
             revit_major_version INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'Succeeded',
             types_count INTEGER NOT NULL DEFAULT 0,
@@ -409,9 +405,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_catalog_items_status ON catalog_items (content_status);
         CREATE INDEX IF NOT EXISTS ix_catalog_versions_item ON catalog_versions (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_catalog_versions_file ON catalog_versions (file_id);
-        CREATE INDEX IF NOT EXISTS ix_catalog_versions_sha256 ON catalog_versions (sha256);
         CREATE INDEX IF NOT EXISTS ix_catalog_versions_revit ON catalog_versions (revit_major_version);
-        CREATE INDEX IF NOT EXISTS ix_family_files_sha256 ON family_files (sha256);
         CREATE INDEX IF NOT EXISTS ix_family_files_revit ON family_files (revit_major_version);
         CREATE INDEX IF NOT EXISTS ix_catalog_tags_item ON catalog_tags (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_catalog_tags_normalized ON catalog_tags (normalized_tag);
@@ -421,5 +415,22 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id)
+        """;
+
+    /// <summary>
+    /// v2.0.0 migration v14: drop sha256 / size_bytes columns. SQLite 3.35+
+    /// supports ALTER TABLE DROP COLUMN, so we drop each column inside a
+    /// single transaction. Indexes on the dropped columns are auto-removed.
+    /// </summary>
+    public const string MigrateV14DropSha256Columns = """
+        ALTER TABLE family_files DROP COLUMN size_bytes;
+        ALTER TABLE family_files DROP COLUMN sha256;
+        ALTER TABLE catalog_versions DROP COLUMN sha256;
+        ALTER TABLE family_data_import_runs DROP COLUMN source_sha256
+        """;
+
+    public const string MigrateV14DropSha256Indexes = """
+        DROP INDEX IF EXISTS ix_family_files_sha256;
+        DROP INDEX IF EXISTS ix_catalog_versions_sha256
         """;
 }

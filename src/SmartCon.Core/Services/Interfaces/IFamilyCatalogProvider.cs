@@ -31,8 +31,5 @@ public interface IFamilyCatalogProvider
     /// <summary>Find a catalog item by normalized name (exact match).</summary>
     Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default);
 
-    /// <summary>Find a catalog version by SHA256 hash (exact match).</summary>
-    Task<FamilyCatalogVersion?> FindByHashAsync(string sha256, CancellationToken ct = default);
-
     Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default);
 }

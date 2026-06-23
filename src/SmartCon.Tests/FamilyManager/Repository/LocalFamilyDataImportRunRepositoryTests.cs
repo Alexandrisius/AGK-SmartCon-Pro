@@ -47,7 +47,6 @@ public sealed class LocalFamilyDataImportRunRepositoryTests : IDisposable
             catalogItemId,
             null,
             null,
-            null,
             2025,
             status,
             typesCount,

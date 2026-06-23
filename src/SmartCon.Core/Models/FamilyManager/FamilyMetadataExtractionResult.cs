@@ -2,12 +2,10 @@ namespace SmartCon.Core.Models.FamilyManager;
 
 /// <summary>
 /// Result of metadata extraction from a family file.
-/// MVP: populated with file-level metadata only (name, size, hash, timestamps).
+/// MVP: populated with file-level metadata only (name, timestamps).
 /// Post-MVP: populated with deep extraction (types, parameters, category, preview).
 /// </summary>
 /// <param name="FileName">File name.</param>
-/// <param name="FileSizeBytes">File size.</param>
-/// <param name="Sha256">Content hash.</param>
 /// <param name="LastWriteTimeUtc">Last write time.</param>
 /// <param name="CategoryName">Detected Revit category (Post-MVP).</param>
 /// <param name="RevitMajorVersion">Detected Revit version (Post-MVP).</param>
@@ -15,8 +13,6 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Parameters">Extracted parameter descriptors (Post-MVP).</param>
 public sealed record FamilyMetadataExtractionResult(
     string FileName,
-    long FileSizeBytes,
-    string Sha256,
     DateTimeOffset? LastWriteTimeUtc,
     string? CategoryName,
     int? RevitMajorVersion,

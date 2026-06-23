@@ -38,20 +38,6 @@ public sealed class App : IExternalApplication
             ServiceLocator.Initialize(application);
             LanguageManager.Initialize();
 
-            // Sweep stale temp folders left over from a previous Revit session
-            // (e.g. Revit crashed mid-import). Runs once at startup; log
-            // lines use the same [ActiveCleanup] prefix as the regular
-            // per-import cleanup so the user can trace both in the log.
-            try
-            {
-                var cleanupService = ServiceHost.GetService<IActiveImportCleanupService>();
-                AsyncBridge.RunSync(() => cleanupService.CleanupAfterImportAsync());
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"App.OnStartup.StartupTempSweep: failed: {ex.GetType().Name}: {ex.Message}");
-            }
-
             var fmProvider = ServiceHost.GetService<FamilyManagerPaneProvider>();
             var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
             application.RegisterDockablePane(fmPaneId, "Family Manager", fmProvider);
@@ -70,19 +56,6 @@ public sealed class App : IExternalApplication
     public Result OnShutdown(UIControlledApplication application)
     {
         TryLaunchUpdater();
-        // Use the same cleanup service as per-import cleanup so that
-        // BOTH staging roots (FMLoad and SystemFamilyLoadFromProject)
-        // are removed on shutdown. The previous inline implementation
-        // only handled FMLoad, leaking SystemFamilyLoadFromProject/*.
-        try
-        {
-            var cleanupService = ServiceHost.GetService<IActiveImportCleanupService>();
-            AsyncBridge.RunSync(() => cleanupService.CleanupAfterImportAsync());
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"App.OnShutdown.TempCleanup: failed: {ex.GetType().Name}: {ex.Message}");
-        }
         ServiceLocator.Dispose();
         return Result.Succeeded;
     }

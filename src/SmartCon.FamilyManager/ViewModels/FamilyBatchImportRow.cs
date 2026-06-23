@@ -11,9 +11,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 public sealed partial class FamilyBatchImportRow : ObservableObject
 {
     public string FilePath { get; }
-    public string Sha256 { get; }
     public int RevitMajorVersion { get; }
-    public long FileSizeBytes { get; }
     public string FamilySource { get; }
 
     [ObservableProperty]
@@ -64,9 +62,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     {
         FilePath = item.FilePath;
         FileName = item.FileName;
-        Sha256 = item.Sha256;
         RevitMajorVersion = item.RevitMajorVersion;
-        FileSizeBytes = item.FileSizeBytes;
         FamilySource = item.FamilySource;
         _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;
@@ -100,27 +96,10 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     private static IReadOnlyList<FamilyBatchImportAction> BuildAvailableActions(FamilyBatchImportStatus status) => status switch
     {
-        FamilyBatchImportStatus.Duplicate => [FamilyBatchImportAction.Skip],
         FamilyBatchImportStatus.New => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.Skip],
         FamilyBatchImportStatus.Existing => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.OverwriteCurrent, FamilyBatchImportAction.Skip],
         _ => [FamilyBatchImportAction.Skip]
     };
-
-    public void SetStatusSilent(FamilyBatchImportStatus status, string? existingItemId, string? existingVersionLabel)
-    {
-        Status = status;
-        ExistingCatalogItemId = existingItemId;
-        ExistingVersionLabel = existingVersionLabel;
-        AvailableActions = BuildAvailableActions(status);
-
-        if (status == FamilyBatchImportStatus.Duplicate)
-            Action = FamilyBatchImportAction.Skip;
-    }
-
-    partial void OnFileNameChanged(string value)
-    {
-        NameChanged?.Invoke(this);
-    }
 
     partial void OnActionChanged(FamilyBatchImportAction value)
     {
@@ -147,7 +126,6 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     }
 
     public event Func<FamilyBatchImportRow, Task>? PickCategoryRequested;
-    public event Func<FamilyBatchImportRow, Task>? NameChanged;
     public event Action<FamilyBatchImportRow, FamilyBatchImportAction>? ActionChanged;
     public event Action<FamilyBatchImportRow, (string? Id, string Path)>? CategoryChanged;
     public event Action<FamilyBatchImportRow, bool>? SelectionChanged;
