@@ -140,4 +140,109 @@ public sealed class SharedFamiliesLoadModeDialogViewModelTests
         Assert.True(closeResult);
         Assert.Equal(SharedFamiliesLoadChoice.OverwriteAll, vm.Result);
     }
+
+    [Fact]
+    public void Create_SingleConflict_DoesNotShowBatchProgress()
+    {
+        var request = new SharedFamilyDecisionRequest(
+            SharedFamilyName: "M_Flange",
+            IsFamilyInUse: false,
+            ParentFamilyName: "M_Pipe_Fitting",
+            IndexInBatch: 1,
+            TotalInBatch: 1);
+
+        var vm = SharedFamiliesLoadModeDialogViewModel.Create(request);
+
+        Assert.False(vm.ShowBatchProgress);
+        Assert.Equal(string.Empty, vm.BatchProgress);
+    }
+
+    [Fact]
+    public void Create_MultipleConflicts_ShowsBatchProgress()
+    {
+        var request = new SharedFamilyDecisionRequest(
+            SharedFamilyName: "Болт М12",
+            IsFamilyInUse: false,
+            ParentFamilyName: "Затвор фланцевый",
+            IndexInBatch: 2,
+            TotalInBatch: 5);
+
+        var vm = SharedFamiliesLoadModeDialogViewModel.Create(request);
+
+        Assert.True(vm.ShowBatchProgress);
+        Assert.NotEmpty(vm.BatchProgress);
+        // Format depends on localization but must contain "2" and "5"
+        Assert.Contains("2", vm.BatchProgress);
+        Assert.Contains("5", vm.BatchProgress);
+    }
+
+    [Fact]
+    public void Create_NameSourceRevitApi_HidesSourceIndicator()
+    {
+        var request = new SharedFamilyDecisionRequest(
+            SharedFamilyName: "Болт М12",
+            IsFamilyInUse: false,
+            ParentFamilyName: "Затвор фланцевый",
+            IndexInBatch: 1,
+            TotalInBatch: 1,
+            NameSource: SharedFamilyNameSource.RevitApi);
+
+        var vm = SharedFamiliesLoadModeDialogViewModel.Create(request);
+
+        Assert.False(vm.ShowSourceIndicator);
+        Assert.Equal(string.Empty, vm.SourceIndicator);
+    }
+
+    [Fact]
+    public void Create_NameSourceCatalogDb_ShowsSourceIndicator()
+    {
+        var request = new SharedFamilyDecisionRequest(
+            SharedFamilyName: "Болт М12",
+            IsFamilyInUse: false,
+            ParentFamilyName: "Затвор фланцевый",
+            IndexInBatch: 1,
+            TotalInBatch: 1,
+            NameSource: SharedFamilyNameSource.CatalogDb);
+
+        var vm = SharedFamiliesLoadModeDialogViewModel.Create(request);
+
+        Assert.True(vm.ShowSourceIndicator);
+        Assert.NotEmpty(vm.SourceIndicator);
+    }
+
+    [Fact]
+    public void Create_NameSourceFallbackPlaceholder_ShowsPlaceholderHint()
+    {
+        var request = new SharedFamilyDecisionRequest(
+            SharedFamilyName: "<shared nested #3>",
+            IsFamilyInUse: false,
+            ParentFamilyName: "Затвор фланцевый",
+            IndexInBatch: 3,
+            TotalInBatch: 0,
+            NameSource: SharedFamilyNameSource.FallbackPlaceholder);
+
+        var vm = SharedFamiliesLoadModeDialogViewModel.Create(request);
+
+        Assert.True(vm.ShowSourceIndicator);
+        Assert.NotEmpty(vm.SourceIndicator);
+    }
+
+    [Fact]
+    public void Create_TotalInBatchZero_DoesNotShowBatchProgress_EvenWithIndexGreaterThanOne()
+    {
+        var request = new SharedFamilyDecisionRequest(
+            SharedFamilyName: "Болт М12",
+            IsFamilyInUse: false,
+            ParentFamilyName: "Затвор фланцевый",
+            IndexInBatch: 3,
+            TotalInBatch: 0,
+            NameSource: SharedFamilyNameSource.CatalogDb);
+
+        var vm = SharedFamiliesLoadModeDialogViewModel.Create(request);
+
+        // TotalInBatch=0 means catalog had no data — show source indicator
+        // (so user knows the name is a placeholder) but hide the progress row.
+        Assert.False(vm.ShowBatchProgress);
+        Assert.True(vm.ShowSourceIndicator);
+    }
 }

@@ -217,6 +217,18 @@ public sealed partial class FamilyManagerMainViewModel
                     if (extractionResult.Success)
                     {
                         extractionResults.Add((catalogItemId, extractionResult, item.VersionId, item.FileId, hasTypeCatalog));
+
+                        // ADR-034: persist shared-nested names in the same
+                        // ExtractFromManagedFile call (V3 — no second
+                        // OpenDocumentFile, no extra MFC family-upgrade
+                        // dialog). Graceful degradation if the repository is
+                        // unavailable (legacy catalog without V13 migration)
+                        // or the .rfa declares no shared nested families.
+                        await SaveSharedNestedNamesAsync(
+                            catalogItemId,
+                            item.VersionId,
+                            extractionResult.SharedNestedFamilyNamesSafe,
+                            CancellationToken.None);
                     }
                 }
             }

@@ -154,7 +154,13 @@ src/SmartCon.FamilyManager/
   Для больших проектов это может раздражать. Mitigated: диалог маленький,
   default = Use Project, Enter = Apply.
 - **Neg:** в Revit ≤ 2024.2 параметр `sharedFamily` в
-  `OnSharedFamilyFound` приходит как parent family (баг REVIT-198137).
-  Mitigated: наш диалог показывает `sharedFamily?.Name` — даже если это
-  parent, пользователь всё равно может сделать выбор; в имени будет
-  parent, и пользователь увидит это явно.
+  `OnSharedFamilyFound` приходит как `null` или как parent family
+  (баг REVIT-198137, исправлен в Revit 2024.3.0.13+). **Mitigated в
+  ADR-034**: при импорте семейства в FM имена shared nested извлекаются
+  **внутри** `IFamilyDataExtractionService.ExtractFromManagedFile`
+  (ADR-034 §2 — единый open-close цикл на каждый `.rfa`) и сохраняются в
+  таблице `family_nested_shared_families`. При загрузке в проект
+  `RevitFamilyLoadOptions` использует `SharedFamilyNameResolver` для
+  fallback: если Revit API вернул `null`, имя берётся из БД по индексу
+  вызова. Пользователь видит реальное имя + индикатор "имя из каталога
+  SmartCon" для прозрачности.

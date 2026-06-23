@@ -333,5 +333,14 @@ public static partial class LocalizationService
 
         ru["FM_LoadShared_Skip"] = "Пропущено: {0}";
         en["FM_LoadShared_Skip"] = "Skipped: {0}";
+
+        ru["FM_LoadShared_BatchProgress"] = "Общее вложенное {0} из {1}";
+        en["FM_LoadShared_BatchProgress"] = "Shared nested {0} of {1}";
+
+        ru["FM_LoadShared_SourceFromCatalog"] = "имя из каталога SmartCon";
+        en["FM_LoadShared_SourceFromCatalog"] = "name from SmartCon catalog";
+
+        ru["FM_LoadShared_SourcePlaceholder"] = "имя недоступно — переимпортируйте семейство в Family Manager";
+        en["FM_LoadShared_SourcePlaceholder"] = "name unavailable — re-import the family in Family Manager";
     }
 }

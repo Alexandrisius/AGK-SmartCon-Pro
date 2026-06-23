@@ -672,14 +672,59 @@ public enum SharedFamiliesLoadChoice
 public sealed record SharedFamilyDecisionRequest(
     string SharedFamilyName,
     bool IsFamilyInUse,
-    string ParentFamilyName);
+    string ParentFamilyName,
+    int IndexInBatch = 1,
+    int TotalInBatch = 1,
+    SharedFamilyNameSource NameSource = SharedFamilyNameSource.RevitApi);
 ```
 
 | Поле | Назначение |
 |---|---|
-| `SharedFamilyName` | Имя конфликтующего shared nested (в Revit 2024.3+ это nested; в более ранних — parent, REVIT-198137) |
+| `SharedFamilyName` | Имя конфликтующего shared nested. В Revit 2024.3+ — из Revit API. В более ранних (REVIT-198137) — из каталога SmartCon через `SharedFamilyNameResolver` (см. ADR-034) |
 | `IsFamilyInUse` | Размещены ли экземпляры в проекте (влияет на текст предупреждения) |
 | `ParentFamilyName` | Имя родительского семейства для caption диалога |
+| `IndexInBatch` | 1-based индекс текущего вызова в серии `OnSharedFamilyFound` (ADR-034) |
+| `TotalInBatch` | Размер списка `nestedSharedNames` из БД (0 = legacy-каталог, прогресс скрыт) |
+| `NameSource` | Откуда взято `SharedFamilyName` (см. ниже) |
+
+## SharedFamilyNameSource
+
+Источник имени, отображаемого в диалоге. Используется UI для прозрачности —
+если имя пришло не из Revit API, показывается индикатор «имя из каталога».
+
+**Файл:** `SharedFamilyNameSource.cs`
+
+```csharp
+public enum SharedFamilyNameSource
+{
+    RevitApi = 0,            // Нормальный путь: Revit 2024.3+ / 2025+
+    CatalogDb = 1,           // Fallback: REVIT-198137 + каталог SmartCon
+    FallbackPlaceholder = 2  // Крайний случай: ни Revit, ни БД (legacy-каталог)
+}
+```
+
+## SharedFamilyNameResolver
+
+Pure-C# helper, выбирающий лучшее доступное имя для shared nested conflict.
+Извлечён из `RevitFamilyLoadOptions` чтобы логика counter + fallback была
+unit-тестируемой без Revit API (sealed native тип `Autodesk.Revit.DB.Family`).
+
+**Файл:** `SharedFamilyNameResolver.cs`
+
+```csharp
+public sealed class SharedFamilyNameResolver
+{
+    public SharedFamilyNameResolver(IReadOnlyList<string>? nestedSharedNames = null);
+    public int NextInvocationIndex();
+    public int TotalInBatch { get; }
+    public (string Name, SharedFamilyNameSource Source) Resolve(
+        string? revitApiName, int invocationIndex);
+}
+```
+
+Цепочка: `RevitApi` (если не null/whitespace) → `CatalogDb` (по индексу
+вызова) → `FallbackPlaceholder` (с индексом). Thread-safe counter через
+`Interlocked.Increment`. См. ADR-034.
 
 ---
 

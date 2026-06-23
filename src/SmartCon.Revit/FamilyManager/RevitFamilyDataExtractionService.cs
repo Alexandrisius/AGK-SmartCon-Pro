@@ -39,22 +39,22 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             familyDoc = app.OpenDocumentFile(rfaFilePath);
             if (familyDoc is null)
             {
-                return new FamilyExtractionResult(false, [], null, "Failed to open family document", revitMajorVersion);
+                return new FamilyExtractionResult(false, [], null, "Failed to open family document", revitMajorVersion, Array.Empty<string>());
             }
 
             if (!familyDoc.IsFamilyDocument)
             {
-                return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion);
+                return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion, Array.Empty<string>());
             }
 
-            return ExtractCore(familyDoc, expectedParameterNames, revitMajorVersion);
+            return ExtractCore(familyDoc, expectedParameterNames, revitMajorVersion) with { SharedNestedFamilyNames = Array.Empty<string>() };
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn(
                 $"Extract failed for '{Path.GetFileName(rfaFilePath)}': {ex.Message} " +
                 "[Action: verify file is a valid Revit .rfa, or check Revit version compatibility]");
-            return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion);
+            return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion, Array.Empty<string>());
         }
         finally
         {
@@ -101,19 +101,19 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
 
         if (!familyDocument.IsFamilyDocument)
         {
-            return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion);
+            return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion, Array.Empty<string>());
         }
 
         try
         {
-            return ExtractCore(familyDocument, expectedParameterNames, revitMajorVersion);
+            return ExtractCore(familyDocument, expectedParameterNames, revitMajorVersion) with { SharedNestedFamilyNames = Array.Empty<string>() };
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn(
                 $"Extract failed for document '{familyDocument.Title}': {ex.Message} " +
                 "[Action: check Revit journal for details, or restart Revit if the COM object is corrupted]");
-            return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion);
+            return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion, Array.Empty<string>());
         }
     }
 
@@ -136,7 +136,8 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             return new FamilyExtractionResult(
                 false, [], null,
                 $"File not found: {Path.GetFileName(managedRfaPath)}",
-                GetMajorVersion());
+                GetMajorVersion(),
+                Array.Empty<string>());
         }
 
         Document? doc = null;
@@ -157,13 +158,13 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 $"OpenDocumentFile failed for '{Path.GetFileName(managedRfaPath)}': {ex.Message} " +
                 "[Action: verify file is a valid Revit .rfa, or check Revit version compatibility]");
             return new FamilyExtractionResult(
-                false, [], null, ex.Message, GetMajorVersion());
+                false, [], null, ex.Message, GetMajorVersion(), Array.Empty<string>());
         }
 
         if (doc is null)
         {
             return new FamilyExtractionResult(
-                false, [], null, "OpenDocumentFile returned null", GetMajorVersion());
+                false, [], null, "OpenDocumentFile returned null", GetMajorVersion(), Array.Empty<string>());
         }
 
         try
@@ -171,10 +172,51 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             if (!doc.IsFamilyDocument)
             {
                 return new FamilyExtractionResult(
-                    false, [], null, "Not a family document", GetMajorVersion());
+                    false, [], null, "Not a family document", GetMajorVersion(), Array.Empty<string>());
             }
 
-            return ExtractCore(doc, expectedParameterNames, GetMajorVersion());
+            var result = ExtractCore(doc, expectedParameterNames, GetMajorVersion());
+
+            // ADR-034: collect names of shared nested families declared by the
+            // parent family, in the same OpenDocumentFile+Close cycle. This
+            // closes REVIT-198137 for Revit 2023 / 2024 < 24.3.0.13 by
+            // persisting the names at import time so the load path can use
+            // them as a fallback when the Revit API returns null for the
+            // shared family reference in IFamilyLoadOptions.OnSharedFamilyFound.
+            //
+            // We do NOT use a separate extractor / second OpenDocumentFile
+            // (which was tried in the V2 implementation and caused a 4-dialog
+            // MFC upgrade prompt per 2 .rfa files instead of 2). Sharing the
+            // same open cycle keeps the freeze workaround (REVIT-236376 /
+            // REVIT-237190) working: the WPF render thread is resynced once
+            // per file, not twice, and the family-upgrade dialog appears
+            // exactly once per .rfa.
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                var sharedNames = CollectSharedNestedFamilyNames(doc, ct);
+                if (sharedNames.Count > 0)
+                {
+                    result = result with { SharedNestedFamilyNames = sharedNames };
+                }
+                else
+                {
+                    result = result with { SharedNestedFamilyNames = Array.Empty<string>() };
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"Shared nested name collection failed for '{Path.GetFileName(managedRfaPath)}': " +
+                    $"{ex.GetType().Name}: {ex.Message} " +
+                    "[Action: import continues without shared-nested names — Revit ≤ 2024.2 dialog will show placeholder, user can re-import to fix]");
+            }
+
+            return result;
         }
         finally
         {
@@ -208,11 +250,18 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             // ReleaseComObject and let GC reclaim it. Close(false) above is the
             // actual lifetime-end call — that is the one that tells Revit to drop
             // the document.
-            SmartConLogger.Freeze("Extract: Starting ReleaseComObject");
+            //
+            // Log level is Debug (not Freeze) because the ArgumentException is
+            // expected and harmless — see the matching catch block in the
+            // Extract(string, IReadOnlyList<string>) overload above (line ~80).
+            // The Freeze level would pollute freeze-diagnostic.log with noise on
+            // every import; the Freeze level is reserved for diagnostic markers
+            // around long-running operations (OpenDocumentFile, Close, etc.).
             try { Marshal.ReleaseComObject(doc); }
             catch (Exception ex)
             {
-                SmartConLogger.Freeze($"Extract: Close/Release failed - {ex.GetType().Name}: {ex.Message}");
+                SmartConLogger.Debug(
+                    $"Marshal.ReleaseComObject skipped (RevitAPI doc is not a real COM object): {ex.Message}");
             }
 
             // Freeze workaround (REVIT-236376 / REVIT-237190): see
@@ -307,7 +356,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
 
         SmartConLogger.Info($"RESULT: {types.Count} named types, UntypedValues={(untypedValues is not null ? untypedValues.Count.ToString() : "null")}");
 
-        return new FamilyExtractionResult(true, types, untypedValues, null, revitMajorVersion);
+        return new FamilyExtractionResult(true, types, untypedValues, null, revitMajorVersion, Array.Empty<string>());
     }
 
     private static FamilyExtractionValueResult ExtractValueForParameter(
@@ -400,5 +449,87 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
     {
         var versionString = _revitContext.GetRevitVersion();
         return int.TryParse(versionString, out var v) ? v : 0;
+    }
+
+    /// <summary>
+    /// Walks the <c>FamilyInstance</c>s in the open family document and returns
+    /// the names of nested families that are marked as shared. The result is
+    /// deduplicated case-insensitively and returned in first-encountered order.
+    ///
+    /// ADR-034: this used to be its own class (<c>RevitSharedNestedFamilyExtractor</c>)
+    /// that opened the .rfa a second time, which caused the Revit MFC family-upgrade
+    /// dialog to appear 4 times per 2 imported files instead of 2 (one
+    /// <c>OpenDocumentFile</c> per <c>ExtractFromManagedFile</c> call — and another
+    /// per <c>ExtractCore</c>-shaped pass). Co-locating the scan inside the
+    /// existing open-close cycle keeps the user-visible dialog count at the
+    /// intended 1-per-file baseline.
+    ///
+    /// Detection rule: <c>Family</c> has no <c>IsShared</c> property in the Revit
+    /// API — the canonical test is the built-in parameter
+    /// <c>BuiltInParameter.FAMILY_SHARED</c> on the family. Value <c>1</c> means
+    /// the family lives in its own .rfa and is referenceable from any project;
+    /// <c>0</c> means it is embedded into the parent (no separate <c>.rfa</c>).
+    /// See Autodesk forum thread "How to check if family is shared" and the
+    /// Jeremy Tammik Building Coder notes on iterating nested family definitions
+    /// in a family document.
+    /// </summary>
+    /// <param name="familyDoc">An open family document. Caller owns the open-close
+    /// cycle — this method MUST NOT close the document.</param>
+    /// <param name="ct">Cancellation token.</param>
+    private static IReadOnlyList<string> CollectSharedNestedFamilyNames(
+        Document familyDoc, CancellationToken ct)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        int instanceCount = 0;
+        int sharedCount = 0;
+
+        var collector = new FilteredElementCollector(familyDoc)
+            .OfClass(typeof(FamilyInstance));
+
+        foreach (FamilyInstance fi in collector)
+        {
+            ct.ThrowIfCancellationRequested();
+            instanceCount++;
+
+            var family = fi.Symbol?.Family;
+            if (family is null) continue;
+
+            if (!IsSharedFamily(family)) continue;
+            sharedCount++;
+
+            var name = family.Name;
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            if (!seen.Add(name)) continue;
+
+            result.Add(name);
+        }
+
+        SmartConLogger.Debug(
+            $"Shared-nested scan: {instanceCount} instances, {sharedCount} shared, {result.Count} unique names");
+        return result;
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if the family lives in its own .rfa and can be
+    /// referenced as a shared nested from other documents. Uses
+    /// <c>FAMILY_SHARED</c> built-in parameter — the only documented detection
+    /// path for shared families in the Revit API.
+    /// </summary>
+    /// <param name="family">Fully-qualified to avoid clashing with the
+    /// <c>SmartCon.Core.Models.FamilyManager</c> namespace imported at the
+    /// top of the file (where <c>Family</c> would otherwise be the namespace
+    /// itself, not the Revit type).</param>
+    private static bool IsSharedFamily(Autodesk.Revit.DB.Family family)
+    {
+        try
+        {
+            var p = family.get_Parameter(BuiltInParameter.FAMILY_SHARED);
+            return p is not null && p.AsInteger() == 1;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

@@ -27,7 +27,22 @@ public sealed record FamilyExtractionResult(
     IReadOnlyList<FamilyExtractionTypeValues> Types,
     IReadOnlyList<FamilyExtractionValueResult>? UntypedValues,
     string? ErrorMessage,
-    int RevitMajorVersion);
+    int RevitMajorVersion,
+    IReadOnlyList<string>? SharedNestedFamilyNames = null)
+{
+    /// <summary>
+    /// Non-null accessor for <see cref="SharedNestedFamilyNames"/>. The field
+    /// is nullable to keep <c>new FamilyExtractionResult(...)</c> source-compatible
+    /// for all call sites that pre-date the shared-nested fallback feature
+    /// (ADR-034). Production call sites (RevitFamilyDataExtractionService and
+    /// SmartCon.Revit system family paths) always populate it; legacy test
+    /// fixtures and the SystemFamilyAttributeExtractionService may leave it
+    /// null. Consumers should use this accessor to avoid repeating the
+    /// null-coalesce at every read site.
+    /// </summary>
+    public IReadOnlyList<string> SharedNestedFamilyNamesSafe =>
+        SharedNestedFamilyNames ?? Array.Empty<string>();
+}
 
 public interface IFamilyDataExtractionService
 {

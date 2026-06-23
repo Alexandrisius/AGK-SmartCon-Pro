@@ -56,6 +56,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV10Async(connection, ct);
         await MigrateV11Async(connection, ct);
         await MigrateV12Async(connection, ct);
+        await MigrateV13Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -404,6 +405,29 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await versionCmd.ExecuteNonQueryAsync(ct);
     }
 
+    private static async Task MigrateV13Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 13) return;
+
+        if (!await TableExistsAsync(connection, "family_nested_shared_families", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateFamilyNestedSharedFamilies;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using (var idxCmd = connection.CreateCommand())
+        {
+            idxCmd.CommandText = FamilyCatalogSql.CreateNestedSharedFamiliesIndexes;
+            await idxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '13' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static async Task MigrateV8Async(SqliteConnection connection, CancellationToken ct)
     {
         var currentVersion = await GetSchemaVersionAsync(connection, ct);
@@ -510,6 +534,22 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "ALTER TABLE family_types ADD COLUMN type_unique_id TEXT";
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "family_nested_shared_families", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateFamilyNestedSharedFamilies;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Indexes are idempotent (CREATE INDEX IF NOT EXISTS). Always attempt
+        // them so a partial migration (table created, indexes failed) is
+        // healed on next launch.
+        using (var idxCmd = connection.CreateCommand())
+        {
+            idxCmd.CommandText = FamilyCatalogSql.CreateNestedSharedFamiliesIndexes;
+            await idxCmd.ExecuteNonQueryAsync(ct);
         }
     }
 

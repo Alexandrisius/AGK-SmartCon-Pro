@@ -26,6 +26,10 @@ public sealed partial class SharedFamiliesLoadModeDialogViewModel : ObservableOb
     [ObservableProperty] private string _inUseWarning = string.Empty;
     [ObservableProperty] private bool _isFamilyInUse;
     [ObservableProperty] private SharedFamiliesLoadChoice _selectedChoice = SharedFamiliesLoadChoice.UseProject;
+    [ObservableProperty] private string _batchProgress = string.Empty;
+    [ObservableProperty] private string _sourceIndicator = string.Empty;
+    [ObservableProperty] private bool _showBatchProgress;
+    [ObservableProperty] private bool _showSourceIndicator;
 
     public event Action<bool?>? RequestClose;
 
@@ -86,13 +90,47 @@ public sealed partial class SharedFamiliesLoadModeDialogViewModel : ObservableOb
             ? (LanguageManager.GetString(StringLocalization.Keys.FM_LoadShared_InUseWarning) ?? "")
             : string.Empty;
 
+        string batchProgress = string.Empty;
+        bool showBatchProgress = false;
+        if (request.TotalInBatch > 1)
+        {
+            batchProgress = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_LoadShared_BatchProgress)
+                    ?? "Shared nested {0} of {1}",
+                request.IndexInBatch, request.TotalInBatch);
+            showBatchProgress = true;
+        }
+
+        string sourceIndicator = string.Empty;
+        bool showSourceIndicator = false;
+        switch (request.NameSource)
+        {
+            case SharedFamilyNameSource.CatalogDb:
+                sourceIndicator = LanguageManager.GetString(StringLocalization.Keys.FM_LoadShared_SourceFromCatalog)
+                    ?? "name from SmartCon catalog";
+                showSourceIndicator = true;
+                break;
+            case SharedFamilyNameSource.FallbackPlaceholder:
+                sourceIndicator = LanguageManager.GetString(StringLocalization.Keys.FM_LoadShared_SourcePlaceholder)
+                    ?? "name unavailable — re-import the family in Family Manager to populate";
+                showSourceIndicator = true;
+                break;
+            case SharedFamilyNameSource.RevitApi:
+            default:
+                break;
+        }
+
         return new SharedFamiliesLoadModeDialogViewModel
         {
             Title = title,
             Message = message,
             SharedFamilyName = request.SharedFamilyName,
             IsFamilyInUse = request.IsFamilyInUse,
-            InUseWarning = inUseWarning
+            InUseWarning = inUseWarning,
+            BatchProgress = batchProgress,
+            ShowBatchProgress = showBatchProgress,
+            SourceIndicator = sourceIndicator,
+            ShowSourceIndicator = showSourceIndicator
         };
     }
 }

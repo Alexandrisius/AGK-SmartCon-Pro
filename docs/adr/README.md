@@ -44,3 +44,4 @@
 | [031](031-fireandforget-ui-marshalling.md) | FireAndForget — обязательный UI-marshalling (net48 freeze post-mortem) | accepted | 2026-06-19 |
 | [032](032-type-catalog-simulation.md) | Type Catalog Simulation — вычисление формул для типов из .txt через Document.Regenerate (Issue #66) | superseded by 033 | 2026-06-21 |
 | [033](033-bakein-type-catalog.md) | Bake-in Type Catalog в .rfa при импорте (Issue #74) | accepted | 2026-06-22 |
+| [034](034-shared-nested-persist-fallback.md) | Persist shared nested family names at import time (REVIT-198137 в Revit 2023/2024.2, Issue #77) | accepted | 2026-06-23 |
