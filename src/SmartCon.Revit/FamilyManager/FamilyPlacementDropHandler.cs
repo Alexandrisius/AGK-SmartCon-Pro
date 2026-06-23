@@ -120,6 +120,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                         typeName,
                         onStatusMessage: _onStatusMessage,
                         onSharedDecision: _onSharedDecision,
+                        catalogItemId: dragData.CatalogItemId,
                         ct: CancellationToken.None).GetAwaiter().GetResult();
                 }
 

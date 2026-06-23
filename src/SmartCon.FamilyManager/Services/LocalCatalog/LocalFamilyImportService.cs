@@ -174,6 +174,15 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     ct);
             }
 
+            // ADR-034: shared-nested family name persistence now lives in
+            // FamilyManagerMainViewModel.ExtractFromManagedFileAsync — see
+            // SaveSharedNestedNamesAsync. Co-locating the scan inside the
+            // existing IFamilyDataExtractionService.ExtractFromManagedFile
+            // open-close cycle keeps the Revit family-upgrade dialog count
+            // at 1 per .rfa instead of the V2 baseline of 2 (separate
+            // ISHaredNestedFamilyExtractor that opened the file a second
+            // time).
+
             return new FamilyImportResult(
                 Success: true,
                 CatalogItemId: catalogItemId,
@@ -525,6 +534,15 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     versionLabel,
                     ct);
             }
+
+            // ADR-034: shared-nested family name persistence now lives in
+            // FamilyManagerMainViewModel.ExtractFromManagedFileAsync — see
+            // SaveSharedNestedNamesAsync. Co-locating the scan inside the
+            // existing IFamilyDataExtractionService.ExtractFromManagedFile
+            // open-close cycle keeps the Revit family-upgrade dialog count
+            // at 1 per .rfa instead of the V2 baseline of 2 (separate
+            // ISHaredNestedFamilyExtractor that opened the file a second
+            // time).
 
             return new FamilyImportResult(
                 Success: true,

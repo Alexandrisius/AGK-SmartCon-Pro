@@ -31,6 +31,8 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" Margin="0,0,0,12"
@@ -47,14 +49,27 @@
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
         </Border>
 
-        <TextBlock Grid.Row="2" Margin="0,0,0,12"
+        <TextBlock Grid.Row="2" Margin="0,0,0,4"
+                   FontSize="11"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding BatchProgress}"
+                   Visibility="{Binding ShowBatchProgress, Converter={StaticResource BoolToVis}}"/>
+
+        <TextBlock Grid.Row="3" Margin="0,0,0,4"
                    FontFamily="Consolas, Cascadia Code, Segoe UI Mono, Courier New"
                    FontSize="13" FontWeight="SemiBold"
                    Foreground="{DynamicResource AccentBrush}"
                    Text="{Binding SharedFamilyName}"
                    TextWrapping="Wrap"/>
 
-        <StackPanel Grid.Row="3" Margin="0,0,0,12">
+        <TextBlock Grid.Row="4" Margin="0,0,0,12" FontSize="10"
+                   TextWrapping="Wrap" MaxWidth="440"
+                   FontStyle="Italic"
+                   Foreground="{DynamicResource TextSecondaryBrush}"
+                   Text="{Binding SourceIndicator}"
+                   Visibility="{Binding ShowSourceIndicator, Converter={StaticResource BoolToVis}}"/>
+
+        <StackPanel Grid.Row="5" Margin="0,0,0,12">
             <RadioButton Content="{loc:Loc FM_LoadShared_UseProject}"
                          IsChecked="{Binding IsUseProjectSelected, Mode=TwoWay}"
                          FontSize="12"
@@ -71,7 +86,7 @@
                          Foreground="{DynamicResource TextPrimaryBrush}"/>
         </StackPanel>
 
-        <TextBlock Grid.Row="4" Margin="26,0,0,8" FontSize="11"
+        <TextBlock Grid.Row="6" Margin="26,0,0,8" FontSize="11"
                    TextWrapping="Wrap" MaxWidth="440"
                    Foreground="{DynamicResource TextSecondaryBrush}">
             <TextBlock.Style>
@@ -89,13 +104,13 @@
             </TextBlock.Style>
         </TextBlock>
 
-        <TextBlock Grid.Row="5" Margin="0,0,0,12" FontSize="11"
+        <TextBlock Grid.Row="7" Margin="0,0,0,12" FontSize="11"
                    TextWrapping="Wrap" MaxWidth="440"
                    Foreground="{DynamicResource WarningBrush}"
                    Text="{Binding InUseWarning}"
                    Visibility="{Binding IsFamilyInUse, Converter={StaticResource BoolToVis}}"/>
 
-        <StackPanel Grid.Row="6" Orientation="Horizontal"
+        <StackPanel Grid.Row="8" Orientation="Horizontal"
                     HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="{loc:Loc FM_LoadShared_Apply}"
                     Command="{Binding ApplyCommand}"

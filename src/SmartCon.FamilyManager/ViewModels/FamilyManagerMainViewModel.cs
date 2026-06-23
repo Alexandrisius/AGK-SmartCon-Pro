@@ -57,6 +57,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyFinder _familyFinder;
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
+    private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
     private readonly Dispatcher _uiDispatcher;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
@@ -157,6 +158,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _familyFinder = services.FamilyFinder;
         _versionWriter = services.VersionWriter;
         _clock = services.Clock;
+        _sharedNestedRepository = services.SharedNestedRepository;
 
         // Application.Current?.Dispatcher is null in Revit addins (especially net48)
         // because WPF Application is not auto-created. Dispatcher.CurrentDispatcher

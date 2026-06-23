@@ -42,4 +42,5 @@ public sealed record FamilyManagerServices(
     IStaleCategoryAggregator StaleCategoryAggregator,
     IFamilyFinder FamilyFinder,
     IFamilyVersionWriter VersionWriter,
-    IClock Clock);
+    IClock Clock,
+    ISharedNestedFamilyRepository SharedNestedRepository);

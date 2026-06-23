@@ -9,15 +9,34 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.FamilyManager;
 
+/// <summary>
+/// Implementation of <see cref="IFamilyLoadService"/> for Revit.
+///
+/// Log shape at Debug build level (verifies both bugs from the GitHub issues):
+///   - Issue #76 (R2021): the callback flow is observed end-to-end:
+///     <c>OnFamilyFound</c> fires once for the main family, <c>OnSharedFamilyFound</c>
+///     fires once per conflicting shared nested. If the dialog is wrapped in a
+///     user transaction (hypothesised cause of #76), neither callback fires
+///     and the family is silently overwritten.
+///   - Issue #77 (REVIT-198137): when <c>ApiName=&lt;null&gt;</c> in the
+///     <c>OnSharedFamilyFound</c> scope, the resolver falls back to the
+///     catalog-DB name and the dialog shows the real name instead of the
+///     Revit native conflict UI.
+/// </summary>
 public sealed class RevitFamilyLoadService : IFamilyLoadService
 {
     private readonly IRevitContext _revitContext;
     private readonly ITransactionService _transactionService;
+    private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
 
-    public RevitFamilyLoadService(IRevitContext revitContext, ITransactionService transactionService)
+    public RevitFamilyLoadService(
+        IRevitContext revitContext,
+        ITransactionService transactionService,
+        ISharedNestedFamilyRepository? nestedSharedRepository = null)
     {
         _revitContext = revitContext;
         _transactionService = transactionService;
+        _nestedSharedRepository = nestedSharedRepository;
     }
 
     private static Autodesk.Revit.DB.Family? FindExistingFamily(Document doc, string name)
@@ -35,6 +54,23 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         bool success = false;
 
         string? renameResult = null;
+
+        // Issue #76 verification: log the attempt number and whether
+        // IFamilyLoadOptions is supplied (so OnSharedFamilyFound callback
+        // will fire). At Debug level this is visible per attempt.
+        if (loadOptions is not null)
+        {
+            SmartConLogger.Info(
+                $"[{attemptName}] LoadFamily WITH IFamilyLoadOptions — " +
+                "expecting OnFamilyFound + OnSharedFamilyFound callbacks (Issue #76 verification)");
+        }
+        else
+        {
+            SmartConLogger.Info(
+                $"[{attemptName}] LoadFamily WITHOUT IFamilyLoadOptions — " +
+                "no callbacks will fire (silent overwrite fallback path)");
+        }
+
         _transactionService.RunInTransaction("Load Family", _ =>
         {
             bool loaded;
@@ -116,59 +152,38 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         return "Unable to load family. The file may be from a newer Revit version or incompatible with this project.";
     }
 
-    public Task<FamilyLoadResult> LoadFamilyAsync(FamilyResolvedFile file, FamilyLoadOptions options, Action<string>? onStatusMessage = null, Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null, CancellationToken ct = default)
+    public async Task<FamilyLoadResult> LoadFamilyAsync(
+        FamilyResolvedFile file,
+        FamilyLoadOptions options,
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        IReadOnlyList<string>? nestedSharedNames = null,
+        CancellationToken ct = default)
     {
         var doc = _revitContext.GetDocument();
         if (doc is null)
-            return Task.FromResult(new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed));
+            return new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed);
 
         var normalizedPath = Path.GetFullPath(file.AbsolutePath);
         var fileName = Path.GetFileName(normalizedPath);
-        using var _scope = SmartConLogger.BeginScope("FamilyLoad",
-            ("Method", "LoadFamilyAsync"),
-            ("FilePath", fileName));
-
-        SmartConLogger.Info("Attempting to load family");
-        SmartConLogger.Info($"File exists: {File.Exists(normalizedPath)}");
-        SmartConLogger.Info($"Current Revit version: {doc.Application.VersionNumber}");
+        // C15: scope wraps only the preparation phase (file info + DB lookup).
+        // NOT the actual LoadFamily call, which can block for minutes on
+        // a user-blocking WPF dialog (OnSharedFamilyFound). Each attempt
+        // (Attempt 1 / Attempt 2) gets its own inner scope inside
+        // TryLoadInTransaction. Correlation across attempts is via the
+        // FilePath scope property.
+        var resolvedNestedNames = await PrepareForLoadAsync(file, fileName, normalizedPath, options, nestedSharedNames, ct).ConfigureAwait(true);
 
         if (!File.Exists(normalizedPath))
         {
-            SmartConLogger.Info("File not found");
-            return Task.FromResult(new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed));
+            return new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed);
         }
 
         try
         {
-            var fileInfo = new FileInfo(normalizedPath);
-            SmartConLogger.Info($"File size: {fileInfo.Length} bytes");
-
-            using var basicInfo = BasicFileInfo.Extract(normalizedPath);
-            if (basicInfo != null)
-            {
-                var fileFormat = basicInfo.Format ?? "unknown";
-                var isCurrentVersion = basicInfo.IsSavedInCurrentVersion;
-                SmartConLogger.Info($"File version={fileFormat}, IsCurrentVersion={isCurrentVersion}, LaterVersion={basicInfo.IsSavedInLaterVersion}");
-
-                if (basicInfo.IsSavedInLaterVersion)
-                {
-                    SmartConLogger.Info($"Family saved in newer version: {fileFormat}");
-                    return Task.FromResult(new FamilyLoadResult(false, null, null,
-                        $"Family was saved in Revit {fileFormat} and cannot be opened in the current version.", FamilyLoadStatus.Failed));
-                }
-
-                if (!isCurrentVersion)
-                {
-                    SmartConLogger.Info($"UPGRADE DIALOG EXPECTED (version {fileFormat})");
-                }
-            }
-
-            var preferredName = options.PreferredName?.Trim();
-            var checkName = !string.IsNullOrWhiteSpace(preferredName)
-                ? preferredName
+            var checkName = !string.IsNullOrWhiteSpace(options.PreferredName?.Trim())
+                ? options.PreferredName!.Trim()
                 : SafeFileName.GetBaseName(normalizedPath).Trim();
-
-            SmartConLogger.Info($"Checking for existing family by name: '{checkName}'");
 
             var existingFamily = FindExistingFamily(doc, checkName!);
             if (existingFamily is not null)
@@ -184,36 +199,100 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 SmartConLogger.Info($"No existing family found with name '{checkName}'");
             }
 
-            var loadOptions = new RevitFamilyLoadOptions(options.OverwriteParameterValues, onStatusMessage, onSharedDecision);
+            // Issue #77 verification (Debug): log the fallback names count so
+            // an operator can confirm the catalog has data ready for
+            // REVIT-198137 fallback (when ApiName is null in OnSharedFamilyFound).
+            var fallbackSummary = resolvedNestedNames is { Count: > 0 }
+                ? $"ready (REVIT-198137 fallback will use catalog if ApiName is null)"
+                : "empty (dialog may show placeholder in Revit 2023/2024.2)";
+            SmartConLogger.Info(
+                $"Catalog fallback names for this load: {fallbackSummary} " +
+                $"(Count={(resolvedNestedNames?.Count ?? 0)})");
+
+            var loadOptions = new RevitFamilyLoadOptions(
+                options.OverwriteParameterValues, onStatusMessage, onSharedDecision, resolvedNestedNames);
 
             SmartConLogger.Info("Attempt 1: LoadFamily with options in transaction...");
             var result1 = TryLoadInTransaction(doc, normalizedPath, loadOptions, options, "Attempt1", existingFamily);
             if (result1 is not null)
-                return Task.FromResult(result1);
+                return result1;
             SmartConLogger.Info("Attempt 1 failed (returned null)");
 
             SmartConLogger.Info("Attempt 2: LoadFamily without IFamilyLoadOptions...");
             var result2 = TryLoadInTransaction(doc, normalizedPath, null, options, "Attempt2", existingFamily);
             if (result2 is not null)
-                return Task.FromResult(result2);
+                return result2;
             SmartConLogger.Info("Attempt 2 failed (returned null)");
 
             var errorMessage = BuildErrorMessage(normalizedPath);
             SmartConLogger.Info($"Both attempts failed - returning error: {errorMessage}");
-            return Task.FromResult(new FamilyLoadResult(false, null, null, errorMessage, FamilyLoadStatus.Failed));
+            return new FamilyLoadResult(false, null, null, errorMessage, FamilyLoadStatus.Failed);
         }
         catch (Exception ex)
         {
             SmartConLogger.Info($"LoadFamily exception: {ex.GetType().Name}: {ex.Message}");
-            return Task.FromResult(new FamilyLoadResult(false, null, null, ex.Message, FamilyLoadStatus.Failed));
+            return new FamilyLoadResult(false, null, null, ex.Message, FamilyLoadStatus.Failed);
         }
     }
 
-    public Task<FamilyLoadResult> LoadFamilySymbolAsync(string filePath, string typeName, Action<string>? onStatusMessage = null, Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null, CancellationToken ct = default)
+    private async Task<IReadOnlyList<string>?> PrepareForLoadAsync(
+        FamilyResolvedFile file,
+        string fileName,
+        string normalizedPath,
+        FamilyLoadOptions options,
+        IReadOnlyList<string>? nestedSharedNames,
+        CancellationToken ct)
+    {
+        using var _scope = SmartConLogger.BeginScope("FamilyLoad",
+            ("Method", "LoadFamilyAsync"),
+            ("FilePath", fileName));
+
+        SmartConLogger.Info("Attempting to load family");
+        SmartConLogger.Info($"File exists: {File.Exists(normalizedPath)}");
+
+        if (!File.Exists(normalizedPath))
+        {
+            SmartConLogger.Info("File not found");
+            return null;
+        }
+
+        var fileInfo = new FileInfo(normalizedPath);
+        SmartConLogger.Info($"File size: {fileInfo.Length} bytes");
+
+        using var basicInfo = BasicFileInfo.Extract(normalizedPath);
+        if (basicInfo != null)
+        {
+            var fileFormat = basicInfo.Format ?? "unknown";
+            var isCurrentVersion = basicInfo.IsSavedInCurrentVersion;
+            SmartConLogger.Info($"File version={fileFormat}, IsCurrentVersion={isCurrentVersion}, LaterVersion={basicInfo.IsSavedInLaterVersion}");
+
+            if (basicInfo.IsSavedInLaterVersion)
+            {
+                SmartConLogger.Info($"Family saved in newer version: {fileFormat}");
+                return null;
+            }
+
+            if (!isCurrentVersion)
+            {
+                SmartConLogger.Info($"UPGRADE DIALOG EXPECTED (version {fileFormat})");
+            }
+        }
+
+        return await ResolveNestedNamesAsync(file, nestedSharedNames, ct).ConfigureAwait(true);
+    }
+
+    public async Task<FamilyLoadResult> LoadFamilySymbolAsync(
+        string filePath,
+        string typeName,
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        IReadOnlyList<string>? nestedSharedNames = null,
+        string? catalogItemId = null,
+        CancellationToken ct = default)
     {
         var doc = _revitContext.GetDocument();
         if (doc is null)
-            return Task.FromResult(new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed));
+            return new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed);
 
         var normalizedPath = Path.GetFullPath(filePath);
         var fileName = Path.GetFileName(normalizedPath);
@@ -227,12 +306,59 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         if (!File.Exists(normalizedPath))
         {
             SmartConLogger.Info("File not found");
-            return Task.FromResult(new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed));
+            return new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed);
         }
 
         try
         {
-            var loadOptions = new RevitFamilyLoadOptions(overwriteParameterValues: true, onStatusMessage, onSharedDecision);
+            // Resolve nested names: caller-provided take priority; otherwise
+            // look up the catalog DB by CatalogItemId. The Type Catalog load
+            // path is the one most likely to trigger REVIT-198137 (every
+            // type re-resolves the parent family and triggers
+            // OnSharedFamilyFound), so this lookup is important for
+            // Revit 2023 / 2024 < 24.3.0.13.
+            IReadOnlyList<string>? resolvedNestedNames = nestedSharedNames;
+            if (resolvedNestedNames is null
+                && !string.IsNullOrEmpty(catalogItemId)
+                && _nestedSharedRepository is not null)
+            {
+                try
+                {
+                    resolvedNestedNames = await _nestedSharedRepository
+                        .GetNamesForCurrentVersionAsync(catalogItemId!, ct)
+                        .ConfigureAwait(true);
+                    if (resolvedNestedNames is { Count: > 0 })
+                    {
+                        SmartConLogger.Info(
+                            $"Loaded {resolvedNestedNames.Count} nested names from catalog DB for '{catalogItemId}' " +
+                            "— will use as fallback if Revit API returns null (REVIT-198137)");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"Failed to read nested names from catalog DB for symbol load: " +
+                        $"{ex.GetType().Name}: {ex.Message} " +
+                        "[Action: continuing without fallback names — dialog may show placeholder in Revit 2023/2024.2]");
+                }
+            }
+            else if (resolvedNestedNames is null && string.IsNullOrEmpty(catalogItemId))
+            {
+                SmartConLogger.Warn(
+                    "LoadFamilySymbolAsync called without catalogItemId and without explicit nestedSharedNames " +
+                    "[Action: caller should pass catalogItemId to enable REVIT-198137 fallback for symbol-based loads]");
+            }
+
+            // Issue #77 verification (Debug): same summary as LoadFamilyAsync.
+            var fallbackSummary = resolvedNestedNames is { Count: > 0 }
+                ? "ready (REVIT-198137 fallback will use catalog if ApiName is null)"
+                : "empty (dialog may show placeholder in Revit 2023/2024.2)";
+            SmartConLogger.Info(
+                $"Catalog fallback names for this symbol load: {fallbackSummary} " +
+                $"(Count={(resolvedNestedNames?.Count ?? 0)})");
+
+            var loadOptions = new RevitFamilyLoadOptions(
+                overwriteParameterValues: true, onStatusMessage, onSharedDecision, resolvedNestedNames);
             bool loaded = false;
             Autodesk.Revit.DB.FamilySymbol? symbol = null;
 
@@ -245,7 +371,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             {
                 var familyName = symbol.FamilyName;
                 SmartConLogger.Info($"Symbol '{typeName}' loaded successfully from family '{familyName}'");
-                return Task.FromResult(new FamilyLoadResult(true, familyName, $"Type '{typeName}' loaded", null, FamilyLoadStatus.Loaded));
+                return new FamilyLoadResult(true, familyName, $"Type '{typeName}' loaded", null, FamilyLoadStatus.Loaded);
             }
 
             // If LoadFamilySymbol returns false, it may be because the type already exists.
@@ -266,17 +392,57 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 if (existingSymbol is not null)
                 {
                     SmartConLogger.Info($"Symbol '{typeName}' already exists in family '{existingFamily.Name}'");
-                    return Task.FromResult(new FamilyLoadResult(true, existingFamily.Name, $"Type '{typeName}' already exists", null, FamilyLoadStatus.Current));
+                    return new FamilyLoadResult(true, existingFamily.Name, $"Type '{typeName}' already exists", null, FamilyLoadStatus.Current);
                 }
             }
 
             SmartConLogger.Info($"Failed to load symbol '{typeName}'");
-            return Task.FromResult(new FamilyLoadResult(false, null, null, $"Failed to load type '{typeName}'", FamilyLoadStatus.Failed));
+            return new FamilyLoadResult(false, null, null, $"Failed to load type '{typeName}'", FamilyLoadStatus.Failed);
         }
         catch (Exception ex)
         {
             SmartConLogger.Info($"Exception: {ex.GetType().Name}: {ex.Message}");
-            return Task.FromResult(new FamilyLoadResult(false, null, null, ex.Message, FamilyLoadStatus.Failed));
+            return new FamilyLoadResult(false, null, null, ex.Message, FamilyLoadStatus.Failed);
+        }
+    }
+
+    private async Task<IReadOnlyList<string>?> ResolveNestedNamesAsync(
+        FamilyResolvedFile file,
+        IReadOnlyList<string>? callerProvided,
+        CancellationToken ct)
+    {
+        if (callerProvided is not null) return callerProvided;
+        if (_nestedSharedRepository is null) return null;
+        var catalogItemId = file.CatalogItemId;
+        if (string.IsNullOrEmpty(catalogItemId))
+        {
+            SmartConLogger.Debug("FamilyResolvedFile.CatalogItemId is empty — no catalog lookup");
+            return null;
+        }
+        try
+        {
+            var names = await _nestedSharedRepository
+                .GetNamesForCurrentVersionAsync(catalogItemId!, ct)
+                .ConfigureAwait(true);
+            if (names.Count > 0)
+            {
+                SmartConLogger.Info(
+                    $"Loaded {names.Count} nested names from catalog DB for '{catalogItemId}' " +
+                    "— will use as fallback if Revit API returns null (REVIT-198137)");
+            }
+            else
+            {
+                SmartConLogger.Debug(
+                    $"Catalog lookup for '{catalogItemId}': empty list (legacy catalog or no shared nested in this family)");
+            }
+            return names;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Failed to read nested names from catalog DB: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: continuing without fallback names — dialog may show placeholder in Revit 2023/2024.2]");
+            return null;
         }
     }
 }

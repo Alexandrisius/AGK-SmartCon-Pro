@@ -343,7 +343,8 @@ internal static class FamilyCatalogSql
         {CreateCategoryAttributeBindings};
         {CreateFamilyDataImportRuns};
         {CreateExtractedAttributeValues};
-        {CreateDbUsers}
+        {CreateDbUsers};
+        {CreateFamilyNestedSharedFamilies}
         """;
 
     public const string MigrateV9AddLoadedVersionLabel = """
@@ -370,6 +371,36 @@ internal static class FamilyCatalogSql
 
     public const string MigrateV12DropProjectUsageTable = """
         DROP TABLE IF EXISTS project_usage
+        """;
+
+    public const string CreateFamilyNestedSharedFamilies = """
+        CREATE TABLE IF NOT EXISTS family_nested_shared_families (
+            catalog_item_id TEXT NOT NULL,
+            version_id TEXT NOT NULL,
+            -- nested_family_name is intentionally NOT COLLATE NOCASE.
+            -- SQLite's NOCASE collation only handles ASCII case-folding
+            -- (https://www.sqlite.org/datatype3.html#collation). Cyrillic
+            -- (Russian) names like "Болт" vs "БОЛТ" are NOT considered equal
+            -- by NOCASE. The C# layer (LocalSharedNestedFamilyRepository) does
+            -- case-insensitive dedup with StringComparer.OrdinalIgnoreCase
+            -- BEFORE INSERT, so duplicates are blocked at the application
+            -- layer. The PK here acts as a safety net for ASCII-only fixtures
+            -- and direct SQL inserts. If you bypass the C# layer for non-ASCII
+            -- names, you will get duplicates — that is intentional.
+            nested_family_name TEXT NOT NULL,
+            ordinal INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (catalog_item_id, version_id, nested_family_name),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateNestedSharedFamiliesIndexes = """
+        -- ix_nested_shared_name: intentionally removed. No current query filters
+        -- by nested_family_name; the only SELECT uses catalog_item_id (covered
+        -- by the PK prefix) and version_id. Add this index back when a
+        -- "which families use this shared nested?" report is implemented.
+        CREATE INDEX IF NOT EXISTS ix_nested_shared_version ON family_nested_shared_families (version_id)
         """;
 
     public const string CreateIndexes = """

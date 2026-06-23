@@ -544,6 +544,19 @@ public sealed partial class FamilyManagerMainViewModel
                     }
                     SmartConLogger.Info(
                         $"Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(task.ManagedRfaPath)}' (CatalogItemId={task.CatalogItemId})");
+
+                    // ADR-034: persist shared-nested names extracted in the
+                    // same call. This is the third call site (loadable path);
+                    // the file is also opened by LoadableFamilyTypeResolver
+                    // (ResolveTypesFromRfa) earlier in the pipeline, but the
+                    // user reported issue is the 4-dialog MFC upgrade storm
+                    // on a 2-file batch import — fixing that means
+                    // deduping within ExtractFromManagedFile specifically.
+                    await SaveSharedNestedNamesAsync(
+                        task.CatalogItemId,
+                        task.VersionId,
+                        extraction.SharedNestedFamilyNamesSafe,
+                        CancellationToken.None);
                 }
             }
             catch (Exception ex)
@@ -589,6 +602,14 @@ public sealed partial class FamilyManagerMainViewModel
                     extractionResults.Add((catalogItemId, extraction, item.VersionId, item.FileId, hasTypeCatalog));
                     SmartConLogger.Info(
                         $"Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(resolved.AbsolutePath)}'");
+
+                    // ADR-034: persist shared-nested names extracted in the
+                    // same call (V3 — single OpenDocumentFile per .rfa).
+                    await SaveSharedNestedNamesAsync(
+                        catalogItemId,
+                        item.VersionId,
+                        extraction.SharedNestedFamilyNamesSafe,
+                        CancellationToken.None);
                 }
             }
         }

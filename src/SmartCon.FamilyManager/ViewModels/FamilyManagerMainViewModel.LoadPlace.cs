@@ -197,6 +197,7 @@ public sealed partial class FamilyManagerMainViewModel
                             typeName,
                             onStatusMessage: msg => StatusMessage = msg,
                             onSharedDecision: sharedDecision,
+                            catalogItemId: catalogItemId,
                             ct: CancellationToken.None).ConfigureAwait(true);
                     }
 

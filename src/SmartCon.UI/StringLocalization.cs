@@ -509,5 +509,8 @@ public static class StringLocalization
         public const string FM_LoadShared_InUseWarning = "FM_LoadShared_InUseWarning";
         public const string FM_LoadShared_Apply = "FM_LoadShared_Apply";
         public const string FM_LoadShared_Skip = "FM_LoadShared_Skip";
+        public const string FM_LoadShared_BatchProgress = "FM_LoadShared_BatchProgress";
+        public const string FM_LoadShared_SourceFromCatalog = "FM_LoadShared_SourceFromCatalog";
+        public const string FM_LoadShared_SourcePlaceholder = "FM_LoadShared_SourcePlaceholder";
     }
 }

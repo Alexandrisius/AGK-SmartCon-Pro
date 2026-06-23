@@ -187,6 +187,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyDataImportService>(sp => sp.GetRequiredService<FamilyDataImportService>());
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
         services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
+        services.AddSingleton<LocalSharedNestedFamilyRepository>();
+        services.AddSingleton<ISharedNestedFamilyRepository>(sp => sp.GetRequiredService<LocalSharedNestedFamilyRepository>());
         services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
         services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
         services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
