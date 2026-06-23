@@ -46,6 +46,20 @@ internal sealed partial class LocalFamilyImportService
             $"{nameof(PrepareManagedRfaAsync)}: source='{Path.GetFileName(sourceFilePath)}', " +
             $"original='{(originalSourcePath is null ? "<none>" : Path.GetFileName(originalSourcePath))}', catalogItem='{catalogItemId}', version='{versionLabel}'");
 
+        // v2.0.0 UC-2: when the caller already wrote the file to managed
+        // storage via SaveAs (Import Active Family Document), sourceFilePath
+        // equals managedRfaPath byte-for-byte. Skip Copy/Bake — the file is
+        // already at its final destination, and any I/O against the same
+        // path while Revit holds the document open would be rejected with
+        // "Access to the path is denied".
+        if (string.Equals(sourceFilePath, managedRfaPath, StringComparison.OrdinalIgnoreCase))
+        {
+            SmartConLogger.Info(
+                "Source equals managed path — file already in managed storage, " +
+                "skipping copy/bake");
+            return null;
+        }
+
         var sourceTxtPath = ResolveTypeCatalogPath(sourceFilePath, originalSourcePath, catalogItemId, ct);
 
         if (string.IsNullOrEmpty(sourceTxtPath))

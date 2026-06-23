@@ -326,9 +326,11 @@ public sealed partial class FamilyManagerMainViewModel
                             .ToList()
                         : new List<string>();
                     var next = existingDirs
+#pragma warning disable CA1846 // Prefer AsSpan over Substring (net48 compat — no AsSpan on string in net48)
                         .Where(d => d.StartsWith("v") && d.Length > 1)
                         .Select(d => int.TryParse(d.Substring(1), out var n) ? n : 0)
                         .DefaultIfEmpty(0)
+#pragma warning restore CA1846
                         .Max() + 1;
                     versionLabel = $"v{next}";
                 }
@@ -402,6 +404,127 @@ public sealed partial class FamilyManagerMainViewModel
         var skipped = 0;
         var errors = importResult.Success ? 0 : 1;
         StatusMessage = BuildImportStatusMessage(success, skipped, errors, total);
+
+        // Phase 5 — close the active family document on the Revit UI thread
+        // and return focus to the project (if one was open). The user has
+        // finished with this family — it's now in the catalog, managed as
+        // read-only, and there's no reason to keep it loaded. Pass the
+        // post-SaveAs PathName so we close the right document even when
+        // .SaveAs() switched active focus.
+        if (importResult.Success && snapshot.Document is not null)
+        {
+            await CloseFamilyDocumentAsync(managedRfaPath!);
+        }
+    }
+
+    /// <summary>
+    /// Switches focus back to the project (if one was open) and closes the
+    /// family document that was just imported. Runs on the Revit UI thread
+    /// via the awaitable external event. Tolerates missing documents
+    /// gracefully — Revit may have already closed them.
+    /// </summary>
+    /// <remarks>
+    /// Behaviour:
+    /// <list type="bullet">
+    /// <item>Project was open before Edit Family → switch focus to project, then close the family</item>
+    /// <item>Only a family was open → post the Close command (Revit closes the active doc)</item>
+    /// <item>Family already closed by user → no-op</item>
+    /// </list>
+    /// We pass the post-SaveAs managed path so we close exactly the document
+    /// that was just written, regardless of whether SaveAs switched focus.
+    /// </remarks>
+    private async Task CloseFamilyDocumentAsync(string capturedFamilyPath)
+    {
+        using var _ = SmartConLogger.BeginScope("FMImport",
+            ("Method", "CloseFamilyDocumentAsync"));
+        try
+        {
+            await _awaitableEvent.RaiseAsync(obj =>
+            {
+                using var _uiScope = SmartConLogger.BeginScope("FMImport",
+                    ("Method", "CloseFamilyDocumentAsync"),
+                    ("Thread", "RevitUI"));
+                var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
+                var app = uiApp.Application;
+                var activeBeforeSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
+
+                var projectDoc = app.Documents.Cast<Document>()
+                    .FirstOrDefault(d => !d.IsFamilyDocument && !d.IsLinked
+                        && !string.IsNullOrEmpty(d.PathName)
+                        && d.PathName != activeBeforeSwitch);
+
+                if (projectDoc != null)
+                {
+                    try
+                    {
+                        uiApp.OpenAndActivateDocument(projectDoc.PathName);
+                    }
+                    catch (Exception activateEx)
+                    {
+                        SmartConLogger.Warn(
+                            $"Activate project failed: {activateEx.Message}");
+                        try
+                        {
+                            var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
+                            uiApp.PostCommand(closeCmd);
+                        }
+                        catch { }
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
+                        uiApp.PostCommand(closeCmd);
+                        SmartConLogger.Info(
+                            "No project to switch to — posted Close command");
+                    }
+                    catch (Exception postEx)
+                    {
+                        SmartConLogger.Warn(
+                            $"PostCommand Close failed: {postEx.Message}");
+                    }
+                }
+
+                var activeAfterSwitch = uiApp.ActiveUIDocument?.Document?.PathName;
+                if (!string.IsNullOrEmpty(capturedFamilyPath)
+                    && !string.Equals(activeAfterSwitch, capturedFamilyPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        var docToClose = app.Documents.Cast<Document>()
+                            .FirstOrDefault(d => string.Equals(
+                                d.PathName, capturedFamilyPath, StringComparison.OrdinalIgnoreCase));
+                        if (docToClose != null && !docToClose.IsLinked)
+                        {
+                            docToClose.Close(false);
+                            SmartConLogger.Debug(
+                                $"Closed family file: {capturedFamilyPath}");
+                        }
+                        else
+                        {
+                            SmartConLogger.Debug(
+                                "Family document not found in app.Documents (already closed?)");
+                        }
+                    }
+                    catch (Exception closeEx)
+                    {
+                        SmartConLogger.Info(
+                            $"Family close skipped: {closeEx.Message}");
+                    }
+                }
+                else
+                {
+                    SmartConLogger.Debug(
+                        $"Active document switched to '{activeAfterSwitch}' — no need to close family");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"CloseFamilyDocumentAsync failed: {ex.Message}");
+        }
     }
 
     /// <summary>Snapshot of an active family document captured on the Revit UI thread.</summary>
