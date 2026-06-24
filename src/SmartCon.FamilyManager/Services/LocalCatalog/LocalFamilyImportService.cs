@@ -99,6 +99,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
         try
         {
+            SmartConLogger.Debug(
+                $"ImportFileAsync: after PrepareManagedRfaAsync, filePath='{filePath}', managedRfaPath='{managedRfaPath}', exists={File.Exists(managedRfaPath)}");
+
             var catalogResult = await PrepareManagedRfaAsync(
                 filePath,
                 request.OriginalSourcePath,
@@ -108,8 +111,13 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 managedRfaPath,
                 ct);
 
+            SmartConLogger.Debug(
+                $"ImportFileAsync: PrepareManagedRfaAsync returned, catalogResult={(catalogResult is null ? "null" : "TypeCatalogResolutionResult")}, exists={File.Exists(managedRfaPath)}");
+
             if (!File.Exists(managedRfaPath))
             {
+                SmartConLogger.Warn(
+                    $"ImportFileAsync: managed file missing at '{managedRfaPath}' after PrepareManagedRfaAsync [Action: check staging helpers in StageSystemFamiliesFromMetadataAsync / StageLoadableFamiliesFromMetadataAsync]");
                 return new FamilyImportResult(
                     Success: false,
                     CatalogItemId: null,
@@ -188,8 +196,12 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 ManagedFilePath: managedRfaPath,
                 WasNewVersion: existingItem is not null);
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Error(
+                $"ImportFileAsync threw: {ex.GetType().Name}: {ex.Message} " +
+                $"[Action: check file='{Path.GetFileName(filePath)}', managedPath='{managedRfaPath}']");
+            SmartConLogger.Debug($"ImportFileAsync stack trace: {ex.StackTrace}");
             CleanupFileAsync(relativePath);
             throw;
         }
@@ -390,6 +402,10 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             catch (Exception ex)
             {
                 errorCount++;
+                SmartConLogger.Error(
+                    $"ImportBatchAsync: file='{item.FileName}' threw: {ex.GetType().Name}: {ex.Message} " +
+                    $"[Action: see prior log lines from ImportFileAsync for the underlying cause]");
+                SmartConLogger.Debug($"ImportBatchAsync stack trace: {ex.StackTrace}");
                 results.Add(new FamilyImportResult(
                     Success: false,
                     CatalogItemId: null,
