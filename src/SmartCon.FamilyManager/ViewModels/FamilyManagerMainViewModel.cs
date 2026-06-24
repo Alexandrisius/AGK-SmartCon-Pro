@@ -10,6 +10,7 @@ using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services;
+using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.FamilyManager.Services.Stale;
 using SmartCon.UI;
 
@@ -23,6 +24,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyCatalogProvider _catalogProvider;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
     private readonly IFamilyImportService _importService;
+    private readonly IFamilyImportPrecomputer _importPrecomputer;
+    private readonly StoragePathResolver _pathResolver;
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IFamilyLoadService _loadService;
     private readonly IFamilyManagerDialogService _dialogService;
@@ -122,6 +125,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _catalogProvider = services.CatalogProvider;
         _writableProvider = services.WritableProvider;
         _importService = services.ImportService;
+        _importPrecomputer = services.ImportPrecomputer;
+        _pathResolver = services.PathResolver;
         _fileResolver = services.FileResolver;
         _loadService = services.LoadService;
         _dialogService = services.DialogService;

@@ -1275,3 +1275,25 @@ public static class LegacyStageFolderCleaner
 
 Живёт в `SmartCon.Core` (а не в `SmartCon.App`) чтобы логика была тестируемой без Revit UIApplication. Реальный production entry point — `App.OnStartup` в `SmartCon.App`, который делегирует в `LegacyStageFolderCleaner.Cleanup(...)`.
 
+---
+
+## PrecomputedImportTriple
+
+v2.0.0: каноническая тройка `(CatalogItemId, VersionLabel, ManagedPath)`, которую VM batch-диалога аллоцирует ДО показа диалога и пробрасывает через все стадии импорт-флоу (build → dialog → staging → import). Это единственная форма данных, которая гарантирует инвариант `family_files.relative_path = "{dbRoot}/files/<id>/<version>/<name>"`: `ManagedPath` — абсолютный путь на диске, `CatalogItemId` + `VersionLabel` — компоненты, которые вместе с именем файла образуют этот layout.
+
+**Файл:** `Models/FamilyManager/PrecomputedImportTriple.cs`
+
+```csharp
+public sealed record PrecomputedImportTriple(
+    string CatalogItemId,
+    string VersionLabel,
+    string ManagedPath);
+```
+
+Иммутабельный record: VM только заменяет тройку целиком (через `IFamilyImportPrecomputer.BuildPrecomputedTripleAsync`), никогда не мутирует поля по отдельности. Это исключает round-trip с полуобновлённым состоянием, когда `CatalogItemId` уже от нового имени, а `VersionLabel`/`ManagedPath` — от старого. Именно это состояние приводило к `UNIQUE constraint failed: catalog_items.id` в pre-v2.0.0: после rename строки в диалоге `ImportFileAsync` пытался `INSERT` новую запись с `id` от старого имени.
+
+Используется в:
+- `FamilyBatchImportItem.PrecomputedCatalogItemId/VersionLabel/ManagedPath` (Core) — DTO, передаваемое через batch dialog.
+- `FamilyBatchImportRow.PrecomputedCatalogItemId/VersionLabel/ManagedPath` (`SmartCon.FamilyManager/ViewModels`) — бэкинг-поля row VM.
+- `IFamilyImportPrecomputer.BuildPrecomputedTripleAsync` (Core) — контракт выделенного precomputer-сервиса, который является единым источником истины для вычисления этой тройки (как для initial dialog build, так и для dialog rename handler).
+

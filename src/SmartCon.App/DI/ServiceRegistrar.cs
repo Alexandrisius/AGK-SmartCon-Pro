@@ -167,6 +167,14 @@ public static class ServiceRegistrar
         services.AddSingleton<LocalFamilyTypeRepository>();
         services.AddSingleton<IFamilyTypeRepository>(sp => sp.GetRequiredService<LocalFamilyTypeRepository>());
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
+        // v2.0.0: precomputer allocates the canonical
+        // (CatalogItemId, VersionLabel, ManagedPath) triple for a given
+        // display name without performing file I/O. Used by the batch
+        // import dialog's rename handler so the round-trip from the
+        // dialog back to ImportFileAsync always carries consistent
+        // values (the dialog pre-build and the dialog rename share the
+        // same single source of truth).
+        services.AddSingleton<IFamilyImportPrecomputer, LocalFamilyImportPrecomputer>();
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();

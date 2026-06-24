@@ -28,6 +28,50 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     /// </summary>
     public FamilyImportSource? Source { get; }
 
+    /// <summary>
+    /// v2.0.0: precomputed canonical managed path the VM allocated up
+    /// front in <c>BuildSystemFamilyBatchRowVirtualAsync</c> /
+    /// <c>BuildLoadableFamilyBatchRowVirtualAsync</c>. The staging
+    /// helper writes the staged file at this exact path (so the
+    /// managed-path invariant
+    /// <c>family_files.relative_path = "{dbRoot}/files/&lt;catalogItemId&gt;/&lt;versionLabel&gt;/&lt;name&gt;"</c>
+    /// holds). <c>GetResultItems</c> must re-emit it on
+    /// <see cref="FamilyBatchImportItem.PrecomputedManagedPath"/> so the
+    /// post-dialog flow still has it — losing this value is what
+    /// broke the v2.0.0 import and forced staging to fall back to
+    /// <c>ComputeSystemFamilyManagedPath</c> with a fresh GUID, which
+    /// then made <c>ImportFileAsync</c> look for the file at a path
+    /// nothing wrote to.
+    /// <para>
+    /// v2.0.0 hotfix: this and the two <c>Precomputed*</c> siblings are
+    /// <c>[ObservableProperty]</c>-backed (not <c>get;</c>-only) because
+    /// the dialog's <c>OnRowNameChanged</c> handler has to re-derive the
+    /// triple when the user renames a row — leaving the values stuck on
+    /// the original name produces the
+    /// <c>UNIQUE constraint failed: catalog_items.id</c> failure mode
+    /// where <c>ImportFileAsync</c> tries to insert a new row with the
+    /// pre-existing id of the family the row used to be named after.
+    /// </para>
+    /// </summary>
+    [ObservableProperty]
+    private string? _precomputedManagedPath;
+
+    /// <summary>
+    /// v2.0.0: precomputed catalog item id. See
+    /// <see cref="PrecomputedManagedPath"/> for why this must survive
+    /// the dialog round-trip.
+    /// </summary>
+    [ObservableProperty]
+    private string? _precomputedCatalogItemId;
+
+    /// <summary>
+    /// v2.0.0: precomputed version label. See
+    /// <see cref="PrecomputedManagedPath"/> for why this must survive
+    /// the dialog round-trip.
+    /// </summary>
+    [ObservableProperty]
+    private string? _precomputedVersionLabel;
+
     [ObservableProperty]
     private int? _typeCount;
 
@@ -84,6 +128,12 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         Status = item.Status;
         ExistingCatalogItemId = item.ExistingCatalogItemId;
         ExistingVersionLabel = item.ExistingVersionLabel;
+        // Backing-field assignment is intentional: the row is being
+        // constructed, so the [ObservableProperty]-generated INPC
+        // notifications would be wasted work (no listener yet).
+        _precomputedCatalogItemId = item.PrecomputedCatalogItemId;
+        _precomputedVersionLabel = item.PrecomputedVersionLabel;
+        _precomputedManagedPath = item.PrecomputedManagedPath;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
         // Display rule for the category cell:

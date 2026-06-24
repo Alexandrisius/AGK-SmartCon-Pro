@@ -3,7 +3,16 @@ using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal sealed class StoragePathResolver
+/// <summary>
+/// Resolves canonical on-disk paths for the catalog's managed storage
+/// area. Exposed as <c>public</c> because
+/// <c>FamilyManagerServices</c> (also public) and the
+/// <c>FamilyManagerMainViewModel</c> constructor need to inject it;
+/// keeping it internal would force a wider
+/// <c>InternalsVisibleTo</c> chain than is justified by a single
+/// "all catalog-managed files live under {dbRoot}/files/..." invariant.
+/// </summary>
+public sealed class StoragePathResolver
 {
     private readonly LocalCatalogDatabase _database;
 

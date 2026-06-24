@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
@@ -23,7 +24,7 @@ internal sealed partial class LocalFamilyImportService
         return LocalCatalogProvider.ReadCatalogItem(reader) with { Tags = [] };
     }
 
-    private async Task<string> GetNextVersionLabelAsync(string catalogItemId, CancellationToken ct)
+    private async Task<string> ComputeNextVersionLabelAsync(string catalogItemId, CancellationToken ct)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
@@ -38,6 +39,52 @@ internal sealed partial class LocalFamilyImportService
         }
 
         return "v2";
+    }
+
+    /// <summary>
+    /// v2.0.0: public entry point for <see cref="IFamilyImportService.GetNextVersionLabelAsync"/>.
+    /// Returns <c>vN+1</c> for an existing item that has <c>vN</c>,
+    /// or <c>"v2"</c> as a defensive fallback when no prior version exists
+    /// (the VM uses this to allocate the canonical managed path up front).
+    /// </summary>
+    public async Task<string> GetNextVersionLabelAsync(string catalogItemId, CancellationToken ct)
+    {
+        return await ComputeNextVersionLabelAsync(catalogItemId, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// v2.0.0: single source of truth for canonical managed paths.
+    /// Staging helpers and <see cref="ImportFileAsync"/> both go through
+    /// here so the on-disk path and the <c>family_files.relative_path</c>
+    /// row can never drift out of sync.
+    ///
+    /// Returns <c>null</c> when no active database is selected — callers
+    /// must surface this as a user error rather than falling back to a
+    /// temp folder (v2.0.0 has no temp folders, per ADR-035).
+    /// </summary>
+    public string? ComputeManagedFilePath(
+        string catalogItemId,
+        string versionLabel,
+        string fileName,
+        string extension)
+    {
+        if (string.IsNullOrEmpty(catalogItemId)) return null;
+        if (string.IsNullOrEmpty(versionLabel)) return null;
+        if (string.IsNullOrWhiteSpace(fileName)) return null;
+
+        var ext = string.IsNullOrEmpty(extension) ? ".rfa" : extension;
+        // CA1865 ("use StartsWith(char)") would break net48 compatibility
+        // (net48 only exposes StartsWith(string)). Inspecting the first
+        // character is portable across both target frameworks.
+        if (ext.Length == 0 || ext[0] != '.') ext = "." + ext;
+
+        var dbRoot = _database.GetDatabaseRoot();
+        if (string.IsNullOrEmpty(dbRoot)) return null;
+
+        return _pathResolver.GetRfaFilePath(
+            catalogItemId,
+            versionLabel,
+            fileName + ext);
     }
 
     private static async Task InsertFileRecordAsync(SqliteConnection connection, string id,

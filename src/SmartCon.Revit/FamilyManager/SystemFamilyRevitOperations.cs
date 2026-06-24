@@ -416,13 +416,12 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
     private static string SanitizeFileName(string name)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sb = new System.Text.StringBuilder(name.Length);
-        foreach (var c in name)
-        {
-            sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
-        }
-        return sb.ToString();
+        // v2.0.0: the actual sanitisation rule lives in
+        // SmartCon.Core.Services.FamilyManager.SafeFileName.SanitizeFileName
+        // — this method is a thin redirect so the duplicate is gone and
+        // the rule is defined in exactly one place. The next refactor
+        // pass should inline the call sites and delete this wrapper.
+        return SafeFileName.SanitizeFileName(name);
     }
 
     private sealed class SkipDuplicateTypesHandler : IDuplicateTypeNamesHandler

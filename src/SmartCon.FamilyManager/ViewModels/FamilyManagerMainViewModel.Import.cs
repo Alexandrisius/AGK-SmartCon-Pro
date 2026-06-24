@@ -120,7 +120,14 @@ public sealed partial class FamilyManagerMainViewModel
                 }
             }
 
-            using var vm = new FamilyBatchImportViewModel(items, _dialogService, _viewModelFactory, categoryId, categoryName, _catalogProvider);
+            using var vm = new FamilyBatchImportViewModel(
+                items,
+                _dialogService,
+                _viewModelFactory,
+                categoryId,
+                categoryName,
+                _catalogProvider,
+                importPrecomputer: _importPrecomputer);
             var result = _dialogService.ShowBatchImportDialog(vm);
             if (result != true) return;
 
@@ -586,7 +593,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (string.IsNullOrEmpty(dbRoot)) return null;
         var catalogItemId = Guid.NewGuid().ToString("N");
         var versionDir = Path.Combine(dbRoot, "files", catalogItemId, "v1");
-        var safeName = SanitizeFileName(SafeFileName.GetBaseName(familyName));
+        var safeName = SafeFileName.SanitizeFileName(SafeFileName.GetBaseName(familyName));
         if (string.IsNullOrEmpty(safeName)) safeName = "Family";
         return Path.Combine(versionDir, safeName + ".rfa");
     }
@@ -750,6 +757,25 @@ public sealed partial class FamilyManagerMainViewModel
             targetCategoryName = cat.FullPath ?? cat.Name;
         }
 
+        // v2.0.0: precompute the canonical (catalogItemId, versionLabel,
+        // managedRfaPath) triple through the precomputer — the SAME
+        // service the dialog rename handler uses, so the initial build
+        // and the post-rename re-derivation agree on every value (id +
+        // version + path all move together, never piecemeal). The
+        // precomputer itself re-runs FindByNormalizedNameAsync, so we
+        // pay one extra read here; the trade-off is worth it for the
+        // invariant guarantee.
+        var precomputed = await _importPrecomputer
+            .BuildPrecomputedTripleAsync(displayName, ".rvt", ct)
+            .ConfigureAwait(false);
+
+        SmartConLogger.Info(
+            $"[FMImport.BuildSystem] displayName='{displayName}', " +
+            $"existingByName={(existingByName?.Id ?? "<null>")}, " +
+            $"precomputedCatalogItemId='{precomputed?.CatalogItemId ?? "<null>"}', " +
+            $"precomputedVersionLabel='{precomputed?.VersionLabel ?? "<null>"}', " +
+            $"precomputedManagedPath='{precomputed?.ManagedPath ?? "<null>"}'");
+
         return new FamilyBatchImportItem(
             FilePath: placeholderPath,
             FileName: displayName,
@@ -763,7 +789,10 @@ public sealed partial class FamilyManagerMainViewModel
             TypeCount: coreTypes.Count,
             RevitCategory: displayName,
             SourceTypes: coreTypes,
-            Source: source);
+            Source: source,
+            PrecomputedCatalogItemId: precomputed?.CatalogItemId,
+            PrecomputedVersionLabel: precomputed?.VersionLabel,
+            PrecomputedManagedPath: precomputed?.ManagedPath);
     }
 
     private async Task<FamilyBatchImportItem?> BuildLoadableFamilyBatchRowVirtualAsync(
@@ -813,6 +842,13 @@ public sealed partial class FamilyManagerMainViewModel
             targetCategoryName = cat.FullPath ?? cat.Name;
         }
 
+        // v2.0.0: same rationale as BuildSystemFamilyBatchRowVirtualAsync
+        // — go through the precomputer so the initial build and the
+        // post-rename re-derivation cannot drift apart.
+        var precomputed = await _importPrecomputer
+            .BuildPrecomputedTripleAsync(loadable.FamilyName, ".rfa", ct)
+            .ConfigureAwait(false);
+
         return new FamilyBatchImportItem(
             FilePath: placeholderPath,
             FileName: loadable.FamilyName,
@@ -827,7 +863,10 @@ public sealed partial class FamilyManagerMainViewModel
             RevitCategory: loadable.CategoryName,
             OriginalSourcePath: null,
             SourceTypes: null,
-            Source: source);
+            Source: source,
+            PrecomputedCatalogItemId: precomputed?.CatalogItemId,
+            PrecomputedVersionLabel: precomputed?.VersionLabel,
+            PrecomputedManagedPath: precomputed?.ManagedPath);
     }
 
     private string? StageLoadableFamilyFromProject(LoadableFamilyInfo info, string managedRfaPath)
@@ -904,15 +943,5 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    private static string SanitizeFileName(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sb = new System.Text.StringBuilder(name.Length);
-        foreach (var c in name)
-        {
-            sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
-        }
-        return sb.ToString();
-    }
 }
 

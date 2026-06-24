@@ -37,6 +37,14 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IFamilyCatalogProvider? _catalogProvider;
+    /// <summary>
+    /// v2.0.0: optional precomputer that re-derives the
+    /// (CatalogItemId, VersionLabel, ManagedPath) triple when the user
+    /// renames a row in the dialog. Nullable for backward compatibility
+    /// with older test fixtures that don't wire it up — production
+    /// code always passes a real instance.
+    /// </summary>
+    private readonly IFamilyImportPrecomputer? _importPrecomputer;
     private bool _disposed;
     private bool _batchApplying;
 
@@ -58,11 +66,13 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         IFamilyManagerViewModelFactory viewModelFactory,
         string? defaultCategoryId = null,
         string? defaultCategoryName = null,
-        IFamilyCatalogProvider? catalogProvider = null)
+        IFamilyCatalogProvider? catalogProvider = null,
+        IFamilyImportPrecomputer? importPrecomputer = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
         _catalogProvider = catalogProvider;
+        _importPrecomputer = importPrecomputer;
 
         foreach (var item in items)
         {
@@ -150,11 +160,23 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// form the pre-build flow uses, so the row's Status flips
     /// New ↔ Existing as soon as the user types a name that no longer
     /// (or now) matches an existing catalog item.
+    /// <para>
+    /// v2.0.0: when an <see cref="IFamilyImportPrecomputer"/> is wired
+    /// in, we also re-derive the precomputed
+    /// (CatalogItemId, VersionLabel, ManagedPath) triple — without this
+    /// re-derivation, the dialog would carry a stale precomputed id
+    /// (the one from the row's original name) into the post-dialog
+    /// import, and <c>ImportFileAsync</c> would try to
+    /// <c>INSERT</c> a new <c>catalog_items</c> row with that id,
+    /// tripping the <c>UNIQUE constraint failed: catalog_items.id</c>
+    /// failure mode observed in the v2.0.0 manual run (the
+    /// "Трубы → Трубы новые" rename in the active-project flow).
+    /// </para>
     /// </summary>
     private void OnRowNameChanged(FamilyBatchImportRow row, string newName)
     {
         if (_batchApplying) return;
-        if (_catalogProvider is null) return;
+        if (_catalogProvider is null && _importPrecomputer is null) return;
         if (string.IsNullOrWhiteSpace(newName)) return;
 
         _nameChangeCts?.Cancel();
@@ -162,6 +184,14 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         var cts = new CancellationTokenSource();
         _nameChangeCts = cts;
         var token = cts.Token;
+
+        // Capture the row's family source so the precomputer uses the
+        // right extension (.rfa for loadable, .rvt for system) when
+        // re-deriving the managed path. This must be evaluated on the
+        // calling thread (UI) — FamilySource is a plain CLR string and
+        // the row is not safe to read from the ThreadPool after this
+        // method returns.
+        var extension = ResolveExtensionForRow(row);
 
         _ = Task.Run(async () =>
         {
@@ -171,9 +201,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 if (token.IsCancellationRequested) return;
 
                 var normalized = FamilyNameNormalizer.Normalize(newName);
-                var existing = await _catalogProvider
-                    .FindByNormalizedNameAsync(normalized, token)
-                    .ConfigureAwait(false);
+                var existing = _catalogProvider is null
+                    ? null
+                    : await _catalogProvider
+                        .FindByNormalizedNameAsync(normalized, token)
+                        .ConfigureAwait(false);
                 if (token.IsCancellationRequested) return;
 
                 var newStatus = existing is null
@@ -182,14 +214,27 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 var newExistingId = existing?.Id;
                 var newExistingVersionLabel = existing?.CurrentVersionLabel;
 
+                // Re-derive the canonical triple so the post-dialog
+                // import uses the id/path that actually correspond to
+                // the new name. Done here (on the background thread)
+                // because the precomputer may hit the DB.
+                PrecomputedImportTriple? precomputed = null;
+                if (_importPrecomputer is not null)
+                {
+                    precomputed = await _importPrecomputer
+                        .BuildPrecomputedTripleAsync(newName, extension, token)
+                        .ConfigureAwait(false);
+                    if (token.IsCancellationRequested) return;
+                }
+
                 var dispatcher = System.Windows.Application.Current?.Dispatcher;
                 if (dispatcher is not null && !dispatcher.CheckAccess())
                 {
-                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel));
+                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, precomputed));
                 }
                 else
                 {
-                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel);
+                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, precomputed);
                 }
             }
             catch (OperationCanceledException)
@@ -204,11 +249,26 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         }, token);
     }
 
+    private static string ResolveExtensionForRow(FamilyBatchImportRow row)
+    {
+        // v2.0.0: extension is the file-type component of the
+        // precomputed managed path. System-family rows stage .rvt
+        // snapshots, loadable rows stage .rfa. We read it from the row
+        // (not the catalog) because the row already carries the
+        // resolved FamilySource — see FamilyBatchImportRow constructor.
+        return row.FamilySource switch
+        {
+            "system" => ".rvt",
+            _ => ".rfa"
+        };
+    }
+
     private void ApplyNameChangeResult(
         FamilyBatchImportRow row,
         FamilyBatchImportStatus newStatus,
         string? newExistingId,
-        string? newExistingVersionLabel)
+        string? newExistingVersionLabel,
+        PrecomputedImportTriple? precomputed)
     {
         if (row.Status != newStatus)
         {
@@ -216,6 +276,20 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         }
         row.ExistingCatalogItemId = newExistingId;
         row.ExistingVersionLabel = newExistingVersionLabel;
+
+        // The precomputer is the only place that knows the
+        // version-label math (vN+1) and the managed-path layout — we
+        // must apply its result as a unit, never piecemeal, otherwise
+        // the dialog could carry a new CatalogItemId with the old
+        // VersionLabel (or vice versa) into the import and trip the
+        // UNIQUE constraint on (catalog_item_id, version_label,
+        // revit_major_version).
+        if (precomputed is not null)
+        {
+            row.PrecomputedCatalogItemId = precomputed.CatalogItemId;
+            row.PrecomputedVersionLabel = precomputed.VersionLabel;
+            row.PrecomputedManagedPath = precomputed.ManagedPath;
+        }
     }
 
     private void ApplyActionToSelection(FamilyBatchImportRow source, FamilyBatchImportAction newValue)
@@ -322,7 +396,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// <summary>
     /// Returns items with user-selected actions for the caller.
     /// v2.0.0: also re-emits the <see cref="FamilyBatchImportItem.Source"/>
-    /// payload. Without it, the post-dialog staging flow in
+    /// payload AND the precomputed
+    /// (CatalogItemId, VersionLabel, ManagedPath) triple.
+    ///
+    /// Without <c>Source</c>, the post-dialog staging flow in
     /// <c>ProcessProjectImportAsync</c> sees <c>Source = null</c> on
     /// every row and skips all staging, leaving the placeholder
     /// <c>FilePath</c> ("system://..." / "loadable://...") in place.
@@ -330,6 +407,15 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// non-existent path and reports <c>Success = false</c> for every
     /// item. This was the root cause of the v2.0.0 batch-import
     /// regression (UC-3/UC-4 imported zero families).
+    ///
+    /// Without the precomputed triple, staging falls back to
+    /// <c>ComputeSystemFamilyManagedPath</c> with a fresh GUID, the
+    /// staged file lands at a path that no longer matches the
+    /// <c>family_files.relative_path</c> row that
+    /// <see cref="IFamilyImportService.ImportFileAsync"/> would later
+    /// allocate, and every row returns <c>Success = false</c>. This
+    /// regression bit hard in the most recent Revit run, so the row VM
+    /// now propagates all three precomputed values back to the caller.
     /// </summary>
     public IReadOnlyList<FamilyBatchImportItem> GetResultItems()
     {
@@ -347,7 +433,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             r.RevitCategory,
             OriginalSourcePath: null,
             SourceTypes: null,
-            Source: r.Source)
+            Source: r.Source,
+            PrecomputedCatalogItemId: r.PrecomputedCatalogItemId,
+            PrecomputedVersionLabel: r.PrecomputedVersionLabel,
+            PrecomputedManagedPath: r.PrecomputedManagedPath)
         {
             Action = r.Action
         }).ToList();

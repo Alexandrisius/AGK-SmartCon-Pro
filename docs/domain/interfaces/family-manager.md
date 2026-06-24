@@ -824,3 +824,37 @@ public interface IFamilyVersionWriter
 
 **Реализация:** `FamilyVersionWriter` (в `SmartCon.FamilyManager/Services/Stale/`). Внутри — `RaiseAsyncTask` для `FindByName` + `WriteToLoadedFamily` на Revit main thread. No-op если семейство не загружено в проект (например, при `LoadFamilySymbol` без `LoadFamily`).
 
+---
+
+## IFamilyImportPrecomputer
+
+v2.0.0: single-purpose сервис, аллоцирующий каноническую `PrecomputedImportTriple` для заданного `displayName` без файлового I/O. Выделен из `IFamilyImportService` для соблюдения SRP: импорт-pipeline (запись файлов + обновление БД) и trivial DB-lookup + path-математика, которую каждая строка batch dialog делает заранее, — это разные ответственности.
+
+**Файл:** `IFamilyImportPrecomputer.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportPrecomputer.cs`
+
+```csharp
+public interface IFamilyImportPrecomputer
+{
+    Task<PrecomputedImportTriple?> BuildPrecomputedTripleAsync(
+        string displayName,
+        string extension,
+        CancellationToken ct = default);
+}
+```
+
+Семантика:
+- Нормализует `displayName` через `FamilyNameNormalizer` и ищет existing item через `IFamilyCatalogProvider.FindByNormalizedNameAsync`.
+- Если existing найден — возвращает `(existing.Id, ComputeNextVersionLabel(existing.Id), ComputeManagedFilePath(...))`: id сохраняется, версия инкрементируется (`vN → vN+1`).
+- Если existing не найден — возвращает `(Guid.NewGuid() в формате "N", "v1", ComputeManagedFilePath(...))`.
+- `extension` — расширение с ведущей точкой (`".rfa"` для loadable, `".rvt"` для system); `".rfa"` default для null/empty.
+- Возвращает `null` когда активная БД не имеет `GetDatabaseRoot()` (caller обязан surfacing this как user error, не fallback на temp-папку — v2.0.0 не использует temp-папки, см. ADR-035).
+
+Используется в **обоих** сценариях, где нужен precomputed triple:
+- Initial dialog build (`BuildSystemFamilyBatchRowVirtualAsync` / `BuildLoadableFamilyBatchRowVirtualAsync` в `FamilyManagerMainViewModel.Import.cs`) — при первом построении списка строк.
+- Dialog rename handler (`FamilyBatchImportViewModel.OnRowNameChanged`) — при переименовании пользователем строки в batch dialog.
+
+Без единого источника истины эти два пути могут разойтись: `BuildSystem` использует `existingByName` из прямого lookup в `IFamilyCatalogProvider`, а `OnRowNameChanged` — `existing` из `IFamilyCatalogProvider` (тот же provider, но в другом контексте). Преcomputers заменяет оба на один вызов, гарантируя что `CatalogItemId`/`VersionLabel`/`ManagedPath` всегда согласованы и перевычисляются атомарно.
+
+`OnRowNameChanged` дополнительно оборачивает вызов в `Task.Delay(250 ms)` debouncer, чтобы DB-lookup не срабатывал на каждое нажатие клавиши. Cancellation token отменяет предыдущий pending-вызов при следующем нажатии.
+

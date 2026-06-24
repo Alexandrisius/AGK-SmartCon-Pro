@@ -258,9 +258,19 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }
 
-        // Phase 2 — show batch dialog with a placeholder FilePath. The actual
-        // managed copy is created only AFTER the user confirms. Cancellation
-        // is safe — no temp file was created.
+        // v2.0.0: precompute the canonical (catalogItemId, versionLabel,
+        // managedRfaPath) tuple up front via the shared precomputer —
+        // the SAME service the dialog rename handler uses, so the
+        // initial build and the post-rename re-derivation agree on
+        // every value. The placeholder FilePath is only used for the
+        // dialog preview — the staged path is `PrecomputedManagedPath`.
+        var precomputed = await _importPrecomputer
+            .BuildPrecomputedTripleAsync(snapshot.BaseName, ".rfa", CancellationToken.None)
+            .ConfigureAwait(false);
+        var precomputedCatalogItemId = precomputed?.CatalogItemId ?? Guid.NewGuid().ToString("N");
+        var precomputedVersionLabel = precomputed?.VersionLabel ?? "v1";
+        var precomputedManagedPath = precomputed?.ManagedPath;
+
         var placeholderFilePath = snapshot.OriginalPathName ?? $"active://{snapshot.BaseName}";
         var item = new FamilyBatchImportItem(
             placeholderFilePath,
@@ -274,9 +284,19 @@ public sealed partial class FamilyManagerMainViewModel
             FamilySource: "loadable",
             TypeCount: null,
             RevitCategory: null,
-            OriginalSourcePath: snapshot.OriginalPathName);
+            OriginalSourcePath: snapshot.OriginalPathName,
+            SourceTypes: null,
+            Source: null,
+            PrecomputedCatalogItemId: precomputedCatalogItemId,
+            PrecomputedVersionLabel: precomputedVersionLabel,
+            PrecomputedManagedPath: precomputedManagedPath);
 
-        using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory, catalogProvider: _catalogProvider);
+        using var vm = new FamilyBatchImportViewModel(
+            new[] { item },
+            _dialogService,
+            _viewModelFactory,
+            catalogProvider: _catalogProvider,
+            importPrecomputer: _importPrecomputer);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             // No cleanup needed — no temp file was created. The active
@@ -291,67 +311,65 @@ public sealed partial class FamilyManagerMainViewModel
         var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
         if (toImport.Count == 0) return;
 
-        // Phase 3 — compute the target managed path, then call SaveAs on the
-        // active document on the Revit UI thread. The user-selected action
-        // determines whether we create a new version or overwrite current.
+        // v2.0.0: re-resolve the canonical managed path in case the user
+        // picked OverwriteCurrent. The version label for overwrite is the
+        // existing item's current_version_label, so we drop back to that
+        // version and write on top of the existing file. The path
+        // itself has to be recomputed too — `precomputedManagedPath`
+        // always points at vN+1, but for OverwriteCurrent we need
+        // vN (the existing file), otherwise Revit SaveAs would write
+        // to a different directory than the one ImportFileAsync later
+        // records in family_files.relative_path.
         var isOverwrite = toImport[0].Action == FamilyBatchImportAction.OverwriteCurrent
             && existingByName is not null;
         var versionLabel = isOverwrite
-            ? existingByName!.CurrentVersionLabel
-            : (existingByName is null
-                ? "v1"
-                : null /* computed below */);
+            ? existingByName!.CurrentVersionLabel ?? precomputedVersionLabel
+            : precomputedVersionLabel;
+        var managedRfaPath = isOverwrite
+            ? _importService.ComputeManagedFilePath(
+                precomputedCatalogItemId,
+                versionLabel,
+                SafeFileName.SanitizeFileName(snapshot.BaseName),
+                ".rfa")
+            : precomputedManagedPath;
 
-        var managedRfaPath = await _awaitableEvent.RaiseAsync<string?>(obj =>
+        if (string.IsNullOrEmpty(managedRfaPath))
+        {
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
+            return;
+        }
+
+        // v2.0.0: ensure the target version directory exists BEFORE
+        // calling Revit SaveAs. The precomputer is pure compute (no
+        // side effects) and does not create directories — that is the
+        // caller's job, and the caller here is the only place that
+        // knows the user has confirmed the dialog so the file will
+        // actually be written. Without this call, SaveAs reports
+        // COleException 0x80030002 (STG_E_PATHNOTFOUND) because
+        // Revit does not create parent directories itself.
+        //
+        // Idempotent — Directory.CreateDirectory returns the existing
+        // directory if it already exists (e.g. vN for OverwriteCurrent
+        // when the user has previously opened the same version).
+        _pathResolver.EnsureFamilyDirectories(precomputedCatalogItemId, versionLabel);
+
+        // Phase 3 — call SaveAs on the active document on the Revit UI thread.
+        // Read-only managed files: clear before SaveAs (Revit's SaveAs
+        // requires write access on the target).
+        var saveAsPath = await _awaitableEvent.RaiseAsync<string?>(obj =>
         {
             try
             {
-                var dbRoot = _databaseManager.GetActiveDatabasePath();
-                if (string.IsNullOrEmpty(dbRoot))
+                if (File.Exists(managedRfaPath!))
                 {
-                    SmartConLogger.Error("No active database selected");
-                    return null;
+                    File.SetAttributes(managedRfaPath!, File.GetAttributes(managedRfaPath!) & ~FileAttributes.ReadOnly);
+                    File.Delete(managedRfaPath!);
                 }
 
-                var catalogItemId = existingByName?.Id ?? Guid.NewGuid().ToString();
-                var managedDir = Path.Combine(dbRoot, "files", catalogItemId);
-                if (versionLabel is null)
-                {
-                    // IncrementVersion: figure out next version label.
-                    var existingDirs = Directory.Exists(managedDir)
-                        ? Directory.GetDirectories(managedDir)
-                            .Select(p => Path.GetFileName(p) ?? string.Empty)
-                            .ToList()
-                        : new List<string>();
-                    var next = existingDirs
-#pragma warning disable CA1846 // Prefer AsSpan over Substring (net48 compat — no AsSpan on string in net48)
-                        .Where(d => d.StartsWith("v") && d.Length > 1)
-                        .Select(d => int.TryParse(d.Substring(1), out var n) ? n : 0)
-                        .DefaultIfEmpty(0)
-#pragma warning restore CA1846
-                        .Max() + 1;
-                    versionLabel = $"v{next}";
-                }
+                snapshot.Document!.SaveAs(managedRfaPath!, new SaveAsOptions { OverwriteExistingFile = true });
+                File.SetAttributes(managedRfaPath!, File.GetAttributes(managedRfaPath!) | FileAttributes.ReadOnly);
 
-                var versionDir = Path.Combine(managedDir, versionLabel);
-                Directory.CreateDirectory(versionDir);
-
-                var invalid = Path.GetInvalidFileNameChars();
-                var safeName = string.Concat(snapshot.BaseName.Select(c => invalid.Contains(c) ? '_' : c));
-                var managedPath = Path.Combine(versionDir, safeName + ".rfa");
-
-                // Read-only managed files: clear before SaveAs (Revit's
-                // SaveAs requires write access on the target).
-                if (File.Exists(managedPath))
-                {
-                    File.SetAttributes(managedPath, File.GetAttributes(managedPath) & ~FileAttributes.ReadOnly);
-                    File.Delete(managedPath);
-                }
-
-                snapshot.Document!.SaveAs(managedPath, new SaveAsOptions { OverwriteExistingFile = true });
-                File.SetAttributes(managedPath, File.GetAttributes(managedPath) | FileAttributes.ReadOnly);
-
-                return managedPath;
+                return managedRfaPath;
             }
             catch (Exception ex)
             {
@@ -360,7 +378,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
         });
 
-        if (string.IsNullOrEmpty(managedRfaPath))
+        if (string.IsNullOrEmpty(saveAsPath))
         {
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
             return;
@@ -370,7 +388,7 @@ public sealed partial class FamilyManagerMainViewModel
         // with OriginalSourcePath pointing back to the user's original .rfa
         // (so the .txt Type Catalog sidecar lookup still works).
         var request = new FamilyImportRequest(
-            FilePath: managedRfaPath!,
+            FilePath: saveAsPath!,
             RevitMajorVersion: snapshot.RevitVersion,
             Category: toImport[0].TargetCategoryName,
             Tags: null,
@@ -379,7 +397,10 @@ public sealed partial class FamilyManagerMainViewModel
             FamilySource: "loadable",
             RevitCategory: null,
             FileName: snapshot.BaseName,
-            OriginalSourcePath: snapshot.OriginalPathName);
+            OriginalSourcePath: snapshot.OriginalPathName,
+            PrecomputedCatalogItemId: precomputedCatalogItemId,
+            PrecomputedVersionLabel: versionLabel,
+            PrecomputedManagedPath: saveAsPath);
 
         var progress = new Progress<FamilyImportProgress>(p =>
         {
@@ -411,7 +432,7 @@ public sealed partial class FamilyManagerMainViewModel
         // .SaveAs() switched active focus.
         if (importResult.Success && snapshot.Document is not null)
         {
-            await CloseFamilyDocumentAsync(managedRfaPath!);
+            await CloseFamilyDocumentAsync(saveAsPath!);
         }
     }
 
@@ -564,8 +585,13 @@ public sealed partial class FamilyManagerMainViewModel
         var defaultCategoryName = (string?)null;
 
         using var vm = new FamilyBatchImportViewModel(
-            batchItems, _dialogService, _viewModelFactory,
-            defaultCategoryId, defaultCategoryName, _catalogProvider);
+            batchItems,
+            _dialogService,
+            _viewModelFactory,
+            defaultCategoryId,
+            defaultCategoryName,
+            _catalogProvider,
+            importPrecomputer: _importPrecomputer);
         if (_dialogService.ShowBatchImportDialog(vm) != true) return;
 
         var selectedItems = vm.GetResultItems();
@@ -686,7 +712,15 @@ public sealed partial class FamilyManagerMainViewModel
                     continue;
                 }
 
-                var managedRvtPath = ComputeSystemFamilyManagedPath(source.DisplayName);
+                // v2.0.0: prefer the canonical managed path that the VM
+                // pre-computed up front (BuildSystemFamilyBatchRowVirtualAsync).
+                // For an existing item, this is files/<existingItem.Id>/<vN+1>;
+                // for a new item, files/<fresh GUID>/v1. Falling back to the
+                // legacy allocator when no precomputed path is present keeps
+                // unit tests and direct callers working.
+                var managedRvtPath = !string.IsNullOrEmpty(item.PrecomputedManagedPath)
+                    ? item.PrecomputedManagedPath!
+                    : ComputeSystemFamilyManagedPath(source.DisplayName);
                 if (string.IsNullOrEmpty(managedRvtPath))
                 {
                     SmartConLogger.Warn($"Cannot compute managed path for '{source.DisplayName}' — skipping [Action: check active catalog DB is selected]");
@@ -694,7 +728,11 @@ public sealed partial class FamilyManagerMainViewModel
                 }
 
                 SmartConLogger.Info(
-                    $"Staging system family '{source.DisplayName}': categoryId={source.CategoryId}, typeCount={source.TypeUniqueIds.Count}, target='{managedRvtPath}'");
+                    $"Staging system family '{source.DisplayName}': " +
+                    $"item.PrecomputedCatalogItemId='{item.PrecomputedCatalogItemId ?? "<null>"}', " +
+                    $"item.PrecomputedManagedPath='{item.PrecomputedManagedPath ?? "<null>"}', " +
+                    $"using={(item.PrecomputedManagedPath is not null ? "precomputed" : "fallback")}, " +
+                    $"target='{managedRvtPath}'");
 
                 CreateCleanProjectResult createResult;
                 try
@@ -788,7 +826,10 @@ public sealed partial class FamilyManagerMainViewModel
                     continue;
                 }
 
-                var managedRfaPath = ComputeLoadableFamilyManagedPath(source.FamilyName);
+                // v2.0.0: prefer the precomputed canonical managed path.
+                var managedRfaPath = !string.IsNullOrEmpty(item.PrecomputedManagedPath)
+                    ? item.PrecomputedManagedPath!
+                    : ComputeLoadableFamilyManagedPath(source.FamilyName);
                 if (string.IsNullOrEmpty(managedRfaPath))
                 {
                     SmartConLogger.Warn($"Cannot compute managed path for '{source.FamilyName}' — skipping");

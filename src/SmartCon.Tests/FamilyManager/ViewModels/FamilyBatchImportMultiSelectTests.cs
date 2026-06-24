@@ -28,7 +28,10 @@ public sealed class FamilyBatchImportMultiSelectTests
         FamilyBatchImportStatus status = FamilyBatchImportStatus.New,
         string? categoryId = null,
         FamilyImportSource? source = null,
-        string? filePath = null)
+        string? filePath = null,
+        string? precomputedCatalogItemId = null,
+        string? precomputedVersionLabel = null,
+        string? precomputedManagedPath = null)
     {
         return new FamilyBatchImportItem(
             FilePath: filePath ?? $@"C:\fake\{fileName}.rfa",
@@ -42,7 +45,10 @@ public sealed class FamilyBatchImportMultiSelectTests
             FamilySource: "loadable",
             TypeCount: null,
             RevitCategory: null,
-            Source: source);
+            Source: source,
+            PrecomputedCatalogItemId: precomputedCatalogItemId,
+            PrecomputedVersionLabel: precomputedVersionLabel,
+            PrecomputedManagedPath: precomputedManagedPath);
     }
 
     /// <summary>
@@ -364,5 +370,245 @@ public sealed class FamilyBatchImportMultiSelectTests
         var row = vm.Items.Single();
 
         Assert.Same(source, row.Source);
+    }
+
+    /// <summary>
+    /// v2.0.0 regression: <see cref="FamilyBatchImportViewModel.GetResultItems"/>
+    /// MUST round-trip the precomputed
+    /// (CatalogItemId, VersionLabel, ManagedPath) triple from the row VM
+    /// back into the resulting <see cref="FamilyBatchImportItem"/>. The
+    /// post-dialog flow (staging + import) relies on these values to keep
+    /// the managed-path invariant consistent — losing them forced
+    /// staging to fall back to a fresh GUID and broke every batch
+    /// import (UC-3 / UC-4 reported <c>Success = false</c> for every
+    /// item). <see cref="FamilyBatchImportRow"/> also exposes them as
+    /// read-only properties so a direct reader sees the same values.
+    /// </summary>
+    [Fact]
+    public void GetResultItems_PreservesPrecomputedTriple_OnStagedRow()
+    {
+        const string catalogId = "staged-catalog-123";
+        const string versionLabel = "v1";
+        const string managedPath = @"C:\db\files\staged-catalog-123\v1\StagedFamily.rfa";
+
+        var items = new[] { MakeItem(
+            "StagedFamily",
+            source: null,
+            filePath: "loadable://StagedFamily",
+            precomputedCatalogItemId: catalogId,
+            precomputedVersionLabel: versionLabel,
+            precomputedManagedPath: managedPath) };
+
+        using var vm = CreateVm(items);
+
+        var result = vm.GetResultItems().Single();
+
+        Assert.Equal(catalogId, result.PrecomputedCatalogItemId);
+        Assert.Equal(versionLabel, result.PrecomputedVersionLabel);
+        Assert.Equal(managedPath, result.PrecomputedManagedPath);
+    }
+
+    [Fact]
+    public void FamilyBatchImportRow_ExposesPrecomputedTriple()
+    {
+        const string catalogId = "row-catalog-456";
+        const string versionLabel = "v7";
+        const string managedPath = @"C:\db\files\row-catalog-456\v7\Whatever.rfa";
+
+        var items = new[] { MakeItem(
+            "Whatever",
+            filePath: "loadable://Whatever",
+            precomputedCatalogItemId: catalogId,
+            precomputedVersionLabel: versionLabel,
+            precomputedManagedPath: managedPath) };
+        using var vm = CreateVm(items);
+        var row = vm.Items.Single();
+
+        Assert.Equal(catalogId, row.PrecomputedCatalogItemId);
+        Assert.Equal(versionLabel, row.PrecomputedVersionLabel);
+        Assert.Equal(managedPath, row.PrecomputedManagedPath);
+    }
+
+    /// <summary>
+    /// v2.0.0 regression (the bug that broke the "Трубы → Трубы новые"
+    /// rename in the active-project flow): when the user renames a row
+    /// in the dialog to a name that does NOT exist in the catalog, the
+    /// row's precomputed triple must be re-derived. Leaving the original
+    /// (now-stale) precomputedCatalogItemId on the row would cause
+    /// <c>ImportFileAsync</c> to call
+    /// <c>InsertCatalogItemAsync(id=staleGuid)</c> and trip
+    /// <c>UNIQUE constraint failed: catalog_items.id</c>.
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_ToUniqueName_RebindsPrecomputedTripleToFreshGuid()
+    {
+        // Pre-seed the catalog with a family that has a known id; the
+        // precomputer must NOT re-use that id when the row is renamed
+        // away from it.
+        const string seededId = "seeded-existing-id";
+        const string seededName = "Existing Family";
+        var existing = new FamilyCatalogItem(
+            Id: seededId,
+            Name: seededName,
+            NormalizedName: "existingfamily",
+            Description: null,
+            CategoryPath: null,
+            CategoryId: null,
+            Manufacturer: null,
+            ContentStatus: ContentStatus.Active,
+            CurrentVersionLabel: "v3",
+            Tags: Array.Empty<string>(),
+            PublishedBy: null,
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            UpdatedAtUtc: DateTimeOffset.UtcNow);
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<string, CancellationToken>((normalized, _) =>
+                normalized == "existingfamily"
+                    ? Task.FromResult<FamilyCatalogItem?>(existing)
+                    : Task.FromResult<FamilyCatalogItem?>(null));
+
+        // The precomputer delegates to the catalog for the existing-lookup
+        // and to the import service for the path math. We stub both: the
+        // catalog says "no match for this name" and the import service
+        // hands out a fresh GUID + v1 + a synthetic path on every call.
+        var precomputerMock = new Mock<IFamilyImportPrecomputer>();
+        precomputerMock
+            .Setup(p => p.BuildPrecomputedTripleAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string displayName, string ext, CancellationToken _) =>
+                new PrecomputedImportTriple(
+                    CatalogItemId: Guid.NewGuid().ToString("N"),
+                    VersionLabel: "v1",
+                    ManagedPath: $@"C:\db\files\{Guid.NewGuid():N}\v1\{displayName}{ext}"));
+
+        var items = new[] { MakeItem(
+            seededName,
+            status: FamilyBatchImportStatus.Existing,
+            precomputedCatalogItemId: seededId,
+            precomputedVersionLabel: "v3",
+            precomputedManagedPath: $@"C:\db\files\{seededId}\v3\{seededName}.rfa") };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object,
+            importPrecomputer: precomputerMock.Object);
+        var row = vm.Items.Single();
+
+        // Capture the original precomputed triple so the test can prove
+        // the rename actually moved the values away from the seed.
+        var originalId = row.PrecomputedCatalogItemId;
+        var originalVersion = row.PrecomputedVersionLabel;
+        var originalPath = row.PrecomputedManagedPath;
+        Assert.Equal(seededId, originalId);
+
+        row.FileName = "Трубы новые";
+
+        // Wait for the debounced lookup + recompute. Same 2s deadline
+        // the existing rename tests use so we don't accidentally make
+        // this test flaky.
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.New && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.New, row.Status);
+        // The critical assertions: the precomputed triple is now bound
+        // to a fresh GUID, NOT the seeded "existing-id" of the family
+        // the row used to be named after. If this fails, ImportFileAsync
+        // will INSERT a new catalog_items row with the stale id and
+        // trip UNIQUE constraint failed: catalog_items.id.
+        Assert.NotEqual(originalId, row.PrecomputedCatalogItemId);
+        Assert.False(string.IsNullOrEmpty(row.PrecomputedCatalogItemId));
+        Assert.Matches("^[0-9a-f]{32}$", row.PrecomputedCatalogItemId!);
+        Assert.Equal("v1", row.PrecomputedVersionLabel);
+        Assert.NotEqual(originalVersion, row.PrecomputedVersionLabel);
+        Assert.NotEqual(originalPath, row.PrecomputedManagedPath);
+        Assert.Contains("Трубы новые", row.PrecomputedManagedPath!);
+    }
+
+    /// <summary>
+    /// v2.0.0 regression: renaming a row to a name that DOES exist in
+    /// the catalog must re-use that existing item's id and the next
+    /// version label, not allocate a fresh GUID. The precomputer's
+    /// "reuse existing" path must run for renames too, otherwise the
+    /// dialog would write a duplicate row instead of re-importing under
+    /// the existing catalog item.
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_ToExistingName_RebindsPrecomputedTripleToExistingId()
+    {
+        const string existingId = "existing-catalog-id";
+        const string existingName = "Renamed Target";
+        const string nextVersion = "v4";
+        const string existingPath = @"C:\db\files\existing-catalog-id\v4\Renamed Target.rfa";
+
+        var existing = new FamilyCatalogItem(
+            Id: existingId,
+            Name: existingName,
+            NormalizedName: "renamedtarget",
+            Description: null,
+            CategoryPath: null,
+            CategoryId: null,
+            Manufacturer: null,
+            ContentStatus: ContentStatus.Active,
+            CurrentVersionLabel: "v3",
+            Tags: Array.Empty<string>(),
+            PublishedBy: null,
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            UpdatedAtUtc: DateTimeOffset.UtcNow);
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<string, CancellationToken>((normalized, _) =>
+                normalized == "renamed target"
+                    ? Task.FromResult<FamilyCatalogItem?>(existing)
+                    : Task.FromResult<FamilyCatalogItem?>(null));
+
+        var precomputerMock = new Mock<IFamilyImportPrecomputer>();
+        precomputerMock
+            .Setup(p => p.BuildPrecomputedTripleAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PrecomputedImportTriple(
+                CatalogItemId: existingId,
+                VersionLabel: nextVersion,
+                ManagedPath: existingPath));
+
+        var items = new[] { MakeItem(
+            "Original Name",
+            status: FamilyBatchImportStatus.New,
+            precomputedCatalogItemId: Guid.NewGuid().ToString("N"),
+            precomputedVersionLabel: "v1",
+            precomputedManagedPath: @"C:\db\files\old-guid\v1\Original Name.rfa") };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object,
+            importPrecomputer: precomputerMock.Object);
+        var row = vm.Items.Single();
+
+        row.FileName = existingName;
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.Existing && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.Existing, row.Status);
+        Assert.Equal(existingId, row.PrecomputedCatalogItemId);
+        Assert.Equal(nextVersion, row.PrecomputedVersionLabel);
+        Assert.Equal(existingPath, row.PrecomputedManagedPath);
+
+        // Round-trip through GetResultItems so the post-dialog
+        // orchestrator sees the same (existingId, nextVersion) triple.
+        var emitted = vm.GetResultItems().Single();
+        Assert.Equal(existingId, emitted.PrecomputedCatalogItemId);
+        Assert.Equal(nextVersion, emitted.PrecomputedVersionLabel);
+        Assert.Equal(existingPath, emitted.PrecomputedManagedPath);
     }
 }
