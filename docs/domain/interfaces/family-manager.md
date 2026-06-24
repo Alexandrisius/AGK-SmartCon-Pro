@@ -89,60 +89,6 @@ public interface IFamilyTypeCatalogBaker
 
 ---
 
-## IFamilyFileResolver
-
-Разрешение путей к файлам семейств из managed storage. Выбирает лучший файл для целевой версии Revit.
-
-**Файл:** `IFamilyFileResolver.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFileResolver.cs`
-
-```csharp
-public interface IFamilyFileResolver
-{
-    Task<FamilyResolvedFile> ResolveForLoadAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
-    string? GetDatabaseRoot();
-}
-```
-
----
-
-## IFamilySidecarLocator
-
-Поиск и копирование Type Catalog (.txt) sidecar-файла, который Revit
-хранит рядом с `.rfa` под тем же базовым именем. Pure I/O, без
-зависимости от Revit API — полностью покрывается unit-тестами.
-
-**Файл:** `IFamilySidecarLocator.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilySidecarLocator.cs`
-
-```csharp
-public interface IFamilySidecarLocator
-{
-    string? FindSidecarPath(string? rfaPath);
-    Task<string?> CopySidecarAsync(string sourceTxtPath, string destDir, CancellationToken ct = default);
-}
-```
-
----
-
-## IActiveFamilyFilePreparer
-
-Подготовка активного .rfa-документа для импорта: SaveAs в temp
-и копирование .txt sidecar рядом с temp .rfa. Реализация работает
-внутри ExternalEvent (I-01).
-
-**Файл:** `IActiveFamilyFilePreparer.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/ActiveFamilyFilePreparer.cs`
-
-```csharp
-public interface IActiveFamilyFilePreparer
-{
-    Task<ActiveFamilyPreparationResult?> PrepareActiveFamilyAsync(CancellationToken ct = default);
-}
-```
-
----
-
 ## IActiveDocumentClassifier
 
 Определяет тип активного документа: `Family` / `Project` / `None`.
@@ -162,18 +108,18 @@ public interface IActiveDocumentClassifier
 
 ---
 
-## IActiveImportCleanupService
+## IFamilyFileResolver
 
-Удаляет temp-папки, созданные пайплайном «Импорт активного файла».
-Заменяет ad-hoc static helper в VM. Вызывается в `finally`.
+Разрешение путей к файлам семейств из managed storage. Выбирает лучший файл для целевой версии Revit.
 
-**Файл:** `IActiveImportCleanupService.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/ActiveImportCleanupService.cs`
+**Файл:** `IFamilyFileResolver.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFileResolver.cs`
 
 ```csharp
-public interface IActiveImportCleanupService
+public interface IFamilyFileResolver
 {
-    Task CleanupAfterImportAsync(CancellationToken ct = default);
+    Task<FamilyResolvedFile> ResolveForLoadAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
+    string? GetDatabaseRoot();
 }
 ```
 
@@ -604,32 +550,6 @@ CRUD для дерева категорий каталога семейств.
 
 **Файл:** `ICategoryRepository.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalCategoryRepository.cs`
-
----
-
-## IFamilyManagerViewModelFactory
-
-Factory для создания ViewModel FamilyManager с разрешёнными зависимостями (защита от DI-anti-pattern: ViewModel не запрашивают сервисы напрямую из конструктора).
-
-**Файл:** `SmartCon.FamilyManager/Services/IFamilyManagerViewModelFactory.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/FamilyManagerViewModelFactory.cs`
-
-```csharp
-public interface IFamilyManagerViewModelFactory
-{
-    FamilyMetadataEditViewModel CreateMetadataEditViewModel(
-        string catalogItemId, string name, string? description,
-        string? categoryId, string? categoryPath, IReadOnlyList<string> tags, ContentStatus contentStatus);
-    FamilyPropertiesViewModel CreatePropertiesViewModel(
-        string catalogItemId, string name, string? description,
-        string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
-        ContentStatus contentStatus, string? manufacturer, string? versionLabel,
-        string? fileSizeText, string? createdAtText, string? updatedAtText);
-    CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
-    AttributeLibraryViewModel CreateAttributeLibraryViewModel();
-    CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
-}
-```
 
 ---
 

@@ -594,30 +594,6 @@ Catalog sidecar рядом с оригиналом при подготовке m
 
 ---
 
-## ActiveFamilyPreparationResult
-
-Результат подготовки активного Revit family-документа для импорта.
-Возвращается `IActiveFamilyFilePreparer.PrepareActiveFamilyAsync`.
-
-**Файл:** `ActiveFamilyPreparationResult.cs`
-
-```csharp
-public sealed record ActiveFamilyPreparationResult(
-    string TempRfaPath,
-    string? TempTxtPath,
-    string? OriginalRfaPath,
-    string? OriginalTxtPath);
-```
-
-| Поле | Описание |
-|---|---|
-| `TempRfaPath` | Absolute path к `.rfa`, сохранённому в temp (например `%TEMP%\SmartCon\FMLoad\{guid}\{name}.rfa`) |
-| `TempTxtPath` | Absolute path к скопированному sidecar `.txt` рядом с `TempRfaPath`, или `null` если sidecar не найден |
-| `OriginalRfaPath` | Absolute path к исходному `.rfa` (managed storage или рабочая папка пользователя); `null` для несохранённых документов |
-| `OriginalTxtPath` | Absolute path к исходному sidecar `.txt` рядом с `OriginalRfaPath`, или `null` |
-
----
-
 ## FamilyLoadOptions
 
 Параметры загрузки семейства в проект Revit.
@@ -1197,4 +1173,69 @@ public static class StaleSnapshotLogic
 - `MergeInto`: **добавляет/перезаписывает** entries из `newResults` в существующий snapshot. Entries для **других** catalog item IDs (других категорий) сохраняются. Это значит что `CheckCategory(catA)` затем `CheckCategory(catB)` сохраняет stale маркеры обеих категорий.
 - `RemoveFrom`: **удаляет** entries по `catalogItemIds`. Возвращает тот же snapshot instance если ничего не удалено (zero-allocation). Используется после успешного Update — stale маркер удаляется, остальные сохраняются.
 - Both methods **не мутируют** входной snapshot — создаётся новый `FamilyStaleSnapshot`.
+
+---
+
+## FamilySourceTypeInfo
+
+v2.0.0: Core-level DTO для типов системных семейств, используемый в публичных API batch dialog (см. `FamilyBatchImportItem.SourceTypes` и `SystemFamilyPendingImport.Types`). Создан чтобы Core record не тянул `Autodesk.Revit.DB.BuiltInCategory` через `SelectedSystemType` — иначе нарушается I-09 (Core не должен зависеть от Revit API в публичных сигнатурах) и тесты без runtime Revit падают.
+
+**Файл:** `Models/FamilyManager/FamilySourceTypeInfo.cs`
+
+```csharp
+public sealed record FamilySourceTypeInfo(
+    string UniqueId,
+    string Name,
+    string CategoryName,
+    int CategoryId);
+```
+
+- `UniqueId` — Revit unique id элемента типа. Extractor в managed `.rvt` ищет этот id.
+- `Name` — отображаемое имя типа.
+- `CategoryName` — отображаемое имя родительской категории (например `"OST_PipeFitting"`).
+- `CategoryId` — ordinal `BuiltInCategory`, переданный через границу FamilyManager→Core как plain `int`. Orchestrator и extractor никогда не видят enum напрямую.
+
+Маппинг `SelectedSystemType → FamilySourceTypeInfo` выполняется на границе VM→Core в `FamilyManagerMainViewModel.Import.cs` (UC-3/UC-4 batch flow). В обратную сторону маппинг не нужен — extractor читает типы из managed `.rvt` по `UniqueId`/`Name`, ordinal ему не нужен.
+
+---
+
+## SystemFamilyPendingImport
+
+v2.0.0: результат подготовки одной категории системного семейства к импорту. Один экземпляр на непустой `CategoryAnalysis` или на user-picked группу. Содержит managed-путь к мини-`.rvt` (создан `CreateCleanProjectWithTypesAndInstances` напрямую в managed storage) и список типов для последующего extraction.
+
+**Файл:** `Models/FamilyManager/SystemFamilyPendingImport.cs`
+
+```csharp
+public sealed record SystemFamilyPendingImport(
+    string CategoryName,
+    IReadOnlyList<FamilySourceTypeInfo> Types,
+    string ManagedRvtPath);
+```
+
+- `CategoryName` — отображаемое имя категории (используется как имя файла managed `.rvt`).
+- `Types` — типы категории в виде Core DTO (см. `FamilySourceTypeInfo`).
+- `ManagedRvtPath` — абсолютный путь к managed `.rvt` в `{dbRoot}/files/{catalogItemId}/v1/{name}.rvt`.
+
+Используется только в VM как промежуточное значение между `StageSystemFromAnalysis` (создание managed `.rvt`) и `BuildSystemFamilyBatchRowAsync` (построение batch row для dialog).
+
+---
+
+## LegacyStageFolderCleaner
+
+v2.0.0: one-shot helper для удаления legacy `files/_stage/` папок, оставшихся от SmartCon &lt; v2.0.0, где loadable families стейджились через `EditFamily + SaveAs` во временную подпапку `_stage/{guid}/`. После temp-removal sweep staging идёт напрямую в managed storage (`files/{catalogItemId}/v1/...`) и `_stage/` больше не создаётся — но папка может остаться на диске у пользователей, обновляющихся с предыдущей версии.
+
+**Файл:** `Services/FamilyManager/LegacyStageFolderCleaner.cs`
+
+```csharp
+public static class LegacyStageFolderCleaner
+{
+    public static void Cleanup(string familyManagerRoot);
+}
+```
+
+- `familyManagerRoot` — путь к `%APPDATA%\SmartCon\FamilyManager` (или другой catalog root). Передаётся из `App.OnStartup`.
+- `Cleanup` идёт по каждой подпапке (catalog) и удаляет `files/_stage/` если существует. Идемпотентна: отсутствующая папка — no-op, повторный запуск — no-op.
+- Все исключения логируются на уровне `Debug` и проглатываются (permissive): один заблокированный catalog не должен ломать startup.
+
+Живёт в `SmartCon.Core` (а не в `SmartCon.App`) чтобы логика была тестируемой без Revit UIApplication. Реальный production entry point — `App.OnStartup` в `SmartCon.App`, который делегирует в `LegacyStageFolderCleaner.Cleanup(...)`.
 

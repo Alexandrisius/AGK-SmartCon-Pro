@@ -45,29 +45,6 @@ Extension-методы для `Microsoft.Data.Sqlite.SqliteConnection`:
 
 ---
 
-## SystemFamilyTempLayout
-
-Single source of truth для путей temp-папок system-family pipeline.
-И staging-producer, и cleanup-consumer ОБЯЗАНЫ брать пути отсюда — иначе риск
-"зависшего" .rvt между save и cleanup.
-
-**Файл:** `SmartCon.Core/Services/FamilyManager/SystemFamilyTempLayout.cs`
-
-```csharp
-public static class SystemFamilyTempLayout
-{
-    public const string TempRoot       = "SmartCon";
-    public const string StagingSubdir  = "SystemFamilyLoadFromProject";
-}
-```
-
-Layout под `Path.GetTempPath()`:
-```
-%TEMP%\SmartCon\SystemFamilyLoadFromProject\<GUID>\<safeName>.rvt
-```
-
----
-
 ## SmartConLogger
 
 Главный фасад логирования. Методы: `Debug`, `Info`, `Warn`, `Error`, `Fatal`, `BeginScope`, `Measure`.
@@ -163,12 +140,6 @@ JSON-репозиторий для `UpdateSettings` (автообновлени�
 Реализация `IFittingChainResolver` (ADR-010) — единая точка решений о цепочке фитингов/редьюсеров.
 
 **Файл:** `SmartCon.Core/Services/Implementation/FittingChainResolver.cs`
-
----
-
-## LocalCatalogDatabase
-
-`public sealed class LocalCatalogDatabase` (ранее `internal`). Содержит путь к файлу БД и factory для `SqliteConnection`. Повышение видимости — CS0051 fix (public ctor принимал internal параметр).
 
 ---
 
