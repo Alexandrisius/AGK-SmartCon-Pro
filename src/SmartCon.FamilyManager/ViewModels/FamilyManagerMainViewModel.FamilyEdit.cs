@@ -661,8 +661,18 @@ public sealed partial class FamilyManagerMainViewModel
                 return;
             }
 
-            foreach (var item in items)
+            // v2.0.0 regression: do NOT mutate `items` from inside a
+            // `foreach`. List<T>'s indexer setter invalidates the
+            // foreach enumerator and throws "Collection was modified;
+            // enumeration operation may not execute" on the next
+            // MoveNext(). Use an index-based for-loop and capture
+            // rewrites in a side dictionary, then apply them after
+            // the loop in a single pass.
+            var rewrites = new Dictionary<int, FamilyBatchImportItem>(items.Count);
+
+            for (var i = 0; i < items.Count; i++)
             {
+                var item = items[i];
                 if (item.Source is not FamilyImportSource.SystemSource source)
                 {
                     SmartConLogger.Debug(
@@ -707,11 +717,7 @@ public sealed partial class FamilyManagerMainViewModel
                     continue;
                 }
 
-                // Rewrite the item in place so the orchestrator sees a
-                // real managed path. FamilyBatchImportItem is a record,
-                // so we replace the list entry with a new instance.
-                var index = items.IndexOf(item);
-                items[index] = item with
+                rewrites[i] = item with
                 {
                     FilePath = createResult.FilePath!,
                     SourceTypes = source.TypeNames
@@ -721,6 +727,14 @@ public sealed partial class FamilyManagerMainViewModel
                 };
                 SmartConLogger.Info(
                     $"Staged system family '{source.DisplayName}' -> '{createResult.FilePath}'");
+            }
+
+            // Apply rewrites after the for-loop, in a single pass.
+            // The for-loop above does not enumerate `items` so this
+            // assignment is safe.
+            foreach (var kvp in rewrites)
+            {
+                items[kvp.Key] = kvp.Value;
             }
         }, CancellationToken.None);
     }
@@ -751,8 +765,16 @@ public sealed partial class FamilyManagerMainViewModel
                 return;
             }
 
-            foreach (var item in items)
+            // v2.0.0 regression: see StageSystemFamiliesFromMetadataAsync
+            // for the full rationale. Mutating items[] from inside a
+            // foreach invalidates List<T>'s enumerator. We stage each
+            // item into a side dictionary and apply rewrites in a
+            // single pass after the staging loop.
+            var rewrites = new Dictionary<int, FamilyBatchImportItem>(items.Count);
+
+            for (var i = 0; i < items.Count; i++)
             {
+                var item = items[i];
                 if (item.Source is not FamilyImportSource.LoadableSource source)
                 {
                     SmartConLogger.Debug(
@@ -793,10 +815,15 @@ public sealed partial class FamilyManagerMainViewModel
                     continue;
                 }
 
-                var index = items.IndexOf(item);
-                items[index] = item with { FilePath = rfaPath! };
+                rewrites[i] = item with { FilePath = rfaPath! };
                 SmartConLogger.Info(
                     $"Staged loadable family '{source.FamilyName}' -> '{rfaPath}'");
+            }
+
+            // Apply rewrites after the for-loop, in a single pass.
+            foreach (var kvp in rewrites)
+            {
+                items[kvp.Key] = kvp.Value;
             }
         }, CancellationToken.None);
     }
