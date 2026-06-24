@@ -181,6 +181,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 FileName: finalMetadata.FileName,
                 VersionLabel: versionLabel,
                 ErrorMessage: null,
+                ManagedFilePath: managedRfaPath,
                 WasNewVersion: existingItem is not null);
         }
         catch
@@ -531,6 +532,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 FileName: finalMetadata.FileName,
                 VersionLabel: versionLabel,
                 ErrorMessage: null,
+                ManagedFilePath: managedRfaPath,
                 WasNewVersion: true);
         }
         catch

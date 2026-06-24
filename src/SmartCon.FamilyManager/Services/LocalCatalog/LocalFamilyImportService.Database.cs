@@ -324,6 +324,7 @@ internal sealed partial class LocalFamilyImportService
             FileName: sourceMetadata.FileName,
             VersionLabel: currentVersion.VersionLabel,
             ErrorMessage: null,
+            ManagedFilePath: absolutePath,
             WasNewVersion: false);
     }
 }

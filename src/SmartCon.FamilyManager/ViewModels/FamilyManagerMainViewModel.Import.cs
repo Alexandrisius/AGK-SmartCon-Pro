@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using Autodesk.Revit.DB;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -401,27 +400,6 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     /// <summary>
-    /// Persists the type names alongside the staged .rvt as
-    /// <c>&lt;name&gt;.rvt.types.json</c>. The orchestrator reads this
-    /// sidecar after the batch import completes, then the extractor
-    /// uses the names to filter which types to read from the staged file.
-    /// </summary>
-    private static void WriteTypeSidecar(string rvtPath, IReadOnlyList<SelectedSystemType> types)
-    {
-        try
-        {
-            var metaPath = rvtPath + ".types.json";
-            var typeNames = types.Select(t => t.Name).ToList();
-            File.WriteAllText(metaPath, JsonSerializer.Serialize(typeNames));
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                $"[SystemImport.Create] Failed to write sidecar meta for '{Path.GetFileName(rvtPath)}': {ex.Message}");
-        }
-    }
-
-    /// <summary>
     /// Returns display name for the single-category case: the .rvt file
     /// name of the active project, without extension. Falls back to
     /// <see cref="Autodesk.Revit.DB.Document.Title"/> for unsaved projects.
@@ -520,7 +498,8 @@ public sealed partial class FamilyManagerMainViewModel
                 TargetCategoryName: null,
                 FamilySource: "system",
                 TypeCount: pending.Types.Count,
-                RevitCategory: pending.CategoryName));
+                RevitCategory: pending.CategoryName,
+                SourceTypes: pending.Types));
         }
 
         foreach (var loadable in analysis.LoadableFamilies)
@@ -619,8 +598,6 @@ public sealed partial class FamilyManagerMainViewModel
                 activeDoc, uniqueIds, category, displayName, safeManagedPath);
             if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
                 continue;
-
-            WriteTypeSidecar(createResult.FilePath!, types);
 
             pending.Add(new SystemFamilyPendingImport(displayName, types, createResult.FilePath!));
         }
@@ -721,8 +698,6 @@ public sealed partial class FamilyManagerMainViewModel
                         activeDoc, uniqueIds, analysis.Category, displayName, safeManagedPath);
                     if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
                         continue;
-
-                    WriteTypeSidecar(createResult.FilePath!, types);
 
                     var pending = new SystemFamilyPendingImport(displayName, types, createResult.FilePath!);
                     var row = await BuildSystemFamilyBatchRowAsync(pending, ct, categoriesById);
@@ -826,7 +801,8 @@ public sealed partial class FamilyManagerMainViewModel
             TargetCategoryName: targetCategoryName,
             FamilySource: "system",
             TypeCount: pending.Types.Count,
-            RevitCategory: pending.CategoryName);
+            RevitCategory: pending.CategoryName,
+            SourceTypes: pending.Types);
     }
 
     private async Task<FamilyBatchImportItem?> BuildLoadableFamilyBatchRowAsync(
