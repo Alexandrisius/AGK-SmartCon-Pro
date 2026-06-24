@@ -72,13 +72,10 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         SmartConLogger.Debug($"File: {Path.GetFileName(filePath)} -> displayName='{displayName}', Revit: R{revitVersion}");
 
         var existingItem = await FindByNameAsync(displayName, ct);
-        if (existingItem is not null)
-        {
-            // v2.0.0: SHA-256 dedup is gone. Same-name + different content now
-            // produces a new version (vN+1) via GetNextVersionLabelAsync below.
-            // Caller can use OverwriteCurrent action to replace current version
-            // instead of creating a new one.
-        }
+        // v2.0.0: SHA-256 dedup is gone. When existingItem is not null we
+        // always allocate a new version (vN+1) via GetNextVersionLabelAsync
+        // below. Callers that want to replace the current version use the
+        // OverwriteCurrent action through ImportBatchAsync instead.
 
         var now = DateTimeOffset.UtcNow;
         var fileRecordId = Guid.NewGuid().ToString();
