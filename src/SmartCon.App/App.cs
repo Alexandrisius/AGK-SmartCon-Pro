@@ -35,6 +35,7 @@ public sealed class App : IExternalApplication
         {
             ApplyUpdaterSelfUpdate();
             CleanupStalePendingUpdate();
+            CleanupLegacyStageFolder();
             ServiceLocator.Initialize(application);
             LanguageManager.Initialize();
 
@@ -139,6 +140,42 @@ public sealed class App : IExternalApplication
         catch (Exception ex)
         {
             SmartConLogger.Debug($"App.TryLaunchUpdater: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// One-shot cleanup of the legacy <c>files/_stage/</c> folder used by
+    /// SmartCon &lt; v2.0.0 for transient family staging. The folder has been
+    /// removed from the runtime flow (see ADR-035) but may still exist on
+    /// disk for users upgrading from a prior version.
+    /// </summary>
+    private static void CleanupLegacyStageFolder()
+    {
+        try
+        {
+            var fmDir = Path.Combine(s_smartConDir, "FamilyManager");
+            if (!Directory.Exists(fmDir)) return;
+
+            foreach (var catalogDir in Directory.GetDirectories(fmDir))
+            {
+                var stageDir = Path.Combine(catalogDir, "files", "_stage");
+                if (!Directory.Exists(stageDir)) continue;
+
+                try
+                {
+                    Directory.Delete(stageDir, recursive: true);
+                    SmartConLogger.Info($"Removed legacy staging folder: {stageDir}");
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug(
+                        $"App.CleanupLegacyStageFolder: failed to remove '{stageDir}': {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"App.CleanupLegacyStageFolder: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

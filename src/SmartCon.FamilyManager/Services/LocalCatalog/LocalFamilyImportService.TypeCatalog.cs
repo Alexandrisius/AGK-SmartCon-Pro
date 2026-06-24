@@ -60,6 +60,32 @@ internal sealed partial class LocalFamilyImportService
             return null;
         }
 
+        // v2.0.0 UC-3/UC-4: the VM has already produced a managed staging file
+        // for the system family (.rvt) or loadable family (.rfa) via CreateCleanProject
+        // or EditFamily+SaveAs in the batch flow. The file lives somewhere under
+        // {dbRoot}/files/ but at a different catalog-item-id directory than the
+        // one ImportBatchAsync will allocate. Skip the copy (the source is
+        // already in managed storage); we only need to register it.
+        var dbRoot = _database.GetDatabaseRoot();
+        var managedFilesRoot = string.IsNullOrEmpty(dbRoot)
+            ? null
+            : Path.Combine(dbRoot, "files");
+        if (!string.IsNullOrEmpty(managedFilesRoot))
+        {
+            var normalizedSource = Path.GetFullPath(sourceFilePath);
+            var normalizedManagedRoot = Path.GetFullPath(managedFilesRoot);
+            var sourceIsInManaged = normalizedSource.StartsWith(
+                normalizedManagedRoot + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase);
+            if (sourceIsInManaged)
+            {
+                SmartConLogger.Info(
+                    $"Source already inside managed storage ('{Path.GetFileName(sourceFilePath)}') — " +
+                    "skipping copy/bake; ImportBatchAsync will register it as the new version");
+                return null;
+            }
+        }
+
         var sourceTxtPath = ResolveTypeCatalogPath(sourceFilePath, originalSourcePath, catalogItemId, ct);
 
         if (string.IsNullOrEmpty(sourceTxtPath))

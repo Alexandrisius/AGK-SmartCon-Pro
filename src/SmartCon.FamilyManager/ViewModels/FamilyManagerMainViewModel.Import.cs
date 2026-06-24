@@ -504,7 +504,10 @@ public sealed partial class FamilyManagerMainViewModel
 
         foreach (var loadable in analysis.LoadableFamilies)
         {
-            var rfaPath = StageLoadableFamilyFromProject(loadable);
+            var managedRfaPath = ComputeLoadableFamilyManagedPath(loadable.FamilyName);
+            if (string.IsNullOrEmpty(managedRfaPath)) continue;
+
+            var rfaPath = StageLoadableFamilyFromProject(loadable, managedRfaPath!);
             if (string.IsNullOrEmpty(rfaPath) || !File.Exists(rfaPath))
                 continue;
 
@@ -622,6 +625,25 @@ public sealed partial class FamilyManagerMainViewModel
         return Path.Combine(versionDir, safeName + ".rvt");
     }
 
+    /// <summary>
+    /// v2.0.0: compute the managed storage path for a loadable family .rfa
+    /// staged from an active project. Symmetric to
+    /// <see cref="ComputeSystemFamilyManagedPath"/>: the caller always
+    /// allocates the catalog item id (and thus the version directory) up
+    /// front so the .rfa produced by <see cref="StageLoadableFamilyFromProject"/>
+    /// lands directly in the catalog rather than in a transient _stage/ folder.
+    /// </summary>
+    private string? ComputeLoadableFamilyManagedPath(string familyName)
+    {
+        var dbRoot = _databaseManager.GetActiveDatabasePath();
+        if (string.IsNullOrEmpty(dbRoot)) return null;
+        var catalogItemId = Guid.NewGuid().ToString("N");
+        var versionDir = Path.Combine(dbRoot, "files", catalogItemId, "v1");
+        var safeName = SanitizeFileName(SafeFileName.GetBaseName(familyName));
+        if (string.IsNullOrEmpty(safeName)) safeName = "Family";
+        return Path.Combine(versionDir, safeName + ".rfa");
+    }
+
     private async Task<List<FamilyBatchImportItem>> BuildActiveProjectBatchItemsAsync(
         IReadOnlyList<CategoryAnalysis> systemAnalyses,
         IReadOnlyList<LoadableFamilyInfo> loadableFamilies)
@@ -710,7 +732,10 @@ public sealed partial class FamilyManagerMainViewModel
         {
             foreach (var loadable in loadableFamilies)
             {
-                var rfaPath = StageLoadableFamilyFromProject(loadable);
+                var managedRfaPath = ComputeLoadableFamilyManagedPath(loadable.FamilyName);
+                if (string.IsNullOrEmpty(managedRfaPath)) continue;
+
+                var rfaPath = StageLoadableFamilyFromProject(loadable, managedRfaPath!);
                 if (string.IsNullOrEmpty(rfaPath) || !File.Exists(rfaPath)) continue;
 
                 var row = await BuildLoadableFamilyBatchRowAsync(loadable, rfaPath!, ct, categoriesById);
@@ -897,8 +922,15 @@ public sealed partial class FamilyManagerMainViewModel
             OriginalSourcePath: null);
     }
 
-    private string? StageLoadableFamilyFromProject(LoadableFamilyInfo info, string? managedRfaPath = null)
+    private string? StageLoadableFamilyFromProject(LoadableFamilyInfo info, string managedRfaPath)
     {
+        if (string.IsNullOrEmpty(managedRfaPath))
+        {
+            throw new ArgumentException(
+                "managedRfaPath is required — caller must compute it via ComputeLoadableFamilyManagedPath",
+                nameof(managedRfaPath));
+        }
+
         var doc = _revitContext.GetDocument();
         if (doc is null) return null;
 
@@ -927,34 +959,15 @@ public sealed partial class FamilyManagerMainViewModel
                 return null;
             }
 
-            // v2.0.0: if caller did not pre-compute a managed path, generate
-            // a temporary managed location. (Used when StageLoadableFamily is
-            // called outside an import batch — currently only by the legacy
-            // FamilyEdit pipeline.)
+            // v2.0.0: caller pre-computed the managed path; SaveAs writes
+            // straight into catalog storage — no transient _stage/ folder.
             var rfaPath = managedRfaPath;
-            if (string.IsNullOrEmpty(rfaPath))
+            var parent = Path.GetDirectoryName(rfaPath);
+            if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            if (File.Exists(rfaPath))
             {
-                var safeName = SanitizeFileName(SafeFileName.GetBaseName(info.FamilyName));
-                var guid = Guid.NewGuid().ToString("N");
-                var dbRoot = _databaseManager.GetActiveDatabasePath();
-                if (string.IsNullOrEmpty(dbRoot))
-                {
-                    SmartConLogger.Error("No active database selected");
-                    return null;
-                }
-                rfaPath = Path.Combine(dbRoot, "files", "_stage", guid, safeName + ".rfa");
-                var stageDir = Path.GetDirectoryName(rfaPath);
-                if (!string.IsNullOrEmpty(stageDir)) Directory.CreateDirectory(stageDir);
-            }
-            else
-            {
-                var parent = Path.GetDirectoryName(rfaPath);
-                if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
-                if (File.Exists(rfaPath))
-                {
-                    File.SetAttributes(rfaPath, File.GetAttributes(rfaPath) & ~FileAttributes.ReadOnly);
-                    File.Delete(rfaPath);
-                }
+                File.SetAttributes(rfaPath, File.GetAttributes(rfaPath) & ~FileAttributes.ReadOnly);
+                File.Delete(rfaPath);
             }
 
             familyDoc.SaveAs(rfaPath, new SaveAsOptions { OverwriteExistingFile = true });
