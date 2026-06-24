@@ -85,7 +85,7 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
             totalImported);
     }
 
-    private async Task SaveSystemTypesAsync(string catalogItemId, IReadOnlyList<SelectedSystemType> types, string? versionId, string? fileId)
+    private async Task SaveSystemTypesAsync(string catalogItemId, IReadOnlyList<FamilySourceTypeInfo> types, string? versionId, string? fileId)
     {
         var descriptors = types.Select((t, i) => new FamilyTypeDescriptor(
             Id: Guid.NewGuid().ToString(),

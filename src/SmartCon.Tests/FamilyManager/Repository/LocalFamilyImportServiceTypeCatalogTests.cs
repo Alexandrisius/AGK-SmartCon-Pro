@@ -250,10 +250,15 @@ public sealed class LocalFamilyImportServiceTypeCatalogTests : IDisposable
         // managed path that mirrors what ComputeManagedRfaPath will pick
         // (same display name → same catalog_item_id → next version v2).
         // Write the v1 content to the v2 path so FilePath == managedRfaPath.
-        var managedV2 = Path.Combine(
-            Path.GetDirectoryName(managedV1)!,
-            "v2",
-            Path.GetFileName(managedV1));
+        //
+        // Layout: {dbRoot}/files/{catalogItemId}/v1/{name}.rfa
+        //         {dbRoot}/files/{catalogItemId}/v2/{name}.rfa
+        //
+        // Path.GetDirectoryName(managedV1) returns the v1/ folder, so
+        // we strip that one segment before re-appending v2/.
+        var itemDir = Path.GetDirectoryName(managedV1)!;
+        var catalogDir = Path.GetDirectoryName(itemDir)!;
+        var managedV2 = Path.Combine(catalogDir, "v2", Path.GetFileName(managedV1));
         Directory.CreateDirectory(Path.GetDirectoryName(managedV2)!);
         File.Copy(managedV1, managedV2, overwrite: true);
         Assert.True(File.Exists(managedV2));

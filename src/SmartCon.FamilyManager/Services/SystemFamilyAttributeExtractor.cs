@@ -67,23 +67,16 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
                         task.ManagedRvtPath, task.TypeNames);
                     if (extraction.Success)
                     {
-                        var saveTask = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _dataImportService.SaveExtractionResultAsync(
-                                    task.CatalogItemId, extraction, task.VersionId, task.FileId,
-                                    CancellationToken.None);
-                                SmartConLogger.Debug(
-                                    $"[SystemImport.Extract] Saved extraction for '{Path.GetFileName(task.ManagedRvtPath)}': " +
-                                    $"{extraction.Types.Count} types");
-                            }
-                            catch (Exception ex)
-                            {
-                                SmartConLogger.Warn(
-                                    $"[SystemImport.Extract] SaveExtractionResult failed: {ex.Message}");
-                            }
-                        }, CancellationToken.None);
+                        // v2.0.0 hotfix: SaveExtractionResultAsync is already
+                        // an async method that returns a Task. The previous
+                        // implementation wrapped it in Task.Run, which (a)
+                        // double-scheduled the work onto the thread pool,
+                        // and (b) created a flaky race in unit tests where
+                        // the second task's extraction appeared to be
+                        // skipped when both saves hit the thread pool at
+                        // the same time. Call the async method directly and
+                        // let Task.WhenAll drive completion.
+                        var saveTask = SaveExtractionSafelyAsync(task, extraction);
                         pendingSaves.Add(saveTask);
                     }
                     else
@@ -124,5 +117,25 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
 
         SmartConLogger.Info(
             $"[SystemImport.Extract] ✓ Extraction phase complete ({pendingSaves.Count} file(s) saved)");
+    }
+
+    private async Task SaveExtractionSafelyAsync(
+        SystemFamilyExtractionTask task,
+        FamilyExtractionResult extraction)
+    {
+        try
+        {
+            await _dataImportService.SaveExtractionResultAsync(
+                task.CatalogItemId, extraction, task.VersionId, task.FileId,
+                CancellationToken.None).ConfigureAwait(false);
+            SmartConLogger.Debug(
+                $"[SystemImport.Extract] Saved extraction for '{Path.GetFileName(task.ManagedRvtPath)}': " +
+                $"{extraction.Types.Count} types");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"[SystemImport.Extract] SaveExtractionResult failed: {ex.Message}");
+        }
     }
 }

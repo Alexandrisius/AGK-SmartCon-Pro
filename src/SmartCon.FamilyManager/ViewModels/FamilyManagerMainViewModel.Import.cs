@@ -598,7 +598,14 @@ public sealed partial class FamilyManagerMainViewModel
             if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
                 continue;
 
-            pending.Add(new SystemFamilyPendingImport(displayName, types, createResult.FilePath!));
+            // Map SelectedSystemType (Revit-bound) into the Core-level
+            // FamilySourceTypeInfo DTO before crossing the boundary.
+            var coreTypes = types
+                .Select(t => new FamilySourceTypeInfo(
+                    t.UniqueId, t.Name, t.CategoryName, (int)t.Category))
+                .ToList();
+
+            pending.Add(new SystemFamilyPendingImport(displayName, coreTypes, createResult.FilePath!));
         }
 
         return pending;
@@ -717,7 +724,16 @@ public sealed partial class FamilyManagerMainViewModel
                     if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
                         continue;
 
-                    var pending = new SystemFamilyPendingImport(displayName, types, createResult.FilePath!);
+                    // Map SelectedSystemType (Revit-bound) into the Core-level
+                    // FamilySourceTypeInfo DTO before crossing the
+                    // FamilyManager → Core boundary. Orchestrator and
+                    // extractor only ever see the DTO.
+                    var coreTypes = types
+                        .Select(t => new FamilySourceTypeInfo(
+                            t.UniqueId, t.Name, t.CategoryName, (int)t.Category))
+                        .ToList();
+
+                    var pending = new SystemFamilyPendingImport(displayName, coreTypes, createResult.FilePath!);
                     var row = await BuildSystemFamilyBatchRowAsync(pending, ct, categoriesById);
                     if (row is not null) result.Add(row);
                 }

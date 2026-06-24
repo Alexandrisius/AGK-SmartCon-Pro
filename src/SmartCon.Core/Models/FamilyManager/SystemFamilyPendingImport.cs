@@ -1,5 +1,3 @@
-using SmartCon.Core.Services.FamilyManager;
-
 namespace SmartCon.Core.Models.FamilyManager;
 
 /// <summary>
@@ -8,5 +6,5 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// </summary>
 public sealed record SystemFamilyPendingImport(
     string CategoryName,
-    IReadOnlyList<SelectedSystemType> Types,
+    IReadOnlyList<FamilySourceTypeInfo> Types,
     string ManagedRvtPath);

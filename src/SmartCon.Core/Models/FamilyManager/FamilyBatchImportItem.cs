@@ -1,5 +1,3 @@
-using SmartCon.Core.Services.FamilyManager;
-
 namespace SmartCon.Core.Models.FamilyManager;
 
 /// <summary>
@@ -18,7 +16,7 @@ public sealed record FamilyBatchImportItem(
     int? TypeCount = null,
     string? RevitCategory = null,
     string? OriginalSourcePath = null,
-    IReadOnlyList<SelectedSystemType>? SourceTypes = null)
+    IReadOnlyList<FamilySourceTypeInfo>? SourceTypes = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =
