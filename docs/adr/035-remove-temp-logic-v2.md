@@ -1,6 +1,6 @@
 # ADR-035: Remove temp staging infrastructure (v2.0.0)
 
-- **Status:** Accepted
+- **Status:** Completed
 - **Date:** 2026-06-24
 - **Phase:** 27 — Family Manager temp removal
 - **Supersedes:** ADR-024 (ActiveFamilyFilePreparer)

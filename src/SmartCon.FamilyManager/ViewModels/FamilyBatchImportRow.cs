@@ -106,6 +106,16 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         ActionChanged?.Invoke(this, value);
     }
 
+    partial void OnFileNameChanged(string value)
+    {
+        // v2.0.0 hotfix: notify the parent view-model so it can re-resolve
+        // the catalog status (New/Existing) when the user renames the row.
+        // Without this, the Status column would stay "Existing" even after
+        // the user typed a unique name, leaving the dialog visually
+        // inconsistent with what would actually happen on import.
+        NameChanged?.Invoke(this, value);
+    }
+
     partial void OnTargetCategoryPathChanged(string value)
     {
         // Fire only on path change so we always have a consistent (Id, Path)
@@ -129,4 +139,12 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public event Action<FamilyBatchImportRow, FamilyBatchImportAction>? ActionChanged;
     public event Action<FamilyBatchImportRow, (string? Id, string Path)>? CategoryChanged;
     public event Action<FamilyBatchImportRow, bool>? SelectionChanged;
+
+    /// <summary>
+    /// v2.0.0 hotfix: fires whenever the user edits
+    /// <see cref="FileName"/> in the batch dialog. The parent view-model
+    /// re-resolves the catalog status (New/Existing) on a debounced timer
+    /// and updates the row accordingly.
+    /// </summary>
+    public event Action<FamilyBatchImportRow, string>? NameChanged;
 }

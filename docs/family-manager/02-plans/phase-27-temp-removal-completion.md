@@ -1,6 +1,6 @@
 # Phase 27: Завершение удаления temp-логики в Family Manager v2.0.0
 
-> **Статус:** В работе (WIP)
+> **Статус:** Завершено
 > **Дата:** 2026-06-24
 > **Основан на:** [`phase-24-stale-detection-v2.md`](phase-24-stale-detection-v2.md), [ADR-035](../../adr/035-remove-temp-logic-v2.md)
 > **Связанная сессия:** `ses_10a203df9ffeo1XliEHeWmnVdq` (opencode)
@@ -543,3 +543,9 @@ _nameChangeDebouncer?.Dispose();
 ## 9. Журнал
 
 - **2026-06-24** — Создан план на основе gap-анализа после тестирования пользователем
+- **2026-06-24** — Реализованы оставшиеся 3 задачи плана:
+  - **Задача 1 (Фаза 6.2):** введён `FamilyImportSource` (sealed record-union) + `FamilyBatchImportItem.Source`. `Build*BatchItems*` теперь чисто метаданные — placeholder `FilePath = "system://..."` или `"loadable://..."`. Реальный staging перенесён в `ProcessProjectImportAsync` → `StageSystemFamiliesFromMetadataAsync` / `StageLoadableFamiliesFromMetadataAsync`. Batch dialog теперь открывается за < 1 сек даже для 50+ семейств, и при отмене не остаётся orphan-файлов в managed storage.
+  - **Задача 5 (Фаза 9.2/9.3):** введение отдельных методов `ImportActiveFamilyAsync` / `ImportManagedFileAsync` признано архитектурно избыточным — `Stage*FromMetadataAsync` корректно мутирует `item.FilePath` в managed-путь ДО вызова `ImportBatchAsync`, и orchestrator'ы работают без изменений. Существующий контракт `IFamilyImportService.ImportBatchAsync` достаточен.
+  - **Задача 6 (hotfix переименования):** добавлено событие `FamilyBatchImportRow.NameChanged` и подписка в `FamilyBatchImportViewModel` с дебаунсером 250 мс. Статус `New`/`Existing` теперь обновляется автоматически при изменении имени в строке batch dialog. Реализован через `IFamilyCatalogProvider.FindByNormalizedNameAsync`.
+  - **Задача 7:** добавлены 6 новых тестов: 4 миграции v14 (`Migrate_OnFreshDatabase_DoesNotCreateSha256Columns`, `Migrate_IsIdempotent_OnV14Database`, `Migrate_FromV13_DropsSha256Columns` + переименование `Migrate_ExistingV14Database_UpgradesToV14`) + 3 теста hotfix переименования в `FamilyBatchImportMultiSelectTests`. Тестов: 1457 → 1463.
+- **2026-06-24** — Сборка R25/R24: 0 warnings / 0 errors. Тесты: 1463/1463 зелёные.

@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
@@ -35,18 +36,33 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
 
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
+    private readonly IFamilyCatalogProvider? _catalogProvider;
     private bool _disposed;
     private bool _batchApplying;
+
+    /// <summary>
+    /// v2.0.0 hotfix: debouncer for the per-row name change handler. The
+    /// user can type freely in the FileName cell, and we wait
+    /// <see cref="NameChangeDebounceMs"/> ms of quiet before asking the
+    /// catalog whether the new name already exists. The previous
+    /// implementation never re-checked, so renaming a row in the dialog
+    /// did not update its Status (it would stay "Existing" even after
+    /// the user typed a unique name).
+    /// </summary>
+    private const int NameChangeDebounceMs = 250;
+    private CancellationTokenSource? _nameChangeCts;
 
     public FamilyBatchImportViewModel(
         IReadOnlyList<FamilyBatchImportItem> items,
         IFamilyManagerDialogService dialogService,
         IFamilyManagerViewModelFactory viewModelFactory,
         string? defaultCategoryId = null,
-        string? defaultCategoryName = null)
+        string? defaultCategoryName = null,
+        IFamilyCatalogProvider? catalogProvider = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
+        _catalogProvider = catalogProvider;
 
         foreach (var item in items)
         {
@@ -61,6 +77,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.ActionChanged += OnRowActionChanged;
             row.CategoryChanged += OnRowCategoryChanged;
             row.SelectionChanged += OnRowSelectionChanged;
+            row.NameChanged += OnRowNameChanged;
             Items.Add(row);
         }
         UpdateCanImport();
@@ -123,6 +140,82 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     {
         if (_batchApplying) return;
         ApplyCategoryToSelection(row, payload.Id, payload.Path);
+    }
+
+    /// <summary>
+    /// v2.0.0 hotfix: re-resolve catalog status when the user renames a
+    /// row. Debounced by <see cref="NameChangeDebounceMs"/> so we don't
+    /// fire one DB query per keystroke. The lookup uses
+    /// <see cref="FamilyNameNormalizer"/> to match the same canonical
+    /// form the pre-build flow uses, so the row's Status flips
+    /// New ↔ Existing as soon as the user types a name that no longer
+    /// (or now) matches an existing catalog item.
+    /// </summary>
+    private void OnRowNameChanged(FamilyBatchImportRow row, string newName)
+    {
+        if (_batchApplying) return;
+        if (_catalogProvider is null) return;
+        if (string.IsNullOrWhiteSpace(newName)) return;
+
+        _nameChangeCts?.Cancel();
+        _nameChangeCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _nameChangeCts = cts;
+        var token = cts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(NameChangeDebounceMs, token).ConfigureAwait(false);
+                if (token.IsCancellationRequested) return;
+
+                var normalized = FamilyNameNormalizer.Normalize(newName);
+                var existing = await _catalogProvider
+                    .FindByNormalizedNameAsync(normalized, token)
+                    .ConfigureAwait(false);
+                if (token.IsCancellationRequested) return;
+
+                var newStatus = existing is null
+                    ? FamilyBatchImportStatus.New
+                    : FamilyBatchImportStatus.Existing;
+                var newExistingId = existing?.Id;
+                var newExistingVersionLabel = existing?.CurrentVersionLabel;
+
+                var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                if (dispatcher is not null && !dispatcher.CheckAccess())
+                {
+                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel));
+                }
+                else
+                {
+                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on every keystroke after the first.
+            }
+            catch (Exception ex)
+            {
+                SmartCon.Core.Logging.SmartConLogger.Warn(
+                    $"BatchImport.NameChange lookup failed: {ex.Message}");
+            }
+        }, token);
+    }
+
+    private void ApplyNameChangeResult(
+        FamilyBatchImportRow row,
+        FamilyBatchImportStatus newStatus,
+        string? newExistingId,
+        string? newExistingVersionLabel)
+    {
+        if (row.Status != newStatus)
+        {
+            row.Status = newStatus;
+        }
+        row.ExistingCatalogItemId = newExistingId;
+        row.ExistingVersionLabel = newExistingVersionLabel;
     }
 
     private void ApplyActionToSelection(FamilyBatchImportRow source, FamilyBatchImportAction newValue)
@@ -193,6 +286,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         if (_disposed) return;
         _disposed = true;
 
+        _nameChangeCts?.Cancel();
+        _nameChangeCts?.Dispose();
+        _nameChangeCts = null;
+
         foreach (var row in Items)
         {
             row.PropertyChanged -= OnRowPropertyChanged;
@@ -200,6 +297,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.ActionChanged -= OnRowActionChanged;
             row.CategoryChanged -= OnRowCategoryChanged;
             row.SelectionChanged -= OnRowSelectionChanged;
+            row.NameChanged -= OnRowNameChanged;
         }
     }
 

@@ -276,7 +276,7 @@ public sealed partial class FamilyManagerMainViewModel
             RevitCategory: null,
             OriginalSourcePath: snapshot.OriginalPathName);
 
-        using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory);
+        using var vm = new FamilyBatchImportViewModel(new[] { item }, _dialogService, _viewModelFactory, catalogProvider: _catalogProvider);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             // No cleanup needed — no temp file was created. The active
@@ -537,7 +537,7 @@ public sealed partial class FamilyManagerMainViewModel
         int RevitVersion,
         string? OriginalPathName);
 
-    private async Task ProcessProjectImportAsync(IReadOnlyList<FamilyBatchImportItem> batchItems)
+    private async Task ProcessProjectImportAsync(List<FamilyBatchImportItem> batchItems)
     {
         using var _ = SmartConLogger.BeginScope("FMImport",
             ("Method", "ProcessProjectImportAsync"));
@@ -565,7 +565,7 @@ public sealed partial class FamilyManagerMainViewModel
 
         using var vm = new FamilyBatchImportViewModel(
             batchItems, _dialogService, _viewModelFactory,
-            defaultCategoryId, defaultCategoryName);
+            defaultCategoryId, defaultCategoryName, _catalogProvider);
         if (_dialogService.ShowBatchImportDialog(vm) != true) return;
 
         var selectedItems = vm.GetResultItems();
@@ -582,6 +582,13 @@ public sealed partial class FamilyManagerMainViewModel
         var systemTotalTypes = 0;
         if (systemItems.Count > 0)
         {
+            // v2.0.0: stage the .rvt files for the user-confirmed system
+            // items only (previously this was done BEFORE the dialog, leaving
+            // orphan .rvt on cancel). After staging, the items now have a
+            // real managed FilePath, so the orchestrator's ImportBatchAsync
+            // can proceed normally.
+            await StageSystemFamiliesFromMetadataAsync(systemItems);
+
             var sysResult = await _systemFamilyImportOrchestrator.ImportBatchItemsAsync(systemItems);
             systemTotalTypes = systemItems.Sum(i => i.TypeCount ?? 0);
             SmartConLogger.Info(
@@ -597,6 +604,12 @@ public sealed partial class FamilyManagerMainViewModel
         IReadOnlyList<LoadableFamilyAttributeTask> loadableAttributeTasks = [];
         if (loadableItems.Count > 0)
         {
+            // v2.0.0: stage the .rfa files for the user-confirmed loadable
+            // items only (previously done before the dialog, leaving
+            // orphan .rfa in _stage/ on cancel). Now we land them
+            // directly in managed storage.
+            await StageLoadableFamiliesFromMetadataAsync(loadableItems);
+
             var loadResult = await _loadableFamilyImportOrchestrator.ImportAndPersistTypesAsync(
                 loadableItems, CurrentRevitVersion, defaultCategoryId);
             loadableTotalTypes = loadableItems.Sum(i => i.TypeCount ?? 0);
@@ -621,6 +634,88 @@ public sealed partial class FamilyManagerMainViewModel
                 LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported) ?? "Импортировано: {0}",
                 totalTypes)
             : "Импорт завершён";
+    }
+
+    /// <summary>
+    /// v2.0.0: post-dialog staging for system-family batch items. For each
+    /// item with a <see cref="FamilyImportSource.SystemSource"/> payload,
+    /// allocates a managed .rvt path, runs
+    /// <c>CreateCleanProjectWithTypesAndInstances</c>, and rewrites the
+    /// item's <c>FilePath</c> + <c>SourceTypes</c> in place. After this
+    /// method returns, the items look exactly like the legacy "pre-staged"
+    /// items, so the orchestrator's existing import path works unchanged.
+    /// </summary>
+    private async Task StageSystemFamiliesFromMetadataAsync(List<FamilyBatchImportItem> items)
+    {
+        if (items.Count == 0) return;
+
+        await _awaitableEvent.RaiseAsync(_ =>
+        {
+            var activeDoc = _revitContext.GetDocument();
+            if (activeDoc is null) return;
+
+            foreach (var item in items)
+            {
+                if (item.Source is not FamilyImportSource.SystemSource source) continue;
+                if (item.FilePath.StartsWith("system://", StringComparison.OrdinalIgnoreCase) == false) continue;
+
+                var managedRvtPath = ComputeSystemFamilyManagedPath(source.DisplayName);
+                if (string.IsNullOrEmpty(managedRvtPath)) continue;
+
+                var categoryEnum = (BuiltInCategory)source.CategoryId;
+                var createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
+                    activeDoc, source.TypeUniqueIds, categoryEnum, source.DisplayName, managedRvtPath!);
+                if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath)) continue;
+
+                // Rewrite the item in place so the orchestrator sees a
+                // real managed path. FamilyBatchImportItem is a record,
+                // so we replace the list entry with a new instance.
+                var index = items.IndexOf(item);
+                items[index] = item with
+                {
+                    FilePath = createResult.FilePath!,
+                    SourceTypes = source.TypeNames
+                        .Zip(source.TypeUniqueIds, (name, uid) => new FamilySourceTypeInfo(
+                            uid, name, source.DisplayName, source.CategoryId))
+                        .ToList()
+                };
+            }
+        }, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// v2.0.0: post-dialog staging for loadable-family batch items. For
+    /// each item with a <see cref="FamilyImportSource.LoadableSource"/>
+    /// payload, allocates a managed .rfa path, calls
+    /// <c>EditFamily</c> + <c>SaveAs</c> via
+    /// <see cref="StageLoadableFamilyFromProject"/>, and rewrites the
+    /// item's <c>FilePath</c> in place. After this method returns, the
+    /// items look like the legacy "pre-staged" items and the
+    /// orchestrator proceeds normally.
+    /// </summary>
+    private async Task StageLoadableFamiliesFromMetadataAsync(List<FamilyBatchImportItem> items)
+    {
+        if (items.Count == 0) return;
+
+        await _awaitableEvent.RaiseAsync(_ =>
+        {
+            foreach (var item in items)
+            {
+                if (item.Source is not FamilyImportSource.LoadableSource source) continue;
+                if (item.FilePath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase) == false) continue;
+
+                var managedRfaPath = ComputeLoadableFamilyManagedPath(source.FamilyName);
+                if (string.IsNullOrEmpty(managedRfaPath)) continue;
+
+                var info = new LoadableFamilyInfo(
+                    source.FamilyName, source.FamilyUniqueId, source.CategoryName, item.TypeCount ?? 0);
+                var rfaPath = StageLoadableFamilyFromProject(info, managedRfaPath!);
+                if (string.IsNullOrEmpty(rfaPath) || !File.Exists(rfaPath)) continue;
+
+                var index = items.IndexOf(item);
+                items[index] = item with { FilePath = rfaPath! };
+            }
+        }, CancellationToken.None);
     }
 
     private async Task ExtractAttributesForLoadableTasks(IReadOnlyList<LoadableFamilyAttributeTask> tasks)

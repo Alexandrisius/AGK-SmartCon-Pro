@@ -49,7 +49,7 @@ public interface IWritableFamilyCatalogProvider
 
 ## IFamilyImportService
 
-Оркестрация импорта семейств: валидация, хеширование, копирование в managed storage, запись в каталог.
+Оркестрация импорта семейств: запись в managed storage, запись в БД каталога. v2.0.0: SHA-256 dedup и `.txt` sidecar copy убраны. Метод `ImportBatchAsync` принимает уже подготовленные `FamilyBatchImportItem` (с реальным `FilePath` в managed storage или с placeholder + `Source` payload, который `ProcessProjectImportAsync` резолвит ДО передачи).
 
 **Файл:** `IFamilyImportService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportService.cs`
@@ -60,8 +60,15 @@ public interface IFamilyImportService
     Task<FamilyImportResult> ImportFileAsync(FamilyImportRequest request, CancellationToken ct = default);
     Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
     Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default);
+    Task<FamilyBatchImportResult> ImportBatchAsync(
+        IReadOnlyList<FamilyBatchImportItem> items,
+        string? categoryId,
+        IProgress<FamilyImportProgress>? progress,
+        CancellationToken ct = default);
 }
 ```
+
+> **Архитектурное примечание (v2.0.0):** ранний план предлагал ввести отдельные методы `ImportActiveFamilyAsync(Document, ...)` и `ImportManagedFileAsync(string managedPath, ...)`. Реализация пошла по более простому пути: VM-слой сам делает `SaveAs(managedRfaPath)` в активном документе (UC-2) или `StageLoadableFamilyFromProject` / `CreateCleanProjectWithTypesAndInstances` (UC-3/UC-4), затем `item.FilePath` перезаписывается на managed-путь и orchestrator (`SystemFamilyImportOrchestrator` / `LoadableFamilyImportOrchestrator`) вызывает существующий `ImportBatchAsync`. Это сохраняет `IFamilyImportService` компактным (1 import-path для всех 4 use-case'ов) и убирает необходимость в `FamilyActiveImportRequest` record.
 
 ---
 

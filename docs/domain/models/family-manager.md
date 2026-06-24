@@ -460,18 +460,18 @@ public sealed record FamilyImportResult(
 public sealed record FamilyBatchImportItem(
     string FilePath,
     string FileName,
-    string Sha256,
     int RevitMajorVersion,
-    long FileSizeBytes,
     FamilyBatchImportStatus Status,
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
     string? TargetCategoryId = null,
     string? TargetCategoryName = null,
     string FamilySource = "loadable",
-    int TypeCount = 0,
+    int? TypeCount = null,
     string? RevitCategory = null,
-    string? OriginalSourcePath = null)
+    string? OriginalSourcePath = null,
+    IReadOnlyList<FamilySourceTypeInfo>? SourceTypes = null,
+    FamilyImportSource? Source = null)
 {
     public FamilyBatchImportAction Action { get; set; }
     public string? TargetCategoryId { get; set; }
@@ -479,11 +479,15 @@ public sealed record FamilyBatchImportItem(
 }
 ```
 
+- `FilePath` — для UC-1/UC-2 (импорт с диска или активного `.rfa`) это реальный путь к файлу. Для UC-3/UC-4 (импорт активного проекта / выделенных элементов) это placeholder `"system://..."` или `"loadable://..."` до подтверждения пользователем, после чего `ProcessProjectImportAsync` перезаписывает это поле на managed-путь.
+- `Source` (v2.0.0) — payload для пост-диалогового staging flow (UC-3/UC-4). `null` для UC-1/UC-2 (файл уже на диске). `SystemSource` / `LoadableSource` — sealed record-union, см. [FamilyImportSource](#familyimportsource).
+- v2.0.0 breaking change: поля `Sha256` и `FileSizeBytes` удалены — SHA-256 dedup и показ размера файла больше не используются (см. ADR-035).
+
 ---
 
 ## FamilyBatchImportStatus
 
-Статус файла в диалоге пакетного импорта. Определяется на основе сравнения SHA256 с каталогом.
+Статус файла в диалоге пакетного импорта. v2.0.0: `Duplicate` удалён — content-based dedup по SHA-256 больше не выполняется. Дубликаты по содержимому попадают как `Existing` (новая версия).
 
 **Файл:** `FamilyBatchImportStatus.cs`
 
@@ -491,9 +495,8 @@ public sealed record FamilyBatchImportItem(
 public enum FamilyBatchImportStatus
 {
     New,        // Новое семейство, отсутствует в каталоге
-    Existing,   // Семейство есть в каталоге, но SHA256 отличается
-    Duplicate,  // Точное совпадение SHA256 — пропускается автоматически
-    Error       // Ошибка чтения файла
+    Existing,   // Семейство с таким нормализованным именем уже в каталоге
+    Error       // Ошибка чтения файла / невалидный .rfa
 }
 ```
 
@@ -1196,6 +1199,39 @@ public sealed record FamilySourceTypeInfo(
 - `CategoryId` — ordinal `BuiltInCategory`, переданный через границу FamilyManager→Core как plain `int`. Orchestrator и extractor никогда не видят enum напрямую.
 
 Маппинг `SelectedSystemType → FamilySourceTypeInfo` выполняется на границе VM→Core в `FamilyManagerMainViewModel.Import.cs` (UC-3/UC-4 batch flow). В обратную сторону маппинг не нужен — extractor читает типы из managed `.rvt` по `UniqueId`/`Name`, ordinal ему не нужен.
+
+---
+
+## FamilyImportSource
+
+v2.0.0: strongly-typed sealed record-union payload для `FamilyBatchImportItem.Source`. Несёт данные, необходимые пост-диалоговому staging flow (UC-3 / UC-4) для создания managed `.rvt` / `.rfa` уже **после** подтверждения пользователем. До введения этого типа batch dialog показывался через 20-30 сек для проекта с 50 семействами, потому что staging (`CreateCleanProjectWithTypesAndInstances` + `EditFamily + SaveAs`) выполнялся ДО диалога — и оставлял orphan-файлы при отмене.
+
+**Файл:** `Models/FamilyManager/FamilyImportSource.cs`
+
+```csharp
+public abstract record FamilyImportSource
+{
+    private FamilyImportSource() { }
+
+    public sealed record SystemSource(
+        string DisplayName,
+        int CategoryId,
+        IReadOnlyList<string> TypeUniqueIds,
+        IReadOnlyList<string> TypeNames) : FamilyImportSource;
+
+    public sealed record LoadableSource(
+        string FamilyName,
+        string FamilyUniqueId,
+        string CategoryName) : FamilyImportSource;
+}
+```
+
+- `SystemSource` — системное семейство (трубы, воздуховоды, и т.д.). `CategoryId` — ordinal `BuiltInCategory` (как в `FamilySourceTypeInfo.CategoryId`). `TypeUniqueIds` / `TypeNames` — параллельные списки Revit UniqueId и display name типов.
+- `LoadableSource` — loadable семейство. `FamilyUniqueId` — Revit UniqueId `Family`-элемента в активном проекте (для `doc.GetElement(uid)` → `Family` → `EditFamily`).
+
+Живёт в `SmartCon.Core` (не в `SmartCon.FamilyManager`) чтобы публичный API `FamilyBatchImportItem.Source` не тянул `Autodesk.Revit.DB.Document` (I-09).
+
+Пост-диалоговый flow: `ProcessProjectImportAsync` → `StageSystemFamiliesFromMetadataAsync` / `StageLoadableFamiliesFromMetadataAsync` (в VM, через `IFamilyManagerAwaitableEvent`). Эти методы читают `Source`, вызывают Revit-API staging helper, и **перезаписывают `item.FilePath`** в managed-путь (через `with`-expression для record). После этого orchestrator'ы (`SystemFamilyImportOrchestrator`, `LoadableFamilyImportOrchestrator`) работают с реальными managed файлами и не требуют изменений.
 
 ---
 

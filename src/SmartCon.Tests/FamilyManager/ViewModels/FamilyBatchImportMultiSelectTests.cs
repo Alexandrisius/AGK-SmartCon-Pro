@@ -171,4 +171,112 @@ public sealed class FamilyBatchImportMultiSelectTests
         Assert.Equal(typeof(bool), dp.PropertyType);
         Assert.Equal("RestoreMultiSelectOnCellClick", dp.Name);
     }
+
+    /// <summary>
+    /// v2.0.0 hotfix: renaming a row whose name now matches nothing in the
+    /// catalog must flip the row's Status to <c>New</c>. The debounced
+    /// lookup runs on a background task; we wait synchronously for the
+    /// result by giving the dispatcher / task pool a chance to complete.
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_ToUniqueName_UpdatesStatusToNew()
+    {
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FamilyCatalogItem?)null);
+
+        var items = new[] { MakeItem("orig") };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object);
+        var row = vm.Items.Single();
+
+        // The row starts as New; the test sets the pre-condition to
+        // Existing to verify the rename flips it back.
+        row.Status = FamilyBatchImportStatus.Existing;
+        row.ExistingCatalogItemId = "old-id";
+        row.ExistingVersionLabel = "v1";
+
+        row.FileName = "completely-different-name";
+
+        // Wait for the debounced lookup (250ms in the VM) plus a small
+        // buffer for the dispatcher to apply the result.
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.New && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.New, row.Status);
+        Assert.Null(row.ExistingCatalogItemId);
+        Assert.Null(row.ExistingVersionLabel);
+    }
+
+    /// <summary>
+    /// v2.0.0 hotfix: renaming a row to a name that already exists in the
+    /// catalog must flip the row's Status to <c>Existing</c> and update
+    /// <c>ExistingCatalogItemId</c> + <c>ExistingVersionLabel</c> to the
+    /// matched record.
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_ToExistingName_UpdatesStatusToExisting()
+    {
+        var existing = new FamilyCatalogItem(
+            Id: "catalog-id-1",
+            Name: "TargetFamily",
+            NormalizedName: "targetfamily",
+            Description: null,
+            CategoryPath: null,
+            CategoryId: null,
+            Manufacturer: null,
+            ContentStatus: ContentStatus.Active,
+            CurrentVersionLabel: "v3",
+            Tags: Array.Empty<string>(),
+            PublishedBy: null,
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            UpdatedAtUtc: DateTimeOffset.UtcNow);
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+
+        var items = new[] { MakeItem("orig") };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object);
+        var row = vm.Items.Single();
+        row.Status = FamilyBatchImportStatus.New;
+
+        row.FileName = "TargetFamily";
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.Existing && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.Existing, row.Status);
+        Assert.Equal("catalog-id-1", row.ExistingCatalogItemId);
+        Assert.Equal("v3", row.ExistingVersionLabel);
+    }
+
+    /// <summary>
+    /// v2.0.0 hotfix: when the view-model is constructed without a
+    /// catalog provider (older callers), the rename handler must not
+    /// throw. The Status / ExistingCatalogItemId remain at their
+    /// pre-rename values.
+    /// </summary>
+    [Fact]
+    public void RenamingRow_WithoutCatalogProvider_DoesNotThrow()
+    {
+        var items = new[] { MakeItem("orig") };
+        using var vm = CreateVm(items);
+        var row = vm.Items.Single();
+        row.Status = FamilyBatchImportStatus.New;
+
+        var ex = Record.Exception(() => row.FileName = "new-name");
+        Assert.Null(ex);
+        Assert.Equal(FamilyBatchImportStatus.New, row.Status);
+    }
 }
