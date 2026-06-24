@@ -14,6 +14,20 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public int RevitMajorVersion { get; }
     public string FamilySource { get; }
 
+    /// <summary>
+    /// v2.0.0: source payload for post-dialog staging. <c>null</c> for
+    /// UC-1/UC-2 (file already on disk). <see cref="FamilyImportSource"/>
+    /// for UC-3/UC-4 (the dialog receives placeholder <c>FilePath</c>
+    /// like <c>"system://..."</c> or <c>"loadable://..."</c>; this
+    /// <c>Source</c> is the staged pipeline's input for creating the
+    /// real managed file after the user confirms the dialog).
+    ///
+    /// Read-only because the user never edits it directly — only the
+    /// row VM's <see cref="GetResultItems"/> re-emits it on
+    /// <see cref="FamilyBatchImportItem.Source"/>.
+    /// </summary>
+    public FamilyImportSource? Source { get; }
+
     [ObservableProperty]
     private int? _typeCount;
 
@@ -64,6 +78,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         FileName = item.FileName;
         RevitMajorVersion = item.RevitMajorVersion;
         FamilySource = item.FamilySource;
+        Source = item.Source;
         _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;
         Status = item.Status;

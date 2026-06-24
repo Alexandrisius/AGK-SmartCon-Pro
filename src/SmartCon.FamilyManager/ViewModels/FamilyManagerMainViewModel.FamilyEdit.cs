@@ -649,23 +649,63 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (items.Count == 0) return;
 
+        using var _scope = SmartConLogger.BeginScope("FMImport",
+            ("Method", "StageSystemFamiliesFromMetadataAsync"));
+
         await _awaitableEvent.RaiseAsync(_ =>
         {
             var activeDoc = _revitContext.GetDocument();
-            if (activeDoc is null) return;
+            if (activeDoc is null)
+            {
+                SmartConLogger.Warn("Active document is null — cannot stage system families");
+                return;
+            }
 
             foreach (var item in items)
             {
-                if (item.Source is not FamilyImportSource.SystemSource source) continue;
-                if (item.FilePath.StartsWith("system://", StringComparison.OrdinalIgnoreCase) == false) continue;
+                if (item.Source is not FamilyImportSource.SystemSource source)
+                {
+                    SmartConLogger.Debug(
+                        $"Skipping item '{item.FileName}': Source is not SystemSource (got {item.Source?.GetType().Name ?? "null"})");
+                    continue;
+                }
+                if (item.FilePath.StartsWith("system://", StringComparison.OrdinalIgnoreCase) == false)
+                {
+                    SmartConLogger.Debug(
+                        $"Skipping item '{item.FileName}': FilePath '{item.FilePath}' does not start with 'system://' (already staged?)");
+                    continue;
+                }
 
                 var managedRvtPath = ComputeSystemFamilyManagedPath(source.DisplayName);
-                if (string.IsNullOrEmpty(managedRvtPath)) continue;
+                if (string.IsNullOrEmpty(managedRvtPath))
+                {
+                    SmartConLogger.Warn($"Cannot compute managed path for '{source.DisplayName}' — skipping [Action: check active catalog DB is selected]");
+                    continue;
+                }
 
-                var categoryEnum = (BuiltInCategory)source.CategoryId;
-                var createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
-                    activeDoc, source.TypeUniqueIds, categoryEnum, source.DisplayName, managedRvtPath!);
-                if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath)) continue;
+                SmartConLogger.Info(
+                    $"Staging system family '{source.DisplayName}': categoryId={source.CategoryId}, typeCount={source.TypeUniqueIds.Count}, target='{managedRvtPath}'");
+
+                CreateCleanProjectResult createResult;
+                try
+                {
+                    var categoryEnum = (BuiltInCategory)source.CategoryId;
+                    createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
+                        activeDoc, source.TypeUniqueIds, categoryEnum, source.DisplayName, managedRvtPath!);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Error(
+                        $"CreateCleanProjectWithTypesAndInstances threw for '{source.DisplayName}': {ex.GetType().Name}: {ex.Message} [Action: verify category has at least one placeable type in the active project]");
+                    continue;
+                }
+
+                if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
+                {
+                    SmartConLogger.Warn(
+                        $"CreateCleanProjectWithTypesAndInstances returned Success=false for '{source.DisplayName}' [Action: see prior log lines from SystemRevitOps for the underlying cause]");
+                    continue;
+                }
 
                 // Rewrite the item in place so the orchestrator sees a
                 // real managed path. FamilyBatchImportItem is a record,
@@ -679,6 +719,8 @@ public sealed partial class FamilyManagerMainViewModel
                             uid, name, source.DisplayName, source.CategoryId))
                         .ToList()
                 };
+                SmartConLogger.Info(
+                    $"Staged system family '{source.DisplayName}' -> '{createResult.FilePath}'");
             }
         }, CancellationToken.None);
     }
@@ -697,23 +739,64 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (items.Count == 0) return;
 
+        using var _scope = SmartConLogger.BeginScope("FMImport",
+            ("Method", "StageLoadableFamiliesFromMetadataAsync"));
+
         await _awaitableEvent.RaiseAsync(_ =>
         {
+            var activeDoc = _revitContext.GetDocument();
+            if (activeDoc is null)
+            {
+                SmartConLogger.Warn("Active document is null — cannot stage loadable families");
+                return;
+            }
+
             foreach (var item in items)
             {
-                if (item.Source is not FamilyImportSource.LoadableSource source) continue;
-                if (item.FilePath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase) == false) continue;
+                if (item.Source is not FamilyImportSource.LoadableSource source)
+                {
+                    SmartConLogger.Debug(
+                        $"Skipping item '{item.FileName}': Source is not LoadableSource (got {item.Source?.GetType().Name ?? "null"})");
+                    continue;
+                }
+                if (item.FilePath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase) == false)
+                {
+                    SmartConLogger.Debug(
+                        $"Skipping item '{item.FileName}': FilePath '{item.FilePath}' does not start with 'loadable://' (already staged?)");
+                    continue;
+                }
 
                 var managedRfaPath = ComputeLoadableFamilyManagedPath(source.FamilyName);
-                if (string.IsNullOrEmpty(managedRfaPath)) continue;
+                if (string.IsNullOrEmpty(managedRfaPath))
+                {
+                    SmartConLogger.Warn($"Cannot compute managed path for '{source.FamilyName}' — skipping");
+                    continue;
+                }
 
                 var info = new LoadableFamilyInfo(
                     source.FamilyName, source.FamilyUniqueId, source.CategoryName, item.TypeCount ?? 0);
-                var rfaPath = StageLoadableFamilyFromProject(info, managedRfaPath!);
-                if (string.IsNullOrEmpty(rfaPath) || !File.Exists(rfaPath)) continue;
+                string? rfaPath;
+                try
+                {
+                    rfaPath = StageLoadableFamilyFromProject(info, managedRfaPath!);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Error(
+                        $"StageLoadableFamilyFromProject threw for '{source.FamilyName}': {ex.GetType().Name}: {ex.Message} [Action: verify the family is still loaded in the active project]");
+                    continue;
+                }
+                if (string.IsNullOrEmpty(rfaPath) || !File.Exists(rfaPath))
+                {
+                    SmartConLogger.Warn(
+                        $"StageLoadableFamilyFromProject returned empty/missing file for '{source.FamilyName}' [Action: see prior log lines from the staging helper for the underlying cause]");
+                    continue;
+                }
 
                 var index = items.IndexOf(item);
                 items[index] = item with { FilePath = rfaPath! };
+                SmartConLogger.Info(
+                    $"Staged loadable family '{source.FamilyName}' -> '{rfaPath}'");
             }
         }, CancellationToken.None);
     }

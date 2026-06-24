@@ -321,6 +321,15 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
 
     /// <summary>
     /// Returns items with user-selected actions for the caller.
+    /// v2.0.0: also re-emits the <see cref="FamilyBatchImportItem.Source"/>
+    /// payload. Without it, the post-dialog staging flow in
+    /// <c>ProcessProjectImportAsync</c> sees <c>Source = null</c> on
+    /// every row and skips all staging, leaving the placeholder
+    /// <c>FilePath</c> ("system://..." / "loadable://...") in place.
+    /// The orchestrator then calls <c>ImportFileAsync</c> with a
+    /// non-existent path and reports <c>Success = false</c> for every
+    /// item. This was the root cause of the v2.0.0 batch-import
+    /// regression (UC-3/UC-4 imported zero families).
     /// </summary>
     public IReadOnlyList<FamilyBatchImportItem> GetResultItems()
     {
@@ -335,7 +344,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             r.TargetCategoryPath,
             r.FamilySource,
             r.TypeCount,
-            r.RevitCategory)
+            r.RevitCategory,
+            OriginalSourcePath: null,
+            SourceTypes: null,
+            Source: r.Source)
         {
             Action = r.Action
         }).ToList();

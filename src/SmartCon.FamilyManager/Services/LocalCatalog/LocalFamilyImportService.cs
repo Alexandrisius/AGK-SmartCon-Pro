@@ -50,8 +50,15 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         await _migrator.MigrateAsync(ct);
 
         var filePath = request.FilePath;
+        SmartConLogger.Debug($"ImportFileAsync called with FilePath='{filePath}', exists={File.Exists(filePath)}");
         if (!File.Exists(filePath))
         {
+            SmartConLogger.Warn(
+                $"ImportFileAsync: file not found at '{filePath}'. " +
+                "This usually means the orchestrator's pre-dialog staging did not run " +
+                "and the item still has its virtual placeholder FilePath. " +
+                "[Action: see StageSystemFamiliesFromMetadataAsync / " +
+                "StageLoadableFamiliesFromMetadataAsync log lines for the real cause]");
             return new FamilyImportResult(
                 Success: false,
                 CatalogItemId: null,

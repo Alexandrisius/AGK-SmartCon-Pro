@@ -26,10 +26,12 @@ public sealed class FamilyBatchImportMultiSelectTests
     private static FamilyBatchImportItem MakeItem(
         string fileName,
         FamilyBatchImportStatus status = FamilyBatchImportStatus.New,
-        string? categoryId = null)
+        string? categoryId = null,
+        FamilyImportSource? source = null,
+        string? filePath = null)
     {
         return new FamilyBatchImportItem(
-            FilePath: $@"C:\fake\{fileName}.rfa",
+            FilePath: filePath ?? $@"C:\fake\{fileName}.rfa",
             FileName: fileName,
             RevitMajorVersion: 2025,
             Status: status,
@@ -39,7 +41,8 @@ public sealed class FamilyBatchImportMultiSelectTests
             TargetCategoryName: categoryId,
             FamilySource: "loadable",
             TypeCount: null,
-            RevitCategory: null);
+            RevitCategory: null,
+            Source: source);
     }
 
     /// <summary>
@@ -278,5 +281,88 @@ public sealed class FamilyBatchImportMultiSelectTests
         var ex = Record.Exception(() => row.FileName = "new-name");
         Assert.Null(ex);
         Assert.Equal(FamilyBatchImportStatus.New, row.Status);
+    }
+
+    /// <summary>
+    /// v2.0.0 regression: <see cref="FamilyBatchImportRow"/> must surface
+    /// the <see cref="FamilyImportSource"/> payload from the input item,
+    /// and <see cref="FamilyBatchImportViewModel.GetResultItems"/> must
+    /// re-emit it on the resulting <see cref="FamilyBatchImportItem"/>.
+    /// Without this, the post-dialog staging flow in
+    /// <c>ProcessProjectImportAsync</c> sees <c>Source = null</c> on
+    /// every row and skips all staging, leaving the placeholder
+    /// <c>FilePath</c> ("system://..." / "loadable://...") in place.
+    /// The orchestrator then calls <c>ImportFileAsync</c> with a
+    /// non-existent path and reports <c>Success = false</c> for every
+    /// item. This was the root cause of the v2.0.0 batch-import
+    /// regression (UC-3/UC-4 imported zero families).
+    /// </summary>
+    [Fact]
+    public void GetResultItems_PreservesSource_OnLoadableRow()
+    {
+        var source = new FamilyImportSource.LoadableSource(
+            FamilyName: "TestFamily",
+            FamilyUniqueId: "uid-123",
+            CategoryName: "TestCategory");
+        var placeholder = "loadable://TestFamily";
+        var items = new[] { MakeItem("TestFamily", source: source, filePath: placeholder) };
+        using var vm = CreateVm(items);
+
+        var result = vm.GetResultItems();
+
+        Assert.Single(result);
+        Assert.Same(source, result[0].Source);
+        Assert.Equal(placeholder, result[0].FilePath);
+    }
+
+    /// <summary>
+    /// v2.0.0 regression: same as <see cref="GetResultItems_PreservesSource_OnLoadableRow"/>
+    /// but for the system-family path. The system <see cref="FamilyImportSource.SystemSource"/>
+    /// carries the type unique ids needed by
+    /// <c>StageSystemFamiliesFromMetadataAsync</c>.
+    /// </summary>
+    [Fact]
+    public void GetResultItems_PreservesSource_OnSystemRow()
+    {
+        var source = new FamilyImportSource.SystemSource(
+            DisplayName: "Трубы",
+            CategoryId: 41, // OST_Pipes
+            TypeUniqueIds: new[] { "uid-1", "uid-2" },
+            TypeNames: new[] { "Тип 1", "Тип 2" });
+        var placeholder = "system://active-project/Трубы";
+        var items = new[] { new FamilyBatchImportItem(
+            FilePath: placeholder,
+            FileName: "Трубы",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.New,
+            FamilySource: "system",
+            TypeCount: 2,
+            RevitCategory: "Трубы",
+            Source: source) };
+        using var vm = CreateVm(items);
+
+        var result = vm.GetResultItems();
+
+        Assert.Single(result);
+        Assert.Same(source, result[0].Source);
+        Assert.Equal(placeholder, result[0].FilePath);
+    }
+
+    /// <summary>
+    /// v2.0.0 regression: <see cref="FamilyBatchImportRow"/> must
+    /// expose the input <see cref="FamilyBatchImportItem.Source"/> via
+    /// its <c>Source</c> property. Without it, callers that need the
+    /// payload (e.g. custom VM code) have no way to read it back.
+    /// </summary>
+    [Fact]
+    public void FamilyBatchImportRow_ExposesSource()
+    {
+        var source = new FamilyImportSource.LoadableSource(
+            FamilyName: "X", FamilyUniqueId: "u", CategoryName: "C");
+        var items = new[] { MakeItem("X", source: source, filePath: "loadable://X") };
+        using var vm = CreateVm(items);
+        var row = vm.Items.Single();
+
+        Assert.Same(source, row.Source);
     }
 }
