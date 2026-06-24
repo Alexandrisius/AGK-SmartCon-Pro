@@ -596,8 +596,10 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
                 fm.Set(param, (int)value!);
                 break;
             case StorageType.ElementId:
-#if REVIT2022_OR_GREATER
+#if REVIT2024_OR_GREATER
                 fm.Set(param, new ElementId((long)value!));
+#elif REVIT2022_OR_GREATER
+                fm.Set(param, new ElementId((int)value!));
 #else
                 fm.Set(param, new ElementId((BuiltInParameter)(long)value!));
 #endif
