@@ -35,7 +35,7 @@ public sealed class SystemFamilyAttributeExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAndSaveAsync_MissingTempRvt_SkipsAndDoesNotCallSave()
+    public async Task ExtractAndSaveAsync_MissingManagedRvt_SkipsAndDoesNotCallSave()
     {
         var extraction = new StubExtraction();
         var dataImport = new StubDataImport();
@@ -45,7 +45,7 @@ public sealed class SystemFamilyAttributeExtractorTests
             dataImport);
 
         var missing = new SystemFamilyExtractionTask(
-            "cat-1", @"C:\non-existent\temp.rvt", new[] { "TypeA" }, null, null);
+            "cat-1", @"C:\non-existent\managed.rvt", new[] { "TypeA" }, null, null);
 
         await sut.ExtractAndSaveAsync(new[] { missing });
 
@@ -54,10 +54,10 @@ public sealed class SystemFamilyAttributeExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAndSaveAsync_SuccessfulExtraction_AwaitsSaveThenDeletes()
+    public async Task ExtractAndSaveAsync_SuccessfulExtraction_AwaitsSaveAndRetainsManagedRvt()
     {
-        var tempRvt = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
-        File.WriteAllBytes(tempRvt, new byte[] { 0x00 });
+        var managedRvt = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
+        File.WriteAllBytes(managedRvt, new byte[] { 0x00 });
         try
         {
             var extraction = new StubExtraction();
@@ -68,25 +68,28 @@ public sealed class SystemFamilyAttributeExtractorTests
                 dataImport);
 
             var task = new SystemFamilyExtractionTask(
-                "cat-1", tempRvt, new[] { "TypeA" }, null, null);
+                "cat-1", managedRvt, new[] { "TypeA" }, null, null);
 
             await sut.ExtractAndSaveAsync(new[] { task });
 
             Assert.Equal(1, extraction.CallCount);
             Assert.Equal(1, dataImport.SaveCount);
-            Assert.False(File.Exists(tempRvt), "Temp .rvt must be deleted after save completes");
+            // v2.0.0: managed .rvt must remain on disk (I-16 immutable) so
+            // Edit System Family can resolve it through LocalFamilyFileResolver.
+            Assert.True(File.Exists(managedRvt),
+                "Managed .rvt must remain in catalog storage after extraction");
         }
         finally
         {
-            try { if (File.Exists(tempRvt)) File.Delete(tempRvt); } catch { }
+            try { if (File.Exists(managedRvt)) File.Delete(managedRvt); } catch { }
         }
     }
 
     [Fact]
-    public async Task ExtractAndSaveAsync_ExtractionFails_DoesNotCallSaveButDeletes()
+    public async Task ExtractAndSaveAsync_ExtractionFails_DoesNotCallSaveButRetainsFile()
     {
-        var tempRvt = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
-        File.WriteAllBytes(tempRvt, new byte[] { 0x00 });
+        var managedRvt = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
+        File.WriteAllBytes(managedRvt, new byte[] { 0x00 });
         try
         {
             var extraction = new StubExtraction(forceFail: true);
@@ -97,27 +100,28 @@ public sealed class SystemFamilyAttributeExtractorTests
                 dataImport);
 
             var task = new SystemFamilyExtractionTask(
-                "cat-1", tempRvt, new[] { "TypeA" }, null, null);
+                "cat-1", managedRvt, new[] { "TypeA" }, null, null);
 
             await sut.ExtractAndSaveAsync(new[] { task });
 
             Assert.Equal(1, extraction.CallCount);
             Assert.Equal(0, dataImport.SaveCount);
-            Assert.False(File.Exists(tempRvt), "Temp .rvt is still deleted even if extraction failed");
+            Assert.True(File.Exists(managedRvt),
+                "Managed .rvt stays on disk even when extraction failed");
         }
         finally
         {
-            try { if (File.Exists(tempRvt)) File.Delete(tempRvt); } catch { }
+            try { if (File.Exists(managedRvt)) File.Delete(managedRvt); } catch { }
         }
     }
 
     [Fact]
     public async Task ExtractAndSaveAsync_MultipleTasks_AwaitsAllSaves()
     {
-        var tempRvt1 = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
-        var tempRvt2 = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
-        File.WriteAllBytes(tempRvt1, new byte[] { 0x00 });
-        File.WriteAllBytes(tempRvt2, new byte[] { 0x00 });
+        var managedRvt1 = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
+        var managedRvt2 = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
+        File.WriteAllBytes(managedRvt1, new byte[] { 0x00 });
+        File.WriteAllBytes(managedRvt2, new byte[] { 0x00 });
         try
         {
             var extraction = new StubExtraction();
@@ -129,29 +133,29 @@ public sealed class SystemFamilyAttributeExtractorTests
 
             var tasks = new[]
             {
-                new SystemFamilyExtractionTask("cat-1", tempRvt1, new[] { "T1" }, null, null),
-                new SystemFamilyExtractionTask("cat-2", tempRvt2, new[] { "T2" }, null, null),
+                new SystemFamilyExtractionTask("cat-1", managedRvt1, new[] { "T1" }, null, null),
+                new SystemFamilyExtractionTask("cat-2", managedRvt2, new[] { "T2" }, null, null),
             };
 
             await sut.ExtractAndSaveAsync(tasks);
 
             Assert.Equal(2, extraction.CallCount);
             Assert.Equal(2, dataImport.SaveCount);
-            Assert.False(File.Exists(tempRvt1));
-            Assert.False(File.Exists(tempRvt2));
+            Assert.True(File.Exists(managedRvt1));
+            Assert.True(File.Exists(managedRvt2));
         }
         finally
         {
-            try { if (File.Exists(tempRvt1)) File.Delete(tempRvt1); } catch { }
-            try { if (File.Exists(tempRvt2)) File.Delete(tempRvt2); } catch { }
+            try { if (File.Exists(managedRvt1)) File.Delete(managedRvt1); } catch { }
+            try { if (File.Exists(managedRvt2)) File.Delete(managedRvt2); } catch { }
         }
     }
 
     [Fact]
-    public async Task ExtractAndSaveAsync_SaveThrows_DoesNotPropagateAndStillDeletes()
+    public async Task ExtractAndSaveAsync_SaveThrows_DoesNotPropagateAndRetainsManagedFile()
     {
-        var tempRvt = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
-        File.WriteAllBytes(tempRvt, new byte[] { 0x00 });
+        var managedRvt = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
+        File.WriteAllBytes(managedRvt, new byte[] { 0x00 });
         try
         {
             var extraction = new StubExtraction();
@@ -162,16 +166,17 @@ public sealed class SystemFamilyAttributeExtractorTests
                 dataImport);
 
             var task = new SystemFamilyExtractionTask(
-                "cat-1", tempRvt, new[] { "TypeA" }, null, null);
+                "cat-1", managedRvt, new[] { "TypeA" }, null, null);
 
             await sut.ExtractAndSaveAsync(new[] { task });
 
             Assert.Equal(1, dataImport.SaveCount);
-            Assert.False(File.Exists(tempRvt));
+            Assert.True(File.Exists(managedRvt),
+                "Save failure must not delete the managed file");
         }
         finally
         {
-            try { if (File.Exists(tempRvt)) File.Delete(tempRvt); } catch { }
+            try { if (File.Exists(managedRvt)) File.Delete(managedRvt); } catch { }
         }
     }
 

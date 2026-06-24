@@ -6,6 +6,7 @@ using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Threading;
 using SmartCon.FamilyManager;
@@ -151,32 +152,7 @@ public sealed class App : IExternalApplication
     /// </summary>
     private static void CleanupLegacyStageFolder()
     {
-        try
-        {
-            var fmDir = Path.Combine(s_smartConDir, "FamilyManager");
-            if (!Directory.Exists(fmDir)) return;
-
-            foreach (var catalogDir in Directory.GetDirectories(fmDir))
-            {
-                var stageDir = Path.Combine(catalogDir, "files", "_stage");
-                if (!Directory.Exists(stageDir)) continue;
-
-                try
-                {
-                    Directory.Delete(stageDir, recursive: true);
-                    SmartConLogger.Info($"Removed legacy staging folder: {stageDir}");
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Debug(
-                        $"App.CleanupLegacyStageFolder: failed to remove '{stageDir}': {ex.Message}");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Debug($"App.CleanupLegacyStageFolder: {ex.GetType().Name}: {ex.Message}");
-        }
+        LegacyStageFolderCleaner.Cleanup(Path.Combine(s_smartConDir, "FamilyManager"));
     }
 
     private static Assembly? OnAssemblyResolve(object? sender, ResolveEventArgs args)
