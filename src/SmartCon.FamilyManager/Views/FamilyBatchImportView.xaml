@@ -87,6 +87,7 @@
                      SelectionUnit="FullRow"
                      CanUserResizeColumns="True"
                      CanUserSortColumns="False"
+                     EnableRowVirtualization="False"
                      behaviors:DataGridBehaviors.DeselectOnEmptyClick="True"
                      behaviors:DataGridBehaviors.RestoreMultiSelectOnCellClick="True">
                 <DataGrid.ColumnHeaderStyle>
