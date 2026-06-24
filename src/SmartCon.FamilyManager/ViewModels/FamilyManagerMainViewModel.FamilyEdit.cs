@@ -642,6 +642,23 @@ public sealed partial class FamilyManagerMainViewModel
             loadableAttributeTasks = loadResult.AttributeTasks;
             SmartConLogger.Info(
                 $"Loadable: imported={loadResult.ImportedCount}, skipped={loadResult.SkippedCount}, attrTasks={loadableAttributeTasks.Count}");
+
+            // Issue #84 (Phase 24): re-sync FamilyVersion marker for every
+            // loadable family that successfully made it into the catalog. The
+            // "Импорт активного файла" / "Импорт выделенных" flows copy
+            // in-project family bytes into managed storage and bump the
+            // catalog version (v1 / vN+1), but do not touch the Family
+            // element in the active project. Without re-writing the marker
+            // the next "Проверить" immediately flags every freshly-imported
+            // loadable as stale (NoEntityStorage), even though the in-project
+            // family IS the authoritative vN+1 source for the new catalog
+            // row. System families (FamilySource == "system") are skipped by
+            // design — ADR-030 §Out of Scope: there is no in-project Family
+            // element to write a marker onto (OST_PipeCurves etc. are
+            // MEPCurve / Wall in Revit, not Family).
+            await WriteVersionMarkersForImportedLoadablesAsync(
+                loadableItems, loadableAttributeTasks, CancellationToken.None).ConfigureAwait(true);
+            _staleDetector.InvalidateCache();
         }
 
         if (loadableAttributeTasks.Count > 0)
@@ -660,6 +677,28 @@ public sealed partial class FamilyManagerMainViewModel
                 LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported) ?? "Импортировано: {0}",
                 totalTypes)
             : "Импорт завершён";
+    }
+
+    /// <summary>
+    /// Issue #84 / Phase 24 (ADR-030): thin wrapper that delegates to
+    /// <see cref="LoadableMarkerLogic.WriteMarkersForImportedLoadablesAsync"/>.
+    /// Called from <see cref="ProcessProjectImportAsync"/> after a successful
+    /// loadable import so that the next "Проверить" does not flag every
+    /// freshly-imported loadable as stale (see ADR-030 + issue body for
+    /// the full rationale). Pure logic lives in Core so it is unit-testable
+    /// without spinning up the Revit API.
+    /// </summary>
+    private Task WriteVersionMarkersForImportedLoadablesAsync(
+        List<FamilyBatchImportItem> loadableItems,
+        IReadOnlyList<LoadableFamilyAttributeTask> attributeTasks,
+        CancellationToken ct)
+    {
+        return LoadableMarkerLogic.WriteMarkersForImportedLoadablesAsync(
+            loadableItems,
+            attributeTasks,
+            _versionWriter,
+            CurrentRevitVersion,
+            ct);
     }
 
     /// <summary>

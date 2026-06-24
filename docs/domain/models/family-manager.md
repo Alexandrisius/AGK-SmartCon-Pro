@@ -1179,6 +1179,46 @@ public static class StaleSnapshotLogic
 
 ---
 
+## LoadableMarkerLogic
+
+Issue #84 / Phase 24 (ADR-030): pure static helper, который после успешного импорта loadable-семейства из активного проекта в каталог (через «Импорт активного файла» / «Импорт выделенных») переписывает `SmartCon_FamilyVersion_v1` ExtensibleStorage маркер на Family-элементе в активном проекте. Без этого шага следующий «Проверить» сразу помечает каждое свеже-импортированное loadable как `StaleReason.NoEntityStorage`, хотя это семейство в проекте и есть авторитетный источник vN+1 для новой строки каталога.
+
+**Файл:** `LoadableMarkerLogic.cs` (в `SmartCon.Core/Services/Interfaces/`)
+
+```csharp
+public static class LoadableMarkerLogic
+{
+    public static Task<MarkerWriteSummary> WriteMarkersForImportedLoadablesAsync(
+        IReadOnlyList<FamilyBatchImportItem> loadableItems,
+        IReadOnlyList<LoadableFamilyAttributeTask> attributeTasks,
+        IFamilyVersionWriter versionWriter,
+        int targetRevit,
+        CancellationToken ct);
+
+    public sealed record MarkerWriteSummary(
+        int SuccessCount,
+        int SkippedCount,
+        int FailedCount,
+        int Total);
+}
+```
+
+**Семантика:**
+
+- Для каждого `LoadableFamilyAttributeTask` (успешно импортированное loadable) ищет соответствующий `FamilyBatchImportItem` по `PrecomputedCatalogItemId` и вызывает `IFamilyVersionWriter.WriteVersionMarkerAsync(catalogItemId, item.FileName, item.PrecomputedVersionLabel, targetRevit, ct)`. Версия маркера = та же, что попала в каталог (`v1` для нового, `vN+1` для ре-импорта).
+- Само содержимое `Family` в проекте **не меняется** — меняется только метаданные маркера.
+- Per-family try/catch: исключение на одном семействе **не прерывает** батч — пишется `Warn` с `[Action: ...]` и счётчик `FailedCount++`. Каталог уже принял запись, откатывать импорт нельзя.
+- `SkippedCount` растёт если `task.CatalogItemId` пуст или не нашлось matching batch item (теоретический edge case, в orchestrator'е такого не бывает).
+- System families (`FamilySource == "system"`) **не появляются** на входе — `ProcessProjectImportAsync` фильтрует их upstream. По дизайну (ADR-030 §Out of Scope) у них нет in-project `Family` элемента в смысле Revit API (`OST_PipeCurves` и т.п. — это `MEPCurve` / `Wall`).
+- Aggregate `MarkerWriteSummary`: `SuccessCount + SkippedCount + FailedCount == Total`.
+
+**Используется в:**
+- `FamilyManagerMainViewModel.FamilyEdit.cs:WriteVersionMarkersForImportedLoadablesAsync` — тонкая обёртка, делегирующая в этот helper. Вызывается из `ProcessProjectImportAsync` после `LoadableFamilyImportOrchestrator.ImportAndPersistTypesAsync` и перед `_staleDetector.InvalidateCache()`.
+
+**Pure logic** — никакого Revit API в сигнатуре (только `IFamilyVersionWriter`). Позволяет unit-тестировать через hand-written fake `IFamilyVersionWriter` без поднятия Revit (`src/SmartCon.Tests/FamilyManager/Stale/LoadableMarkerLogicTests.cs` — 8 тестов на empty batch / single / multiple / no-match skip / full failure / partial failure isolation / targetRevit passthrough / null-args throws).
+
+---
+
 ## FamilySourceTypeInfo
 
 v2.0.0: Core-level DTO для типов системных семейств, используемый в публичных API batch dialog (см. `FamilyBatchImportItem.SourceTypes` и `SystemFamilyPendingImport.Types`). Создан чтобы Core record не тянул `Autodesk.Revit.DB.BuiltInCategory` через `SelectedSystemType` — иначе нарушается I-09 (Core не должен зависеть от Revit API в публичных сигнатурах) и тесты без runtime Revit падают.
