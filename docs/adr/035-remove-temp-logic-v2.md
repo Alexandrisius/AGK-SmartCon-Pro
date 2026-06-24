@@ -117,22 +117,40 @@ Active family document in Revit
                    → active doc stays open with PathName = managed path
 ```
 
-`CloseFamilyDocumentAsync` is removed entirely. The active family document
-remains open across the import — `SaveAs` into managed storage does **not**
-close the source document. The user's `PathName` after import points to
-the managed copy, which is expected (they can save again locally if needed).
+`CloseFamilyDocumentAsync` is **retained** for the post-import teardown
+of the orphan family document (the one Revit opened when the user invoked
+"Редактировать" on a managed catalog item — see issue #79). The hotfix
+path keeps the active document open across a cancelled batch dialog
+(returns `false` from `ProcessFamilyImportAsync`, no `CloseFamilyDocumentAsync`
+call), and only invokes `CloseFamilyDocumentAsync(managedRfaPath)` when
+the user confirmed the import — at which point the now-orphaned family
+document is closed and focus returns to the host project.
 
 ### UC-3 / UC-4 (Import Active Project / Selected Elements) flow change
 
 Before v2.0.0: temp files for system categories and loadable families were
 created in `%TEMP%\SmartCon\SystemFamilyLoadFromProject\{guid}\` before the
-batch dialog appeared, leaving orphan files if the user cancelled.
+batch dialog appeared, leaving orphan files if the user cancelled. Loadable
+families used a separate `dbRoot/files/_stage/{guid}/{name}.rfa` transient
+location, also leaking on cancel.
 
-After v2.0.0: the VM computes a target managed path
-(`{db-root}/files/{newGuid}/v1/{name}.rfa`) and the isolation project service
-saves directly into managed storage. If the user cancels the batch dialog,
-the orphan `.rvt` files remain in managed storage but are unreferenced from
-the catalog. A future Phase can add an orphan-sweep task (not in scope here).
+After v2.0.0:
+- `ComputeSystemFamilyManagedPath(displayName)` and
+  `ComputeLoadableFamilyManagedPath(familyName)` allocate the canonical
+  managed path (`{db-root}/files/{newGuid}/v1/{name}.r{fa|vt}`) up front.
+- The isolation project service (`CreateCleanProjectWithTypesAndInstances`)
+  and the loadable staging helper (`StageLoadableFamilyFromProject`) both
+  `SaveAs` directly into managed storage — no `_stage/` fallback, no temp.
+- `LocalFamilyImportService.PrepareManagedRfaAsync` gains an early-out
+  that skips the copy when the source already lives under
+  `{db-root}/files/`, removing the duplicate managed copy that UC-3/UC-4
+  used to produce before `ImportBatchAsync` registered the new catalog item.
+- `App.OnStartup` runs `CleanupLegacyStageFolder` once on upgrade to remove
+  any `_stage/` folder left behind by prior versions. The path is idempotent
+  (no folder → no-op).
+- If the user cancels the batch dialog, the orphan `.rvt` / `.rfa` files
+  remain in managed storage but are unreferenced from the catalog. A future
+  Phase can add an orphan-sweep task (not in scope here).
 
 ### Type Catalog and read-only files
 
