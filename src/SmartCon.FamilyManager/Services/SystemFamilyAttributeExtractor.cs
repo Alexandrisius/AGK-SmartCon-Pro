@@ -56,15 +56,15 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
             {
                 try
                 {
-                    if (!File.Exists(task.TempRvtPath))
+                    if (!File.Exists(task.ManagedRvtPath))
                     {
                         SmartConLogger.Warn(
-                            $"[SystemImport.Extract] Temp .rvt not found for extraction: {task.TempRvtPath}");
+                            $"[SystemImport.Extract] Managed .rvt not found for extraction: {task.ManagedRvtPath}");
                         continue;
                     }
 
                     var extraction = _extraction.ExtractFromRvt(
-                        task.TempRvtPath, task.TypeNames);
+                        task.ManagedRvtPath, task.TypeNames);
                     if (extraction.Success)
                     {
                         var saveTask = Task.Run(async () =>
@@ -75,7 +75,7 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
                                     task.CatalogItemId, extraction, task.VersionId, task.FileId,
                                     CancellationToken.None);
                                 SmartConLogger.Debug(
-                                    $"[SystemImport.Extract] Saved extraction for '{Path.GetFileName(task.TempRvtPath)}': " +
+                                    $"[SystemImport.Extract] Saved extraction for '{Path.GetFileName(task.ManagedRvtPath)}': " +
                                     $"{extraction.Types.Count} types");
                             }
                             catch (Exception ex)
@@ -89,14 +89,14 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
                     else
                     {
                         SmartConLogger.Warn(
-                            $"[SystemImport.Extract] Extraction failed for '{Path.GetFileName(task.TempRvtPath)}': " +
+                            $"[SystemImport.Extract] Extraction failed for '{Path.GetFileName(task.ManagedRvtPath)}': " +
                             $"{extraction.ErrorMessage}");
                     }
                 }
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn(
-                        $"[SystemImport.Extract] Extraction exception for '{task.TempRvtPath}': {ex.Message}");
+                        $"[SystemImport.Extract] Extraction exception for '{task.ManagedRvtPath}': {ex.Message}");
                 }
             }
         }, ct);
@@ -104,7 +104,7 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
         if (pendingSaves.Count > 0)
         {
             SmartConLogger.Debug(
-                $"[SystemImport.Extract] Waiting for {pendingSaves.Count} save(s) before cleanup...");
+                $"[SystemImport.Extract] Waiting for {pendingSaves.Count} save(s)...");
             try
             {
                 await Task.WhenAll(pendingSaves);
@@ -116,15 +116,10 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
             }
         }
 
-        foreach (var task in tasks)
+        if (tasks.Count > 0)
         {
-            try
-            {
-                if (File.Exists(task.TempRvtPath)) File.Delete(task.TempRvtPath);
-                var metaPath = task.TempRvtPath + ".types.json";
-                if (File.Exists(metaPath)) File.Delete(metaPath);
-            }
-            catch { }
+            SmartConLogger.Debug(
+                $"[SystemImport.Extract] Extraction complete; managed .rvt files retained in catalog storage (I-16 immutable).");
         }
 
         SmartConLogger.Info(

@@ -9,7 +9,7 @@ namespace SmartCon.Core.Services.Interfaces;
 public sealed record SystemFamilyPendingImport(
     string CategoryName,
     IReadOnlyList<SelectedSystemType> Types,
-    string TempRvtPath);
+    string ManagedRvtPath);
 
 /// <summary>
 /// Catalog-side orchestration of a staged system-family import:

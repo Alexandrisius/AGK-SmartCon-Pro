@@ -486,10 +486,10 @@ public sealed partial class FamilyManagerMainViewModel
         var pendingItems = StageSystemFromAnalysis(analysis);
         foreach (var pending in pendingItems)
         {
-            if (!File.Exists(pending.TempRvtPath))
+            if (!File.Exists(pending.ManagedRvtPath))
                 continue;
 
-            var revitVersion = _fileInfoReader.ReadRevitVersion(pending.TempRvtPath) ?? CurrentRevitVersion;
+            var revitVersion = _fileInfoReader.ReadRevitVersion(pending.ManagedRvtPath) ?? CurrentRevitVersion;
 
             var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(pending.CategoryName);
             var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, ct);
@@ -510,7 +510,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
 
             result.Add(new FamilyBatchImportItem(
-                FilePath: pending.TempRvtPath,
+                FilePath: pending.ManagedRvtPath,
                 FileName: pending.CategoryName,
                 RevitMajorVersion: revitVersion,
                 Status: status,
@@ -750,9 +750,9 @@ public sealed partial class FamilyManagerMainViewModel
         SystemFamilyPendingImport pending, CancellationToken ct,
         IReadOnlyDictionary<string, CategoryNode>? categoriesById = null)
     {
-        if (!File.Exists(pending.TempRvtPath)) return null;
+        if (!File.Exists(pending.ManagedRvtPath)) return null;
 
-        var revitVersion = _fileInfoReader.ReadRevitVersion(pending.TempRvtPath) ?? CurrentRevitVersion;
+        var revitVersion = _fileInfoReader.ReadRevitVersion(pending.ManagedRvtPath) ?? CurrentRevitVersion;
         var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(pending.CategoryName);
         var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, ct);
 
@@ -816,7 +816,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
 
         return new FamilyBatchImportItem(
-            FilePath: pending.TempRvtPath,
+            FilePath: pending.ManagedRvtPath,
             FileName: pending.CategoryName,
             RevitMajorVersion: revitVersion,
             Status: status,
