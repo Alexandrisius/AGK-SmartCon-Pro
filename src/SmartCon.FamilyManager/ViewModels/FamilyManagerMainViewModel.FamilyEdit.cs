@@ -220,14 +220,12 @@ public sealed partial class FamilyManagerMainViewModel
             var doc = uiApp.ActiveUIDocument?.Document;
             if (doc is null || !doc.IsFamilyDocument)
             {
-                return new ActiveFamilySnapshot(null, string.Empty, 0, false, null);
+                return new ActiveFamilySnapshot(null, string.Empty, 0, null);
             }
             var revitVersion = _fileInfoReader.ReadRevitVersion(doc.PathName) ?? CurrentRevitVersion;
             var baseName = SafeFileName.GetBaseName(
                 string.IsNullOrEmpty(doc.PathName) ? doc.Title : doc.PathName);
-            var hasTypeCatalog = !string.IsNullOrEmpty(doc.PathName)
-                && File.Exists(Path.ChangeExtension(doc.PathName, ".txt"));
-            return new ActiveFamilySnapshot(doc, baseName, revitVersion, hasTypeCatalog, doc.PathName);
+            return new ActiveFamilySnapshot(doc, baseName, revitVersion, doc.PathName);
         });
 
         if (snapshot.Document is null)
@@ -528,11 +526,15 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     /// <summary>Snapshot of an active family document captured on the Revit UI thread.</summary>
+    /// <remarks>
+    /// v2.0.0: <c>HasTypeCatalog</c> removed. ADR-033 bakes the Type Catalog
+    /// into the managed .rfa at import time, so the active document no
+    /// longer needs to advertise whether a sidecar exists.
+    /// </remarks>
     private sealed record ActiveFamilySnapshot(
         Document? Document,
         string BaseName,
         int RevitVersion,
-        bool HasTypeCatalog,
         string? OriginalPathName);
 
     private async Task ProcessProjectImportAsync(IReadOnlyList<FamilyBatchImportItem> batchItems)
@@ -640,16 +642,8 @@ public sealed partial class FamilyManagerMainViewModel
                 var extraction = await ExtractFromManagedFileAsync(task.ManagedRfaPath, Array.Empty<string>(), CancellationToken.None);
                 if (extraction.Success)
                 {
-                    if (task.HasTypeCatalog)
-                    {
-                        await _dataImportService.MergeMissingValuesAsync(
-                            task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
-                    }
-                    else
-                    {
-                        await _dataImportService.SaveExtractionResultAsync(
-                            task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
-                    }
+                    await _dataImportService.SaveExtractionResultAsync(
+                        task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
                     SmartConLogger.Info(
                         $"Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(task.ManagedRfaPath)}' (CatalogItemId={task.CatalogItemId})");
 
@@ -687,7 +681,7 @@ public sealed partial class FamilyManagerMainViewModel
         using var _scope = SmartConLogger.BeginScope("FMLoadable",
             ("Method", "ExtractAttributesForImportedFamilies"),
             ("Count", importResults.Count));
-        var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionId, string? FileId, bool HasTypeCatalog)>();
+        var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionId, string? FileId)>();
 
         try
         {
@@ -701,13 +695,10 @@ public sealed partial class FamilyManagerMainViewModel
 
                 if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
 
-                var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
-                var hasTypeCatalog = File.Exists(txtPath);
-
                 var extraction = await ExtractFromManagedFileAsync(resolved.AbsolutePath, Array.Empty<string>(), CancellationToken.None);
                 if (extraction.Success)
                 {
-                    extractionResults.Add((catalogItemId, extraction, item.VersionId, item.FileId, hasTypeCatalog));
+                    extractionResults.Add((catalogItemId, extraction, item.VersionId, item.FileId));
                     SmartConLogger.Info(
                         $"Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(resolved.AbsolutePath)}'");
 
@@ -732,11 +723,10 @@ public sealed partial class FamilyManagerMainViewModel
         {
             try
             {
-                foreach (var (catalogItemId, result, versionId, fileId, hasTypeCatalog) in extractionResults)
+                foreach (var (catalogItemId, result, versionId, fileId) in extractionResults)
                 {
                     // v2.0.0: Type Catalog (.txt) no longer stored in managed
                     // storage. Save unconditionally (ADR-033 bake-in).
-                    _ = hasTypeCatalog; // suppress unused warning
                     await _dataImportService.SaveExtractionResultAsync(
                         catalogItemId, result, versionId, fileId, CancellationToken.None);
                 }

@@ -183,7 +183,7 @@ public sealed partial class FamilyManagerMainViewModel
             // when OpenDocumentFile triggers MFC family upgrade dialog
             StatusMessage = BuildImportStatusMessage(successCount, skippedCount, errorCount, total);
 
-            var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionLabel, string? FileId, bool HasTypeCatalog)>();
+            var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionLabel, string? FileId)>();
 
             try
             {
@@ -199,13 +199,10 @@ public sealed partial class FamilyManagerMainViewModel
 
                     if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
 
-                    var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
-                    var hasTypeCatalog = File.Exists(txtPath);
-
                     var extractionResult = await ExtractFromManagedFileAsync(resolved.AbsolutePath, Array.Empty<string>(), CancellationToken.None);
                     if (extractionResult.Success)
                     {
-                        extractionResults.Add((catalogItemId, extractionResult, item.VersionId, item.FileId, hasTypeCatalog));
+                        extractionResults.Add((catalogItemId, extractionResult, item.VersionId, item.FileId));
 
                         // ADR-034: persist shared-nested names in the same
                         // ExtractFromManagedFile call (V3 — no second
@@ -236,13 +233,12 @@ public sealed partial class FamilyManagerMainViewModel
                 var saveSw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
-                    foreach (var (catalogItemId, result, versionId, fileId, hasTypeCatalog) in extractionResults)
+                    foreach (var (catalogItemId, result, versionId, fileId) in extractionResults)
                     {
                         // v2.0.0: Type Catalog (.txt) no longer stored in managed
                         // storage. Baker baked the types into the .rfa itself
                         // (ADR-033), so the extraction result is always the
-                        // authoritative data. Save unconditionally.
-                        _ = hasTypeCatalog; // suppress unused warning
+                        // authoritative data.
                         await _dataImportService.SaveExtractionResultAsync(
                             catalogItemId, result, versionId, fileId, CancellationToken.None);
                     }

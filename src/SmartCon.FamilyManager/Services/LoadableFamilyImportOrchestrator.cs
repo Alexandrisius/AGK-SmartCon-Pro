@@ -105,13 +105,11 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                     match.CatalogItemId!, targetRevitVersion, ct);
                 if (!string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
-                    var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
                     attributeTasks.Add(new LoadableFamilyAttributeTask(
                         CatalogItemId: match.CatalogItemId!,
                         ManagedRfaPath: resolved.AbsolutePath,
                         VersionId: match.VersionId,
-                        FileId: match.FileId,
-                        HasTypeCatalog: File.Exists(txtPath)));
+                        FileId: match.FileId));
                 }
             }
             catch (Exception ex)
