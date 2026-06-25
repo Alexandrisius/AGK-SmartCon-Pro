@@ -1,0 +1,118 @@
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace SmartCon.FamilyManager.ViewModels;
+
+public sealed partial class FamilyManagerMainViewModel
+{
+    /// <summary>
+    /// Recursively expands the subtree rooted at <paramref name="node"/>.
+    /// Sets <see cref="CatalogTreeNodeViewModel.IsExpanded"/> to <c>true</c>
+    /// on every <see cref="CategoryNodeViewModel"/> in the subtree. Leaves
+    /// (<see cref="FamilyLeafNodeViewModel"/>) are ignored — their IsExpanded
+    /// has no visual effect.
+    /// </summary>
+    internal static void ExpandSubtree(CatalogTreeNodeViewModel node)
+    {
+        foreach (var child in node.Children)
+        {
+            if (child is CategoryNodeViewModel catChild)
+                ExpandSubtree(catChild);
+        }
+
+        if (node is CategoryNodeViewModel cat)
+            cat.IsExpanded = true;
+    }
+
+    /// <summary>
+    /// Recursively collapses the subtree rooted at <paramref name="node"/>,
+    /// INCLUDING the root node itself. Matches VS Solution Explorer behavior:
+    /// "Collapse All" closes the whole subtree, not just the children.
+    /// </summary>
+    internal static void CollapseSubtree(CatalogTreeNodeViewModel node)
+    {
+        if (node is CategoryNodeViewModel cat)
+            cat.IsExpanded = false;
+
+        foreach (var child in node.Children)
+        {
+            if (child is CategoryNodeViewModel catChild)
+                CollapseSubtree(catChild);
+        }
+    }
+
+    /// <summary>
+    /// Expands every root category and all of its descendants.
+    /// </summary>
+    internal static void ExpandAll(IEnumerable<CatalogTreeNodeViewModel> roots)
+    {
+        foreach (var root in roots)
+            ExpandSubtree(root);
+    }
+
+    /// <summary>
+    /// Collapses every root category and all of its descendants (including roots).
+    /// </summary>
+    internal static void CollapseAll(IEnumerable<CatalogTreeNodeViewModel> roots)
+    {
+        foreach (var root in roots)
+            CollapseSubtree(root);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if any category in the subtree rooted at
+    /// <paramref name="category"/> is collapsed (including the root itself).
+    /// Used by the hover-reveal toggle button to decide whether clicking
+    /// should expand or collapse.
+    /// </summary>
+    internal static bool IsAnyDescendantCollapsed(CategoryNodeViewModel category)
+    {
+        if (!category.IsExpanded)
+            return true;
+
+        foreach (var child in category.Children)
+        {
+            if (child is CategoryNodeViewModel catChild && IsAnyDescendantCollapsed(catChild))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Expands the entire tree. Bound to the "Развернуть всё" button in the status bar.
+    /// </summary>
+    [RelayCommand]
+    private void ExpandAllTree()
+    {
+        ExpandAll(TreeNodes);
+    }
+
+    /// <summary>
+    /// Collapses the entire tree (including all root categories). Bound to the
+    /// "Свернуть всё" button in the status bar.
+    /// </summary>
+    [RelayCommand]
+    private void CollapseAllTree()
+    {
+        CollapseAll(TreeNodes);
+    }
+
+    /// <summary>
+    /// Toggles the subtree rooted at <paramref name="category"/>:
+    /// expands everything if any descendant is collapsed, otherwise collapses
+    /// the whole subtree. Bound to the hover-reveal button in each category
+    /// header.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleSubtree(CategoryNodeViewModel? category)
+    {
+        if (category is null)
+            return;
+
+        if (IsAnyDescendantCollapsed(category))
+            ExpandSubtree(category);
+        else
+            CollapseSubtree(category);
+    }
+}

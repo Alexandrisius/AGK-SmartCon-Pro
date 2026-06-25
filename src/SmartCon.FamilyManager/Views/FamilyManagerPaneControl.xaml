@@ -20,6 +20,7 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <converters:StaleCountToTooltipConverter x:Key="StaleCountToTooltipConverter"/>
             <converters:StaleReasonToTooltipConverter x:Key="StaleReasonToTooltipConverter"/>
+            <converters:TotalItemCountToTooltipConverter x:Key="TotalItemCountToTooltipConverter"/>
 
             <Style x:Key="DangerIconButton" TargetType="Button">
                 <Setter Property="Background" Value="Transparent"/>
@@ -624,7 +625,11 @@
                 <HierarchicalDataTemplate DataType="{x:Type vm:CategoryNodeViewModel}"
                                            ItemsSource="{Binding Children}">
                     <Grid HorizontalAlignment="Stretch">
-                        <StackPanel Orientation="Horizontal">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
                             <Path Data="{StaticResource FolderIconGeometry}"
                                    Fill="{DynamicResource TextMutedBrush}"
                                    Width="14" Height="14"
@@ -646,6 +651,48 @@
                                        FontSize="11" VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
                         </StackPanel>
+                        <Button Grid.Column="1"
+                                Command="{Binding DataContext.ToggleSubtreeCommand,
+                                                  RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                CommandParameter="{Binding}"
+                                Width="20" Height="20"
+                                Margin="6,0,4,0"
+                                Cursor="Hand"
+                                Focusable="False"
+                                ToolTip="{loc:Loc FM_ToggleSubtreeTooltip}"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource FlatIconButton}">
+                                    <Setter Property="Opacity" Value="0"/>
+                                    <Setter Property="IsHitTestVisible" Value="False"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMouseOver,
+                                                                       RelativeSource={RelativeSource AncestorType=TreeViewItem}}"
+                                                     Value="True">
+                                            <Setter Property="Opacity" Value="1"/>
+                                            <Setter Property="IsHitTestVisible" Value="True"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Path Fill="{DynamicResource TextSecondaryBrush}"
+                                  Width="12" Height="12"
+                                  Stretch="Uniform"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Data" Value="{StaticResource UnfoldMoreGeometry}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsAnyDescendantCollapsed}" Value="False">
+                                                <Setter Property="Data" Value="{StaticResource UnfoldLessGeometry}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Button>
                     </Grid>
                 </HierarchicalDataTemplate>
 
@@ -688,13 +735,68 @@
         </TreeView>
 
         <Grid Grid.Row="4" Margin="0,4,0,0">
-            <TextBlock Text="{Binding StatusMessage}"
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0"
+                        Orientation="Horizontal"
+                        Margin="0,0,4,0"
+                        VerticalAlignment="Center">
+                <Button Command="{Binding CollapseAllTreeCommand}"
+                        Width="28" Height="28"
+                        Cursor="Hand"
+                        Focusable="False"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        ToolTip="{loc:Loc FM_CollapseAllTooltip}"
+                        Style="{StaticResource FlatIconButton}">
+                    <Path Data="{StaticResource UnfoldLessGeometry}"
+                          Fill="{DynamicResource TextSecondaryBrush}"
+                          Width="12" Height="12"
+                          Stretch="Uniform"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"/>
+                </Button>
+                <Button Command="{Binding ExpandAllTreeCommand}"
+                        Width="28" Height="28"
+                        Cursor="Hand"
+                        Focusable="False"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        ToolTip="{loc:Loc FM_ExpandAllTooltip}"
+                        Style="{StaticResource FlatIconButton}">
+                    <Path Data="{StaticResource UnfoldMoreGeometry}"
+                          Fill="{DynamicResource TextSecondaryBrush}"
+                          Width="12" Height="12"
+                          Stretch="Uniform"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"/>
+                </Button>
+            </StackPanel>
+
+            <TextBlock Grid.Column="1"
+                       Text="{Binding StatusMessage}"
                        VerticalAlignment="Center"
+                       HorizontalAlignment="Center"
                        Foreground="{DynamicResource TextSecondaryBrush}"
                        TextWrapping="Wrap"
                        TextTrimming="CharacterEllipsis"
                        ToolTip="{Binding StatusMessage}"
                        MaxHeight="36"/>
+
+            <TextBlock Grid.Column="2"
+                       Text="{Binding TotalItemCount}"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Margin="8,0,4,0"
+                       MinWidth="40"
+                       TextAlignment="Right"
+                       ToolTip="{Binding TotalItemCount, Converter={StaticResource TotalItemCountToTooltipConverter}}"/>
         </Grid>
     </Grid>
 </UserControl>

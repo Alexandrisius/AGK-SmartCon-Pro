@@ -124,6 +124,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             _noCategoryNode.FamilyCount = uncategorized.Count;
             if (!expandAll && expandedIds.Contains("__no_category__")) _noCategoryNode.IsExpanded = true;
+            _noCategoryNode.AttachCollapseTracking();
             rootNodes.Add(_noCategoryNode);
 
             stageSw.Restart();
@@ -223,6 +224,7 @@ public sealed partial class FamilyManagerMainViewModel
             if (expandAll) vm.IsExpanded = true;
             else if (expandedIds is not null && expandedIds.Contains(catNode.Id)) vm.IsExpanded = true;
         }
+        vm.AttachCollapseTracking();
         return vm;
     }
 

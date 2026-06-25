@@ -340,5 +340,14 @@ public static partial class LocalizationService
 
         ru["FM_LoadShared_SourcePlaceholder"] = "имя недоступно — переимпортируйте семейство в Family Manager";
         en["FM_LoadShared_SourcePlaceholder"] = "name unavailable — re-import the family in Family Manager";
+
+        ru["FM_ToggleSubtreeTooltip"] = "Развернуть/свернуть вложенные категории";
+        en["FM_ToggleSubtreeTooltip"] = "Toggle subtree";
+        ru["FM_ExpandAllTooltip"] = "Развернуть всё дерево";
+        en["FM_ExpandAllTooltip"] = "Expand all";
+        ru["FM_CollapseAllTooltip"] = "Свернуть всё дерево";
+        en["FM_CollapseAllTooltip"] = "Collapse all";
+        ru["FM_TotalFamiliesTooltip"] = "Загружено семейств: {0}";
+        en["FM_TotalFamiliesTooltip"] = "Total families loaded: {0}";
     }
 }

@@ -1390,3 +1390,84 @@ public sealed record PrecomputedImportTriple(
 - `FamilyBatchImportRow.PrecomputedCatalogItemId/VersionLabel/ManagedPath` (`SmartCon.FamilyManager/ViewModels`) — бэкинг-поля row VM.
 - `IFamilyImportPrecomputer.BuildPrecomputedTripleAsync` (Core) — контракт выделенного precomputer-сервиса, который является единым источником истины для вычисления этой тройки (как для initial dialog build, так и для dialog rename handler).
 
+---
+
+**Tree expand/collapse в UI дерева категорий** (Issue #86 / ADR-037).
+
+Вся UI-логика разворачивания/сворачивания поддеревьев живёт в `SmartCon.FamilyManager/` (не в Core — это VM-уровень), но для reference описана здесь.
+
+**Файлы:**
+
+- `src/SmartCon.FamilyManager/ViewModels/FamilyManagerMainViewModel.TreeExpand.cs` — pure logic + `[RelayCommand]` обёртки.
+- `src/SmartCon.FamilyManager/ViewModels/CategoryNodeViewModel.cs` — `IsAnyDescendantCollapsed` computed property + `AttachCollapseTracking()`.
+- `src/SmartCon.UI/Generic.xaml` — `UnfoldMoreGeometry` / `UnfoldLessGeometry` (Material Design filled, viewbox 0 0 24 24).
+
+**Static helpers (pure logic, `internal static` для unit-тестирования):**
+
+```csharp
+internal static void ExpandSubtree(CatalogTreeNodeViewModel node);
+internal static void CollapseSubtree(CatalogTreeNodeViewModel node);
+internal static void ExpandAll(IEnumerable<CatalogTreeNodeViewModel> roots);
+internal static void CollapseAll(IEnumerable<CatalogTreeNodeViewModel> roots);
+```
+
+Семантика:
+
+- `ExpandSubtree(node)` — рекурсивно выставляет `IsExpanded = true` на всех `CategoryNodeViewModel` в поддереве (включая корень). `FamilyLeafNodeViewModel` пропускаются — их `IsExpanded` не имеет визуального эффекта.
+- `CollapseSubtree(node)` — рекурсивно выставляет `IsExpanded = false` на всех `CategoryNodeViewModel` в поддереве **включая корень**. Поведение совпадает с VS Solution Explorer «Collapse All» — закрывает всё поддерево.
+
+**RelayCommands (XAML bindings):**
+
+```csharp
+[RelayCommand] private void ExpandAllTree();         // → ExpandAll(TreeNodes)
+[RelayCommand] private void CollapseAllTree();       // → CollapseAll(TreeNodes)
+[RelayCommand] private void ToggleSubtree(CategoryNodeViewModel? category);
+```
+
+- `ExpandAllTreeCommand` / `CollapseAllTreeCommand` привязаны к двум кнопкам в статус-баре (`FamilyManagerPaneControl.xaml` Row 4).
+- `ToggleSubtreeCommand` привязан к hover-reveal кнопке в header каждой категории — клик разворачивает всё поддерево если хоть что-то свёрнуто, иначе сворачивает всё.
+
+**Иконки** (Material Design, filled `PathGeometry`):
+
+- `UnfoldMoreGeometry` — X-pattern: верхний Λ + нижний V. Семантика: "расширение во все стороны" (expand).
+- `UnfoldLessGeometry` — hourglass: верхний V + нижний Λ. Семантика: "сжатие к центру" (collapse).
+
+Геометрии взяты из Material Icons (Google, Apache 2.0), viewbox 0 0 24 24, рендерятся через `<Viewbox Width="15" Height="15">` filled цветом `TextSecondaryBrush`. Hover-toggle-кнопка динамически меняет `Path.Data` через DataTrigger на `IsAnyDescendantCollapsed`.
+
+**`CategoryNodeViewModel.IsAnyDescendantCollapsed`** — computed property для динамической смены иконки:
+
+```csharp
+[ObservableProperty] private bool _isAnyDescendantCollapsed = true;
+```
+
+- Подписывается на `PropertyChanged` самого узла и всех потомков `CategoryNodeViewModel` рекурсивно.
+- Реагирует на изменения `IsExpanded` И `IsAnyDescendantCollapsed` в дочерних узлах (одного `IsExpanded` недостаточно — потомок может обновить только своё `IsAnyDescendantCollapsed` без изменения своего `IsExpanded`).
+- Подписка настраивается через `AttachCollapseTracking()` (вызывается из `BuildCategoryNode` после построения поддерева).
+- `DetachCollapseTracking()` для cleanup при удалении поддерева.
+
+В XAML используется через DataTrigger для смены `Path.Data`:
+
+```xaml
+<Style.Triggers>
+    <DataTrigger Binding="{Binding IsAnyDescendantCollapsed}" Value="False">
+        <Setter Property="Data" Value="{StaticResource UnfoldLessGeometry}"/>
+    </DataTrigger>
+</Style.Triggers>
+```
+
+**UI binding:** `IsExpanded` через `ItemContainerStyle` уже привязан к VM в TwoWay (`FamilyTreeItemBaseStyle` в `FamilyManagerPaneControl.xaml:593`), так что прямое изменение свойства в VM **сразу** отражается на UI без дополнительного кода.
+
+**Edge cases:**
+
+- При активном поиске (`SearchText` непустой) дерево уже раскрыто полностью через `expandAll` в `LoadTreeAsync`, поэтому дополнительных действий не требуется.
+- UI virtualization отключена для каталога (300–500 узлов), так что все `TreeViewItem` контейнеры гарантированно существуют к моменту клика. Команды корректно работают и для частично/полностью свёрнутых деревьев.
+- Кнопка в header категории использует `Focusable="False"` чтобы не триггерить `TreeViewItem.IsSelected` при hover-click. Drag-and-drop из header-а папки (не с кнопки) по-прежнему работает через `TreeViewDragDropBehavior`.
+- Кнопки статус-бара используют `Style="{StaticResource FlatIconButton}"` (Generic.xaml) — явный `ControlTemplate` с точно центрированным `ContentPresenter`. Иконка не смещается при hover (в отличие от дефолтного WPF Button).
+
+**Используется в:**
+
+- `FamilyManagerPaneControl.xaml:624-680` — `HierarchicalDataTemplate` для `CategoryNodeViewModel`, hover-reveal `ToggleSubtreeCommand` с динамической сменой иконки.
+- `FamilyManagerPaneControl.xaml:738-797` — статус-бар с `ExpandAllTreeCommand` / `CollapseAllTreeCommand` + счётчик `TotalItemCount`.
+
+Pure logic, ноль зависимостей от Revit API. Unit-тесты в `src/SmartCon.Tests/FamilyManager/ViewModels/FamilyManagerMainExpandCollapseTests.cs` (12 кейсов, включая реактивное обновление `IsAnyDescendantCollapsed`).
+

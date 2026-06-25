@@ -510,5 +510,10 @@ public static class StringLocalization
         public const string FM_LoadShared_BatchProgress = "FM_LoadShared_BatchProgress";
         public const string FM_LoadShared_SourceFromCatalog = "FM_LoadShared_SourceFromCatalog";
         public const string FM_LoadShared_SourcePlaceholder = "FM_LoadShared_SourcePlaceholder";
+
+        public const string FM_ToggleSubtreeTooltip = "FM_ToggleSubtreeTooltip";
+        public const string FM_ExpandAllTooltip = "FM_ExpandAllTooltip";
+        public const string FM_CollapseAllTooltip = "FM_CollapseAllTooltip";
+        public const string FM_TotalFamiliesTooltip = "FM_TotalFamiliesTooltip";
     }
 }
