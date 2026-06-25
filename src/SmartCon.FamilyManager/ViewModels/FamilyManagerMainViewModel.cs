@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Threading;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Common;
@@ -59,7 +58,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
     private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
-    private readonly Dispatcher _uiDispatcher;
+    private readonly IDispatcher _dispatcher;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -161,13 +160,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _clock = services.Clock;
         _sharedNestedRepository = services.SharedNestedRepository;
 
-        // Application.Current?.Dispatcher is null in Revit addins (especially net48)
-        // because WPF Application is not auto-created. Dispatcher.CurrentDispatcher
-        // is reliable when called on the UI thread (ctor) — returns the UI thread's
-        // dispatcher which can be used to marshal back from background threads.
-        _uiDispatcher = System.Windows.Application.Current?.Dispatcher
-            ?? Dispatcher.CurrentDispatcher;
-        SmartConLogger.Debug($"FamilyManagerMainViewModel.ctor: _uiDispatcher captured thread={_uiDispatcher.Thread.ManagedThreadId}, Application.Current={(System.Windows.Application.Current is null ? "<null>" : "exists")}");
+        // v2.0.0 (ADR-036, M-019-003): inject IDispatcher instead of capturing
+        // Application.Current?.Dispatcher. The latter is null in net48 Revit
+        // addins (WPF Application is not auto-created), and the fallback to
+        // Dispatcher.CurrentDispatcher is unreliable from background threads.
+        // WpfDispatcher (DI-registered) is net48-safe and unit-testable.
+        _dispatcher = services.Dispatcher;
+        SmartConLogger.Debug($"FamilyManagerMainViewModel.ctor: _dispatcher captured");
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -571,34 +570,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             IsLoading = true;
             try
             {
-                if (!_uiDispatcher.HasShutdownStarted)
-                {
-                    _ = _uiDispatcher.InvokeAsync(async () =>
-                    {
-                        try
-                        {
-                            await RefreshAccessAndLoadTreeAsync();
-                        }
-                        catch (DbAccessDeniedException ex)
-                        {
-                            CanImport = false;
-                            CanEdit = false;
-                            CanManageUsers = false;
-                            _dialogService.ShowError(
-                                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
-                                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
-                            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
-                            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
-                        }
-                        catch (Exception ex)
-                        {
-                            SmartConLogger.Error($"RefreshTreeAsync failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
-                            StatusMessage = string.Format(
-                                LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
-                                ex.Message);
-                        }
-                    });
-                }
+                // v2.0.0 (ADR-036): IDispatcher.InvokeAsync takes an Action, but
+                // RefreshTreeOnUiThreadAsync returns Task. Wrapping the async
+                // lambda directly would generate an async void state machine,
+                // which violates I-13 (exception swallowing) and breaks
+                // testability. Extracting the async work into a named Task-
+                // returning method and dispatching a fire-and-forget Action
+                // (via `_ =`) keeps the Action synchronous and the exception
+                // path observable through RefreshTreeOnUiThreadAsync itself.
+                _ = _dispatcher.InvokeAsync(() => { _ = RefreshTreeOnUiThreadAsync(); });
             }
             finally
             {
@@ -608,6 +588,32 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         catch (Exception ex)
         {
             SmartConLogger.Error($"RefreshTreeViaExternalEvent failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
+        }
+    }
+
+    private async Task RefreshTreeOnUiThreadAsync()
+    {
+        try
+        {
+            await RefreshAccessAndLoadTreeAsync();
+        }
+        catch (DbAccessDeniedException ex)
+        {
+            CanImport = false;
+            CanEdit = false;
+            CanManageUsers = false;
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
+                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
+            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"RefreshTreeAsync failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
+                ex.Message);
         }
     }
 
@@ -629,10 +635,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         {
             InvalidateLoadedFamilyNamesCache();
 
-            if (!_uiDispatcher.HasShutdownStarted)
-            {
-                _ = _uiDispatcher.InvokeAsync(() => LoadTreeAsync());
-            }
+            // v2.0.0 (ADR-036, M-019-003): IDispatcher.InvokeAsync returns Task.
+            // We don't await here because OnPlacementCompleted is sync and the
+            // caller is the placement event handler; UI refresh is opportunistic.
+            _ = _dispatcher.InvokeAsync(() => { _ = LoadTreeAsync(); });
         }
         catch (Exception ex)
         {
@@ -675,14 +681,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     /// </summary>
     private bool SetStatusOnUiThread(string message)
     {
-        if (_uiDispatcher.HasShutdownStarted) return false;
-        if (_uiDispatcher.CheckAccess())
+        if (_dispatcher.CheckAccess())
         {
             StatusMessage = message;
         }
         else
         {
-            _ = _uiDispatcher.InvokeAsync(() => StatusMessage = message);
+            _ = _dispatcher.InvokeAsync(() => StatusMessage = message);
         }
         return true;
     }

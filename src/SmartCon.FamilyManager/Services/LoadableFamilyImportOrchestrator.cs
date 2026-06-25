@@ -88,7 +88,10 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                 }
                 else
                 {
-                    await _typeRepository.SaveTypesAsync(match.CatalogItemId!, types, ct);
+                    // v2.0.0 (ADR-036): orchestrators pass null/null/"no-run" because
+                    // they replace the entire type set for a catalog item (no multi-version
+                    // semantics). SyncTypesAsync enforces DELETE+INSERT atomically.
+                    await _typeRepository.SyncTypesAsync(match.CatalogItemId!, versionId: null, fileId: null, runId: "no-run", types, ct);
                     using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName), ("CatalogItemId", match.CatalogItemId));
                     SmartConLogger.Info($"Saved {types.Count} type(s) for '{item.FileName}' (CatalogItemId={match.CatalogItemId})");
                 }

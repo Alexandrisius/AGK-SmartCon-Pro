@@ -59,6 +59,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV12Async(connection, ct);
         await MigrateV13Async(connection, ct);
         await MigrateV14Async(connection, ct);
+        await MigrateV15Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -509,6 +510,38 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = "UPDATE schema_info SET value = '8' WHERE key = 'schema_version'";
         await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// v2.0.0 (ADR-036) migration v15: add FOREIGN KEY (type_id) → family_types(id)
+    /// ON DELETE CASCADE on extracted_attribute_values. Recreates the table to
+    /// add the constraint (SQLite limitation). Pre-existing orphan rows are
+    /// cleaned up inside the SQL constant.
+    /// </summary>
+    private static async Task MigrateV15Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 15) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV15AddAttributeValuesForeignKey;
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.CommandText = "UPDATE schema_info SET value = '15' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v15: added FK on extracted_attribute_values.type_id (ON DELETE CASCADE)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)

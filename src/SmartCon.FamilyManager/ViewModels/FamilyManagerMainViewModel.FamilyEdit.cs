@@ -1014,10 +1014,28 @@ public sealed partial class FamilyManagerMainViewModel
                     await _dataImportService.SaveExtractionResultAsync(
                         catalogItemId, result, versionId, fileId, CancellationToken.None);
                 }
+                SmartConLogger.Debug("ExtractAttributesForImportedFamilies: save complete, scheduling UI tree refresh");
             }
             catch (Exception ex)
             {
                 SmartConLogger.Warn($"SaveExtraction failed: {ex.Message} [Action: проверьте права на запись в БД каталога, дисковое пространство и целостность SQLite файла]");
+            }
+
+            // v2.0.0 (ADR-036, bug #2 fix): marshal LoadTreeAsync back to the
+            // UI thread so newly imported types appear in the dockable panel
+            // immediately. Without this call, the user had to press Refresh
+            // manually because FireAndForget runs on the thread pool.
+            // Mirrors the pattern in ExtractTypesForImportedFamilies (Import.cs:265-288)
+            // and follows ADR-031 rule #1 (FireAndForget + UI → dispatcher).
+            try
+            {
+                // IDispatcher.InvokeAsync takes an Action; LoadTreeAsync returns
+                // Task. Wrap in fire-and-forget so the marshalled Action is sync.
+                await _dispatcher.InvokeAsync(() => { _ = LoadTreeAsync(); });
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"Tree reload after save failed: {ex.Message} [Action: нажмите Refresh чтобы обновить дерево]");
             }
         }, nameof(ExtractAttributesForImportedFamilies));
     }

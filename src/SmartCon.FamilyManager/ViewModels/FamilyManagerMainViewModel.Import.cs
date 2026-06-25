@@ -264,22 +264,17 @@ public sealed partial class FamilyManagerMainViewModel
 
                 try
                 {
-                    var dispatcher = _uiDispatcher;
-                    SmartConLogger.FreezeThreadPool("ExtractTypesForImportedFamilies.beforeTreeReload");
-                    SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: dispatcher snapshot — thread={dispatcher.Thread.ManagedThreadId}, HasShutdownStarted={dispatcher.HasShutdownStarted}");
-                    SmartConLogger.Debug($"ExtractTypesForImportedFamilies: save complete on thread {Environment.CurrentManagedThreadId}, _uiDispatcher thread={dispatcher.Thread.ManagedThreadId}, HasShutdownStarted={dispatcher.HasShutdownStarted}");
-                    if (!dispatcher.HasShutdownStarted)
-                    {
-                        var beforeThread = Environment.CurrentManagedThreadId;
-                        var dispatcherThread = dispatcher.Thread.ManagedThreadId;
-                        var treeSw = System.Diagnostics.Stopwatch.StartNew();
-                        SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: about to dispatcher.InvokeAsync(LoadTreeAsync) — caller thread={beforeThread}, dispatcher thread={dispatcherThread}, same={(beforeThread == dispatcherThread)}");
-                        SmartConLogger.Debug($"ExtractTypesForImportedFamilies: about to dispatcher.InvokeAsync(LoadTreeAsync) — caller thread={beforeThread}, dispatcher thread={dispatcherThread}, same={(beforeThread == dispatcherThread)}");
-                        await dispatcher.InvokeAsync(() => LoadTreeAsync());
-                        treeSw.Stop();
-                        SmartConLogger.Freeze($"ExtractTypesForImportedFamilies: LoadTreeAsync took {treeSw.ElapsedMilliseconds}ms, returned on thread {Environment.CurrentManagedThreadId}");
-                        SmartConLogger.Debug($"ExtractTypesForImportedFamilies: dispatcher.InvokeAsync(LoadTreeAsync) returned on thread {Environment.CurrentManagedThreadId}");
-                    }
+                    // v2.0.0 (ADR-036, M-019-003): use the injected IDispatcher
+                    // instead of the removed _uiDispatcher (System.Windows.Threading.Dispatcher).
+                    var dispatcher = _dispatcher;
+                    var beforeThread = Environment.CurrentManagedThreadId;
+                    var treeSw = System.Diagnostics.Stopwatch.StartNew();
+                    SmartConLogger.Debug($"ExtractTypesForImportedFamilies: about to dispatcher.InvokeAsync(LoadTreeAsync) — caller thread={beforeThread}");
+                    // IDispatcher.InvokeAsync takes an Action; LoadTreeAsync returns
+                    // Task. Wrap in fire-and-forget so the marshalled Action is sync.
+                    await dispatcher.InvokeAsync(() => { _ = LoadTreeAsync(); });
+                    treeSw.Stop();
+                    SmartConLogger.Debug($"ExtractTypesForImportedFamilies: dispatcher.InvokeAsync(LoadTreeAsync) returned on thread {Environment.CurrentManagedThreadId}, elapsed={treeSw.ElapsedMilliseconds}ms");
                 }
                 catch (Exception ex)
                 {

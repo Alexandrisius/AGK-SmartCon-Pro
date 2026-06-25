@@ -922,8 +922,61 @@ public sealed record FamilyTypeDescriptor(
     int SortOrder,
     string? VersionId = null,
     string? FileId = null,
-    string? ExtractionRunId = null);
+    string? ExtractionRunId = null,
+    string? UniqueId = null);
 ```
+
+**v2.0.0 (ADR-036):** `UniqueId` (Revit `Element.UniqueId` типа) добавлен для устранения коллизий
+при merge. Используется в `IFamilyTypeRepository.SyncTypesAsync` для сохранения
+через `type_unique_id` колонку.
+
+---
+
+## IFamilyTypeRepository
+
+**v2.0.0 (ADR-036):** старые методы `SaveTypesAsync` (DELETE+INSERT, project case) и
+`SaveTypesForRunAsync` (UPSERT без DELETE, имел bug #1) **удалены** и заменены
+единым `SyncTypesAsync` с семантикой **DELETE+INSERT в одной транзакции**.
+
+**Файл:** `src/SmartCon.Core/Services/Interfaces/IFamilyTypeRepository.cs`
+
+```csharp
+public interface IFamilyTypeRepository
+{
+    Task<IReadOnlyList<FamilyTypeDescriptor>> GetTypesForItemAsync(string catalogItemId, CancellationToken ct = default);
+    Task<IReadOnlyList<FamilyTypeDescriptor>> GetTypesForItemVersionAsync(string catalogItemId, string? versionId, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyTypeDescriptor>>> GetAllTypesBatchAsync(IEnumerable<string> catalogItemIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// Synchronises the type list for a given (catalogItemId, versionId, fileId) triple
+    /// inside a single transaction. Atomically removes types missing from the new list
+    /// and upserts the supplied types. Returns {typeName → typeId} for downstream
+    /// attribute-value persistence.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> SyncTypesAsync(
+        string catalogItemId,
+        string? versionId,
+        string? fileId,
+        string runId,
+        IReadOnlyList<FamilyTypeDescriptor> types,
+        CancellationToken ct = default);
+
+    Task<bool> HasTypesAsync(string catalogItemId, CancellationToken ct = default);
+}
+```
+
+**Call sites:**
+
+| Caller | versionId / fileId | runId | Семантика |
+|---|---|---|---|
+| `FamilyDataImportService` (импорт активного .rfa) | `versionId`, `fileId` из extraction result | `runId` извлечения | Multi-version safe |
+| `LocalFamilyImportService.TypeCatalog` (.txt bake-in) | `versionId`, `null` | `runId` извлечения | Multi-version safe |
+| `LoadableFamilyImportOrchestrator` (project case) | `null`, `null` | `"no-run"` | Заменяет все типы catalog item |
+| `SystemFamilyImportOrchestrator` (project case) | `null`, `null` | `"no-run"` | Заменяет все типы catalog item |
+
+**Schema requirement:** `extracted_attribute_values.type_id` имеет FOREIGN KEY
+→ `family_types(id) ON DELETE CASCADE` (V15, ADR-036). Orphan attribute values
+автоматически удаляются при `SyncTypesAsync` с пустым `types` списком.
 
 ---
 

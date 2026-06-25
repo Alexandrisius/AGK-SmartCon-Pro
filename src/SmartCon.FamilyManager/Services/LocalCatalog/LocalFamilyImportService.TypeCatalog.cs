@@ -197,7 +197,7 @@ internal sealed partial class LocalFamilyImportService
             SmartConLogger.Info($"Skipped {duplicateCount} duplicate type(s), imported {types.Count} unique types");
         }
 
-        var typeIdsByName = await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, null, runId, types, ct);
+        var typeIdsByName = await _typeRepository.SyncTypesAsync(catalogItemId, versionId, null, runId, types, ct);
 
         var values = new List<ExtractedAttributeValue>();
         for (var i = 0; i < parseResult.Entries.Count; i++)

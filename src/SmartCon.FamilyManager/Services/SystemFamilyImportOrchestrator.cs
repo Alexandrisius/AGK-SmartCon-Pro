@@ -97,7 +97,13 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
             ExtractionRunId: null,
             UniqueId: t.UniqueId)).ToList();
 
-        await _typeRepository.SaveTypesAsync(catalogItemId, descriptors).ConfigureAwait(false);
+        // v2.0.0 (ADR-036): orchestrator replaces the entire type set for
+        // the catalog item atomically. Pass the real versionId/fileId from
+        // matchingResult so SyncTypesAsync can record the FK columns on the
+        // new family_types rows. Pass runId="no-run" because system-family
+        // project imports do not produce a family_data_import_runs row for
+        // the type registration step (only attribute extraction creates a run).
+        await _typeRepository.SyncTypesAsync(catalogItemId, versionId, fileId, runId: "no-run", descriptors).ConfigureAwait(false);
     }
 }
 

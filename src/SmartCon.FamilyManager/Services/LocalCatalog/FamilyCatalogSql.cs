@@ -275,7 +275,12 @@ internal static class FamilyCatalogSql
     public const string MigrateV8RecreateExtractedAttributeValues = """
         -- Clean up any leftover from a previous failed migration
         DROP TABLE IF EXISTS extracted_attribute_values_new;
-        -- Create temporary table with new schema
+        -- Create temporary table with new schema. All four FK constraints
+        -- are present so that if V8 runs AFTER V15 (via EnsureCriticalColumns
+        -- path on a DB that never had V15 applied yet) the type_id and
+        -- attribute_id FKs survive the recreate. Without them, Bug #85
+        -- regression would lose cascade-cleanup for attribute values
+        -- whenever the V8 path executes on an old DB.
         CREATE TABLE extracted_attribute_values_new (
             id TEXT PRIMARY KEY,
             catalog_item_id TEXT NOT NULL,
@@ -296,6 +301,8 @@ internal static class FamilyCatalogSql
             extraction_run_id TEXT NOT NULL,
             extracted_at_utc TEXT NOT NULL,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (type_id) REFERENCES family_types(id) ON DELETE CASCADE,
+            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
             FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
             UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
         );
@@ -432,5 +439,81 @@ internal static class FamilyCatalogSql
     public const string MigrateV14DropSha256Indexes = """
         DROP INDEX IF EXISTS ix_family_files_sha256;
         DROP INDEX IF EXISTS ix_catalog_versions_sha256
+        """;
+
+    /// <summary>
+    /// v2.0.0 (ADR-036) migration v15: add FOREIGN KEY (type_id) REFERENCES
+    /// family_types(id) ON DELETE CASCADE on extracted_attribute_values. This
+    /// is a prerequisite for SyncTypesAsync (the new unified type-save method)
+    /// to clean up orphan attribute values via DB-level CASCADE when a type
+    /// is removed from a family.
+    ///
+    /// SQLite does not support ALTER TABLE ADD CONSTRAINT, so we recreate
+    /// the table inside a single transaction, copy data verbatim, and let the
+    /// new FK constraints take effect on the renamed table. Pre-existing
+    /// orphan rows (extracted_attribute_values.type_id pointing at a deleted
+    /// family_types.id) are deleted before the recreate.
+    ///
+    /// Note: PRAGMA foreign_keys is a no-op inside a transaction (SQLite
+    /// limitation), so we cannot toggle it for the recreate. The pre-delete
+    /// of orphan rows is what makes the table-recreate safe.
+    /// </summary>
+    public const string MigrateV15AddAttributeValuesForeignKey = """
+        -- 1. Clean up any orphan rows that would otherwise violate the new FK.
+        --    extracted_attribute_values.type_id is nullable; only NOT-NULL
+        --    values that don't match any family_types.id need cleanup.
+        DELETE FROM extracted_attribute_values
+        WHERE type_id IS NOT NULL
+          AND type_id NOT IN (SELECT id FROM family_types);
+
+        -- 2. Recreate extracted_attribute_values with the new FK constraint.
+        DROP TABLE IF EXISTS extracted_attribute_values_new;
+
+        CREATE TABLE extracted_attribute_values_new (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            version_id TEXT,
+            file_id TEXT,
+            type_id TEXT,
+            attribute_id TEXT,
+            binding_id TEXT,
+            parameter_name TEXT NOT NULL,
+            parameter_scope TEXT,
+            storage_type TEXT,
+            value_text TEXT,
+            value_raw TEXT,
+            value_number REAL,
+            unit_type_id TEXT,
+            status TEXT NOT NULL DEFAULT 'Found',
+            message TEXT,
+            extraction_run_id TEXT NOT NULL,
+            extracted_at_utc TEXT NOT NULL,
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (type_id) REFERENCES family_types(id) ON DELETE CASCADE,
+            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
+            FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
+            UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
+        );
+
+        INSERT INTO extracted_attribute_values_new (
+            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
+            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
+            unit_type_id, status, message, extraction_run_id, extracted_at_utc
+        )
+        SELECT
+            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
+            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
+            unit_type_id, status, message, extraction_run_id, extracted_at_utc
+        FROM extracted_attribute_values;
+
+        DROP TABLE extracted_attribute_values;
+        ALTER TABLE extracted_attribute_values_new RENAME TO extracted_attribute_values;
+
+        -- 3. Recreate indexes (IF NOT EXISTS makes this idempotent).
+        CREATE INDEX IF NOT EXISTS ix_attr_values_item_version ON extracted_attribute_values (catalog_item_id, version_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_type ON extracted_attribute_values (type_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
         """;
 }

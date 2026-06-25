@@ -59,4 +59,14 @@ public sealed record FamilyManagerServices(
     IFamilyFinder FamilyFinder,
     IFamilyVersionWriter VersionWriter,
     IClock Clock,
-    ISharedNestedFamilyRepository SharedNestedRepository);
+    ISharedNestedFamilyRepository SharedNestedRepository,
+    /// <summary>
+    /// v2.0.0 (ADR-036, M-019-003): UI dispatcher. Injected instead of
+    /// <c>Application.Current?.Dispatcher</c> because the latter is
+    /// <c>null</c> in net48 Revit addins (known WPF/Revit interaction
+    /// bug, see ADR-025 M-019-003). The injected <see cref="IDispatcher"/>
+    /// is unit-testable (<c>WpfDispatcher</c> is net48-safe) and is the
+    /// canonical way to marshal FireAndForget callbacks back to the UI
+    /// thread per ADR-031.
+    /// </summary>
+    IDispatcher Dispatcher);
