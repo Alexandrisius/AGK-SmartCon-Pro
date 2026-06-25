@@ -115,4 +115,48 @@ public sealed partial class FamilyManagerMainViewModel
         else
             CollapseSubtree(category);
     }
+
+    /// <summary>
+    /// Принудительно сворачивает все категории в дереве, затем разворачивает только
+    /// те, чьи ID присутствуют в <paramref name="savedCategoryIds"/>. Используется
+    /// при очистке строки поиска, чтобы WPF TreeView визуально отразил
+    /// «свёрнутое» состояние категорий, которые ранее были развёрнуты через
+    /// <c>expandAll=true</c>.
+    /// Без явного <see cref="CollapseAll(IEnumerable{CatalogTreeNodeViewModel})"/>
+    /// новые VM-объекты приходят с <c>IsExpanded=false</c>, но ранее отрисованные
+    /// TreeViewItem'ы с TwoWay-биндингом не сбрасывают визуальное состояние.
+    /// Каждая категория из saved раскрывается точечно (без каскадного разворачивания
+    /// потомков), чтобы не раскрывать свёрнутые братья/сёстры, которых нет в saved.
+    /// </summary>
+    internal static void RestoreExpandedState(IEnumerable<CatalogTreeNodeViewModel> roots, HashSet<string> savedCategoryIds)
+    {
+        if (savedCategoryIds is null || savedCategoryIds.Count == 0)
+        {
+            CollapseAll(roots);
+            return;
+        }
+
+        CollapseAll(roots);
+
+        foreach (var root in roots)
+        {
+            RestoreExpandedTargeted(root, savedCategoryIds);
+        }
+    }
+
+    private static void RestoreExpandedTargeted(CatalogTreeNodeViewModel node, HashSet<string> savedCategoryIds)
+    {
+        if (node is CategoryNodeViewModel cat)
+        {
+            if (savedCategoryIds.Contains(cat.CategoryId))
+            {
+                cat.IsExpanded = true;
+            }
+        }
+
+        foreach (var child in node.Children)
+        {
+            RestoreExpandedTargeted(child, savedCategoryIds);
+        }
+    }
 }

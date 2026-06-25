@@ -21,6 +21,7 @@
             <converters:StaleCountToTooltipConverter x:Key="StaleCountToTooltipConverter"/>
             <converters:StaleReasonToTooltipConverter x:Key="StaleReasonToTooltipConverter"/>
             <converters:TotalItemCountToTooltipConverter x:Key="TotalItemCountToTooltipConverter"/>
+            <converters:SearchHighlightConverter x:Key="SearchHighlight"/>
 
             <Style x:Key="DangerIconButton" TargetType="Button">
                 <Setter Property="Background" Value="Transparent"/>
@@ -631,11 +632,11 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal">
                             <Path Data="{StaticResource FolderIconGeometry}"
-                                   Fill="{DynamicResource TextMutedBrush}"
-                                   Width="14" Height="14"
-                                   Margin="0,0,6,0"
-                                   Stretch="Uniform"
-                                   VerticalAlignment="Center"/>
+                                  Fill="{DynamicResource TextMutedBrush}"
+                                  Width="14" Height="14"
+                                  Margin="0,0,6,0"
+                                  Stretch="Uniform"
+                                  VerticalAlignment="Center"/>
                             <TextBlock Text="{Binding DisplayName}"
                                        FontWeight="SemiBold" FontSize="12"
                                        VerticalAlignment="Center"/>
@@ -700,16 +701,22 @@
                                              ItemsSource="{Binding Children}">
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding DisplayName}"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                       VerticalAlignment="Center"/>
-                            
+                            <ContentControl VerticalAlignment="Center"
+                                            Foreground="{DynamicResource TextPrimaryBrush}">
+                                <ContentControl.Content>
+                                    <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                        <Binding Path="DisplayName"/>
+                                        <Binding Path="DataContext.SearchText" RelativeSource="{RelativeSource AncestorType=TreeView}"/>
+                                    </MultiBinding>
+                                </ContentControl.Content>
+                            </ContentControl>
+
                             <TextBlock Text="{Binding VersionLabel, StringFormat='{}({0})'}"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="10"
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
-                            
+
                             <TextBlock Text="{loc:Loc FM_Stale}"
                                        Foreground="{DynamicResource WarningBrush}"
                                        FontSize="10"
@@ -723,8 +730,14 @@
 
                 <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
                     <Grid HorizontalAlignment="Stretch">
-                        <TextBlock Text="{Binding DisplayName}"
-                                   VerticalAlignment="Center" />
+                        <ContentControl VerticalAlignment="Center">
+                            <ContentControl.Content>
+                                <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                    <Binding Path="DisplayName"/>
+                                    <Binding Path="DataContext.SearchText" RelativeSource="{RelativeSource AncestorType=TreeView}"/>
+                                </MultiBinding>
+                            </ContentControl.Content>
+                        </ContentControl>
                     </Grid>
                 </DataTemplate>
             </TreeView.Resources>

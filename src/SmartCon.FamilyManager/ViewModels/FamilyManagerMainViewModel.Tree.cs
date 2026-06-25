@@ -62,8 +62,6 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     expandedIds = new HashSet<string>(_savedExpandedCategoryIds);
                     expandedFamilyIds = new HashSet<string>(_savedExpandedFamilyIds);
-                    _savedExpandedCategoryIds.Clear();
-                    _savedExpandedFamilyIds.Clear();
                 }
                 else
                 {
@@ -138,6 +136,28 @@ public sealed partial class FamilyManagerMainViewModel
                 SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
             }
             SmartConLogger.Freeze($"LoadTreeAsync: AttachCachedTypesAsync took {stageSw.ElapsedMilliseconds}ms");
+
+            // Удаляем пустые категории при активном поиске, чтобы пользователь видел
+            // только ветки с совпадениями (best practice: скрывать нерелевантные разделы).
+            // Вызывается ПОСЛЕ построения всего дерева (включая _noCategoryNode) и
+            // AttachCachedTypesAsync, но ДО присвоения TreeNodes, чтобы PropertyChanged
+            // коллекции не дёргал WPF лишний раз.
+            StripEmptyCategories(rootNodes, expandAll);
+
+            // При очистке поиска принудительно сбрасываем визуальное состояние TreeViewItem'ов
+            // через CollapseAll, затем восстанавливаем сохранённые ID. WPF TreeView с TwoWay
+            // биндингом IsExpanded не сбрасывает визуальное состояние уже отрисованных
+            // TreeViewItem'ов при переприсвоении ItemsSource, поэтому без явного CollapseAll
+            // категории, развёрнутые через expandAll=true, остаются видимыми развёрнутыми
+            // даже после возврата VM.IsExpanded=false. RestoreExpandedState ниже явно
+            // проходит по дереву и разворачивает только сохранённые категории.
+            if (!expandAll)
+            {
+                CollapseAll(rootNodes);
+                RestoreExpandedState(rootNodes, _savedExpandedCategoryIds);
+                _savedExpandedCategoryIds.Clear();
+                _savedExpandedFamilyIds.Clear();
+            }
 
             stageSw.Restart();
             TreeNodes = rootNodes;
@@ -237,5 +257,56 @@ public sealed partial class FamilyManagerMainViewModel
         var batch = await _typeRepository.GetAllTypesBatchAsync(familyIds, ct);
 
         AttachTypesToNodes(rootNodes, batch, expandedFamilyIds);
+    }
+
+    /// <summary>
+    /// Удаляет категории без family items при активном поиске, чтобы пользователь
+    /// видел только ветки, содержащие совпадения. При <paramref name="expandAll"/>=<c>false</c>
+    /// (поиск неактивен) метод не трогает дерево.
+    /// Категория считается пустой, если у неё <c>FamilyCount == 0</c> и ни одна дочерняя
+    /// категория не содержит результатов. Идём по списку с конца, чтобы удаление было
+    /// безопасным для итерации.
+    /// </summary>
+    internal static void StripEmptyCategories(ObservableCollection<CatalogTreeNodeViewModel> roots, bool expandAll)
+    {
+        if (!expandAll || roots is null)
+        {
+            return;
+        }
+
+        StripEmptyRecursive(roots);
+    }
+
+    private static void StripEmptyRecursive(ObservableCollection<CatalogTreeNodeViewModel> nodes)
+    {
+        for (int i = nodes.Count - 1; i >= 0; i--)
+        {
+            if (nodes[i] is not CategoryNodeViewModel cat)
+            {
+                continue;
+            }
+
+            StripEmptyRecursive(cat.Children);
+
+            if (cat.FamilyCount == 0 && !HasNonEmptyCategoryDescendant(cat))
+            {
+                nodes.RemoveAt(i);
+            }
+        }
+    }
+
+    private static bool HasNonEmptyCategoryDescendant(CategoryNodeViewModel category)
+    {
+        foreach (var child in category.Children)
+        {
+            if (child is CategoryNodeViewModel childCat)
+            {
+                if (childCat.FamilyCount > 0 || HasNonEmptyCategoryDescendant(childCat))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }
