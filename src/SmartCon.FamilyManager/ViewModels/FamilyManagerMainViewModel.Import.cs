@@ -41,7 +41,9 @@ public sealed partial class FamilyManagerMainViewModel
 
     /// <summary>
     /// Shows the batch import dialog for the given file paths.
-    /// Collects SHA256, Revit version, deduplicates, then runs ImportBatchAsync.
+    /// v2.0.0: no SHA-256 dedup, no file size — status is computed from
+    /// normalized name only (New / Existing). Runs <c>ImportBatchAsync</c>
+    /// after user confirmation.
     /// </summary>
     private async Task ShowBatchImportDialogAsync(string[] paths, string? categoryId, string? forcedExistingItemId = null)
     {
@@ -59,7 +61,7 @@ public sealed partial class FamilyManagerMainViewModel
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"Failed to resolve category name for '{categoryId}': {ex.Message}");
+                    SmartConLogger.Warn($"Failed to resolve category name for '{categoryId}': {ex.Message} [Action: проверьте, что категория существует в каталоге и БД доступна]");
                 }
             }
 
@@ -88,7 +90,7 @@ public sealed partial class FamilyManagerMainViewModel
                             }
                             catch (Exception ex)
                             {
-                                SmartConLogger.Warn($"Failed to resolve category name for '{existingCategoryId}': {ex.Message}");
+                                SmartConLogger.Warn($"Failed to resolve category name for '{existingCategoryId}': {ex.Message} [Action: проверьте, что категория существует в каталоге и БД доступна]");
                             }
                         }
                         items.Add(new FamilyBatchImportItem(
@@ -111,7 +113,7 @@ public sealed partial class FamilyManagerMainViewModel
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"Failed to analyze file '{path}': {ex.Message}");
+                    SmartConLogger.Warn($"Failed to analyze file '{path}': {ex.Message} [Action: проверьте, что файл доступен для чтения и не повреждён]");
                     items.Add(new FamilyBatchImportItem(
                         path, SafeFileName.GetBaseName(path), 0,
                         FamilyBatchImportStatus.Error,
@@ -142,7 +144,7 @@ public sealed partial class FamilyManagerMainViewModel
             var importResult = await _importService.ImportBatchAsync(selectedItems, categoryId, progress, CancellationToken.None);
 
             // Extract types/attributes for successfully imported families
-            var successfulItems = importResult.Results.Where(r => r.Success && !r.WasSkippedAsDuplicate).ToList();
+            var successfulItems = importResult.Results.Where(r => r.Success && !r.WasSkipped).ToList();
             if (successfulItems.Count > 0)
             {
                 _ = ExtractTypesForImportedFamilies(successfulItems, importResult.SuccessCount, importResult.SkippedCount, importResult.ErrorCount, importResult.TotalFiles);
@@ -227,7 +229,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"ExtractTypesForImportedFamilies extraction failed: {ex.Message}");
+                SmartConLogger.Warn($"ExtractTypesForImportedFamilies extraction failed: {ex.Message} [Action: проверьте логи Revit и состояние .rfa, повторите импорт]");
             }
 
             // FireAndForget: SQLite save + tree reload on UI thread.
@@ -421,12 +423,12 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task<List<FamilyBatchImportItem>> BuildSelectedElementsBatchItemsAsync(
         SelectedElementsAnalysis analysis)
     {
-        // I-01: StageSystemFromAnalysis and StageLoadableFamilyFromProject
-        // both touch the Revit API (_systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances
-        // and EditFamily/SaveAs respectively). They must run on the Revit
-        // UI thread. The WPF DockablePane SynchronizationContext is NOT
-        // the Revit UI thread, so we route the whole build through
-        // IFamilyManagerAwaitableEvent, which is bound to an ExternalEvent
+        // I-01: SystemFamily isolation (CreateCleanProjectWithTypesAndInstances)
+        // and loadable staging (EditFamily + SaveAs) both touch the Revit API.
+        // They must run on the Revit UI thread. The WPF DockablePane
+        // SynchronizationContext is NOT the Revit UI thread, so we route the
+        // whole build through IFamilyManagerAwaitableEvent, which is bound
+        // to an ExternalEvent
         // handler. Mirrors the pattern in ExtractTypesForImportedFamilies
         // and AnalyzeActiveProjectAsync. We use the async overload
         // (RaiseAsync<Task<List<…>>>) so the caller's await unwraps the
@@ -516,52 +518,6 @@ public sealed partial class FamilyManagerMainViewModel
         return result;
     }
 
-    private List<SystemFamilyPendingImport> StageSystemFromAnalysis(SelectedElementsAnalysis analysis)
-    {
-        // v2.0.0: this helper is now called by the post-dialog flow
-        // (ProcessProjectImportAsync.ExecuteProjectImportAsync) rather
-        // than by the pre-dialog build. Each call still drives
-        // CreateCleanProjectWithTypesAndInstances per category, but
-        // only for items the user confirmed. Cancelling the dialog
-        // short-circuits the flow, so no orphan .rvt is left on disk.
-        var pending = new List<SystemFamilyPendingImport>();
-        if (analysis.SystemTypes.Count == 0) return pending;
-
-        var activeDoc = _revitContext.GetDocument();
-        if (activeDoc is null) return pending;
-
-        var groups = analysis.SystemTypes
-            .GroupBy(s => s.Category)
-            .OrderBy(g => g.Key.ToString(), StringComparer.Ordinal);
-
-        foreach (var group in groups)
-        {
-            var category = group.Key;
-            var types = group.ToList();
-            var uniqueIds = types.Select(t => t.UniqueId).ToList();
-            var displayName = types[0].CategoryName;
-
-            var managedRvtPath = ComputeSystemFamilyManagedPath(displayName);
-            if (string.IsNullOrEmpty(managedRvtPath))
-                continue;
-
-            var safeManagedPath = managedRvtPath!;
-            var createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
-                activeDoc, uniqueIds, category, displayName, safeManagedPath);
-            if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
-                continue;
-
-            var coreTypes = types
-                .Select(t => new FamilySourceTypeInfo(
-                    t.UniqueId, t.Name, t.CategoryName, (int)t.Category))
-                .ToList();
-
-            pending.Add(new SystemFamilyPendingImport(displayName, coreTypes, createResult.FilePath!));
-        }
-
-        return pending;
-    }
-
     /// <summary>
     /// v2.0.0: compute the managed storage path for a system family mini-rvt.
     /// Allocated by the orchestrator AFTER the user confirms the dialog
@@ -576,7 +532,8 @@ public sealed partial class FamilyManagerMainViewModel
         if (string.IsNullOrEmpty(dbRoot)) return null;
         var catalogItemId = Guid.NewGuid().ToString("N");
         var versionDir = Path.Combine(dbRoot, "files", catalogItemId, "v1");
-        var safeName = string.Concat(displayName.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+        var safeName = SafeFileName.SanitizeFileName(SafeFileName.GetBaseName(displayName));
+        if (string.IsNullOrEmpty(safeName)) safeName = "Family";
         return Path.Combine(versionDir, safeName + ".rvt");
     }
 
@@ -885,7 +842,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (family is null)
         {
             SmartConLogger.Warn(
-                $"Family '{info.FamilyName}' (uid='{info.FamilyUniqueId}') not found in active project");
+                $"Family '{info.FamilyName}' (uid='{info.FamilyUniqueId}') not found in active project [Action: убедитесь, что семейство размещено в активном проекте]");
             return null;
         }
         if (family.IsInPlace)
@@ -902,7 +859,7 @@ public sealed partial class FamilyManagerMainViewModel
             if (familyDoc is null || !familyDoc.IsFamilyDocument)
             {
                 SmartConLogger.Warn(
-                    $"EditFamily returned null/non-family for '{info.FamilyName}'");
+                    $"EditFamily returned null/non-family for '{info.FamilyName}' [Action: проверьте, что семейство валидно и не заблокировано другим процессом]");
                 return null;
             }
 
@@ -926,7 +883,7 @@ public sealed partial class FamilyManagerMainViewModel
         catch (Exception ex)
         {
             SmartConLogger.Warn(
-                $"Failed to stage '{info.FamilyName}': {ex.Message}");
+                $"Failed to stage '{info.FamilyName}': {ex.Message} [Action: проверьте логи Revit и повторите импорт]");
             return null;
         }
         finally

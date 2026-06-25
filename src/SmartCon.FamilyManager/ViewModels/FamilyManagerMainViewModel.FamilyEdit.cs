@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.IO;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -230,7 +229,7 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (snapshot.Document is null)
         {
-            SmartConLogger.Warn("No active family document at import time — aborting");
+            SmartConLogger.Warn("No active family document at import time — aborting [Action: откройте .rfa в Revit и повторите команду Импорт активного файла]");
             return;
         }
 
@@ -254,7 +253,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"Failed to resolve category name: {ex.Message}");
+                SmartConLogger.Warn($"Failed to resolve category name: {ex.Message} [Action: проверьте, что категория существует в каталоге и БД каталога доступна для чтения]");
             }
         }
 
@@ -481,7 +480,7 @@ public sealed partial class FamilyManagerMainViewModel
                     catch (Exception activateEx)
                     {
                         SmartConLogger.Warn(
-                            $"Activate project failed: {activateEx.Message}");
+                            $"Activate project failed: {activateEx.Message} [Action: переключитесь на проект в Revit вручную]");
                         try
                         {
                             var closeCmd = RevitCommandId.LookupPostableCommandId(PostableCommand.Close);
@@ -502,7 +501,7 @@ public sealed partial class FamilyManagerMainViewModel
                     catch (Exception postEx)
                     {
                         SmartConLogger.Warn(
-                            $"PostCommand Close failed: {postEx.Message}");
+                            $"PostCommand Close failed: {postEx.Message} [Action: закройте активный документ в Revit вручную]");
                     }
                 }
 
@@ -542,7 +541,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"CloseFamilyDocumentAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"CloseFamilyDocumentAsync failed: {ex.Message} [Action: переключитесь на нужный документ в Revit вручную, каталог уже содержит импортированную запись]");
         }
     }
 
@@ -722,7 +721,7 @@ public sealed partial class FamilyManagerMainViewModel
             var activeDoc = _revitContext.GetDocument();
             if (activeDoc is null)
             {
-                SmartConLogger.Warn("Active document is null — cannot stage system families");
+                SmartConLogger.Warn("Active document is null — cannot stage system families [Action: откройте .rvt проект в Revit, затем повторите команду]");
                 return;
             }
 
@@ -838,7 +837,7 @@ public sealed partial class FamilyManagerMainViewModel
             var activeDoc = _revitContext.GetDocument();
             if (activeDoc is null)
             {
-                SmartConLogger.Warn("Active document is null — cannot stage loadable families");
+                SmartConLogger.Warn("Active document is null — cannot stage loadable families [Action: откройте .rvt проект в Revit, затем повторите команду]");
                 return;
             }
 
@@ -871,7 +870,7 @@ public sealed partial class FamilyManagerMainViewModel
                     : ComputeLoadableFamilyManagedPath(source.FamilyName);
                 if (string.IsNullOrEmpty(managedRfaPath))
                 {
-                    SmartConLogger.Warn($"Cannot compute managed path for '{source.FamilyName}' — skipping");
+                    SmartConLogger.Warn($"Cannot compute managed path for '{source.FamilyName}' — skipping [Action: проверьте, что активная БД каталога выбрана и доступна для записи]");
                     continue;
                 }
 
@@ -920,7 +919,7 @@ public sealed partial class FamilyManagerMainViewModel
                 if (!File.Exists(task.ManagedRfaPath))
                 {
                     SmartConLogger.Warn(
-                        $"Managed .rfa missing: '{task.ManagedRfaPath}'");
+                        $"Managed .rfa missing: '{task.ManagedRfaPath}' [Action: проверьте, что антивирус не удалил файл, или повторите импорт]");
                     continue;
                 }
 
@@ -949,7 +948,7 @@ public sealed partial class FamilyManagerMainViewModel
             catch (Exception ex)
             {
                 SmartConLogger.Warn(
-                    $"Extraction failed for '{task.CatalogItemId}': {ex.Message}");
+                    $"Extraction failed for '{task.CatalogItemId}': {ex.Message} [Action: проверьте, что .rfa не повреждён и Revit может открыть его вручную]");
             }
         }
     }
@@ -972,7 +971,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             foreach (var item in importResults)
             {
-                if (!item.Success || item.WasSkippedAsDuplicate) continue;
+                if (!item.Success || item.WasSkipped) continue;
                 if (string.IsNullOrEmpty(item.CatalogItemId)) continue;
                 var catalogItemId = item.CatalogItemId!;
 
@@ -999,7 +998,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"Attribute extraction failed: {ex.Message}");
+            SmartConLogger.Warn($"Attribute extraction failed: {ex.Message} [Action: проверьте логи Revit (Journal) и убедитесь, что .rfa/.rvt не повреждены, повторите импорт]");
         }
 
         if (extractionResults.Count == 0) return;
@@ -1018,7 +1017,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"SaveExtraction failed: {ex.Message}");
+                SmartConLogger.Warn($"SaveExtraction failed: {ex.Message} [Action: проверьте права на запись в БД каталога, дисковое пространство и целостность SQLite файла]");
             }
         }, nameof(ExtractAttributesForImportedFamilies));
     }
@@ -1105,7 +1104,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (!CanEdit)
         {
-            SmartConLogger.Warn($"MoveFamilyToCategoryAsync blocked: user lacks edit permissions.");
+            SmartConLogger.Warn($"MoveFamilyToCategoryAsync blocked: user lacks edit permissions [Action: обратитесь к владельцу БД каталога через окно Users для получения прав на редактирование]");
             return;
         }
 

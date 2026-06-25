@@ -21,9 +21,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
 
     public FamilyExtractionResult ExtractFromRvt(string rvtFilePath, IReadOnlyList<string>? typeNames)
     {
-        using var _scope = SmartConLogger.BeginScope("SystemFamilyAttr",
-            ("Method", "ExtractFromRvt"),
-            ("RvtFileName", Path.GetFileName(rvtFilePath)));
+        var rvtFileName = Path.GetFileName(rvtFilePath);
         var app = _revitUIContext.GetUIApplication().Application;
         var versionString = _revitContext.GetRevitVersion();
         var revitMajorVersion = int.TryParse(versionString, out var v) ? v : 0;
@@ -46,7 +44,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"Extract failed for '{Path.GetFileName(rvtFilePath)}': {ex.Message}");
+            SmartConLogger.Warn($"Extract failed for '{rvtFileName}': {ex.Message} [Action: проверьте, что .rvt не повреждён и открывается в Revit вручную]");
             return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion);
         }
         finally
@@ -59,7 +57,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn($"Failed to close rvt '{Path.GetFileName(rvtFilePath)}': {ex.Message}");
+                    SmartConLogger.Warn($"Failed to close rvt '{rvtFileName}': {ex.Message} [Action: safe to ignore — Revit releases the document on its own]");
                 }
 
                 try
@@ -68,7 +66,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Info($"Marshal.ReleaseComObject skipped (Document is not a real COM object in Revit API): {ex.Message} (param={ex.GetType().GetProperty("ParamName")?.GetValue(ex) ?? "<n/a>"})");
+                    SmartConLogger.Debug($"Marshal.ReleaseComObject skipped (Document is not a real COM object in Revit API): {ex.Message}");
                 }
             }
         }

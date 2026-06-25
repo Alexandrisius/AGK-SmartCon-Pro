@@ -44,19 +44,14 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
         string outputRfaPath,
         CancellationToken ct = default)
     {
-        using var _scope = SmartConLogger.BeginScope("TypeCatalogBake",
-            ("Method", nameof(BakeAsync)),
-            ("RfaFileName", Path.GetFileName(sourceRfaPath)),
-            ("OutputFileName", Path.GetFileName(outputRfaPath)),
-            ("CatalogRows", catalog.Entries.Count));
+        var sourceFileName = Path.GetFileName(sourceRfaPath);
+        var outputFileName = Path.GetFileName(outputRfaPath);
 
         return await _awaitableEvent.RaiseAsync<FamilyTypeCatalogBakingResult>(obj =>
         {
             var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
             var app = uiApp.Application;
             Document? familyDoc = null;
-            var openSw = System.Diagnostics.Stopwatch.StartNew();
-            var saveSw = System.Diagnostics.Stopwatch.StartNew();
 
             SmartConLogger.FreezeThreadPool("Bake.beforeOpen");
 
@@ -65,10 +60,14 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
                 EnsureOutputDirectory(outputRfaPath);
                 EnsureWritable(outputRfaPath);
 
-                SmartConLogger.Freeze($"Bake: Starting OpenDocumentFile for '{Path.GetFileName(sourceRfaPath)}'");
-                familyDoc = app.OpenDocumentFile(sourceRfaPath);
-                openSw.Stop();
-                SmartConLogger.Freeze($"Bake: OpenDocumentFile completed in {openSw.ElapsedMilliseconds}ms");
+                double openMs;
+                using (var _openMs = SmartConLogger.Measure("Bake.OpenDocumentFile"))
+                {
+                    SmartConLogger.Freeze($"Bake: Starting OpenDocumentFile for '{sourceFileName}'");
+                    familyDoc = app.OpenDocumentFile(sourceRfaPath);
+                    openMs = _openMs.GetElapsedMilliseconds();
+                    SmartConLogger.Freeze($"Bake: OpenDocumentFile completed in {openMs}ms");
+                }
                 if (familyDoc is null)
                 {
                     return Failure($"Failed to open family document '{sourceRfaPath}'");
@@ -85,13 +84,16 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
                     return bakeResult;
                 }
 
-                saveSw.Restart();
-                using var saveOptions = new SaveAsOptions { OverwriteExistingFile = true };
-                familyDoc.SaveAs(outputRfaPath, saveOptions);
-                SetReadOnly(outputRfaPath);
-                saveSw.Stop();
-                SmartConLogger.Freeze($"Bake: SaveAs completed in {saveSw.ElapsedMilliseconds}ms");
-                SmartConLogger.Info($"Baked family saved to '{Path.GetFileName(outputRfaPath)}'");
+                double saveMs;
+                using (var _saveMs = SmartConLogger.Measure("Bake.SaveAs"))
+                {
+                    using var saveOptions = new SaveAsOptions { OverwriteExistingFile = true };
+                    familyDoc.SaveAs(outputRfaPath, saveOptions);
+                    SetReadOnly(outputRfaPath);
+                    saveMs = _saveMs.GetElapsedMilliseconds();
+                }
+                SmartConLogger.Freeze($"Bake: SaveAs completed in {saveMs}ms");
+                SmartConLogger.Info($"Baked family saved to '{outputFileName}': rows={catalog.Entries.Count}");
 
                 return new FamilyTypeCatalogBakingResult(
                     Success: true,
@@ -103,7 +105,7 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
             {
                 SmartConLogger.FreezeFail("Bake", $"{ex.GetType().Name}: {ex.Message}");
                 SmartConLogger.Warn(
-                    $"Type Catalog bake failed for '{Path.GetFileName(sourceRfaPath)}': {ex.Message} " +
+                    $"Type Catalog bake failed for '{sourceFileName}': {ex.Message} " +
                     "[Action: verify the .rfa and .txt are compatible, or check the Revit journal for details]");
                 return Failure(ex.Message);
             }
@@ -112,33 +114,22 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
                 if (familyDoc != null)
                 {
                     SmartConLogger.Freeze("Bake: Starting Close");
-                    var closeSw = System.Diagnostics.Stopwatch.StartNew();
-                    try { familyDoc.Close(false); }
-                    catch (Exception ex)
+                    using (var _closeMs = SmartConLogger.Measure("Bake.Close"))
                     {
-                        closeSw.Stop();
-                        SmartConLogger.FreezeFail("Bake.Close", $"after {closeSw.ElapsedMilliseconds}ms: {ex.GetType().Name}: {ex.Message}");
+                        try { familyDoc.Close(false); }
+                        catch (Exception ex)
+                        {
+                            var closeMs = _closeMs.GetElapsedMilliseconds();
+                            SmartConLogger.FreezeFail("Bake.Close", $"after {closeMs}ms: {ex.GetType().Name}: {ex.Message}");
+                        }
+                        var closeMsFinal = _closeMs.GetElapsedMilliseconds();
+                        SmartConLogger.Freeze($"Bake: Close completed in {closeMsFinal}ms");
                     }
-                    closeSw.Stop();
-                    SmartConLogger.Freeze($"Bake: Close completed in {closeSw.ElapsedMilliseconds}ms");
 
-                    // See RevitFamilyDataExtractionService — RevitAPI Document is
-                    // a managed RCW wrapper, not a real COM object. ReleaseComObject
-                    // on it throws ArgumentException and leaves a half-cleaned-up
-                    // RCW that the GC finalizer will mishandle, zombifying the WPF
-                    // render thread (REVIT-237190). Skip the call when IsComObject
-                    // returns false; Close(false) above is the real lifetime-end.
                     try { Marshal.ReleaseComObject(familyDoc); } catch { /* ignore */ }
                 }
 
-                // Freeze workaround (REVIT-236376 / REVIT-237190): family upgrade
-                // dialog leaves the WPF render thread behind the UI thread. Show
-                // a near-invisible InfoCenter balloon to force a Win32 focus event
-                // that re-syncs them — the same recovery that happens when the
-                // user right-clicks on the DockablePane. See REVIT API forum
-                // "Loading a rfa file into a document using LoadFamily() freezes
-                // Revit UI" for the community-confirmed workaround.
-                RevitBalloonNudge.Nudge($"SmartCon: baked {Path.GetFileName(sourceRfaPath)}");
+                RevitBalloonNudge.Nudge($"SmartCon: baked {sourceFileName}");
             }
         }, ct).ConfigureAwait(false);
     }

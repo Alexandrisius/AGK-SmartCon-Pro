@@ -67,7 +67,7 @@ internal sealed class SystemFamilyIsolationProjectAdapter : ISystemFamilyIsolati
         else
         {
             SmartConLogger.Warn(
-                $"[SystemImport.Create] ✗ {displayName}: {result.Error}");
+                $"[SystemImport.Create] ✗ {displayName}: {result.Error} [Action: см. журнал Revit (Journal) для деталей; batch продолжит с другими категориями]");
         }
 
         return result;

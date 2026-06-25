@@ -178,7 +178,7 @@ internal sealed partial class LocalFamilyImportService
             if (!seenTypeNames.Add(entry.TypeName))
             {
                 duplicateCount++;
-                SmartConLogger.Warn($"Duplicate type name '{entry.TypeName}' at index {i}, skipping (keeping first occurrence)");
+                SmartConLogger.Warn($"Duplicate type name '{entry.TypeName}' at index {i}, skipping (keeping first occurrence) [Action: проверьте .txt — удалите дубликат, если хотите импортировать все строки]");
                 continue;
             }
 
@@ -315,7 +315,7 @@ internal sealed partial class LocalFamilyImportService
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"Failed to find previous version Type Catalog for {catalogItemId}: {ex.Message}");
+            SmartConLogger.Warn($"Failed to find previous version Type Catalog for {catalogItemId}: {ex.Message} [Action: проверьте БД каталога, эта версия будет импортирована без diff со старой]");
             return null;
         }
     }
@@ -354,7 +354,7 @@ internal sealed partial class LocalFamilyImportService
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"Charset detection failed: {ex.Message}, returning UTF-8 result with replacement chars");
+                SmartConLogger.Warn($"Charset detection failed: {ex.Message}, returning UTF-8 result with replacement chars [Action: проверьте кодировку .txt; ожидается UTF-8 или Windows-1251]");
             }
         }
 

@@ -114,7 +114,7 @@ public sealed partial class FamilyManagerMainViewModel
                 catch (Exception ex)
                 {
                     using var _scope = SmartConLogger.BeginScope("FindInCatalog", ("Stage", "inner"));
-                    SmartConLogger.Warn($"failed: {ex.Message}");
+                    SmartConLogger.Warn($"failed: {ex.Message} [Action: проверьте, что активная БД каталога выбрана и доступна]");
                     StatusMessage = ex.Message;
                 }
             });

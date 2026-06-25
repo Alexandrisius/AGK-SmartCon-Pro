@@ -203,7 +203,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"LoadPresetsAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"LoadPresetsAsync failed: {ex.Message} [Action: закройте и откройте properties снова; проверьте БД каталога]");
             HasPresets = false;
             EffectiveParameters = [];
         }
@@ -281,7 +281,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"LoadAttributesDataAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"LoadAttributesDataAsync failed: {ex.Message} [Action: закройте и откройте properties снова; проверьте БД каталога]");
             AttributesStatusMessage = ex.Message;
         }
     }

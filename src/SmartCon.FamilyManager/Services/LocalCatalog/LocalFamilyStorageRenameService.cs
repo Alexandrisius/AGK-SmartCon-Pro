@@ -45,7 +45,7 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
 
         if (string.IsNullOrEmpty(currentVersionLabel) || string.IsNullOrWhiteSpace(trimmedNewName))
         {
-            SmartConLogger.Warn($"current_version_label is empty or newName is whitespace — aborting");
+            SmartConLogger.Warn($"current_version_label is empty or newName is whitespace — aborting [Action: проверьте выбранную версию и новое имя — оба должны быть непустыми]");
             return;
         }
 
@@ -113,7 +113,7 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
                 }
                 else
                 {
-                    SmartConLogger.Warn($"Skipped: oldExists={File.Exists(oldAbsolutePath)}, newExists={File.Exists(newAbsolutePath)}");
+                    SmartConLogger.Warn($"Skipped: oldExists={File.Exists(oldAbsolutePath)}, newExists={File.Exists(newAbsolutePath)} [Action: проверьте, что оба файла существуют на диске]");
                 }
 
                 using var updateCmd = connection.CreateCommand();

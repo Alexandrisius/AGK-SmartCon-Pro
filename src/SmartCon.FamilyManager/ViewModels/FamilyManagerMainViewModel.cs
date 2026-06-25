@@ -193,7 +193,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"DetectRevitVersion failed: {ex.Message}");
+            SmartConLogger.Warn($"DetectRevitVersion failed: {ex.Message} [Action: перезапустите Revit, проверьте что версия Revit соответствует одной из поддерживаемых R19/R21/R24/R25]");
         }
     }
 
@@ -568,37 +568,46 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 catch { }
             });
 
-            var dispatcher = _uiDispatcher;
-
-            dispatcher?.BeginInvoke(new Action(async () =>
+            IsLoading = true;
+            try
             {
-                try
+                if (!_uiDispatcher.HasShutdownStarted)
                 {
-                    await RefreshAccessAndLoadTreeAsync();
+                    _ = _uiDispatcher.InvokeAsync(async () =>
+                    {
+                        try
+                        {
+                            await RefreshAccessAndLoadTreeAsync();
+                        }
+                        catch (DbAccessDeniedException ex)
+                        {
+                            CanImport = false;
+                            CanEdit = false;
+                            CanManageUsers = false;
+                            _dialogService.ShowError(
+                                LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
+                                string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
+                            TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
+                            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
+                        }
+                        catch (Exception ex)
+                        {
+                            SmartConLogger.Error($"RefreshTreeAsync failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
+                            StatusMessage = string.Format(
+                                LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
+                                ex.Message);
+                        }
+                    });
                 }
-                catch (DbAccessDeniedException ex)
-                {
-                    CanImport = false;
-                    CanEdit = false;
-                    CanManageUsers = false;
-                    _dialogService.ShowError(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
-                        string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
-                    TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
-                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Error($"RefreshTreeAsync failed: {ex}");
-                    StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
-                        ex.Message);
-                }
-            }));
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"RefreshTreeViaExternalEvent failed: {ex.Message}");
+            SmartConLogger.Error($"RefreshTreeViaExternalEvent failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
         }
     }
 
@@ -633,11 +642,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private void OnPlacementFailed(string errorMessage)
     {
-        if (!SetStatusOnUiThread(errorMessage))
+        if (!SetStatusOnUiThread($"{errorMessage} [Action: проверьте, что семейство загружено в проект и тип существует; попробуйте Refresh]"))
         {
             return;
         }
-        SmartConLogger.Warn($"{errorMessage}");
     }
 
     private void OnPlacementSucceeded(string successMessage)

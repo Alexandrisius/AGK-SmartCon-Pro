@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -195,9 +196,18 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     }
 
     [RelayCommand]
-    private void PickCategory()
+    private async Task PickCategory()
     {
-        PickCategoryRequested?.Invoke(this);
+        var handler = PickCategoryRequested;
+        if (handler is null) return;
+        try
+        {
+            await handler(this);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"PickCategory failed for '{FileName}': {ex.GetType().Name}: {ex.Message} [Action: закройте batch dialog и повторите, проверьте логи smartcon.log]");
+        }
     }
 
     public event Func<FamilyBatchImportRow, Task>? PickCategoryRequested;

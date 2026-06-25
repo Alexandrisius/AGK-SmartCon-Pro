@@ -59,7 +59,7 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                 !string.IsNullOrEmpty(r.FileName) &&
                 string.Equals(r.FileName, itemFileWithExt, StringComparison.OrdinalIgnoreCase));
 
-            if (match is null || !match.Success || match.WasSkippedAsDuplicate || string.IsNullOrEmpty(match.CatalogItemId))
+            if (match is null || !match.Success || match.WasSkipped || string.IsNullOrEmpty(match.CatalogItemId))
             {
                 skipped++;
                 continue;

@@ -25,18 +25,20 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
         var rfaFileName = System.IO.Path.GetFileName(rfaFilePath);
         var app = _revitUIContext.GetUIApplication().Application;
         Document? familyDoc = null;
-        var openSw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            using var _scope = SmartConLogger.BeginScope("LoadableFamilyTypeResolver", ("RfaFileName", rfaFileName), ("CatalogItemId", catalogItemId));
             SmartConLogger.FreezeThreadPool("LoadableResolver.beforeOpen");
-            SmartConLogger.Freeze($"LoadableResolver: Starting OpenDocumentFile for '{rfaFileName}'");
-            familyDoc = app.OpenDocumentFile(rfaFilePath);
-            openSw.Stop();
-            SmartConLogger.Freeze($"LoadableResolver: OpenDocumentFile completed in {openSw.ElapsedMilliseconds}ms");
+            double openMs;
+            using (var _openMs = SmartConLogger.Measure("LoadableResolver.OpenDocumentFile"))
+            {
+                SmartConLogger.Freeze($"LoadableResolver: Starting OpenDocumentFile for '{rfaFileName}'");
+                familyDoc = app.OpenDocumentFile(rfaFilePath);
+                openMs = _openMs.GetElapsedMilliseconds();
+                SmartConLogger.Freeze($"LoadableResolver: OpenDocumentFile completed in {openMs}ms");
+            }
             if (familyDoc is null || !familyDoc.IsFamilyDocument)
             {
-                SmartConLogger.Warn("OpenDocumentFile did not return a family document [Action: Verify file is a valid Revit .rfa, or check Revit version compatibility]");
+                SmartConLogger.Warn($"OpenDocumentFile did not return a family document for '{rfaFileName}' (catalogItemId={catalogItemId}) [Action: Verify file is a valid Revit .rfa, or check Revit version compatibility]");
                 return [];
             }
 
@@ -51,7 +53,7 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
 
             if (fm.Types.Size == 0)
             {
-                SmartConLogger.Info("No types in family document (types.Size=0)");
+                SmartConLogger.Info($"No types in family document '{rfaFileName}' (types.Size=0)");
                 return result;
             }
 
@@ -73,13 +75,12 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
                     UniqueId: symbol?.UniqueId));
             }
 
-            SmartConLogger.Info($"Resolved {result.Count} type(s)");
+            SmartConLogger.Info($"Resolved {result.Count} type(s) from '{rfaFileName}'");
             return result;
         }
         catch (Exception ex)
         {
-            using var _scope = SmartConLogger.BeginScope("LoadableFamilyTypeResolver", ("RfaFileName", rfaFileName), ("Stage", "Resolve"));
-            SmartConLogger.Warn($"Failed to resolve types: {ex.Message} [Action: Check Revit journal for detailed error, or restart Revit if COM object is corrupted]");
+            SmartConLogger.Warn($"Failed to resolve types from '{rfaFileName}' (catalogItemId={catalogItemId}): {ex.Message} [Action: Check Revit journal for detailed error, or restart Revit if COM object is corrupted]");
             return [];
         }
         finally
@@ -89,15 +90,8 @@ public sealed class LoadableFamilyTypeResolver : ILoadableFamilyTypeResolver
                 try { familyDoc.Close(false); }
                 catch (Exception ex)
                 {
-                    using var _scope = SmartConLogger.BeginScope("LoadableFamilyTypeResolver", ("RfaFileName", rfaFileName), ("Stage", "Close"));
-                    SmartConLogger.Warn($"Close failed: {ex.Message} [Action: Safe to ignore — Revit will release the document on its own]");
+                    SmartConLogger.Warn($"Close failed for '{rfaFileName}': {ex.Message} [Action: Safe to ignore — Revit will release the document on its own]");
                 }
-                // See RevitFamilyDataExtractionService — RevitAPI Document is a
-                // managed RCW wrapper, not a real COM object. ReleaseComObject on
-                // it throws ArgumentException and leaves a half-cleaned-up RCW that
-                // the GC finalizer will mishandle, zombifying the WPF render thread
-                // (REVIT-237190). Skip when IsComObject returns false; Close(false)
-                // above is the real lifetime-end.
                 try { Marshal.ReleaseComObject(familyDoc); }
                 catch { }
             }

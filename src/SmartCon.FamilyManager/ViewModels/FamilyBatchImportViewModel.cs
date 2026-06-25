@@ -244,7 +244,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             catch (Exception ex)
             {
                 SmartCon.Core.Logging.SmartConLogger.Warn(
-                    $"BatchImport.NameChange lookup failed: {ex.Message}");
+                    $"BatchImport.NameChange lookup failed: {ex.Message} [Action: проверьте, что БД каталога доступна; статус строки может быть неактуальным до Refresh]");
             }
         }, token);
     }

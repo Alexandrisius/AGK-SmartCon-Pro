@@ -59,7 +59,7 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
                     if (!File.Exists(task.ManagedRvtPath))
                     {
                         SmartConLogger.Warn(
-                            $"[SystemImport.Extract] Managed .rvt not found for extraction: {task.ManagedRvtPath}");
+                            $"[SystemImport.Extract] Managed .rvt not found for extraction: {task.ManagedRvtPath} [Action: проверьте, что антивирус не удалил файл, или повторите импорт категории]");
                         continue;
                     }
 
@@ -83,13 +83,13 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
                     {
                         SmartConLogger.Warn(
                             $"[SystemImport.Extract] Extraction failed for '{Path.GetFileName(task.ManagedRvtPath)}': " +
-                            $"{extraction.ErrorMessage}");
+                            $"{extraction.ErrorMessage} [Action: проверьте логи Revit; категория будет записана без extracted attributes]");
                     }
                 }
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn(
-                        $"[SystemImport.Extract] Extraction exception for '{task.ManagedRvtPath}': {ex.Message}");
+                        $"[SystemImport.Extract] Extraction exception for '{task.ManagedRvtPath}': {ex.Message} [Action: проверьте логи Revit; batch продолжит с другими категориями]");
                 }
             }
         }, ct);
@@ -105,7 +105,7 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
             catch (Exception ex)
             {
                 SmartConLogger.Warn(
-                    $"[SystemImport.Extract] One or more saves failed: {ex.Message}");
+                    $"[SystemImport.Extract] One or more saves failed: {ex.Message} [Action: проверьте БД каталога; некоторые категории могут не иметь extracted attributes]");
             }
         }
 
@@ -135,7 +135,7 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
         catch (Exception ex)
         {
             SmartConLogger.Warn(
-                $"[SystemImport.Extract] SaveExtractionResult failed: {ex.Message}");
+                $"[SystemImport.Extract] SaveExtractionResult failed: {ex.Message} [Action: проверьте права на запись в БД каталога и целостность SQLite файла]");
         }
     }
 }

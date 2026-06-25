@@ -45,7 +45,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"CategoryPicker.LoadTreeAsync: failed: {ex.Message}");
+            SmartConLogger.Warn($"CategoryPicker.LoadTreeAsync: failed: {ex.Message} [Action: закройте и откройте picker снова; проверьте БД каталога]");
         }
 
         var tree = new CategoryTree(nodes);

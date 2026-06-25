@@ -57,7 +57,7 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
                 var types = item.SourceTypes;
                 if (types is null || types.Count == 0)
                 {
-                    SmartConLogger.Warn($"No source types provided for system row '{item.FileName}'");
+                    SmartConLogger.Warn($"No source types provided for system row '{item.FileName}' [Action: проверьте, что выбранный проект содержит размещённые элементы этой категории]");
                     continue;
                 }
 

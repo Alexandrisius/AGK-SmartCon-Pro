@@ -312,7 +312,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 var result = await ImportFileAsync(importRequest, ct);
                 results.Add(result);
 
-                if (result.WasSkippedAsDuplicate)
+                if (result.WasSkipped)
                     skippedCount++;
                 else if (result.Success)
                     successCount++;
@@ -430,7 +430,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     FileName: item.FileName,
                     VersionLabel: item.ExistingVersionLabel,
                     ErrorMessage: null,
-                    WasSkippedAsDuplicate: true));
+                    WasSkipped: true));
                 continue;
             }
 

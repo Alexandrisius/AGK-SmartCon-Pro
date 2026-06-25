@@ -335,7 +335,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
     /// Использует BuiltInParameter (locale-independent), а не LookupParameter("Diameter"),
     /// т.к. имя параметра в UI зависит от языка проекта ("Diameter" / "Диаметр").
     /// </summary>
-    private static void NormalizeInstanceDimensions(
+    private void NormalizeInstanceDimensions(
         Document newDoc,
         Dictionary<ElementId, List<ElementId>> instancesByType,
         BuiltInCategory category)
@@ -385,14 +385,13 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             var typeId = kvp.Key;
             var instanceIds = kvp.Value;
             var typeName = newDoc.GetElement(typeId)?.Name ?? typeId.ToString();
-            using (var tx = new Transaction(newDoc, $"Normalize dimensions: {typeName}"))
+            try
             {
-                try
+                _transactionService.RunInTransaction(newDoc, $"Normalize dimensions: {typeName}", doc =>
                 {
-                    tx.Start();
                     foreach (var instId in instanceIds)
                     {
-                        var inst = newDoc.GetElement(instId);
+                        var inst = doc.GetElement(instId);
                         if (inst is null) continue;
 
                         if (diamBip.HasValue && diameterFt > 0)
@@ -402,14 +401,13 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                         if (heightBip.HasValue && heightFt > 0)
                             inst.get_Parameter(heightBip.Value)?.Set(heightFt);
                     }
-                    tx.Commit();
-                    SmartConLogger.Info(
-                        $"'{typeName}': applied to {instanceIds.Count} instance(s)");
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn($"'{typeName}': {ex.Message}");
-                }
+                });
+                SmartConLogger.Info(
+                    $"'{typeName}': applied to {instanceIds.Count} instance(s)");
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"'{typeName}': {ex.Message} [Action: проверьте, что тип семейства поддерживает изменение диаметра/ширины/высоты через стандартные параметры]");
             }
         }
     }

@@ -58,7 +58,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         Assert.NotNull(result.FileId);
         Assert.Equal("TestFamily.rfa", result.FileName);
         Assert.Equal("v1", result.VersionLabel);
-        Assert.False(result.WasSkippedAsDuplicate);
+        Assert.False(result.WasSkipped);
     }
 
     [Fact]
@@ -71,12 +71,12 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
 
         var result1 = await _importService.ImportFileAsync(new FamilyImportRequest(path1, 2025, null, null, null));
         Assert.True(result1.Success);
-        Assert.False(result1.WasSkippedAsDuplicate);
+        Assert.False(result1.WasSkipped);
         Assert.Equal("v1", result1.VersionLabel);
 
         var result2 = await _importService.ImportFileAsync(new FamilyImportRequest(path1, 2025, null, null, null));
         Assert.True(result2.Success);
-        Assert.False(result2.WasSkippedAsDuplicate);
+        Assert.False(result2.WasSkipped);
         Assert.Equal("v2", result2.VersionLabel);
         Assert.Equal(result1.CatalogItemId, result2.CatalogItemId);
         Assert.Equal(result1.CatalogItemId, result2.CatalogItemId);
@@ -206,7 +206,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         Assert.Equal("v1", result.VersionLabel);
         Assert.Equal(stagedPath, result.ManagedFilePath);
         Assert.Equal("StagedFamily.rfa", result.FileName);
-        Assert.False(result.WasSkippedAsDuplicate);
+        Assert.False(result.WasSkipped);
 
         var file = await _fixture.GetProvider().GetFileAsync(result.FileId!);
         Assert.NotNull(file);

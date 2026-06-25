@@ -23,100 +23,6 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));
     }
 
-    public FamilyExtractionResult Extract(string rfaFilePath, IReadOnlyList<string> expectedParameterNames)
-    {
-        using var _scope = SmartConLogger.BeginScope("FamilyDataExt",
-            ("Method", "Extract"),
-            ("RfaFileName", Path.GetFileName(rfaFilePath)));
-        var doc = _revitContext.GetDocument();
-        var app = doc.Application;
-
-        var revitMajorVersion = GetMajorVersion();
-
-        Document? familyDoc = null;
-        try
-        {
-            familyDoc = app.OpenDocumentFile(rfaFilePath);
-            if (familyDoc is null)
-            {
-                return new FamilyExtractionResult(false, [], null, "Failed to open family document", revitMajorVersion, Array.Empty<string>());
-            }
-
-            if (!familyDoc.IsFamilyDocument)
-            {
-                return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion, Array.Empty<string>());
-            }
-
-            return ExtractCore(familyDoc, expectedParameterNames, revitMajorVersion) with { SharedNestedFamilyNames = Array.Empty<string>() };
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                $"Extract failed for '{Path.GetFileName(rfaFilePath)}': {ex.Message} " +
-                "[Action: verify file is a valid Revit .rfa, or check Revit version compatibility]");
-            return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion, Array.Empty<string>());
-        }
-        finally
-        {
-            if (familyDoc != null)
-            {
-                try
-                {
-                    familyDoc.Close(false);
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn(
-                        $"Failed to close family document '{Path.GetFileName(rfaFilePath)}': {ex.Message} " +
-                        "[Action: safe to ignore — Revit releases the document on its own]");
-                }
-
-                try
-                {
-                    Marshal.ReleaseComObject(familyDoc);
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Debug(
-                        $"Marshal.ReleaseComObject skipped (RevitAPI doc is not a real COM object): {ex.Message}");
-                }
-            }
-
-            // Freeze workaround (REVIT-236376 / REVIT-237190): force a Win32
-            // focus event via an InfoCenter balloon so the WPF render thread
-            // re-syncs with the UI thread after the family upgrade dialog
-            // closes. See RevitBalloonNudge.cs for the rationale.
-            RevitBalloonNudge.Nudge($"SmartCon: extracted {Path.GetFileName(rfaFilePath)}");
-        }
-    }
-
-    public FamilyExtractionResult Extract(Document familyDocument, IReadOnlyList<string> expectedParameterNames)
-    {
-#pragma warning disable CA1510
-        if (familyDocument is null)
-            throw new ArgumentNullException(nameof(familyDocument));
-#pragma warning restore CA1510
-
-        var revitMajorVersion = GetMajorVersion();
-
-        if (!familyDocument.IsFamilyDocument)
-        {
-            return new FamilyExtractionResult(false, [], null, "Not a family document", revitMajorVersion, Array.Empty<string>());
-        }
-
-        try
-        {
-            return ExtractCore(familyDocument, expectedParameterNames, revitMajorVersion) with { SharedNestedFamilyNames = Array.Empty<string>() };
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                $"Extract failed for document '{familyDocument.Title}': {ex.Message} " +
-                "[Action: check Revit journal for details, or restart Revit if the COM object is corrupted]");
-            return new FamilyExtractionResult(false, [], null, ex.Message, revitMajorVersion, Array.Empty<string>());
-        }
-    }
-
     public FamilyExtractionResult ExtractFromManagedFile(
         string managedRfaPath,
         IReadOnlyList<string> expectedParameterNames,
@@ -127,38 +33,39 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             throw new ArgumentNullException(nameof(managedRfaPath));
 #pragma warning restore CA1510
 
-        using var _scope = SmartConLogger.BeginScope("FamilyDataExt",
-            ("Method", "ExtractFromManagedFile"),
-            ("RfaFileName", Path.GetFileName(managedRfaPath)));
+        var rfaFileName = Path.GetFileName(managedRfaPath);
 
         if (!File.Exists(managedRfaPath))
         {
             return new FamilyExtractionResult(
                 false, [], null,
-                $"File not found: {Path.GetFileName(managedRfaPath)}",
+                $"File not found: {rfaFileName}",
                 GetMajorVersion(),
                 Array.Empty<string>());
         }
 
         Document? doc = null;
         SmartConLogger.FreezeThreadPool("ExtractFromManagedFile.beforeOpen");
-        var openSw = System.Diagnostics.Stopwatch.StartNew();
-        try
+        double openMs;
+        using (var _openMs = SmartConLogger.Measure("ExtractFromManagedFile.OpenDocumentFile"))
         {
-            SmartConLogger.Freeze($"Extract: Starting OpenDocumentFile for '{Path.GetFileName(managedRfaPath)}'");
-            doc = _revitContext.GetDocument().Application.OpenDocumentFile(managedRfaPath);
-            openSw.Stop();
-            SmartConLogger.Freeze($"Extract: OpenDocumentFile completed in {openSw.ElapsedMilliseconds}ms");
-        }
-        catch (Exception ex)
-        {
-            openSw.Stop();
-            SmartConLogger.FreezeFail("Extract.OpenDocumentFile", $"after {openSw.ElapsedMilliseconds}ms: {ex.GetType().Name}: {ex.Message}");
-            SmartConLogger.Warn(
-                $"OpenDocumentFile failed for '{Path.GetFileName(managedRfaPath)}': {ex.Message} " +
-                "[Action: verify file is a valid Revit .rfa, or check Revit version compatibility]");
-            return new FamilyExtractionResult(
-                false, [], null, ex.Message, GetMajorVersion(), Array.Empty<string>());
+            try
+            {
+                SmartConLogger.Freeze($"Extract: Starting OpenDocumentFile for '{rfaFileName}'");
+                doc = _revitContext.GetDocument().Application.OpenDocumentFile(managedRfaPath);
+                openMs = _openMs.GetElapsedMilliseconds();
+                SmartConLogger.Freeze($"Extract: OpenDocumentFile completed in {openMs}ms");
+            }
+            catch (Exception ex)
+            {
+                openMs = _openMs.GetElapsedMilliseconds();
+                SmartConLogger.FreezeFail("Extract.OpenDocumentFile", $"after {openMs}ms: {ex.GetType().Name}: {ex.Message}");
+                SmartConLogger.Warn(
+                    $"OpenDocumentFile failed for '{rfaFileName}': {ex.Message} " +
+                    "[Action: verify file is a valid Revit .rfa, or check Revit version compatibility]");
+                return new FamilyExtractionResult(
+                    false, [], null, ex.Message, GetMajorVersion(), Array.Empty<string>());
+            }
         }
 
         if (doc is null)
@@ -221,15 +128,17 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
         finally
         {
             SmartConLogger.Freeze("Extract: Starting Close");
-            var closeSw = System.Diagnostics.Stopwatch.StartNew();
-            try { doc.Close(false); }
-            catch (Exception ex)
+            using (var _closeMs = SmartConLogger.Measure("ExtractFromManagedFile.Close"))
             {
-                closeSw.Stop();
-                SmartConLogger.FreezeFail("Extract.Close", $"after {closeSw.ElapsedMilliseconds}ms: {ex.GetType().Name}: {ex.Message}");
+                try { doc.Close(false); }
+                catch (Exception ex)
+                {
+                    var closeMs = _closeMs.GetElapsedMilliseconds();
+                    SmartConLogger.FreezeFail("Extract.Close", $"after {closeMs}ms: {ex.GetType().Name}: {ex.Message}");
+                }
+                var closeMsFinal = _closeMs.GetElapsedMilliseconds();
+                SmartConLogger.Freeze($"Extract: Close completed in {closeMsFinal}ms");
             }
-            closeSw.Stop();
-            SmartConLogger.Freeze($"Extract: Close completed in {closeSw.ElapsedMilliseconds}ms");
 
             // COM cleanup: RevitAPI Document is a managed RCW wrapper, not a real
             // unmanaged COM object. Calling Marshal.ReleaseComObject on a managed
@@ -252,11 +161,8 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
             // the document.
             //
             // Log level is Debug (not Freeze) because the ArgumentException is
-            // expected and harmless — see the matching catch block in the
-            // Extract(string, IReadOnlyList<string>) overload above (line ~80).
-            // The Freeze level would pollute freeze-diagnostic.log with noise on
-            // every import; the Freeze level is reserved for diagnostic markers
-            // around long-running operations (OpenDocumentFile, Close, etc.).
+            // expected and harmless. The Freeze level is reserved for diagnostic
+            // markers around long-running operations (OpenDocumentFile, Close, etc.).
             try { Marshal.ReleaseComObject(doc); }
             catch (Exception ex)
             {

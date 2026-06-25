@@ -162,13 +162,13 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             catch (IOException ex) when (i < maxRetries - 1)
             {
                 using var _scope = SmartConLogger.BeginScope("FM Delete", ("Path", path), ("Attempt", i + 1));
-                SmartConLogger.Warn($"failed to delete directory: {ex.Message}. Retrying...");
+                SmartConLogger.Warn($"failed to delete directory: {ex.Message}. Retrying... [Action: обычно файл заблокирован антивирусом или другим процессом; операция будет повторена до 5 раз]");
                 await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException ex) when (i < maxRetries - 1)
             {
                 using var _scope = SmartConLogger.BeginScope("FM Delete", ("Path", path), ("Attempt", i + 1));
-                SmartConLogger.Warn($"failed (access denied): {ex.Message}. Retrying...");
+                SmartConLogger.Warn($"failed (access denied): {ex.Message}. Retrying... [Action: обычно файл заблокирован антивирусом или другим процессом; операция будет повторена до 5 раз]");
                 await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
             }
         }

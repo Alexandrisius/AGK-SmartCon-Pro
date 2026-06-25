@@ -444,7 +444,7 @@ public sealed record FamilyImportResult(
     string? FileName,
     string? VersionLabel,
     string? ErrorMessage,
-    bool WasSkippedAsDuplicate = false,
+    bool WasSkipped = false,
     bool WasNewVersion = false);
 ```
 
