@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -11,10 +12,66 @@ namespace SmartCon.FamilyManager.ViewModels;
 public sealed partial class FamilyBatchImportRow : ObservableObject
 {
     public string FilePath { get; }
-    public string Sha256 { get; }
     public int RevitMajorVersion { get; }
-    public long FileSizeBytes { get; }
     public string FamilySource { get; }
+
+    /// <summary>
+    /// v2.0.0: source payload for post-dialog staging. <c>null</c> for
+    /// UC-1/UC-2 (file already on disk). <see cref="FamilyImportSource"/>
+    /// for UC-3/UC-4 (the dialog receives placeholder <c>FilePath</c>
+    /// like <c>"system://..."</c> or <c>"loadable://..."</c>; this
+    /// <c>Source</c> is the staged pipeline's input for creating the
+    /// real managed file after the user confirms the dialog).
+    ///
+    /// Read-only because the user never edits it directly — only the
+    /// row VM's <see cref="GetResultItems"/> re-emits it on
+    /// <see cref="FamilyBatchImportItem.Source"/>.
+    /// </summary>
+    public FamilyImportSource? Source { get; }
+
+    /// <summary>
+    /// v2.0.0: precomputed canonical managed path the VM allocated up
+    /// front in <c>BuildSystemFamilyBatchRowVirtualAsync</c> /
+    /// <c>BuildLoadableFamilyBatchRowVirtualAsync</c>. The staging
+    /// helper writes the staged file at this exact path (so the
+    /// managed-path invariant
+    /// <c>family_files.relative_path = "{dbRoot}/files/&lt;catalogItemId&gt;/&lt;versionLabel&gt;/&lt;name&gt;"</c>
+    /// holds). <c>GetResultItems</c> must re-emit it on
+    /// <see cref="FamilyBatchImportItem.PrecomputedManagedPath"/> so the
+    /// post-dialog flow still has it — losing this value is what
+    /// broke the v2.0.0 import and forced staging to fall back to
+    /// <c>ComputeSystemFamilyManagedPath</c> with a fresh GUID, which
+    /// then made <c>ImportFileAsync</c> look for the file at a path
+    /// nothing wrote to.
+    /// <para>
+    /// v2.0.0 hotfix: this and the two <c>Precomputed*</c> siblings are
+    /// <c>[ObservableProperty]</c>-backed (not <c>get;</c>-only) because
+    /// the dialog's <c>OnRowNameChanged</c> handler has to re-derive the
+    /// triple when the user renames a row — leaving the values stuck on
+    /// the original name produces the
+    /// <c>UNIQUE constraint failed: catalog_items.id</c> failure mode
+    /// where <c>ImportFileAsync</c> tries to insert a new row with the
+    /// pre-existing id of the family the row used to be named after.
+    /// </para>
+    /// </summary>
+    [ObservableProperty]
+    private string? _precomputedManagedPath;
+
+    /// <summary>
+    /// v2.0.0: precomputed catalog item id. See
+    /// <see cref="PrecomputedManagedPath"/> for why this must survive
+    /// the dialog round-trip.
+    /// </summary>
+    [ObservableProperty]
+    private string? _precomputedCatalogItemId;
+
+    /// <summary>
+    /// v2.0.0: precomputed version label. See
+    /// <see cref="PrecomputedManagedPath"/> for why this must survive
+    /// the dialog round-trip.
+    /// </summary>
+    [ObservableProperty]
+    private string? _precomputedVersionLabel;
 
     [ObservableProperty]
     private int? _typeCount;
@@ -64,15 +121,20 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     {
         FilePath = item.FilePath;
         FileName = item.FileName;
-        Sha256 = item.Sha256;
         RevitMajorVersion = item.RevitMajorVersion;
-        FileSizeBytes = item.FileSizeBytes;
         FamilySource = item.FamilySource;
+        Source = item.Source;
         _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;
         Status = item.Status;
         ExistingCatalogItemId = item.ExistingCatalogItemId;
         ExistingVersionLabel = item.ExistingVersionLabel;
+        // Backing-field assignment is intentional: the row is being
+        // constructed, so the [ObservableProperty]-generated INPC
+        // notifications would be wasted work (no listener yet).
+        _precomputedCatalogItemId = item.PrecomputedCatalogItemId;
+        _precomputedVersionLabel = item.PrecomputedVersionLabel;
+        _precomputedManagedPath = item.PrecomputedManagedPath;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
         // Display rule for the category cell:
@@ -100,31 +162,24 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     private static IReadOnlyList<FamilyBatchImportAction> BuildAvailableActions(FamilyBatchImportStatus status) => status switch
     {
-        FamilyBatchImportStatus.Duplicate => [FamilyBatchImportAction.Skip],
         FamilyBatchImportStatus.New => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.Skip],
         FamilyBatchImportStatus.Existing => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.OverwriteCurrent, FamilyBatchImportAction.Skip],
         _ => [FamilyBatchImportAction.Skip]
     };
 
-    public void SetStatusSilent(FamilyBatchImportStatus status, string? existingItemId, string? existingVersionLabel)
+    partial void OnActionChanged(FamilyBatchImportAction value)
     {
-        Status = status;
-        ExistingCatalogItemId = existingItemId;
-        ExistingVersionLabel = existingVersionLabel;
-        AvailableActions = BuildAvailableActions(status);
-
-        if (status == FamilyBatchImportStatus.Duplicate)
-            Action = FamilyBatchImportAction.Skip;
+        ActionChanged?.Invoke(this, value);
     }
 
     partial void OnFileNameChanged(string value)
     {
-        NameChanged?.Invoke(this);
-    }
-
-    partial void OnActionChanged(FamilyBatchImportAction value)
-    {
-        ActionChanged?.Invoke(this, value);
+        // v2.0.0 hotfix: notify the parent view-model so it can re-resolve
+        // the catalog status (New/Existing) when the user renames the row.
+        // Without this, the Status column would stay "Existing" even after
+        // the user typed a unique name, leaving the dialog visually
+        // inconsistent with what would actually happen on import.
+        NameChanged?.Invoke(this, value);
     }
 
     partial void OnTargetCategoryPathChanged(string value)
@@ -141,14 +196,30 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     }
 
     [RelayCommand]
-    private void PickCategory()
+    private async Task PickCategory()
     {
-        PickCategoryRequested?.Invoke(this);
+        var handler = PickCategoryRequested;
+        if (handler is null) return;
+        try
+        {
+            await handler(this);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"PickCategory failed for '{FileName}': {ex.GetType().Name}: {ex.Message} [Action: закройте batch dialog и повторите, проверьте логи smartcon.log]");
+        }
     }
 
     public event Func<FamilyBatchImportRow, Task>? PickCategoryRequested;
-    public event Func<FamilyBatchImportRow, Task>? NameChanged;
     public event Action<FamilyBatchImportRow, FamilyBatchImportAction>? ActionChanged;
     public event Action<FamilyBatchImportRow, (string? Id, string Path)>? CategoryChanged;
     public event Action<FamilyBatchImportRow, bool>? SelectionChanged;
+
+    /// <summary>
+    /// v2.0.0 hotfix: fires whenever the user edits
+    /// <see cref="FileName"/> in the batch dialog. The parent view-model
+    /// re-resolves the catalog status (New/Existing) on a debounced timer
+    /// and updates the row accordingly.
+    /// </summary>
+    public event Action<FamilyBatchImportRow, string>? NameChanged;
 }

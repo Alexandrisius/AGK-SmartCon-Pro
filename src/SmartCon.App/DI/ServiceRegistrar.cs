@@ -166,8 +166,15 @@ public static class ServiceRegistrar
         services.AddSingleton<ICategoryRepository>(sp => sp.GetRequiredService<LocalCategoryRepository>());
         services.AddSingleton<LocalFamilyTypeRepository>();
         services.AddSingleton<IFamilyTypeRepository>(sp => sp.GetRequiredService<LocalFamilyTypeRepository>());
-        services.AddSingleton<Sha256FileHasher>();
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
+        // v2.0.0: precomputer allocates the canonical
+        // (CatalogItemId, VersionLabel, ManagedPath) triple for a given
+        // display name without performing file I/O. Used by the batch
+        // import dialog's rename handler so the round-trip from the
+        // dialog back to ImportFileAsync always carries consistent
+        // values (the dialog pre-build and the dialog rename share the
+        // same single source of truth).
+        services.AddSingleton<IFamilyImportPrecomputer, LocalFamilyImportPrecomputer>();
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
@@ -189,7 +196,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
         services.AddSingleton<LocalSharedNestedFamilyRepository>();
         services.AddSingleton<ISharedNestedFamilyRepository>(sp => sp.GetRequiredService<LocalSharedNestedFamilyRepository>());
-        services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
+        services.AddSingleton<IFamilyMetadataExtractionService, FileMetadataExtractionService>();
         services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
         services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
         services.AddSingleton<IFamilyPlacementDragService, RevitFamilyPlacementDragService>();
@@ -202,10 +209,7 @@ public static class ServiceRegistrar
         services.AddSingleton<ISystemFamilyAttributeExtractor, SmartCon.FamilyManager.Services.SystemFamilyAttributeExtractor>();
         services.AddSingleton<ISystemFamilyImportOrchestrator, SmartCon.FamilyManager.Services.SystemFamilyImportOrchestrator>();
         services.AddSingleton<ISystemFamilyAttributeExtractionService, SystemFamilyAttributeExtractionService>();
-        services.AddSingleton<IFamilySidecarLocator, LocalFamilySidecarLocator>();
-        services.AddSingleton<IActiveFamilyFilePreparer, ActiveFamilyFilePreparer>();
         services.AddSingleton<IActiveDocumentClassifier, ActiveDocumentClassifier>();
-        services.AddSingleton<IActiveImportCleanupService, ActiveImportCleanupService>();
         services.AddSingleton<IUserIdentityService, RevitUserIdentityService>();
         services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();

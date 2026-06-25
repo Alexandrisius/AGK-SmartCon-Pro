@@ -105,17 +105,26 @@ safety**.
 
 ---
 
-### M-019-003: `Application.Current?.Dispatcher` → `IDispatcher`
+### M-019-003: `Application.Current?.Dispatcher` → `IDispatcher` ✅ DONE
 
 **Скоуп:** 5 call site-ов в 3 файлах:
 - `FamilyManagerMainViewModel.cs` (2 — `OnPlacementCompleted`)
 - `RevitWindowFocusService.cs` (1)
 - `ShareProjectCommand.cs` (2 — но это `UIElement.Dispatcher`, другая семантика)
 
-**Почему плохо:**
-- `Application.Current` — **глобальный синглтон**, не инжектируется.
-- В тестах `Application.Current` = `null` (нет WPF Application), паттерн `?? Dispatcher.CurrentDispatcher` падает с "must create DependencySource on same thread".
-- `dispatcher.HasShutdownStarted` — race condition между проверкой и `BeginInvoke`.
+**Статус:** ✅ Выполнено в [ADR-036](036-active-family-type-sync.md) (Phase 27, 2026-06-25).
+
+**Что сделано:**
+- `FamilyManagerServices` расширен: добавлен `IDispatcher Dispatcher` (62→63 props).
+- `FamilyManagerMainViewModel._uiDispatcher` (System.Windows.Threading.Dispatcher) → `_dispatcher` (IDispatcher).
+- Захват в ctor упрощён: `_dispatcher = services.Dispatcher` (вместо `Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher`).
+- 4 использования обновлены: `RefreshTreeViaExternalEventAsync`, `OnPlacementCompleted`, `SetStatusOnUiThread` (2 вызова), `RefreshTree` через dispatcher.
+
+**Out of scope этого PR (отложено):**
+- `CategoryPickerViewModel:120-124` (поиск) — отдельный call site, требует `CategoryPickerViewModelFactory` для инжекции IDispatcher.
+- `CategoryTreeEditorViewModel:74-79` (выбор категории) — отдельный call site, требует той же фабрики.
+- `RevitWindowFocusService.cs:1` — отдельный сервис, требует отдельного PR.
+- `ShareProjectCommand.cs:2` — `UIElement.Dispatcher` другая семантика (не мигрируется).
 
 **Почему хорошо после:**
 - В тестах — `Mock<IDispatcher>()` или `InlineDispatcher` (синхронный).
@@ -125,22 +134,16 @@ safety**.
 **Критичность:** 🟠 высокая. **UI-thread deadlock потенциально возможен**
 (см. [revit-api-best-practice skill](../../.agents/skills/revit-api-best-practice/SKILL.md) — `MFC UI freezes`).
 
-**Подводный камень:**
+**Подводный камень (resolved):**
 - `UIElement.Dispatcher` (например, `_progressView?.Dispatcher`) — **другая семантика**,
   это dispatcher конкретного UIElement, не Application. Не мигрировать на `IDispatcher`.
 - `Dispatcher.CurrentDispatcher` fallback в `WpfDispatcher` — может создать лишний
   dispatcher в тестах. Сейчас `WpfDispatcher` (FamilyManager/UI) уже корректно
   обрабатывает `null` через `Dispatcher.CurrentDispatcher`.
 
-**Стратегия:**
-1. В `FamilyManagerMainViewModel` — добавить `IDispatcher` в `FamilyManagerServices`
-   (record, 30→31 props).
-2. Заменить `Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher` → `_dispatcher`.
-3. `dispatcher.BeginInvoke(action)` → `_dispatcher.InvokeAsync(action)`.
-4. Тесты: `Mock<IDispatcher>` + `Verify(d => d.InvokeAsync(...))`.
-
 **Ссылка:** инфраструктура в коммите `1bb47f7` (Phase 6 finish).
 WpfDispatcher + 7 тестов в `WpfDispatcherTests.cs`.
+FamilyManagerMainViewModel миграция в коммите [ADR-036](036-active-family-type-sync.md).
 
 ---
 
@@ -246,10 +249,10 @@ WpfDispatcher + 7 тестов в `WpfDispatcherTests.cs`.
 |---|---|---|---|---|---|---|
 | M-019-001 | `DateTimeOffset.UtcNow` → `IClock` | 74 места | 🟡 средне | 1-2 дня | низкий (read-only) | open |
 | M-019-002 | `Guid.NewGuid()` → `IIdGenerator` | 40 мест | 🟢 низко | 0.5 дня | низкий (read-only) | open |
-| M-019-003 | `Application.Current?.Dispatcher` → `IDispatcher` | 5 мест | 🟠 высоко | 0.5 дня | средний (UI thread) | open |
+| M-019-003 | `Application.Current?.Dispatcher` → `IDispatcher` | 5 мест | 🟠 высоко | 0.5 дня | средний (UI thread) | ✅ **DONE (partial, ADR-036)** — FamilyManagerMainViewModel; 3 call site в backlog |
 | M-019-004 | manual SQL → `SqliteConnectionExtensions` | 30+ мест | 🟡 средне | 1 день | средний (repositories) | open |
 | M-019-005 | `SmartConLogger.Info` → `BeginScope` | 1001 место | 🟢 низко | 2-3 дня | средний (observability) | ✅ **DONE** |
-| | **ИТОГО** | **~1150 мест** | | **5-7 дней** | | 1/5 done |
+| | **ИТОГО** | **~1150 мест** | | **5-7 дней** | | 1/5 done (+ partial M-019-003) |
 
 ## Рекомендуемый порядок миграции
 

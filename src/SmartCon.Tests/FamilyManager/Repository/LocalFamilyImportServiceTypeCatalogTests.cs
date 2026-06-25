@@ -26,8 +26,8 @@ public sealed class LocalFamilyImportServiceTypeCatalogTests : IDisposable
     {
         _fixture = new TempCatalogFixture();
 
-        var hasher = new Sha256FileHasher();
-        var metadataService = new FileNameOnlyMetadataExtractionService(hasher);
+        
+        var metadataService = new FileMetadataExtractionService();
         _importService = new LocalFamilyImportService(
             _fixture.GetDatabase(),
             _fixture.GetMigrator(),
@@ -213,6 +213,71 @@ public sealed class LocalFamilyImportServiceTypeCatalogTests : IDisposable
         Assert.Equal(2, types.Count);
         Assert.Contains(types, t => t.Name == "S50");
         Assert.Contains(types, t => t.Name == "S100");
+    }
+
+    [Fact]
+    public async Task ImportFile_SourceEqualsManagedPath_SkipsCopyAndSucceeds()
+    {
+        // UC-2 (Import Active Family Document) regression:
+        // 1) FamilyManagerMainViewModel.SaveAs() writes the active .rfa
+        //    directly into managed storage. The active doc's PathName now
+        //    points at the managed copy.
+        // 2) ImportFileAsync() is invoked with FilePath = managed path.
+        // 3) PrepareManagedRfaAsync used to File.Copy(source→managed),
+        //    which is a self-copy that throws "Access is denied" while
+        //    Revit still holds the file open.
+        //
+        // The fix: detect source==managed (case-insensitive) and skip
+        // Copy/Bake. We verify the round-trip succeeds end-to-end:
+        // first import populates v1; second import with FilePath pointing
+        // at the post-SaveAs managed location must produce v2 without
+        // throwing on the self-copy attempt.
+
+        // Step 1 — initial import. FilePath is a user-side .rfa; managed
+        // path differs from it (different root).
+        var originalRfa = _fixture.CreateFakeRfaFile("UC2-Source.rfa");
+        var first = await _importService.ImportFileAsync(
+            new FamilyImportRequest(originalRfa, 2025, null, null, null));
+        Assert.True(first.Success);
+
+        var fileRecord = await _fixture.GetProvider().GetFileAsync(first.FileId!);
+        Assert.NotNull(fileRecord);
+        var managedV1 = Path.Combine(
+            _fixture.GetDatabaseRoot(), fileRecord.RelativePath);
+        Assert.True(File.Exists(managedV1));
+
+        // Step 2 — simulate the post-SaveAs state. We materialise a v2
+        // managed path that mirrors what ComputeManagedRfaPath will pick
+        // (same display name → same catalog_item_id → next version v2).
+        // Write the v1 content to the v2 path so FilePath == managedRfaPath.
+        //
+        // Layout: {dbRoot}/files/{catalogItemId}/v1/{name}.rfa
+        //         {dbRoot}/files/{catalogItemId}/v2/{name}.rfa
+        //
+        // Path.GetDirectoryName(managedV1) returns the v1/ folder, so
+        // we strip that one segment before re-appending v2/.
+        var itemDir = Path.GetDirectoryName(managedV1)!;
+        var catalogDir = Path.GetDirectoryName(itemDir)!;
+        var managedV2 = Path.Combine(catalogDir, "v2", Path.GetFileName(managedV1));
+        Directory.CreateDirectory(Path.GetDirectoryName(managedV2)!);
+        File.Copy(managedV1, managedV2, overwrite: true);
+        Assert.True(File.Exists(managedV2));
+
+        // Step 3 — call ImportFileAsync with FilePath = managedV2. ComputeManagedRfaPath
+        // will resolve to v2/{name}.rfa (= managedV2). The new short-circuit
+        // detects source==managed and skips Copy/Bake, allowing the import
+        // to record v2 in the catalog without touching the file.
+        var second = await _importService.ImportFileAsync(
+            new FamilyImportRequest(
+                FilePath: managedV2,
+                RevitMajorVersion: 2025,
+                Category: null,
+                Tags: null,
+                Description: null));
+
+        Assert.True(second.Success, second.ErrorMessage);
+        Assert.Equal("v2", second.VersionLabel);
+        Assert.True(File.Exists(managedV2), "managed v2 file must remain after import");
     }
 
     public void Dispose()

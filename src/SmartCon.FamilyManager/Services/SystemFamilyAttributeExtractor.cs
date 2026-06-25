@@ -56,47 +56,40 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
             {
                 try
                 {
-                    if (!File.Exists(task.TempRvtPath))
+                    if (!File.Exists(task.ManagedRvtPath))
                     {
                         SmartConLogger.Warn(
-                            $"[SystemImport.Extract] Temp .rvt not found for extraction: {task.TempRvtPath}");
+                            $"[SystemImport.Extract] Managed .rvt not found for extraction: {task.ManagedRvtPath} [Action: проверьте, что антивирус не удалил файл, или повторите импорт категории]");
                         continue;
                     }
 
                     var extraction = _extraction.ExtractFromRvt(
-                        task.TempRvtPath, task.TypeNames);
+                        task.ManagedRvtPath, task.TypeNames);
                     if (extraction.Success)
                     {
-                        var saveTask = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _dataImportService.SaveExtractionResultAsync(
-                                    task.CatalogItemId, extraction, task.VersionId, task.FileId,
-                                    CancellationToken.None);
-                                SmartConLogger.Debug(
-                                    $"[SystemImport.Extract] Saved extraction for '{Path.GetFileName(task.TempRvtPath)}': " +
-                                    $"{extraction.Types.Count} types");
-                            }
-                            catch (Exception ex)
-                            {
-                                SmartConLogger.Warn(
-                                    $"[SystemImport.Extract] SaveExtractionResult failed: {ex.Message}");
-                            }
-                        }, CancellationToken.None);
+                        // v2.0.0 hotfix: SaveExtractionResultAsync is already
+                        // an async method that returns a Task. The previous
+                        // implementation wrapped it in Task.Run, which (a)
+                        // double-scheduled the work onto the thread pool,
+                        // and (b) created a flaky race in unit tests where
+                        // the second task's extraction appeared to be
+                        // skipped when both saves hit the thread pool at
+                        // the same time. Call the async method directly and
+                        // let Task.WhenAll drive completion.
+                        var saveTask = SaveExtractionSafelyAsync(task, extraction);
                         pendingSaves.Add(saveTask);
                     }
                     else
                     {
                         SmartConLogger.Warn(
-                            $"[SystemImport.Extract] Extraction failed for '{Path.GetFileName(task.TempRvtPath)}': " +
-                            $"{extraction.ErrorMessage}");
+                            $"[SystemImport.Extract] Extraction failed for '{Path.GetFileName(task.ManagedRvtPath)}': " +
+                            $"{extraction.ErrorMessage} [Action: проверьте логи Revit; категория будет записана без extracted attributes]");
                     }
                 }
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn(
-                        $"[SystemImport.Extract] Extraction exception for '{task.TempRvtPath}': {ex.Message}");
+                        $"[SystemImport.Extract] Extraction exception for '{task.ManagedRvtPath}': {ex.Message} [Action: проверьте логи Revit; batch продолжит с другими категориями]");
                 }
             }
         }, ct);
@@ -104,7 +97,7 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
         if (pendingSaves.Count > 0)
         {
             SmartConLogger.Debug(
-                $"[SystemImport.Extract] Waiting for {pendingSaves.Count} save(s) before cleanup...");
+                $"[SystemImport.Extract] Waiting for {pendingSaves.Count} save(s)...");
             try
             {
                 await Task.WhenAll(pendingSaves);
@@ -112,22 +105,37 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
             catch (Exception ex)
             {
                 SmartConLogger.Warn(
-                    $"[SystemImport.Extract] One or more saves failed: {ex.Message}");
+                    $"[SystemImport.Extract] One or more saves failed: {ex.Message} [Action: проверьте БД каталога; некоторые категории могут не иметь extracted attributes]");
             }
         }
 
-        foreach (var task in tasks)
+        if (tasks.Count > 0)
         {
-            try
-            {
-                if (File.Exists(task.TempRvtPath)) File.Delete(task.TempRvtPath);
-                var metaPath = task.TempRvtPath + ".types.json";
-                if (File.Exists(metaPath)) File.Delete(metaPath);
-            }
-            catch { }
+            SmartConLogger.Debug(
+                $"[SystemImport.Extract] Extraction complete; managed .rvt files retained in catalog storage (I-16 immutable).");
         }
 
         SmartConLogger.Info(
             $"[SystemImport.Extract] ✓ Extraction phase complete ({pendingSaves.Count} file(s) saved)");
+    }
+
+    private async Task SaveExtractionSafelyAsync(
+        SystemFamilyExtractionTask task,
+        FamilyExtractionResult extraction)
+    {
+        try
+        {
+            await _dataImportService.SaveExtractionResultAsync(
+                task.CatalogItemId, extraction, task.VersionId, task.FileId,
+                CancellationToken.None).ConfigureAwait(false);
+            SmartConLogger.Debug(
+                $"[SystemImport.Extract] Saved extraction for '{Path.GetFileName(task.ManagedRvtPath)}': " +
+                $"{extraction.Types.Count} types");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"[SystemImport.Extract] SaveExtractionResult failed: {ex.Message} [Action: проверьте права на запись в БД каталога и целостность SQLite файла]");
+        }
     }
 }

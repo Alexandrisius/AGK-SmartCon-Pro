@@ -18,7 +18,6 @@ public sealed class FamilyBatchImportStatusConverter : IValueConverter
         {
             FamilyBatchImportStatus.New => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_StatusNew) ?? "New",
             FamilyBatchImportStatus.Existing => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_StatusExisting) ?? "Existing",
-            FamilyBatchImportStatus.Duplicate => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_StatusDuplicate) ?? "Duplicate",
             FamilyBatchImportStatus.Error => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_StatusError) ?? "Error",
             _ => status.ToString()
         };

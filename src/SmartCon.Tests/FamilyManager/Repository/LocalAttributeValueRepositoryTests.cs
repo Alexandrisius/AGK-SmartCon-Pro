@@ -65,13 +65,41 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private async Task SeedPrerequisitesAsync(string catalogItemId, HashSet<string> attributeIds, HashSet<string> runIds)
+    // v2.0.0 (ADR-036): extracted_attribute_values.type_id has FOREIGN KEY
+    // → family_types(id) ON DELETE CASCADE (V15). Tests that insert attribute
+    // values with a non-null typeId must seed the corresponding family_types row
+    // or the INSERT will fail with FOREIGN KEY constraint failed.
+    private async Task SeedFamilyTypeAsync(string typeId, string catalogItemId)
+    {
+        using var connection = _fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id)
+            VALUES (@id, @itemId, @name, 0, NULL, NULL, NULL)
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@id", typeId));
+        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        cmd.Parameters.Add(new SqliteParameter("@name", typeId));
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task SeedPrerequisitesAsync(
+        string catalogItemId,
+        HashSet<string> attributeIds,
+        HashSet<string> runIds,
+        HashSet<string>? typeIds = null)
     {
         await SeedCatalogItemAsync(catalogItemId);
         foreach (var attrId in attributeIds)
             await SeedAttributeDefinitionAsync(attrId);
         foreach (var runId in runIds)
             await SeedImportRunAsync(runId, catalogItemId);
+        if (typeIds is not null)
+        {
+            foreach (var typeId in typeIds)
+                await SeedFamilyTypeAsync(typeId, catalogItemId);
+        }
     }
 
     private static ExtractedAttributeValue CreateTestValue(
@@ -88,7 +116,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task SaveValuesAsync_SavesAndRetrievesByItem()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"], ["type1"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -106,7 +134,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task SaveValuesAsync_WithVersionId_FiltersByVersion()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"], ["type1"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -125,7 +153,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task SaveValuesAsync_NullVersionId_FiltersCorrectly()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2"], ["run1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2"], ["run1"], ["type1"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -143,7 +171,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task GetValuesForTypeAsync_ReturnsOnlyMatchingType()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"], ["typeA", "typeB"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -162,7 +190,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task GetValuesForRunAsync_ReturnsOnlyMatchingRun()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["runA", "runB"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["runA", "runB"], ["type1"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -181,7 +209,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task ReplaceSnapshotAsync_ReplacesOldValues()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"], ["type1"]);
 
         var oldValues = new List<ExtractedAttributeValue>
         {
@@ -207,7 +235,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task ReplaceSnapshotAsync_DoesNotAffectOtherVersions()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"], ["type1"]);
 
         var v1Values = new List<ExtractedAttributeValue>
         {
@@ -236,7 +264,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task DeleteValuesForRunAsync_RemovesValues_ReturnsCount()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"], ["type1"]);
 
         var run1Values = new List<ExtractedAttributeValue>
         {
@@ -266,7 +294,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task GetFoundCountAsync_CountsFoundStatus()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"], ["type1"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -284,7 +312,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task GetMissingCountAsync_CountsNonFoundStatus()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"], ["type1"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -302,7 +330,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task GetFoundCountAsync_WithVersionId_FiltersByVersion()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2"], ["run1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2"], ["run1"], ["type1"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -319,7 +347,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task SaveValuesAsync_UpsertsOnConflict()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1"], ["run1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1"], ["run1"], ["type1"]);
 
         var original = new List<ExtractedAttributeValue>
         {

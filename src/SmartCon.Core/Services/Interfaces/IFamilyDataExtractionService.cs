@@ -46,14 +46,6 @@ public sealed record FamilyExtractionResult(
 
 public interface IFamilyDataExtractionService
 {
-    FamilyExtractionResult Extract(string rfaFilePath, IReadOnlyList<string> expectedParameterNames);
-
-    /// <summary>
-    /// Extracts types and parameters from an already-open family document.
-    /// The caller is responsible for closing the document.
-    /// </summary>
-    FamilyExtractionResult Extract(Autodesk.Revit.DB.Document familyDocument, IReadOnlyList<string> expectedParameterNames);
-
     /// <summary>
     /// Single entry point for all managed-storage import paths. Opens the
     /// .rfa via Revit API and reads the baked-in family types and parameters.

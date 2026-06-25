@@ -8,11 +8,8 @@ public enum FamilyBatchImportStatus
     /// <summary>New family, not in catalog.</summary>
     New,
 
-    /// <summary>Family exists in catalog with a different SHA256.</summary>
+    /// <summary>Family exists in catalog with the same normalized name.</summary>
     Existing,
-
-    /// <summary>Exact SHA256 match, skip automatically.</summary>
-    Duplicate,
 
     /// <summary>Error reading file.</summary>
     Error

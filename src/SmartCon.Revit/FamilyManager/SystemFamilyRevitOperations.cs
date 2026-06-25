@@ -165,12 +165,15 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         Document sourceDoc,
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory category,
-        string displayName)
+        string displayName,
+        string managedRvtPath)
     {
         if (sourceDoc is null)
             return new CreateCleanProjectResult(false, null, "sourceDoc is null", 0);
         if (typeUniqueIds is null || typeUniqueIds.Count == 0)
             return new CreateCleanProjectResult(false, null, "No typeUniqueIds provided", 0);
+        if (string.IsNullOrEmpty(managedRvtPath))
+            return new CreateCleanProjectResult(false, null, "managedRvtPath is empty", 0);
 
         var sourceTypeIds = new List<ElementId>();
         foreach (var uid in typeUniqueIds)
@@ -219,21 +222,20 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
             var placedCount = placedInstancesByType.Sum(kv => kv.Value.Count);
 
-            var safeName = SanitizeFileName(displayName) + ".rvt";
-            var tempDir = Path.Combine(
-                Path.GetTempPath(),
-                SystemFamilyTempLayout.TempRoot,
-                SystemFamilyTempLayout.StagingSubdir,
-                Guid.NewGuid().ToString());
-            Directory.CreateDirectory(tempDir);
-
-            var finalPath = Path.Combine(tempDir, safeName);
-            newDoc.SaveAs(finalPath, new SaveAsOptions { OverwriteExistingFile = true });
+            // v2.0.0: SaveAs directly into managed storage, no temp staging.
+            var managedDir = Path.GetDirectoryName(managedRvtPath);
+            if (!string.IsNullOrEmpty(managedDir) && !Directory.Exists(managedDir))
+            {
+                Directory.CreateDirectory(managedDir);
+            }
+            if (File.Exists(managedRvtPath))
+            {
+                File.SetAttributes(managedRvtPath, File.GetAttributes(managedRvtPath) & ~FileAttributes.ReadOnly);
+                File.Delete(managedRvtPath);
+            }
+            newDoc.SaveAs(managedRvtPath, new SaveAsOptions { OverwriteExistingFile = true });
+            File.SetAttributes(managedRvtPath, File.GetAttributes(managedRvtPath) | FileAttributes.ReadOnly);
             newDoc.Close(false);
-            // Defensive ReleaseComObject — required for batch processing of
-            // 100+ system categories to prevent family-upgrade freeze (REVIT-237190).
-            // Document is a RCW; without explicit release the runtime keeps
-            // a reference until GC, which can hang Revit on shutdown.
             try { Marshal.ReleaseComObject(newDoc); } catch { }
             newDoc = null;
 
@@ -241,7 +243,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 $"'{displayName}': copied={copiedTypeIds.Count}, placed={placedCount}");
 
             return new CreateCleanProjectResult(
-                true, finalPath, null, copiedTypeIds.Count, displayName, placedCount);
+                true, managedRvtPath, null, copiedTypeIds.Count, displayName, placedCount);
         }
         catch (Exception ex)
         {
@@ -333,7 +335,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
     /// Использует BuiltInParameter (locale-independent), а не LookupParameter("Diameter"),
     /// т.к. имя параметра в UI зависит от языка проекта ("Diameter" / "Диаметр").
     /// </summary>
-    private static void NormalizeInstanceDimensions(
+    private void NormalizeInstanceDimensions(
         Document newDoc,
         Dictionary<ElementId, List<ElementId>> instancesByType,
         BuiltInCategory category)
@@ -383,14 +385,13 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             var typeId = kvp.Key;
             var instanceIds = kvp.Value;
             var typeName = newDoc.GetElement(typeId)?.Name ?? typeId.ToString();
-            using (var tx = new Transaction(newDoc, $"Normalize dimensions: {typeName}"))
+            try
             {
-                try
+                _transactionService.RunInTransaction(newDoc, $"Normalize dimensions: {typeName}", doc =>
                 {
-                    tx.Start();
                     foreach (var instId in instanceIds)
                     {
-                        var inst = newDoc.GetElement(instId);
+                        var inst = doc.GetElement(instId);
                         if (inst is null) continue;
 
                         if (diamBip.HasValue && diameterFt > 0)
@@ -400,27 +401,25 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                         if (heightBip.HasValue && heightFt > 0)
                             inst.get_Parameter(heightBip.Value)?.Set(heightFt);
                     }
-                    tx.Commit();
-                    SmartConLogger.Info(
-                        $"'{typeName}': applied to {instanceIds.Count} instance(s)");
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn($"'{typeName}': {ex.Message}");
-                }
+                });
+                SmartConLogger.Info(
+                    $"'{typeName}': applied to {instanceIds.Count} instance(s)");
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"'{typeName}': {ex.Message} [Action: проверьте, что тип семейства поддерживает изменение диаметра/ширины/высоты через стандартные параметры]");
             }
         }
     }
 
     private static string SanitizeFileName(string name)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sb = new System.Text.StringBuilder(name.Length);
-        foreach (var c in name)
-        {
-            sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
-        }
-        return sb.ToString();
+        // v2.0.0: the actual sanitisation rule lives in
+        // SmartCon.Core.Services.FamilyManager.SafeFileName.SanitizeFileName
+        // — this method is a thin redirect so the duplicate is gone and
+        // the rule is defined in exactly one place. The next refactor
+        // pass should inline the call sites and delete this wrapper.
+        return SafeFileName.SanitizeFileName(name);
     }
 
     private sealed class SkipDuplicateTypesHandler : IDuplicateTypeNamesHandler

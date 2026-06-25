@@ -444,7 +444,7 @@ public sealed record FamilyImportResult(
     string? FileName,
     string? VersionLabel,
     string? ErrorMessage,
-    bool WasSkippedAsDuplicate = false,
+    bool WasSkipped = false,
     bool WasNewVersion = false);
 ```
 
@@ -460,18 +460,18 @@ public sealed record FamilyImportResult(
 public sealed record FamilyBatchImportItem(
     string FilePath,
     string FileName,
-    string Sha256,
     int RevitMajorVersion,
-    long FileSizeBytes,
     FamilyBatchImportStatus Status,
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
     string? TargetCategoryId = null,
     string? TargetCategoryName = null,
     string FamilySource = "loadable",
-    int TypeCount = 0,
+    int? TypeCount = null,
     string? RevitCategory = null,
-    string? OriginalSourcePath = null)
+    string? OriginalSourcePath = null,
+    IReadOnlyList<FamilySourceTypeInfo>? SourceTypes = null,
+    FamilyImportSource? Source = null)
 {
     public FamilyBatchImportAction Action { get; set; }
     public string? TargetCategoryId { get; set; }
@@ -479,11 +479,15 @@ public sealed record FamilyBatchImportItem(
 }
 ```
 
+- `FilePath` — для UC-1/UC-2 (импорт с диска или активного `.rfa`) это реальный путь к файлу. Для UC-3/UC-4 (импорт активного проекта / выделенных элементов) это placeholder `"system://..."` или `"loadable://..."` до подтверждения пользователем, после чего `ProcessProjectImportAsync` перезаписывает это поле на managed-путь.
+- `Source` (v2.0.0) — payload для пост-диалогового staging flow (UC-3/UC-4). `null` для UC-1/UC-2 (файл уже на диске). `SystemSource` / `LoadableSource` — sealed record-union, см. [FamilyImportSource](#familyimportsource).
+- v2.0.0 breaking change: поля `Sha256` и `FileSizeBytes` удалены — SHA-256 dedup и показ размера файла больше не используются (см. ADR-035).
+
 ---
 
 ## FamilyBatchImportStatus
 
-Статус файла в диалоге пакетного импорта. Определяется на основе сравнения SHA256 с каталогом.
+Статус файла в диалоге пакетного импорта. v2.0.0: `Duplicate` удалён — content-based dedup по SHA-256 больше не выполняется. Дубликаты по содержимому попадают как `Existing` (новая версия).
 
 **Файл:** `FamilyBatchImportStatus.cs`
 
@@ -491,9 +495,8 @@ public sealed record FamilyBatchImportItem(
 public enum FamilyBatchImportStatus
 {
     New,        // Новое семейство, отсутствует в каталоге
-    Existing,   // Семейство есть в каталоге, но SHA256 отличается
-    Duplicate,  // Точное совпадение SHA256 — пропускается автоматически
-    Error       // Ошибка чтения файла
+    Existing,   // Семейство с таким нормализованным именем уже в каталоге
+    Error       // Ошибка чтения файла / невалидный .rfa
 }
 ```
 
@@ -591,30 +594,6 @@ public sealed record FamilyUpdateRequest(
 копирования в temp staging folder. Используется для поиска Type
 Catalog sidecar рядом с оригиналом при подготовке managed `.rfa`
 (ADR-033).
-
----
-
-## ActiveFamilyPreparationResult
-
-Результат подготовки активного Revit family-документа для импорта.
-Возвращается `IActiveFamilyFilePreparer.PrepareActiveFamilyAsync`.
-
-**Файл:** `ActiveFamilyPreparationResult.cs`
-
-```csharp
-public sealed record ActiveFamilyPreparationResult(
-    string TempRfaPath,
-    string? TempTxtPath,
-    string? OriginalRfaPath,
-    string? OriginalTxtPath);
-```
-
-| Поле | Описание |
-|---|---|
-| `TempRfaPath` | Absolute path к `.rfa`, сохранённому в temp (например `%TEMP%\SmartCon\FMLoad\{guid}\{name}.rfa`) |
-| `TempTxtPath` | Absolute path к скопированному sidecar `.txt` рядом с `TempRfaPath`, или `null` если sidecar не найден |
-| `OriginalRfaPath` | Absolute path к исходному `.rfa` (managed storage или рабочая папка пользователя); `null` для несохранённых документов |
-| `OriginalTxtPath` | Absolute path к исходному sidecar `.txt` рядом с `OriginalRfaPath`, или `null` |
 
 ---
 
@@ -943,8 +922,61 @@ public sealed record FamilyTypeDescriptor(
     int SortOrder,
     string? VersionId = null,
     string? FileId = null,
-    string? ExtractionRunId = null);
+    string? ExtractionRunId = null,
+    string? UniqueId = null);
 ```
+
+**v2.0.0 (ADR-036):** `UniqueId` (Revit `Element.UniqueId` типа) добавлен для устранения коллизий
+при merge. Используется в `IFamilyTypeRepository.SyncTypesAsync` для сохранения
+через `type_unique_id` колонку.
+
+---
+
+## IFamilyTypeRepository
+
+**v2.0.0 (ADR-036):** старые методы `SaveTypesAsync` (DELETE+INSERT, project case) и
+`SaveTypesForRunAsync` (UPSERT без DELETE, имел bug #1) **удалены** и заменены
+единым `SyncTypesAsync` с семантикой **DELETE+INSERT в одной транзакции**.
+
+**Файл:** `src/SmartCon.Core/Services/Interfaces/IFamilyTypeRepository.cs`
+
+```csharp
+public interface IFamilyTypeRepository
+{
+    Task<IReadOnlyList<FamilyTypeDescriptor>> GetTypesForItemAsync(string catalogItemId, CancellationToken ct = default);
+    Task<IReadOnlyList<FamilyTypeDescriptor>> GetTypesForItemVersionAsync(string catalogItemId, string? versionId, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyTypeDescriptor>>> GetAllTypesBatchAsync(IEnumerable<string> catalogItemIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// Synchronises the type list for a given (catalogItemId, versionId, fileId) triple
+    /// inside a single transaction. Atomically removes types missing from the new list
+    /// and upserts the supplied types. Returns {typeName → typeId} for downstream
+    /// attribute-value persistence.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> SyncTypesAsync(
+        string catalogItemId,
+        string? versionId,
+        string? fileId,
+        string runId,
+        IReadOnlyList<FamilyTypeDescriptor> types,
+        CancellationToken ct = default);
+
+    Task<bool> HasTypesAsync(string catalogItemId, CancellationToken ct = default);
+}
+```
+
+**Call sites:**
+
+| Caller | versionId / fileId | runId | Семантика |
+|---|---|---|---|
+| `FamilyDataImportService` (импорт активного .rfa) | `versionId`, `fileId` из extraction result | `runId` извлечения | Multi-version safe |
+| `LocalFamilyImportService.TypeCatalog` (.txt bake-in) | `versionId`, `null` | `runId` извлечения | Multi-version safe |
+| `LoadableFamilyImportOrchestrator` (project case) | `null`, `null` | `"no-run"` | Заменяет все типы catalog item |
+| `SystemFamilyImportOrchestrator` (project case) | `null`, `null` | `"no-run"` | Заменяет все типы catalog item |
+
+**Schema requirement:** `extracted_attribute_values.type_id` имеет FOREIGN KEY
+→ `family_types(id) ON DELETE CASCADE` (V15, ADR-036). Orphan attribute values
+автоматически удаляются при `SyncTypesAsync` с пустым `types` списком.
 
 ---
 
@@ -1197,4 +1229,164 @@ public static class StaleSnapshotLogic
 - `MergeInto`: **добавляет/перезаписывает** entries из `newResults` в существующий snapshot. Entries для **других** catalog item IDs (других категорий) сохраняются. Это значит что `CheckCategory(catA)` затем `CheckCategory(catB)` сохраняет stale маркеры обеих категорий.
 - `RemoveFrom`: **удаляет** entries по `catalogItemIds`. Возвращает тот же snapshot instance если ничего не удалено (zero-allocation). Используется после успешного Update — stale маркер удаляется, остальные сохраняются.
 - Both methods **не мутируют** входной snapshot — создаётся новый `FamilyStaleSnapshot`.
+
+---
+
+## LoadableMarkerLogic
+
+Issue #84 / Phase 24 (ADR-030): pure static helper, который после успешного импорта loadable-семейства из активного проекта в каталог (через «Импорт активного файла» / «Импорт выделенных») переписывает `SmartCon_FamilyVersion_v1` ExtensibleStorage маркер на Family-элементе в активном проекте. Без этого шага следующий «Проверить» сразу помечает каждое свеже-импортированное loadable как `StaleReason.NoEntityStorage`, хотя это семейство в проекте и есть авторитетный источник vN+1 для новой строки каталога.
+
+**Файл:** `LoadableMarkerLogic.cs` (в `SmartCon.Core/Services/Interfaces/`)
+
+```csharp
+public static class LoadableMarkerLogic
+{
+    public static Task<MarkerWriteSummary> WriteMarkersForImportedLoadablesAsync(
+        IReadOnlyList<FamilyBatchImportItem> loadableItems,
+        IReadOnlyList<LoadableFamilyAttributeTask> attributeTasks,
+        IFamilyVersionWriter versionWriter,
+        int targetRevit,
+        CancellationToken ct);
+
+    public sealed record MarkerWriteSummary(
+        int SuccessCount,
+        int SkippedCount,
+        int FailedCount,
+        int Total);
+}
+```
+
+**Семантика:**
+
+- Для каждого `LoadableFamilyAttributeTask` (успешно импортированное loadable) ищет соответствующий `FamilyBatchImportItem` по `PrecomputedCatalogItemId` и вызывает `IFamilyVersionWriter.WriteVersionMarkerAsync(catalogItemId, item.FileName, item.PrecomputedVersionLabel, targetRevit, ct)`. Версия маркера = та же, что попала в каталог (`v1` для нового, `vN+1` для ре-импорта).
+- Само содержимое `Family` в проекте **не меняется** — меняется только метаданные маркера.
+- Per-family try/catch: исключение на одном семействе **не прерывает** батч — пишется `Warn` с `[Action: ...]` и счётчик `FailedCount++`. Каталог уже принял запись, откатывать импорт нельзя.
+- `SkippedCount` растёт если `task.CatalogItemId` пуст или не нашлось matching batch item (теоретический edge case, в orchestrator'е такого не бывает).
+- System families (`FamilySource == "system"`) **не появляются** на входе — `ProcessProjectImportAsync` фильтрует их upstream. По дизайну (ADR-030 §Out of Scope) у них нет in-project `Family` элемента в смысле Revit API (`OST_PipeCurves` и т.п. — это `MEPCurve` / `Wall`).
+- Aggregate `MarkerWriteSummary`: `SuccessCount + SkippedCount + FailedCount == Total`.
+
+**Используется в:**
+- `FamilyManagerMainViewModel.FamilyEdit.cs:WriteVersionMarkersForImportedLoadablesAsync` — тонкая обёртка, делегирующая в этот helper. Вызывается из `ProcessProjectImportAsync` после `LoadableFamilyImportOrchestrator.ImportAndPersistTypesAsync` и перед `_staleDetector.InvalidateCache()`.
+
+**Pure logic** — никакого Revit API в сигнатуре (только `IFamilyVersionWriter`). Позволяет unit-тестировать через hand-written fake `IFamilyVersionWriter` без поднятия Revit (`src/SmartCon.Tests/FamilyManager/Stale/LoadableMarkerLogicTests.cs` — 8 тестов на empty batch / single / multiple / no-match skip / full failure / partial failure isolation / targetRevit passthrough / null-args throws).
+
+---
+
+## FamilySourceTypeInfo
+
+v2.0.0: Core-level DTO для типов системных семейств, используемый в публичных API batch dialog (см. `FamilyBatchImportItem.SourceTypes` и `SystemFamilyPendingImport.Types`). Создан чтобы Core record не тянул `Autodesk.Revit.DB.BuiltInCategory` через `SelectedSystemType` — иначе нарушается I-09 (Core не должен зависеть от Revit API в публичных сигнатурах) и тесты без runtime Revit падают.
+
+**Файл:** `Models/FamilyManager/FamilySourceTypeInfo.cs`
+
+```csharp
+public sealed record FamilySourceTypeInfo(
+    string UniqueId,
+    string Name,
+    string CategoryName,
+    int CategoryId);
+```
+
+- `UniqueId` — Revit unique id элемента типа. Extractor в managed `.rvt` ищет этот id.
+- `Name` — отображаемое имя типа.
+- `CategoryName` — отображаемое имя родительской категории (например `"OST_PipeFitting"`).
+- `CategoryId` — ordinal `BuiltInCategory`, переданный через границу FamilyManager→Core как plain `int`. Orchestrator и extractor никогда не видят enum напрямую.
+
+Маппинг `SelectedSystemType → FamilySourceTypeInfo` выполняется на границе VM→Core в `FamilyManagerMainViewModel.Import.cs` (UC-3/UC-4 batch flow). В обратную сторону маппинг не нужен — extractor читает типы из managed `.rvt` по `UniqueId`/`Name`, ordinal ему не нужен.
+
+---
+
+## FamilyImportSource
+
+v2.0.0: strongly-typed sealed record-union payload для `FamilyBatchImportItem.Source`. Несёт данные, необходимые пост-диалоговому staging flow (UC-3 / UC-4) для создания managed `.rvt` / `.rfa` уже **после** подтверждения пользователем. До введения этого типа batch dialog показывался через 20-30 сек для проекта с 50 семействами, потому что staging (`CreateCleanProjectWithTypesAndInstances` + `EditFamily + SaveAs`) выполнялся ДО диалога — и оставлял orphan-файлы при отмене.
+
+**Файл:** `Models/FamilyManager/FamilyImportSource.cs`
+
+```csharp
+public abstract record FamilyImportSource
+{
+    private FamilyImportSource() { }
+
+    public sealed record SystemSource(
+        string DisplayName,
+        int CategoryId,
+        IReadOnlyList<string> TypeUniqueIds,
+        IReadOnlyList<string> TypeNames) : FamilyImportSource;
+
+    public sealed record LoadableSource(
+        string FamilyName,
+        string FamilyUniqueId,
+        string CategoryName) : FamilyImportSource;
+}
+```
+
+- `SystemSource` — системное семейство (трубы, воздуховоды, и т.д.). `CategoryId` — ordinal `BuiltInCategory` (как в `FamilySourceTypeInfo.CategoryId`). `TypeUniqueIds` / `TypeNames` — параллельные списки Revit UniqueId и display name типов.
+- `LoadableSource` — loadable семейство. `FamilyUniqueId` — Revit UniqueId `Family`-элемента в активном проекте (для `doc.GetElement(uid)` → `Family` → `EditFamily`).
+
+Живёт в `SmartCon.Core` (не в `SmartCon.FamilyManager`) чтобы публичный API `FamilyBatchImportItem.Source` не тянул `Autodesk.Revit.DB.Document` (I-09).
+
+Пост-диалоговый flow: `ProcessProjectImportAsync` → `StageSystemFamiliesFromMetadataAsync` / `StageLoadableFamiliesFromMetadataAsync` (в VM, через `IFamilyManagerAwaitableEvent`). Эти методы читают `Source`, вызывают Revit-API staging helper, и **перезаписывают `item.FilePath`** в managed-путь (через `with`-expression для record). После этого orchestrator'ы (`SystemFamilyImportOrchestrator`, `LoadableFamilyImportOrchestrator`) работают с реальными managed файлами и не требуют изменений.
+
+---
+
+## SystemFamilyPendingImport
+
+v2.0.0: результат подготовки одной категории системного семейства к импорту. Один экземпляр на непустой `CategoryAnalysis` или на user-picked группу. Содержит managed-путь к мини-`.rvt` (создан `CreateCleanProjectWithTypesAndInstances` напрямую в managed storage) и список типов для последующего extraction.
+
+**Файл:** `Models/FamilyManager/SystemFamilyPendingImport.cs`
+
+```csharp
+public sealed record SystemFamilyPendingImport(
+    string CategoryName,
+    IReadOnlyList<FamilySourceTypeInfo> Types,
+    string ManagedRvtPath);
+```
+
+- `CategoryName` — отображаемое имя категории (используется как имя файла managed `.rvt`).
+- `Types` — типы категории в виде Core DTO (см. `FamilySourceTypeInfo`).
+- `ManagedRvtPath` — абсолютный путь к managed `.rvt` в `{dbRoot}/files/{catalogItemId}/v1/{name}.rvt`.
+
+Используется только в VM как промежуточное значение между `StageSystemFromAnalysis` (создание managed `.rvt`) и `BuildSystemFamilyBatchRowAsync` (построение batch row для dialog).
+
+---
+
+## LegacyStageFolderCleaner
+
+v2.0.0: one-shot helper для удаления legacy `files/_stage/` папок, оставшихся от SmartCon &lt; v2.0.0, где loadable families стейджились через `EditFamily + SaveAs` во временную подпапку `_stage/{guid}/`. После temp-removal sweep staging идёт напрямую в managed storage (`files/{catalogItemId}/v1/...`) и `_stage/` больше не создаётся — но папка может остаться на диске у пользователей, обновляющихся с предыдущей версии.
+
+**Файл:** `Services/FamilyManager/LegacyStageFolderCleaner.cs`
+
+```csharp
+public static class LegacyStageFolderCleaner
+{
+    public static void Cleanup(string familyManagerRoot);
+}
+```
+
+- `familyManagerRoot` — путь к `%APPDATA%\SmartCon\FamilyManager` (или другой catalog root). Передаётся из `App.OnStartup`.
+- `Cleanup` идёт по каждой подпапке (catalog) и удаляет `files/_stage/` если существует. Идемпотентна: отсутствующая папка — no-op, повторный запуск — no-op.
+- Все исключения логируются на уровне `Debug` и проглатываются (permissive): один заблокированный catalog не должен ломать startup.
+
+Живёт в `SmartCon.Core` (а не в `SmartCon.App`) чтобы логика была тестируемой без Revit UIApplication. Реальный production entry point — `App.OnStartup` в `SmartCon.App`, который делегирует в `LegacyStageFolderCleaner.Cleanup(...)`.
+
+---
+
+## PrecomputedImportTriple
+
+v2.0.0: каноническая тройка `(CatalogItemId, VersionLabel, ManagedPath)`, которую VM batch-диалога аллоцирует ДО показа диалога и пробрасывает через все стадии импорт-флоу (build → dialog → staging → import). Это единственная форма данных, которая гарантирует инвариант `family_files.relative_path = "{dbRoot}/files/<id>/<version>/<name>"`: `ManagedPath` — абсолютный путь на диске, `CatalogItemId` + `VersionLabel` — компоненты, которые вместе с именем файла образуют этот layout.
+
+**Файл:** `Models/FamilyManager/PrecomputedImportTriple.cs`
+
+```csharp
+public sealed record PrecomputedImportTriple(
+    string CatalogItemId,
+    string VersionLabel,
+    string ManagedPath);
+```
+
+Иммутабельный record: VM только заменяет тройку целиком (через `IFamilyImportPrecomputer.BuildPrecomputedTripleAsync`), никогда не мутирует поля по отдельности. Это исключает round-trip с полуобновлённым состоянием, когда `CatalogItemId` уже от нового имени, а `VersionLabel`/`ManagedPath` — от старого. Именно это состояние приводило к `UNIQUE constraint failed: catalog_items.id` в pre-v2.0.0: после rename строки в диалоге `ImportFileAsync` пытался `INSERT` новую запись с `id` от старого имени.
+
+Используется в:
+- `FamilyBatchImportItem.PrecomputedCatalogItemId/VersionLabel/ManagedPath` (Core) — DTO, передаваемое через batch dialog.
+- `FamilyBatchImportRow.PrecomputedCatalogItemId/VersionLabel/ManagedPath` (`SmartCon.FamilyManager/ViewModels`) — бэкинг-поля row VM.
+- `IFamilyImportPrecomputer.BuildPrecomputedTripleAsync` (Core) — контракт выделенного precomputer-сервиса, который является единым источником истины для вычисления этой тройки (как для initial dialog build, так и для dialog rename handler).
 

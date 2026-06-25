@@ -23,6 +23,14 @@ namespace SmartCon.Revit.Util;
 /// Every step is best-effort and never throws — the call chain we are
 /// trying to fix is already broken, so adding a fault here would only
 /// hide the real error.
+///
+/// v2.0.0 build-time resilience: the AdWindows-using body is wrapped in
+/// <c>#if !NO_ADWINDOWS</c>. <c>NO_ADWINDOWS</c> is defined by
+/// SmartCon.Revit.csproj when no <c>AdWindows.dll</c> was found at any
+/// expected HintPath on the build machine. On such machines
+/// <see cref="Nudge"/> compiles to a no-op (still logs once at Debug so
+/// the missing workaround is visible in the log) — the rest of
+/// SmartCon is unaffected because <see cref="Nudge"/> is best-effort.
 /// </summary>
 public static class RevitBalloonNudge
 {
@@ -35,6 +43,14 @@ public static class RevitBalloonNudge
     /// </summary>
     public static void Nudge(string message)
     {
+#if NO_ADWINDOWS
+        if (_warnedOnce) return;
+        _warnedOnce = true;
+        SmartConLogger.Debug(
+            "RevitBalloonNudge skipped: AdWindows.dll was not found on this build machine. " +
+            "The family-upgrade freeze workaround is unavailable; " +
+            "right-click on the DockablePane will still recover the UI.");
+#else
         try
         {
             var palette = Autodesk.Windows.ComponentManager.InfoCenterPaletteManager;
@@ -65,5 +81,6 @@ public static class RevitBalloonNudge
                 $"RevitBalloonNudge failed: {ex.Message} " +
                 "[Action: balloon workaround unavailable — right-click on the DockablePane will still recover the UI]");
         }
+#endif
     }
 }

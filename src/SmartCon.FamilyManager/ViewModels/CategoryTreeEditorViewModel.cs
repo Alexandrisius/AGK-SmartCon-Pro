@@ -102,7 +102,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"CategoryTreeEditor GetAllAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"CategoryTreeEditor GetAllAsync failed: {ex.Message} [Action: закройте и откройте editor; проверьте БД каталога]");
         }
 
         IReadOnlyDictionary<string, int> familyCounts = new Dictionary<string, int>();
@@ -112,7 +112,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"CategoryTreeEditor GetAllFamilyCountsAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"CategoryTreeEditor GetAllFamilyCountsAsync failed: {ex.Message} [Action: проверьте БД каталога; counts могут быть неполными до Refresh]");
         }
 
         var tree = new CategoryTree(nodes);
@@ -228,7 +228,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"LoadAttributesForCategoryAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"LoadAttributesForCategoryAsync failed: {ex.Message} [Action: закройте и откройте editor; проверьте БД каталога]");
         }
     }
 
@@ -315,7 +315,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"CategoryTreeEditor OkAsync GetAllAsync failed: {ex.Message}");
+                SmartConLogger.Warn($"CategoryTreeEditor OkAsync GetAllAsync failed: {ex.Message} [Action: закройте editor и проверьте БД каталога, изменения могли не сохраниться]");
             }
 
             var tempToRealId = new Dictionary<string, string>();
@@ -543,7 +543,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"FireAndForget '{operationName}': {ex.GetBaseException().Message}");
+                SmartConLogger.Warn($"FireAndForget '{operationName}': {ex.GetBaseException().Message} [Action: операция выполнена в фоне, проверьте результат через Refresh]");
             }
         });
     }

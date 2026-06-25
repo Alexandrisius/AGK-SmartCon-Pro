@@ -1,3 +1,4 @@
+using System.IO;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -38,21 +39,23 @@ internal sealed class SystemFamilyIsolationProjectAdapter : ISystemFamilyIsolati
         Document sourceDoc,
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory category,
-        string displayName)
+        string displayName,
+        string managedRvtPath)
     {
         using var _scope = SmartConLogger.BeginScope("CreateCleanProject",
             ("Method", "CreateCleanProjectWithTypesAndInstances"),
-            ("DisplayName", displayName));
+            ("DisplayName", displayName),
+            ("File", Path.GetFileName(managedRvtPath)));
         if (sourceDoc is null)
         {
             return new CreateCleanProjectResult(false, null, "sourceDoc is null", 0);
         }
 
         SmartConLogger.Info(
-            $"[SystemImport.Create] {displayName} ({category}): staging {typeUniqueIds.Count} type(s)");
+            $"[SystemImport.Create] {displayName} ({category}): staging {typeUniqueIds.Count} type(s) -> {managedRvtPath}");
 
         var result = _revitOps.CreateCleanProjectWithTypesAndInstances(
-            sourceDoc, typeUniqueIds, category, displayName);
+            sourceDoc, typeUniqueIds, category, displayName, managedRvtPath);
 
         if (result.Success)
         {
@@ -64,7 +67,7 @@ internal sealed class SystemFamilyIsolationProjectAdapter : ISystemFamilyIsolati
         else
         {
             SmartConLogger.Warn(
-                $"[SystemImport.Create] ✗ {displayName}: {result.Error}");
+                $"[SystemImport.Create] ✗ {displayName}: {result.Error} [Action: см. журнал Revit (Journal) для деталей; batch продолжит с другими категориями]");
         }
 
         return result;

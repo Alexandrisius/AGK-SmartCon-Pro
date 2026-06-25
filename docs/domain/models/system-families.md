@@ -87,32 +87,6 @@ public sealed record CreateCleanProjectResult(
 
 ---
 
-## SystemFamilyBatchImportItem
-
-Элемент batch-диалога импорта системных семейств (один на категорию).
-Содержит метаданные для проверки дублей и финального импорта в managed storage
-(поле `TempRvtPath` — путь к временному .rvt, `TypeNames` — список имён типов).
-
-**Файл:** `SystemFamilyBatchImportItem.cs`
-
-```csharp
-public sealed record SystemFamilyBatchImportItem(
-    string Id,
-    string SourceCategoryName,
-    string FamilyName,
-    string NormalizedName,
-    IReadOnlyList<string> TypeNames,
-    int TypeCount,
-    FamilyBatchImportStatus Status,
-    FamilyBatchImportAction Action,
-    string? ExistingCatalogItemId = null,
-    string? TempRvtPath = null,
-    string? Sha256 = null,
-    string? TargetCategoryId = null);
-```
-
----
-
 ## SystemFamilyImportResult
 
 Результат финального импорта системных семейств из подготовленных .rvt в managed storage.

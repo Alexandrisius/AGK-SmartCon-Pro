@@ -69,6 +69,25 @@ internal sealed class TempCatalogFixture : IDisposable
         return path;
     }
 
+    /// <summary>
+    /// Create a fake staged managed file at <c>{dbRoot}/files/&lt;catalogItemId&gt;/&lt;versionLabel&gt;/&lt;fileName&gt;</c>.
+    /// Mirrors what <c>StageLoadableFamilyFromProject</c>,
+    /// <c>CreateCleanProjectWithTypesAndInstances</c> and
+    /// <c>ProcessFamilyImportAsync</c>'s <c>SaveAs</c> do at import time
+    /// before the orchestrator's <c>ImportBatchAsync</c> loop calls
+    /// <c>ImportFileAsync</c>. The returned path lives under
+    /// <c>{dbRoot}/files/</c>, so <c>TryExtractManagedPathInfo</c> should
+    /// classify it as a managed file.
+    /// </summary>
+    public string CreateFakeStagedManagedFile(string catalogItemId, string versionLabel, string fileName)
+    {
+        var versionDir = Path.Combine(TempDir, "files", catalogItemId, versionLabel);
+        Directory.CreateDirectory(versionDir);
+        var path = Path.Combine(versionDir, fileName);
+        File.WriteAllText(path, $"FAKE_STAGED_MANAGED_CONTENT_{fileName}_{Guid.NewGuid()}");
+        return path;
+    }
+
     public void Dispose()
     {
         try

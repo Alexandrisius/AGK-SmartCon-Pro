@@ -45,7 +45,7 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
 
         if (string.IsNullOrEmpty(currentVersionLabel) || string.IsNullOrWhiteSpace(trimmedNewName))
         {
-            SmartConLogger.Warn($"current_version_label is empty or newName is whitespace — aborting");
+            SmartConLogger.Warn($"current_version_label is empty or newName is whitespace — aborting [Action: проверьте выбранную версию и новое имя — оба должны быть непустыми]");
             return;
         }
 
@@ -105,18 +105,15 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
                     }, ct);
                     SmartConLogger.Info($"File moved successfully");
 
-                    // Переименовываем Type Catalog (.txt) если есть
-                    var oldTxtPath = Path.ChangeExtension(oldAbsolutePath, ".txt");
-                    var newTxtPath = Path.ChangeExtension(newAbsolutePath, ".txt");
-                    if (File.Exists(oldTxtPath) && !File.Exists(newTxtPath))
-                    {
-                        await Task.Run(() => File.Move(oldTxtPath, newTxtPath), ct);
-                        SmartConLogger.Info($"Type Catalog moved: {oldTxtPath} -> {newTxtPath}");
-                    }
+                    // v2.0.0: Type Catalog (.txt) is no longer stored in managed
+                    // storage — baker (ADR-033) bakes types into the .rfa itself.
+                    // The .txt only ever existed next to the source .rfa on the
+                    // user's disk, never in managed storage, so there is
+                    // nothing to rename here.
                 }
                 else
                 {
-                    SmartConLogger.Warn($"Skipped: oldExists={File.Exists(oldAbsolutePath)}, newExists={File.Exists(newAbsolutePath)}");
+                    SmartConLogger.Warn($"Skipped: oldExists={File.Exists(oldAbsolutePath)}, newExists={File.Exists(newAbsolutePath)} [Action: проверьте, что оба файла существуют на диске]");
                 }
 
                 using var updateCmd = connection.CreateCommand();

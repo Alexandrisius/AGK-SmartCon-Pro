@@ -6,6 +6,7 @@ using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Threading;
 using SmartCon.FamilyManager;
@@ -35,22 +36,9 @@ public sealed class App : IExternalApplication
         {
             ApplyUpdaterSelfUpdate();
             CleanupStalePendingUpdate();
+            CleanupLegacyStageFolder();
             ServiceLocator.Initialize(application);
             LanguageManager.Initialize();
-
-            // Sweep stale temp folders left over from a previous Revit session
-            // (e.g. Revit crashed mid-import). Runs once at startup; log
-            // lines use the same [ActiveCleanup] prefix as the regular
-            // per-import cleanup so the user can trace both in the log.
-            try
-            {
-                var cleanupService = ServiceHost.GetService<IActiveImportCleanupService>();
-                AsyncBridge.RunSync(() => cleanupService.CleanupAfterImportAsync());
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"App.OnStartup.StartupTempSweep: failed: {ex.GetType().Name}: {ex.Message}");
-            }
 
             var fmProvider = ServiceHost.GetService<FamilyManagerPaneProvider>();
             var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
@@ -70,19 +58,6 @@ public sealed class App : IExternalApplication
     public Result OnShutdown(UIControlledApplication application)
     {
         TryLaunchUpdater();
-        // Use the same cleanup service as per-import cleanup so that
-        // BOTH staging roots (FMLoad and SystemFamilyLoadFromProject)
-        // are removed on shutdown. The previous inline implementation
-        // only handled FMLoad, leaking SystemFamilyLoadFromProject/*.
-        try
-        {
-            var cleanupService = ServiceHost.GetService<IActiveImportCleanupService>();
-            AsyncBridge.RunSync(() => cleanupService.CleanupAfterImportAsync());
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"App.OnShutdown.TempCleanup: failed: {ex.GetType().Name}: {ex.Message}");
-        }
         ServiceLocator.Dispose();
         return Result.Succeeded;
     }
@@ -167,6 +142,17 @@ public sealed class App : IExternalApplication
         {
             SmartConLogger.Debug($"App.TryLaunchUpdater: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// One-shot cleanup of the legacy <c>files/_stage/</c> folder used by
+    /// SmartCon &lt; v2.0.0 for transient family staging. The folder has been
+    /// removed from the runtime flow (see ADR-035) but may still exist on
+    /// disk for users upgrading from a prior version.
+    /// </summary>
+    private static void CleanupLegacyStageFolder()
+    {
+        LegacyStageFolderCleaner.Cleanup(Path.Combine(s_smartConDir, "FamilyManager"));
     }
 
     private static Assembly? OnAssemblyResolve(object? sender, ResolveEventArgs args)

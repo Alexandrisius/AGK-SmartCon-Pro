@@ -65,7 +65,7 @@ public class TypeCatalogEncodingTests : IDisposable
             _fixture.GetMigrator(),
             _fixture.GetProvider(),
             _fixture.GetPathResolver(),
-            new FileNameOnlyMetadataExtractionService(new Sha256FileHasher()),
+            new FileMetadataExtractionService(),
             _fixture.GetTypeRepository(),
             _fixture.GetValueRepository(),
             _fixture.GetRunRepository(),

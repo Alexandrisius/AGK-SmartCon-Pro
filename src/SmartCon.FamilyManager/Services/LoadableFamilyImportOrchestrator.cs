@@ -59,7 +59,7 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                 !string.IsNullOrEmpty(r.FileName) &&
                 string.Equals(r.FileName, itemFileWithExt, StringComparison.OrdinalIgnoreCase));
 
-            if (match is null || !match.Success || match.WasSkippedAsDuplicate || string.IsNullOrEmpty(match.CatalogItemId))
+            if (match is null || !match.Success || match.WasSkipped || string.IsNullOrEmpty(match.CatalogItemId))
             {
                 skipped++;
                 continue;
@@ -88,7 +88,10 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                 }
                 else
                 {
-                    await _typeRepository.SaveTypesAsync(match.CatalogItemId!, types, ct);
+                    // v2.0.0 (ADR-036): orchestrators pass null/null/"no-run" because
+                    // they replace the entire type set for a catalog item (no multi-version
+                    // semantics). SyncTypesAsync enforces DELETE+INSERT atomically.
+                    await _typeRepository.SyncTypesAsync(match.CatalogItemId!, versionId: null, fileId: null, runId: "no-run", types, ct);
                     using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName), ("CatalogItemId", match.CatalogItemId));
                     SmartConLogger.Info($"Saved {types.Count} type(s) for '{item.FileName}' (CatalogItemId={match.CatalogItemId})");
                 }
@@ -105,13 +108,11 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                     match.CatalogItemId!, targetRevitVersion, ct);
                 if (!string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
-                    var txtPath = Path.ChangeExtension(resolved.AbsolutePath, ".txt");
                     attributeTasks.Add(new LoadableFamilyAttributeTask(
                         CatalogItemId: match.CatalogItemId!,
                         ManagedRfaPath: resolved.AbsolutePath,
                         VersionId: match.VersionId,
-                        FileId: match.FileId,
-                        HasTypeCatalog: File.Exists(txtPath)));
+                        FileId: match.FileId));
                 }
             }
             catch (Exception ex)

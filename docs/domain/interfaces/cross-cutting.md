@@ -66,6 +66,43 @@ public interface IDispatcher
 
 **DI:** `services.AddSingleton<IDispatcher, WpfDispatcher>();`
 
+**v2.0.0 (ADR-036, M-019-003 DONE):** `FamilyManagerMainViewModel` теперь инжектирует `IDispatcher` через `FamilyManagerServices` (62→63 props) и использует `_dispatcher.InvokeAsync(...)` вместо захваченного в ctor `Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher`. Это:
+- Устраняет известный баг WPF/Revit в net48 (Application.Current == null).
+- Делает VM unit-тестируемым через `Mock<IDispatcher>` или `new WpfDispatcher(null)`.
+- Следует правилу ADR-031 #1: **Любое обновление UI внутри FireAndForget должно маршалиться через dispatcher явно**.
+
+**Out of scope:** `CategoryPickerViewModel`, `CategoryTreeEditorViewModel`, `RevitWindowFocusService`, `ShareProjectCommand` — ещё используют legacy-паттерн. Их миграция — отдельный PR.
+
+**Пример использования (после M-019-003):**
+
+```csharp
+// ctor
+_dispatcher = services.Dispatcher;
+
+// в FireAndForget (ADR-031 правило #1)
+FireAndForget(async () =>
+{
+    await _dataImportService.SaveExtractionResultAsync(...);
+
+    // ✅ Marshal back to UI thread explicitly.
+    // IDispatcher.InvokeAsync принимает Action, а LoadTreeAsync возвращает Task.
+    // Оборачиваем в fire-and-forget лямбду через discard (`_ = ...`), чтобы
+    // Action оставался sync — иначе компилятор генерирует async void lambda,
+    // что нарушает I-13. Этот же паттерн использован в
+    // FamilyManagerMainViewModel.FamilyEdit.cs:1034 (Bug #2 fix, ADR-036).
+    await _dispatcher.InvokeAsync(() => { _ = LoadTreeAsync(); });
+}, nameof(MyMethod));
+
+// синхронный UI update с CheckAccess
+private void OnStatusChanged(string message)
+{
+    if (_dispatcher.CheckAccess())
+        StatusMessage = message;
+    else
+        _ = _dispatcher.InvokeAsync(() => StatusMessage = message);
+}
+```
+
 ---
 
 ## ISmartConLogger

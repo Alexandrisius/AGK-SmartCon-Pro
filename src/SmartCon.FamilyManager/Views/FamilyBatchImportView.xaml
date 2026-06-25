@@ -8,8 +8,8 @@
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         Title="{loc:Loc FM_BatchImport_Title}"
-        Width="1150" Height="520"
-        MinWidth="950" MinHeight="420"
+        Width="1080" Height="520"
+        MinWidth="880" MinHeight="420"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResizeWithGrip"
         Background="{DynamicResource BackgroundBrush}"
@@ -21,10 +21,8 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:SingletonResources/>
             </ResourceDictionary.MergedDictionaries>
-            <converters:NotEqualConverter x:Key="NotEqualConverter"/>
             <converters:FamilyBatchImportActionConverter x:Key="ActionConverter"/>
             <converters:FamilyBatchImportStatusConverter x:Key="StatusConverter"/>
-            <converters:FileSizeToMbConverter x:Key="FileSizeConverter"/>
             <converters:TypeCountToDisplayConverter x:Key="TypeCountConverter"/>
             <Style x:Key="CenterCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                 <Setter Property="HorizontalAlignment" Value="Center"/>
@@ -89,6 +87,7 @@
                      SelectionUnit="FullRow"
                      CanUserResizeColumns="True"
                      CanUserSortColumns="False"
+                     EnableRowVirtualization="False"
                      behaviors:DataGridBehaviors.DeselectOnEmptyClick="True"
                      behaviors:DataGridBehaviors.RestoreMultiSelectOnCellClick="True">
                 <DataGrid.ColumnHeaderStyle>
@@ -102,18 +101,12 @@
                     <DataGridTextColumn x:Name="ColFileName"
                                         Binding="{Binding FileName}"
                                         Width="*"
-                                        MinWidth="280"
+                                        MinWidth="350"
                                         ElementStyle="{StaticResource LeftCell}"/>
                     <DataGridTextColumn x:Name="ColRevitVersion"
                                         Binding="{Binding RevitMajorVersion}"
                                         Width="Auto"
                                         MinWidth="80"
-                                        IsReadOnly="True"
-                                        ElementStyle="{StaticResource CenterCell}"/>
-                    <DataGridTextColumn x:Name="ColSize"
-                                        Binding="{Binding FileSizeBytes, Converter={StaticResource FileSizeConverter}}"
-                                        Width="Auto"
-                                        MinWidth="70"
                                         IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
                     <DataGridTextColumn x:Name="ColTypeCount"
@@ -164,7 +157,6 @@
                             <DataTemplate>
                                 <ComboBox ItemsSource="{Binding AvailableActions}"
                                           SelectedItem="{Binding Action, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                          IsEnabled="{Binding Status, Converter={StaticResource NotEqualConverter}, ConverterParameter=Duplicate}"
                                           VerticalAlignment="Center"
                                           HorizontalAlignment="Stretch"
                                           Height="24"

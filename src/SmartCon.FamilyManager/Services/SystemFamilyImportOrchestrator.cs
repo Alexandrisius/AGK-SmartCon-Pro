@@ -1,9 +1,6 @@
 using System.IO;
-using System.Text.Json;
-using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
-using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services;
@@ -28,7 +25,8 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
         _typeRepository = typeRepository;
     }
 
-    public async Task<SystemFamilyImportResult> ImportBatchItemsAsync(IReadOnlyList<FamilyBatchImportItem> items)
+    public async Task<SystemFamilyImportResult> ImportBatchItemsAsync(
+        IReadOnlyList<FamilyBatchImportItem> items)
     {
         using var _scope = SmartConLogger.BeginScope("SystemImport",
             ("Method", "ImportBatchItemsAsync"),
@@ -53,23 +51,22 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
                     string.Equals(Path.GetFileName(item.FilePath), r.FileName, StringComparison.OrdinalIgnoreCase));
 
                 if (matchingResult is null) continue;
-                if (!matchingResult.Success || matchingResult.WasSkippedAsDuplicate || string.IsNullOrEmpty(matchingResult.CatalogItemId))
+                if (!matchingResult.Success || string.IsNullOrEmpty(matchingResult.CatalogItemId))
                     continue;
 
-                var types = LoadTypesFromSidecar(item.FilePath);
-                if (types.Count == 0)
+                var types = item.SourceTypes;
+                if (types is null || types.Count == 0)
                 {
-                    SmartConLogger.Warn($"No types for '{item.FileName}'");
+                    SmartConLogger.Warn($"No source types provided for system row '{item.FileName}' [Action: проверьте, что выбранный проект содержит размещённые элементы этой категории]");
+                    continue;
                 }
-                else
-                {
-                    await SaveSystemTypesAsync(matchingResult.CatalogItemId!, types, matchingResult.VersionId, matchingResult.FileId).ConfigureAwait(false);
-                    SmartConLogger.Info($"Saved {types.Count} types for '{item.FileName}' (CatalogItemId={matchingResult.CatalogItemId})");
-                }
+
+                await SaveSystemTypesAsync(matchingResult.CatalogItemId!, types, matchingResult.VersionId, matchingResult.FileId).ConfigureAwait(false);
+                SmartConLogger.Info($"Saved {types.Count} types for '{item.FileName}' (CatalogItemId={matchingResult.CatalogItemId})");
 
                 extractionTasks.Add(new SystemFamilyExtractionTask(
                     matchingResult.CatalogItemId!,
-                    item.FilePath,
+                    matchingResult.ManagedFilePath ?? item.FilePath,
                     types.Select(t => t.Name).ToList(),
                     matchingResult.VersionId,
                     matchingResult.FileId));
@@ -88,7 +85,7 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
             totalImported);
     }
 
-    private async Task SaveSystemTypesAsync(string catalogItemId, IReadOnlyList<SelectedSystemType> types, string? versionId, string? fileId)
+    private async Task SaveSystemTypesAsync(string catalogItemId, IReadOnlyList<FamilySourceTypeInfo> types, string? versionId, string? fileId)
     {
         var descriptors = types.Select((t, i) => new FamilyTypeDescriptor(
             Id: Guid.NewGuid().ToString(),
@@ -100,27 +97,13 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
             ExtractionRunId: null,
             UniqueId: t.UniqueId)).ToList();
 
-        await _typeRepository.SaveTypesAsync(catalogItemId, descriptors).ConfigureAwait(false);
-    }
-
-    private static IReadOnlyList<SelectedSystemType> LoadTypesFromSidecar(string tempRvtPath)
-    {
-        try
-        {
-            var metaPath = tempRvtPath + ".types.json";
-            if (!File.Exists(metaPath)) return [];
-
-            var typeNames = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(metaPath));
-            if (typeNames is null) return [];
-
-            return typeNames
-                .Select((name, i) => new SelectedSystemType($"temp-{i}", name, "Unknown", BuiltInCategory.INVALID))
-                .ToList();
-        }
-        catch
-        {
-            return [];
-        }
+        // v2.0.0 (ADR-036): orchestrator replaces the entire type set for
+        // the catalog item atomically. Pass the real versionId/fileId from
+        // matchingResult so SyncTypesAsync can record the FK columns on the
+        // new family_types rows. Pass runId="no-run" because system-family
+        // project imports do not produce a family_data_import_runs row for
+        // the type registration step (only attribute extraction creates a run).
+        await _typeRepository.SyncTypesAsync(catalogItemId, versionId, fileId, runId: "no-run", descriptors).ConfigureAwait(false);
     }
 }
 

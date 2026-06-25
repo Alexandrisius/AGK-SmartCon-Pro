@@ -49,7 +49,7 @@ public interface IWritableFamilyCatalogProvider
 
 ## IFamilyImportService
 
-Оркестрация импорта семейств: валидация, хеширование, копирование в managed storage, запись в каталог.
+Оркестрация импорта семейств: запись в managed storage, запись в БД каталога. v2.0.0: SHA-256 dedup и `.txt` sidecar copy убраны. Метод `ImportBatchAsync` принимает уже подготовленные `FamilyBatchImportItem` (с реальным `FilePath` в managed storage или с placeholder + `Source` payload, который `ProcessProjectImportAsync` резолвит ДО передачи).
 
 **Файл:** `IFamilyImportService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportService.cs`
@@ -60,8 +60,15 @@ public interface IFamilyImportService
     Task<FamilyImportResult> ImportFileAsync(FamilyImportRequest request, CancellationToken ct = default);
     Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
     Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default);
+    Task<FamilyBatchImportResult> ImportBatchAsync(
+        IReadOnlyList<FamilyBatchImportItem> items,
+        string? categoryId,
+        IProgress<FamilyImportProgress>? progress,
+        CancellationToken ct = default);
 }
 ```
+
+> **Архитектурное примечание (v2.0.0):** ранний план предлагал ввести отдельные методы `ImportActiveFamilyAsync(Document, ...)` и `ImportManagedFileAsync(string managedPath, ...)`. Реализация пошла по более простому пути: VM-слой сам делает `SaveAs(managedRfaPath)` в активном документе (UC-2) или `StageLoadableFamilyFromProject` / `CreateCleanProjectWithTypesAndInstances` (UC-3/UC-4), затем `item.FilePath` перезаписывается на managed-путь и orchestrator (`SystemFamilyImportOrchestrator` / `LoadableFamilyImportOrchestrator`) вызывает существующий `ImportBatchAsync`. Это сохраняет `IFamilyImportService` компактным (1 import-path для всех 4 use-case'ов) и убирает необходимость в `FamilyActiveImportRequest` record.
 
 ---
 
@@ -89,60 +96,6 @@ public interface IFamilyTypeCatalogBaker
 
 ---
 
-## IFamilyFileResolver
-
-Разрешение путей к файлам семейств из managed storage. Выбирает лучший файл для целевой версии Revit.
-
-**Файл:** `IFamilyFileResolver.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFileResolver.cs`
-
-```csharp
-public interface IFamilyFileResolver
-{
-    Task<FamilyResolvedFile> ResolveForLoadAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
-    string? GetDatabaseRoot();
-}
-```
-
----
-
-## IFamilySidecarLocator
-
-Поиск и копирование Type Catalog (.txt) sidecar-файла, который Revit
-хранит рядом с `.rfa` под тем же базовым именем. Pure I/O, без
-зависимости от Revit API — полностью покрывается unit-тестами.
-
-**Файл:** `IFamilySidecarLocator.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilySidecarLocator.cs`
-
-```csharp
-public interface IFamilySidecarLocator
-{
-    string? FindSidecarPath(string? rfaPath);
-    Task<string?> CopySidecarAsync(string sourceTxtPath, string destDir, CancellationToken ct = default);
-}
-```
-
----
-
-## IActiveFamilyFilePreparer
-
-Подготовка активного .rfa-документа для импорта: SaveAs в temp
-и копирование .txt sidecar рядом с temp .rfa. Реализация работает
-внутри ExternalEvent (I-01).
-
-**Файл:** `IActiveFamilyFilePreparer.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/ActiveFamilyFilePreparer.cs`
-
-```csharp
-public interface IActiveFamilyFilePreparer
-{
-    Task<ActiveFamilyPreparationResult?> PrepareActiveFamilyAsync(CancellationToken ct = default);
-}
-```
-
----
-
 ## IActiveDocumentClassifier
 
 Определяет тип активного документа: `Family` / `Project` / `None`.
@@ -162,18 +115,18 @@ public interface IActiveDocumentClassifier
 
 ---
 
-## IActiveImportCleanupService
+## IFamilyFileResolver
 
-Удаляет temp-папки, созданные пайплайном «Импорт активного файла».
-Заменяет ad-hoc static helper в VM. Вызывается в `finally`.
+Разрешение путей к файлам семейств из managed storage. Выбирает лучший файл для целевой версии Revit.
 
-**Файл:** `IActiveImportCleanupService.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/ActiveImportCleanupService.cs`
+**Файл:** `IFamilyFileResolver.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFileResolver.cs`
 
 ```csharp
-public interface IActiveImportCleanupService
+public interface IFamilyFileResolver
 {
-    Task CleanupAfterImportAsync(CancellationToken ct = default);
+    Task<FamilyResolvedFile> ResolveForLoadAsync(string catalogItemId, int targetRevitVersion, CancellationToken ct = default);
+    string? GetDatabaseRoot();
 }
 ```
 
@@ -607,32 +560,6 @@ CRUD для дерева категорий каталога семейств.
 
 ---
 
-## IFamilyManagerViewModelFactory
-
-Factory для создания ViewModel FamilyManager с разрешёнными зависимостями (защита от DI-anti-pattern: ViewModel не запрашивают сервисы напрямую из конструктора).
-
-**Файл:** `SmartCon.FamilyManager/Services/IFamilyManagerViewModelFactory.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/FamilyManagerViewModelFactory.cs`
-
-```csharp
-public interface IFamilyManagerViewModelFactory
-{
-    FamilyMetadataEditViewModel CreateMetadataEditViewModel(
-        string catalogItemId, string name, string? description,
-        string? categoryId, string? categoryPath, IReadOnlyList<string> tags, ContentStatus contentStatus);
-    FamilyPropertiesViewModel CreatePropertiesViewModel(
-        string catalogItemId, string name, string? description,
-        string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
-        ContentStatus contentStatus, string? manufacturer, string? versionLabel,
-        string? fileSizeText, string? createdAtText, string? updatedAtText);
-    CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
-    AttributeLibraryViewModel CreateAttributeLibraryViewModel();
-    CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
-}
-```
-
----
-
 ## IAttributeDefinitionRepository
 
 CRUD для определений атрибутов (AttributeDefinition). Заменяет устаревший IAttributePresetRepository.
@@ -896,4 +823,38 @@ public interface IFamilyVersionWriter
 ```
 
 **Реализация:** `FamilyVersionWriter` (в `SmartCon.FamilyManager/Services/Stale/`). Внутри — `RaiseAsyncTask` для `FindByName` + `WriteToLoadedFamily` на Revit main thread. No-op если семейство не загружено в проект (например, при `LoadFamilySymbol` без `LoadFamily`).
+
+---
+
+## IFamilyImportPrecomputer
+
+v2.0.0: single-purpose сервис, аллоцирующий каноническую `PrecomputedImportTriple` для заданного `displayName` без файлового I/O. Выделен из `IFamilyImportService` для соблюдения SRP: импорт-pipeline (запись файлов + обновление БД) и trivial DB-lookup + path-математика, которую каждая строка batch dialog делает заранее, — это разные ответственности.
+
+**Файл:** `IFamilyImportPrecomputer.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportPrecomputer.cs`
+
+```csharp
+public interface IFamilyImportPrecomputer
+{
+    Task<PrecomputedImportTriple?> BuildPrecomputedTripleAsync(
+        string displayName,
+        string extension,
+        CancellationToken ct = default);
+}
+```
+
+Семантика:
+- Нормализует `displayName` через `FamilyNameNormalizer` и ищет existing item через `IFamilyCatalogProvider.FindByNormalizedNameAsync`.
+- Если existing найден — возвращает `(existing.Id, ComputeNextVersionLabel(existing.Id), ComputeManagedFilePath(...))`: id сохраняется, версия инкрементируется (`vN → vN+1`).
+- Если existing не найден — возвращает `(Guid.NewGuid() в формате "N", "v1", ComputeManagedFilePath(...))`.
+- `extension` — расширение с ведущей точкой (`".rfa"` для loadable, `".rvt"` для system); `".rfa"` default для null/empty.
+- Возвращает `null` когда активная БД не имеет `GetDatabaseRoot()` (caller обязан surfacing this как user error, не fallback на temp-папку — v2.0.0 не использует temp-папки, см. ADR-035).
+
+Используется в **обоих** сценариях, где нужен precomputed triple:
+- Initial dialog build (`BuildSystemFamilyBatchRowVirtualAsync` / `BuildLoadableFamilyBatchRowVirtualAsync` в `FamilyManagerMainViewModel.Import.cs`) — при первом построении списка строк.
+- Dialog rename handler (`FamilyBatchImportViewModel.OnRowNameChanged`) — при переименовании пользователем строки в batch dialog.
+
+Без единого источника истины эти два пути могут разойтись: `BuildSystem` использует `existingByName` из прямого lookup в `IFamilyCatalogProvider`, а `OnRowNameChanged` — `existing` из `IFamilyCatalogProvider` (тот же provider, но в другом контексте). Преcomputers заменяет оба на один вызов, гарантируя что `CatalogItemId`/`VersionLabel`/`ManagedPath` всегда согласованы и перевычисляются атомарно.
+
+`OnRowNameChanged` дополнительно оборачивает вызов в `Task.Delay(250 ms)` debouncer, чтобы DB-lookup не срабатывал на каждое нажатие клавиши. Cancellation token отменяет предыдущий pending-вызов при следующем нажатии.
 

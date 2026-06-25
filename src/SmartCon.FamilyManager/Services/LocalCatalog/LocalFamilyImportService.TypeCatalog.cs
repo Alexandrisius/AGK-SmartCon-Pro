@@ -46,6 +46,46 @@ internal sealed partial class LocalFamilyImportService
             $"{nameof(PrepareManagedRfaAsync)}: source='{Path.GetFileName(sourceFilePath)}', " +
             $"original='{(originalSourcePath is null ? "<none>" : Path.GetFileName(originalSourcePath))}', catalogItem='{catalogItemId}', version='{versionLabel}'");
 
+        // v2.0.0 UC-2: when the caller already wrote the file to managed
+        // storage via SaveAs (Import Active Family Document), sourceFilePath
+        // equals managedRfaPath byte-for-byte. Skip Copy/Bake — the file is
+        // already at its final destination, and any I/O against the same
+        // path while Revit holds the document open would be rejected with
+        // "Access to the path is denied".
+        if (string.Equals(sourceFilePath, managedRfaPath, StringComparison.OrdinalIgnoreCase))
+        {
+            SmartConLogger.Info(
+                "Source equals managed path — file already in managed storage, " +
+                "skipping copy/bake");
+            return null;
+        }
+
+        // v2.0.0 UC-3/UC-4: the VM has already produced a managed staging file
+        // for the system family (.rvt) or loadable family (.rfa) via CreateCleanProject
+        // or EditFamily+SaveAs in the batch flow. The file lives somewhere under
+        // {dbRoot}/files/ but at a different catalog-item-id directory than the
+        // one ImportBatchAsync will allocate. Skip the copy (the source is
+        // already in managed storage); we only need to register it.
+        var dbRoot = _database.GetDatabaseRoot();
+        var managedFilesRoot = string.IsNullOrEmpty(dbRoot)
+            ? null
+            : Path.Combine(dbRoot, "files");
+        if (!string.IsNullOrEmpty(managedFilesRoot))
+        {
+            var normalizedSource = Path.GetFullPath(sourceFilePath);
+            var normalizedManagedRoot = Path.GetFullPath(managedFilesRoot);
+            var sourceIsInManaged = normalizedSource.StartsWith(
+                normalizedManagedRoot + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase);
+            if (sourceIsInManaged)
+            {
+                SmartConLogger.Info(
+                    $"Source already inside managed storage ('{Path.GetFileName(sourceFilePath)}') — " +
+                    "skipping copy/bake; ImportBatchAsync will register it as the new version");
+                return null;
+            }
+        }
+
         var sourceTxtPath = ResolveTypeCatalogPath(sourceFilePath, originalSourcePath, catalogItemId, ct);
 
         if (string.IsNullOrEmpty(sourceTxtPath))
@@ -120,7 +160,6 @@ internal sealed partial class LocalFamilyImportService
             catalogItemId,
             versionId,
             null,
-            null,
             0,
             FamilyDataImportStatus.Succeeded,
             parseResult.Entries.Count,
@@ -139,7 +178,7 @@ internal sealed partial class LocalFamilyImportService
             if (!seenTypeNames.Add(entry.TypeName))
             {
                 duplicateCount++;
-                SmartConLogger.Warn($"Duplicate type name '{entry.TypeName}' at index {i}, skipping (keeping first occurrence)");
+                SmartConLogger.Warn($"Duplicate type name '{entry.TypeName}' at index {i}, skipping (keeping first occurrence) [Action: проверьте .txt — удалите дубликат, если хотите импортировать все строки]");
                 continue;
             }
 
@@ -158,7 +197,7 @@ internal sealed partial class LocalFamilyImportService
             SmartConLogger.Info($"Skipped {duplicateCount} duplicate type(s), imported {types.Count} unique types");
         }
 
-        var typeIdsByName = await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, null, runId, types, ct);
+        var typeIdsByName = await _typeRepository.SyncTypesAsync(catalogItemId, versionId, null, runId, types, ct);
 
         var values = new List<ExtractedAttributeValue>();
         for (var i = 0; i < parseResult.Entries.Count; i++)
@@ -276,7 +315,7 @@ internal sealed partial class LocalFamilyImportService
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"Failed to find previous version Type Catalog for {catalogItemId}: {ex.Message}");
+            SmartConLogger.Warn($"Failed to find previous version Type Catalog for {catalogItemId}: {ex.Message} [Action: проверьте БД каталога, эта версия будет импортирована без diff со старой]");
             return null;
         }
     }
@@ -315,7 +354,7 @@ internal sealed partial class LocalFamilyImportService
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"Charset detection failed: {ex.Message}, returning UTF-8 result with replacement chars");
+                SmartConLogger.Warn($"Charset detection failed: {ex.Message}, returning UTF-8 result with replacement chars [Action: проверьте кодировку .txt; ожидается UTF-8 или Windows-1251]");
             }
         }
 

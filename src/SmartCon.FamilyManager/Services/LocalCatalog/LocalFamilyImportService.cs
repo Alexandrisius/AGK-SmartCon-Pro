@@ -50,8 +50,15 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         await _migrator.MigrateAsync(ct);
 
         var filePath = request.FilePath;
+        SmartConLogger.Debug($"ImportFileAsync called with FilePath='{filePath}', exists={File.Exists(filePath)}");
         if (!File.Exists(filePath))
         {
+            SmartConLogger.Warn(
+                $"ImportFileAsync: file not found at '{filePath}'. " +
+                "This usually means the orchestrator's pre-dialog staging did not run " +
+                "and the item still has its virtual placeholder FilePath. " +
+                "[Action: see StageSystemFamiliesFromMetadataAsync / " +
+                "StageLoadableFamiliesFromMetadataAsync log lines for the real cause]");
             return new FamilyImportResult(
                 Success: false,
                 CatalogItemId: null,
@@ -63,67 +70,128 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
 
         var sourceMetadata = await _metadataService.ExtractAsync(filePath, ct);
-        var sha256 = sourceMetadata.Sha256;
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         var displayName = !string.IsNullOrWhiteSpace(request.FileName)
             ? request.FileName!
             : SafeFileName.GetBaseName(filePath);
 
-        SmartConLogger.Debug($"File: {Path.GetFileName(filePath)} -> displayName='{displayName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}");
+        SmartConLogger.Debug($"File: {Path.GetFileName(filePath)} -> displayName='{displayName}', Revit: R{revitVersion}");
 
+        // v2.0.0: resolve the canonical (catalogItemId, versionLabel,
+        // managedRfaPath) tuple. When the caller pre-computed them
+        // (UC-2 SaveAs / UC-3 / UC-4 staged flow), trust them — they
+        // already encoded the existing-vs-new decision and the
+        // next-version lookup, and the staged file already lives at
+        // PrecomputedManagedPath. For the legacy / direct import path
+        // (UC-1 user .rfa files), fall back to a fresh allocation.
         var existingItem = await FindByNameAsync(displayName, ct);
-        if (existingItem is not null)
+
+        var hasPrecomputed =
+            !string.IsNullOrWhiteSpace(request.PrecomputedCatalogItemId)
+            && !string.IsNullOrWhiteSpace(request.PrecomputedVersionLabel)
+            && !string.IsNullOrWhiteSpace(request.PrecomputedManagedPath);
+
+        SmartConLogger.Debug(
+            $"ImportFileAsync: hasPrecomputed={hasPrecomputed}, " +
+            $"req.PrecomputedCatalogItemId='{request.PrecomputedCatalogItemId ?? "<null>"}', " +
+            $"req.PrecomputedManagedPath='{request.PrecomputedManagedPath ?? "<null>"}'");
+
+        string catalogItemId;
+        string versionLabel;
+        string managedRfaPath;
+
+        if (hasPrecomputed)
         {
-            var existingVersion = await FindVersionByHashAndRevitAsync(existingItem.Id, sha256, revitVersion, ct);
-            if (existingVersion is not null)
+            catalogItemId = request.PrecomputedCatalogItemId!;
+            versionLabel = request.PrecomputedVersionLabel!;
+            managedRfaPath = request.PrecomputedManagedPath!;
+
+            SmartConLogger.Debug(
+                $"ImportFileAsync: using precomputed path " +
+                $"catalogItemId='{catalogItemId}', versionLabel='{versionLabel}', " +
+                $"managedRfaPath='{managedRfaPath}'");
+
+            if (!string.Equals(filePath, managedRfaPath, StringComparison.OrdinalIgnoreCase))
             {
-                return new FamilyImportResult(
-                    Success: true,
-                    CatalogItemId: existingItem.Id,
-                    VersionId: existingVersion.Id,
-                    FileId: existingVersion.FileId,
-                    FileName: sourceMetadata.FileName,
-                    VersionLabel: existingVersion.VersionLabel,
-                    ErrorMessage: null,
-                    WasSkippedAsDuplicate: true);
+                SmartConLogger.Warn(
+                    $"ImportFileAsync: source FilePath '{filePath}' differs from " +
+                    $"precomputed managed path '{managedRfaPath}' [Action: verify " +
+                    $"BuildSystemFamilyBatchRowVirtualAsync / " +
+                    $"BuildLoadableFamilyBatchRowVirtualAsync output]");
             }
+        }
+        else
+        {
+            // Direct import path (UC-1, ImportFolderAsync). Allocate a
+            // fresh catalogItemId (or reuse existingItem.Id) and a fresh
+            // version label, then compute the canonical managed path.
+            catalogItemId = existingItem?.Id ?? Guid.NewGuid().ToString();
+            versionLabel = existingItem is not null
+                ? await ComputeNextVersionLabelAsync(existingItem.Id, ct)
+                : "v1";
+            managedRfaPath = ComputeManagedRfaPath(catalogItemId, versionLabel, sourceMetadata, displayName);
         }
 
         var now = DateTimeOffset.UtcNow;
         var fileRecordId = Guid.NewGuid().ToString();
-        var catalogItemId = existingItem?.Id ?? Guid.NewGuid().ToString();
         var versionId = Guid.NewGuid().ToString();
         var normalizedName = FamilyNameNormalizer.Normalize(displayName);
-
-        var versionLabel = existingItem is not null
-            ? await GetNextVersionLabelAsync(existingItem.Id, ct)
-            : "v1";
-
-        var managedRfaPath = ComputeManagedRfaPath(catalogItemId, versionLabel, sourceMetadata, displayName);
         var relativePath = _pathResolver.GetRelativePath(managedRfaPath);
+
+        SmartConLogger.Debug(
+            $"ImportFileAsync: catalogItemId='{catalogItemId}', versionLabel='{versionLabel}', " +
+            $"managedRfaPath='{managedRfaPath}', existingItem={(existingItem?.Id ?? "<null>")}");
 
         try
         {
-            var catalogResult = await PrepareManagedRfaAsync(
-                filePath,
-                request.OriginalSourcePath,
-                catalogItemId,
-                versionId,
-                versionLabel,
-                managedRfaPath,
-                ct);
+            TypeCatalogResolutionResult? catalogResult = null;
 
-            if (!File.Exists(managedRfaPath))
+            // PrepareManagedRfaAsync only runs when the source file is NOT
+            // already at its canonical managed path. UC-2/UC-3/UC-4 staged
+            // flows hand us a path that IS the managed path; running
+            // PrepareManagedRfaAsync would either re-copy (waste) or, when
+            // the staged path was mis-named, corrupt the layout.
+            var sourceIsAlreadyManaged = string.Equals(
+                Path.GetFullPath(filePath),
+                Path.GetFullPath(managedRfaPath),
+                StringComparison.OrdinalIgnoreCase);
+
+            if (!sourceIsAlreadyManaged)
             {
-                return new FamilyImportResult(
-                    Success: false,
-                    CatalogItemId: null,
-                    VersionId: null,
-                    FileId: null,
-                    FileName: sourceMetadata.FileName,
-                    VersionLabel: null,
-                    ErrorMessage: "Managed family file was not created after Type Catalog processing");
+                SmartConLogger.Debug(
+                    $"ImportFileAsync: entering PrepareManagedRfaAsync, filePath='{filePath}', managedRfaPath='{managedRfaPath}', exists={File.Exists(managedRfaPath)}");
+
+                catalogResult = await PrepareManagedRfaAsync(
+                    filePath,
+                    request.OriginalSourcePath,
+                    catalogItemId,
+                    versionId,
+                    versionLabel,
+                    managedRfaPath,
+                    ct);
+
+                SmartConLogger.Debug(
+                    $"ImportFileAsync: PrepareManagedRfaAsync returned, catalogResult={(catalogResult is null ? "null" : "TypeCatalogResolutionResult")}, exists={File.Exists(managedRfaPath)}");
+
+                if (!File.Exists(managedRfaPath))
+                {
+                    SmartConLogger.Warn(
+                        $"ImportFileAsync: managed file missing at '{managedRfaPath}' after PrepareManagedRfaAsync [Action: check staging helpers in StageSystemFamiliesFromMetadataAsync / StageLoadableFamiliesFromMetadataAsync]");
+                    return new FamilyImportResult(
+                        Success: false,
+                        CatalogItemId: null,
+                        VersionId: null,
+                        FileId: null,
+                        FileName: sourceMetadata.FileName,
+                        VersionLabel: null,
+                        ErrorMessage: "Managed family file was not created after Type Catalog processing");
+                }
+            }
+            else
+            {
+                SmartConLogger.Debug(
+                    $"ImportFileAsync: source already at managed path '{filePath}', skipping PrepareManagedRfaAsync");
             }
 
             var finalMetadata = await _metadataService.ExtractAsync(managedRfaPath, ct);
@@ -191,10 +259,15 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 FileName: finalMetadata.FileName,
                 VersionLabel: versionLabel,
                 ErrorMessage: null,
+                ManagedFilePath: managedRfaPath,
                 WasNewVersion: existingItem is not null);
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Error(
+                $"ImportFileAsync threw: {ex.GetType().Name}: {ex.Message} " +
+                $"[Action: check file='{Path.GetFileName(filePath)}', managedPath='{managedRfaPath}']");
+            SmartConLogger.Debug($"ImportFileAsync stack trace: {ex.StackTrace}");
             CleanupFileAsync(relativePath);
             throw;
         }
@@ -239,7 +312,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 var result = await ImportFileAsync(importRequest, ct);
                 results.Add(result);
 
-                if (result.WasSkippedAsDuplicate)
+                if (result.WasSkipped)
                     skippedCount++;
                 else if (result.Success)
                     successCount++;
@@ -297,16 +370,50 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         var skippedCount = 0;
         var errorCount = 0;
 
-        for (var i = 0; i < items.Count; i++)
+        // v2.0.0: dedupe by (catalogItemId, versionLabel) so multiple
+        // staged rows that resolve to the same canonical managed entry
+        // (e.g. two system-family analyses that name the same category,
+        // or a user re-running the import twice in the same dialog) only
+        // produce ONE catalog_versions row. Otherwise we'd hit a SQLite
+        // UNIQUE constraint failure on
+        // (catalog_item_id, version_label, revit_major_version).
+        var processedKeys = new HashSet<string>();
+        var dedupedItems = new List<FamilyBatchImportItem>(items.Count);
+
+        foreach (var item in items)
+        {
+            if (item.Action == FamilyBatchImportAction.Skip)
+            {
+                dedupedItems.Add(item);
+                continue;
+            }
+
+            var key = BuildBatchDedupKey(item);
+            if (key is null || processedKeys.Add(key))
+            {
+                dedupedItems.Add(item);
+            }
+            else
+            {
+                SmartConLogger.Warn(
+                    $"ImportBatchAsync: dropping duplicate item '{item.FileName}' " +
+                    $"for key '{key}' [Action: same family/version already queued in this batch]");
+                // We still need to emit a synthetic "skipped" result so
+                // the caller's per-item progress stays in sync.
+                dedupedItems.Add(item with { Action = FamilyBatchImportAction.Skip });
+            }
+        }
+
+        for (var i = 0; i < dedupedItems.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            var item = items[i];
+            var item = dedupedItems[i];
 
             SmartConLogger.Info($"File: {item.FileName}, Status: {item.Status}, Action: {item.Action}");
 
             progress?.Report(new FamilyImportProgress(
                 CurrentFileIndex: i,
-                TotalFiles: items.Count,
+                TotalFiles: dedupedItems.Count,
                 CurrentFileName: item.FileName,
                 SuccessCount: successCount,
                 SkippedCount: skippedCount,
@@ -323,7 +430,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     FileName: item.FileName,
                     VersionLabel: item.ExistingVersionLabel,
                     ErrorMessage: null,
-                    WasSkippedAsDuplicate: true));
+                    WasSkipped: true));
                 continue;
             }
 
@@ -347,12 +454,19 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         ? null
                         : item.TargetCategoryName;
                     var request = new FamilyImportRequest(
-                        item.FilePath,
-                        item.RevitMajorVersion,
-                        effectiveCategoryName, null, null, effectiveCategoryId,
-                        item.FamilySource,
-                        item.RevitCategory,
-                        item.FileName);
+                        FilePath: item.FilePath,
+                        RevitMajorVersion: item.RevitMajorVersion,
+                        Category: effectiveCategoryName,
+                        Tags: null,
+                        Description: null,
+                        CategoryId: effectiveCategoryId,
+                        FamilySource: item.FamilySource,
+                        RevitCategory: item.RevitCategory,
+                        FileName: item.FileName,
+                        OriginalSourcePath: item.OriginalSourcePath,
+                        PrecomputedCatalogItemId: item.PrecomputedCatalogItemId,
+                        PrecomputedVersionLabel: item.PrecomputedVersionLabel,
+                        PrecomputedManagedPath: item.PrecomputedManagedPath);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
@@ -374,12 +488,15 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             ? null
                             : item.TargetCategoryName;
                         var request = new FamilyUpdateRequest(
-                            item.ExistingCatalogItemId!,
-                            item.FilePath,
-                            item.RevitMajorVersion,
-                            item.TargetCategoryId,
-                            effectiveCategoryName,
-                            item.FileName);
+                            CatalogItemId: item.ExistingCatalogItemId!,
+                            FilePath: item.FilePath,
+                            RevitMajorVersion: item.RevitMajorVersion,
+                            CategoryId: item.TargetCategoryId,
+                            CategoryName: effectiveCategoryName,
+                            FileName: item.FileName,
+                            OriginalSourcePath: item.OriginalSourcePath,
+                            PrecomputedVersionLabel: item.PrecomputedVersionLabel,
+                            PrecomputedManagedPath: item.PrecomputedManagedPath);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -395,6 +512,10 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             catch (Exception ex)
             {
                 errorCount++;
+                SmartConLogger.Error(
+                    $"ImportBatchAsync: file='{item.FileName}' threw: {ex.GetType().Name}: {ex.Message} " +
+                    $"[Action: see prior log lines from ImportFileAsync for the underlying cause]");
+                SmartConLogger.Debug($"ImportBatchAsync stack trace: {ex.StackTrace}");
                 results.Add(new FamilyImportResult(
                     Success: false,
                     CatalogItemId: null,
@@ -407,8 +528,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
 
         progress?.Report(new FamilyImportProgress(
-            CurrentFileIndex: items.Count - 1,
-            TotalFiles: items.Count,
+            CurrentFileIndex: dedupedItems.Count - 1,
+            TotalFiles: dedupedItems.Count,
             CurrentFileName: string.Empty,
             SuccessCount: successCount,
             SkippedCount: skippedCount,
@@ -416,10 +537,25 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
         return new FamilyBatchImportResult(
             Results: results,
-            TotalFiles: items.Count,
+            TotalFiles: dedupedItems.Count,
             SuccessCount: successCount,
             SkippedCount: skippedCount,
             ErrorCount: errorCount);
+    }
+
+    private static string? BuildBatchDedupKey(FamilyBatchImportItem item)
+    {
+        // v2.0.0: a batch row collides with a previous one when both
+        // resolve to the same canonical managed file, i.e. the same
+        // (catalogItemId, versionLabel, revit_major_version). Without
+        // this guard the second row would trip the SQLite UNIQUE
+        // constraint on catalog_versions.
+        var id = item.PrecomputedCatalogItemId ?? item.ExistingCatalogItemId;
+        var ver = item.PrecomputedVersionLabel
+            ?? item.ExistingVersionLabel
+            ?? "v1";
+        if (string.IsNullOrEmpty(id)) return null;
+        return $"{id}|{ver}|{item.RevitMajorVersion}";
     }
 
     public async Task<FamilyImportResult> UpdateFamilyAsync(FamilyUpdateRequest request, CancellationToken ct = default)
@@ -445,59 +581,78 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         }
 
         var sourceMetadata = await _metadataService.ExtractAsync(filePath, ct);
-        var sha256 = sourceMetadata.Sha256;
         var revitVersion = _fileInfoReader?.ReadRevitVersion(filePath) ?? request.RevitMajorVersion;
 
         var newName = !string.IsNullOrWhiteSpace(request.FileName)
             ? request.FileName!
             : SafeFileName.GetBaseName(filePath);
 
-        SmartConLogger.Info($"File: {Path.GetFileName(filePath)} -> newName='{newName}', SHA256: {sha256[..16]}..., Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
+        SmartConLogger.Info($"File: {Path.GetFileName(filePath)} -> newName='{newName}', Revit: R{revitVersion}, TargetItem: {request.CatalogItemId}");
 
-        var currentVersion = await FindCurrentVersionByHashAsync(request.CatalogItemId, sha256, ct);
-        if (currentVersion is not null)
-        {
-            return new FamilyImportResult(
-                Success: true,
-                CatalogItemId: request.CatalogItemId,
-                VersionId: currentVersion.Id,
-                FileId: currentVersion.FileId,
-                FileName: sourceMetadata.FileName,
-                VersionLabel: currentVersion.VersionLabel,
-                ErrorMessage: null,
-                WasSkippedAsDuplicate: true);
-        }
+        // v2.0.0: SHA-256 dedup is gone. UpdateFamilyAsync always creates a new
+        // version (vN+1). Callers that want to replace the current version
+        // should use OverwriteCurrent action via ImportBatchAsync instead.
 
-        var versionLabel = await GetNextVersionLabelAsync(request.CatalogItemId, ct);
         var normalizedName = FamilyNameNormalizer.Normalize(newName);
         var now = DateTimeOffset.UtcNow;
         var fileRecordId = Guid.NewGuid().ToString();
         var versionId = Guid.NewGuid().ToString();
 
-        var managedRfaPath = ComputeManagedRfaPath(request.CatalogItemId, versionLabel, sourceMetadata, newName);
+        // v2.0.0: prefer caller-supplied (versionLabel, managedRfaPath)
+        // so the staged file the VM placed at the canonical path can be
+        // registered without re-allocating. Fall back to a fresh
+        // (versionLabel, managedRfaPath) when the caller didn't precompute
+        // (legacy / direct callers, tests).
+        var hasPrecomputed =
+            !string.IsNullOrWhiteSpace(request.PrecomputedVersionLabel)
+            && !string.IsNullOrWhiteSpace(request.PrecomputedManagedPath);
+
+        string versionLabel;
+        string managedRfaPath;
+
+        if (hasPrecomputed)
+        {
+            versionLabel = request.PrecomputedVersionLabel!;
+            managedRfaPath = request.PrecomputedManagedPath!;
+        }
+        else
+        {
+            versionLabel = await ComputeNextVersionLabelAsync(request.CatalogItemId, ct);
+            managedRfaPath = ComputeManagedRfaPath(request.CatalogItemId, versionLabel, sourceMetadata, newName);
+        }
+
         var relativePath = _pathResolver.GetRelativePath(managedRfaPath);
 
         try
         {
-            var catalogResult = await PrepareManagedRfaAsync(
-                filePath,
-                request.OriginalSourcePath,
-                request.CatalogItemId,
-                versionId,
-                versionLabel,
-                managedRfaPath,
-                ct);
+            TypeCatalogResolutionResult? catalogResult = null;
+            var sourceIsAlreadyManaged = string.Equals(
+                Path.GetFullPath(filePath),
+                Path.GetFullPath(managedRfaPath),
+                StringComparison.OrdinalIgnoreCase);
 
-            if (!File.Exists(managedRfaPath))
+            if (!sourceIsAlreadyManaged)
             {
-                return new FamilyImportResult(
-                    Success: false,
-                    CatalogItemId: null,
-                    VersionId: null,
-                    FileId: null,
-                    FileName: sourceMetadata.FileName,
-                    VersionLabel: null,
-                    ErrorMessage: "Managed family file was not created after Type Catalog processing");
+                catalogResult = await PrepareManagedRfaAsync(
+                    filePath,
+                    request.OriginalSourcePath,
+                    request.CatalogItemId,
+                    versionId,
+                    versionLabel,
+                    managedRfaPath,
+                    ct);
+
+                if (!File.Exists(managedRfaPath))
+                {
+                    return new FamilyImportResult(
+                        Success: false,
+                        CatalogItemId: null,
+                        VersionId: null,
+                        FileId: null,
+                        FileName: sourceMetadata.FileName,
+                        VersionLabel: null,
+                        ErrorMessage: "Managed family file was not created after Type Catalog processing");
+                }
             }
 
             var finalMetadata = await _metadataService.ExtractAsync(managedRfaPath, ct);
@@ -552,6 +707,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 FileName: finalMetadata.FileName,
                 VersionLabel: versionLabel,
                 ErrorMessage: null,
+                ManagedFilePath: managedRfaPath,
                 WasNewVersion: true);
         }
         catch
@@ -573,7 +729,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             sourceExt = ".rfa";
 
         var destFileName = !string.IsNullOrWhiteSpace(displayName)
-            ? SanitizeFileName(displayName) + sourceExt
+            ? SafeFileName.SanitizeFileName(displayName) + sourceExt
             : metadata.FileName;
 
         return _pathResolver.GetRfaFilePath(catalogItemId, versionLabel, destFileName);
@@ -633,18 +789,6 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         return new CopyResult(false, null, $"Failed to copy file to managed storage after {CopyMaxRetries} attempts");
     }
 
-    private static string SanitizeFileName(string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return "Family";
-        var invalid = Path.GetInvalidFileNameChars();
-        var sb = new System.Text.StringBuilder(name!.Length);
-        foreach (var c in name)
-        {
-            sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
-        }
-        return sb.ToString();
-    }
-
     private void CleanupFileAsync(string? relativePath)
     {
         if (string.IsNullOrEmpty(relativePath)) return;
@@ -653,13 +797,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             var absPath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
             if (File.Exists(absPath))
                 File.Delete(absPath);
-            
-            // Also cleanup Type Catalog (.txt) sidecar file
-            var txtPath = Path.ChangeExtension(absPath, ".txt");
-            if (File.Exists(txtPath))
-            {
-                try { File.Delete(txtPath); } catch { /* ignored */ }
-            }
+
+            // v2.0.0: Type Catalog (.txt) is no longer stored in managed
+            // storage — baker (ADR-033) bakes types into the .rfa itself.
         }
         catch
         {

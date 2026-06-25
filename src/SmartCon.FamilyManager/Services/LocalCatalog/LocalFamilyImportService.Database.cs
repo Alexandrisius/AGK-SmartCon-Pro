@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
@@ -23,81 +24,7 @@ internal sealed partial class LocalFamilyImportService
         return LocalCatalogProvider.ReadCatalogItem(reader) with { Tags = [] };
     }
 
-    private async Task<FamilyCatalogVersion?> FindVersionByHashAndRevitAsync(string catalogItemId, string sha256, int revitVersion, CancellationToken ct)
-    {
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            SELECT cv.* FROM catalog_versions cv
-            INNER JOIN family_files ff ON ff.id = cv.file_id
-            WHERE cv.catalog_item_id = @itemId AND ff.sha256 = @sha256 AND cv.revit_major_version = @revitVersion
-            LIMIT 1
-            """;
-        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
-        cmd.Parameters.Add(new SqliteParameter("@sha256", sha256));
-        cmd.Parameters.Add(new SqliteParameter("@revitVersion", revitVersion));
-
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct))
-            return null;
-
-        return new FamilyCatalogVersion(
-            Id: reader.GetString(reader.GetOrdinal("id")),
-            CatalogItemId: reader.GetString(reader.GetOrdinal("catalog_item_id")),
-            FileId: reader.GetString(reader.GetOrdinal("file_id")),
-            VersionLabel: reader.GetString(reader.GetOrdinal("version_label")),
-            Sha256: reader.GetString(reader.GetOrdinal("sha256")),
-            RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
-            TypesCount: reader.IsDBNull(reader.GetOrdinal("types_count"))
-                ? null
-                : reader.GetInt32(reader.GetOrdinal("types_count")),
-            ParametersCount: reader.IsDBNull(reader.GetOrdinal("parameters_count"))
-                ? null
-                : reader.GetInt32(reader.GetOrdinal("parameters_count")),
-            PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
-    }
-
-    /// <summary>
-    /// Checks whether the given SHA256 matches the current (active) version of the specified catalog item.
-    /// Used by UpdateFamilyAsync to prevent re-uploading the same file that is already current.
-    /// </summary>
-    private async Task<FamilyCatalogVersion?> FindCurrentVersionByHashAsync(string catalogItemId, string sha256, CancellationToken ct)
-    {
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            SELECT cv.* FROM catalog_versions cv
-            INNER JOIN catalog_items ci ON ci.id = cv.catalog_item_id AND ci.current_version_label = cv.version_label
-            INNER JOIN family_files ff ON ff.id = cv.file_id
-            WHERE cv.catalog_item_id = @itemId AND ff.sha256 = @sha256
-            LIMIT 1
-            """;
-        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
-        cmd.Parameters.Add(new SqliteParameter("@sha256", sha256));
-
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct))
-            return null;
-
-        return new FamilyCatalogVersion(
-            Id: reader.GetString(reader.GetOrdinal("id")),
-            CatalogItemId: reader.GetString(reader.GetOrdinal("catalog_item_id")),
-            FileId: reader.GetString(reader.GetOrdinal("file_id")),
-            VersionLabel: reader.GetString(reader.GetOrdinal("version_label")),
-            Sha256: reader.GetString(reader.GetOrdinal("sha256")),
-            RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
-            TypesCount: reader.IsDBNull(reader.GetOrdinal("types_count"))
-                ? null
-                : reader.GetInt32(reader.GetOrdinal("types_count")),
-            ParametersCount: reader.IsDBNull(reader.GetOrdinal("parameters_count"))
-                ? null
-                : reader.GetInt32(reader.GetOrdinal("parameters_count")),
-            PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
-    }
-
-    private async Task<string> GetNextVersionLabelAsync(string catalogItemId, CancellationToken ct)
+    private async Task<string> ComputeNextVersionLabelAsync(string catalogItemId, CancellationToken ct)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
@@ -114,20 +41,64 @@ internal sealed partial class LocalFamilyImportService
         return "v2";
     }
 
+    /// <summary>
+    /// v2.0.0: public entry point for <see cref="IFamilyImportService.GetNextVersionLabelAsync"/>.
+    /// Returns <c>vN+1</c> for an existing item that has <c>vN</c>,
+    /// or <c>"v2"</c> as a defensive fallback when no prior version exists
+    /// (the VM uses this to allocate the canonical managed path up front).
+    /// </summary>
+    public async Task<string> GetNextVersionLabelAsync(string catalogItemId, CancellationToken ct)
+    {
+        return await ComputeNextVersionLabelAsync(catalogItemId, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// v2.0.0: single source of truth for canonical managed paths.
+    /// Staging helpers and <see cref="ImportFileAsync"/> both go through
+    /// here so the on-disk path and the <c>family_files.relative_path</c>
+    /// row can never drift out of sync.
+    ///
+    /// Returns <c>null</c> when no active database is selected — callers
+    /// must surface this as a user error rather than falling back to a
+    /// temp folder (v2.0.0 has no temp folders, per ADR-035).
+    /// </summary>
+    public string? ComputeManagedFilePath(
+        string catalogItemId,
+        string versionLabel,
+        string fileName,
+        string extension)
+    {
+        if (string.IsNullOrEmpty(catalogItemId)) return null;
+        if (string.IsNullOrEmpty(versionLabel)) return null;
+        if (string.IsNullOrWhiteSpace(fileName)) return null;
+
+        var ext = string.IsNullOrEmpty(extension) ? ".rfa" : extension;
+        // CA1865 ("use StartsWith(char)") would break net48 compatibility
+        // (net48 only exposes StartsWith(string)). Inspecting the first
+        // character is portable across both target frameworks.
+        if (ext.Length == 0 || ext[0] != '.') ext = "." + ext;
+
+        var dbRoot = _database.GetDatabaseRoot();
+        if (string.IsNullOrEmpty(dbRoot)) return null;
+
+        return _pathResolver.GetRfaFilePath(
+            catalogItemId,
+            versionLabel,
+            fileName + ext);
+    }
+
     private static async Task InsertFileRecordAsync(SqliteConnection connection, string id,
         string relativePath, FamilyMetadataExtractionResult metadata,
         int revitVersion, DateTimeOffset now, CancellationToken ct)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO family_files (id, relative_path, file_name, size_bytes, sha256, revit_major_version, imported_at_utc)
-            VALUES (@id, @relativePath, @fileName, @sizeBytes, @sha256, @revitVersion, @importedAtUtc)
+            INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+            VALUES (@id, @relativePath, @fileName, @revitVersion, @importedAtUtc)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@relativePath", relativePath));
         cmd.Parameters.Add(new SqliteParameter("@fileName", metadata.FileName));
-        cmd.Parameters.Add(new SqliteParameter("@sizeBytes", metadata.FileSizeBytes));
-        cmd.Parameters.Add(new SqliteParameter("@sha256", metadata.Sha256));
         cmd.Parameters.Add(new SqliteParameter("@revitVersion", revitVersion));
         cmd.Parameters.Add(new SqliteParameter("@importedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -214,14 +185,13 @@ internal sealed partial class LocalFamilyImportService
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, sha256, revit_major_version, types_count, parameters_count, published_at_utc)
-            VALUES (@id, @catalogItemId, @fileId, @versionLabel, @sha256, @revitMajorVersion, @typesCount, @parametersCount, @publishedAtUtc)
+            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, types_count, parameters_count, published_at_utc)
+            VALUES (@id, @catalogItemId, @fileId, @versionLabel, @revitMajorVersion, @typesCount, @parametersCount, @publishedAtUtc)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", versionId));
         cmd.Parameters.Add(new SqliteParameter("@catalogItemId", catalogItemId));
         cmd.Parameters.Add(new SqliteParameter("@fileId", fileId));
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
-        cmd.Parameters.Add(new SqliteParameter("@sha256", metadata.Sha256));
         cmd.Parameters.Add(new SqliteParameter("@revitMajorVersion", revitVersion));
         cmd.Parameters.Add(new SqliteParameter("@typesCount",
             metadata.Types is not null ? (object)metadata.Types.Count : DBNull.Value));
@@ -270,7 +240,6 @@ internal sealed partial class LocalFamilyImportService
             CatalogItemId: reader.GetString(reader.GetOrdinal("catalog_item_id")),
             FileId: reader.GetString(reader.GetOrdinal("file_id")),
             VersionLabel: reader.GetString(reader.GetOrdinal("version_label")),
-            Sha256: reader.GetString(reader.GetOrdinal("sha256")),
             RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
             TypesCount: reader.IsDBNull(reader.GetOrdinal("types_count"))
                 ? null
@@ -283,7 +252,6 @@ internal sealed partial class LocalFamilyImportService
 
     /// <summary>
     /// Overwrites the file for the current version without changing current_version_label.
-    /// Updates family_files.sha256 and size_bytes.
     /// </summary>
     private async Task<FamilyImportResult> OverwriteCurrentAsync(FamilyBatchImportItem item, CancellationToken ct)
     {
@@ -350,19 +318,15 @@ internal sealed partial class LocalFamilyImportService
                     ErrorMessage: "Managed family file was not created after Type Catalog processing");
             }
 
-            var finalMetadata = await _metadataService.ExtractAsync(absolutePath, ct);
-
-            // Update family_files
+            // Update family_files (v2.0.0: no sha256/size_bytes columns)
             using var updateFileCmd = connection.CreateCommand();
             updateFileCmd.CommandText = """
                 UPDATE family_files
-                SET sha256 = @sha256, size_bytes = @sizeBytes, file_name = @fileName, imported_at_utc = @importedAtUtc
+                SET file_name = @fileName, imported_at_utc = @importedAtUtc
                 WHERE id = @fileId
                 """;
             updateFileCmd.Parameters.Add(new SqliteParameter("@fileId", currentVersion.FileId));
-            updateFileCmd.Parameters.Add(new SqliteParameter("@sha256", finalMetadata.Sha256));
-            updateFileCmd.Parameters.Add(new SqliteParameter("@sizeBytes", finalMetadata.FileSizeBytes));
-            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", finalMetadata.FileName));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", sourceMetadata.FileName));
             updateFileCmd.Parameters.Add(new SqliteParameter("@importedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
             await updateFileCmd.ExecuteNonQueryAsync(ct);
 
@@ -407,6 +371,7 @@ internal sealed partial class LocalFamilyImportService
             FileName: sourceMetadata.FileName,
             VersionLabel: currentVersion.VersionLabel,
             ErrorMessage: null,
+            ManagedFilePath: absolutePath,
             WasNewVersion: false);
     }
 }

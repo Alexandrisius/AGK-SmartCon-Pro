@@ -262,14 +262,12 @@ public static class StringLocalization
         public const string FM_BatchImport_Title = "FM_BatchImport_Title";
         public const string FM_BatchImport_FileName = "FM_BatchImport_FileName";
         public const string FM_BatchImport_RevitVersion = "FM_BatchImport_RevitVersion";
-        public const string FM_BatchImport_Size = "FM_BatchImport_Size";
         public const string FM_BatchImport_Status = "FM_BatchImport_Status";
         public const string FM_BatchImport_Action = "FM_BatchImport_Action";
         public const string FM_BatchImport_SelectAll = "FM_BatchImport_SelectAll";
         public const string FM_BatchImport_Load = "FM_BatchImport_Load";
         public const string FM_BatchImport_StatusNew = "FM_BatchImport_StatusNew";
         public const string FM_BatchImport_StatusExisting = "FM_BatchImport_StatusExisting";
-        public const string FM_BatchImport_StatusDuplicate = "FM_BatchImport_StatusDuplicate";
         public const string FM_BatchImport_StatusError = "FM_BatchImport_StatusError";
         public const string FM_BatchImport_ActionIncrement = "FM_BatchImport_ActionIncrement";
         public const string FM_BatchImport_ActionOverwrite = "FM_BatchImport_ActionOverwrite";

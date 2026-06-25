@@ -182,29 +182,6 @@ public interface ISystemFamilyPlacementService
 
 ---
 
-## SystemFamilyTempLayout (Core/Service constants)
-
-Single source of truth для путей temp-папок system-family pipeline.
-И staging-producer, и cleanup-consumer ОБЯЗАНЫ брать пути отсюда — иначе риск
-"зависшего" .rvt между save и cleanup.
-
-**Файл:** `SmartCon.Core/Services/FamilyManager/SystemFamilyTempLayout.cs`
-
-```csharp
-public static class SystemFamilyTempLayout
-{
-    public const string TempRoot       = "SmartCon";
-    public const string StagingSubdir  = "SystemFamilyLoadFromProject";
-}
-```
-
-Layout под `Path.GetTempPath()`:
-```
-%TEMP%\SmartCon\SystemFamilyLoadFromProject\<GUID>\<safeName>.rvt
-```
-
----
-
 ## CategoryCompat (Core/Compatibility)
 
 Кросс-TFM абстракция `Category → BuiltInCategory`:

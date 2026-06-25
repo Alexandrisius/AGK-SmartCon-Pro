@@ -64,7 +64,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"AttributeLibrary.InitializeAsync: failed: {ex.Message}");
+            SmartConLogger.Warn($"AttributeLibrary.InitializeAsync: failed: {ex.Message} [Action: проверьте, что БД каталога доступна для чтения; нажмите Refresh в окне атрибутов]");
         }
     }
 
@@ -83,7 +83,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"AttributeLibrary.RefreshAsync: failed: {ex.Message}");
+            SmartConLogger.Warn($"AttributeLibrary.RefreshAsync: failed: {ex.Message} [Action: нажмите Refresh в окне атрибутов, проверьте БД каталога]");
         }
     }
 

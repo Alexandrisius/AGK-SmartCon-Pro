@@ -86,7 +86,6 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
             catalogItemId,
             versionId,
             fileId,
-            null,
             extractionResult.RevitMajorVersion,
             FamilyDataImportStatus.Succeeded,
             extractionResult.Types.Count,
@@ -123,7 +122,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
             }
         }
 
-        var typeIdsByName = await _typeRepository.SaveTypesForRunAsync(catalogItemId, versionId, fileId, runId, types, ct);
+        var typeIdsByName = await _typeRepository.SyncTypesAsync(catalogItemId, versionId, fileId, runId, types, ct);
 
         var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
         var attrByName = allAttrs.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
@@ -231,7 +230,7 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
         var now = DateTimeOffset.UtcNow;
 
         await _runRepository.CreateRunAsync(new FamilyDataImportRun(
-            runId, catalogItemId, versionId, fileId, null,
+            runId, catalogItemId, versionId, fileId,
             extractionResult.RevitMajorVersion,
             FamilyDataImportStatus.Succeeded,
             0, now, null, null), ct);

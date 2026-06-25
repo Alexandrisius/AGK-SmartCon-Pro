@@ -1,5 +1,6 @@
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
+using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.FamilyManager.Services.Stale;
 
 namespace SmartCon.FamilyManager.Services;
@@ -8,6 +9,23 @@ public sealed record FamilyManagerServices(
     IFamilyCatalogProvider CatalogProvider,
     IWritableFamilyCatalogProvider WritableProvider,
     IFamilyImportService ImportService,
+    /// <summary>
+    /// v2.0.0: precomputer that allocates the canonical
+    /// (CatalogItemId, VersionLabel, ManagedPath) triple for a given
+    /// display name. Used by the batch-import dialog's rename handler
+    /// so the round-trip from the dialog back to <c>ImportFileAsync</c>
+    /// always carries consistent values (the dialog pre-build and the
+    /// dialog rename share the same single source of truth).
+    /// </summary>
+    IFamilyImportPrecomputer ImportPrecomputer,
+    /// <summary>
+    /// v2.0.0: storage path resolver. Injected as a record member so
+    /// <c>FamilyManagerMainViewModel.ProcessFamilyImportAsync</c> can
+    /// call <c>EnsureFamilyDirectories</c> before <c>Document.SaveAs</c>
+    /// — Revit requires the target directory to exist beforehand and
+    /// ComputeManagedFilePath alone does not create it.
+    /// </summary>
+    StoragePathResolver PathResolver,
     IFamilyFileResolver FileResolver,
     IFamilyLoadService LoadService,
     IFamilyManagerDialogService DialogService,
@@ -31,9 +49,7 @@ public sealed record FamilyManagerServices(
     ISystemFamilyIsolationProjectService SystemFamilyIsolationProject,
     ISystemFamilyAttributeExtractor SystemFamilyAttributeExtractor,
     ISystemFamilyImportOrchestrator SystemFamilyImportOrchestrator,
-    IActiveFamilyFilePreparer ActiveFamilyFilePreparer,
     IActiveDocumentClassifier ActiveDocumentClassifier,
-    IActiveImportCleanupService ActiveImportCleanupService,
     ILoadableFamilyScanner LoadableFamilyScanner,
     ILoadableFamilyImportOrchestrator LoadableFamilyImportOrchestrator,
     IFamilyVersionStore VersionStore,
@@ -43,4 +59,14 @@ public sealed record FamilyManagerServices(
     IFamilyFinder FamilyFinder,
     IFamilyVersionWriter VersionWriter,
     IClock Clock,
-    ISharedNestedFamilyRepository SharedNestedRepository);
+    ISharedNestedFamilyRepository SharedNestedRepository,
+    /// <summary>
+    /// v2.0.0 (ADR-036, M-019-003): UI dispatcher. Injected instead of
+    /// <c>Application.Current?.Dispatcher</c> because the latter is
+    /// <c>null</c> in net48 Revit addins (known WPF/Revit interaction
+    /// bug, see ADR-025 M-019-003). The injected <see cref="IDispatcher"/>
+    /// is unit-testable (<c>WpfDispatcher</c> is net48-safe) and is the
+    /// canonical way to marshal FireAndForget callbacks back to the UI
+    /// thread per ADR-031.
+    /// </summary>
+    IDispatcher Dispatcher);

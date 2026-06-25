@@ -24,7 +24,7 @@ namespace SmartCon.Core.Threading;
 /// feature/logging-improvements branch):</b></para>
 /// <list type="table">
 ///   <item><term>✅ SAFE</term><description><c>IFamilyFileResolver.ResolveForLoadAsync</c> — pure SQLite I/O via <c>Microsoft.Data.Sqlite</c> with real <c>await</c>.</description></item>
-///   <item><term>✅ SAFE</term><description><c>IActiveImportCleanupService.CleanupAfterImportAsync</c> — pure file I/O (<c>Directory.Delete</c>, <c>File.Get/SetAttributes</c>) with no Revit API.</description></item>
+///   <item><term>✅ SAFE</term><description><c>IFamilyCatalogProvider.FindByNormalizedNameAsync</c> — pure SQLite query, no Revit API.</description></item>
 ///   <item><term>✅ SAFE</term><description><c>IUpdateService.GetPendingUpdateAsync</c> — pure file I/O (<c>File.ReadAllTextAsync</c> + <c>JsonSerializer.Deserialize</c>).</description></item>
 ///   <item><term>❌ DANGEROUS</term><description><c>IFamilyLoadService.LoadFamilyAsync</c> — internally calls <c>doc.LoadFamily</c> and <c>_transactionService.RunInTransaction</c>. <b>Use</b> <c>.GetAwaiter().GetResult()</c> directly (no Task.Run).</description></item>
 ///   <item><term>❌ DANGEROUS</term><description><c>IFamilyLoadService.LoadFamilySymbolAsync</c> — internally calls <c>doc.LoadFamilySymbol</c>. <b>Use</b> <c>.GetAwaiter().GetResult()</c> directly (no Task.Run).</description></item>

@@ -27,7 +27,7 @@ public sealed partial class FamilyManagerMainViewModel
             catch (Exception ex)
             {
                 using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "GetAllAsync"));
-                SmartConLogger.Warn($"failed: {ex.Message}");
+                SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
             }
             SmartConLogger.Freeze($"LoadTreeAsync: GetAllAsync took {stageSw.ElapsedMilliseconds}ms, categories={categories.Count}");
 
@@ -134,7 +134,7 @@ public sealed partial class FamilyManagerMainViewModel
             catch (Exception ex)
             {
                 using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "AttachCachedTypesAsync"));
-                SmartConLogger.Warn($"failed: {ex.Message}");
+                SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
             }
             SmartConLogger.Freeze($"LoadTreeAsync: AttachCachedTypesAsync took {stageSw.ElapsedMilliseconds}ms");
 

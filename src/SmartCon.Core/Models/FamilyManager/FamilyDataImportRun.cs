@@ -5,7 +5,6 @@ public sealed record FamilyDataImportRun(
     string CatalogItemId,
     string? VersionId,
     string? FileId,
-    string? SourceSha256,
     int RevitMajorVersion,
     FamilyDataImportStatus Status,
     int TypesCount,
