@@ -462,4 +462,83 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     {
         _fixture.Dispose();
     }
+
+    /// <summary>
+    /// v2.0.1: when the user renames a row in the batch dialog and picks
+    /// OverwriteCurrent, the catalog row's `name` and `normalized_name`
+    /// must reflect the new name. Previously the on-disk file was written
+    /// under the new name but the DB row kept the old name, so the catalog
+    /// tree showed the family under the wrong label.
+    ///
+    /// OverwriteCurrent keeps the existing file path (vN) — only the
+    /// `file_name` column and the catalog row's `name` change. We
+    /// simulate the post-SaveAs state by writing the staged bytes to the
+    /// existing managed file path so OverwriteCurrentAsync's
+    /// <c>PrepareManagedRfaAsync</c> sees the source already at the
+    /// canonical location and skips the copy.
+    /// </summary>
+    [Fact]
+    public async Task ImportBatchAsync_OverwriteCurrent_UpdatesCatalogItemName()
+    {
+        // Seed an existing family in v1.
+        var seedPath = _fixture.CreateFakeRfaFile("OriginalName.rfa");
+        var seed = await _importService.ImportFileAsync(
+            new FamilyImportRequest(seedPath, 2025, null, null, null));
+        Assert.True(seed.Success);
+        Assert.NotNull(seed.CatalogItemId);
+
+        // Simulate the post-SaveAs state: ProcessFamilyImportAsync wrote
+        // the staged bytes to the EXISTING managed path (overwrite), so
+        // the on-disk file at the canonical v1 path is what the dialog
+        // considers the "renamed" content. OverwriteCurrentAsync then
+        // overwrites family_files.file_name and catalog_items.name with
+        // the dialog's FileName ("RenamedName").
+        var versionsBefore = await _fixture.GetProvider().GetVersionsAsync(seed.CatalogItemId!);
+        Assert.Single(versionsBefore);
+        var existingFile = await _fixture.GetProvider().GetFileAsync(versionsBefore[0].FileId);
+        Assert.NotNull(existingFile);
+        var existingAbsolutePath = Path.Combine(_fixture.GetDatabaseRoot(), existingFile!.RelativePath);
+        File.SetAttributes(existingAbsolutePath, File.GetAttributes(existingAbsolutePath) & ~FileAttributes.ReadOnly);
+        File.WriteAllText(existingAbsolutePath, $"RENAMED_CONTENT_{Guid.NewGuid()}");
+        Assert.True(File.Exists(existingAbsolutePath));
+
+        var item = new FamilyBatchImportItem(
+            FilePath: existingAbsolutePath,
+            FileName: "RenamedName",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Existing,
+            ExistingCatalogItemId: seed.CatalogItemId,
+            ExistingVersionLabel: seed.VersionLabel,
+            TargetCategoryId: null,
+            TargetCategoryName: null,
+            FamilySource: "loadable",
+            TypeCount: null)
+        {
+            // v2.0.1: the default Action is IncrementVersion, which would
+            // route through UpdateFamilyAsync and try to create v2 — not
+            // what we want to test here. Set it to OverwriteCurrent so the
+            // service exercises the rename-while-overwriting path.
+            Action = FamilyBatchImportAction.OverwriteCurrent
+        };
+
+        var result = await _importService.ImportBatchAsync(new[] { item }, null, null);
+
+        Assert.True(
+            result.Results.Count > 0 && result.Results[0].Success,
+            $"Overwrite failed: ErrorMessage={result.Results[0].ErrorMessage}, FileName={result.Results[0].FileName}, SuccessCount={result.SuccessCount}, ErrorCount={result.ErrorCount}");
+        Assert.Equal(1, result.SuccessCount);
+        Assert.Equal(0, result.ErrorCount);
+
+        var itemAfter = await _fixture.GetProvider().GetItemAsync(seed.CatalogItemId!);
+        Assert.NotNull(itemAfter);
+        Assert.Equal("RenamedName", itemAfter!.Name);
+        Assert.Equal("renamedname", itemAfter.NormalizedName);
+
+        // The family_files row must also reflect the new file_name.
+        var versions = await _fixture.GetProvider().GetVersionsAsync(seed.CatalogItemId!);
+        Assert.Single(versions);
+        var fileAfter = await _fixture.GetProvider().GetFileAsync(versions[0].FileId);
+        Assert.NotNull(fileAfter);
+        Assert.Equal("RenamedName.rfa", fileAfter!.FileName);
+    }
 }

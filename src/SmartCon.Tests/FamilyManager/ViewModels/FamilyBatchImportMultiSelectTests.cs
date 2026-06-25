@@ -611,4 +611,333 @@ public sealed class FamilyBatchImportMultiSelectTests
         Assert.Equal(nextVersion, emitted.PrecomputedVersionLabel);
         Assert.Equal(existingPath, emitted.PrecomputedManagedPath);
     }
+
+    /// <summary>
+    /// v2.0.1: when Status flips, AvailableActions must be rebuilt so
+    /// OverwriteCurrent appears for Existing and disappears for New.
+    /// </summary>
+    [Fact]
+    public void Status_NewToExisting_AddsOverwriteCurrentToAvailableActions()
+    {
+        var items = new[] { MakeItem("Family", status: FamilyBatchImportStatus.New) };
+        using var vm = CreateVm(items);
+        var row = vm.Items.Single();
+
+        Assert.DoesNotContain(FamilyBatchImportAction.OverwriteCurrent, row.AvailableActions);
+
+        row.Status = FamilyBatchImportStatus.Existing;
+
+        Assert.Contains(FamilyBatchImportAction.OverwriteCurrent, row.AvailableActions);
+    }
+
+    /// <summary>
+    /// v2.0.1: when Status flips Existing → New, AvailableActions must
+    /// drop OverwriteCurrent. Action must be reset to a value present
+    /// in the new list (otherwise the bound combo box holds an invalid
+    /// value).
+    /// </summary>
+    [Fact]
+    public void Status_ExistingToNew_DropsOverwriteCurrentAndResetsAction()
+    {
+        var items = new[] { MakeItem("Family", status: FamilyBatchImportStatus.Existing) };
+        using var vm = CreateVm(items);
+        var row = vm.Items.Single();
+
+        row.Action = FamilyBatchImportAction.OverwriteCurrent;
+        Assert.Equal(FamilyBatchImportAction.OverwriteCurrent, row.Action);
+
+        row.Status = FamilyBatchImportStatus.New;
+
+        Assert.DoesNotContain(FamilyBatchImportAction.OverwriteCurrent, row.AvailableActions);
+        Assert.NotEqual(FamilyBatchImportAction.OverwriteCurrent, row.Action);
+    }
+
+    /// <summary>
+    /// v2.0.1: when the user renames a row in the dialog to a name that
+    /// DOES exist in the catalog, the row must pick up the existing
+    /// item's category automatically (only when the user has not
+    /// manually picked one in the picker).
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_ToExistingName_PicksUpExistingCategory()
+    {
+        var existing = new FamilyCatalogItem(
+            Id: "existing-id-cat",
+            Name: "ExistingWithCategory",
+            NormalizedName: "existingwithcategory",
+            Description: null,
+            CategoryPath: "HVAC > Ducts",
+            CategoryId: "cat-duct",
+            Manufacturer: null,
+            ContentStatus: ContentStatus.Active,
+            CurrentVersionLabel: "v1",
+            Tags: Array.Empty<string>(),
+            PublishedBy: null,
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            UpdatedAtUtc: DateTimeOffset.UtcNow);
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<string, CancellationToken>((normalized, _) =>
+                normalized == "existingwithcategory"
+                    ? Task.FromResult<FamilyCatalogItem?>(existing)
+                    : Task.FromResult<FamilyCatalogItem?>(null));
+
+        var items = new[] { MakeItem("Original", status: FamilyBatchImportStatus.New) };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object);
+        var row = vm.Items.Single();
+        Assert.Null(row.TargetCategoryId);
+
+        row.FileName = "ExistingWithCategory";
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.Existing && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.Existing, row.Status);
+        Assert.Equal("cat-duct", row.TargetCategoryId);
+        Assert.Equal("HVAC > Ducts", row.TargetCategoryPath);
+    }
+
+    /// <summary>
+    /// v2.0.1: when the user has manually picked a category in the
+    /// picker, the rename must NOT clobber it — even if the new name
+    /// matches an existing item with a different category. The user
+    /// intent is "move this family to my picked category".
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_ToExistingName_DoesNotClobberManuallyPickedCategory()
+    {
+        var existing = new FamilyCatalogItem(
+            Id: "existing-id-cat2",
+            Name: "ExistingWithCategory2",
+            NormalizedName: "existingwithcategory2",
+            Description: null,
+            CategoryPath: "HVAC > Ducts",
+            CategoryId: "cat-duct",
+            Manufacturer: null,
+            ContentStatus: ContentStatus.Active,
+            CurrentVersionLabel: "v1",
+            Tags: Array.Empty<string>(),
+            PublishedBy: null,
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            UpdatedAtUtc: DateTimeOffset.UtcNow);
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<string, CancellationToken>((normalized, _) =>
+                normalized == "existingwithcategory2"
+                    ? Task.FromResult<FamilyCatalogItem?>(existing)
+                    : Task.FromResult<FamilyCatalogItem?>(null));
+
+        var items = new[] { MakeItem("Original", status: FamilyBatchImportStatus.New) };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object);
+        var row = vm.Items.Single();
+
+        row.TargetCategoryId = "cat-plumbing";
+        row.TargetCategoryPath = "Plumbing";
+        row.TargetCategoryIsManual = true;
+
+        row.FileName = "ExistingWithCategory2";
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.Existing && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.Existing, row.Status);
+        Assert.Equal("cat-plumbing", row.TargetCategoryId);
+        Assert.Equal("Plumbing", row.TargetCategoryPath);
+    }
+
+    /// <summary>
+    /// v2.0.1 hotfix: when the user explicitly picks "Без категории"
+    /// in the picker (a deliberate reset), the manual flag must be
+    /// cleared so a subsequent rename to another existing family
+    /// re-pulls the target family's category. Picking a real
+    /// category locks the category (see the matching test above);
+    /// picking "Без категории" must NOT — the user intent is
+    /// "no manual override, follow the name".
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_AfterExplicitReset_PullsExistingCategoryOnRename()
+    {
+        var existing = new FamilyCatalogItem(
+            Id: "reset-target-id",
+            Name: "RenamedTarget",
+            NormalizedName: "renamedtarget",
+            Description: null,
+            CategoryPath: "HVAC > Ducts",
+            CategoryId: "cat-duct",
+            Manufacturer: null,
+            ContentStatus: ContentStatus.Active,
+            CurrentVersionLabel: "v1",
+            Tags: Array.Empty<string>(),
+            PublishedBy: null,
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            UpdatedAtUtc: DateTimeOffset.UtcNow);
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<string, CancellationToken>((normalized, _) =>
+                normalized == "renamedtarget"
+                    ? Task.FromResult<FamilyCatalogItem?>(existing)
+                    : Task.FromResult<FamilyCatalogItem?>(null));
+
+        var items = new[] { MakeItem("Original") };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object);
+        var row = vm.Items.Single();
+
+        // Simulate the user opening the picker and clicking
+        // "Без категории" (the explicit no-category choice). In the
+        // VM this writes null TargetCategoryId and clears the manual
+        // flag so a subsequent rename can re-categorize by name.
+        row.TargetCategoryId = null;
+        row.TargetCategoryPath = "Без категории";
+        row.TargetCategoryIsManual = false;
+        Assert.Null(row.TargetCategoryId);
+
+        row.FileName = "RenamedTarget";
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.Existing && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.Existing, row.Status);
+        Assert.Equal("cat-duct", row.TargetCategoryId);
+        Assert.Equal("HVAC > Ducts", row.TargetCategoryPath);
+    }
+
+    /// <summary>
+    /// v2.0.1: renaming a row Existing → New (a unique name) must
+    /// clear the category inherited from the previous existing item
+    /// (when the category was not manually picked by the user).
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_ExistingToNew_ClearsInheritedCategory()
+    {
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FamilyCatalogItem?)null);
+
+        var items = new[] { MakeItem("Original", status: FamilyBatchImportStatus.Existing) };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object);
+        var row = vm.Items.Single();
+
+        // Simulate inherited category: TargetCategoryIsManual defaults
+        // to false, so the rename handler treats this as inherited and
+        // must clear it when the row flips to New.
+        row.TargetCategoryId = "cat-duct";
+        row.TargetCategoryPath = "HVAC > Ducts";
+        Assert.False(row.TargetCategoryIsManual);
+
+        row.FileName = "TotallyUniqueName";
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.New && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.New, row.Status);
+        Assert.Null(row.TargetCategoryId);
+    }
+
+    /// <summary>
+    /// v2.0.1: when the user has manually picked a category, a rename
+    /// Existing → New must NOT clobber the manual choice.
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_ExistingToNew_KeepsManuallyPickedCategory()
+    {
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FamilyCatalogItem?)null);
+
+        var items = new[] { MakeItem("Original", status: FamilyBatchImportStatus.Existing) };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object);
+        var row = vm.Items.Single();
+
+        row.TargetCategoryId = "cat-plumbing";
+        row.TargetCategoryPath = "Plumbing";
+        row.TargetCategoryIsManual = true;
+
+        row.FileName = "TotallyUniqueName";
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.New && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.New, row.Status);
+        Assert.Equal("cat-plumbing", row.TargetCategoryId);
+        Assert.Equal("Plumbing", row.TargetCategoryPath);
+    }
+
+    /// <summary>
+    /// v2.0.1: when the precomputer returns null (e.g. no active DB),
+    /// the rename handler must clear the stale precomputed triple so
+    /// the downstream importer does not register a new row under the
+    /// OLD name's GUID.
+    /// </summary>
+    [Fact]
+    public async Task RenamingRow_PrecomputerReturnsNull_ClearsStalePrecomputedTriple()
+    {
+        var catalogMock = new Mock<IFamilyCatalogProvider>();
+        catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FamilyCatalogItem?)null);
+
+        var precomputerMock = new Mock<IFamilyImportPrecomputer>();
+        precomputerMock
+            .Setup(p => p.BuildPrecomputedTripleAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PrecomputedImportTriple?)null);
+
+        var items = new[] { MakeItem(
+            "Original",
+            status: FamilyBatchImportStatus.Existing,
+            precomputedCatalogItemId: "stale-existing-id",
+            precomputedVersionLabel: "v3",
+            precomputedManagedPath: @"C:\db\files\stale-existing-id\v3\Original.rfa") };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object,
+            catalogProvider: catalogMock.Object,
+            importPrecomputer: precomputerMock.Object);
+        var row = vm.Items.Single();
+        Assert.Equal("stale-existing-id", row.PrecomputedCatalogItemId);
+
+        row.FileName = "BrandNew";
+
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (row.Status != FamilyBatchImportStatus.New && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(FamilyBatchImportStatus.New, row.Status);
+        Assert.Null(row.PrecomputedCatalogItemId);
+        Assert.Null(row.PrecomputedVersionLabel);
+        Assert.Null(row.PrecomputedManagedPath);
+    }
 }

@@ -116,13 +116,28 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             {
                 if (string.IsNullOrEmpty(result))
                 {
+                    // v2.0.1 hotfix: picking "Без категории" (null/empty)
+                    // is the user's way of saying "reset, let the
+                    // catalog decide by name". Unlike picking a real
+                    // category, it must NOT lock the category away from
+                    // the dynamic ExistingCatalogItemId lookup — otherwise
+                    // renaming to another existing family would keep the
+                    // row at "Без категории" instead of pulling the
+                    // target family's category. Clear the manual flag so
+                    // ApplyNameChangeResult picks the category up again.
                     row.TargetCategoryId = null;
                     row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
+                    row.TargetCategoryIsManual = false;
                 }
                 else
                 {
                     row.TargetCategoryId = result;
                     row.TargetCategoryPath = pickerVm.SelectedPath;
+                    // v2.0.1: a real category choice is a deliberate
+                    // "move to this category" instruction. Lock the
+                    // category so a subsequent rename does not silently
+                    // re-categorize the row.
+                    row.TargetCategoryIsManual = true;
                 }
                 // OnTargetCategoryPathChanged partial-method on Row fires
                 // ApplyCategoryToSelection, so the multi-select batch effect
@@ -213,6 +228,12 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     : FamilyBatchImportStatus.Existing;
                 var newExistingId = existing?.Id;
                 var newExistingVersionLabel = existing?.CurrentVersionLabel;
+                // v2.0.1: capture the existing item's category so the row
+                // picks it up automatically when the user renames the row
+                // to another existing family's name (and has not manually
+                // picked a category in the picker).
+                var newExistingCategoryId = existing?.CategoryId;
+                var newExistingCategoryPath = existing?.CategoryPath;
 
                 // Re-derive the canonical triple so the post-dialog
                 // import uses the id/path that actually correspond to
@@ -230,11 +251,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 var dispatcher = System.Windows.Application.Current?.Dispatcher;
                 if (dispatcher is not null && !dispatcher.CheckAccess())
                 {
-                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, precomputed));
+                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed));
                 }
                 else
                 {
-                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, precomputed);
+                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed);
                 }
             }
             catch (OperationCanceledException)
@@ -268,14 +289,43 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         FamilyBatchImportStatus newStatus,
         string? newExistingId,
         string? newExistingVersionLabel,
+        string? newExistingCategoryId,
+        string? newExistingCategoryPath,
         PrecomputedImportTriple? precomputed)
     {
         if (row.Status != newStatus)
         {
+            // Setting Status triggers OnStatusChanged which rebuilds
+            // AvailableActions and validates Action. Done BEFORE the
+            // existing-id/category updates so the Action validation
+            // sees the row's previous ExistingCatalogItemId semantics.
             row.Status = newStatus;
         }
         row.ExistingCatalogItemId = newExistingId;
         row.ExistingVersionLabel = newExistingVersionLabel;
+
+        // v2.0.1: pick up the existing item's category automatically
+        // ONLY when the user has not manually picked a category in the
+        // picker (TargetCategoryIsManual == false). If the user picked
+        // manually, leave their choice alone. If the rename flipped the
+        // row back to New and the category was inherited from the
+        // previous existing item, clear it so the import doesn't write
+        // a stale category into the freshly-created row.
+        if (!row.TargetCategoryIsManual)
+        {
+            if (newStatus == FamilyBatchImportStatus.Existing && newExistingId is not null)
+            {
+                row.TargetCategoryId = newExistingCategoryId;
+                row.TargetCategoryPath = !string.IsNullOrWhiteSpace(newExistingCategoryPath)
+                    ? newExistingCategoryPath!
+                    : (LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории");
+            }
+            else
+            {
+                row.TargetCategoryId = null;
+                row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
+            }
+        }
 
         // The precomputer is the only place that knows the
         // version-label math (vN+1) and the managed-path layout — we
@@ -284,11 +334,23 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         // VersionLabel (or vice versa) into the import and trip the
         // UNIQUE constraint on (catalog_item_id, version_label,
         // revit_major_version).
+        //
+        // v2.0.1: if the precomputer returns null (no active DB / path
+        // allocation failed), clear the stale precomputed triple so the
+        // downstream importer does not register a new row under the
+        // OLD name's GUID (which would collide on
+        // UNIQUE constraint failed: catalog_items.id).
         if (precomputed is not null)
         {
             row.PrecomputedCatalogItemId = precomputed.CatalogItemId;
             row.PrecomputedVersionLabel = precomputed.VersionLabel;
             row.PrecomputedManagedPath = precomputed.ManagedPath;
+        }
+        else
+        {
+            row.PrecomputedCatalogItemId = null;
+            row.PrecomputedVersionLabel = null;
+            row.PrecomputedManagedPath = null;
         }
     }
 

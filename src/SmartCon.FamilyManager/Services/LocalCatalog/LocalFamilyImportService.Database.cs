@@ -291,7 +291,6 @@ internal sealed partial class LocalFamilyImportService
         }
 
         var absolutePath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
-        var sourceMetadata = await _metadataService.ExtractAsync(item.FilePath, ct);
         TypeCatalogResolutionResult? catalogResult = null;
 
         try
@@ -326,22 +325,28 @@ internal sealed partial class LocalFamilyImportService
                 WHERE id = @fileId
                 """;
             updateFileCmd.Parameters.Add(new SqliteParameter("@fileId", currentVersion.FileId));
-            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", sourceMetadata.FileName));
+            // v2.0.1: write the user-edited name + ".rfa" to the
+            // family_files.file_name column so a rename in the batch
+            // dialog is reflected in the file_name too. Previously this
+            // was sourceMetadata.FileName (the staged source file),
+            // which could disagree with the catalog row's name after
+            // a rename.
+            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", item.FileName + ".rfa"));
             updateFileCmd.Parameters.Add(new SqliteParameter("@importedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
             await updateFileCmd.ExecuteNonQueryAsync(ct);
 
-            // Update catalog_items.updated_at_utc and optionally category_id + category_name
+            // v2.0.1: always reflect the user-edited FileName in the
+            // catalog row. The original code only updated updated_at_utc
+            // (or category) and left catalog_items.name on its original
+            // value, so a rename + OverwriteCurrent wrote a new file at
+            // the renamed path but the catalog row kept the old name.
+            var normalizedNewName = FamilyNameNormalizer.Normalize(item.FileName);
+            await UpdateCatalogItemWithNameAsync(connection, item.ExistingCatalogItemId!, item.FileName, normalizedNewName, currentVersion.VersionLabel, DateTimeOffset.UtcNow, ct);
+
+            // Update category_id + category_name if the user picked one.
             if (!string.IsNullOrEmpty(item.TargetCategoryId))
             {
                 await UpdateCatalogItemCategoryAsync(connection, item.ExistingCatalogItemId!, item.TargetCategoryId, item.TargetCategoryName, DateTimeOffset.UtcNow, ct);
-            }
-            else
-            {
-                using var updateItemCmd = connection.CreateCommand();
-                updateItemCmd.CommandText = "UPDATE catalog_items SET updated_at_utc = @updatedAtUtc WHERE id = @itemId";
-                updateItemCmd.Parameters.Add(new SqliteParameter("@itemId", item.ExistingCatalogItemId));
-                updateItemCmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
-                await updateItemCmd.ExecuteNonQueryAsync(ct);
             }
 
             tx.Commit();
@@ -363,15 +368,18 @@ internal sealed partial class LocalFamilyImportService
                 ct);
         }
 
-        return new FamilyImportResult(
+return new FamilyImportResult(
             Success: true,
             CatalogItemId: item.ExistingCatalogItemId,
             VersionId: currentVersion.Id,
             FileId: currentVersion.FileId,
-            FileName: sourceMetadata.FileName,
+            // v2.0.1: report the user-edited file name so the UI sees
+            // the renamed file (sourceMetadata.FileName was the staged
+            // source file, not the edited display name).
+            FileName: item.FileName,
             VersionLabel: currentVersion.VersionLabel,
             ErrorMessage: null,
             ManagedFilePath: absolutePath,
             WasNewVersion: false);
-    }
+        }
 }

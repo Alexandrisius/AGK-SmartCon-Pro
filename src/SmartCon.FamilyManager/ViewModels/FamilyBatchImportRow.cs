@@ -99,6 +99,17 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     [ObservableProperty]
     private string _targetCategoryPath = string.Empty;
 
+    /// <summary>
+    /// v2.0.1: tracks whether the user has manually picked a category
+    /// in the picker. <c>false</c> when the category was inherited from
+    /// the dialog-build time lookup (ExistingCatalogItemId.CategoryId),
+    /// <c>true</c> after the picker assigns a value. Used by the rename
+    /// handler to decide whether to clobber the category when the row
+    /// status flips Existing ↔ New.
+    /// </summary>
+    [ObservableProperty]
+    private bool _targetCategoryIsManual;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AvailableActions))]
     private string _fileName = string.Empty;
@@ -170,6 +181,27 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     partial void OnActionChanged(FamilyBatchImportAction value)
     {
         ActionChanged?.Invoke(this, value);
+    }
+
+    partial void OnStatusChanged(FamilyBatchImportStatus value)
+    {
+        // v2.0.1 hotfix: recompute AvailableActions when Status flips so
+        // OverwriteCurrent appears for Existing and disappears for New.
+        // Previously the list was built once in the constructor, so a
+        // rename Existing → New kept OverwriteCurrent (or vice versa).
+        AvailableActions = BuildAvailableActions(value);
+
+        // Validate current Action against the new available set; if the
+        // user previously selected OverwriteCurrent and the row became
+        // New (or the row became Existing but Action was set during New
+        // phase), reset to IncrementVersion. This keeps the combo box
+        // bound to Action from ever holding an invalid value.
+        if (!AvailableActions.Contains(Action))
+        {
+            Action = AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
+                ? FamilyBatchImportAction.IncrementVersion
+                : FamilyBatchImportAction.Skip;
+        }
     }
 
     partial void OnFileNameChanged(string value)
