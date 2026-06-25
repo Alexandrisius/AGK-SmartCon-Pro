@@ -61,7 +61,16 @@ public sealed class SearchHighlightConverter : IMultiValueConverter
             return text;
         }
 
-        var textBlock = new TextBlock { TextWrapping = TextWrapping.NoWrap };
+        // IsHitTestVisible=false lets mouse clicks pass through the TextBlock to the
+        // owning TreeViewItem. Without this, Runs with a non-null Background absorb
+        // hit-test results, so SelectedItem never updates and drag never starts on
+        // search results. The hit-test in TreeViewDragDropBehavior uses the cursor
+        // position instead of SelectedItem, but click-to-select still benefits.
+        var textBlock = new TextBlock
+        {
+            TextWrapping = TextWrapping.NoWrap,
+            IsHitTestVisible = false,
+        };
         AppendHighlightedRuns(textBlock, text, tokens);
         return textBlock;
     }

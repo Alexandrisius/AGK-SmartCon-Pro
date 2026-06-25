@@ -340,4 +340,86 @@ public sealed class FamilyManagerMainRestoreExpandedStateTests
         Assert.False(root.IsExpanded);
         Assert.False(child.IsExpanded);
     }
+
+    [Fact]
+    public void RestoreExpandedFamilies_NullOrEmpty_DoesNotThrowAndChangesNothing()
+    {
+        var leaf = MakeLeaf("a", "Filter");
+        leaf.IsExpanded = true;
+        var roots = new ObservableCollection<CatalogTreeNodeViewModel> { leaf };
+
+        FamilyManagerMainViewModel.RestoreExpandedFamilies(roots, null!);
+        FamilyManagerMainViewModel.RestoreExpandedFamilies(roots, new HashSet<string>());
+
+        Assert.True(leaf.IsExpanded);
+    }
+
+    [Fact]
+    public void RestoreExpandedFamilies_MatchingId_ExpandsLeaf()
+    {
+        var cat = MakeCat("cat", "Cat");
+        var leaf = MakeLeaf("a", "Filter");
+        cat.Children.Add(leaf);
+        cat.AttachCollapseTracking();
+        cat.IsExpanded = true;
+        leaf.IsExpanded = false;
+
+        var roots = new ObservableCollection<CatalogTreeNodeViewModel> { cat };
+
+        FamilyManagerMainViewModel.RestoreExpandedFamilies(roots, new HashSet<string> { "a" });
+
+        Assert.True(leaf.IsExpanded);
+    }
+
+    [Fact]
+    public void RestoreExpandedFamilies_NonMatchingId_LeavesLeafCollapsed()
+    {
+        var leaf = MakeLeaf("a", "Filter");
+        leaf.IsExpanded = false;
+        var roots = new ObservableCollection<CatalogTreeNodeViewModel> { leaf };
+
+        FamilyManagerMainViewModel.RestoreExpandedFamilies(roots, new HashSet<string> { "other" });
+
+        Assert.False(leaf.IsExpanded);
+    }
+
+    [Fact]
+    public void RestoreExpandedFamilies_DeeplyNested_StillFindsLeaf()
+    {
+        var root = MakeCat("root", "Root");
+        var mid = MakeCat("mid", "Mid");
+        var deep = MakeCat("deep", "Deep");
+        var leaf = MakeLeaf("a", "Filter");
+        deep.Children.Add(leaf);
+        mid.Children.Add(deep);
+        root.Children.Add(mid);
+        root.AttachCollapseTracking();
+        leaf.IsExpanded = false;
+
+        var roots = new ObservableCollection<CatalogTreeNodeViewModel> { root };
+
+        FamilyManagerMainViewModel.RestoreExpandedFamilies(roots, new HashSet<string> { "a" });
+
+        Assert.True(leaf.IsExpanded);
+    }
+
+    [Fact]
+    public void RestoreExpandedFamilies_OnlyMatchingLeavesExpanded_OthersCollapsed()
+    {
+        var cat = MakeCat("cat", "Cat");
+        var keep = MakeLeaf("keep", "Keep");
+        var drop = MakeLeaf("drop", "Drop");
+        cat.Children.Add(keep);
+        cat.Children.Add(drop);
+        cat.AttachCollapseTracking();
+        keep.IsExpanded = false;
+        drop.IsExpanded = false;
+
+        var roots = new ObservableCollection<CatalogTreeNodeViewModel> { cat };
+
+        FamilyManagerMainViewModel.RestoreExpandedFamilies(roots, new HashSet<string> { "keep" });
+
+        Assert.True(keep.IsExpanded);
+        Assert.False(drop.IsExpanded);
+    }
 }

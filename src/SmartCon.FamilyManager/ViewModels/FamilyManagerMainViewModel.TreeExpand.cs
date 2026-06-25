@@ -159,4 +159,37 @@ public sealed partial class FamilyManagerMainViewModel
             RestoreExpandedTargeted(child, savedCategoryIds);
         }
     }
+
+    /// <summary>
+    /// Восстанавливает развёрнутость <see cref="FamilyLeafNodeViewModel"/> по сохранённым
+    /// ID. Используется в паре с <see cref="RestoreExpandedState"/> при возврате из поиска:
+    /// после CollapseAll семейства нужно снова развернуть, иначе пользователь потеряет
+    /// раскрытые им узлы с типами. Поиск по дереву рекурсивный, IDs сравниваются через
+    /// <see cref="HashSet{T}.Contains"/>.
+    /// </summary>
+    internal static void RestoreExpandedFamilies(IEnumerable<CatalogTreeNodeViewModel> roots, HashSet<string> savedFamilyIds)
+    {
+        if (savedFamilyIds is null || savedFamilyIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var root in roots)
+        {
+            RestoreExpandedFamiliesRecursive(root, savedFamilyIds);
+        }
+    }
+
+    private static void RestoreExpandedFamiliesRecursive(CatalogTreeNodeViewModel node, HashSet<string> savedFamilyIds)
+    {
+        if (node is FamilyLeafNodeViewModel leaf && savedFamilyIds.Contains(leaf.CatalogItemId))
+        {
+            leaf.IsExpanded = true;
+        }
+
+        foreach (var child in node.Children)
+        {
+            RestoreExpandedFamiliesRecursive(child, savedFamilyIds);
+        }
+    }
 }

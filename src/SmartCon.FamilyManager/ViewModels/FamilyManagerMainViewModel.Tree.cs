@@ -65,8 +65,19 @@ public sealed partial class FamilyManagerMainViewModel
                 }
                 else
                 {
+                    // При DnD категоризации или любом другом перезагрузе без поиска
+                    // saved пуст — берём текущее состояние из TreeNodes чтобы пользователь
+                    // не терял раскрытые категории/семейства после LoadTreeAsync.
                     CollectExpandedIds(TreeNodes, expandedIds, expandedFamilyIds);
                 }
+            }
+            else
+            {
+                // При активном поиске все категории с family items раскрываются принудительно
+                // (expandAll=true в BuildCategoryNode), но семейства по умолчанию свёрнуты.
+                // Здесь собираем только раскрытые семейства, чтобы placement DnD (который
+                // вызывает LoadTreeAsync с тем же SearchText) не сбрасывал состояние пользователя.
+                CollectExpandedIds(TreeNodes, [], expandedFamilyIds);
             }
 
             // Phase 24: stale markers come from the detector snapshot (ADR-030).
@@ -144,17 +155,24 @@ public sealed partial class FamilyManagerMainViewModel
             // коллекции не дёргал WPF лишний раз.
             StripEmptyCategories(rootNodes, expandAll);
 
-            // При очистке поиска принудительно сбрасываем визуальное состояние TreeViewItem'ов
-            // через CollapseAll, затем восстанавливаем сохранённые ID. WPF TreeView с TwoWay
-            // биндингом IsExpanded не сбрасывает визуальное состояние уже отрисованных
-            // TreeViewItem'ов при переприсвоении ItemsSource, поэтому без явного CollapseAll
-            // категории, развёрнутые через expandAll=true, остаются видимыми развёрнутыми
-            // даже после возврата VM.IsExpanded=false. RestoreExpandedState ниже явно
-            // проходит по дереву и разворачивает только сохранённые категории.
-            if (!expandAll)
+            // При возврате из активного поиска принудительно сбрасываем визуальное
+            // состояние TreeViewItem'ов через CollapseAll, затем восстанавливаем
+            // сохранённые категории и семейства. WPF TreeView с TwoWay-биндингом IsExpanded
+            // не сбрасывает визуальное состояние уже отрисованных TreeViewItem'ов при
+            // переприсвоении ItemsSource, поэтому без явного CollapseAll категории,
+            // развёрнутые через expandAll=true, остаются видимыми развёрнутыми даже после
+            // возврата VM.IsExpanded=false.
+            //
+            // ВАЖНО: вызываем ТОЛЬКО при возврате из поиска (_savedExpandedCategoryIds.Count > 0).
+            // При DnD категоризации / placement / Refresh без поиска saved пуст — в этом случае
+            // BuildCategoryNode и AttachTypesToNodes уже установили правильные IsExpanded на
+            // основе expandedIds/expandedFamilyIds (CollectExpandedIds из текущего TreeNodes),
+            // и CollapseAll здесь сломает состояние пользователя (регрессия от #86).
+            if (!expandAll && _savedExpandedCategoryIds.Count > 0)
             {
                 CollapseAll(rootNodes);
                 RestoreExpandedState(rootNodes, _savedExpandedCategoryIds);
+                RestoreExpandedFamilies(rootNodes, _savedExpandedFamilyIds);
                 _savedExpandedCategoryIds.Clear();
                 _savedExpandedFamilyIds.Clear();
             }
