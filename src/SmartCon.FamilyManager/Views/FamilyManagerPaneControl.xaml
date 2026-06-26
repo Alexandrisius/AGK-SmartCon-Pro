@@ -5,6 +5,7 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:fmbehaviors="clr-namespace:SmartCon.FamilyManager.Behaviors"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:selectors="clr-namespace:SmartCon.FamilyManager.Selectors"
@@ -460,22 +461,29 @@
             </Grid>
         </Grid>
 
-        <TreeView Grid.Row="3"
-                  x:Name="CategoryTree"
-                  ItemsSource="{Binding TreeNodes}"
-                  behaviors:TreeViewBehaviors.RightClickSelect="True"
-                  behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
-                  behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
-                  behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
-                  behaviors:TreeViewDragDropBehavior.PlacementDragCommand="{Binding StartPlacementDragCommand}"
-                  behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
-                  behaviors:TreeViewBehaviors.AutoScrollToSelectedItem="True"
-                  behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
-                  Background="Transparent"
-                  BorderBrush="{DynamicResource BorderAltBrush}"
-                  BorderThickness="1"
-                  Padding="2"
-                  AllowDrop="True">
+        <!-- TreeView wrapped in Grid so that the overlay panel can sit on top
+             of it with Panel.ZIndex=1000. Panel.ZIndex is the ONLY reliable
+             way to ensure the sticky overlay is drawn above all TreeViewItems
+             (TranslateTransform on TreeViewItem headers does not promote
+             Z-order relative to sibling TreeViewItems). -->
+        <Grid Grid.Row="3">
+            <TreeView x:Name="CategoryTree"
+                      ItemsSource="{Binding TreeNodes}"
+                      behaviors:TreeViewBehaviors.RightClickSelect="True"
+                      behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
+                      behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
+                      behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
+                      behaviors:TreeViewDragDropBehavior.PlacementDragCommand="{Binding StartPlacementDragCommand}"
+                      behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
+                      behaviors:TreeViewBehaviors.AutoScrollToSelectedItem="True"
+                      behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
+                      fmbehaviors:StickyCategoryHeaderBehavior.Enabled="True"
+                      fmbehaviors:StickyCategoryHeaderBehavior.Overlay="{Binding ElementName=StickyStack}"
+                      Background="Transparent"
+                      BorderBrush="{DynamicResource BorderAltBrush}"
+                      BorderThickness="1"
+                      Padding="2"
+                      AllowDrop="True">
             <i:Interaction.Triggers>
                 <i:EventTrigger EventName="SelectedItemChanged">
                     <i:InvokeCommandAction Command="{Binding TreeViewSelectedItemChangedCommand}"
@@ -745,7 +753,23 @@
             <TreeView.ItemContainerStyleSelector>
                 <StaticResourceExtension ResourceKey="FamilyTreeItemStyleSelector"/>
             </TreeView.ItemContainerStyleSelector>
-        </TreeView>
+            </TreeView>
+
+            <!-- Sticky overlay: Panel.ZIndex="1000" гарантирует что стек прилипших
+                 Category-заголовков рисуется ПОВЕРХ всех TreeViewItem.
+                 StickyOverlay Border IsHitTestVisible=True + Background=Transparent —
+                 вся область sticky перехватывает клики, не пропуская их к TreeViewItem под ней.
+                 PreviewMouseWheel обрабатывается в Behavior и перенаправляется в ScrollViewer,
+                 чтобы скролл не ломался при наведении на sticky-область. -->
+            <Border x:Name="StickyOverlay"
+                    Panel.ZIndex="1000"
+                    IsHitTestVisible="True"
+                    VerticalAlignment="Top"
+                    HorizontalAlignment="Stretch"
+                    Background="Transparent">
+                <StackPanel x:Name="StickyStack" Background="Transparent"/>
+            </Border>
+        </Grid>
 
         <Grid Grid.Row="4" Margin="0,4,0,0">
             <Grid.ColumnDefinitions>
