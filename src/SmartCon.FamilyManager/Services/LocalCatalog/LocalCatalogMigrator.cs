@@ -60,6 +60,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV13Async(connection, ct);
         await MigrateV14Async(connection, ct);
         await MigrateV15Async(connection, ct);
+        await MigrateV16Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -544,6 +545,66 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// v2.1.0 migration v16: add content_hash and hash_format_version
+    /// columns to catalog_items and catalog_versions for content-fingerprint
+    /// deduplication. Additive only — no breaking changes. Idempotent:
+    /// each ALTER TABLE is guarded by a column-existence check.
+    /// </summary>
+    private static async Task MigrateV16Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 16) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "catalog_items", "content_hash", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN content_hash TEXT";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (!await ColumnExistsAsync(connection, "catalog_items", "hash_format_version", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN hash_format_version INTEGER";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "content_hash", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN content_hash TEXT";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "hash_format_version", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN hash_format_version INTEGER";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var idxCmd = connection.CreateCommand();
+            idxCmd.CommandText = FamilyCatalogSql.CreateV16Indexes;
+            await idxCmd.ExecuteNonQueryAsync(ct);
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.CommandText = "UPDATE schema_info SET value = '16' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v16: added content_hash columns and indexes");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -649,6 +710,42 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             idxCmd.CommandText = FamilyCatalogSql.CreateNestedSharedFamiliesIndexes;
             await idxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // v16 content_hash columns — ensure they exist even if migration
+        // sequence was interrupted.
+        if (!await ColumnExistsAsync(connection, "catalog_items", "content_hash", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN content_hash TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "hash_format_version", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN hash_format_version INTEGER";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_versions", "content_hash", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN content_hash TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_versions", "hash_format_version", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN hash_format_version INTEGER";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using (var v16IdxCmd = connection.CreateCommand())
+        {
+            v16IdxCmd.CommandText = FamilyCatalogSql.CreateV16Indexes;
+            await v16IdxCmd.ExecuteNonQueryAsync(ct);
         }
     }
 

@@ -33,6 +33,8 @@ internal static class FamilyCatalogSql
             published_by TEXT,
             family_source TEXT NOT NULL DEFAULT 'loadable',
             revit_category TEXT,
+            content_hash TEXT,
+            hash_format_version INTEGER,
             created_at_utc TEXT NOT NULL,
             updated_at_utc TEXT NOT NULL
         )
@@ -47,6 +49,8 @@ internal static class FamilyCatalogSql
             revit_major_version INTEGER NOT NULL,
             types_count INTEGER,
             parameters_count INTEGER,
+            content_hash TEXT,
+            hash_format_version INTEGER,
             published_at_utc TEXT NOT NULL,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE CASCADE,
@@ -515,5 +519,26 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
         CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
         CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
+        """;
+
+    /// <summary>
+    /// v2.1.0 migration v16: add content_hash and hash_format_version
+    /// columns to catalog_items and catalog_versions for content-fingerprint
+    /// deduplication. Additive only — no breaking changes. Partial indexes
+    /// (WHERE content_hash IS NOT NULL) avoid indexing legacy rows that have
+    /// no hash yet.
+    /// </summary>
+    public const string MigrateV16AddContentHashColumns = """
+        ALTER TABLE catalog_items ADD COLUMN content_hash TEXT;
+        ALTER TABLE catalog_items ADD COLUMN hash_format_version INTEGER;
+        ALTER TABLE catalog_versions ADD COLUMN content_hash TEXT;
+        ALTER TABLE catalog_versions ADD COLUMN hash_format_version INTEGER
+        """;
+
+    public const string CreateV16Indexes = """
+        CREATE INDEX IF NOT EXISTS ix_catalog_items_content_hash
+            ON catalog_items (content_hash) WHERE content_hash IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_catalog_versions_content_hash
+            ON catalog_versions (content_hash) WHERE content_hash IS NOT NULL
         """;
 }
