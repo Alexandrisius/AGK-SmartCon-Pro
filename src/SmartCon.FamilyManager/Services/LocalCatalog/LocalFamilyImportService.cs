@@ -468,7 +468,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         OriginalSourcePath: item.OriginalSourcePath,
                         PrecomputedCatalogItemId: item.PrecomputedCatalogItemId,
                         PrecomputedVersionLabel: item.PrecomputedVersionLabel,
-                        PrecomputedManagedPath: item.PrecomputedManagedPath);
+                        PrecomputedManagedPath: item.PrecomputedManagedPath,
+                        ContentHash: item.ContentHash,
+                        HashFormatVersion: item.HashFormatVersion);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
@@ -498,7 +500,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             FileName: item.FileName,
                             OriginalSourcePath: item.OriginalSourcePath,
                             PrecomputedVersionLabel: item.PrecomputedVersionLabel,
-                            PrecomputedManagedPath: item.PrecomputedManagedPath);
+                            PrecomputedManagedPath: item.PrecomputedManagedPath,
+                            ContentHash: item.ContentHash,
+                            HashFormatVersion: item.HashFormatVersion);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else

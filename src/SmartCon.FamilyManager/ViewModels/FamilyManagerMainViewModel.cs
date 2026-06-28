@@ -59,6 +59,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IClock _clock;
     private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
     private readonly IDispatcher _dispatcher;
+    private readonly FamilyImportPreparationService _preparationService;
+    private readonly IContentHashDedupService _dedupService;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -167,6 +169,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         // WpfDispatcher (DI-registered) is net48-safe and unit-testable.
         _dispatcher = services.Dispatcher;
         SmartConLogger.Debug($"FamilyManagerMainViewModel.ctor: _dispatcher captured");
+        _preparationService = services.PreparationService;
+        _dedupService = services.DedupService;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;

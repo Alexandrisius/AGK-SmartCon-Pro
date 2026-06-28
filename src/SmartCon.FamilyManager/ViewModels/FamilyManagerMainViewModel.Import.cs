@@ -41,16 +41,15 @@ public sealed partial class FamilyManagerMainViewModel
 
     /// <summary>
     /// Shows the batch import dialog for the given file paths.
-    /// v2.0.0: no SHA-256 dedup, no file size — status is computed from
-    /// normalized name only (New / Existing). Runs <c>ImportBatchAsync</c>
-    /// after user confirmation.
+    /// Phase 27: uses FamilyImportPreparationService for unified
+    /// open → extract → hash → dedup in a single pass. Documents are
+    /// held open until the dialog is confirmed or cancelled.
     /// </summary>
     private async Task ShowBatchImportDialogAsync(string[] paths, string? categoryId, string? forcedExistingItemId = null)
     {
         IsLoading = true;
         try
         {
-            var items = new List<FamilyBatchImportItem>();
             string? categoryName = null;
             if (!string.IsNullOrEmpty(categoryId))
             {
@@ -65,61 +64,60 @@ public sealed partial class FamilyManagerMainViewModel
                 }
             }
 
-            foreach (var path in paths)
-            {
-                try
-                {
-                    var metadata = await _metadataService.ExtractAsync(path, CancellationToken.None);
-                    var revitVersion = _fileInfoReader.ReadRevitVersion(path) ?? CurrentRevitVersion;
+            var preparedItems = await _preparationService.PrepareForFileImportAsync(paths, CancellationToken.None);
+            var items = new List<FamilyBatchImportItem>(preparedItems.Count);
 
-                    // v2.0.0: no SHA-256 dedup. Same-name families get a new
-                    // version (vN+1) or OverwriteCurrent if the user picks it.
-                    var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(SafeFileName.GetBaseName(path));
-                    var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
-                    if (existingByName is not null || forcedExistingItemId is not null)
+            foreach (var p in preparedItems)
+            {
+                string? existingCategoryId = null;
+                string? existingCategoryName = null;
+
+                if (p.ExistingCatalogItemId is not null)
+                {
+                    try
                     {
-                        var existingCategoryId = existingByName?.CategoryId;
-                        var existingCategoryName = existingByName?.CategoryPath;
-                        // category_name in DB can be NULL while category_id is set — resolve name from repository
+                        var existingItem = await _catalogProvider.GetItemAsync(p.ExistingCatalogItemId, CancellationToken.None);
+                        existingCategoryId = existingItem?.CategoryId;
+                        existingCategoryName = existingItem?.CategoryPath;
                         if (existingCategoryId is not null && existingCategoryName is null)
                         {
-                            try
-                            {
-                                var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
-                                existingCategoryName = cat?.Name;
-                            }
-                            catch (Exception ex)
-                            {
-                                SmartConLogger.Warn($"Failed to resolve category name for '{existingCategoryId}': {ex.Message} [Action: проверьте, что категория существует в каталоге и БД доступна]");
-                            }
+                            var cat = await _categoryRepository.GetByIdAsync(existingCategoryId, CancellationToken.None);
+                            existingCategoryName = cat?.Name;
                         }
-                        items.Add(new FamilyBatchImportItem(
-                            path, SafeFileName.GetBaseName(path), revitVersion,
-                            FamilyBatchImportStatus.Existing,
-                            forcedExistingItemId ?? existingByName!.Id, existingByName?.CurrentVersionLabel,
-                            existingCategoryId ?? categoryId, existingCategoryName ?? categoryName,
-                            FamilySource: "loadable",
-                            TypeCount: null));
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        items.Add(new FamilyBatchImportItem(
-                            path, SafeFileName.GetBaseName(path), revitVersion,
-                            FamilyBatchImportStatus.New,
-                            null, null, categoryId, categoryName,
-                            FamilySource: "loadable",
-                            TypeCount: null));
+                        SmartConLogger.Warn($"Failed to resolve category for existing item '{p.ExistingCatalogItemId}': {ex.Message} [Action: проверьте, что БД доступна]");
                     }
                 }
-                catch (Exception ex)
+
+                var status = p.ErrorMessage is not null
+                    ? FamilyBatchImportStatus.Error
+                    : p.Status;
+
+                items.Add(new FamilyBatchImportItem(
+                    FilePath: p.SourcePath,
+                    FileName: p.DisplayName,
+                    RevitMajorVersion: p.RevitMajorVersion,
+                    Status: status,
+                    ExistingCatalogItemId: forcedExistingItemId ?? p.ExistingCatalogItemId,
+                    ExistingVersionLabel: p.ExistingVersionLabel,
+                    TargetCategoryId: categoryId ?? existingCategoryId,
+                    TargetCategoryName: categoryName ?? existingCategoryName,
+                    FamilySource: p.FamilySource,
+                    TypeCount: null,
+                    RevitCategory: null,
+                    OriginalSourcePath: null,
+                    SourceTypes: p.SourceTypes,
+                    Source: p.Source,
+                    ContentHash: p.ContentHash?.HexString,
+                    HashFormatVersion: p.ContentHash?.FormatVersion,
+                    MatchedVersionLabel: p.MatchedVersionLabel)
                 {
-                    SmartConLogger.Warn($"Failed to analyze file '{path}': {ex.Message} [Action: проверьте, что файл доступен для чтения и не повреждён]");
-                    items.Add(new FamilyBatchImportItem(
-                        path, SafeFileName.GetBaseName(path), 0,
-                        FamilyBatchImportStatus.Error,
-                        FamilySource: "loadable",
-                        TypeCount: null));
-                }
+                    Action = status == FamilyBatchImportStatus.Duplicate
+                        ? FamilyBatchImportAction.Skip
+                        : FamilyBatchImportAction.IncrementVersion
+                });
             }
 
             using var vm = new FamilyBatchImportViewModel(
@@ -129,9 +127,14 @@ public sealed partial class FamilyManagerMainViewModel
                 categoryId,
                 categoryName,
                 _catalogProvider,
-                importPrecomputer: _importPrecomputer);
+                importPrecomputer: _importPrecomputer,
+                dedupService: _dedupService);
             var result = _dialogService.ShowBatchImportDialog(vm);
-            if (result != true) return;
+            if (result != true)
+            {
+                await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+                return;
+            }
 
             var selectedItems = vm.GetResultItems();
             var progress = new Progress<FamilyImportProgress>(p =>
@@ -142,6 +145,8 @@ public sealed partial class FamilyManagerMainViewModel
             });
 
             var importResult = await _importService.ImportBatchAsync(selectedItems, categoryId, progress, CancellationToken.None);
+
+            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
 
             // Extract types/attributes for successfully imported families
             var successfulItems = importResult.Results.Where(r => r.Success && !r.WasSkipped).ToList();
@@ -156,10 +161,6 @@ public sealed partial class FamilyManagerMainViewModel
                 await LoadTreeAsync();
             }
 
-            // Single LoadTreeAsync: types appear after save via dispatcher.
-            // Double call (before+after) doubled main-thread work in net48 and
-            // caused WPF render thread to fall behind — see ADR-031.
-
             // Auto-clear status after 10 seconds
             FireAndForget(async () =>
             {
@@ -169,6 +170,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
+            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}",
                 ex.Message);
@@ -418,96 +420,127 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task<List<FamilyBatchImportItem>> BuildSelectedElementsBatchItemsAsync(
         SelectedElementsAnalysis analysis)
     {
-        // I-01: SystemFamily isolation (CreateCleanProjectWithTypesAndInstances)
-        // and loadable staging (EditFamily + SaveAs) both touch the Revit API.
-        // They must run on the Revit UI thread. The WPF DockablePane
-        // SynchronizationContext is NOT the Revit UI thread, so we route the
-        // whole build through IFamilyManagerAwaitableEvent, which is bound
-        // to an ExternalEvent
-        // handler. Mirrors the pattern in ExtractTypesForImportedFamilies
-        // and AnalyzeActiveProjectAsync. We use the async overload
-        // (RaiseAsync<Task<List<…>>>) so the caller's await unwraps the
-        // inner task before returning the list.
-        var inner = await _awaitableEvent.RaiseAsync(
-            _ => BuildSelectedElementsBatchItemsCoreAsync(analysis),
-            CancellationToken.None);
-        return await inner;
-    }
-
-    private async Task<List<FamilyBatchImportItem>> BuildSelectedElementsBatchItemsCoreAsync(
-        SelectedElementsAnalysis analysis)
-    {
-        var result = new List<FamilyBatchImportItem>();
         var ct = CancellationToken.None;
 
-        // v2.0.0: this method is now metadata-only — it does NOT call any
-        // Revit-API staging helper. The post-dialog flow (see
-        // ProcessProjectImportAsync) reads FamilyBatchImportItem.Source
-        // and stages the .rvt / .rfa into managed storage AFTER the user
-        // confirms the dialog. This brings the dialog open-time from
-        // 20-30s to <2s for 50+ families, and avoids orphan files when
-        // the user cancels the dialog.
-        //
-        // We can therefore drop ConfigureAwait(true): the orchestrator's
-        // post-dialog work will route its own Revit-API calls through
-        // IFamilyManagerAwaitableEvent.
-        //
-        // Load all categories once and reuse the dictionary for every row
-        // builder. Eliminates an N+1 query pattern (each GetByIdAsync was
-        // doing one targeted SELECT plus one full table scan to build the
-        // FullPath; with 42+ families this turned into ~84 SQL round-trips).
-        // We populate the dictionary with whatever the categories table
-        // currently has — a row's "real" category is identified by
-        // CategoryId, and the dictionary is the single source of truth for
-        // the display label (FullPath). This is the same lookup the
-        // legacy ShowBatchImportDialogAsync used to do via
-        // _categoryRepository.GetByIdAsync, but amortised across the batch.
-        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(false);
-        var categoriesById = allCategories.ToDictionary(c => c.Id);
+        var systemAnalyses = analysis.SystemTypes
+            .GroupBy(s => s.Category)
+            .Select(g => new CategoryAnalysis(
+                g.Key,
+                g.First().CategoryName,
+                g.Select(t => new SystemTypeInfo(t.Name, t.UniqueId)).ToList()))
+            .ToList();
 
-        if (analysis.SystemTypes.Count > 0)
+        var prepared = await _preparationService.PrepareProjectImportAsync(
+            systemAnalyses, analysis.LoadableFamilies, ct);
+
+        return await MapPreparedItemsToBatchItemsAsync(prepared, ct);
+    }
+
+    private async Task<List<FamilyBatchImportItem>> BuildActiveProjectBatchItemsAsync(
+        IReadOnlyList<CategoryAnalysis> systemAnalyses,
+        IReadOnlyList<LoadableFamilyInfo> loadableFamilies)
+    {
+        var ct = CancellationToken.None;
+
+        string? projectNameOverride = null;
+        if (systemAnalyses.Count == 1 && loadableFamilies.Count == 0)
         {
-            var groups = analysis.SystemTypes
-                .GroupBy(s => s.Category)
-                .OrderBy(g => g.Key.ToString(), StringComparer.Ordinal);
-
-            foreach (var group in groups)
+            var activeDoc = _revitContext.GetDocument();
+            if (activeDoc is not null)
             {
-                var category = group.Key;
-                var types = group.ToList();
-                var displayName = types[0].CategoryName;
-
-                var coreTypes = types
-                    .Select(t => new FamilySourceTypeInfo(
-                        t.UniqueId, t.Name, t.CategoryName, (int)t.Category))
-                    .ToList();
-
-                var source = new FamilyImportSource.SystemSource(
-                    DisplayName: displayName,
-                    CategoryId: (int)category,
-                    TypeUniqueIds: types.Select(t => t.UniqueId).ToList(),
-                    TypeNames: types.Select(t => t.Name).ToList());
-
-                var placeholderPath =
-                    $"system://selected-elements/{SafeFileName.GetBaseName(displayName)}";
-
-                var row = await BuildSystemFamilyBatchRowVirtualAsync(
-                    displayName, coreTypes, source, placeholderPath, ct, categoriesById);
-                if (row is not null) result.Add(row);
+                projectNameOverride = ResolveActiveProjectDisplayName(activeDoc);
+                SmartConLogger.Info(
+                    $"[FMImport] Single system category with no loadable families — " +
+                    $"using source file name '{projectNameOverride}' as displayName");
             }
         }
 
-        foreach (var loadable in analysis.LoadableFamilies)
-        {
-            var placeholderPath = $"loadable://{SafeFileName.GetBaseName(loadable.FamilyName)}";
-            var source = new FamilyImportSource.LoadableSource(
-                FamilyName: loadable.FamilyName,
-                FamilyUniqueId: loadable.FamilyUniqueId,
-                CategoryName: loadable.CategoryName);
+        var prepared = await _preparationService.PrepareProjectImportAsync(
+            systemAnalyses, loadableFamilies, ct);
 
-            var row = await BuildLoadableFamilyBatchRowVirtualAsync(
-                loadable, source, placeholderPath, ct, categoriesById);
-            if (row is not null) result.Add(row);
+        if (projectNameOverride is not null && prepared.Count == 1 && prepared[0].FamilySource == "system")
+        {
+            prepared = new List<PreparedFamilyItem>
+            {
+                prepared[0] with
+                {
+                    DisplayName = projectNameOverride,
+                    SourcePath = $"system://{SafeFileName.GetBaseName(projectNameOverride)}"
+                }
+            };
+        }
+
+        return await MapPreparedItemsToBatchItemsAsync(prepared, ct);
+    }
+
+    /// <summary>
+    /// Maps PreparedFamilyItem list to FamilyBatchImportItem list.
+    /// Does precompute triple + category resolution for each item.
+    /// </summary>
+    private async Task<List<FamilyBatchImportItem>> MapPreparedItemsToBatchItemsAsync(
+        IReadOnlyList<PreparedFamilyItem> prepared, CancellationToken ct)
+    {
+        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(false);
+        var categoriesById = allCategories.ToDictionary(c => c.Id);
+
+        var result = new List<FamilyBatchImportItem>(prepared.Count);
+
+        foreach (var p in prepared)
+        {
+            string? existingCategoryId = null;
+            string? existingCategoryName = null;
+
+            if (p.ExistingCatalogItemId is not null)
+            {
+                try
+                {
+                    var existingItem = await _catalogProvider.GetItemAsync(p.ExistingCatalogItemId, ct);
+                    existingCategoryId = existingItem?.CategoryId;
+                    existingCategoryName = existingItem?.CategoryPath;
+                    if (existingCategoryId is not null && existingCategoryName is null && categoriesById.TryGetValue(existingCategoryId, out var cat))
+                        existingCategoryName = cat.FullPath ?? cat.Name;
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn($"Failed to resolve category for existing item '{p.ExistingCatalogItemId}': {ex.Message} [Action: проверьте, что БД доступна]");
+                }
+            }
+
+            var extension = p.FamilySource == "system" ? ".rvt" : ".rfa";
+            var precomputed = await _importPrecomputer
+                .BuildPrecomputedTripleAsync(p.DisplayName, extension, ct)
+                .ConfigureAwait(false);
+
+            var status = p.ErrorMessage is not null
+                ? FamilyBatchImportStatus.Error
+                : p.Status;
+
+            result.Add(new FamilyBatchImportItem(
+                FilePath: p.SourcePath,
+                FileName: p.DisplayName,
+                RevitMajorVersion: p.RevitMajorVersion,
+                Status: status,
+                ExistingCatalogItemId: p.ExistingCatalogItemId,
+                ExistingVersionLabel: p.ExistingVersionLabel,
+                TargetCategoryId: existingCategoryId,
+                TargetCategoryName: existingCategoryName,
+                FamilySource: p.FamilySource,
+                TypeCount: p.SourceTypes?.Count,
+                RevitCategory: null,
+                OriginalSourcePath: null,
+                SourceTypes: p.SourceTypes,
+                Source: p.Source,
+                PrecomputedCatalogItemId: precomputed?.CatalogItemId,
+                PrecomputedVersionLabel: precomputed?.VersionLabel,
+                PrecomputedManagedPath: precomputed?.ManagedPath,
+                ContentHash: p.ContentHash?.HexString,
+                HashFormatVersion: p.ContentHash?.FormatVersion,
+                MatchedVersionLabel: p.MatchedVersionLabel)
+            {
+                Action = status == FamilyBatchImportStatus.Duplicate
+                    ? FamilyBatchImportAction.Skip
+                    : FamilyBatchImportAction.IncrementVersion
+            });
         }
 
         return result;
@@ -548,121 +581,6 @@ public sealed partial class FamilyManagerMainViewModel
         var safeName = SafeFileName.SanitizeFileName(SafeFileName.GetBaseName(familyName));
         if (string.IsNullOrEmpty(safeName)) safeName = "Family";
         return Path.Combine(versionDir, safeName + ".rfa");
-    }
-
-    private async Task<List<FamilyBatchImportItem>> BuildActiveProjectBatchItemsAsync(
-        IReadOnlyList<CategoryAnalysis> systemAnalyses,
-        IReadOnlyList<LoadableFamilyInfo> loadableFamilies)
-    {
-        // I-01: see the matching comment in BuildSelectedElementsBatchItemsAsync.
-        // Route the whole build through IFamilyManagerAwaitableEvent so we keep
-        // a single Revit-aware context for the analysis. The build itself is
-        // now metadata-only — no staging — so the dialog opens in 1-2s even
-        // for 50+ families (previously 20-30s due to per-family
-        // CreateCleanProjectWithTypesAndInstances + StageLoadableFamilyFromProject).
-        var inner = await _awaitableEvent.RaiseAsync(
-            _ => BuildActiveProjectBatchItemsCoreAsync(systemAnalyses, loadableFamilies),
-            CancellationToken.None);
-        return await inner;
-    }
-
-    private async Task<List<FamilyBatchImportItem>> BuildActiveProjectBatchItemsCoreAsync(
-        IReadOnlyList<CategoryAnalysis> systemAnalyses,
-        IReadOnlyList<LoadableFamilyInfo> loadableFamilies)
-    {
-        var result = new List<FamilyBatchImportItem>();
-        var ct = CancellationToken.None;
-
-        // Load all categories once. See BuildSelectedElementsBatchItemsAsync
-        // for the full rationale (N+1 elimination + source-of-truth for the
-        // display label). The build is now metadata-only — we no longer
-        // touch the Revit API for staging, so we can use ConfigureAwait(false)
-        // to release the UI thread between awaits.
-        var allCategories = await _categoryRepository.GetAllAsync(ct).ConfigureAwait(false);
-        var categoriesById = allCategories.ToDictionary(c => c.Id);
-
-        if (systemAnalyses.Count > 0)
-        {
-            // Use project name as displayName ONLY when the project is a "pure" system-family
-            // mini-rvt: exactly one system category and zero loadable families. In that case
-            // the .rvt was likely named after the category (e.g. "Трубы пластиковые.rvt") and
-            // renaming to "Трубы" on every re-import would be annoying. If the project also
-            // has loadable families, fall back to the category DisplayName ("Трубы", "Гибкие
-            // трубы") so the system family is identified by its category, not the project name.
-            //
-            // The project display name is also stored on the placeholder
-            // FilePath (system://<ProjectName>/<Category>) so the post-dialog
-            // flow can read it back when staging.
-            string? projectName = null;
-            if (systemAnalyses.Count == 1 && loadableFamilies.Count == 0)
-            {
-                var activeDoc = _revitContext.GetDocument();
-                if (activeDoc is not null)
-                {
-                    projectName = ResolveActiveProjectDisplayName(activeDoc);
-                    SmartConLogger.Info(
-                        $"[FMImport] Single system category with no loadable families — " +
-                        $"using source file name '{projectName}' as displayName");
-                }
-            }
-            else if (systemAnalyses.Count == 1 && loadableFamilies.Count > 0)
-            {
-                SmartConLogger.Info(
-                    $"[FMImport] Single system category BUT {loadableFamilies.Count} loadable " +
-                    $"families present — using category DisplayName '{systemAnalyses[0].DisplayName}' " +
-                    $"instead of project name to keep identity stable across re-imports");
-            }
-
-            foreach (var analysis in systemAnalyses)
-            {
-                var displayName = projectName ?? analysis.DisplayName;
-                var types = analysis.Types
-                    .Select(t => new SelectedSystemType(
-                        t.UniqueId, t.Name, analysis.DisplayName, analysis.Category))
-                    .ToList();
-
-                // Map SelectedSystemType (Revit-bound) into the Core-level
-                // FamilySourceTypeInfo DTO before crossing the
-                // FamilyManager → Core boundary. Orchestrator and
-                // extractor only ever see the DTO.
-                var coreTypes = types
-                    .Select(t => new FamilySourceTypeInfo(
-                        t.UniqueId, t.Name, t.CategoryName, (int)t.Category))
-                    .ToList();
-
-                var source = new FamilyImportSource.SystemSource(
-                    DisplayName: displayName,
-                    CategoryId: (int)analysis.Category,
-                    TypeUniqueIds: types.Select(t => t.UniqueId).ToList(),
-                    TypeNames: types.Select(t => t.Name).ToList());
-
-                var placeholderPath =
-                    $"system://{(projectName is not null ? SafeFileName.GetBaseName(projectName) : "active-project")}/" +
-                    $"{SafeFileName.GetBaseName(displayName)}";
-
-                var row = await BuildSystemFamilyBatchRowVirtualAsync(
-                    displayName, coreTypes, source, placeholderPath, ct, categoriesById);
-                if (row is not null) result.Add(row);
-            }
-        }
-
-        if (loadableFamilies.Count > 0)
-        {
-            foreach (var loadable in loadableFamilies)
-            {
-                var placeholderPath = $"loadable://{SafeFileName.GetBaseName(loadable.FamilyName)}";
-                var source = new FamilyImportSource.LoadableSource(
-                    FamilyName: loadable.FamilyName,
-                    FamilyUniqueId: loadable.FamilyUniqueId,
-                    CategoryName: loadable.CategoryName);
-
-                var row = await BuildLoadableFamilyBatchRowVirtualAsync(
-                    loadable, source, placeholderPath, ct, categoriesById);
-                if (row is not null) result.Add(row);
-            }
-        }
-
-        return result;
     }
 
     private async Task<FamilyBatchImportItem?> BuildSystemFamilyBatchRowVirtualAsync(
@@ -821,13 +739,44 @@ public sealed partial class FamilyManagerMainViewModel
             PrecomputedManagedPath: precomputed?.ManagedPath);
     }
 
-    private string? StageLoadableFamilyFromProject(LoadableFamilyInfo info, string managedRfaPath)
+    private string? StageLoadableFamilyFromProject(LoadableFamilyInfo info, string managedRfaPath, string? sourcePath = null)
     {
         if (string.IsNullOrEmpty(managedRfaPath))
         {
             throw new ArgumentException(
                 "managedRfaPath is required — caller must compute it via ComputeLoadableFamilyManagedPath",
                 nameof(managedRfaPath));
+        }
+
+        var rfaPath = managedRfaPath;
+        var parent = Path.GetDirectoryName(rfaPath);
+        if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+        if (File.Exists(rfaPath))
+        {
+            File.SetAttributes(rfaPath, File.GetAttributes(rfaPath) & ~FileAttributes.ReadOnly);
+            File.Delete(rfaPath);
+        }
+
+        var heldDoc = sourcePath is not null
+            ? _preparationService.GetOpenedDocument(sourcePath)
+            : null;
+
+        if (heldDoc is not null)
+        {
+            try
+            {
+                heldDoc.SaveAs(rfaPath, new SaveAsOptions { OverwriteExistingFile = true });
+                File.SetAttributes(rfaPath, File.GetAttributes(rfaPath) | FileAttributes.ReadOnly);
+                if (sourcePath is not null) _preparationService.ReleaseDocument(sourcePath);
+                SmartConLogger.Debug($"Staged '{info.FamilyName}' from held doc → '{rfaPath}'");
+                return rfaPath;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"SaveAs from held doc failed for '{info.FamilyName}': {ex.Message} — falling back to EditFamily [Action: проверьте логи Revit]");
+                if (sourcePath is not null) _preparationService.ReleaseDocument(sourcePath);
+            }
         }
 
         var doc = _revitContext.GetDocument();
@@ -856,17 +805,6 @@ public sealed partial class FamilyManagerMainViewModel
                 SmartConLogger.Warn(
                     $"EditFamily returned null/non-family for '{info.FamilyName}' [Action: проверьте, что семейство валидно и не заблокировано другим процессом]");
                 return null;
-            }
-
-            // v2.0.0: caller pre-computed the managed path; SaveAs writes
-            // straight into catalog storage — no transient _stage/ folder.
-            var rfaPath = managedRfaPath;
-            var parent = Path.GetDirectoryName(rfaPath);
-            if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
-            if (File.Exists(rfaPath))
-            {
-                File.SetAttributes(rfaPath, File.GetAttributes(rfaPath) & ~FileAttributes.ReadOnly);
-                File.Delete(rfaPath);
             }
 
             familyDoc.SaveAs(rfaPath, new SaveAsOptions { OverwriteExistingFile = true });

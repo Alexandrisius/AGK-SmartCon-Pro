@@ -212,120 +212,100 @@ public sealed partial class FamilyManagerMainViewModel
         using var _ = SmartConLogger.BeginScope("FMImport",
             ("Method", "ProcessFamilyImportAsync"));
 
-        // Phase 1 — gather metadata from the active document (UI thread).
-        var snapshot = await _awaitableEvent.RaiseAsync<ActiveFamilySnapshot>(obj =>
-        {
-            var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
-            var doc = uiApp.ActiveUIDocument?.Document;
-            if (doc is null || !doc.IsFamilyDocument)
-            {
-                return new ActiveFamilySnapshot(null, string.Empty, 0, null);
-            }
-            var revitVersion = _fileInfoReader.ReadRevitVersion(doc.PathName) ?? CurrentRevitVersion;
-            var baseName = SafeFileName.GetBaseName(
-                string.IsNullOrEmpty(doc.PathName) ? doc.Title : doc.PathName);
-            return new ActiveFamilySnapshot(doc, baseName, revitVersion, doc.PathName);
-        });
+        var prepared = await _preparationService.PrepareActiveFamilyAsync(CancellationToken.None);
 
-        if (snapshot.Document is null)
+        if (prepared.ErrorMessage is not null)
         {
-            SmartConLogger.Warn("No active family document at import time — aborting [Action: откройте .rfa в Revit и повторите команду Импорт активного файла]");
+            StatusMessage = $"Import error: {prepared.ErrorMessage}";
             return;
         }
 
-        var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(snapshot.BaseName);
-        var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, CancellationToken.None);
-
-        var existingCategoryId = existingByName?.CategoryId;
+        string? existingCategoryId = null;
         string? existingCategoryName = null;
-        if (existingCategoryId is not null)
+        if (prepared.ExistingCatalogItemId is not null)
         {
             try
             {
-                var allCategories = await _categoryRepository
-                    .GetAllAsync(CancellationToken.None)
-                    .ConfigureAwait(false);
-                var categoriesById = allCategories.ToDictionary(c => c.Id);
-                if (categoriesById.TryGetValue(existingCategoryId, out var cat) && cat is not null)
+                var existingItem = await _catalogProvider.GetItemAsync(prepared.ExistingCatalogItemId, CancellationToken.None);
+                existingCategoryId = existingItem?.CategoryId;
+                if (existingCategoryId is not null)
                 {
-                    existingCategoryName = cat.FullPath ?? cat.Name;
+                    var allCategories = await _categoryRepository.GetAllAsync(CancellationToken.None);
+                    var categoriesById = allCategories.ToDictionary(c => c.Id);
+                    if (categoriesById.TryGetValue(existingCategoryId, out var cat) && cat is not null)
+                        existingCategoryName = cat.FullPath ?? cat.Name;
                 }
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"Failed to resolve category name: {ex.Message} [Action: проверьте, что категория существует в каталоге и БД каталога доступна для чтения]");
+                SmartConLogger.Warn($"Failed to resolve category: {ex.Message} [Action: проверьте, что БД каталога доступна]");
             }
         }
 
-        // v2.0.0: precompute the canonical (catalogItemId, versionLabel,
-        // managedRfaPath) tuple up front via the shared precomputer —
-        // the SAME service the dialog rename handler uses, so the
-        // initial build and the post-rename re-derivation agree on
-        // every value. The placeholder FilePath is only used for the
-        // dialog preview — the staged path is `PrecomputedManagedPath`.
         var precomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(snapshot.BaseName, ".rfa", CancellationToken.None)
+            .BuildPrecomputedTripleAsync(prepared.DisplayName, ".rfa", CancellationToken.None)
             .ConfigureAwait(false);
         var precomputedCatalogItemId = precomputed?.CatalogItemId ?? Guid.NewGuid().ToString("N");
         var precomputedVersionLabel = precomputed?.VersionLabel ?? "v1";
         var precomputedManagedPath = precomputed?.ManagedPath;
 
-        var placeholderFilePath = snapshot.OriginalPathName ?? $"active://{snapshot.BaseName}";
+        var placeholderFilePath = prepared.SourcePath;
+        var status = prepared.ErrorMessage is not null
+            ? FamilyBatchImportStatus.Error
+            : prepared.Status;
+
         var item = new FamilyBatchImportItem(
             placeholderFilePath,
-            snapshot.BaseName,
-            snapshot.RevitVersion,
-            existingByName is not null ? FamilyBatchImportStatus.Existing : FamilyBatchImportStatus.New,
-            existingByName?.Id,
-            existingByName?.CurrentVersionLabel,
+            prepared.DisplayName,
+            prepared.RevitMajorVersion,
+            status,
+            prepared.ExistingCatalogItemId,
+            prepared.ExistingVersionLabel,
             existingCategoryId,
             existingCategoryName,
             FamilySource: "loadable",
             TypeCount: null,
             RevitCategory: null,
-            OriginalSourcePath: snapshot.OriginalPathName,
+            OriginalSourcePath: prepared.SourcePath,
             SourceTypes: null,
             Source: null,
             PrecomputedCatalogItemId: precomputedCatalogItemId,
             PrecomputedVersionLabel: precomputedVersionLabel,
-            PrecomputedManagedPath: precomputedManagedPath);
+            PrecomputedManagedPath: precomputedManagedPath,
+            ContentHash: prepared.ContentHash?.HexString,
+            HashFormatVersion: prepared.ContentHash?.FormatVersion,
+            MatchedVersionLabel: prepared.MatchedVersionLabel)
+        {
+            Action = status == FamilyBatchImportStatus.Duplicate
+                ? FamilyBatchImportAction.Skip
+                : FamilyBatchImportAction.IncrementVersion
+        };
 
         using var vm = new FamilyBatchImportViewModel(
             new[] { item },
             _dialogService,
             _viewModelFactory,
             catalogProvider: _catalogProvider,
-            importPrecomputer: _importPrecomputer);
+            importPrecomputer: _importPrecomputer,
+            dedupService: _dedupService);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
-            // No cleanup needed — no temp file was created. The active
-            // family document remains open and untouched. (Bug fix: in v1.x
-            // the import flow created a temp file via SaveAs BEFORE the
-            // dialog, so cancelling forced a close on the user's family
-            // document and could discard their edits.)
+            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
             return;
         }
 
         var selectedItems = vm.GetResultItems();
         var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
-        if (toImport.Count == 0) return;
+        if (toImport.Count == 0)
+        {
+            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+            return;
+        }
 
         var importItem = toImport[0];
 
-        // v2.0.1 hotfix: honour the user-edited FileName from the batch
-        // dialog. Previously the import used `snapshot.BaseName` (the
-        // original active document name), so renaming the row in the
-        // dialog was silently ignored — the file landed at the path
-        // computed from the original name and the catalog row was
-        // registered under the original name as well.
         var displayName = importItem.FileName;
 
-        // v2.0.1: re-resolve the canonical (catalogItemId, versionLabel,
-        // managedRfaPath) tuple from the EDITED name. The precomputer
-        // may return null when the active DB is unavailable; in that
-        // case fall back to a fresh GUID + v1 so the import still has
-        // stable values to register (the file will land at a default
-        // path; ImportFileAsync will recompute it).
         var postDialogPrecomputed = await _importPrecomputer
             .BuildPrecomputedTripleAsync(displayName, ".rfa", CancellationToken.None)
             .ConfigureAwait(false);
@@ -341,12 +321,6 @@ public sealed partial class FamilyManagerMainViewModel
             ?? importItem.PrecomputedManagedPath
             ?? precomputedManagedPath;
 
-        // OverwriteCurrent keeps the existing item's current_version_label
-        // (vN) and writes on top of the existing file; anything else uses
-        // the next-version path that BuildPrecomputedTripleAsync already
-        // resolved. We detect OverwriteCurrent from the dialog result,
-        // NOT from `existingByName` (which was computed before the dialog
-        // and may point at a different family now that the user renamed).
         var isOverwrite = importItem.Action == FamilyBatchImportAction.OverwriteCurrent
             && importItem.Status == FamilyBatchImportStatus.Existing
             && importItem.ExistingCatalogItemId is not null
@@ -354,9 +328,6 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (isOverwrite)
         {
-            // Overwrite the file at the existing version label. The
-            // managed path has to be recomputed from the EDITED name
-            // (so the on-disk .rfa matches the catalog row's name).
             resolvedVersionLabel = importItem.ExistingVersionLabel!;
             var overwritePath = _importService.ComputeManagedFilePath(
                 importItem.ExistingCatalogItemId!,
@@ -376,23 +347,10 @@ public sealed partial class FamilyManagerMainViewModel
             return;
         }
 
-        // v2.0.0: ensure the target version directory exists BEFORE
-        // calling Revit SaveAs. The precomputer is pure compute (no
-        // side effects) and does not create directories — that is the
-        // caller's job, and the caller here is the only place that
-        // knows the user has confirmed the dialog so the file will
-        // actually be written. Without this call, SaveAs reports
-        // COleException 0x80030002 (STG_E_PATHNOTFOUND) because
-        // Revit does not create parent directories itself.
-        //
-        // Idempotent — Directory.CreateDirectory returns the existing
-        // directory if it already exists (e.g. vN for OverwriteCurrent
-        // when the user has previously opened the same version).
         _pathResolver.EnsureFamilyDirectories(resolvedCatalogItemId, resolvedVersionLabel);
 
-        // Phase 3 — call SaveAs on the active document on the Revit UI thread.
-        // Read-only managed files: clear before SaveAs (Revit's SaveAs
-        // requires write access on the target).
+        var activeDoc = await _awaitableEvent.RaiseAsync(app => _revitContext.GetDocument(), CancellationToken.None);
+
         var saveAsPath = await _awaitableEvent.RaiseAsync<string?>(obj =>
         {
             try
@@ -403,7 +361,7 @@ public sealed partial class FamilyManagerMainViewModel
                     File.Delete(resolvedManagedPath!);
                 }
 
-                snapshot.Document!.SaveAs(resolvedManagedPath!, new SaveAsOptions { OverwriteExistingFile = true });
+                activeDoc.SaveAs(resolvedManagedPath!, new SaveAsOptions { OverwriteExistingFile = true });
                 File.SetAttributes(resolvedManagedPath!, File.GetAttributes(resolvedManagedPath!) | FileAttributes.ReadOnly);
 
                 return resolvedManagedPath;
@@ -421,21 +379,12 @@ public sealed partial class FamilyManagerMainViewModel
             return;
         }
 
-        // v2.0.1: prefer the category the user picked in the dialog. If
-        // they did not touch the picker, the row VM has already inherited
-        // the existing item's category (see ApplyNameChangeResult); the
-        // pre-dialog `existingCategoryId` fallback remains as a safety
-        // net for the case where the dialog ran without a category
-        // repository wired up.
         var resolvedCategoryId = importItem.TargetCategoryId ?? existingCategoryId;
         var resolvedCategoryName = importItem.TargetCategoryName ?? existingCategoryName;
 
-        // Phase 4 — record the file in the catalog. Reuse ImportFileAsync
-        // with OriginalSourcePath pointing back to the user's original .rfa
-        // (so the .txt Type Catalog sidecar lookup still works).
         var request = new FamilyImportRequest(
             FilePath: saveAsPath!,
-            RevitMajorVersion: snapshot.RevitVersion,
+            RevitMajorVersion: prepared.RevitMajorVersion,
             Category: resolvedCategoryName,
             Tags: null,
             Description: null,
@@ -443,10 +392,12 @@ public sealed partial class FamilyManagerMainViewModel
             FamilySource: "loadable",
             RevitCategory: null,
             FileName: displayName,
-            OriginalSourcePath: snapshot.OriginalPathName,
+            OriginalSourcePath: prepared.SourcePath,
             PrecomputedCatalogItemId: resolvedCatalogItemId,
             PrecomputedVersionLabel: resolvedVersionLabel,
-            PrecomputedManagedPath: saveAsPath);
+            PrecomputedManagedPath: saveAsPath,
+            ContentHash: importItem.ContentHash,
+            HashFormatVersion: importItem.HashFormatVersion);
 
         var progress = new Progress<FamilyImportProgress>(p =>
         {
@@ -470,16 +421,12 @@ public sealed partial class FamilyManagerMainViewModel
         var errors = importResult.Success ? 0 : 1;
         StatusMessage = BuildImportStatusMessage(success, skipped, errors, total);
 
-        // Phase 5 — close the active family document on the Revit UI thread
-        // and return focus to the project (if one was open). The user has
-        // finished with this family — it's now in the catalog, managed as
-        // read-only, and there's no reason to keep it loaded. Pass the
-        // post-SaveAs PathName so we close the right document even when
-        // .SaveAs() switched active focus.
-        if (importResult.Success && snapshot.Document is not null)
+        if (importResult.Success)
         {
             await CloseFamilyDocumentAsync(saveAsPath!);
         }
+
+        await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
     }
 
     /// <summary>
@@ -637,8 +584,13 @@ public sealed partial class FamilyManagerMainViewModel
             defaultCategoryId,
             defaultCategoryName,
             _catalogProvider,
-            importPrecomputer: _importPrecomputer);
-        if (_dialogService.ShowBatchImportDialog(vm) != true) return;
+            importPrecomputer: _importPrecomputer,
+            dedupService: _dedupService);
+        if (_dialogService.ShowBatchImportDialog(vm) != true)
+        {
+            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+            return;
+        }
 
         var selectedItems = vm.GetResultItems();
         var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
@@ -723,6 +675,8 @@ public sealed partial class FamilyManagerMainViewModel
                 LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported) ?? "Импортировано: {0}",
                 totalTypes)
             : "Импорт завершён";
+
+        await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
     }
 
     /// <summary>
@@ -926,7 +880,7 @@ public sealed partial class FamilyManagerMainViewModel
                 string? rfaPath;
                 try
                 {
-                    rfaPath = StageLoadableFamilyFromProject(info, managedRfaPath!);
+                    rfaPath = StageLoadableFamilyFromProject(info, managedRfaPath!, item.FilePath);
                 }
                 catch (Exception ex)
                 {

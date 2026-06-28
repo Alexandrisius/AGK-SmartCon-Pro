@@ -45,6 +45,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// code always passes a real instance.
     /// </summary>
     private readonly IFamilyImportPrecomputer? _importPrecomputer;
+    private readonly IContentHashDedupService? _dedupService;
     private bool _disposed;
     private bool _batchApplying;
 
@@ -67,12 +68,14 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         string? defaultCategoryId = null,
         string? defaultCategoryName = null,
         IFamilyCatalogProvider? catalogProvider = null,
-        IFamilyImportPrecomputer? importPrecomputer = null)
+        IFamilyImportPrecomputer? importPrecomputer = null,
+        IContentHashDedupService? dedupService = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
         _catalogProvider = catalogProvider;
         _importPrecomputer = importPrecomputer;
+        _dedupService = dedupService;
 
         foreach (var item in items)
         {
@@ -200,13 +203,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         _nameChangeCts = cts;
         var token = cts.Token;
 
-        // Capture the row's family source so the precomputer uses the
-        // right extension (.rfa for loadable, .rvt for system) when
-        // re-deriving the managed path. This must be evaluated on the
-        // calling thread (UI) — FamilySource is a plain CLR string and
-        // the row is not safe to read from the ThreadPool after this
-        // method returns.
         var extension = ResolveExtensionForRow(row);
+
+        var rowContentHash = row.PrecomputedContentHash;
+        var rowHashFormatVersion = row.HashFormatVersion;
+        var rowFamilySource = row.FamilySource;
 
         _ = Task.Run(async () =>
         {
@@ -216,6 +217,23 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 if (token.IsCancellationRequested) return;
 
                 var normalized = FamilyNameNormalizer.Normalize(newName);
+
+                FamilyContentHash? contentHash = null;
+                if (rowContentHash is not null && rowHashFormatVersion is not null)
+                {
+                    contentHash = new FamilyContentHash(
+                        rowContentHash, rowHashFormatVersion.Value, rowFamilySource);
+                }
+
+                ContentHashDedupResult? dedupResult = null;
+                if (_dedupService is not null)
+                {
+                    dedupResult = await _dedupService
+                        .CheckAsync(normalized, contentHash, rowFamilySource, token)
+                        .ConfigureAwait(false);
+                    if (token.IsCancellationRequested) return;
+                }
+
                 var existing = _catalogProvider is null
                     ? null
                     : await _catalogProvider
@@ -223,22 +241,16 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                         .ConfigureAwait(false);
                 if (token.IsCancellationRequested) return;
 
-                var newStatus = existing is null
-                    ? FamilyBatchImportStatus.New
-                    : FamilyBatchImportStatus.Existing;
-                var newExistingId = existing?.Id;
-                var newExistingVersionLabel = existing?.CurrentVersionLabel;
-                // v2.0.1: capture the existing item's category so the row
-                // picks it up automatically when the user renames the row
-                // to another existing family's name (and has not manually
-                // picked a category in the picker).
+                var newStatus = dedupResult?.Status
+                    ?? (existing is null
+                        ? FamilyBatchImportStatus.New
+                        : FamilyBatchImportStatus.Existing);
+                var newExistingId = dedupResult?.ExistingCatalogItemId ?? existing?.Id;
+                var newExistingVersionLabel = dedupResult?.ExistingVersionLabel ?? existing?.CurrentVersionLabel;
+                var newMatchedVersionLabel = dedupResult?.HashMatch?.MatchedVersionLabel;
                 var newExistingCategoryId = existing?.CategoryId;
                 var newExistingCategoryPath = existing?.CategoryPath;
 
-                // Re-derive the canonical triple so the post-dialog
-                // import uses the id/path that actually correspond to
-                // the new name. Done here (on the background thread)
-                // because the precomputer may hit the DB.
                 PrecomputedImportTriple? precomputed = null;
                 if (_importPrecomputer is not null)
                 {
@@ -251,16 +263,15 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 var dispatcher = System.Windows.Application.Current?.Dispatcher;
                 if (dispatcher is not null && !dispatcher.CheckAccess())
                 {
-                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed));
+                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel));
                 }
                 else
                 {
-                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed);
+                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel);
                 }
             }
             catch (OperationCanceledException)
             {
-                // Expected on every keystroke after the first.
             }
             catch (Exception ex)
             {
@@ -291,29 +302,20 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         string? newExistingVersionLabel,
         string? newExistingCategoryId,
         string? newExistingCategoryPath,
-        PrecomputedImportTriple? precomputed)
+        PrecomputedImportTriple? precomputed,
+        string? matchedVersionLabel = null)
     {
         if (row.Status != newStatus)
         {
-            // Setting Status triggers OnStatusChanged which rebuilds
-            // AvailableActions and validates Action. Done BEFORE the
-            // existing-id/category updates so the Action validation
-            // sees the row's previous ExistingCatalogItemId semantics.
             row.Status = newStatus;
         }
         row.ExistingCatalogItemId = newExistingId;
         row.ExistingVersionLabel = newExistingVersionLabel;
+        row.MatchedVersionLabel = matchedVersionLabel;
 
-        // v2.0.1: pick up the existing item's category automatically
-        // ONLY when the user has not manually picked a category in the
-        // picker (TargetCategoryIsManual == false). If the user picked
-        // manually, leave their choice alone. If the rename flipped the
-        // row back to New and the category was inherited from the
-        // previous existing item, clear it so the import doesn't write
-        // a stale category into the freshly-created row.
         if (!row.TargetCategoryIsManual)
         {
-            if (newStatus == FamilyBatchImportStatus.Existing && newExistingId is not null)
+            if ((newStatus == FamilyBatchImportStatus.Existing || newStatus == FamilyBatchImportStatus.Duplicate) && newExistingId is not null)
             {
                 row.TargetCategoryId = newExistingCategoryId;
                 row.TargetCategoryPath = !string.IsNullOrWhiteSpace(newExistingCategoryPath)
@@ -327,19 +329,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             }
         }
 
-        // The precomputer is the only place that knows the
-        // version-label math (vN+1) and the managed-path layout — we
-        // must apply its result as a unit, never piecemeal, otherwise
-        // the dialog could carry a new CatalogItemId with the old
-        // VersionLabel (or vice versa) into the import and trip the
-        // UNIQUE constraint on (catalog_item_id, version_label,
-        // revit_major_version).
-        //
-        // v2.0.1: if the precomputer returns null (no active DB / path
-        // allocation failed), clear the stale precomputed triple so the
-        // downstream importer does not register a new row under the
-        // OLD name's GUID (which would collide on
-        // UNIQUE constraint failed: catalog_items.id).
         if (precomputed is not null)
         {
             row.PrecomputedCatalogItemId = precomputed.CatalogItemId;
