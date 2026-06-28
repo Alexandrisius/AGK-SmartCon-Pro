@@ -374,4 +374,215 @@ public class FamilyContentHasherTests
         Assert.NotNull(hash2);
         Assert.NotEqual(hash1.HexString, hash2.HexString);
     }
+
+    [Fact]
+    public void ComputeForSystem_EmptyParameter_DoesNotAffectHash()
+    {
+        var snapshotWithoutEmpty = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)])]);
+        var snapshotWithEmpty = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный",
+            [
+                new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null),
+                new SystemParameterValue("ADSK_Mark", "String", false, null, null, null),
+            ])]);
+
+        var hash1 = _hasher.ComputeForSystem(snapshotWithoutEmpty);
+        var hash2 = _hasher.ComputeForSystem(snapshotWithEmpty);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_AllParametersEmpty_HashStillComputed()
+    {
+        var snapshot = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный",
+            [
+                new SystemParameterValue("Diameter", "Double", false, null, null, null),
+                new SystemParameterValue("ADSK_Mark", "String", false, null, null, null),
+            ])]);
+
+        var result = _hasher.ComputeForSystem(snapshot);
+
+        Assert.NotNull(result);
+        Assert.NotEmpty(result.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_FilledParameterVsEmpty_ReturnsDifferentHash()
+    {
+        var snapshotEmpty = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный",
+            [
+                new SystemParameterValue("ADSK_Mark", "String", false, null, null, null),
+            ])]);
+        var snapshotFilled = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный",
+            [
+                new SystemParameterValue("ADSK_Mark", "String", true, "Vendor1", null, null),
+            ])]);
+
+        var hashEmpty = _hasher.ComputeForSystem(snapshotEmpty);
+        var hashFilled = _hasher.ComputeForSystem(snapshotFilled);
+
+        Assert.NotNull(hashEmpty);
+        Assert.NotNull(hashFilled);
+        Assert.NotEqual(hashEmpty.HexString, hashFilled.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_EmptyParameterValue_DoesNotAffectHash()
+    {
+        var param = new FamilyParameterInfo("Width", "Double", "PG_GEOMETRY", false, false, null, false, false, null, null);
+        var snapshotWithoutEmpty = CreateLoadableSnapshot(
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("DN50", [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)])]);
+        var snapshotWithEmpty = CreateLoadableSnapshot(
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("DN50",
+            [
+                new FamilyParameterValue("Width", "Double", true, "50", 50.0, null),
+                new FamilyParameterValue("Height", "Double", false, null, null, null),
+            ])]);
+
+        var hash1 = _hasher.ComputeForLoadable(snapshotWithoutEmpty);
+        var hash2 = _hasher.ComputeForLoadable(snapshotWithEmpty);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_BlankStringValue_DoesNotAffectHash()
+    {
+        var snapshotWithout = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)])]);
+        var snapshotWith = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный",
+            [
+                new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null),
+                new SystemParameterValue("ADSK_Mark", "String", true, "", null, null),
+            ])]);
+
+        var hash1 = _hasher.ComputeForSystem(snapshotWithout);
+        var hash2 = _hasher.ComputeForSystem(snapshotWith);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_InvalidElementIdValue_DoesNotAffectHash()
+    {
+        var snapshotWithout = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)])]);
+        var snapshotWith = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный",
+            [
+                new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null),
+                new SystemParameterValue("Material", "ElementId", true, "INVALID", null, null),
+            ])]);
+
+        var hash1 = _hasher.ComputeForSystem(snapshotWithout);
+        var hash2 = _hasher.ComputeForSystem(snapshotWith);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_NumericZero_IsMeaningful_AffectsHash()
+    {
+        var snapshotZero = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("IfcCode", "Integer", true, "0", 0.0, null)])]);
+        var snapshotMissing = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный", [])]);
+
+        var hashZero = _hasher.ComputeForSystem(snapshotZero);
+        var hashMissing = _hasher.ComputeForSystem(snapshotMissing);
+
+        Assert.NotNull(hashZero);
+        Assert.NotNull(hashMissing);
+        Assert.NotEqual(hashZero.HexString, hashMissing.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_BlankStringValue_DoesNotAffectHash()
+    {
+        var param = new FamilyParameterInfo("Width", "Double", "PG_GEOMETRY", false, false, null, false, false, null, null);
+        var snapshotWithout = CreateLoadableSnapshot(
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("DN50", [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)])]);
+        var snapshotWith = CreateLoadableSnapshot(
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("DN50",
+            [
+                new FamilyParameterValue("Width", "Double", true, "50", 50.0, null),
+                new FamilyParameterValue("ADSK_Mark", "String", true, "", null, null),
+            ])]);
+
+        var hash1 = _hasher.ComputeForLoadable(snapshotWithout);
+        var hash2 = _hasher.ComputeForLoadable(snapshotWith);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_IfcGUID_DoesNotAffectHash()
+    {
+        var snapshot1 = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный",
+            [
+                new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null),
+                new SystemParameterValue("Код IfcGUID", "String", true, "07pqzDwibFqRrKFG$dg4$g", null, null),
+            ])]);
+        var snapshot2 = CreateSystemSnapshot(
+            types: [new SystemTypeSnapshot("Стандартный",
+            [
+                new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null),
+                new SystemParameterValue("Код IfcGUID", "String", true, "19t75Gyzb19w$H_0FkkXqo", null, null),
+            ])]);
+
+        var hash1 = _hasher.ComputeForSystem(snapshot1);
+        var hash2 = _hasher.ComputeForSystem(snapshot2);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_IfcGUID_DoesNotAffectHash()
+    {
+        var param = new FamilyParameterInfo("Width", "Double", "PG_GEOMETRY", false, false, null, false, false, null, null);
+        var snapshot1 = CreateLoadableSnapshot(
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("DN50",
+            [
+                new FamilyParameterValue("Width", "Double", true, "50", 50.0, null),
+                new FamilyParameterValue("Код IfcGUID", "String", true, "07pqzDwibFqRrKFG$dg4$g", null, null),
+            ])]);
+        var snapshot2 = CreateLoadableSnapshot(
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("DN50",
+            [
+                new FamilyParameterValue("Width", "Double", true, "50", 50.0, null),
+                new FamilyParameterValue("Код IfcGUID", "String", true, "19t75Gyzb19w$H_0FkkXqo", null, null),
+            ])]);
+
+        var hash1 = _hasher.ComputeForLoadable(snapshot1);
+        var hash2 = _hasher.ComputeForLoadable(snapshot2);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
 }

@@ -353,8 +353,6 @@ public sealed class FamilyImportPreparationService
             if (!doc.IsFamilyDocument)
                 throw new InvalidOperationException("File is not a family document");
 
-            doc.Regenerate();
-
             snapshot = await _awaitableEvent
                 .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(doc), ct)
                 .ConfigureAwait(false);
@@ -476,7 +474,6 @@ public sealed class FamilyImportPreparationService
                         throw new InvalidOperationException($"Family '{loadable.FamilyName}' not found by UniqueId");
 
                     familyDoc = activeDoc.EditFamily(family);
-                    familyDoc.Regenerate();
 
                     return _snapshotExtractor.ExtractFromFamilyDocument(familyDoc);
                 }, ct)

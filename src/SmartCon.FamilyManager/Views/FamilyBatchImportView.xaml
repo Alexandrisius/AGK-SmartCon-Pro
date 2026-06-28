@@ -116,11 +116,17 @@
                                         IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
                     <DataGridTextColumn x:Name="ColStatus"
-                                        Binding="{Binding Status, Converter={StaticResource StatusConverter}}"
                                         Width="Auto"
                                         MinWidth="100"
                                         IsReadOnly="True"
-                                        ElementStyle="{StaticResource CenterCell}"/>
+                                        ElementStyle="{StaticResource CenterCell}">
+                        <DataGridTextColumn.Binding>
+                            <MultiBinding Converter="{StaticResource StatusConverter}">
+                                <Binding Path="Status"/>
+                                <Binding Path="MatchedVersionLabel"/>
+                            </MultiBinding>
+                        </DataGridTextColumn.Binding>
+                    </DataGridTextColumn>
                     <DataGridTemplateColumn x:Name="ColCategory"
                                             Width="*"
                                             MinWidth="120">
