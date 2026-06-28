@@ -73,6 +73,29 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     [ObservableProperty]
     private string? _precomputedVersionLabel;
 
+    /// <summary>
+    /// Phase 27: content hash (hex string) computed during Phase 1 Prepare.
+    /// Survives the dialog round-trip so Phase 3 Commit can store it in
+    /// the catalog. Null if hash was not computed (error or legacy).
+    /// </summary>
+    [ObservableProperty]
+    private string? _precomputedContentHash;
+
+    /// <summary>
+    /// Phase 27: hash format version (1 for the current algorithm).
+    /// Survives the dialog round-trip alongside <see cref="PrecomputedContentHash"/>.
+    /// </summary>
+    [ObservableProperty]
+    private int? _hashFormatVersion;
+
+    /// <summary>
+    /// Phase 27: version label that the content hash matched (e.g. "v2").
+    /// Displayed in the dialog as "Duplicate (v2)". Null when status is
+    /// not Duplicate.
+    /// </summary>
+    [ObservableProperty]
+    private string? _matchedVersionLabel;
+
     [ObservableProperty]
     private int? _typeCount;
 
@@ -146,6 +169,9 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _precomputedCatalogItemId = item.PrecomputedCatalogItemId;
         _precomputedVersionLabel = item.PrecomputedVersionLabel;
         _precomputedManagedPath = item.PrecomputedManagedPath;
+        _precomputedContentHash = item.ContentHash;
+        _hashFormatVersion = item.HashFormatVersion;
+        _matchedVersionLabel = item.MatchedVersionLabel;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
         // Display rule for the category cell:
@@ -175,6 +201,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     {
         FamilyBatchImportStatus.New => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.Skip],
         FamilyBatchImportStatus.Existing => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.OverwriteCurrent, FamilyBatchImportAction.Skip],
+        FamilyBatchImportStatus.Duplicate => [FamilyBatchImportAction.Skip, FamilyBatchImportAction.IncrementVersion],
         _ => [FamilyBatchImportAction.Skip]
     };
 
@@ -190,6 +217,15 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         // Previously the list was built once in the constructor, so a
         // rename Existing → New kept OverwriteCurrent (or vice versa).
         AvailableActions = BuildAvailableActions(value);
+
+        // Phase 27: Duplicate defaults to Skip (no point creating a new
+        // version with identical content). User can manually switch to
+        // IncrementVersion if they want to force a new version.
+        if (value == FamilyBatchImportStatus.Duplicate)
+        {
+            Action = FamilyBatchImportAction.Skip;
+            return;
+        }
 
         // Validate current Action against the new available set; if the
         // user previously selected OverwriteCurrent and the row became

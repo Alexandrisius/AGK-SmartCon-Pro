@@ -135,18 +135,24 @@ internal sealed partial class LocalFamilyImportService
     }
 
     private static async Task UpdateCatalogItemWithNameAsync(SqliteConnection connection, string id,
-        string newName, string normalizedName, string versionLabel, DateTimeOffset now, CancellationToken ct)
+        string newName, string normalizedName, string versionLabel, DateTimeOffset now, CancellationToken ct,
+        string? contentHash = null, int? hashFormatVersion = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             UPDATE catalog_items
-            SET name = @name, normalized_name = @normalizedName, current_version_label = @versionLabel, updated_at_utc = @updatedAtUtc
+            SET name = @name, normalized_name = @normalizedName, current_version_label = @versionLabel,
+                content_hash = COALESCE(@contentHash, content_hash),
+                hash_format_version = COALESCE(@hashFmt, hash_format_version),
+                updated_at_utc = @updatedAtUtc
             WHERE id = @id
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@name", newName));
         cmd.Parameters.Add(new SqliteParameter("@normalizedName", normalizedName));
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
+        cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }

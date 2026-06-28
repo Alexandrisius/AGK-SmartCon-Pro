@@ -210,10 +210,12 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 }
                 else
                 {
-                    await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct).ConfigureAwait(false);
+                    await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct,
+                        request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
                 }
 
-                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
+                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
+                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
 
                 if (existingItem is null && request.Tags is not null)
                 {
@@ -664,12 +666,14 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             try
             {
                 await InsertFileRecordAsync(connection, fileRecordId, relativePath, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
-                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct).ConfigureAwait(false);
+                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct,
+                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(request.CategoryId))
                 {
                     await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);
                 }
-                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
+                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
+                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
 
                 tx.Commit();
             }

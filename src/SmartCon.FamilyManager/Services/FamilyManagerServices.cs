@@ -69,4 +69,11 @@ public sealed record FamilyManagerServices(
     /// canonical way to marshal FireAndForget callbacks back to the UI
     /// thread per ADR-031.
     /// </summary>
-    IDispatcher Dispatcher);
+    IDispatcher Dispatcher,
+    /// <summary>
+    /// Phase 27 / Issue #88: content-hash dedup infrastructure.
+    /// </summary>
+    IFamilySnapshotExtractor SnapshotExtractor,
+    IFamilyContentHasher ContentHasher,
+    IContentHashDedupService DedupService,
+    FamilyImportPreparationService PreparationService);

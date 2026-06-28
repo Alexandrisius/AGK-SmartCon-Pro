@@ -498,7 +498,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             Source: r.Source,
             PrecomputedCatalogItemId: r.PrecomputedCatalogItemId,
             PrecomputedVersionLabel: r.PrecomputedVersionLabel,
-            PrecomputedManagedPath: r.PrecomputedManagedPath)
+            PrecomputedManagedPath: r.PrecomputedManagedPath,
+            ContentHash: r.PrecomputedContentHash,
+            HashFormatVersion: r.HashFormatVersion,
+            MatchedVersionLabel: r.MatchedVersionLabel)
         {
             Action = r.Action
         }).ToList();

@@ -215,6 +215,12 @@ public static class ServiceRegistrar
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
 
+        // --- FamilyManager Content Hash Dedup (Phase 27 / Issue #88) ---
+        services.AddSingleton<IFamilySnapshotExtractor, SmartCon.Revit.FamilyManager.RevitFamilySnapshotExtractor>();
+        services.AddSingleton<IFamilyContentHasher, SmartCon.Core.Services.Implementation.FamilyContentHasher>();
+        services.AddSingleton<IContentHashDedupService, SmartCon.FamilyManager.Services.ContentHashDedupService>();
+        services.AddSingleton<SmartCon.FamilyManager.Services.FamilyImportPreparationService>();
+
         // --- FamilyManager Stale Detection (Phase 24 / ADR-030) ---
         services.AddSingleton<IFamilyVersionStore, RevitFamilyVersionStore>();
         services.AddSingleton<IFamilyVersionWriter, FamilyVersionWriter>();
