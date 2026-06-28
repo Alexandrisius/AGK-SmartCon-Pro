@@ -1471,3 +1471,451 @@ internal static void CollapseAll(IEnumerable<CatalogTreeNodeViewModel> roots);
 
 Pure logic, ноль зависимостей от Revit API. Unit-тесты в `src/SmartCon.Tests/FamilyManager/ViewModels/FamilyManagerMainExpandCollapseTests.cs` (12 кейсов, включая реактивное обновление `IsAnyDescendantCollapsed`).
 
+
+---
+
+## FamilyContentHash
+
+Semantic content fingerprint of a family. Stable across SaveAs, rename, Revit upgrade. Changes when any parameter, type, value, geometry or formula changes. v2.0.0 dedup core.
+
+**Файл:** Models/FamilyManager/FamilyContentHash.cs
+
+`csharp
+public sealed record FamilyContentHash(
+    string HexString,
+    int FormatVersion,
+    string SourceKind);
+
+public static class FamilyContentHashFormat
+{
+    public const int CurrentVersion = 1;
+}
+`
+
+- HexString — SHA-256 hex string (uppercase, no dashes).
+- FormatVersion — algorithm version, bumped when canonical-string format changes so old hashes do not produce false duplicate matches against new ones.
+- SourceKind — "loadable" or "system". Used to enforce cross-source separation (system hashes never match loadable hashes and vice versa).
+- FamilyContentHashFormat.CurrentVersion — current format version (= 1). Old rows with a lower FormatVersion will not produce false duplicate matches against newly computed hashes.
+
+---
+
+## FamilySnapshot
+
+Structured snapshot of a loadable family (.rfa) used to compute a FamilyContentHash. Extracted in-memory from an open family document — never from file bytes — so it is stable across SaveAs, rename, and Revit upgrade.
+
+**Файл:** Models/FamilyManager/FamilySnapshot.cs
+
+`csharp
+public sealed record FamilySnapshot(
+    string FamilyName,
+    string Category,
+    IReadOnlyList<FamilyParameterInfo> Parameters,
+    IReadOnlyList<FamilyTypeSnapshot> Types,
+    GeometryMetrics Geometry,
+    IReadOnlyList<string> SharedNestedFamilyNames);
+
+public sealed record FamilyParameterInfo(
+    string Name,
+    string StorageType,
+    string ParameterGroup,
+    bool IsInstance,
+    bool IsShared,
+    string? Formula,
+    bool IsDeterminedByFormula,
+    bool IsReporting,
+    string? SharedParamGuid,
+    string? BuiltInParameterId);
+
+public sealed record FamilyTypeSnapshot(
+    string Name,
+    IReadOnlyList<FamilyParameterValue> Values);
+
+public sealed record FamilyParameterValue(
+    string ParameterName,
+    string StorageType,
+    bool HasValue,
+    string? ValueText,
+    double? ValueNumber,
+    string? ResolvedElementName);
+`
+
+- FamilyName — from FamilyManager or family document title.
+- Category — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
+- Parameters — all schema-level parameters, sorted by name. Includes SharedParamGuid for shared params and BuiltInParameterId enum name for built-ins (null for user/shared).
+- Types — all family types with their values. Unnamed types skipped.
+- Geometry — aggregated GeometryMetrics from all GenericForm elements.
+- SharedNestedFamilyNames — names of shared nested families (ADR-034), sorted.
+- FamilyParameterValue.HasValue distinguishes "no value" (alse) from "value is zero" (	rue, ValueNumber=0) — hash treats them differently.
+
+---
+
+## SystemFamilySnapshot
+
+Structured snapshot of a system family (category + types) inside a project (.rvt). Used to compute a FamilyContentHash for system families. Extracted in-memory from the active project document.
+
+**Файл:** Models/FamilyManager/SystemFamilySnapshot.cs
+
+`csharp
+public sealed record SystemFamilySnapshot(
+    string CategoryName,
+    int CategoryId,
+    IReadOnlyList<SystemTypeSnapshot> Types);
+
+public sealed record SystemTypeSnapshot(
+    string Name,
+    IReadOnlyList<SystemParameterValue> Values);
+
+public sealed record SystemParameterValue(
+    string ParameterName,
+    string StorageType,
+    bool HasValue,
+    string? ValueText,
+    double? ValueNumber,
+    string? ResolvedElementName);
+`
+
+- CategoryName — display name (e.g. "Трубы", "Воздуховоды").
+- CategoryId — numeric BuiltInCategory ordinal carried as int so Core does not depend on Autodesk.Revit.DB (I-09).
+- Types — selected system types with values, sorted by type name.
+- SystemParameterValue — same semantics as FamilyParameterValue — distinguishes "no value" from "zero".
+
+**v2.0.0 hash stability:** the hasher skips blank values (HasValue=false, empty string, INVALID, UNSUPPORTED, READERROR) so the empty ADSK_Завод-изготовитель parameter does not contribute to the hash. The hasher also skips the auto-generated Код IfcGUID parameter (different per .rvt save).
+
+---
+
+## GeometryMetrics
+
+Aggregated geometry metrics for a loadable family document. Used as part of the content fingerprint so that adding/removing a form, or changing an extrusion depth, shifts the hash.
+
+**Файл:** Models/FamilyManager/GeometryMetrics.cs
+
+`csharp
+public sealed record GeometryMetrics(
+    int TotalFormCount,
+    IReadOnlyList<FormMetrics> Forms);
+
+public sealed record FormMetrics(
+    string FormKind,
+    bool IsSolid,
+    double Volume,
+    int FaceCount,
+    int EdgeCount,
+    string? SubcategoryName);
+`
+
+- TotalFormCount — number of GenericForm elements (extrusions, sweeps, revolutions, blends, free-form).
+- Forms — per-form metrics sorted by (FormKind, IsSolid, Volume) for deterministic output.
+- Volume — total volume of all solids in Revit internal units (cubic feet), 6-decimal precision so a 1 mm change shifts the value.
+- FaceCount / EdgeCount — totals across all solids, or 0 if geometry could not be extracted (known bug for shared nested families).
+- FormKind — "Extrusion", "Sweep", "Revolution", "Blend", "SweptBlend", or "GenericForm" for free-form.
+
+---
+
+## ContentHashMatch
+
+Result of a cross-version content-hash search. Returned when a content hash matches a version (current or archived) of a catalog item. Used to display "Дубликат (vN)" in the batch dialog.
+
+**Файл:** Models/FamilyManager/ContentHashMatch.cs
+
+`csharp
+public sealed record ContentHashMatch(
+    string CatalogItemId,
+    string MatchedVersionLabel,
+    bool IsCurrentVersion);
+`
+
+- CatalogItemId — ID of the catalog item whose version matched.
+- MatchedVersionLabel — label of the matching version (e.g. "v2").
+- IsCurrentVersion — 	rue if matched is current version; alse if archived (e.g. after rollback).
+
+---
+
+## ContentHashDedupResult
+
+Result of the content-hash dedup check for a single batch-import row. Combines the name-based lookup with the cross-version hash search to produce the final FamilyBatchImportStatus.
+
+**Файл:** Models/FamilyManager/ContentHashDedupResult.cs
+
+`csharp
+public sealed record ContentHashDedupResult(
+    FamilyBatchImportStatus Status,
+    string? ExistingCatalogItemId,
+    string? ExistingVersionLabel,
+    ContentHashMatch? HashMatch);
+`
+
+- Status — final status: New, Existing, Duplicate, or Error.
+- ExistingCatalogItemId — ID of the existing item found by normalized name, or 
+ull.
+- ExistingVersionLabel — current version label of the existing item, or 
+ull.
+- HashMatch — cross-version hash match details if Status == Duplicate; otherwise 
+ull.
+
+---
+
+## PreparedFamilyItem
+
+Result of Phase 1 (Prepare) of the unified import flow. Contains everything the batch dialog needs to display a row and everything Phase 3 (Commit) needs to write to the catalog — extracted in a single pass from one opened document, without re-opening.
+
+**Файл:** Models/FamilyManager/PreparedFamilyItem.cs
+
+`csharp
+public sealed record PreparedFamilyItem(
+    string SourcePath,
+    string DisplayName,
+    int RevitMajorVersion,
+    FamilyContentHash? ContentHash,
+    FamilySnapshot? LoadableSnapshot,
+    SystemFamilySnapshot? SystemSnapshot,
+    string? ErrorMessage,
+    FamilyImportSource? Source,
+    IReadOnlyList<FamilySourceTypeInfo>? SourceTypes,
+    string FamilySource,
+    FamilyBatchImportStatus Status = FamilyBatchImportStatus.New,
+    string? ExistingCatalogItemId = null,
+    string? ExistingVersionLabel = null,
+    string? MatchedVersionLabel = null);
+`
+
+- SourcePath — file path for UC-1, virtual placeholder for UC-3/UC-4 ("system://...", "loadable://...").
+- ContentHash — computed hash, or 
+ull if extraction failed (see ErrorMessage).
+- LoadableSnapshot / SystemSnapshot — one is set, the other is 
+ull depending on FamilySource.
+- Source — v2.0.0 source payload for UC-3/UC-4 post-dialog staging; 
+ull for UC-1/UC-2.
+- MatchedVersionLabel — set when Status == Duplicate so the UI can show "Дубликат (v2)".
+---
+
+## FamilyContentHash
+
+Semantic content fingerprint of a family. Stable across SaveAs, rename, Revit upgrade. Changes when any parameter, type, value, geometry or formula changes. v2.0.0 dedup core.
+
+**Файл:** `Models/FamilyManager/FamilyContentHash.cs`
+
+```csharp
+public sealed record FamilyContentHash(
+    string HexString,
+    int FormatVersion,
+    string SourceKind);
+
+public static class FamilyContentHashFormat
+{
+    public const int CurrentVersion = 1;
+}
+```
+
+- `HexString` — SHA-256 hex string (uppercase, no dashes).
+- `FormatVersion` — algorithm version, bumped when canonical-string format changes so old hashes do not produce false duplicate matches against new ones.
+- `SourceKind` — `"loadable"` or `"system"`. Used to enforce cross-source separation (system hashes never match loadable hashes and vice versa).
+- `FamilyContentHashFormat.CurrentVersion` — current format version (= 1). Old rows with a lower `FormatVersion` will not produce false duplicate matches against newly computed hashes.
+
+---
+
+## FamilySnapshot
+
+Structured snapshot of a loadable family (.rfa) used to compute a `FamilyContentHash`. Extracted in-memory from an open family document — never from file bytes — so it is stable across SaveAs, rename, and Revit upgrade.
+
+**Файл:** `Models/FamilyManager/FamilySnapshot.cs`
+
+```csharp
+public sealed record FamilySnapshot(
+    string FamilyName,
+    string Category,
+    IReadOnlyList<FamilyParameterInfo> Parameters,
+    IReadOnlyList<FamilyTypeSnapshot> Types,
+    GeometryMetrics Geometry,
+    IReadOnlyList<string> SharedNestedFamilyNames);
+
+public sealed record FamilyParameterInfo(
+    string Name,
+    string StorageType,
+    string ParameterGroup,
+    bool IsInstance,
+    bool IsShared,
+    string? Formula,
+    bool IsDeterminedByFormula,
+    bool IsReporting,
+    string? SharedParamGuid,
+    string? BuiltInParameterId);
+
+public sealed record FamilyTypeSnapshot(
+    string Name,
+    IReadOnlyList<FamilyParameterValue> Values);
+
+public sealed record FamilyParameterValue(
+    string ParameterName,
+    string StorageType,
+    bool HasValue,
+    string? ValueText,
+    double? ValueNumber,
+    string? ResolvedElementName);
+```
+
+- `FamilyName` — from `FamilyManager` or family document title.
+- `Category` — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
+- `Parameters` — all schema-level parameters, sorted by name. Includes `SharedParamGuid` for shared params and `BuiltInParameterId` enum name for built-ins (null for user/shared).
+- `Types` — all family types with their values. Unnamed types skipped.
+- `Geometry` — aggregated `GeometryMetrics` from all `GenericForm` elements.
+- `SharedNestedFamilyNames` — names of shared nested families (ADR-034), sorted.
+- `FamilyParameterValue.HasValue` distinguishes "no value" (`false`) from "value is zero" (`true`, `ValueNumber=0`) — hash treats them differently.
+
+---
+
+## SystemFamilySnapshot
+
+Structured snapshot of a system family (category + types) inside a project (.rvt). Used to compute a `FamilyContentHash` for system families. Extracted in-memory from the active project document.
+
+**Файл:** `Models/FamilyManager/SystemFamilySnapshot.cs`
+
+```csharp
+public sealed record SystemFamilySnapshot(
+    string CategoryName,
+    int CategoryId,
+    IReadOnlyList<SystemTypeSnapshot> Types);
+
+public sealed record SystemTypeSnapshot(
+    string Name,
+    IReadOnlyList<SystemParameterValue> Values);
+
+public sealed record SystemParameterValue(
+    string ParameterName,
+    string StorageType,
+    bool HasValue,
+    string? ValueText,
+    double? ValueNumber,
+    string? ResolvedElementName);
+```
+
+- `CategoryName` — display name (e.g. "Трубы", "Воздуховоды").
+- `CategoryId` — numeric `BuiltInCategory` ordinal carried as `int` so Core does not depend on `Autodesk.Revit.DB` (I-09).
+- `Types` — selected system types with values, sorted by type name.
+- `SystemParameterValue` — same semantics as `FamilyParameterValue` — distinguishes "no value" from "zero".
+
+**v2.0.0 hash stability:** the hasher skips blank values (`HasValue=false`, empty string, `INVALID`, `UNSUPPORTED`, `READERROR`) so the empty `ADSK_Завод-изготовитель` parameter does not contribute to the hash. The hasher also skips the auto-generated `Код IfcGUID` parameter (different per `.rvt` save).
+
+---
+
+## GeometryMetrics
+
+Aggregated geometry metrics for a loadable family document. Used as part of the content fingerprint so that adding/removing a form, or changing an extrusion depth, shifts the hash.
+
+**Файл:** `Models/FamilyManager/GeometryMetrics.cs`
+
+```csharp
+public sealed record GeometryMetrics(
+    int TotalFormCount,
+    IReadOnlyList<FormMetrics> Forms);
+
+public sealed record FormMetrics(
+    string FormKind,
+    bool IsSolid,
+    double Volume,
+    int FaceCount,
+    int EdgeCount,
+    string? SubcategoryName);
+```
+
+- `TotalFormCount` — number of `GenericForm` elements (extrusions, sweeps, revolutions, blends, free-form).
+- `Forms` — per-form metrics sorted by `(FormKind, IsSolid, Volume)` for deterministic output.
+- `Volume` — total volume of all solids in Revit internal units (cubic feet), 6-decimal precision so a 1 mm change shifts the value.
+- `FaceCount` / `EdgeCount` — totals across all solids, or 0 if geometry could not be extracted (known bug for shared nested families).
+- `FormKind` — `"Extrusion"`, `"Sweep"`, `"Revolution"`, `"Blend"`, `"SweptBlend"`, or `"GenericForm"` for free-form.
+
+---
+
+## ContentHashMatch
+
+Result of a cross-version content-hash search. Returned when a content hash matches a version (current or archived) of a catalog item. Used to display "Дубликат (vN)" in the batch dialog.
+
+**Файл:** `Models/FamilyManager/ContentHashMatch.cs`
+
+```csharp
+public sealed record ContentHashMatch(
+    string CatalogItemId,
+    string MatchedVersionLabel,
+    bool IsCurrentVersion);
+```
+
+- `CatalogItemId` — ID of the catalog item whose version matched.
+- `MatchedVersionLabel` — label of the matching version (e.g. `"v2"`).
+- `IsCurrentVersion` — `true` if matched is current version; `false` if archived (e.g. after rollback).
+
+---
+
+## ContentHashDedupResult
+
+Result of the content-hash dedup check for a single batch-import row. Combines the name-based lookup with the cross-version hash search to produce the final `FamilyBatchImportStatus`.
+
+**Файл:** `Models/FamilyManager/ContentHashDedupResult.cs`
+
+```csharp
+public sealed record ContentHashDedupResult(
+    FamilyBatchImportStatus Status,
+    string? ExistingCatalogItemId,
+    string? ExistingVersionLabel,
+    ContentHashMatch? HashMatch);
+```
+
+- `Status` — final status: `New`, `Existing`, `Duplicate`, or `Error`.
+- `ExistingCatalogItemId` — ID of the existing item found by normalized name, or `null`.
+- `ExistingVersionLabel` — current version label of the existing item, or `null`.
+- `HashMatch` — cross-version hash match details if `Status == Duplicate`; otherwise `null`.
+
+---
+
+## PreparedFamilyItem
+
+Result of Phase 1 (Prepare) of the unified import flow. Contains everything the batch dialog needs to display a row and everything Phase 3 (Commit) needs to write to the catalog — extracted in a single pass from one opened document, without re-opening.
+
+**Файл:** `Models/FamilyManager/PreparedFamilyItem.cs`
+
+```csharp
+public sealed record PreparedFamilyItem(
+    string SourcePath,
+    string DisplayName,
+    int RevitMajorVersion,
+    FamilyContentHash? ContentHash,
+    FamilySnapshot? LoadableSnapshot,
+    SystemFamilySnapshot? SystemSnapshot,
+    string? ErrorMessage,
+    FamilyImportSource? Source,
+    IReadOnlyList<FamilySourceTypeInfo>? SourceTypes,
+    string FamilySource,
+    FamilyBatchImportStatus Status = FamilyBatchImportStatus.New,
+    string? ExistingCatalogItemId = null,
+    string? ExistingVersionLabel = null,
+    string? MatchedVersionLabel = null);
+```
+
+- `SourcePath` — file path for UC-1, virtual placeholder for UC-3/UC-4 (`"system://..."`, `"loadable://..."`).
+- `ContentHash` — computed hash, or `null` if extraction failed (see `ErrorMessage`).
+- `LoadableSnapshot` / `SystemSnapshot` — one is set, the other is `null` depending on `FamilySource`.
+- `Source` — v2.0.0 source payload for UC-3/UC-4 post-dialog staging; `null` for UC-1/UC-2.
+- `MatchedVersionLabel` — set when `Status == Duplicate` so the UI can show "Дубликат (v2)".
+
+---
+
+## FamilyContentHasher
+
+Pure-C# implementation of IFamilyContentHasher. No Revit API calls — entirely deterministic. Computes SHA-256 of a sorted canonical string built from the snapshot data. Lives in SmartCon.Core/Services/Implementation/; the IFamilyContentHasher contract is in docs/domain/interfaces/family-manager.md.
+
+**Файл:** Services/Implementation/FamilyContentHasher.cs
+
+`csharp
+public sealed class FamilyContentHasher : IFamilyContentHasher
+{
+    public FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot);
+    public FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot);
+}
+`
+
+**Canonical string layout:**
+- FHV1|LOADABLE|{name}|{cat}|PARAMS|...|TYPES|...|GEOM|...|NESTED|... (loadable)
+- FHV1|SYSTEM|{catName}|{catId}|TYPES|... (system)
+
+**v2.0.0 stability rules:**
+- Blank values excluded (IsBlankValue(hasValue, text)): HasValue=false, empty string, INVALID (no element), UNSUPPORTED, READERROR. Numeric zero is NOT blank.
+- Auto-generated parameters excluded (IsAutoGeneratedParameter(name)): anything containing IfcGUID or IFC GUID (case-insensitive). Revit regenerates these on every .rvt save — including them would break cross-document stability.
+- 10 unit tests in src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs cover blank-value exclusion, INVALID exclusion, numeric zero significance, IFC GUID exclusion, loadable-family blank values, parameter/type/geometry/SharedNested independence, and cross-source prefix separation.

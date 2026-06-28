@@ -858,3 +858,76 @@ public interface IFamilyImportPrecomputer
 
 `OnRowNameChanged` дополнительно оборачивает вызов в `Task.Delay(250 ms)` debouncer, чтобы DB-lookup не срабатывал на каждое нажатие клавиши. Cancellation token отменяет предыдущий pending-вызов при следующем нажатии.
 
+---
+
+## IFamilySnapshotExtractor
+
+Extracts structured snapshots from open Revit documents for content-hash computation. All methods must be called on the Revit UI thread (I-01) — the caller is responsible for marshalling via `IFamilyManagerAwaitableEvent.RaiseAsync`.
+
+**Файл:** `Services/Interfaces/IFamilySnapshotExtractor.cs`
+
+```csharp
+public interface IFamilySnapshotExtractor
+{
+    FamilySnapshot ExtractFromFamilyDocument(Document familyDoc);
+    SystemFamilySnapshot ExtractFromProject(
+        Document projectDoc,
+        IReadOnlyList<string> typeUniqueIds,
+        BuiltInCategory builtInCategory);
+}
+```
+
+- `ExtractFromFamilyDocument` — extracts a `FamilySnapshot` (parameters, types, values, geometry, shared nested names) from an open family document. The document must be a family document (`IsFamilyDocument == true`).
+- `ExtractFromProject` — extracts a `SystemFamilySnapshot` (category + types + parameter values) from an open project document.
+
+**Caller contract:** the active document may be the source project or a managed-storage mini-rvt (after `EditFamily` + `SaveAs`). The extracted hash is stable across both because it is based on in-memory content, not file bytes.
+
+---
+
+## IFamilyContentHasher
+
+Computes a stable `FamilyContentHash` from a snapshot. Pure C# — no Revit API calls. The hash is a SHA-256 of a canonical string built from the snapshot data. Stable across SaveAs, rename, and Revit upgrade because it is based on in-memory content, not file bytes.
+
+**Файл:** `Services/Interfaces/IFamilyContentHasher.cs`
+
+```csharp
+public interface IFamilyContentHasher
+{
+    FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot);
+    FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot);
+}
+```
+
+- `ComputeForLoadable` — returns `null` if the snapshot is null or empty (no parameters, no types, no geometry).
+- `ComputeForSystem` — returns `null` if the snapshot is null or has no types.
+
+**v2.0.0 stability rules:**
+- Blank parameter values are excluded from the canonical string (`HasValue=false`, empty string, `INVALID`, `UNSUPPORTED`, `READERROR`). Numeric zero is meaningful (e.g. IFC=0).
+- The auto-generated `Код IfcGUID` parameter is excluded because Revit regenerates it on every `.rvt` save — including it would make identical content produce different hashes across source project and mini-rvt.
+- Parameter values are sorted by parameter name for deterministic output.
+
+---
+
+## IContentHashDedupService
+
+Content-hash dedup service. Combines the name-based lookup with the cross-version hash search to produce the final `FamilyBatchImportStatus` for a batch-import row.
+
+**Файл:** `Services/Interfaces/IContentHashDedupService.cs`
+
+```csharp
+public interface IContentHashDedupService
+{
+    Task<ContentHashDedupResult> CheckAsync(
+        string normalizedName,
+        FamilyContentHash? contentHash,
+        string familySource,
+        CancellationToken ct = default);
+}
+```
+
+**Business rules (from the business plan):**
+- If the normalized name is NOT in the catalog → `New` (hash is not checked — dedup only applies when names match).
+- If the name matches but no hash is available → `Existing` (fallback to name-only dedup).
+- If the name matches and the hash matches any version (current or archived) → `Duplicate` (returns `HashMatch` with the matched version).
+- If the name matches but the hash does not match any version → `Existing`.
+- Cross-source separation: `"loadable"` hashes are never compared against `"system"` hashes and vice versa.
