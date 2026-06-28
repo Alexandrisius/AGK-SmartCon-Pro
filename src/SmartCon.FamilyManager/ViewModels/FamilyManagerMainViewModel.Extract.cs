@@ -73,8 +73,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (sharedNames is null || sharedNames.Count == 0)
         {
             SmartConLogger.Debug(
-                $"SaveSharedNestedNames: skipped (no shared-nested names extracted for '{catalogItemId}', " +
-                "v={versionId})");
+                $"SaveSharedNestedNames: skipped (no shared-nested names extracted for CatalogItemId={catalogItemId}, VersionId={versionId})");
             return;
         }
 
