@@ -279,6 +279,7 @@ public static partial class LocalizationService
         ru["FM_BatchImport_Action"] = "Действие"; en["FM_BatchImport_Action"] = "Action";
         ru["FM_BatchImport_StatusNew"] = "Новое"; en["FM_BatchImport_StatusNew"] = "New";
         ru["FM_BatchImport_StatusExisting"] = "Существующее"; en["FM_BatchImport_StatusExisting"] = "Existing";
+        ru["FM_BatchImport_StatusDuplicate"] = "Дубликат"; en["FM_BatchImport_StatusDuplicate"] = "Duplicate";
         ru["FM_BatchImport_StatusError"] = "Ошибка"; en["FM_BatchImport_StatusError"] = "Error";
         ru["FM_BatchImport_ActionIncrement"] = "Новая версия"; en["FM_BatchImport_ActionIncrement"] = "New Version";
         ru["FM_BatchImport_ActionOverwrite"] = "Перезаписать текущую"; en["FM_BatchImport_ActionOverwrite"] = "Overwrite Current";

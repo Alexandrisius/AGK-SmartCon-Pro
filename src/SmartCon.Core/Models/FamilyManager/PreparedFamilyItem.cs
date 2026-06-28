@@ -39,4 +39,8 @@ public sealed record PreparedFamilyItem(
     string? ErrorMessage,
     FamilyImportSource? Source,
     IReadOnlyList<FamilySourceTypeInfo>? SourceTypes,
-    string FamilySource);
+    string FamilySource,
+    FamilyBatchImportStatus Status = FamilyBatchImportStatus.New,
+    string? ExistingCatalogItemId = null,
+    string? ExistingVersionLabel = null,
+    string? MatchedVersionLabel = null);

@@ -268,6 +268,7 @@ public static class StringLocalization
         public const string FM_BatchImport_Load = "FM_BatchImport_Load";
         public const string FM_BatchImport_StatusNew = "FM_BatchImport_StatusNew";
         public const string FM_BatchImport_StatusExisting = "FM_BatchImport_StatusExisting";
+        public const string FM_BatchImport_StatusDuplicate = "FM_BatchImport_StatusDuplicate";
         public const string FM_BatchImport_StatusError = "FM_BatchImport_StatusError";
         public const string FM_BatchImport_ActionIncrement = "FM_BatchImport_ActionIncrement";
         public const string FM_BatchImport_ActionOverwrite = "FM_BatchImport_ActionOverwrite";

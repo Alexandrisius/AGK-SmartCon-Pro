@@ -164,7 +164,11 @@ public sealed class FamilyImportPreparationService
                 ErrorMessage: null,
                 Source: null,
                 SourceTypes: null,
-                FamilySource: "loadable");
+                FamilySource: "loadable",
+                Status: dedupResult.Status,
+                ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
+                ExistingVersionLabel: dedupResult.ExistingVersionLabel,
+                MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
         }
         catch (Exception ex)
         {
@@ -389,7 +393,11 @@ public sealed class FamilyImportPreparationService
             ErrorMessage: null,
             Source: null,
             SourceTypes: null,
-            FamilySource: "loadable");
+            FamilySource: "loadable",
+            Status: dedupResult.Status,
+            ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
+            ExistingVersionLabel: dedupResult.ExistingVersionLabel,
+            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
     }
 
     private async Task<PreparedFamilyItem> PrepareSystemCategoryAsync(
@@ -441,7 +449,11 @@ public sealed class FamilyImportPreparationService
             ErrorMessage: null,
             Source: source,
             SourceTypes: sourceTypes,
-            FamilySource: "system");
+            FamilySource: "system",
+            Status: dedupResult.Status,
+            ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
+            ExistingVersionLabel: dedupResult.ExistingVersionLabel,
+            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
     }
 
     private async Task<PreparedFamilyItem> PrepareLoadableFromProjectAsync(
@@ -512,7 +524,11 @@ public sealed class FamilyImportPreparationService
             ErrorMessage: null,
             Source: source,
             SourceTypes: null,
-            FamilySource: "loadable");
+            FamilySource: "loadable",
+            Status: dedupResult.Status,
+            ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
+            ExistingVersionLabel: dedupResult.ExistingVersionLabel,
+            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
     }
 
     private int GetRevitMajorVersion()
