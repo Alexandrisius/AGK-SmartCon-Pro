@@ -594,10 +594,17 @@ public sealed partial class FamilyManagerMainViewModel
 
         var selectedItems = vm.GetResultItems();
         var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
-        if (toImport.Count == 0) return;
+        if (toImport.Count == 0)
+        {
+            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+            return;
+        }
 
         var systemItems = toImport.Where(i => i.FamilySource == "system").ToList();
         var loadableItems = toImport.Where(i => i.FamilySource == "loadable").ToList();
+
+        try
+        {
 
         StatusMessage = string.Format(
             LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyPreparing) ?? "Импорт {0} семейств...",
@@ -675,8 +682,11 @@ public sealed partial class FamilyManagerMainViewModel
                 LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported) ?? "Импортировано: {0}",
                 totalTypes)
             : "Импорт завершён";
-
-        await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+        }
+        finally
+        {
+            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+        }
     }
 
     /// <summary>
