@@ -8,9 +8,15 @@ public enum FamilyBatchImportStatus
     /// <summary>New family, not in catalog.</summary>
     New,
 
-    /// <summary>Family exists in catalog with the same normalized name.</summary>
+    /// <summary>Family exists in catalog with the same normalized name
+    /// but the content hash differs (content changed).</summary>
     Existing,
 
-    /// <summary>Error reading file.</summary>
+    /// <summary>Family exists in catalog with the same normalized name
+    /// AND the content hash matches a version (current or archived).
+    /// Import is skipped by default to avoid duplicate versions.</summary>
+    Duplicate,
+
+    /// <summary>Error reading file or computing content hash.</summary>
     Error
 }

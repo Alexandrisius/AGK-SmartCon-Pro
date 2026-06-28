@@ -61,7 +61,10 @@ public sealed record FamilyBatchImportItem(
     FamilyImportSource? Source = null,
     string? PrecomputedCatalogItemId = null,
     string? PrecomputedVersionLabel = null,
-    string? PrecomputedManagedPath = null)
+    string? PrecomputedManagedPath = null,
+    string? ContentHash = null,
+    int? HashFormatVersion = null,
+    string? MatchedVersionLabel = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

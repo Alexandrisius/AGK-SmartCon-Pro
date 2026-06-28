@@ -21,4 +21,6 @@ public sealed record FamilyCatalogVersion(
     int RevitMajorVersion,
     int? TypesCount,
     int? ParametersCount,
-    DateTimeOffset PublishedAtUtc);
+    DateTimeOffset PublishedAtUtc,
+    string? ContentHash = null,
+    int? HashFormatVersion = null);

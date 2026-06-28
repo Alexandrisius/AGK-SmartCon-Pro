@@ -15,4 +15,6 @@ public sealed record FamilyCatalogItem(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
     string FamilySource = "loadable",
-    string? RevitCategory = null);
+    string? RevitCategory = null,
+    string? ContentHash = null,
+    int? HashFormatVersion = null);
