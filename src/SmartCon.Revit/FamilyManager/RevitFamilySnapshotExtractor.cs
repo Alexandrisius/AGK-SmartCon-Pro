@@ -16,7 +16,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 {
     public FamilySnapshot ExtractFromFamilyDocument(Document familyDoc)
     {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(familyDoc);
+#else
         if (familyDoc is null) throw new ArgumentNullException(nameof(familyDoc));
+#endif
 
         if (!familyDoc.IsFamilyDocument)
             throw new InvalidOperationException("Document is not a family document.");
@@ -52,8 +56,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory builtInCategory)
     {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(projectDoc);
+        ArgumentNullException.ThrowIfNull(typeUniqueIds);
+#else
         if (projectDoc is null) throw new ArgumentNullException(nameof(projectDoc));
         if (typeUniqueIds is null) throw new ArgumentNullException(nameof(typeUniqueIds));
+#endif
 
         using var _scope = SmartConLogger.BeginScope("SnapshotExtract",
             ("Method", nameof(ExtractFromProject)),
