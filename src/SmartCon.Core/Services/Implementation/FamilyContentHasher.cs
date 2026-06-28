@@ -223,7 +223,13 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     private static string ComputeSha256Hex(string input)
     {
         var bytes = Encoding.UTF8.GetBytes(input);
+#if NET8_0_OR_GREATER
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash);
+#else
+        using var sha256 = SHA256.Create();
+        var hash = sha256.ComputeHash(bytes);
+        return BitConverter.ToString(hash).Replace("-", string.Empty);
+#endif
     }
 }
