@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
@@ -51,6 +52,8 @@ public sealed class FamilyImportPreparationService
         if (filePaths is null || filePaths.Count == 0)
             return Array.Empty<PreparedFamilyItem>();
 
+        LogDiagSnapshot("Prepare.entry", _openedDocuments.Count);
+
         using var _scope = SmartConLogger.BeginScope("FamilyPrep",
             ("Method", nameof(PrepareForFileImportAsync)),
             ("FileCount", filePaths.Count));
@@ -101,6 +104,8 @@ public sealed class FamilyImportPreparationService
             $"{results.Count(r => r.ContentHash is not null)} with hash, " +
             $"{results.Count(r => r.ErrorMessage is not null)} errors, " +
             $"{_openedDocuments.Count} documents held open");
+
+        LogDiagSnapshot("Prepare.exit", _openedDocuments.Count);
 
         return results;
     }
@@ -339,6 +344,7 @@ public sealed class FamilyImportPreparationService
 
         try
         {
+            var openSw = Stopwatch.StartNew();
             doc = await _awaitableEvent
                 .RaiseAsync(app =>
                 {
@@ -346,9 +352,24 @@ public sealed class FamilyImportPreparationService
                     return activeDoc.Application.OpenDocumentFile(filePath);
                 }, ct)
                 .ConfigureAwait(false);
+            openSw.Stop();
 
             if (doc is null)
                 throw new InvalidOperationException("OpenDocumentFile returned null");
+
+            if (openSw.ElapsedMilliseconds > 2000)
+            {
+                SmartConLogger.Warn(
+                    $"OpenDocumentFile slow: {openSw.ElapsedMilliseconds}ms for '{Path.GetFileName(filePath)}' " +
+                    $"(heldOpen={_openedDocuments.Count}) " +
+                    "[Action: known Revit degradation after 30+ opens; consider splitting batch into sub-batches of 20]");
+            }
+            else
+            {
+                SmartConLogger.Debug(
+                    $"OpenDocumentFile: {openSw.ElapsedMilliseconds}ms for '{Path.GetFileName(filePath)}' " +
+                    $"(heldOpen={_openedDocuments.Count})");
+            }
 
             if (!doc.IsFamilyDocument)
                 throw new InvalidOperationException("File is not a family document");
@@ -359,6 +380,8 @@ public sealed class FamilyImportPreparationService
 
             _openedDocuments[filePath] = doc;
             SmartConLogger.Debug($"Document held open: {Path.GetFileName(filePath)}");
+
+            LogDiagSnapshot("Prepare.perFile", _openedDocuments.Count);
         }
         catch (Exception ex)
         {
@@ -539,5 +562,35 @@ public sealed class FamilyImportPreparationService
         {
             return 0;
         }
+    }
+
+    private void LogDiagSnapshot(string phase, int openedCount)
+    {
+        var wsMB = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
+        var gc0 = GC.CollectionCount(0);
+        var gc1 = GC.CollectionCount(1);
+        var gc2 = GC.CollectionCount(2);
+        var invalid = CountInvalidOpenedDocs();
+        var invalidPart = invalid > 0 ? $", invalidRCW={invalid}" : "";
+        SmartConLogger.Info(
+            $"[DIAG {phase}] WS={wsMB}MB, GC0={gc0}/GC1={gc1}/GC2={gc2}, " +
+            $"openedDocs={openedCount}{invalidPart}");
+    }
+
+    private int CountInvalidOpenedDocs()
+    {
+        var invalid = 0;
+        foreach (var kv in _openedDocuments)
+        {
+            try
+            {
+                _ = kv.Value.IsFamilyDocument;
+            }
+            catch
+            {
+                invalid++;
+            }
+        }
+        return invalid;
     }
 }

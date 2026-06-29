@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -129,7 +131,30 @@ public sealed partial class FamilyManagerMainViewModel
                 _catalogProvider,
                 importPrecomputer: _importPrecomputer,
                 dedupService: _dedupService);
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
+            var preShowWs = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
+            SmartConLogger.Info(
+                $"[DIAG ShowDialog.entry] items={items.Count}, " +
+                $"dispatcher.HasShutdownStarted={dispatcher.HasShutdownStarted}, " +
+                $"WS={preShowWs}MB");
+
+            var showSw = Stopwatch.StartNew();
             var result = _dialogService.ShowBatchImportDialog(vm);
+            showSw.Stop();
+            var postShowWs = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
+            SmartConLogger.Info(
+                $"[DIAG ShowDialog.exit] result={result}, elapsed={showSw.ElapsedMilliseconds}ms, " +
+                $"WS={postShowWs}MB (delta={postShowWs - preShowWs}MB)");
+
+            if (showSw.ElapsedMilliseconds < 50)
+            {
+                SmartConLogger.Warn(
+                    $"ShowDialog returned in {showSw.ElapsedMilliseconds}ms — possible UI thread block or " +
+                    "DataContext=null. [Action: check if WPF render thread is in zombie state (click on Revit window " +
+                    "or right-click on DockablePane should recover paint)]");
+            }
+
             if (result != true)
             {
                 await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
