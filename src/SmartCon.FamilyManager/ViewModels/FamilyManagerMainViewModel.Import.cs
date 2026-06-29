@@ -809,7 +809,14 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     heldDoc.SaveAs(managedRfaPath, new SaveAsOptions { OverwriteExistingFile = true });
                     File.SetAttributes(managedRfaPath, File.GetAttributes(managedRfaPath) | FileAttributes.ReadOnly);
-                    _preparationService.ReleaseDocument(item.FilePath);
+
+                    SmartConLogger.Debug(
+                        $"Stage post-SaveAs: family='{item.FileName}', " +
+                        $"heldDoc.PathName='{(string.IsNullOrEmpty(heldDoc.PathName) ? "<empty>" : heldDoc.PathName)}' " +
+                        "(should == managedRfaPath), " +
+                        $"IsValidObject={heldDoc.IsValidObject} — will Close+Release now to free the file handle");
+
+                    _preparationService.CloseAndRelease(item.FilePath);
                     SmartConLogger.Info(
                         $"Staged UC-1 loadable family '{item.FileName}' from held doc → '{managedRfaPath}' [no re-open]");
                     rewrites[i] = item with { FilePath = managedRfaPath };
@@ -820,7 +827,7 @@ public sealed partial class FamilyManagerMainViewModel
                         $"SaveAs from held doc failed for '{item.FileName}': {ex.GetType().Name}: {ex.Message} — " +
                         "ImportBatchAsync will fall back to copy/bake from source [Action: проверьте логи Revit " +
                         "и что managed storage доступен для записи]");
-                    _preparationService.ReleaseDocument(item.FilePath);
+                    _preparationService.CloseAndRelease(item.FilePath);
                 }
             }
 
@@ -859,7 +866,14 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 heldDoc.SaveAs(rfaPath, new SaveAsOptions { OverwriteExistingFile = true });
                 File.SetAttributes(rfaPath, File.GetAttributes(rfaPath) | FileAttributes.ReadOnly);
-                if (sourcePath is not null) _preparationService.ReleaseDocument(sourcePath);
+
+                SmartConLogger.Debug(
+                    $"Stage post-SaveAs (project): family='{info.FamilyName}', " +
+                    $"heldDoc.PathName='{(string.IsNullOrEmpty(heldDoc.PathName) ? "<empty>" : heldDoc.PathName)}' " +
+                    "(should == rfaPath), " +
+                    $"IsValidObject={heldDoc.IsValidObject} — will Close+Release now to free the file handle");
+
+                if (sourcePath is not null) _preparationService.CloseAndRelease(sourcePath);
                 SmartConLogger.Debug($"Staged '{info.FamilyName}' from held doc → '{rfaPath}'");
                 return rfaPath;
             }
@@ -867,7 +881,7 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 SmartConLogger.Warn(
                     $"SaveAs from held doc failed for '{info.FamilyName}': {ex.Message} — falling back to EditFamily [Action: проверьте логи Revit]");
-                if (sourcePath is not null) _preparationService.ReleaseDocument(sourcePath);
+                if (sourcePath is not null) _preparationService.CloseAndRelease(sourcePath);
             }
         }
 

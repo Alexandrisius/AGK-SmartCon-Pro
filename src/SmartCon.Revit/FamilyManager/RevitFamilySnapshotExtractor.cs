@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -26,7 +27,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             throw new InvalidOperationException("Document is not a family document.");
 
         using var _scope = SmartConLogger.BeginScope("SnapshotExtract",
-            ("Method", nameof(ExtractFromFamilyDocument)));
+            ("Method", nameof(ExtractFromFamilyDocument)),
+            ("FamilyDocTitle", familyDoc.Title),
+            ("FamilyDocPath", string.IsNullOrEmpty(familyDoc.PathName) ? "<empty>" : Path.GetFileName(familyDoc.PathName)),
+            ("IsValidObject", familyDoc.IsValidObject));
 
         var fm = familyDoc.FamilyManager;
         var familyName = familyDoc.Title;

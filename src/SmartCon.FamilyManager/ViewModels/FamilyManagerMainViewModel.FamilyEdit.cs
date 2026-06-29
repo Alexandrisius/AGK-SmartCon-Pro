@@ -1057,6 +1057,23 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (IOException ex)
         {
+            try
+            {
+                await _preparationService.LogOpenRevitDocumentsStateAsync(
+                    "DeleteFamilyAsync.IOException",
+                    SelectedItem?.Id);
+            }
+            catch (Exception logEx)
+            {
+                SmartConLogger.Debug(
+                    $"LogOpenRevitDocumentsStateAsync failed during DeleteFamilyAsync catch: " +
+                    $"{logEx.GetType().Name}: {logEx.Message}");
+            }
+
+            SmartConLogger.Error(
+                $"DeleteFamilyAsync IOException for id='{SelectedItem?.Id}', name='{SelectedItem?.Name}': {ex.Message} " +
+                "[Action: check LogOpenRevitDocumentsStateAsync output above to identify which open Document holds the lock]");
+
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteError) ?? "Error",
                 LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteInUse) ?? "Failed to delete family files. The file may be open in Revit or another application. Close the file and try again.");
