@@ -69,22 +69,30 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
 
             try
             {
-                // I-01: ResolveTypesFromRfa calls Revit API (app.OpenDocumentFile,
-                // familyDoc.FamilyManager) and must execute on the Revit UI
-                // thread. The WPF DockablePane SynchronizationContext is NOT
-                // the Revit UI thread, so the await of ImportBatchAsync
-                // (which uses ConfigureAwait(false) internally) cannot be
-                // relied upon to resume on Revit. Route the Revit-API call
-                // through IFamilyManagerAwaitableEvent, which is bound to
-                // an ExternalEvent handler.
-                var types = await _awaitableEvent.RaiseAsync(_ =>
-                    _typeResolver.ResolveTypesFromRfa(
-                        item.FilePath, match.CatalogItemId!, match.VersionId, match.FileId),
-                    ct);
+                // Phase 27: use the in-memory snapshot from Prepare to build
+                // FamilyTypeDescriptor rows WITHOUT re-opening the managed .rfa
+                // via ResolveTypesFromRfa. The snapshot already contains every
+                // type name + UniqueId (collected from FamilySymbol in the
+                // single Prepare open). This eliminates the 42×
+                // LoadableResolver.OpenDocumentFile calls seen in the post-import
+                // flow. Pure C# — no ExternalEvent needed (no Revit API).
+                var types = item.LoadableSnapshot is not null
+                    ? SnapshotExtractionMapper.ToTypeDescriptors(
+                        item.LoadableSnapshot,
+                        match.CatalogItemId!,
+                        match.VersionId,
+                        match.FileId)
+                    : [];
+
                 if (types.Count == 0)
                 {
                     using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName));
-                    SmartConLogger.Warn($"No types for '{item.FileName}' [Action: Check .rfa has FamilyManager.Types parameter, or update Family Editor]");
+                    var reason = item.LoadableSnapshot is null
+                        ? "LoadableSnapshot is null (Prepare did not produce one)"
+                        : "snapshot has 0 types";
+                    SmartConLogger.Warn(
+                        $"No types for '{item.FileName}': {reason} " +
+                        "[Action: check Prepare logs — snapshot extraction may have failed, or family has no FamilyManager.Types]");
                 }
                 else
                 {
@@ -93,7 +101,7 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                     // semantics). SyncTypesAsync enforces DELETE+INSERT atomically.
                     await _typeRepository.SyncTypesAsync(match.CatalogItemId!, versionId: null, fileId: null, runId: "no-run", types, ct);
                     using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName), ("CatalogItemId", match.CatalogItemId));
-                    SmartConLogger.Info($"Saved {types.Count} type(s) for '{item.FileName}' (CatalogItemId={match.CatalogItemId})");
+                    SmartConLogger.Info($"Saved {types.Count} type(s) for '{item.FileName}' (CatalogItemId={match.CatalogItemId}) [from snapshot, no re-open]");
                 }
             }
             catch (Exception ex)
@@ -112,7 +120,8 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
                         CatalogItemId: match.CatalogItemId!,
                         ManagedRfaPath: resolved.AbsolutePath,
                         VersionId: match.VersionId,
-                        FileId: match.FileId));
+                        FileId: match.FileId,
+                        Snapshot: item.LoadableSnapshot));
                 }
             }
             catch (Exception ex)

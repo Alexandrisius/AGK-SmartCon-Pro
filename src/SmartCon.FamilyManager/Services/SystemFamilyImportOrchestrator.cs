@@ -69,7 +69,9 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
                     matchingResult.ManagedFilePath ?? item.FilePath,
                     types.Select(t => t.Name).ToList(),
                     matchingResult.VersionId,
-                    matchingResult.FileId));
+                    matchingResult.FileId,
+                    Snapshot: item.SystemSnapshot,
+                    RevitMajorVersion: item.RevitMajorVersion));
             }
         }
         catch (Exception ex)

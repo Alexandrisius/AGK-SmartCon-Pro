@@ -483,14 +483,16 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             r.TypeCount,
             r.RevitCategory,
             OriginalSourcePath: null,
-            SourceTypes: null,
+            SourceTypes: r.SourceTypes,
             Source: r.Source,
             PrecomputedCatalogItemId: r.PrecomputedCatalogItemId,
             PrecomputedVersionLabel: r.PrecomputedVersionLabel,
             PrecomputedManagedPath: r.PrecomputedManagedPath,
             ContentHash: r.PrecomputedContentHash,
             HashFormatVersion: r.HashFormatVersion,
-            MatchedVersionLabel: r.MatchedVersionLabel)
+            MatchedVersionLabel: r.MatchedVersionLabel,
+            LoadableSnapshot: r.LoadableSnapshot,
+            SystemSnapshot: r.SystemSnapshot)
         {
             Action = r.Action
         }).ToList();

@@ -102,6 +102,28 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public string? RevitCategory { get; }
 
     /// <summary>
+    /// Phase 27: source type descriptors for system families. Survives the
+    /// dialog round-trip so <see cref="SystemFamilyImportOrchestrator"/> can
+    /// persist <see cref="FamilyTypeDescriptor"/> rows without re-extracting
+    /// from the staged .rvt. <c>null</c> for loadable families.
+    /// </summary>
+    public IReadOnlyList<FamilySourceTypeInfo>? SourceTypes { get; }
+
+    /// <summary>
+    /// Phase 27: in-memory loadable snapshot from Prepare. Survives the dialog
+    /// round-trip so Commit can write types + values WITHOUT re-opening the
+    /// managed .rfa. <c>null</c> for system families.
+    /// </summary>
+    public FamilySnapshot? LoadableSnapshot { get; }
+
+    /// <summary>
+    /// Phase 27: in-memory system snapshot from Prepare. Survives the dialog
+    /// round-trip so Commit can write types + values WITHOUT re-opening the
+    /// staged .rvt. <c>null</c> for loadable families.
+    /// </summary>
+    public SystemFamilySnapshot? SystemSnapshot { get; }
+
+    /// <summary>
     /// VM-owned selection state. Bound to <c>DataGridRow.IsSelected</c> in
     /// XAML so that the selection survives clicks on inline editors
     /// (ComboBox dropdown, "…" Button) — those clicks collapse
@@ -158,6 +180,9 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         RevitMajorVersion = item.RevitMajorVersion;
         FamilySource = item.FamilySource;
         Source = item.Source;
+        SourceTypes = item.SourceTypes;
+        LoadableSnapshot = item.LoadableSnapshot;
+        SystemSnapshot = item.SystemSnapshot;
         _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;
         Status = item.Status;

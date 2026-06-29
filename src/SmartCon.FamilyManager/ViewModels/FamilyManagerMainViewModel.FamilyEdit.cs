@@ -7,6 +7,7 @@ using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 using SmartCon.UI.Behaviors;
 
@@ -274,7 +275,9 @@ public sealed partial class FamilyManagerMainViewModel
             PrecomputedManagedPath: precomputedManagedPath,
             ContentHash: prepared.ContentHash?.HexString,
             HashFormatVersion: prepared.ContentHash?.FormatVersion,
-            MatchedVersionLabel: prepared.MatchedVersionLabel)
+            MatchedVersionLabel: prepared.MatchedVersionLabel,
+            LoadableSnapshot: prepared.LoadableSnapshot,
+            SystemSnapshot: prepared.SystemSnapshot)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -413,7 +416,20 @@ public sealed partial class FamilyManagerMainViewModel
             await LoadTreeAsync();
         }
 
-        await ExtractAttributesForImportedFamilies(new[] { importResult });
+        // Phase 27: use the in-memory snapshot from Prepare to extract
+        // attributes WITHOUT re-opening the managed .rfa. The active .rfa
+        // snapshot is complete (no .txt bake needed for active documents),
+        // so snapshot-based extraction is safe here.
+        if (importResult.Success && importItem.LoadableSnapshot is not null)
+        {
+            var attrTask = new LoadableFamilyAttributeTask(
+                importResult.CatalogItemId!,
+                saveAsPath!,
+                importResult.VersionId,
+                importResult.FileId,
+                Snapshot: importItem.LoadableSnapshot);
+            await ExtractAttributesForLoadableTasks(new[] { attrTask });
+        }
 
         var total = 1;
         var success = importResult.Success ? 1 : 0;
@@ -927,33 +943,44 @@ public sealed partial class FamilyManagerMainViewModel
         {
             try
             {
-                if (!File.Exists(task.ManagedRfaPath))
+                // Phase 27: use the in-memory snapshot from Prepare to produce
+                // FamilyExtractionResult WITHOUT re-opening the managed .rfa
+                // via ExtractFromManagedFile. The snapshot already contains
+                // every type, parameter value, and shared-nested family name
+                // that the old re-open path would extract. This eliminates the
+                // 42× ExtractFromManagedFile.OpenDocumentFile calls (100-330ms
+                // each) seen in the post-import flow. Pure C# — no ExternalEvent
+                // needed (no Revit API).
+                if (task.Snapshot is null)
                 {
                     SmartConLogger.Warn(
-                        $"Managed .rfa missing: '{task.ManagedRfaPath}' [Action: проверьте, что антивирус не удалил файл, или повторите импорт]");
+                        $"Snapshot is null for '{task.CatalogItemId}' — cannot extract attributes without re-open. " +
+                        "[Action: check Prepare logs — snapshot extraction may have failed; re-import the family to fix]");
                     continue;
                 }
 
-                var extraction = await ExtractFromManagedFileAsync(task.ManagedRfaPath, Array.Empty<string>(), CancellationToken.None);
+                var extraction = SnapshotExtractionMapper.ToExtractionResult(
+                    task.Snapshot, CurrentRevitVersion);
+
                 if (extraction.Success)
                 {
                     await _dataImportService.SaveExtractionResultAsync(
                         task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
                     SmartConLogger.Info(
-                        $"Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(task.ManagedRfaPath)}' (CatalogItemId={task.CatalogItemId})");
+                        $"Extracted {extraction.Types.Count} type(s) from snapshot for '{Path.GetFileName(task.ManagedRfaPath)}' " +
+                        $"(CatalogItemId={task.CatalogItemId}) [no re-open]");
 
-                    // ADR-034: persist shared-nested names extracted in the
-                    // same call. This is the third call site (loadable path);
-                    // the file is also opened by LoadableFamilyTypeResolver
-                    // (ResolveTypesFromRfa) earlier in the pipeline, but the
-                    // user reported issue is the 4-dialog MFC upgrade storm
-                    // on a 2-file batch import — fixing that means
-                    // deduping within ExtractFromManagedFile specifically.
                     await SaveSharedNestedNamesAsync(
                         task.CatalogItemId,
                         task.VersionId,
                         extraction.SharedNestedFamilyNamesSafe,
                         CancellationToken.None);
+                }
+                else
+                {
+                    SmartConLogger.Warn(
+                        $"Snapshot extraction reported failure for '{task.CatalogItemId}': {extraction.ErrorMessage} " +
+                        "[Action: check snapshot mapper logs for details]");
                 }
             }
             catch (Exception ex)
@@ -962,93 +989,6 @@ public sealed partial class FamilyManagerMainViewModel
                     $"Extraction failed for '{task.CatalogItemId}': {ex.Message} [Action: проверьте, что .rfa не повреждён и Revit может открыть его вручную]");
             }
         }
-    }
-
-    /// <summary>
-    /// Извлекает атрибуты (Type parameters) из импортированных .rfa-файлов.
-    /// Зеркалит поведение старого Import.cs (ExtractTypesForImportedFamilies):
-    /// после успешного импорта резолвит файл в managed storage, вызывает
-    /// <see cref="IFamilyDataExtractionService.Extract"/> и сохраняет результат
-    /// через <see cref="IFamilyDataImportService.SaveExtractionResultAsync"/>.
-    /// </summary>
-    private async Task ExtractAttributesForImportedFamilies(IReadOnlyList<FamilyImportResult> importResults)
-    {
-        using var _scope = SmartConLogger.BeginScope("FMLoadable",
-            ("Method", "ExtractAttributesForImportedFamilies"),
-            ("Count", importResults.Count));
-        var extractionResults = new List<(string CatalogItemId, FamilyExtractionResult Result, string? VersionId, string? FileId)>();
-
-        try
-        {
-            foreach (var item in importResults)
-            {
-                if (!item.Success || item.WasSkipped) continue;
-                if (string.IsNullOrEmpty(item.CatalogItemId)) continue;
-                var catalogItemId = item.CatalogItemId!;
-
-                var resolved = await _fileResolver.ResolveForLoadAsync(catalogItemId, CurrentRevitVersion, CancellationToken.None).ConfigureAwait(true);
-
-                if (string.IsNullOrEmpty(resolved.AbsolutePath)) continue;
-
-                var extraction = await ExtractFromManagedFileAsync(resolved.AbsolutePath, Array.Empty<string>(), CancellationToken.None);
-                if (extraction.Success)
-                {
-                    extractionResults.Add((catalogItemId, extraction, item.VersionId, item.FileId));
-                    SmartConLogger.Info(
-                        $"Extracted {extraction.Types.Count} type(s) from '{Path.GetFileName(resolved.AbsolutePath)}'");
-
-                    // ADR-034: persist shared-nested names extracted in the
-                    // same call (V3 — single OpenDocumentFile per .rfa).
-                    await SaveSharedNestedNamesAsync(
-                        catalogItemId,
-                        item.VersionId,
-                        extraction.SharedNestedFamilyNamesSafe,
-                        CancellationToken.None);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"Attribute extraction failed: {ex.Message} [Action: проверьте логи Revit (Journal) и убедитесь, что .rfa/.rvt не повреждены, повторите импорт]");
-        }
-
-        if (extractionResults.Count == 0) return;
-
-        FireAndForget(async () =>
-        {
-            try
-            {
-                foreach (var (catalogItemId, result, versionId, fileId) in extractionResults)
-                {
-                    // v2.0.0: Type Catalog (.txt) no longer stored in managed
-                    // storage. Save unconditionally (ADR-033 bake-in).
-                    await _dataImportService.SaveExtractionResultAsync(
-                        catalogItemId, result, versionId, fileId, CancellationToken.None);
-                }
-                SmartConLogger.Debug("ExtractAttributesForImportedFamilies: save complete, scheduling UI tree refresh");
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"SaveExtraction failed: {ex.Message} [Action: проверьте права на запись в БД каталога, дисковое пространство и целостность SQLite файла]");
-            }
-
-            // v2.0.0 (ADR-036, bug #2 fix): marshal LoadTreeAsync back to the
-            // UI thread so newly imported types appear in the dockable panel
-            // immediately. Without this call, the user had to press Refresh
-            // manually because FireAndForget runs on the thread pool.
-            // Mirrors the pattern in ExtractTypesForImportedFamilies (Import.cs:265-288)
-            // and follows ADR-031 rule #1 (FireAndForget + UI → dispatcher).
-            try
-            {
-                // IDispatcher.InvokeAsync takes an Action; LoadTreeAsync returns
-                // Task. Wrap in fire-and-forget so the marshalled Action is sync.
-                await _dispatcher.InvokeAsync(() => { _ = LoadTreeAsync(); });
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"Tree reload after save failed: {ex.Message} [Action: нажмите Refresh чтобы обновить дерево]");
-            }
-        }, nameof(ExtractAttributesForImportedFamilies));
     }
 
     [RelayCommand(CanExecute = nameof(CanEditOps))]

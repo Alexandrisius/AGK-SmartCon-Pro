@@ -168,6 +168,19 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 paramMap[name] = param;
         }
 
+        // Phase 27: lookup FamilySymbol by type name so we can capture the
+        // Revit UniqueId for each type. This mirrors LoadableFamilyTypeResolver
+        // (ResolveTypesFromRfa) — the UniqueId is needed by the snapshot-to-DB
+        // mapper to populate FamilyTypeDescriptor.UniqueId without re-opening
+        // the .rfa in Commit. Collecting it here (in the single Prepare open)
+        // eliminates the 42× LoadableResolver.OpenDocumentFile calls seen in
+        // the post-import flow.
+        var symbolsByName = new FilteredElementCollector(familyDoc)
+            .OfClass(typeof(FamilySymbol))
+            .Cast<FamilySymbol>()
+            .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+            .ToLookup(s => s.Name, s => s, StringComparer.Ordinal);
+
         var result = new List<FamilyTypeSnapshot>();
 
         foreach (FamilyType familyType in fm.Types)
@@ -187,9 +200,12 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 .OrderBy(v => v.ParameterName, StringComparer.Ordinal)
                 .ToList();
 
+            var uniqueId = symbolsByName[familyType.Name].FirstOrDefault()?.UniqueId;
+
             result.Add(new FamilyTypeSnapshot(
                 Name: familyType.Name,
-                Values: sortedValues));
+                Values: sortedValues,
+                UniqueId: uniqueId));
         }
 
         return result

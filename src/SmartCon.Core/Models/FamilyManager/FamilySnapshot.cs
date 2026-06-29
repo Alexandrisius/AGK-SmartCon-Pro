@@ -65,9 +65,16 @@ public sealed record FamilyParameterInfo(
 /// <param name="Name">Type name (e.g. "DN50").</param>
 /// <param name="Values">Parameter values for this type, sorted by
 /// parameter name.</param>
+/// <param name="UniqueId">Revit UniqueId of the <c>FamilySymbol</c>
+/// backing this type (loadable families only). <c>null</c> for system
+/// families or when the symbol could not be resolved. Used by the
+/// snapshot-to-DB mapper to populate <see cref="FamilyTypeDescriptor.UniqueId"/>
+/// without re-opening the .rfa. NOT part of the content hash —
+/// <see cref="FamilyContentHasher"/> ignores this field.</param>
 public sealed record FamilyTypeSnapshot(
     string Name,
-    IReadOnlyList<FamilyParameterValue> Values);
+    IReadOnlyList<FamilyParameterValue> Values,
+    string? UniqueId = null);
 
 /// <summary>
 /// One parameter value on one family type. Distinguishes "no value"

@@ -114,7 +114,9 @@ public sealed partial class FamilyManagerMainViewModel
                     Source: p.Source,
                     ContentHash: p.ContentHash?.HexString,
                     HashFormatVersion: p.ContentHash?.FormatVersion,
-                    MatchedVersionLabel: p.MatchedVersionLabel)
+                    MatchedVersionLabel: p.MatchedVersionLabel,
+                    LoadableSnapshot: p.LoadableSnapshot,
+                    SystemSnapshot: p.SystemSnapshot)
                 {
                     Action = status == FamilyBatchImportStatus.Duplicate
                         ? FamilyBatchImportAction.Skip
@@ -560,7 +562,9 @@ public sealed partial class FamilyManagerMainViewModel
                 PrecomputedManagedPath: precomputed?.ManagedPath,
                 ContentHash: p.ContentHash?.HexString,
                 HashFormatVersion: p.ContentHash?.FormatVersion,
-                MatchedVersionLabel: p.MatchedVersionLabel)
+                MatchedVersionLabel: p.MatchedVersionLabel,
+                LoadableSnapshot: p.LoadableSnapshot,
+                SystemSnapshot: p.SystemSnapshot)
             {
                 Action = status == FamilyBatchImportStatus.Duplicate
                     ? FamilyBatchImportAction.Skip
