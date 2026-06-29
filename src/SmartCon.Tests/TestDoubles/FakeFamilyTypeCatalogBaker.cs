@@ -31,4 +31,16 @@ internal sealed class FakeFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
             BakedTypeCount: catalog.Entries.Count,
             ErrorMessage: null));
     }
+
+    public Task<FamilyTypeCatalogBakingResult> BakeInExistingDocumentAsync(
+        object familyDoc,
+        TypeCatalogParseResult catalog,
+        CancellationToken ct = default)
+    {
+        return Task.FromResult(new FamilyTypeCatalogBakingResult(
+            Success: true,
+            OutputRfaPath: null,
+            BakedTypeCount: catalog.Entries.Count,
+            ErrorMessage: null));
+    }
 }

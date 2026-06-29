@@ -134,6 +134,51 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
         }, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Phase 27B: bakes the Type Catalog into an already-open family document
+    /// (held open by Prepare). Does NOT open, save, or close — the caller holds
+    /// the document for the later Phase 3 SaveAs. Eliminates the re-open that
+    /// <see cref="BakeAsync"/> performs.
+    /// </summary>
+    public async Task<FamilyTypeCatalogBakingResult> BakeInExistingDocumentAsync(
+        object familyDoc,
+        TypeCatalogParseResult catalog,
+        CancellationToken ct = default)
+    {
+        if (familyDoc is null)
+            return Failure("familyDoc is null");
+
+        return await _awaitableEvent.RaiseAsync<FamilyTypeCatalogBakingResult>(obj =>
+        {
+            try
+            {
+                var doc = (Document)familyDoc;
+                if (!doc.IsFamilyDocument)
+                    return Failure("Document is not a family document");
+
+                SmartConLogger.Info(
+                    $"BakeInExistingDocument: baking {catalog.Entries.Count} type(s) " +
+                    $"into held-open family document (no re-open, no save)");
+
+                var bakeResult = BakeInFamilyDocument(doc, catalog, ct);
+                if (!bakeResult.Success)
+                    return bakeResult;
+
+                SmartConLogger.Info(
+                    $"BakeInExistingDocument: baked {bakeResult.BakedTypeCount} type(s) " +
+                    $"into held-open document — snapshot will contain baked types");
+                return bakeResult;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"BakeInExistingDocument failed: {ex.GetType().Name}: {ex.Message} " +
+                    "[Action: verify the .rfa and .txt are compatible, or check the Revit journal for details]");
+                return Failure(ex.Message);
+            }
+        }, ct).ConfigureAwait(false);
+    }
+
     private FamilyTypeCatalogBakingResult BakeInFamilyDocument(
         Document familyDoc,
         TypeCatalogParseResult catalog,

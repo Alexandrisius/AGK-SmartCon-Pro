@@ -5,7 +5,9 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services.LocalCatalog;
 
 namespace SmartCon.FamilyManager.Services;
 
@@ -23,6 +25,7 @@ public sealed class FamilyImportPreparationService
     private readonly IFamilyContentHasher _contentHasher;
     private readonly IContentHashDedupService _dedupService;
     private readonly IRevitContext _revitContext;
+    private readonly IFamilyTypeCatalogBaker _typeCatalogBaker;
 
     private readonly Dictionary<string, Document> _openedDocuments = new(StringComparer.Ordinal);
 
@@ -31,13 +34,15 @@ public sealed class FamilyImportPreparationService
         IFamilySnapshotExtractor snapshotExtractor,
         IFamilyContentHasher contentHasher,
         IContentHashDedupService dedupService,
-        IRevitContext revitContext)
+        IRevitContext revitContext,
+        IFamilyTypeCatalogBaker typeCatalogBaker)
     {
         _awaitableEvent = awaitableEvent ?? throw new ArgumentNullException(nameof(awaitableEvent));
         _snapshotExtractor = snapshotExtractor ?? throw new ArgumentNullException(nameof(snapshotExtractor));
         _contentHasher = contentHasher ?? throw new ArgumentNullException(nameof(contentHasher));
         _dedupService = dedupService ?? throw new ArgumentNullException(nameof(dedupService));
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));
+        _typeCatalogBaker = typeCatalogBaker ?? throw new ArgumentNullException(nameof(typeCatalogBaker));
     }
 
     /// <summary>
@@ -289,6 +294,16 @@ public sealed class FamilyImportPreparationService
                 {
                     if (pair.Value is not null)
                     {
+                        // Phase 27B: after staging (SaveAs + ReleaseDocument),
+                        // some documents may have been invalidated by Revit.
+                        // IsValidObject check prevents "The referenced object
+                        // is not valid" warnings during cleanup.
+                        if (!pair.Value.IsValidObject)
+                        {
+                            SmartConLogger.Debug(
+                                $"Document '{Path.GetFileName(pair.Key)}' already invalidated by Revit — skipping Close");
+                            continue;
+                        }
                         pair.Value.Close(false);
                         SmartConLogger.Debug($"Closed document: {Path.GetFileName(pair.Key)}");
                     }
@@ -373,6 +388,74 @@ public sealed class FamilyImportPreparationService
 
             if (!doc.IsFamilyDocument)
                 throw new InvalidOperationException("File is not a family document");
+
+            // Phase 27B: bake Type Catalog (.txt) into the held-open family
+            // document BEFORE extracting the snapshot. This way the snapshot
+            // contains the baked types and the content hash is computed over
+            // the baked content — eliminating the re-open that BakeAsync
+            // performed in Commit. The document is already open; baker only
+            // runs a transaction + regenerate, no save/close.
+            var sidecarPath = Path.ChangeExtension(filePath, ".txt");
+            if (File.Exists(sidecarPath))
+            {
+                using var _bakeScope = SmartConLogger.BeginScope("Sidecar",
+                    ("Method", "PrepareBake"),
+                    ("File", Path.GetFileName(sidecarPath)));
+
+                SmartConLogger.Debug(
+                    $"PrepareBake: .txt sidecar found for '{Path.GetFileName(filePath)}' — " +
+                    "reading content");
+
+                var catalogContent = await Task.Run(
+                    () => LocalFamilyImportService.ReadTypeCatalogWithEncodingFallback(sidecarPath),
+                    ct).ConfigureAwait(false);
+
+                if (catalogContent.Length == 0)
+                {
+                    SmartConLogger.Warn(
+                        $"PrepareBake: Type Catalog file is empty: '{Path.GetFileName(sidecarPath)}' " +
+                        "[Action: verify the .txt content — snapshot will use raw .rfa types]");
+                }
+                else
+                {
+                    var parseResult = TypeCatalogParser.Parse(catalogContent);
+                    if (!parseResult.HasEntries)
+                    {
+                        SmartConLogger.Warn(
+                            $"PrepareBake: parsed 0 entries from '{Path.GetFileName(sidecarPath)}' " +
+                            "[Action: verify the Type Catalog format — snapshot will use raw .rfa types]");
+                    }
+                    else
+                    {
+                        SmartConLogger.Debug(
+                            $"PrepareBake: baking {parseResult.Entries.Count} type(s) " +
+                            "into held-open document (no re-open)");
+
+                        var bakeResult = await _typeCatalogBaker
+                            .BakeInExistingDocumentAsync(doc, parseResult, ct)
+                            .ConfigureAwait(false);
+
+                        if (!bakeResult.Success)
+                        {
+                            SmartConLogger.Warn(
+                                $"PrepareBake: bake failed — {bakeResult.ErrorMessage} " +
+                                "[Action: verify the .rfa and .txt are compatible — snapshot will use raw .rfa types]");
+                        }
+                        else
+                        {
+                            SmartConLogger.Info(
+                                $"PrepareBake: baked {bakeResult.BakedTypeCount} type(s) " +
+                                "into held-open document — snapshot will contain baked types");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                SmartConLogger.Debug(
+                    $"PrepareBake: no .txt sidecar for '{Path.GetFileName(filePath)}' — " +
+                    "snapshot from raw .rfa");
+            }
 
             snapshot = await _awaitableEvent
                 .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(doc), ct)

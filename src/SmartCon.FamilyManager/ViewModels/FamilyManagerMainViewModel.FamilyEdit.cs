@@ -411,15 +411,14 @@ public sealed partial class FamilyManagerMainViewModel
 
         var importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
 
-        if (importResult.Success)
-        {
-            await LoadTreeAsync();
-        }
-
-        // Phase 27: use the in-memory snapshot from Prepare to extract
-        // attributes WITHOUT re-opening the managed .rfa. The active .rfa
-        // snapshot is complete (no .txt bake needed for active documents),
-        // so snapshot-based extraction is safe here.
+        // Phase 27B / ADR-036 Bug #2: LoadTreeAsync MUST run AFTER
+        // ExtractAttributesForLoadableTasks, not before. Otherwise the tree
+        // reloads with 0 types (extraction has not written them to the DB yet)
+        // and never refreshes again — the user sees the family node but no
+        // type children. This was the ADR-036 regression: in Phase A the old
+        // FireAndForget ExtractAttributesForImportedFamilies was replaced by
+        // the synchronous ExtractAttributesForLoadableTasks, but the
+        // LoadTreeAsync call was left at its old pre-extraction position.
         if (importResult.Success && importItem.LoadableSnapshot is not null)
         {
             var attrTask = new LoadableFamilyAttributeTask(
@@ -429,6 +428,11 @@ public sealed partial class FamilyManagerMainViewModel
                 importResult.FileId,
                 Snapshot: importItem.LoadableSnapshot);
             await ExtractAttributesForLoadableTasks(new[] { attrTask });
+        }
+
+        if (importResult.Success)
+        {
+            await LoadTreeAsync();
         }
 
         var total = 1;
