@@ -48,4 +48,5 @@ desktop.ini
 ## AI tools
 .opencode/
 .kilo/
+.local/
 skills-lock.json
