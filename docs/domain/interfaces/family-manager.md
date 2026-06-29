@@ -89,8 +89,20 @@ public interface IFamilyTypeCatalogBaker
         TypeCatalogParseResult catalog,
         string outputRfaPath,
         CancellationToken ct = default);
+
+    Task<FamilyTypeCatalogBakingResult> BakeInExistingDocumentAsync(
+        object familyDoc,
+        TypeCatalogParseResult catalog,
+        CancellationToken ct = default);
 }
 ```
+
+**Два метода:**
+- `BakeAsync` — открывает .rfa по пути, bake, SaveAs, Close (Commit-фаза, ADR-033)
+- `BakeInExistingDocumentAsync` (ADR-039) — bake в уже открытом family document
+  (Prepare-фаза). `object familyDoc` — opaque Document (I-09). Без
+  OpenDocumentFile/SaveAs/Close. Используется Phase 27B для bake в held-open
+  документе до extraction snapshot.
 
 **Зависимости:** `IFamilyManagerAwaitableEvent`, `ITransactionService`, `ITypeCatalogValueApplier`, `IFormulaSolver`. Все Revit API операции маршалятся через `IFamilyManagerAwaitableEvent` callback (I-01).
 
