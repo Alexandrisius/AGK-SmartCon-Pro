@@ -783,10 +783,42 @@ public sealed partial class FamilyManagerMainViewModel
                 var item = items[i];
                 if (item.FamilySource != "loadable") continue;
                 if (item.LoadableSnapshot is null) continue;
-                if (string.IsNullOrEmpty(item.PrecomputedManagedPath)) continue;
                 if (item.FilePath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase)) continue;
 
-                var managedRfaPath = item.PrecomputedManagedPath!;
+                // ADR-040: for OverwriteCurrent, overwrite the CURRENT
+                // version's file (v1) instead of the precomputed vN+1 path.
+                // The precomputed path is skipped; OverwriteCurrentAsync will
+                // UPDATE catalog_versions in place without creating an orphan
+                // vN+1 file.
+                string managedRfaPath;
+                if (item.Action == FamilyBatchImportAction.OverwriteCurrent
+                    && !string.IsNullOrEmpty(item.ExistingCatalogItemId)
+                    && !string.IsNullOrEmpty(item.ExistingVersionLabel))
+                {
+                    managedRfaPath = _importService.ComputeManagedFilePath(
+                        item.ExistingCatalogItemId!,
+                        item.ExistingVersionLabel!,
+                        SafeFileName.SanitizeFileName(item.FileName),
+                        ".rfa") ?? string.Empty;
+                    if (string.IsNullOrEmpty(managedRfaPath))
+                    {
+                        SmartConLogger.Warn(
+                            $"OverwriteCurrent staging for '{item.FileName}': ComputeManagedFilePath returned null " +
+                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}') " +
+                            $"[Action: check active catalog DB is selected and pathResolver is configured]");
+                        continue;
+                    }
+                    SmartConLogger.Info(
+                        $"Staging UC-1 loadable family '{item.FileName}' for OverwriteCurrent: reusing current version path " +
+                        $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}', " +
+                        $"target='{managedRfaPath}') — no orphan vN+1 file will be created");
+                }
+                else
+                {
+                    if (string.IsNullOrEmpty(item.PrecomputedManagedPath)) continue;
+                    managedRfaPath = item.PrecomputedManagedPath!;
+                }
+
                 var parent = Path.GetDirectoryName(managedRfaPath);
                 if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
                 if (File.Exists(managedRfaPath))

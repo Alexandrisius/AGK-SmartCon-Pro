@@ -248,6 +248,7 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 - Прямое изменение файлов **запрещено** — изменения = новая версия (ADR-016)
 - `Sha256FileHasher` верифицирует целостность файла при чтении
 - `IFamilyFileResolver` — единственная точка входа для доступа к файлам
+- **Исключение:** `OverwriteCurrent` — явное действие пользователя через batch dialog (комбо-бокс "Перезаписать текущую версию"). При OverwriteCurrent managed-файл текущей версии перезаписывается по тому же пути, а запись в `catalog_versions` UPDATE (а не INSERT новой строки). См. [ADR-040](adr/040-overwritecurrent-semantics.md) и [ADR-016](adr/016-familymanager-readonly-files.md) §"Exception: OverwriteCurrent"
 
 ---
 

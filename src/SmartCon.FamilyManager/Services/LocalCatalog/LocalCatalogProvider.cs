@@ -305,7 +305,9 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             item.CreatedAtUtc,
             item.UpdatedAtUtc,
             item.FamilySource,
-            item.RevitCategory);
+            item.RevitCategory,
+            item.ContentHash,
+            item.HashFormatVersion);
     }
 
     public async Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default)

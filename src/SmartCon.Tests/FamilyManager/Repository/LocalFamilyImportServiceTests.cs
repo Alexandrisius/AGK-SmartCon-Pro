@@ -495,11 +495,14 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         // the dialog's FileName ("RenamedName").
         var versionsBefore = await _fixture.GetProvider().GetVersionsAsync(seed.CatalogItemId!);
         Assert.Single(versionsBefore);
+        var seedVersionId = versionsBefore[0].Id;
+        var seedPublishedAt = versionsBefore[0].PublishedAtUtc;
         var existingFile = await _fixture.GetProvider().GetFileAsync(versionsBefore[0].FileId);
         Assert.NotNull(existingFile);
         var existingAbsolutePath = Path.Combine(_fixture.GetDatabaseRoot(), existingFile!.RelativePath);
         File.SetAttributes(existingAbsolutePath, File.GetAttributes(existingAbsolutePath) & ~FileAttributes.ReadOnly);
-        File.WriteAllText(existingAbsolutePath, $"RENAMED_CONTENT_{Guid.NewGuid()}");
+        var newContent = $"RENAMED_CONTENT_{Guid.NewGuid()}";
+        File.WriteAllText(existingAbsolutePath, newContent);
         Assert.True(File.Exists(existingAbsolutePath));
 
         var item = new FamilyBatchImportItem(
@@ -512,7 +515,19 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
             TargetCategoryId: null,
             TargetCategoryName: null,
             FamilySource: "loadable",
-            TypeCount: null)
+            TypeCount: null,
+            RevitCategory: null,
+            OriginalSourcePath: null,
+            SourceTypes: null,
+            Source: null,
+            PrecomputedCatalogItemId: null,
+            PrecomputedVersionLabel: null,
+            PrecomputedManagedPath: null,
+            ContentHash: "NEW_HASH_ADR040_" + Guid.NewGuid().ToString("N"),
+            HashFormatVersion: 1,
+            MatchedVersionLabel: null,
+            LoadableSnapshot: null,
+            SystemSnapshot: null)
         {
             // v2.0.1: the default Action is IncrementVersion, which would
             // route through UpdateFamilyAsync and try to create v2 — not
@@ -540,5 +555,113 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         var fileAfter = await _fixture.GetProvider().GetFileAsync(versions[0].FileId);
         Assert.NotNull(fileAfter);
         Assert.Equal("RenamedName.rfa", fileAfter!.FileName);
+
+        // ADR-040: catalog_versions must be UPDATEd in place, not INSERTed.
+        // The version id must stay the same (no new row), but content_hash
+        // and published_at_utc must reflect the new content.
+        Assert.Single(versions);
+        Assert.Equal(seedVersionId, versions[0].Id);
+        Assert.Equal(seed.VersionLabel, versions[0].VersionLabel);
+        Assert.Equal(item.ContentHash, versions[0].ContentHash);
+        Assert.Equal(1, versions[0].HashFormatVersion);
+        Assert.True(versions[0].PublishedAtUtc > seedPublishedAt,
+            $"published_at_utc should advance: was {seedPublishedAt:O}, now {versions[0].PublishedAtUtc:O}");
+
+        // ADR-040: the on-disk .rfa file must contain the new content
+        // (OverwriteCurrentAsync must not leave the old bytes).
+        var onDiskContent = File.ReadAllText(existingAbsolutePath);
+        Assert.Equal(newContent, onDiskContent);
+
+        // catalog_items.content_hash must also be updated (stale detection
+        // relies on it).
+        Assert.Equal(versions[0].ContentHash, itemAfter.ContentHash);
+    }
+
+    /// <summary>
+    /// ADR-040: OverwriteCurrent with a non-existent current version
+    /// (catalog_items.current_version_label points to a missing
+    /// catalog_versions row) must return a descriptive error instead of
+    /// throwing or silently succeeding.
+    /// </summary>
+    [Fact]
+    public async Task OverwriteCurrent_CurrentVersionNotFound_ReturnsError()
+    {
+        var item = new FamilyBatchImportItem(
+            FilePath: _fixture.CreateFakeRfaFile("Orphan.rfa"),
+            FileName: "Orphan",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Existing,
+            ExistingCatalogItemId: "nonexistent-catalog-item-id",
+            ExistingVersionLabel: "v1",
+            TargetCategoryId: null,
+            TargetCategoryName: null,
+            FamilySource: "loadable",
+            TypeCount: null)
+        {
+            Action = FamilyBatchImportAction.OverwriteCurrent
+        };
+
+        var result = await _importService.ImportBatchAsync(new[] { item }, null, null);
+
+        Assert.Equal(0, result.SuccessCount);
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Current version not found", result.Results[0].ErrorMessage);
+    }
+
+    /// <summary>
+    /// ADR-040: OverwriteCurrent for a system family (FamilySource="system")
+    /// must write the ".rvt" extension to family_files.file_name, not ".rfa".
+    /// Previously the extension was hardcoded to ".rfa", producing
+    /// "Трубы.rfa" for a system Pipe family.
+    /// </summary>
+    [Fact]
+    public async Task OverwriteCurrent_SystemFamily_UsesRvtExtensionInFileName()
+    {
+        // Seed an existing system family in v1.
+        var seedPath = _fixture.CreateFakeRfaFile("Truby.rfa");
+        var seed = await _importService.ImportFileAsync(
+            new FamilyImportRequest(seedPath, 2025, null, null, null)
+            {
+                FamilySource = "system"
+            });
+        Assert.True(seed.Success);
+        Assert.NotNull(seed.CatalogItemId);
+
+        // Simulate post-staging: overwrite the v1 managed file.
+        var versionsBefore = await _fixture.GetProvider().GetVersionsAsync(seed.CatalogItemId!);
+        Assert.Single(versionsBefore);
+        var existingFile = await _fixture.GetProvider().GetFileAsync(versionsBefore[0].FileId);
+        Assert.NotNull(existingFile);
+        var existingAbsolutePath = Path.Combine(_fixture.GetDatabaseRoot(), existingFile!.RelativePath);
+        File.SetAttributes(existingAbsolutePath, File.GetAttributes(existingAbsolutePath) & ~FileAttributes.ReadOnly);
+        File.WriteAllText(existingAbsolutePath, $"SYSTEM_OVERWRITE_{Guid.NewGuid()}");
+
+        var item = new FamilyBatchImportItem(
+            FilePath: existingAbsolutePath,
+            FileName: "Truby",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Existing,
+            ExistingCatalogItemId: seed.CatalogItemId,
+            ExistingVersionLabel: seed.VersionLabel,
+            TargetCategoryId: null,
+            TargetCategoryName: null,
+            FamilySource: "system",
+            TypeCount: null)
+        {
+            Action = FamilyBatchImportAction.OverwriteCurrent
+        };
+
+        var result = await _importService.ImportBatchAsync(new[] { item }, null, null);
+
+        Assert.Equal(1, result.SuccessCount);
+        Assert.Equal(0, result.ErrorCount);
+
+        var versions = await _fixture.GetProvider().GetVersionsAsync(seed.CatalogItemId!);
+        Assert.Single(versions);
+        var fileAfter = await _fixture.GetProvider().GetFileAsync(versions[0].FileId);
+        Assert.NotNull(fileAfter);
+        Assert.Equal("Truby.rvt", fileAfter!.FileName);
     }
 }

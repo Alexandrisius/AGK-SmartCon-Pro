@@ -47,20 +47,45 @@ internal sealed class LoadableFamilyImportOrchestrator : ILoadableFamilyImportOr
 
         foreach (var item in items)
         {
-            // item.FileName is set via SafeFileName.GetBaseName(item.FilePath) in
+            // ADR-040: match by CatalogItemId first (precise key, works
+            // for OverwriteCurrent where r.FileName has no extension but
+            // item.FilePath does). Fall back to filename comparison for
+            // edge cases where CatalogItemId is not set (e.g. UC-1 New
+            // path where the id is allocated inside ImportFileAsync).
+            //
+            // item.FileName is set via SafeFileName.GetBasePath(item.FilePath) in
             // every Build*BatchItem path (NO extension). However, r.FileName comes
             // from LocalFamilyImportService.ImportFileAsync:79, which assigns
             // metadata.FileName — the raw file name with extension (".rfa").
-            // Compare on the WITH-extension form on both sides so the match works
-            // for every family (including those with internal dots like
+            // Compare on the WITHOUT-extension form on both sides so the fallback
+            // match works for every family (including those with internal dots like
             // "BP_A0307_ITAP_ART.162_Амер угловая.rfa").
-            var itemFileWithExt = Path.GetFileName(item.FilePath);
+            var expectedCatalogItemId = item.ExistingCatalogItemId ?? item.PrecomputedCatalogItemId;
             var match = importResult.Results.FirstOrDefault(r =>
-                !string.IsNullOrEmpty(r.FileName) &&
-                string.Equals(r.FileName, itemFileWithExt, StringComparison.OrdinalIgnoreCase));
+                !string.IsNullOrEmpty(r.CatalogItemId)
+                && !string.IsNullOrEmpty(expectedCatalogItemId)
+                && string.Equals(r.CatalogItemId, expectedCatalogItemId, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                match = importResult.Results.FirstOrDefault(r =>
+                    !string.IsNullOrEmpty(r.FileName) &&
+                    !string.IsNullOrEmpty(item.FileName) &&
+                    string.Equals(
+                        Path.GetFileNameWithoutExtension(r.FileName),
+                        Path.GetFileNameWithoutExtension(item.FileName),
+                        StringComparison.OrdinalIgnoreCase));
+            }
 
             if (match is null || !match.Success || match.WasSkipped || string.IsNullOrEmpty(match.CatalogItemId))
             {
+                if (match is null)
+                {
+                    using var _scope = SmartConLogger.BeginScope("LoadableImport", ("FileName", item.FileName));
+                    SmartConLogger.Warn(
+                        $"No matching import result for loadable row '{item.FileName}' " +
+                        $"(expectedCatalogItemId='{expectedCatalogItemId ?? "<null>"}', FilePath='{item.FilePath}') " +
+                        $"[Action: проверьте, что ImportBatchAsync вернул CatalogItemId для этого item]");
+                }
                 skipped++;
                 continue;
             }

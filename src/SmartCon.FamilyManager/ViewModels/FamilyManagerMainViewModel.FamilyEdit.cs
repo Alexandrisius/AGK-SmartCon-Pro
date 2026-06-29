@@ -386,23 +386,6 @@ public sealed partial class FamilyManagerMainViewModel
         var resolvedCategoryId = importItem.TargetCategoryId ?? existingCategoryId;
         var resolvedCategoryName = importItem.TargetCategoryName ?? existingCategoryName;
 
-        var request = new FamilyImportRequest(
-            FilePath: saveAsPath!,
-            RevitMajorVersion: prepared.RevitMajorVersion,
-            Category: resolvedCategoryName,
-            Tags: null,
-            Description: null,
-            CategoryId: resolvedCategoryId,
-            FamilySource: "loadable",
-            RevitCategory: null,
-            FileName: displayName,
-            OriginalSourcePath: prepared.SourcePath,
-            PrecomputedCatalogItemId: resolvedCatalogItemId,
-            PrecomputedVersionLabel: resolvedVersionLabel,
-            PrecomputedManagedPath: saveAsPath,
-            ContentHash: importItem.ContentHash,
-            HashFormatVersion: importItem.HashFormatVersion);
-
         var progress = new Progress<FamilyImportProgress>(p =>
         {
             StatusMessage = string.Format(
@@ -410,7 +393,76 @@ public sealed partial class FamilyManagerMainViewModel
                 p.CurrentFileIndex + 1, p.TotalFiles);
         });
 
-        var importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
+        // ADR-040: for OverwriteCurrent, route through ImportBatchAsync (which
+        // dispatches to OverwriteCurrentAsync → UPDATE catalog_versions in place)
+        // instead of ImportFileAsync (which always INSERTs a new catalog_versions
+        // row and fails with UNIQUE constraint when versionLabel = ExistingVersionLabel).
+        // For New/IncrementVersion, keep the existing ImportFileAsync path — it
+        // creates a fresh catalog_versions row, which is correct for those actions.
+        FamilyImportResult importResult;
+        if (isOverwrite)
+        {
+            var batchItem = new FamilyBatchImportItem(
+                FilePath: saveAsPath!,
+                FileName: displayName,
+                RevitMajorVersion: prepared.RevitMajorVersion,
+                Status: FamilyBatchImportStatus.Existing,
+                ExistingCatalogItemId: resolvedCatalogItemId,
+                ExistingVersionLabel: resolvedVersionLabel,
+                TargetCategoryId: resolvedCategoryId,
+                TargetCategoryName: resolvedCategoryName,
+                FamilySource: "loadable",
+                TypeCount: importItem.TypeCount,
+                RevitCategory: null,
+                OriginalSourcePath: prepared.SourcePath,
+                SourceTypes: null,
+                Source: null,
+                PrecomputedCatalogItemId: resolvedCatalogItemId,
+                PrecomputedVersionLabel: resolvedVersionLabel,
+                PrecomputedManagedPath: saveAsPath,
+                ContentHash: importItem.ContentHash,
+                HashFormatVersion: importItem.HashFormatVersion,
+                MatchedVersionLabel: importItem.MatchedVersionLabel,
+                LoadableSnapshot: importItem.LoadableSnapshot,
+                SystemSnapshot: null)
+            {
+                Action = FamilyBatchImportAction.OverwriteCurrent
+            };
+
+            var batchResult = await _importService.ImportBatchAsync(
+                new[] { batchItem }, resolvedCategoryId, progress, CancellationToken.None);
+            importResult = batchResult.Results.Count > 0
+                ? batchResult.Results[0]
+                : new FamilyImportResult(
+                    Success: false,
+                    CatalogItemId: resolvedCatalogItemId,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: displayName,
+                    VersionLabel: resolvedVersionLabel,
+                    ErrorMessage: "ImportBatchAsync returned no results for OverwriteCurrent");
+        }
+        else
+        {
+            var request = new FamilyImportRequest(
+                FilePath: saveAsPath!,
+                RevitMajorVersion: prepared.RevitMajorVersion,
+                Category: resolvedCategoryName,
+                Tags: null,
+                Description: null,
+                CategoryId: resolvedCategoryId,
+                FamilySource: "loadable",
+                RevitCategory: null,
+                FileName: displayName,
+                OriginalSourcePath: prepared.SourcePath,
+                PrecomputedCatalogItemId: resolvedCatalogItemId,
+                PrecomputedVersionLabel: resolvedVersionLabel,
+                PrecomputedManagedPath: saveAsPath,
+                ContentHash: importItem.ContentHash,
+                HashFormatVersion: importItem.HashFormatVersion);
+
+            importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
+        }
 
         // Phase 27B / ADR-036 Bug #2: LoadTreeAsync MUST run AFTER
         // ExtractAttributesForLoadableTasks, not before. Otherwise the tree
@@ -788,9 +840,51 @@ public sealed partial class FamilyManagerMainViewModel
                 // for a new item, files/<fresh GUID>/v1. Falling back to the
                 // legacy allocator when no precomputed path is present keeps
                 // unit tests and direct callers working.
-                var managedRvtPath = !string.IsNullOrEmpty(item.PrecomputedManagedPath)
-                    ? item.PrecomputedManagedPath!
-                    : ComputeSystemFamilyManagedPath(source.DisplayName);
+                //
+                // ADR-040: for OverwriteCurrent, the precomputed path points
+                // to vN+1 (precomputer does not know about Action). We must
+                // overwrite the CURRENT version's file (v1) instead, so the
+                // managed .rvt at the current version's path is replaced and
+                // OverwriteCurrentAsync can UPDATE catalog_versions in place
+                // without creating an orphan vN+1 file.
+                string managedRvtPath;
+                if (item.Action == FamilyBatchImportAction.OverwriteCurrent
+                    && !string.IsNullOrEmpty(item.ExistingCatalogItemId)
+                    && !string.IsNullOrEmpty(item.ExistingVersionLabel))
+                {
+                    managedRvtPath = _importService.ComputeManagedFilePath(
+                        item.ExistingCatalogItemId!,
+                        item.ExistingVersionLabel!,
+                        SafeFileName.SanitizeFileName(source.DisplayName),
+                        ".rvt") ?? string.Empty;
+                    if (string.IsNullOrEmpty(managedRvtPath))
+                    {
+                        SmartConLogger.Warn(
+                            $"OverwriteCurrent staging for '{source.DisplayName}': ComputeManagedFilePath returned null " +
+                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}') " +
+                            $"[Action: check active catalog DB is selected and pathResolver is configured]");
+                    }
+                    else
+                    {
+                        // I-16 / ADR-016: managed files are ReadOnly. Remove
+                        // the attribute before CreateCleanProject overwrites
+                        // the file; restore it after.
+                        if (File.Exists(managedRvtPath))
+                        {
+                            File.SetAttributes(managedRvtPath, File.GetAttributes(managedRvtPath) & ~FileAttributes.ReadOnly);
+                        }
+                        SmartConLogger.Info(
+                            $"Staging system family '{source.DisplayName}' for OverwriteCurrent: reusing current version path " +
+                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}', " +
+                            $"target='{managedRvtPath}') — no orphan vN+1 file will be created");
+                    }
+                }
+                else
+                {
+                    managedRvtPath = !string.IsNullOrEmpty(item.PrecomputedManagedPath)
+                        ? item.PrecomputedManagedPath!
+                        : (ComputeSystemFamilyManagedPath(source.DisplayName) ?? string.Empty);
+                }
                 if (string.IsNullOrEmpty(managedRvtPath))
                 {
                     SmartConLogger.Warn($"Cannot compute managed path for '{source.DisplayName}' — skipping [Action: check active catalog DB is selected]");
@@ -801,7 +895,7 @@ public sealed partial class FamilyManagerMainViewModel
                     $"Staging system family '{source.DisplayName}': " +
                     $"item.PrecomputedCatalogItemId='{item.PrecomputedCatalogItemId ?? "<null>"}', " +
                     $"item.PrecomputedManagedPath='{item.PrecomputedManagedPath ?? "<null>"}', " +
-                    $"using={(item.PrecomputedManagedPath is not null ? "precomputed" : "fallback")}, " +
+                    $"using={(item.Action == FamilyBatchImportAction.OverwriteCurrent && !string.IsNullOrEmpty(item.ExistingCatalogItemId) ? "overwrite-current" : (item.PrecomputedManagedPath is not null ? "precomputed" : "fallback"))}, " +
                     $"target='{managedRvtPath}'");
 
                 CreateCleanProjectResult createResult;
@@ -823,6 +917,15 @@ public sealed partial class FamilyManagerMainViewModel
                     SmartConLogger.Warn(
                         $"CreateCleanProjectWithTypesAndInstances returned Success=false for '{source.DisplayName}' [Action: see prior log lines from SystemRevitOps for the underlying cause]");
                     continue;
+                }
+
+                // ADR-040 / I-16: restore ReadOnly on the overwritten
+                // managed file so it stays immutable outside FamilyManager.
+                if (item.Action == FamilyBatchImportAction.OverwriteCurrent
+                    && !string.IsNullOrEmpty(item.ExistingCatalogItemId)
+                    && File.Exists(managedRvtPath!))
+                {
+                    File.SetAttributes(managedRvtPath!, File.GetAttributes(managedRvtPath!) | FileAttributes.ReadOnly);
                 }
 
                 rewrites[i] = item with
@@ -897,9 +1000,44 @@ public sealed partial class FamilyManagerMainViewModel
                 }
 
                 // v2.0.0: prefer the precomputed canonical managed path.
-                var managedRfaPath = !string.IsNullOrEmpty(item.PrecomputedManagedPath)
-                    ? item.PrecomputedManagedPath!
-                    : ComputeLoadableFamilyManagedPath(source.FamilyName);
+                //
+                // ADR-040: for OverwriteCurrent, the precomputed path points
+                // to vN+1 (precomputer does not know about Action). We must
+                // overwrite the CURRENT version's file (v1) instead, so
+                // OverwriteCurrentAsync can UPDATE catalog_versions in place
+                // without creating an orphan vN+1 file. StageLoadableFamilyFromProject
+                // already handles ReadOnly removal/restoration internally.
+                string managedRfaPath;
+                if (item.Action == FamilyBatchImportAction.OverwriteCurrent
+                    && !string.IsNullOrEmpty(item.ExistingCatalogItemId)
+                    && !string.IsNullOrEmpty(item.ExistingVersionLabel))
+                {
+                    managedRfaPath = _importService.ComputeManagedFilePath(
+                        item.ExistingCatalogItemId!,
+                        item.ExistingVersionLabel!,
+                        SafeFileName.SanitizeFileName(source.FamilyName),
+                        ".rfa") ?? string.Empty;
+                    if (string.IsNullOrEmpty(managedRfaPath))
+                    {
+                        SmartConLogger.Warn(
+                            $"OverwriteCurrent staging for '{source.FamilyName}': ComputeManagedFilePath returned null " +
+                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}') " +
+                            $"[Action: check active catalog DB is selected and pathResolver is configured]");
+                    }
+                    else
+                    {
+                        SmartConLogger.Info(
+                            $"Staging loadable family '{source.FamilyName}' for OverwriteCurrent: reusing current version path " +
+                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}', " +
+                            $"target='{managedRfaPath}') — no orphan vN+1 file will be created");
+                    }
+                }
+                else
+                {
+                    managedRfaPath = !string.IsNullOrEmpty(item.PrecomputedManagedPath)
+                        ? item.PrecomputedManagedPath!
+                        : (ComputeLoadableFamilyManagedPath(source.FamilyName) ?? string.Empty);
+                }
                 if (string.IsNullOrEmpty(managedRfaPath))
                 {
                     SmartConLogger.Warn($"Cannot compute managed path for '{source.FamilyName}' — skipping [Action: проверьте, что активная БД каталога выбрана и доступна для записи]");
