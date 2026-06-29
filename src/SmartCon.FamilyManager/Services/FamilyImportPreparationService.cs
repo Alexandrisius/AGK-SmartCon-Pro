@@ -144,6 +144,8 @@ public sealed class FamilyImportPreparationService
         var displayName = !string.IsNullOrEmpty(activeDoc.Title)
             ? activeDoc.Title
             : "ActiveFamily";
+        if (displayName.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
+            displayName = displayName[..^4];
 
         SmartConLogger.Info($"Preparing active family: '{displayName}'");
 
