@@ -34,12 +34,6 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             familyName = familyName[..^4];
         var category = familyDoc.OwnerFamily?.FamilyCategory?.Name ?? string.Empty;
 
-        SmartConLogger.Debug(
-            $"ExtractFromFamilyDocument: familyDoc.Title='{familyDoc.Title}', " +
-            $"IsFamilyDocument={familyDoc.IsFamilyDocument}, " +
-            $"Path='{familyDoc.PathName ?? "<null>"}', " +
-            $"snapshot.FamilyName='{familyName}'");
-
         var parameters = ExtractParameters(fm);
         var types = ExtractTypes(fm, familyDoc);
         var geometry = ExtractGeometry(familyDoc);
@@ -126,14 +120,12 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         var rawParams = fm.GetParameters();
         SmartConLogger.Debug($"ExtractParameters: fm.GetParameters() returned {rawParams.Count} parameter(s)");
         var result = new List<FamilyParameterInfo>(rawParams.Count);
-        var skippedEmptyName = 0;
 
         foreach (var param in rawParams)
         {
             var name = param.Definition?.Name ?? string.Empty;
             if (string.IsNullOrEmpty(name))
             {
-                skippedEmptyName++;
                 SmartConLogger.Debug($"  ExtractParameters: skipping param with empty Definition.Name (StorageType={param.StorageType}, IsShared={param.IsShared}, BuiltInId={TryGetBuiltInParameterId(param) ?? "<none>"})");
                 continue;
             }
@@ -167,7 +159,6 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 BuiltInParameterId: builtInId));
         }
 
-        SmartConLogger.Debug($"ExtractParameters: result={result.Count}, skippedEmptyName={skippedEmptyName}");
         return result
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ThenBy(p => p.StorageType, StringComparer.Ordinal)
@@ -200,14 +191,12 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             .ToLookup(s => s.Name, s => s, StringComparer.Ordinal);
 
         var result = new List<FamilyTypeSnapshot>();
-        var skippedUnnamed = 0;
 
         foreach (FamilyType familyType in fm.Types)
         {
             string typeName;
             if (string.IsNullOrWhiteSpace(familyType.Name))
             {
-                skippedUnnamed++;
                 SmartConLogger.Debug($"  ExtractTypes: using synthetic name '<default>' for unnamed type");
                 typeName = "<default>";
             }
@@ -236,7 +225,6 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 UniqueId: uniqueId));
         }
 
-        SmartConLogger.Debug($"ExtractTypes: result={result.Count}, skippedUnnamed={skippedUnnamed}, totalFmTypes={totalTypes}");
         return result
             .OrderBy(t => t.Name, StringComparer.Ordinal)
             .ToList();
