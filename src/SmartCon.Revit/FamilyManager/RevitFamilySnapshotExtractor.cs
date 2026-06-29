@@ -30,7 +30,15 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 
         var fm = familyDoc.FamilyManager;
         var familyName = familyDoc.Title;
+        if (familyName.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
+            familyName = familyName[..^4];
         var category = familyDoc.OwnerFamily?.FamilyCategory?.Name ?? string.Empty;
+
+        SmartConLogger.Debug(
+            $"ExtractFromFamilyDocument: familyDoc.Title='{familyDoc.Title}', " +
+            $"IsFamilyDocument={familyDoc.IsFamilyDocument}, " +
+            $"Path='{familyDoc.PathName ?? "<null>"}', " +
+            $"snapshot.FamilyName='{familyName}'");
 
         var parameters = ExtractParameters(fm);
         var types = ExtractTypes(fm, familyDoc);
@@ -116,12 +124,19 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         Autodesk.Revit.DB.FamilyManager fm)
     {
         var rawParams = fm.GetParameters();
+        SmartConLogger.Debug($"ExtractParameters: fm.GetParameters() returned {rawParams.Count} parameter(s)");
         var result = new List<FamilyParameterInfo>(rawParams.Count);
+        var skippedEmptyName = 0;
 
         foreach (var param in rawParams)
         {
             var name = param.Definition?.Name ?? string.Empty;
-            if (string.IsNullOrEmpty(name)) continue;
+            if (string.IsNullOrEmpty(name))
+            {
+                skippedEmptyName++;
+                SmartConLogger.Debug($"  ExtractParameters: skipping param with empty Definition.Name (StorageType={param.StorageType}, IsShared={param.IsShared}, BuiltInId={TryGetBuiltInParameterId(param) ?? "<none>"})");
+                continue;
+            }
 
             var storageType = param.StorageType.ToString();
             var group = GetParameterGroup(param);
@@ -152,6 +167,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 BuiltInParameterId: builtInId));
         }
 
+        SmartConLogger.Debug($"ExtractParameters: result={result.Count}, skippedEmptyName={skippedEmptyName}");
         return result
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ThenBy(p => p.StorageType, StringComparer.Ordinal)
@@ -161,6 +177,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
     private static List<FamilyTypeSnapshot> ExtractTypes(
         Autodesk.Revit.DB.FamilyManager fm, Document familyDoc)
     {
+        var totalTypes = fm.Types.Size;
+        SmartConLogger.Debug($"ExtractTypes: fm.Types.Size={totalTypes}");
         var paramMap = new Dictionary<string, FamilyParameter>(StringComparer.Ordinal);
         foreach (FamilyParameter param in fm.GetParameters())
         {
@@ -182,11 +200,21 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             .ToLookup(s => s.Name, s => s, StringComparer.Ordinal);
 
         var result = new List<FamilyTypeSnapshot>();
+        var skippedUnnamed = 0;
 
         foreach (FamilyType familyType in fm.Types)
         {
+            string typeName;
             if (string.IsNullOrWhiteSpace(familyType.Name))
-                continue;
+            {
+                skippedUnnamed++;
+                SmartConLogger.Debug($"  ExtractTypes: using synthetic name '<default>' for unnamed type");
+                typeName = "<default>";
+            }
+            else
+            {
+                typeName = familyType.Name;
+            }
 
             var values = new List<FamilyParameterValue>();
 
@@ -200,14 +228,15 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 .OrderBy(v => v.ParameterName, StringComparer.Ordinal)
                 .ToList();
 
-            var uniqueId = symbolsByName[familyType.Name].FirstOrDefault()?.UniqueId;
+            var uniqueId = symbolsByName[typeName].FirstOrDefault()?.UniqueId;
 
             result.Add(new FamilyTypeSnapshot(
-                Name: familyType.Name,
+                Name: typeName,
                 Values: sortedValues,
                 UniqueId: uniqueId));
         }
 
+        SmartConLogger.Debug($"ExtractTypes: result={result.Count}, skippedUnnamed={skippedUnnamed}, totalFmTypes={totalTypes}");
         return result
             .OrderBy(t => t.Name, StringComparer.Ordinal)
             .ToList();
@@ -309,10 +338,26 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 .Cast<GenericForm>()
                 .ToList();
 
+            var symbolicCount = CountElements(familyDoc,
+                new CurveElementFilter(CurveElementType.SymbolicCurve));
+            var detailCount = CountElements(familyDoc,
+                new CurveElementFilter(CurveElementType.DetailCurve));
+            var modelCount = CountElements(familyDoc,
+                new CurveElementFilter(CurveElementType.ModelCurve));
+            var textNoteCount = CountElements(familyDoc, typeof(TextNote));
+            var refPlaneCount = CountElements(familyDoc, typeof(ReferencePlane));
+            var dimensionCount = CountElements(familyDoc, typeof(Dimension));
+
             if (forms.Count == 0)
             {
-                SmartConLogger.Debug("No GenericForm elements found in family document");
-                return new GeometryMetrics(0, Array.Empty<FormMetrics>());
+                SmartConLogger.Debug(
+                    $"No GenericForm elements found in family document. " +
+                    $"2D: symbolic={symbolicCount}, detail={detailCount}, model={modelCount}, " +
+                    $"text={textNoteCount}, refPlane={refPlaneCount}, dim={dimensionCount}");
+                return new GeometryMetrics(
+                    0, Array.Empty<FormMetrics>(),
+                    symbolicCount, detailCount, modelCount,
+                    textNoteCount, refPlaneCount, dimensionCount);
             }
 
             var options = new Options
@@ -338,9 +383,14 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             SmartConLogger.Debug(
                 $"Geometry: {forms.Count} forms, " +
                 $"{sortedMetrics.Count(f => f.IsSolid)} solid, " +
-                $"{sortedMetrics.Count(f => !f.IsSolid)} void");
+                $"{sortedMetrics.Count(f => !f.IsSolid)} void. " +
+                $"2D: symbolic={symbolicCount}, detail={detailCount}, model={modelCount}, " +
+                $"text={textNoteCount}, refPlane={refPlaneCount}, dim={dimensionCount}");
 
-            return new GeometryMetrics(forms.Count, sortedMetrics);
+            return new GeometryMetrics(
+                forms.Count, sortedMetrics,
+                symbolicCount, detailCount, modelCount,
+                textNoteCount, refPlaneCount, dimensionCount);
         }
         catch (Exception ex)
         {
@@ -348,6 +398,34 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 $"Geometry extraction failed: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: hash will use 0 forms — check family document for corruption]");
             return new GeometryMetrics(0, Array.Empty<FormMetrics>());
+        }
+    }
+
+    private static int CountElements(Document doc, ElementFilter filter)
+    {
+        try
+        {
+            return new FilteredElementCollector(doc)
+                .WherePasses(filter)
+                .ToElements().Count;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static int CountElements(Document doc, Type elementType)
+    {
+        try
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(elementType)
+                .ToElements().Count;
+        }
+        catch
+        {
+            return 0;
         }
     }
 

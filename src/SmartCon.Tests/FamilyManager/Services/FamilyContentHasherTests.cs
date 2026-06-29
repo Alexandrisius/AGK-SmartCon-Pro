@@ -44,11 +44,56 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_EmptySnapshot_ReturnsNull()
+    public void ComputeForLoadable_EmptySnapshot_ReturnsStableHash()
     {
         var snapshot = CreateLoadableSnapshot();
         var result = _hasher.ComputeForLoadable(snapshot);
-        Assert.Null(result);
+        Assert.NotNull(result);
+        Assert.Equal("loadable", result!.SourceKind);
+
+        var result2 = _hasher.ComputeForLoadable(CreateLoadableSnapshot());
+        Assert.NotNull(result2);
+        Assert.Equal(result!.HexString, result2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_EmptySnapshot_DifferentNames_DifferentHashes()
+    {
+        var snapshot1 = CreateLoadableSnapshot(familyName: "LogoA");
+        var snapshot2 = CreateLoadableSnapshot(familyName: "LogoB");
+
+        var hash1 = _hasher.ComputeForLoadable(snapshot1);
+        var hash2 = _hasher.ComputeForLoadable(snapshot2);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_2D_Metrics_AffectHash()
+    {
+        var param = new FamilyParameterInfo("W", "Double", "", false, false, null, false, false, null, null);
+        var type = new FamilyTypeSnapshot("T",
+            [new FamilyParameterValue("W", "Double", true, "1", 1.0, null)]);
+
+        var snapshotWithout2D = CreateLoadableSnapshot(
+            parameters: [param],
+            types: [type],
+            geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()));
+
+        var snapshotWith2D = CreateLoadableSnapshot(
+            parameters: [param],
+            types: [type],
+            geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>(),
+                SymbolicCurveCount: 5, DetailCurveCount: 3, TextNoteCount: 2));
+
+        var hashWithout2D = _hasher.ComputeForLoadable(snapshotWithout2D);
+        var hashWith2D = _hasher.ComputeForLoadable(snapshotWith2D);
+
+        Assert.NotNull(hashWithout2D);
+        Assert.NotNull(hashWith2D);
+        Assert.NotEqual(hashWithout2D.HexString, hashWith2D.HexString);
     }
 
     [Fact]
@@ -584,5 +629,72 @@ public class FamilyContentHasherTests
         Assert.NotNull(hash1);
         Assert.NotNull(hash2);
         Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_RfaExtension_StrippedFromHash()
+    {
+        var param = new FamilyParameterInfo("Width", "Double", "PG_GEOMETRY", false, false, null, false, false, null, null);
+        var snapshotWithRfa = CreateLoadableSnapshot(
+            familyName: "MyFamily.rfa",
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("DN50",
+                [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)])]);
+        var snapshotWithoutRfa = CreateLoadableSnapshot(
+            familyName: "MyFamily",
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("DN50",
+                [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)])]);
+
+        var hashWithRfa = _hasher.ComputeForLoadable(snapshotWithRfa);
+        var hashWithoutRfa = _hasher.ComputeForLoadable(snapshotWithoutRfa);
+
+        Assert.NotNull(hashWithRfa);
+        Assert.NotNull(hashWithoutRfa);
+        Assert.Equal(hashWithoutRfa.HexString, hashWithRfa.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_RfaExtension_CaseInsensitive_Stripped()
+    {
+        var param = new FamilyParameterInfo("W", "Double", "", false, false, null, false, false, null, null);
+        var snapshotUpper = CreateLoadableSnapshot(
+            familyName: "Fam.RFA",
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("T",
+                [new FamilyParameterValue("W", "Double", true, "1", 1.0, null)])]);
+        var snapshotNoExt = CreateLoadableSnapshot(
+            familyName: "Fam",
+            parameters: [param],
+            types: [new FamilyTypeSnapshot("T",
+                [new FamilyParameterValue("W", "Double", true, "1", 1.0, null)])]);
+
+        var hashUpper = _hasher.ComputeForLoadable(snapshotUpper);
+        var hashNoExt = _hasher.ComputeForLoadable(snapshotNoExt);
+
+        Assert.NotNull(hashUpper);
+        Assert.NotNull(hashNoExt);
+        Assert.Equal(hashNoExt.HexString, hashUpper.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_DefaultType_AffectsHashVsNoTypes()
+    {
+        var snapshotNoTypes = CreateLoadableSnapshot(
+            familyName: "Annotation",
+            parameters: [],
+            types: []);
+
+        var snapshotWithDefaultType = CreateLoadableSnapshot(
+            familyName: "Annotation",
+            parameters: [],
+            types: [new FamilyTypeSnapshot("<default>", Array.Empty<FamilyParameterValue>())]);
+
+        var hashNoTypes = _hasher.ComputeForLoadable(snapshotNoTypes);
+        var hashWithDefault = _hasher.ComputeForLoadable(snapshotWithDefaultType);
+
+        Assert.NotNull(hashNoTypes);
+        Assert.NotNull(hashWithDefault);
+        Assert.NotEqual(hashNoTypes.HexString, hashWithDefault.HexString);
     }
 }

@@ -189,9 +189,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         try
         {
             var versionStr = _revitContext.GetRevitVersion();
+            SmartConLogger.Debug($"DetectRevitVersion: GetRevitVersion() returned '{versionStr}' (len={versionStr?.Length ?? 0})");
             if (int.TryParse(versionStr, out var v))
             {
                 CurrentRevitVersion = v;
+                SmartConLogger.Debug($"DetectRevitVersion: parsed successfully → CurrentRevitVersion={v}");
+            }
+            else
+            {
+                SmartConLogger.Warn($"DetectRevitVersion: int.TryParse('{versionStr}') returned false — CurrentRevitVersion stays 0. [Action: check Application.VersionNumber format, may need InvariantCulture parse]");
             }
         }
         catch (Exception ex)
@@ -216,7 +222,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     {
         SmartConLogger.TruncateMainLog();
         _sessionStart = DateTime.Now;
-        SmartConLogger.LogSessionStart($"FamilyManager (Revit {CurrentRevitVersion})");
 
         await _databaseManager.InitializeAsync().ConfigureAwait(true);
         RefreshConnections();
@@ -266,6 +271,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private async Task RefreshAccessAndLoadTreeAsync()
     {
+        DetectRevitVersion();
+        SmartConLogger.LogSessionStart($"FamilyManager (Revit {CurrentRevitVersion})");
+
         if (!HasActiveDatabase)
         {
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
@@ -276,7 +284,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             return;
         }
 
-        DetectRevitVersion();
         _accessControl.InvalidateCache();
 
         try

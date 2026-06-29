@@ -27,18 +27,6 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         if (snapshot is null)
             return null;
 
-        if (snapshot.Parameters.Count == 0 &&
-            snapshot.Types.Count == 0 &&
-            snapshot.Geometry.TotalFormCount == 0)
-        {
-            using var _scope = SmartConLogger.BeginScope("ContentHash",
-                ("Method", nameof(ComputeForLoadable)),
-                ("Family", snapshot.FamilyName),
-                ("Result", "EmptySnapshot"));
-            SmartConLogger.Warn("Loadable snapshot has no parameters, types, or geometry — hash not computed. [Action: check family document is valid]");
-            return null;
-        }
-
         var canonical = BuildLoadableCanonicalString(snapshot);
         var hex = ComputeSha256Hex(canonical);
 
@@ -50,6 +38,10 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             ("FormCount", snapshot.Geometry.TotalFormCount),
             ("Hash", hex));
         SmartConLogger.Info($"Loadable hash computed: {hex} ({snapshot.Parameters.Count} params, {snapshot.Types.Count} types, {snapshot.Geometry.TotalFormCount} forms)");
+        var preview = canonical.Length > 500
+            ? canonical[..500] + "…[truncated]"
+            : canonical;
+        SmartConLogger.Debug($"Canonical string (len={canonical.Length}): {preview}");
 
         return new FamilyContentHash(
             HexString: hex,
@@ -81,6 +73,10 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             ("TypeCount", snapshot.Types.Count),
             ("Hash", hex));
         SmartConLogger.Info($"System hash computed: {hex} ({snapshot.CategoryName}, {snapshot.Types.Count} types)");
+        var preview = canonical.Length > 500
+            ? canonical[..500] + "…[truncated]"
+            : canonical;
+        SmartConLogger.Debug($"Canonical string (len={canonical.Length}): {preview}");
 
         return new FamilyContentHash(
             HexString: hex,
@@ -96,7 +92,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     {
         var sb = new StringBuilder(512);
         sb.Append("FHV1|LOADABLE|");
-        sb.Append(snapshot.FamilyName ?? string.Empty);
+        sb.Append(StripRfaExtension(snapshot.FamilyName) ?? string.Empty);
         sb.Append('|');
         sb.Append(snapshot.Category ?? string.Empty);
         sb.Append('|');
@@ -158,6 +154,14 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             sb.Append(f.EdgeCount).Append('|');
             sb.Append(f.SubcategoryName ?? NullSubcatMarker).Append('|');
         }
+
+        sb.Append("GEOM2D|");
+        sb.Append(snapshot.Geometry.SymbolicCurveCount).Append('|');
+        sb.Append(snapshot.Geometry.DetailCurveCount).Append('|');
+        sb.Append(snapshot.Geometry.ModelCurveCount).Append('|');
+        sb.Append(snapshot.Geometry.TextNoteCount).Append('|');
+        sb.Append(snapshot.Geometry.ReferencePlaneCount).Append('|');
+        sb.Append(snapshot.Geometry.DimensionCount).Append('|');
 
         sb.Append("NESTED|");
         var sortedNested = snapshot.SharedNestedFamilyNames
@@ -263,5 +267,21 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         var hash = sha256.ComputeHash(bytes);
         return BitConverter.ToString(hash).Replace("-", string.Empty);
 #endif
+    }
+
+    /// <summary>
+    /// Strips a trailing <c>.rfa</c> extension (case-insensitive) from the
+    /// family name. <c>Document.Title</c> may or may not include the
+    /// extension depending on how the family document was opened
+    /// (<c>EditFamily</c> from a project includes it; opening a managed
+    /// <c>.rfa</c> file directly does not). Stripping here is a defensive
+    /// measure so the hash is stable regardless of the source path.
+    /// </summary>
+    private static string StripRfaExtension(string? name)
+    {
+        if (name is null || name.Length == 0) return string.Empty;
+        if (name.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
+            return name.Substring(0, name.Length - 4);
+        return name;
     }
 }

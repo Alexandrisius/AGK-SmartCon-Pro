@@ -10,9 +10,30 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// free-form) found in the family document.</param>
 /// <param name="Forms">Per-form metrics, sorted by
 /// (FormKind, IsSolid, Volume) for deterministic output.</param>
+/// <param name="SymbolicCurveCount">Number of <c>SymbolicCurve</c>
+/// elements (2D symbolic lines in annotation/title-block families).
+/// 0 for 3D-only families.</param>
+/// <param name="DetailCurveCount">Number of <c>DetailCurve</c> elements
+/// (2D detail lines). 0 for 3D-only families.</param>
+/// <param name="ModelCurveCount">Number of <c>ModelCurve</c> elements
+/// (2D model lines, used in some annotation families). 0 for 3D-only
+/// families.</param>
+/// <param name="TextNoteCount">Number of <c>TextNote</c> elements
+/// (text labels in annotation/title-block families). 0 for 3D-only
+/// families.</param>
+/// <param name="ReferencePlaneCount">Number of <c>ReferencePlane</c>
+/// elements. 0 for families without reference planes.</param>
+/// <param name="DimensionCount">Number of <c>Dimension</c> elements
+/// in the family document. 0 for families without dimensions.</param>
 public sealed record GeometryMetrics(
     int TotalFormCount,
-    IReadOnlyList<FormMetrics> Forms);
+    IReadOnlyList<FormMetrics> Forms,
+    int SymbolicCurveCount = 0,
+    int DetailCurveCount = 0,
+    int ModelCurveCount = 0,
+    int TextNoteCount = 0,
+    int ReferencePlaneCount = 0,
+    int DimensionCount = 0);
 
 /// <summary>
 /// Metrics for a single <c>GenericForm</c> element inside a family
