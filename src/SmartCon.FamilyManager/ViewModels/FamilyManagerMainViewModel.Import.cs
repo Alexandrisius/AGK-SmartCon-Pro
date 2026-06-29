@@ -10,6 +10,7 @@ using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -111,7 +112,8 @@ public sealed partial class FamilyManagerMainViewModel
                     TargetCategoryId: categoryId ?? existingCategoryId,
                     TargetCategoryName: categoryName ?? existingCategoryName,
                     FamilySource: p.FamilySource,
-                    TypeCount: null,
+                    TypeCount: SnapshotExtractionMapper.ResolveTypeCount(
+                        p.LoadableSnapshot, p.SystemSnapshot, p.SourceTypes),
                     RevitCategory: null,
                     OriginalSourcePath: null,
                     SourceTypes: p.SourceTypes,
@@ -540,7 +542,8 @@ public sealed partial class FamilyManagerMainViewModel
                 TargetCategoryId: existingCategoryId,
                 TargetCategoryName: existingCategoryName,
                 FamilySource: p.FamilySource,
-                TypeCount: p.SourceTypes?.Count,
+                TypeCount: SnapshotExtractionMapper.ResolveTypeCount(
+                    p.LoadableSnapshot, p.SystemSnapshot, p.SourceTypes),
                 RevitCategory: null,
                 OriginalSourcePath: null,
                 SourceTypes: p.SourceTypes,

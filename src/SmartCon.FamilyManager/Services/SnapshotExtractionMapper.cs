@@ -246,6 +246,33 @@ internal static class SnapshotExtractionMapper
     }
 
     /// <summary>
+    /// Resolves the type count to display in the batch import dialog from
+    /// the in-memory snapshots produced in Phase 1 Prepare. Priority:
+    /// <paramref name="sourceTypes"/> (system families — selected/placed
+    /// types count) → <paramref name="loadableSnapshot"/> (loadable
+    /// families — named types from <c>FamilyManager.Types</c>) →
+    /// <paramref name="systemSnapshot"/> (system families — all category
+    /// types, fallback when <paramref name="sourceTypes"/> is null) →
+    /// <c>null</c> (Prepare failed or no snapshot — the dialog shows "—").
+    /// <para>
+    /// This ensures the "Types" column is populated for every use case
+    /// (UC-1 file import, UC-2 active .rfa, UC-3 active project, UC-4
+    /// selected elements) without re-opening any document — the snapshot
+    /// already carries the count from the single Prepare open.
+    /// </para>
+    /// </summary>
+    public static int? ResolveTypeCount(
+        FamilySnapshot? loadableSnapshot,
+        SystemFamilySnapshot? systemSnapshot,
+        IReadOnlyList<FamilySourceTypeInfo>? sourceTypes)
+    {
+        if (sourceTypes is not null) return sourceTypes.Count;
+        if (loadableSnapshot?.Types is not null) return loadableSnapshot.Types.Count;
+        if (systemSnapshot?.Types is not null) return systemSnapshot.Types.Count;
+        return null;
+    }
+
+    /// <summary>
     /// Computes a best-effort ValueRaw string matching the convention of
     /// <c>RevitFamilyDataExtractionService.ExtractValueForParameter</c>:
     /// Double → invariant full-precision, Integer → ToString, String → value,

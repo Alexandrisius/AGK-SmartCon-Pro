@@ -265,7 +265,8 @@ public sealed partial class FamilyManagerMainViewModel
             existingCategoryId,
             existingCategoryName,
             FamilySource: "loadable",
-            TypeCount: null,
+            TypeCount: SnapshotExtractionMapper.ResolveTypeCount(
+                prepared.LoadableSnapshot, prepared.SystemSnapshot, prepared.SourceTypes),
             RevitCategory: null,
             OriginalSourcePath: prepared.SourcePath,
             SourceTypes: null,

@@ -322,4 +322,109 @@ public sealed class SnapshotExtractionMapperTests
         Assert.Single(result);
         Assert.Null(result[0].UniqueId);
     }
+
+    // ---- ResolveTypeCount ----
+
+    [Fact]
+    public void ResolveTypeCount_SourceTypesNotNull_ReturnsSourceTypesCount()
+    {
+        var sourceTypes = new[]
+        {
+            new FamilySourceTypeInfo("uid-1", "DN50", "Pipes", -2008044),
+            new FamilySourceTypeInfo("uid-2", "DN100", "Pipes", -2008044),
+        };
+        var loadableSnapshot = new FamilySnapshot(
+            FamilyName: "F", Category: "C",
+            Parameters: Array.Empty<FamilyParameterInfo>(),
+            Types: new[] { new FamilyTypeSnapshot("X", Array.Empty<FamilyParameterValue>()) },
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+
+        var result = SnapshotExtractionMapper.ResolveTypeCount(
+            loadableSnapshot, systemSnapshot: null, sourceTypes);
+
+        Assert.Equal(2, result);
+    }
+
+    [Fact]
+    public void ResolveTypeCount_SourceTypesNull_LoadableSnapshot_ReturnsSnapshotTypesCount()
+    {
+        var loadableSnapshot = new FamilySnapshot(
+            FamilyName: "Valve", Category: "Pipe Fittings",
+            Parameters: Array.Empty<FamilyParameterInfo>(),
+            Types: new[]
+            {
+                new FamilyTypeSnapshot("DN50", Array.Empty<FamilyParameterValue>()),
+                new FamilyTypeSnapshot("DN100", Array.Empty<FamilyParameterValue>()),
+                new FamilyTypeSnapshot("DN200", Array.Empty<FamilyParameterValue>()),
+            },
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+
+        var result = SnapshotExtractionMapper.ResolveTypeCount(
+            loadableSnapshot, systemSnapshot: null, sourceTypes: null);
+
+        Assert.Equal(3, result);
+    }
+
+    [Fact]
+    public void ResolveTypeCount_SourceTypesNull_LoadableSnapshotNull_SystemSnapshot_ReturnsSystemTypesCount()
+    {
+        var systemSnapshot = new SystemFamilySnapshot(
+            CategoryName: "Трубы", CategoryId: -2008044,
+            Types: new[]
+            {
+                new SystemTypeSnapshot("DN50", Array.Empty<SystemParameterValue>()),
+                new SystemTypeSnapshot("DN100", Array.Empty<SystemParameterValue>()),
+            });
+
+        var result = SnapshotExtractionMapper.ResolveTypeCount(
+            loadableSnapshot: null, systemSnapshot, sourceTypes: null);
+
+        Assert.Equal(2, result);
+    }
+
+    [Fact]
+    public void ResolveTypeCount_AllNull_ReturnsNull()
+    {
+        var result = SnapshotExtractionMapper.ResolveTypeCount(
+            loadableSnapshot: null, systemSnapshot: null, sourceTypes: null);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ResolveTypeCount_EmptySourceTypes_ReturnsZero()
+    {
+        var loadableSnapshot = new FamilySnapshot(
+            FamilyName: "F", Category: "C",
+            Parameters: Array.Empty<FamilyParameterInfo>(),
+            Types: new[] { new FamilyTypeSnapshot("X", Array.Empty<FamilyParameterValue>()) },
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+
+        var result = SnapshotExtractionMapper.ResolveTypeCount(
+            loadableSnapshot, systemSnapshot: null, sourceTypes: Array.Empty<FamilySourceTypeInfo>());
+
+        Assert.Equal(0, result);
+    }
+
+    [Fact]
+    public void ResolveTypeCount_EmptyLoadableSnapshotTypes_ReturnsZero()
+    {
+        var loadableSnapshot = new FamilySnapshot(
+            FamilyName: "F", Category: "C",
+            Parameters: Array.Empty<FamilyParameterInfo>(),
+            Types: Array.Empty<FamilyTypeSnapshot>(),
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+        var systemSnapshot = new SystemFamilySnapshot(
+            CategoryName: "Cat", CategoryId: 0,
+            Types: new[] { new SystemTypeSnapshot("S", Array.Empty<SystemParameterValue>()) });
+
+        var result = SnapshotExtractionMapper.ResolveTypeCount(
+            loadableSnapshot, systemSnapshot, sourceTypes: null);
+
+        Assert.Equal(0, result);
+    }
 }
