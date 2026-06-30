@@ -7,6 +7,7 @@ namespace SmartCon.FamilyManager.Services;
 public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFactory
 {
     private readonly IWritableFamilyCatalogProvider _writableProvider;
+    private readonly IFamilyCatalogProvider _catalogProvider;
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyAssetService _assetService;
     private readonly IAttributePresetService _presetService;
@@ -24,6 +25,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
+        IFamilyCatalogProvider catalogProvider,
         ICategoryRepository categoryRepository,
         IFamilyAssetService assetService,
         IAttributePresetService presetService,
@@ -40,6 +42,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyManagerMetadataMediator metadataMediator)
     {
         _writableProvider = writableProvider;
+        _catalogProvider = catalogProvider;
         _categoryRepository = categoryRepository;
         _assetService = assetService;
         _presetService = presetService;
@@ -67,7 +70,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             catalogItemId, name, description,
             categoryId, categoryPath, tags, contentStatus,
             manufacturer, versionLabel, fileSizeText, createdAtText, updatedAtText,
-            _writableProvider, _categoryRepository, _assetService, _presetService, _dialogService,
+            _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService)
         { IsReadOnly = isReadOnly };
     }

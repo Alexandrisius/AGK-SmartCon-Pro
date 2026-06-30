@@ -6,7 +6,7 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFamilyCatalogProvider
+internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFamilyCatalogProvider
 {
     private readonly LocalCatalogDatabase _database;
 

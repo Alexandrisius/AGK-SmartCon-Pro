@@ -15,7 +15,7 @@
 
     <Window.Resources>
         <ui:SingletonResources>
-            <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
             <converters:PathToBitmapImageConverter x:Key="PathToBitmapImageConverter"/>
         </ui:SingletonResources>
     </Window.Resources>
@@ -535,6 +535,84 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Style="{DynamicResource FlatTabItem}">
+                <TabItem.Header>
+                    <TextBlock Text="{loc:Loc FM_Tab_Versions}"/>
+                </TabItem.Header>
+                <Grid Margin="8,8,8,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <DataGrid x:Name="VersionsGrid"
+                              Grid.Row="0"
+                              ItemsSource="{Binding Versions}"
+                              SelectedItem="{Binding SelectedVersionRow, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              Style="{DynamicResource CompactDataGrid}"
+                              AutoGenerateColumns="False"
+                              SelectionMode="Single" SelectionUnit="FullRow"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              CanUserAddRows="False" CanUserDeleteRows="False"
+                              CanUserResizeRows="False"
+                              BorderThickness="0,0,0,1"
+                              BorderBrush="{DynamicResource BorderBrush}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn x:Name="ColVersionLabel"
+                                                Binding="{Binding VersionLabel}"
+                                                Width="80" MinWidth="60"/>
+                            <DataGridTextColumn x:Name="ColVersionRevit"
+                                                Binding="{Binding RevitMajorVersion}"
+                                                Width="70" MinWidth="50"/>
+                            <DataGridTextColumn x:Name="ColVersionDate"
+                                                Binding="{Binding PublishedAtText}"
+                                                Width="*" MinWidth="120"/>
+                            <DataGridTextColumn x:Name="ColVersionTypes"
+                                                Binding="{Binding TypesCount}"
+                                                Width="70" MinWidth="50"/>
+                            <DataGridTemplateColumn x:Name="ColVersionActive" Width="100" MinWidth="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource AccentBrush}"
+                                                CornerRadius="3" Padding="8,2"
+                                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock Text="{loc:Loc FM_ActiveBadge}"
+                                                       Foreground="White" FontSize="11"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <TextBlock Grid.Row="0"
+                               Text="{Binding VersionsStatusMessage}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="11"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding HasVersions, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"/>
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Margin="0,8,0,0"
+                                Visibility="{Binding HasVersions, Converter={StaticResource BoolToVisibility}}">
+                        <Button Content="{loc:Loc FM_MakeActive}"
+                                Command="{Binding MakeActiveCommand}"
+                                Style="{DynamicResource PrimaryButton}"
+                                Width="160" Height="28"
+                                Margin="0,0,8,0"
+                                ToolTip="{loc:Loc FM_MakeActive_Tooltip}"/>
+                        <Button Content="{loc:Loc FM_DeleteVersion}"
+                                Command="{Binding DeleteVersionCommand}"
+                                Style="{DynamicResource SecondaryButton}"
+                                Width="100" Height="28"
+                                ToolTip="{loc:Loc FM_DeleteVersion_Tooltip}"/>
                     </StackPanel>
                 </Grid>
             </TabItem>

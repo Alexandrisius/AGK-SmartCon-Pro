@@ -28,6 +28,39 @@ internal sealed class LocalFamilyDataImportRunRepository : IFamilyDataImportRunR
         return null;
     }
 
+    /// <summary>
+    /// v2.1.0 (ADR-041 rev #2): returns the most recent run whose
+    /// <c>version_id</c> matches the active version of the catalog item
+    /// (resolved via
+    /// <c>catalog_items.current_version_label = catalog_versions.version_label</c>).
+    /// </summary>
+    public async Task<FamilyDataImportRun?> GetLatestRunForActiveVersionAsync(string catalogItemId, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT r.id, r.catalog_item_id, r.version_id, r.file_id, r.revit_major_version, r.status, r.types_count, r.started_at_utc, r.completed_at_utc, r.error_message
+            FROM family_data_import_runs r
+            WHERE r.catalog_item_id = @itemId
+              AND r.version_id = (
+                SELECT cv.id FROM catalog_versions cv
+                INNER JOIN catalog_items ci ON ci.id = cv.catalog_item_id
+                  AND ci.current_version_label = cv.version_label
+                WHERE cv.catalog_item_id = @itemId
+                LIMIT 1
+              )
+            ORDER BY r.started_at_utc DESC
+            LIMIT 1
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+            return ReadRun(reader);
+
+        return null;
+    }
+
     public async Task<IReadOnlyList<FamilyDataImportRun>> GetRunsForItemAsync(string catalogItemId, CancellationToken ct = default)
     {
         var result = new List<FamilyDataImportRun>();

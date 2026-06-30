@@ -65,6 +65,44 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
         await cmd.ExecuteNonQueryAsync();
     }
 
+    // v2.0.0 (ADR-041): extracted_attribute_values.version_id and
+    // family_types.version_id have FOREIGN KEY → catalog_versions(id) ON DELETE
+    // CASCADE (V17). Tests that use a non-null versionId must seed the
+    // corresponding catalog_versions + family_files rows or the INSERT will
+    // fail with FOREIGN KEY constraint failed.
+    private async Task SeedVersionAsync(string catalogItemId, string versionId, string label = "v0")
+    {
+        using var connection = _fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+        using var tx = connection.BeginTransaction();
+        using var fileCmd = connection.CreateCommand();
+        fileCmd.Transaction = tx;
+        var fileId = $"file-{versionId}";
+        fileCmd.CommandText = """
+            INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+            VALUES (@id, @path, @name, 2025, @t)
+            """;
+        fileCmd.Parameters.Add(new SqliteParameter("@id", fileId));
+        fileCmd.Parameters.Add(new SqliteParameter("@path", $"files/item1/{versionId}/mock.rfa"));
+        fileCmd.Parameters.Add(new SqliteParameter("@name", "mock.rfa"));
+        fileCmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+        await fileCmd.ExecuteNonQueryAsync();
+
+        using var verCmd = connection.CreateCommand();
+        verCmd.Transaction = tx;
+        verCmd.CommandText = """
+            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc)
+            VALUES (@id, @itemId, @fileId, @label, 2025, @t)
+            """;
+        verCmd.Parameters.Add(new SqliteParameter("@id", versionId));
+        verCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        verCmd.Parameters.Add(new SqliteParameter("@fileId", fileId));
+        verCmd.Parameters.Add(new SqliteParameter("@label", label));
+        verCmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+        await verCmd.ExecuteNonQueryAsync();
+        tx.Commit();
+    }
+
     // v2.0.0 (ADR-036): extracted_attribute_values.type_id has FOREIGN KEY
     // → family_types(id) ON DELETE CASCADE (V15). Tests that insert attribute
     // values with a non-null typeId must seed the corresponding family_types row
@@ -88,7 +126,8 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
         string catalogItemId,
         HashSet<string> attributeIds,
         HashSet<string> runIds,
-        HashSet<string>? typeIds = null)
+        HashSet<string>? typeIds = null,
+        HashSet<string>? versionIds = null)
     {
         await SeedCatalogItemAsync(catalogItemId);
         foreach (var attrId in attributeIds)
@@ -99,6 +138,11 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
         {
             foreach (var typeId in typeIds)
                 await SeedFamilyTypeAsync(typeId, catalogItemId);
+        }
+        if (versionIds is not null)
+        {
+            foreach (var versionId in versionIds)
+                await SeedVersionAsync(catalogItemId, versionId, versionId);
         }
     }
 
@@ -134,7 +178,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task SaveValuesAsync_WithVersionId_FiltersByVersion()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"], ["type1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3"], ["run1"], ["type1"], ["v1", "v2"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -153,7 +197,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task SaveValuesAsync_NullVersionId_FiltersCorrectly()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2"], ["run1"], ["type1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2"], ["run1"], ["type1"], ["v1"]);
 
         var values = new List<ExtractedAttributeValue>
         {
@@ -209,7 +253,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task ReplaceSnapshotAsync_ReplacesOldValues()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"], ["type1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"], ["type1"], ["v1"]);
 
         var oldValues = new List<ExtractedAttributeValue>
         {
@@ -235,7 +279,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task ReplaceSnapshotAsync_DoesNotAffectOtherVersions()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"], ["type1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2", "attr3", "attr4", "attr5"], ["run1", "run2"], ["type1"], ["v1", "v2"]);
 
         var v1Values = new List<ExtractedAttributeValue>
         {
@@ -330,7 +374,7 @@ public sealed class LocalAttributeValueRepositoryTests : IDisposable
     [Fact]
     public async Task GetFoundCountAsync_WithVersionId_FiltersByVersion()
     {
-        await SeedPrerequisitesAsync("item1", ["attr1", "attr2"], ["run1"], ["type1"]);
+        await SeedPrerequisitesAsync("item1", ["attr1", "attr2"], ["run1"], ["type1"], ["v1", "v2"]);
 
         var values = new List<ExtractedAttributeValue>
         {

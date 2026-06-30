@@ -578,6 +578,91 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     }
 
     /// <summary>
+    /// ADR-041 rev #2 regression: MakeActive on a Duplicate status row must
+    /// NOT insert a new catalog_versions row. The incoming file's content
+    /// hash matched an existing version, so the file is ALREADY on disk at
+    /// <c>{itemId}/{MatchedVersionLabel}/{name}.rfa</c> — MakeActive only
+    /// switches <c>catalog_items.current_version_label</c>. Any new version
+    /// row would duplicate the file on disk, waste storage, and break the
+    /// version-history display in the UI.
+    /// </summary>
+    [Fact]
+    public async Task ImportBatchAsync_MakeActive_Duplicate_DoesNotCreateNewVersion()
+    {
+        // Seed two versions (v1 = 3 types, v2 = 2 types) for a single
+        // catalog item. Active = v1. Both versions persist on disk because
+        // V18 migration keeps per-version family_types UNIQUE.
+        var seedPath = _fixture.CreateFakeRfaFile("MakeActiveSource.rfa");
+        var seed = await _importService.ImportFileAsync(
+            new FamilyImportRequest(seedPath, 2025, null, null, null));
+        Assert.True(seed.Success);
+        Assert.NotNull(seed.CatalogItemId);
+
+        var versions = await _fixture.GetProvider().GetVersionsAsync(seed.CatalogItemId!);
+        Assert.Single(versions); // v1 only after the first import
+
+        // Simulate an import of the SAME content (duplicate of v1) — the
+        // dedup service would have resolved Status = Duplicate and
+        // MatchedVersionLabel = "v1". The user picks MakeActive from the
+        // batch dialog. ImportBatchAsync must route through
+        // SetActiveVersionAsync and return WasSkipped=true (no file write,
+        // no new version row).
+        var item = new FamilyBatchImportItem(
+            FilePath: seedPath,
+            FileName: "MakeActiveSource",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Duplicate,
+            ExistingCatalogItemId: seed.CatalogItemId,
+            ExistingVersionLabel: "v1",
+            TargetCategoryId: null,
+            TargetCategoryName: null,
+            FamilySource: "loadable",
+            TypeCount: null,
+            RevitCategory: null,
+            OriginalSourcePath: null,
+            SourceTypes: null,
+            Source: null,
+            PrecomputedCatalogItemId: seed.CatalogItemId,
+            PrecomputedVersionLabel: "v1",
+            PrecomputedManagedPath: null,
+            ContentHash: "ANY_HASH_ADR041_" + Guid.NewGuid().ToString("N"),
+            HashFormatVersion: 1,
+            MatchedVersionLabel: "v1",
+            LoadableSnapshot: null,
+            SystemSnapshot: null)
+        {
+            Action = FamilyBatchImportAction.MakeActive
+        };
+
+        var result = await _importService.ImportBatchAsync(new[] { item }, null, null);
+
+        // Success, WasSkipped, and VersionLabel = MatchedVersionLabel ("v1")
+        Assert.Equal(1, result.SuccessCount);
+        Assert.Equal(0, result.ErrorCount);
+        var r = result.Results[0];
+        Assert.True(r.Success, $"MakeActive failed: {r.ErrorMessage}");
+        Assert.True(r.WasSkipped, "MakeActive must set WasSkipped=true — no file is written");
+        Assert.Equal("v1", r.VersionLabel);
+        Assert.Null(r.VersionId);
+        Assert.Null(r.FileId);
+
+        // No new catalog_versions row was inserted.
+        var versionsAfter = await _fixture.GetProvider().GetVersionsAsync(seed.CatalogItemId!);
+        Assert.Single(versionsAfter);
+        // The id/version_label of v1 must be unchanged — ImportBatchAsync
+        // did not UPDATE catalog_versions, only catalog_items.current_version_label.
+        Assert.Equal(versions[0].Id, versionsAfter[0].Id);
+        Assert.Equal("v1", versionsAfter[0].VersionLabel);
+
+        // And current_version_label is now "v1" (it already was "v1" after
+        // the seed import, so SetActiveVersionAsync is a no-op of the label,
+        // but it still syncs content_hash and returns Success=true).
+        var itemAfter = await _fixture.GetProvider().GetItemAsync(seed.CatalogItemId!);
+        Assert.NotNull(itemAfter);
+        Assert.Equal("v1", itemAfter!.CurrentVersionLabel);
+    }
+
+    /// <summary>
     /// ADR-040: OverwriteCurrent with a non-existent current version
     /// (catalog_items.current_version_label points to a missing
     /// catalog_versions row) must return a descriptive error instead of

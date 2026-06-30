@@ -61,6 +61,8 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV14Async(connection, ct);
         await MigrateV15Async(connection, ct);
         await MigrateV16Async(connection, ct);
+        await MigrateV17Async(connection, ct);
+        await MigrateV18Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -597,6 +599,109 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
 
             tx.Commit();
             SmartConLogger.Info("Migration v16: added content_hash columns and indexes");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// v2.0.0 (ADR-041) migration v17: add FOREIGN KEY (version_id) REFERENCES
+    /// catalog_versions(id) ON DELETE CASCADE on family_types and
+    /// extracted_attribute_values. Also adds the composite index
+    /// (catalog_item_id, version_label) on catalog_versions for fast
+    /// GetVersionByLabelAsync / SetActiveVersionAsync lookups.
+    ///
+    /// Recreate-and-copy pattern (same as V15) because SQLite does not support
+    /// ALTER TABLE ADD CONSTRAINT. Each table is recreated inside a single
+    /// transaction with orphan-row cleanup before the copy.
+    ///
+    /// Order matters: family_types is recreated first because
+    /// extracted_attribute_values has FK (type_id) → family_types(id).
+    /// </summary>
+    private static async Task MigrateV17Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 17) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            // Step 1: family_types — recreate with FK (version_id) ON DELETE CASCADE
+            using (var ftCmd = connection.CreateCommand())
+            {
+                ftCmd.Transaction = tx;
+                ftCmd.CommandText = FamilyCatalogSql.MigrateV17RecreateFamilyTypesWithVersionFk;
+                await ftCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Step 2: extracted_attribute_values — recreate with FK (version_id) ON DELETE CASCADE
+            using (var eavCmd = connection.CreateCommand())
+            {
+                eavCmd.Transaction = tx;
+                eavCmd.CommandText = FamilyCatalogSql.MigrateV17RecreateExtractedAttributeValuesWithVersionFk;
+                await eavCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Step 3: composite index on catalog_versions for ByLabel lookups
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.Transaction = tx;
+                idxCmd.CommandText = FamilyCatalogSql.CreateV17Indexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '17' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v17: added FK on family_types.version_id and extracted_attribute_values.version_id (ON DELETE CASCADE)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// v2.1.0 (ADR-041 rev #2) migration v18: change the UNIQUE constraint
+    /// on family_types from (catalog_item_id, type_name) to
+    /// (catalog_item_id, version_id, type_name) so a type name can coexist
+    /// across multiple versions of the same catalog item. This is the
+    /// prerequisite for per-version type storage and version-scoped DELETE
+    /// in SyncTypesAsync: without it, INSERT for a new version with the
+    /// same type name as an existing version hits ON CONFLICT and silently
+    /// reassigns family_types.version_id to the new version, destroying the
+    /// previous version's type rows.
+    ///
+    /// Recreate-and-copy pattern (same as V15/V17). Idempotent: if the
+    /// table already has the new UNIQUE, the recreate is a no-op data copy.
+    /// </summary>
+    private static async Task MigrateV18Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 18) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = FamilyCatalogSql.MigrateV18RecreateFamilyTypesPerVersionUnique;
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '18' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v18: changed family_types UNIQUE to (catalog_item_id, version_id, type_name) for per-version type storage");
         }
         catch
         {

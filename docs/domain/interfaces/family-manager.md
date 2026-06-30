@@ -20,9 +20,14 @@ public interface IFamilyCatalogProvider
     Task<IReadOnlyList<FamilyCatalogItem>> SearchAsync(FamilyCatalogQuery query, CancellationToken ct = default);
     Task<FamilyCatalogItem?> GetItemAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default);
+    Task<FamilyCatalogVersion?> GetVersionByIdAsync(string catalogItemId, string versionId, CancellationToken ct = default);
+    Task<FamilyCatalogVersion?> GetVersionByLabelAsync(string catalogItemId, string versionLabel, int targetRevitMajorVersion = 0, CancellationToken ct = default);
     Task<FamilyFileRecord?> GetFileAsync(string fileId, CancellationToken ct = default);
     Task<int> GetItemCountAsync(CancellationToken ct = default);
     Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default);
+    Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default);
+    Task<ContentHashMatch?> FindByContentHashAcrossVersionsAsync(string hexHash, int hashFormatVersion, string familySource, CancellationToken ct = default);
+    Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default);
 }
 ```
 
@@ -40,8 +45,10 @@ public interface IWritableFamilyCatalogProvider
 {
     Task<FamilyImportResult> ImportAsync(FamilyImportRequest request, CancellationToken ct = default);
     Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
-    Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default);
+    Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, ContentStatus? status, string? manufacturer = null, CancellationToken ct = default);
     Task<bool> DeleteItemAsync(string id, CancellationToken ct = default);
+    Task<SetActiveVersionResult> SetActiveVersionAsync(string catalogItemId, string versionLabel, CancellationToken ct = default);
+    Task<DeleteVersionResult> DeleteVersionAsync(string catalogItemId, string versionLabel, CancellationToken ct = default);
 }
 ```
 

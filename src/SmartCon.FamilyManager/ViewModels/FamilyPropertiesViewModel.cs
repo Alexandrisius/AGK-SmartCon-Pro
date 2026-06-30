@@ -15,6 +15,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 {
     private readonly string _catalogItemId;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
+    private readonly IFamilyCatalogProvider _catalogProvider;
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyAssetService _assetService;
     private readonly IAttributePresetService _presetService;
@@ -78,6 +79,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         AddAssetCommand.NotifyCanExecuteChanged();
         DeleteAssetCommand.NotifyCanExecuteChanged();
         SetAsPrimaryCommand.NotifyCanExecuteChanged();
+        MakeActiveCommand.NotifyCanExecuteChanged();
+        DeleteVersionCommand.NotifyCanExecuteChanged();
     }
 
     private IReadOnlyList<EffectiveCategoryAttribute> _effectiveAttributes = [];
@@ -118,6 +121,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         string? createdAtText,
         string? updatedAtText,
         IWritableFamilyCatalogProvider writableProvider,
+        IFamilyCatalogProvider catalogProvider,
         ICategoryRepository categoryRepository,
         IFamilyAssetService assetService,
         IAttributePresetService presetService,
@@ -132,6 +136,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     {
         _catalogItemId = catalogItemId;
         _writableProvider = writableProvider;
+        _catalogProvider = catalogProvider;
         _categoryRepository = categoryRepository;
         _assetService = assetService;
         _presetService = presetService;
@@ -175,6 +180,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
             await LoadAssetsAsync(ct);
             await LoadPresetsAsync(ct);
             await LoadAttributesDataAsync(ct);
+            await LoadVersionsAsync(ct);
         }
         finally
         {
@@ -230,7 +236,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                 return;
             }
 
-            var run = await _runRepository.GetLatestRunAsync(_catalogItemId, ct);
+            var run = await _runRepository.GetLatestRunForActiveVersionAsync(_catalogItemId, ct);
             if (run is null)
             {
                 HasNotImported = true;

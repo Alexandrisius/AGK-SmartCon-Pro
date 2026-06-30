@@ -133,13 +133,28 @@ internal static class FamilyCatalogSql
             catalog_item_id TEXT NOT NULL,
             type_name TEXT NOT NULL,
             sort_order INTEGER NOT NULL DEFAULT 0,
+            version_id TEXT,
+            file_id TEXT,
+            extraction_run_id TEXT,
+            type_unique_id TEXT,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
-            UNIQUE(catalog_item_id, type_name)
+            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+            FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
+            UNIQUE(catalog_item_id, version_id, type_name)
         )
         """;
 
     public const string CreateFamilyTypesIndexes = """
-        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id)
+        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
+        -- v2.1.0 (ADR-041 rev #2): orchestrator types have version_id IS NULL.
+        -- SQLite treats NULL != NULL in composite UNIQUE, so the table-level
+        -- UNIQUE(catalog_item_id, version_id, type_name) does not prevent
+        -- duplicate orchestrator types. This partial unique index closes the
+        -- gap: one (catalog_item_id, type_name) per item for NULL versions.
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
+        ON family_types (catalog_item_id, type_name)
+        WHERE version_id IS NULL
         """;
 
     public const string CreateAttributePresets = """
@@ -232,6 +247,9 @@ internal static class FamilyCatalogSql
             extraction_run_id TEXT NOT NULL,
             extracted_at_utc TEXT NOT NULL,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (type_id) REFERENCES family_types(id) ON DELETE CASCADE,
+            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
+            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
             FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
             UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
         )
@@ -415,6 +433,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_catalog_items_category ON catalog_items (category_name);
         CREATE INDEX IF NOT EXISTS ix_catalog_items_status ON catalog_items (content_status);
         CREATE INDEX IF NOT EXISTS ix_catalog_versions_item ON catalog_versions (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_catalog_versions_item_label ON catalog_versions (catalog_item_id, version_label);
         CREATE INDEX IF NOT EXISTS ix_catalog_versions_file ON catalog_versions (file_id);
         CREATE INDEX IF NOT EXISTS ix_catalog_versions_revit ON catalog_versions (revit_major_version);
         CREATE INDEX IF NOT EXISTS ix_family_files_revit ON family_files (revit_major_version);
@@ -422,9 +441,12 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_catalog_tags_normalized ON catalog_tags (normalized_tag);
         CREATE INDEX IF NOT EXISTS ix_family_assets_item ON family_assets (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_family_assets_type ON family_assets (asset_type);
+        CREATE INDEX IF NOT EXISTS ix_family_assets_item_version ON family_assets (catalog_item_id, version_label) WHERE version_label IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id);
         CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
         CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
+        CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_attr_values_version ON extracted_attribute_values (version_id) WHERE version_id IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id)
         """;
 
@@ -540,5 +562,201 @@ internal static class FamilyCatalogSql
             ON catalog_items (content_hash) WHERE content_hash IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_catalog_versions_content_hash
             ON catalog_versions (content_hash) WHERE content_hash IS NOT NULL
+        """;
+
+    /// <summary>
+    /// v2.0.0 (ADR-041) migration v17: add FOREIGN KEY (version_id) REFERENCES
+    /// catalog_versions(id) ON DELETE CASCADE on family_types. SQLite does not
+    /// support ALTER TABLE ADD CONSTRAINT, so we recreate the table inside a
+    /// single transaction, copy data verbatim (after orphan cleanup), and let
+    /// the new FK constraints take effect on the renamed table. Pre-existing
+    /// orphan rows (family_types.version_id pointing at a deleted
+    /// catalog_versions.id) are deleted before the recreate — same pattern as
+    /// V15 (extracted_attribute_values.type_id FK).
+    ///
+    /// This FK is what allows DeleteVersionAsync to remove types via a single
+    /// `DELETE FROM catalog_versions WHERE version_label=@label` instead of
+    /// manually walking family_types + extracted_attribute_values.
+    ///
+    /// NOTE: V17 keeps the legacy UNIQUE(catalog_item_id, type_name). V18
+    /// migrates it to UNIQUE(catalog_item_id, version_id, type_name) for
+    /// per-version type storage.
+    /// </summary>
+    public const string MigrateV17RecreateFamilyTypesWithVersionFk = """
+        -- 1. Clean up orphan rows: family_types.version_id pointing at non-existent catalog_versions.id
+        DELETE FROM family_types
+        WHERE version_id IS NOT NULL
+          AND version_id NOT IN (SELECT id FROM catalog_versions);
+
+        -- 2. Recreate family_types with the new FK constraint on version_id
+        DROP TABLE IF EXISTS family_types_v17;
+
+        CREATE TABLE family_types_v17 (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            type_name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            version_id TEXT,
+            file_id TEXT,
+            extraction_run_id TEXT,
+            type_unique_id TEXT,
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+            FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
+            UNIQUE(catalog_item_id, type_name)
+        );
+
+        INSERT INTO family_types_v17 (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id)
+        SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id
+        FROM family_types;
+
+        DROP TABLE family_types;
+        ALTER TABLE family_types_v17 RENAME TO family_types;
+
+        -- 3. Recreate indexes (IF NOT EXISTS makes this idempotent)
+        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
+        CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL
+        """;
+
+    /// <summary>
+    /// v2.0.0 (ADR-041) migration v17 step 2: add FOREIGN KEY (version_id)
+    /// REFERENCES catalog_versions(id) ON DELETE CASCADE on
+    /// extracted_attribute_values. Same recreate-and-copy pattern as V15.
+    /// orphan rows (extracted_attribute_values.version_id pointing at a deleted
+    /// catalog_versions.id) are deleted before the recreate.
+    /// </summary>
+    public const string MigrateV17RecreateExtractedAttributeValuesWithVersionFk = """
+        -- 1. Clean up any orphan rows that would otherwise violate the new FK.
+        DELETE FROM extracted_attribute_values
+        WHERE version_id IS NOT NULL
+          AND version_id NOT IN (SELECT id FROM catalog_versions);
+
+        -- 2. Recreate extracted_attribute_values with the new FK constraint on version_id.
+        DROP TABLE IF EXISTS extracted_attribute_values_v17;
+
+        CREATE TABLE extracted_attribute_values_v17 (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            version_id TEXT,
+            file_id TEXT,
+            type_id TEXT,
+            attribute_id TEXT,
+            binding_id TEXT,
+            parameter_name TEXT NOT NULL,
+            parameter_scope TEXT,
+            storage_type TEXT,
+            value_text TEXT,
+            value_raw TEXT,
+            value_number REAL,
+            unit_type_id TEXT,
+            status TEXT NOT NULL DEFAULT 'Found',
+            message TEXT,
+            extraction_run_id TEXT NOT NULL,
+            extracted_at_utc TEXT NOT NULL,
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (type_id) REFERENCES family_types(id) ON DELETE CASCADE,
+            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
+            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+            FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
+            UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
+        );
+
+        INSERT INTO extracted_attribute_values_v17 (
+            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
+            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
+            unit_type_id, status, message, extraction_run_id, extracted_at_utc
+        )
+        SELECT
+            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
+            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
+            unit_type_id, status, message, extraction_run_id, extracted_at_utc
+        FROM extracted_attribute_values;
+
+        DROP TABLE extracted_attribute_values;
+        ALTER TABLE extracted_attribute_values_v17 RENAME TO extracted_attribute_values;
+
+        -- 3. Recreate indexes (IF NOT EXISTS makes this idempotent)
+        CREATE INDEX IF NOT EXISTS ix_attr_values_item_version ON extracted_attribute_values (catalog_item_id, version_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_type ON extracted_attribute_values (type_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
+        CREATE INDEX IF NOT EXISTS ix_attr_values_version ON extracted_attribute_values (version_id) WHERE version_id IS NOT NULL
+        """;
+
+    /// <summary>
+    /// v2.0.0 (ADR-041) migration v17 step 3: composite index on
+    /// (catalog_item_id, version_label) for fast version-by-label lookups
+    /// used by GetVersionByLabelAsync and SetActiveVersionAsync.
+    /// </summary>
+    public const string CreateV17Indexes = """
+        CREATE INDEX IF NOT EXISTS ix_catalog_versions_item_label
+        ON catalog_versions (catalog_item_id, version_label)
+        """;
+
+    /// <summary>
+    /// v2.1.0 (ADR-041 rev #2) migration v18: change
+    /// UNIQUE(catalog_item_id, type_name) →
+    /// UNIQUE(catalog_item_id, version_id, type_name) so the same type name
+    /// ("100", "200") can co-exist in multiple versions of the same catalog
+    /// item. Without this, SyncTypesAsync's version-scoped DELETE + INSERT
+    /// for a new version with the same type names as the previous version
+    /// would UPSERT (via ON CONFLICT) and silently reassign
+    /// family_types.version_id to the new version — destroying the previous
+    /// version's type rows.
+    ///
+    /// Same recreate-and-copy pattern as V15/V17 because SQLite does not
+    /// support altering a UNIQUE constraint in place. Orphan rows
+    /// (family_types.version_id not in catalog_versions) are cleaned up
+    /// before the copy — same defensive pattern as V17.
+    ///
+    /// A partial UNIQUE INDEX on (catalog_item_id, type_name)
+    /// WHERE version_id IS NULL protects the orchestrator case
+    /// (LoadableFamilyImportOrchestrator / SystemFamilyImportOrchestrator
+    /// import families from the project without a version handle). SQLite
+    /// treats NULL != NULL in composite UNIQUE, so without this partial
+    /// index, two rows with the same (catalog_item_id, null version_id,
+    /// type_name) would violate the "one type per name" invariant for
+    /// project families.
+    /// </summary>
+    public const string MigrateV18RecreateFamilyTypesPerVersionUnique = """
+        -- 1. Clean up orphan rows (defensive — same as V17).
+        DELETE FROM family_types
+        WHERE version_id IS NOT NULL
+          AND version_id NOT IN (SELECT id FROM catalog_versions);
+
+        -- 2. Recreate family_types with per-version UNIQUE.
+        DROP TABLE IF EXISTS family_types_v18;
+
+        CREATE TABLE family_types_v18 (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            type_name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            version_id TEXT,
+            file_id TEXT,
+            extraction_run_id TEXT,
+            type_unique_id TEXT,
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+            FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
+            UNIQUE(catalog_item_id, version_id, type_name)
+        );
+
+        INSERT INTO family_types_v18 (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id)
+        SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id
+        FROM family_types;
+
+        DROP TABLE family_types;
+        ALTER TABLE family_types_v18 RENAME TO family_types;
+
+        -- 3. Recreate indexes and the orchestrator partial UNIQUE index.
+        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
+        CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
+        ON family_types (catalog_item_id, type_name)
+        WHERE version_id IS NULL
         """;
 }

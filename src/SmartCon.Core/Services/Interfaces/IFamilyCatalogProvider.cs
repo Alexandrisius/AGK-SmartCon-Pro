@@ -19,6 +19,23 @@ public interface IFamilyCatalogProvider
     /// <summary>Get versions for a catalog item.</summary>
     Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Get a specific version of a catalog item by its version ID.
+    /// </summary>
+    /// <param name="catalogItemId">Catalog item ID (defensive — included in WHERE).</param>
+    /// <param name="versionId">Version row ID.</param>
+    Task<FamilyCatalogVersion?> GetVersionByIdAsync(string catalogItemId, string versionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Get a specific version of a catalog item by its version label.
+    /// If multiple rows exist for the same label (different Revit major versions),
+    /// returns the one closest to <paramref name="targetRevitMajorVersion"/>.
+    /// </summary>
+    /// <param name="catalogItemId">Catalog item ID.</param>
+    /// <param name="versionLabel">Version label (e.g. "v2").</param>
+    /// <param name="targetRevitMajorVersion">Preferred Revit version (used to disambiguate multi-Revit labels). Pass 0 to get the highest available.</param>
+    Task<FamilyCatalogVersion?> GetVersionByLabelAsync(string catalogItemId, string versionLabel, int targetRevitMajorVersion = 0, CancellationToken ct = default);
+
     /// <summary>Get file record by ID.</summary>
     Task<FamilyFileRecord?> GetFileAsync(string fileId, CancellationToken ct = default);
 
