@@ -766,6 +766,16 @@ public sealed partial class FamilyManagerMainViewModel
             return;
         }
 
+        // ADR-041 rev #5: stamp every item with the publishing user's name
+        // before dispatching. The orchestrator (system or loadable) propagates
+        // this into catalog_versions.published_by via InsertVersionAsync.
+        // _revitContext.GetUsername() returns a cached string field (NOT a
+        // Revit API call — see RevitContext.cs:66-72), so this is safe from
+        // the WPF async thread.
+        var username = _revitContext.GetUsername();
+        foreach (var item in toImport)
+            item.PublishedByUser = username;
+
         var systemItems = toImport.Where(i => i.FamilySource == "system").ToList();
         var loadableItems = toImport.Where(i => i.FamilySource == "loadable").ToList();
 
