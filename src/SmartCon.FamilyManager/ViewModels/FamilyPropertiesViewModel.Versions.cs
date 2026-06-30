@@ -25,6 +25,14 @@ public sealed partial class FamilyPropertiesViewModel
     /// Load all versions of the catalog item for display in the Versions tab.
     /// The active version (matching <c>catalog_items.current_version_label</c>)
     /// is marked with <see cref="FamilyVersionRow.IsActive"/> = true.
+    /// Also attaches the type-name list to each row so:
+    /// <list type="bullet">
+    /// <item>the Types column shows the real count
+    /// (<see cref="FamilyVersionRow.TypesCountDisplay"/> — not the sometimes
+    /// NULL <c>catalog_versions.types_count</c>)</item>
+    /// <item>the cell tooltip + row-details section show the names of types
+    /// in that version (ADR-041 rev #5 UC-2)</item>
+    /// </list>
     /// </summary>
     private async Task LoadVersionsAsync(CancellationToken ct)
     {
@@ -48,8 +56,30 @@ public sealed partial class FamilyPropertiesViewModel
                     publishedAtText: v.PublishedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
                     isActive: string.Equals(v.VersionLabel, currentLabel, System.StringComparison.Ordinal),
                     contentHash: v.ContentHash,
-                    hashFormatVersion: v.HashFormatVersion))
+                    hashFormatVersion: v.HashFormatVersion,
+                    publishedBy: v.PublishedBy,
+                    typeNames: Array.Empty<string>()))
                 .ToList();
+
+            // ADR-041 rev #5: attach type-name list per version for the
+            // Types-column tooltip + row-details section (UC-2 — user can see
+            // which types a version has without activating it). One roundtrip
+            // per version — typical items have 3-5 versions, so the cost is
+            // bounded (~10-30ms).
+            foreach (var row in rows)
+            {
+                try
+                {
+                    var types = await _typeRepository.GetTypesForItemVersionAsync(
+                        _catalogItemId, row.VersionId, ct).ConfigureAwait(true);
+                    row.SetTypeNames(types.Select(t => t.Name).ToList());
+                }
+                catch (Exception typeEx)
+                {
+                    SmartConLogger.Warn(
+                        $"LoadVersionsAsync: failed to load TypeNames for {row.VersionLabel}: {typeEx.Message} [Action: tooltip для колонки «Типы» будет пустым; остальные функции не затронуты]");
+                }
+            }
 
             Versions = new ObservableCollection<FamilyVersionRow>(rows);
             HasVersions = rows.Count > 0;
@@ -88,6 +118,13 @@ public sealed partial class FamilyPropertiesViewModel
         var oldLabel = Versions.FirstOrDefault(r => r.IsActive)?.VersionLabel;
 
         // Two-step UX (ADR-041 UC-3): preview → confirmation modal.
+        // rev #5: the "preview" part of UC-2 is done entirely inside the
+        // Versions tab via a compact tooltip on the Types cell — shows which
+        // types the selected version has, without touching the Attributes tab.
+        // The confirmation modal below is the final action step. After
+        // confirmation, SetActiveVersionAsync switches current_version_label
+        // and LoadAttributesDataAsync reloads the Attributes tab so it
+        // reflects the new active version.
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_Confirm_MakeActive_Title) ?? "Смена активной версии";
         var bodyTemplate = LanguageManager.GetString(StringLocalization.Keys.FM_Confirm_MakeActive_Body)
             ?? "Сделать версию {0} активной вместо {1}?";
@@ -146,7 +183,7 @@ public sealed partial class FamilyPropertiesViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"MakeActiveAsync failed: {ex.Message}");
+            SmartConLogger.Error($"MakeActiveAsync failed: {ex.Message} [Action: проверьте лог smartcon.log; повторите операцию; если не поможет — закройте и откройте окно свойств]");
             _dialogService.ShowError("Family Manager", ex.Message);
         }
     }
@@ -158,6 +195,12 @@ public sealed partial class FamilyPropertiesViewModel
         // selection (active → non-active, or vice versa) leaves the
         // MakeActiveCommand/DeleteCommand in the previous enabled state
         // until the next manual NotifyCanExecuteChanged.
+        //
+        // ADR-041 rev #5: no preview reload is triggered here. The Versions
+        // tab uses a compact tooltip on the Types cell — shows which types
+        // the selected version has, without touching the Attributes tab.
+        // To switch the Attributes tab to a non-active version's data, the
+        // user must click "Сделать активной".
         MakeActiveCommand.NotifyCanExecuteChanged();
         DeleteVersionCommand.NotifyCanExecuteChanged();
     }
@@ -219,7 +262,7 @@ public sealed partial class FamilyPropertiesViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"DeleteVersionAsync failed: {ex.Message}");
+            SmartConLogger.Error($"DeleteVersionAsync failed: {ex.Message} [Action: проверьте лог smartcon.log; повторите попытку удаления; если файлы заблокированы — закройте соответствующий .rfa в Revit]");
             _dialogService.ShowError("Family Manager", ex.Message);
         }
     }

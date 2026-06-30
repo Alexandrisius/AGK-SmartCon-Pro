@@ -52,6 +52,7 @@ internal static class FamilyCatalogSql
             content_hash TEXT,
             hash_format_version INTEGER,
             published_at_utc TEXT NOT NULL,
+            published_by TEXT,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE CASCADE,
             UNIQUE(catalog_item_id, version_label, revit_major_version)
@@ -758,5 +759,15 @@ internal static class FamilyCatalogSql
         CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
         ON family_types (catalog_item_id, type_name)
         WHERE version_id IS NULL
+        """;
+
+    /// <summary>
+    /// V19: adds <c>published_by</c> column to <c>catalog_versions</c>
+    /// so each version row records which Revit user published it.
+    /// ADR-041 rev #5. Simple ALTER TABLE ADD COLUMN (nullable, no default)
+    /// — no recreate needed. Existing rows get NULL (unknown author).
+    /// </summary>
+    public const string MigrateV19AddPublishedByColumn = """
+        ALTER TABLE catalog_versions ADD COLUMN published_by TEXT
         """;
 }

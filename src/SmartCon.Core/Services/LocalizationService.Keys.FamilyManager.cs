@@ -175,6 +175,7 @@ public static partial class LocalizationService
         ru["FM_Version_Column_Version"] = "Версия"; en["FM_Version_Column_Version"] = "Version";
         ru["FM_Version_Column_Revit"] = "Revit"; en["FM_Version_Column_Revit"] = "Revit";
         ru["FM_Version_Column_Date"] = "Дата"; en["FM_Version_Column_Date"] = "Date";
+        ru["FM_Version_Column_Author"] = "Автор"; en["FM_Version_Column_Author"] = "Author";
         ru["FM_Version_Column_Types"] = "Типы"; en["FM_Version_Column_Types"] = "Types";
         ru["FM_Version_Column_Active"] = "Статус"; en["FM_Version_Column_Active"] = "Status";
         ru["FM_ActiveBadge"] = "Активная"; en["FM_ActiveBadge"] = "Active";

@@ -1,6 +1,6 @@
 # ADR-041: FamilyManager Active Version Management
 
-**Status:** accepted (rev #1 + rev #2 + rev #3 + rev #4)
+**Status:** accepted (rev #1 + rev #2 + rev #3 + rev #4 + rev #5)
 **Date:** 2026-06-30
 **Phase:** 28 (v2.0.0)
 **Supersedes:** частично — [ADR-036 rev #3](036-active-family-type-sync.md#rev-3-2026-06-25-case-b--collapse-to-current-вместо-join-on-versionlabel) (collapse-to-current семантика отменена в rev #2)
@@ -11,19 +11,118 @@ ADR-040 (OverwriteCurrent semantics), Issue #88 (content-hash dedup)
 
 ## Revisions
 
-### rev #3 (2026-06-30): MakeActive в ImportActiveFile flow — больше не плодит v3
+### rev #5 (2026-06-30): UX Versions tab — compact tooltip-only preview (UC-2), cosmetic fixes
 
-**Problem:** После rev #2 ручной тест показал что выбор `MakeActive` для строки `Duplicate` в batch диалоге команды `Import Active File` **создавал новую версию v3** вместо того чтобы просто переключить активную версию. На диске оказывалось два одинаковых файла v2 и v3, и каталог пух.
+**Problem:** После аудита ADR-041 (rev #1–4) и двух итераций UI-рефакторинга
+пользователь сформулировал требования: «всё должно быть компактно и строго».
+Конкретно:
 
-**Root cause:** В `FamilyManagerMainViewModel.ProcessFamilyImportAsync` ветка `MakeActive` отсутствовала. После batch диалога precomputer вычислял `v3` (existing item → next version label), `EnsureFamilyDirectories(v3)` создавал каталог, `SaveAs` записывал активный .rfa в `v3/{name}.rfa`, `ImportFileAsync` вставлял новый `catalog_versions` row.
+1. **UC-2 «просмотр выбранной версии без переключения активной».** Первая
+   попытка с `LoadPreviewForSelectedVersionAsync` (перезагружал вкладку
+   Атрибуты) вызывала layout-shift и тяжёлый reload при каждом клике —
+   пользователь явно отверг: «не думаю что просто клик по строчке должен
+   рендерить все новые значения окна свойств». Вторая попытка с
+   `RowDetailsTemplate` (native WPF pattern от MS Learn) тоже отвергнута как
+   слишком громоздкая. Финальное решение: **никаких row details / banner
+   / preview reload** — только tooltip на ячейке «Типы», который разворачивается
+   при наведении и показывает полный список типов через запятую.
 
-**Fix:** Добавлена `isMakeActive` ветка (по аналогии с существующей `isOverwrite`). Для `MakeActive`:
-- пропускаются `EnsureFamilyDirectories` и `SaveAs` (файл уже на диске);
-- пропускается `ExtractAttributesForLoadableTasks` (типы/values для целевой версии уже в БД, повторное извлечение перезаписало бы их с active document snapshot — что сбивает версию строк `family_types.version_id`);
-- routing через `ImportBatchAsync` (как у `OverwriteCurrent`), который dispatch'ит в `LocalFamilyImportService.ImportBatchAsync:478` — `SetActiveVersionAsync` без записи файла;
-- `WasSkipped=true` в результате, статус `BuildImportStatusMessage` отражает «переключение».
+2. **Колонка «Типы» показывала прочерк** хотя типы реально есть (в дереве
+   и в выпадающем списке). Причина: `FamilyCatalogVersion.TypesCount`
+   (из `catalog_versions.types_count`) часто NULL — столбец не
+   заполняется при некоторых режимах импорта. При этом `family_types`
+   строки реально существуют.
 
-**Tests:** `ImportBatchAsync_MakeActive_Duplicate_DoesNotCreateNewVersion` в `LocalFamilyImportServiceTests.cs` — pinning regression: `WasSkipped=true`, `VersionLabel = MatchedVersionLabel`, не более одной `catalog_versions` строки после вызова.
+3. **Выравнивание данных «по левой стороне»** во всех колонках. В batch
+   диалоге короткие колонки (RevitVersion, TypeCount, Status) уже
+   центрированы через `ElementStyle CenterCell` — здесь это было
+   пропущено.
+
+**Дополнительно (log cosmetics):**
+- `LocalCatalogProvider.Versions.cs:198` в catch-блоке `SetActiveVersionAsync`
+  логировал `SmartConLogger.Error(...)` и затем `throw;` → двойное
+  логирование одного исключения (повторно логировалось в
+  `MakeActiveAsync` catch). Исправлено: убран Error-лог, оставлен `throw;`
+  (паттерн уже применён в `DeleteVersionAsync` line 334-338).
+- `LocalCatalogProvider.Versions.cs:363` Warn содержал полный абсолютный
+  путь к `versionDir`. Заменён на leaf name (`Path.GetFileName`) — правило
+  L8 (FilePath в scope = Path.GetFileName). CatalogItemId + VersionLabel
+  уже в scope (lines 207-209), так что message не теряет идентификации.
+
+**Fix — четыре подзадачи (compact simplification):**
+
+1. **`FamilyVersionRow.TypeNames` + `TypeNamesTooltip` + `TypesCountDisplay`**
+   (NEW properties). `FamilyVersionRow` хранит не только `TypesCount` (поле
+   из БД, может быть NULL), но и список имён типов
+   `IReadOnlyList<string> TypeNames` (по умолчанию пустой). Загрузка имён
+   — через `IFamilyTypeRepository.GetTypesForItemVersionAsync
+   (catalogItemId, row.VersionId, ct)` (метод уже существует с rev #2).
+   `TypesCountDisplay` — computed string: возвращает
+   `TypeNames.Count.ToString()` если список не пуст, иначе fallback на
+   `TypesCount`, иначе `"—"`. Это решает проблему прочерка — реальное число
+   типов берётся из `family_types` строк, а не из ненадёжного
+   `catalog_versions.types_count`.
+   `TypeNamesTooltip` — `string.Join(", ", TypeNames)` для tooltip на
+   ячейке `Types`.
+   Один roundtrip на версию — типичный item имеет 3-5 версий, overhead
+   ~10-30ms.
+
+2. **Удалён `LoadPreviewForSelectedVersionAsync` + `IsPreviewMode` /
+   `PreviewVersionLabel` / `_previewLoadCts`** (rollback обеих предыдущих
+   попыток — preview reload и row details). `OnSelectedVersionRowChanged`
+   вернулся к минимальной реализации — только `NotifyCanExecuteChanged`
+   для кнопок. Атрибуты вкладки остаются про **активную** версию до тех
+   пор пока пользователь явно не нажмёт «Сделать активной» — это явный
+   выбор пользователя и соответствует его запросу.
+
+3. **`ElementStyle` для центрирования** (per MS Learn / SO best practice
+   https://stackoverflow.com/questions/720732/text-alignment-in-a-wpf-datagrid
+   + https://stackoverflow.com/questions/63513914/can-i-have-a-datagrid-styles-content-presenter-vary-by-column).
+   В `Window.Resources` добавлены `CenteredTextCell` и `LeftTextCell`
+   `Style TargetType=TextBlock` с `TextAlignment` + `HorizontalAlignment`
+   + `VerticalAlignment`. Все 4 текстовых column'ы (`ColVersionLabel`,
+   `ColVersionRevit`, `ColVersionDate`, `ColVersionTypes`) применяют
+   `ElementStyle="{StaticResource CenteredTextCell}"`. Per MS Learn:
+   `ElementStyle` — единственный правильный способ центрировать **текст**
+   в ячейке (`CellStyle` центрирует только контейнер ячейки, а не сам
+   TextBlock внутри, и потому выглядит "funky" по SO).
+
+4. **Стилизация DataGrid** — выровнена с batch-диалогом:
+   - `CellStyle="{DynamicResource CompactDataGridCell}"` убирает агрессивный
+     синий фон выделенной ячейки (вижуал совпадает с `FamilyBatchImportView`);
+   - `BorderBrush="{DynamicResource BorderAltBrush}"` вместо несуществующего
+     `BorderBrush`;
+   - active badge (`DataGridTemplateColumn.CellTemplate`) —
+     `Background="{DynamicResource SavedSuccessBrush}"` (зелёный)
+     вместо `AccentBrush` (синий) — меньше визуального конфликта с
+     выделением строки + `HorizontalAlignment="Center"` (было `Left`);
+   - `EnableRowVirtualization="False"` — в Properties dialog обычно <20
+     версий, virtualization не нужна, зато без неё selection/hover работает
+     корректнее.
+
+**Логирование:** Обновлены категория `FMProperties` — убран scope
+`LoadPreviewForSelectedVersionAsync` (метод удалён), все остальные scope'ы
+сохранены (`LoadVersionsAsync`, `MakeActiveAsync`, `DeleteVersion`,
+`SetActiveVersionAsync`, `DeleteVersionAsync` в repository).
+
+**Ложная тревога аудита (StaleDetector):** В аудите был спекулятивный
+`MEDIUM` риск «StaleDetector не инвалидируется после MakeActive в Properties
+dialog». Проверено и опровергнуто: `StaleDetector.ComputeReason`
+(`SmartCon.FamilyManager/Services/Stale/StaleDetector.cs:357-383`) принимает
+`FamilyCatalogItem` как параметр — НЕ кэширует `CurrentVersionLabel`. После
+закрытия Properties dialog `FamilyManagerMainViewModel.OpenProperties` (line
+60) вызывает `LoadTreeAsync()`, который перечитывает `catalog_items` из БД и
+строит `FamilyLeafNodeViewModel` с актуальным `CurrentVersionLabel`
+(`FamilyManagerMainViewModel.Tree.cs:126-127`). Следующая проверка stale
+автоматически использует новое значение — **без правок в StaleDetector и без
+отдельной инвалидации**. Это подтверждается ADR-041 §«Почему OverwriteCurrent и
+Stale detection автоматически следуют за активной».
+
+**Tests:** Тесты rev #5 не добавлены. Новая логика — `TypesCountDisplay`
+(computed string property) + tooltip binding в XAML — не имеют unit-testable
+surface (pure data display). Загрузка `TypeNames` в `LoadVersionsAsync`
+покрыта manual Revit test UC-2. Все runtime-пути обеспечиваются manual test
+UC-1–UC-4, UC-8.
 
 ### rev #4 (2026-06-30): MakeActive закрывает активный .rfa так же как другие режимы
 
@@ -409,6 +508,33 @@ Routing зеркалит существующий `isOverwrite` pattern: skip Sa
 |---|---|
 | `SmartCon.FamilyManager/ViewModels/FamilyManagerMainViewModel.FamilyEdit.cs` | CHANGED: убрано условие `!isMakeActive` для вызова `CloseFamilyDocumentAsync`. `pathToClose = saveAsPath ?? placeholderFilePath` (где `placeholderFilePath = prepared.SourcePath`). |
 
+### rev #5 (UX compact tooltip preview + cosmetic)
+
+| Layer | Изменения |
+|---|---|
+| `SmartCon.FamilyManager/ViewModels/FamilyVersionRow.cs` | ADD `TypeNames` (`IReadOnlyList<string>`) private-set свойство. ADD computed `TypeNamesTooltip` (string.Join(", ") или `"— нет типов —"`). ADD computed `TypesCountDisplay` string (`TypeNames.Count.ToString()` fallback `TypesCount` fallback `"—"` — решает проблему прочерка в колонке Типы). ADD `PublishedBy` property. ADD overload constructor `FamilyVersionRow(..., string? publishedBy, IReadOnlyList<string> typeNames)`. ADD `SetTypeNames` internal helper (используется `LoadVersionsAsync` для заполнения после row-конструирования). |
+| `SmartCon.FamilyManager/ViewModels/FamilyPropertiesViewModel.Versions.cs` | CHANGED `LoadVersionsAsync`: после построения `rows` для каждой row вызывается `GetTypesForItemVersionAsync` чтобы заполнить `TypeNames` + `publishedBy` passed from FamilyCatalogVersion.PublishedBy (roundtrip per version, ~10-30ms — typical ≤5 versions). CHANGED `OnSelectedVersionRowChanged`: возвращён к минимальной реализации — только `NotifyCanExecuteChanged` для команд; никаких preview reload (тяжёлый путь ломал UX). CHANGED: `Error` логи в `MakeActiveAsync` и `DeleteVersion` теперь заканчиваются `[Action: ...]` (L9 consistency). REMOVE `LoadPreviewForSelectedVersionAsync` метод (был добавлен в первой попытке rev #5, удалён как нарушающий UX). REMOVE `_previewLoadCts` field. |
+| `SmartCon.FamilyManager/ViewModels/FamilyPropertiesViewModel.cs` | REMOVE `[ObservableProperty] _isPreviewMode` + `[ObservableProperty] _previewVersionLabel` (были добавлены в первой попытке rev #5, удалён вместе с `LoadPreviewForSelectedVersionAsync`). |
+| `SmartCon.FamilyManager/Views/FamilyPropertiesView.xaml` | CHANGED «Версии» TabItem: REMOVE preview banner (двигал таблицу — первая попытка rev #5). REMOVE `RowDetailsTemplate` (вторая попытка rev #5, слишком громоздко). ADD `Window.Resources`: `CenteredTextCell` + `LeftTextCell` `Style TargetType=TextBlock` с `TextAlignment=Center` + `HorizontalAlignment` + `VerticalAlignment` (per MS Learn / SO best practice https://stackoverflow.com/a/720732 + https://stackoverflow.com/a/63513914). CHANGED DataGrid: ADD `CellStyle="{DynamicResource CompactDataGridCell}"` (убирает синий фон ячейки — совпадает с batch диалогом); ADD `RowStyle="{DynamicResource CompactDataGridRow}"` (лёгкий selection + hover, совпадает с batch диалогом); ADD inline `ColumnHeaderStyle` с `HorizontalContentAlignment=Center` (центрирование заголовков колонок); FIX `BorderBrush="{DynamicResource BorderAltBrush}"` (вместо несуществующего `BorderBrush`); ADD `EnableRowVirtualization="False"`; ADD `ElementStyle="{StaticResource CenteredTextCell}"` на все 5 текстовых columns (VersionLabel, RevitMajorVersion, PublishedAtText, PublishedBy/ColVersionAuthor, TypesCountDisplay); CHANGED `ColVersionTypes` `Binding="{Binding TypesCountDisplay}"` (was `TypesCount` which could be NULL — теперь всегда показывает реальное число типов) + `ToolTipService.ToolTip="{Binding TypeNamesTooltip}"` (tooltip при наведении показывает все имена типов через запятую — компактно и строго); CHANGED `ColVersionActive` badge — `Background="{DynamicResource SavedSuccessBrush}"` (зелёный) вместо `AccentBrush` (синий) + `HorizontalAlignment="Center"` (было `Left`). ADD new column `ColVersionAuthor` (`Binding="{Binding PublishedBy, TargetNullValue='—'}"`) showing per-version author username. |
+| `SmartCon.FamilyManager/Views/FamilyPropertiesView.xaml.cs` | CHANGED `InitializeVersionGridHeaders`: ADD `ColVersionAuthor.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Author) ?? "Author"` (I-12 programming установка заголовка колонки Author). |
+| `SmartCon.FamilyManager/Services/LocalCatalog/FamilyCatalogSql.cs` | ADD `published_by TEXT` column to `CreateCatalogVersions` DDL (line 55). ADD const `MigrateV19AddPublishedByColumn` (line 770) — `ALTER TABLE catalog_versions ADD COLUMN published_by TEXT`. |
+| `SmartCon.FamilyManager/Services/LocalCatalog/LocalCatalogMigrator.cs` | ADD registration `await MigrateV19Async(connection, ct)` after V18 (line 66). ADD `MigrateV19Async` implementation (lines 714-748): double idempotency (`schema_version >= 19` check + `ColumnExistsAsync("catalog_versions","published_by")` check); transaction safety (`BeginTransaction → Commit/Rollback`); logs success via `SmartConLogger.Info`. |
+| `SmartCon.FamilyManager/Services/LocalCatalog/LocalCatalogProvider.cs` | CHANGED `ReadCatalogVersion` (line 484): reads `published_by` via `TryGetString(reader, "published_by")` — safe for legacy DBs without V19 migration (returns null). |
+| `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportService.Database.cs` | CHANGED `InsertVersionAsync` (line 198, signature + body): accepts `string? publishedBy = null` parameter, INSERT statement includes `published_by` column + `@publishedBy` SqliteParameter. CHANGED `UpdateVersionAsync` (line 233): accepts `string? publishedBy` parameter (no default — required), UPDATE statement sets `published_by = @publishedBy`. |
+| `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyImportService.cs` | CHANGED all paths that create `FamilyImportRequest`/`FamilyUpdateRequest` to pass `PublishedBy: item.PublishedByUser` or `request.PublishedBy` (depending on entry point). Specifically: line 218 (InsertVersionAsync call), line 313 (ImportFolderAsync), line 475 (ImportBatchAsync New/Increment branch), line 547 (FamilyUpdateRequest creation), line 725 (UpdateFamilyAsync InsertVersionAsync call). OverwriteCurrent path (line 448 Database.cs) also receives `item.PublishedByUser`. MakeActive path **skipped** (pointer switch only, no publication). |
+| `SmartCon.FamilyManager/ViewModels/FamilyManagerMainViewModel.FamilyEdit.cs` | CHANGED `ProcessFamilyImportAsync`: 3 places call `_revitContext.GetUsername()` (cached string field from `RevitContext.cs:66-72`, NOT Revit API — readonly field access safe from async). Lines 457 (MakeActive batch item), 500 (OverwriteCurrent batch item), 534 (FamilyImportRequest new/Increment). All three populate `FamilyBatchImportItem.PublishedByUser`. |
+| `SmartCon.FamilyManager/ViewModels/FamilyManagerMainViewModel.Import.cs` | CHANGED `ImportFilesAsync` (line 189-190): `foreach (var si in selectedItems) si.PublishedByUser = _revitContext.GetUsername();` before `await _importService.ImportBatchAsync(...)`. Covers batch-import pipeline (UC Import Files button). |
+| `SmartCon.Core/Models/FamilyManager/FamilyCatalogVersion.cs` | ADD `PublishedBy` record parameter (string?, optional, default null). XML doc comment `<param name="PublishedBy">`. |
+| `SmartCon.Core/Models/FamilyManager/FamilyImportRequest.cs` | ADD `PublishedBy` record parameter (string?, optional, default null). |
+| `SmartCon.Core/Models/FamilyManager/FamilyUpdateRequest.cs` | ADD `PublishedBy` record parameter (string?, optional, default null). |
+| `SmartCon.Core/Models/FamilyManager/FamilyFolderImportRequest.cs` | ADD `PublishedBy` record parameter (string?, optional, default null). |
+| `SmartCon.Core/Models/FamilyManager/FamilyBatchImportItem.cs` | ADD `PublishedBy` record parameter + ADD `PublishedByUser` mutable property `{ get; set; } = PublishedBy` (same pattern as `TargetCategoryId`/`TargetCategoryName` — positional param initializes mutable shadow property, post-construction mutation allowed for mass-edit in batch grid). |
+| `SmartCon.Core/Services/LocalizationService.Keys.FamilyManager.cs` | ADD `ru["FM_Version_Column_Author"] = "Автор"; en["FM_Version_Column_Author"] = "Author";` (line 178). |
+| `SmartCon.UI/StringLocalization.cs` | ADD `public const string FM_Version_Column_Author = "FM_Version_Column_Author";` (line 398). |
+| `SmartCon.FamilyManager/Services/LocalCatalog/LocalCatalogProvider.Versions.cs` | CHANGED `SetActiveVersionAsync` catch (line ~198): убран `SmartConLogger.Error("SetActiveVersion failed: ...")` + оставлен `throw;` (как в `DeleteVersionAsync`) — убирает двойное логирование исключения. CHANGED `DeleteVersionAsync` file-cleanup Warn (line ~363): полный путь `versionDir` заменён на `leaf name` (`Path.GetFileName`) — правило L8 (file path в message без full path); scope уже содержит CatalogItemId+VersionLabel для корреляции. |
+| `src/SmartCon.Tests/FamilyManager/Repository/LocalCatalogMigratorTests.cs` | UPDATE `"18"` → `"19"` schema_version expectations (4 места: lines 71, 121, 184, 453). |
+| `src/SmartCon.Tests/FamilyManager/Repository/LocalCatalogVersionManagementTests.cs` | UPDATE `"18"` → `"19"` schema_version expectation (1 место: line 33). |
+
 ## Логирование (smartcon-logging)
 
 Категории `FMVersion` + `FMProperties` (rev #1, vocabulary `SmartConLogger`):
@@ -476,11 +602,12 @@ Hard delete гарантирует, что повторный импорт то�
   - `SyncTypesAsync_OrchestratorScope_DoesNotDeleteVersionedTypes`
   - `SyncTypesAsync_ActiveImport_PreservesOtherVersionsTypes` (перевёрнутая семантика; бывш. `SyncTypesAsync_ActiveImport_CollapsesAllVersionsToCurrent`)
 - 1 новый тест rev #3: `ImportBatchAsync_MakeActive_Duplicate_DoesNotCreateNewVersion`
+- rev #5: новых unit-тестов не добавлено (см. `rev #5 → Tests` выше в ревизии; пути покрываются manual Revit test UC-2)
 - Итого: **1676/1676 pass** (Debug.R25 / Debug.R21 / Debug.R24 / Debug.R19)
 
 ### Manual Revit test (требуется пользователю)
 - UC-1: открыть Properties → видеть вкладку Версии → список корректный.
-- UC-2: выбрать v2 (не активную) → Content/Attributes/Files показывают данные v2.
+- UC-2: выбрать v2 (не активную) в таблице «Версии». Колонка «Типы» показывает реальное число типов (через `TypesCountDisplay` — берётся из `TypeNames.Count`, а не из `catalog_versions.types_count` который может быть NULL). Tooltip на ячейке «Типы» показывает полный список имён типов через запятую. Никакого layout-shift / preview reload / banner / row details — компактно и строго. Чтобы увидеть полные атрибуты выбранной версии — нажать «Сделать активной».
 - UC-3: кнопка «Сделать активной» → подтверждающий диалог → OK → бейдж «Активная» на v2, дерево обновилось, вкладка Атрибуты показывает типы/значения v2.
 - UC-4: кнопка «Удалить» на неактивной v3 → подтверждающий диалог → OK → версия удалена из списка; проверка: каталог `{itemId}/v3/` не существует; типы и атрибуты для `version_id` v3 удалены.
 - UC-5 (rev #3): импорт файла-дубликата через "Импорт активного файла" — dedup = Duplicate (hash matches archived version) → в выпадающем списке «Сделать активной». Выбрать → подтвердить импорт → НЕ должно создаться v3, активной стала matched archived version. Файл НЕ перезаписан (проверка mtime файла). Редактор rfa закрылся автоматически.

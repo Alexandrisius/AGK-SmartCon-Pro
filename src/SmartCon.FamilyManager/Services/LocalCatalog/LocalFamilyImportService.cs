@@ -215,7 +215,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 }
 
                 await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
-                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
+                    request.ContentHash, request.HashFormatVersion, request.PublishedBy).ConfigureAwait(false);
 
                 if (existingItem is null && request.Tags is not null)
                 {
@@ -309,7 +309,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     Category: request.Category,
                     Tags: request.Tags,
                     Description: request.Description,
-                    CategoryId: request.CategoryId);
+                    CategoryId: request.CategoryId,
+                    PublishedBy: request.PublishedBy);
 
                 var result = await ImportFileAsync(importRequest, ct);
                 results.Add(result);
@@ -470,7 +471,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         PrecomputedVersionLabel: item.PrecomputedVersionLabel,
                         PrecomputedManagedPath: item.PrecomputedManagedPath,
                         ContentHash: item.ContentHash,
-                        HashFormatVersion: item.HashFormatVersion);
+                        HashFormatVersion: item.HashFormatVersion,
+                        PublishedBy: item.PublishedByUser);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
@@ -544,7 +546,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             PrecomputedVersionLabel: item.PrecomputedVersionLabel,
                             PrecomputedManagedPath: item.PrecomputedManagedPath,
                             ContentHash: item.ContentHash,
-                            HashFormatVersion: item.HashFormatVersion);
+                            HashFormatVersion: item.HashFormatVersion,
+                            PublishedBy: item.PublishedByUser);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -719,7 +722,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);
                 }
                 await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
-                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
+                    request.ContentHash, request.HashFormatVersion, request.PublishedBy).ConfigureAwait(false);
 
                 tx.Commit();
             }

@@ -63,6 +63,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV16Async(connection, ct);
         await MigrateV17Async(connection, ct);
         await MigrateV18Async(connection, ct);
+        await MigrateV19Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -702,6 +703,42 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
 
             tx.Commit();
             SmartConLogger.Info("Migration v18: changed family_types UNIQUE to (catalog_item_id, version_id, type_name) for per-version type storage");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V19: adds <c>published_by TEXT</c> column to <c>catalog_versions</c>
+    /// to track which Revit user published each version. Simple ALTER TABLE
+    /// ADD COLUMN — no recreate needed. ADR-041 rev #5.
+    /// </summary>
+    private static async Task MigrateV19Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 19) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "published_by", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV19AddPublishedByColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '19' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v19: added published_by column to catalog_versions for per-version author tracking");
         }
         catch
         {

@@ -199,12 +199,13 @@ internal sealed partial class LocalFamilyImportService
         string catalogItemId, string fileId, string versionLabel,
         FamilyMetadataExtractionResult metadata, int revitVersion,
         DateTimeOffset now, CancellationToken ct,
-        string? contentHash = null, int? hashFormatVersion = null)
+        string? contentHash = null, int? hashFormatVersion = null,
+        string? publishedBy = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, types_count, parameters_count, content_hash, hash_format_version, published_at_utc)
-            VALUES (@id, @catalogItemId, @fileId, @versionLabel, @revitMajorVersion, @typesCount, @parametersCount, @contentHash, @hashFmt, @publishedAtUtc)
+            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, types_count, parameters_count, content_hash, hash_format_version, published_at_utc, published_by)
+            VALUES (@id, @catalogItemId, @fileId, @versionLabel, @revitMajorVersion, @typesCount, @parametersCount, @contentHash, @hashFmt, @publishedAtUtc, @publishedBy)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", versionId));
         cmd.Parameters.Add(new SqliteParameter("@catalogItemId", catalogItemId));
@@ -218,6 +219,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@publishedAtUtc", now.ToString("o")));
+        cmd.Parameters.Add(new SqliteParameter("@publishedBy", publishedBy ?? (object)DBNull.Value));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
@@ -232,6 +234,7 @@ internal sealed partial class LocalFamilyImportService
         string versionId, FamilyMetadataExtractionResult metadata,
         DateTimeOffset now,
         string? contentHash, int? hashFormatVersion,
+        string? publishedBy,
         CancellationToken ct)
     {
         using var cmd = connection.CreateCommand();
@@ -241,7 +244,8 @@ internal sealed partial class LocalFamilyImportService
                 parameters_count = @parametersCount,
                 content_hash = @contentHash,
                 hash_format_version = @hashFmt,
-                published_at_utc = @publishedAtUtc
+                published_at_utc = @publishedAtUtc,
+                published_by = @publishedBy
             WHERE id = @versionId
             """;
         cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
@@ -252,6 +256,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@publishedAtUtc", now.ToString("o")));
+        cmd.Parameters.Add(new SqliteParameter("@publishedBy", publishedBy ?? (object)DBNull.Value));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
@@ -441,7 +446,7 @@ internal sealed partial class LocalFamilyImportService
             // content; id/version_label/revit_major_version stay the same
             // so FK references (family_types.version_id) remain valid.
             await UpdateVersionAsync(connection, currentVersion.Id, finalMetadata, now,
-                item.ContentHash, item.HashFormatVersion, ct);
+                item.ContentHash, item.HashFormatVersion, item.PublishedByUser, ct);
 
             tx.Commit();
 

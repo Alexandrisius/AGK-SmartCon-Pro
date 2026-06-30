@@ -480,7 +480,8 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             : reader.GetInt32(reader.GetOrdinal("parameters_count")),
         PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))),
         ContentHash: TryGetString(reader, "content_hash"),
-        HashFormatVersion: TryGetInt(reader, "hash_format_version"));
+        HashFormatVersion: TryGetInt(reader, "hash_format_version"),
+        PublishedBy: TryGetString(reader, "published_by"));
 
     private static FamilyFileRecord ReadFileRecord(SqliteDataReader reader) => new(
         Id: reader.GetString(reader.GetOrdinal("id")),

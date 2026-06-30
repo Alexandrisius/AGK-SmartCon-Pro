@@ -192,10 +192,9 @@ internal sealed partial class LocalCatalogProvider
                 PreviousVersionLabel: previousLabel, ActivatedAtUtc: DateTimeOffset.UtcNow,
                 ContentHashSynced: hashSynced);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             tx.Rollback();
-            SmartConLogger.Error($"SetActiveVersion failed: {ex.Message}");
             throw;
         }
     }
@@ -360,7 +359,13 @@ internal sealed partial class LocalCatalogProvider
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"failed to delete physical files at {versionDir}: {ex.Message} [Action: close any Revit document using this family and retry DeleteVersion — DB rows are already removed]");
+                // L8: message uses only the directory leaf name (versionLabel).
+                // Full path PII is avoided; the scope already contains
+                // CatalogItemId + VersionLabel for correlation.
+                var leafName = !string.IsNullOrEmpty(versionDir)
+                    ? Path.GetFileName(versionDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                    : "<unknown>";
+                SmartConLogger.Warn($"failed to delete physical files for version '{leafName}': {ex.Message} [Action: close any Revit document using this family and retry DeleteVersion — DB rows are already removed]");
                 // Not a failure — DB is consistent; orphan dir will be cleaned on next retry.
             }
         }

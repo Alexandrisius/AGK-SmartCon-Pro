@@ -395,6 +395,7 @@ public static class StringLocalization
         public const string FM_Version_Column_Version = "FM_Version_Column_Version";
         public const string FM_Version_Column_Revit = "FM_Version_Column_Revit";
         public const string FM_Version_Column_Date = "FM_Version_Column_Date";
+        public const string FM_Version_Column_Author = "FM_Version_Column_Author";
         public const string FM_Version_Column_Types = "FM_Version_Column_Types";
         public const string FM_Version_Column_Active = "FM_Version_Column_Active";
         public const string FM_ActiveBadge = "FM_ActiveBadge";

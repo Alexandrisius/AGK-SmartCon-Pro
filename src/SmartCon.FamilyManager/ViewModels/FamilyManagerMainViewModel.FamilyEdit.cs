@@ -453,7 +453,8 @@ public sealed partial class FamilyManagerMainViewModel
                 LoadableSnapshot: importItem.LoadableSnapshot,
                 SystemSnapshot: null)
             {
-                Action = FamilyBatchImportAction.MakeActive
+                Action = FamilyBatchImportAction.MakeActive,
+                PublishedByUser = _revitContext.GetUsername()
             };
 
             var batchResult = await _importService.ImportBatchAsync(
@@ -495,7 +496,8 @@ public sealed partial class FamilyManagerMainViewModel
                 LoadableSnapshot: importItem.LoadableSnapshot,
                 SystemSnapshot: null)
             {
-                Action = FamilyBatchImportAction.OverwriteCurrent
+                Action = FamilyBatchImportAction.OverwriteCurrent,
+                PublishedByUser = _revitContext.GetUsername()
             };
 
             var batchResult = await _importService.ImportBatchAsync(
@@ -528,7 +530,8 @@ public sealed partial class FamilyManagerMainViewModel
                 PrecomputedVersionLabel: resolvedVersionLabel,
                 PrecomputedManagedPath: saveAsPath,
                 ContentHash: importItem.ContentHash,
-                HashFormatVersion: importItem.HashFormatVersion);
+                HashFormatVersion: importItem.HashFormatVersion,
+                PublishedBy: _revitContext.GetUsername());
 
             importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
         }
