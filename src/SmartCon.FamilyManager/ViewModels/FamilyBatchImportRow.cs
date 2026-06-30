@@ -226,7 +226,12 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     {
         FamilyBatchImportStatus.New => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.Skip],
         FamilyBatchImportStatus.Existing => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.OverwriteCurrent, FamilyBatchImportAction.Skip],
-        FamilyBatchImportStatus.Duplicate => [FamilyBatchImportAction.Skip, FamilyBatchImportAction.IncrementVersion],
+        // ADR-041: MakeActive only for Duplicate — the incoming file's content
+        // is already in the catalog as one of the existing versions. The user
+        // signals "I'm importing this duplicate because I want that version to
+        // become active." No file is saved — only current_version_label is
+        // switched (and content_hash is synchronized on the item).
+        FamilyBatchImportStatus.Duplicate => [FamilyBatchImportAction.Skip, FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.MakeActive],
         _ => [FamilyBatchImportAction.Skip]
     };
 

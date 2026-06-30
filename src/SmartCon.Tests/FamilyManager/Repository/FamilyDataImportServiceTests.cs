@@ -220,6 +220,11 @@ public sealed class FamilyDataImportServiceTests : IDisposable
     {
         var itemId = await SeedCatalogItemAsync("VersionedFamily");
         await SeedAttributeDefAsync("P1");
+        // v2.0.0 (ADR-041): V17 added FK on family_types.version_id and
+        // extracted_attribute_values.version_id → catalog_versions(id). Seed
+        // real version + file rows so SaveExtractionResultAsync's inserts
+        // satisfy the FK.
+        var (versionId, fileId) = await SeedFileWithIdsAsync(itemId, "VersionedFamily.rfa");
 
         var extractionResult = new FamilyExtractionResult(
             true,
@@ -231,19 +236,19 @@ public sealed class FamilyDataImportServiceTests : IDisposable
             null,
             2025);
 
-        var result = await _service.SaveExtractionResultAsync(itemId, extractionResult, "v1", "file1");
+        var result = await _service.SaveExtractionResultAsync(itemId, extractionResult, versionId, fileId);
 
         Assert.True(result.Success);
 
-        var types = await _typeRepo.GetTypesForItemVersionAsync(itemId, "v1");
+        var types = await _typeRepo.GetTypesForItemVersionAsync(itemId, versionId);
         Assert.Single(types);
-        Assert.Equal("v1", types[0].VersionId);
-        Assert.Equal("file1", types[0].FileId);
+        Assert.Equal(versionId, types[0].VersionId);
+        Assert.Equal(fileId, types[0].FileId);
 
-        var values = await _valueRepo.GetValuesForItemAsync(itemId, "v1");
+        var values = await _valueRepo.GetValuesForItemAsync(itemId, versionId);
         Assert.Single(values);
-        Assert.Equal("v1", values[0].VersionId);
-        Assert.Equal("file1", values[0].FileId);
+        Assert.Equal(versionId, values[0].VersionId);
+        Assert.Equal(fileId, values[0].FileId);
     }
 
     [Fact]
@@ -303,11 +308,16 @@ public sealed class FamilyDataImportServiceTests : IDisposable
 
     private async Task SeedFileAsync(string catalogItemId, string fileName)
     {
+        await SeedFileWithIdsAsync(catalogItemId, fileName);
+    }
+
+    private async Task<(string VersionId, string FileId)> SeedFileWithIdsAsync(string catalogItemId, string fileName)
+    {
         var filePath = _fixture.CreateFakeRfaFile(fileName);
         var relativePath = fileName;
+        var versionLabel = "v1";
         var versionId = Guid.NewGuid().ToString();
         var fileId = Guid.NewGuid().ToString();
-        var versionLabel = "v1";
 
         using var connection = _fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
@@ -336,6 +346,8 @@ public sealed class FamilyDataImportServiceTests : IDisposable
         uCmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
         uCmd.Parameters.Add(new SqliteParameter("@id", catalogItemId));
         await uCmd.ExecuteNonQueryAsync();
+
+        return (versionId, fileId);
     }
 
     private async Task<string> SeedCategoryAsync(string name, string? parentId = null)

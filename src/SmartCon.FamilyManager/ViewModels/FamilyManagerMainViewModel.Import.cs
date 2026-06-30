@@ -186,6 +186,9 @@ public sealed partial class FamilyManagerMainViewModel
             // that BakeAsync performed in Commit.
             await StageLoadableFamiliesFromHeldOpenAsync(selectedItems);
 
+            foreach (var si in selectedItems)
+                si.PublishedByUser = _revitContext.GetUsername();
+
             var importResult = await _importService.ImportBatchAsync(selectedItems, categoryId, progress, CancellationToken.None);
 
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);

@@ -513,8 +513,56 @@ public enum FamilyBatchImportAction
 {
     IncrementVersion,  // Создать новую версию (vN+1), обновить current_version_label
     OverwriteCurrent,  // Заменить файл текущей версии без изменения current_version_label
-    Skip               // Пропустить файл
+    Skip,              // Пропустить файл
+    MakeActive         // Переключить active version на найденный дубликат (без сохранения файла). Только для Status=Duplicate.
 }
+```
+
+---
+
+## SetActiveVersionResult
+
+Результат переключения активной версии каталог-айтема на существующую версию.
+Обновляет `catalog_items.current_version_label` и синхронизирует `content_hash`/`hash_format_version`
+с активируемой версией (чтобы content-hash дедупликация оставалась консистентной).
+См. ADR-041.
+
+**Файл:** `SetActiveVersionResult.cs`
+
+```csharp
+public sealed record SetActiveVersionResult(
+    bool Success,
+    string CatalogItemId,
+    string VersionLabel,
+    string? PreviousVersionLabel,
+    DateTimeOffset ActivatedAtUtc,
+    bool ContentHashSynced,
+    string? ErrorMessage = null);
+```
+
+---
+
+## DeleteVersionResult
+
+Результат удаления неактивной версии каталог-айтема (hard delete). Удаляются:
+- Строки `catalog_versions` (каскадно через FK: `family_files`, `family_types`, `extracted_attribute_values`, `family_nested_shared_families`).
+- Строки `family_assets` явно (привязка по `(catalog_item_id, version_label)`, не FK к versions).
+- Физические файлы в `{dbRoot}/files/{catalogItemId}/{versionLabel}/`.
+
+См. ADR-041.
+
+**Файл:** `DeleteVersionResult.cs`
+
+```csharp
+public sealed record DeleteVersionResult(
+    bool Success,
+    string CatalogItemId,
+    string VersionLabel,
+    int VersionsDeleted,
+    int AssetsDeleted,
+    bool FilesDeleted,
+    string? PhysicalDirectoryPath,
+    string? ErrorMessage = null);
 ```
 
 ---

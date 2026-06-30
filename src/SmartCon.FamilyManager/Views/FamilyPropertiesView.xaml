@@ -15,8 +15,27 @@
 
     <Window.Resources>
         <ui:SingletonResources>
-            <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
             <converters:PathToBitmapImageConverter x:Key="PathToBitmapImageConverter"/>
+            <converters:TypeCountToDisplayConverter x:Key="TypeCountConverter"/>
+            <!-- ADR-041 rev #5: ElementStyle for short columns (Revit version,
+                 Types count, Status badge). Per MS Learn / SO best practice:
+                 apply TextAlignment=Center + VerticalAlignment=Center via
+                 ElementStyle (TargetType=TextBlock), not CellStyle — the
+                 latter only centres the cell container, not the text itself. -->
+            <Style x:Key="CenteredTextCell" TargetType="TextBlock"
+                   BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="TextAlignment" Value="Center"/>
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+            <Style x:Key="LeftTextCell" TargetType="TextBlock"
+                   BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="TextAlignment" Value="Left"/>
+                <Setter Property="HorizontalAlignment" Value="Left"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Margin" Value="6,0"/>
+            </Style>
         </ui:SingletonResources>
     </Window.Resources>
 
@@ -535,6 +554,112 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Style="{DynamicResource FlatTabItem}">
+                <TabItem.Header>
+                    <TextBlock Text="{loc:Loc FM_Tab_Versions}"/>
+                </TabItem.Header>
+                <Grid Margin="8,8,8,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <DataGrid x:Name="VersionsGrid"
+                              Grid.Row="0"
+                              ItemsSource="{Binding Versions}"
+                              SelectedItem="{Binding SelectedVersionRow, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              Style="{DynamicResource CompactDataGrid}"
+                              RowStyle="{DynamicResource CompactDataGridRow}"
+                              CellStyle="{DynamicResource CompactDataGridCell}"
+                              AutoGenerateColumns="False"
+                              SelectionMode="Single" SelectionUnit="FullRow"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              CanUserAddRows="False" CanUserDeleteRows="False"
+                              CanUserResizeRows="False"
+                              EnableRowVirtualization="False"
+                              BorderThickness="0,0,0,1"
+                              BorderBrush="{DynamicResource BorderAltBrush}">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                <Setter Property="Padding" Value="4,2"/>
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn x:Name="ColVersionLabel"
+                                                Binding="{Binding VersionLabel}"
+                                                ElementStyle="{StaticResource CenteredTextCell}"
+                                                Width="80" MinWidth="60"/>
+                            <DataGridTextColumn x:Name="ColVersionRevit"
+                                                Binding="{Binding RevitMajorVersion}"
+                                                ElementStyle="{StaticResource CenteredTextCell}"
+                                                Width="70" MinWidth="50"/>
+                            <DataGridTextColumn x:Name="ColVersionDate"
+                                                Binding="{Binding PublishedAtText}"
+                                                ElementStyle="{StaticResource CenteredTextCell}"
+                                                Width="*" MinWidth="120"/>
+                            <DataGridTextColumn x:Name="ColVersionAuthor"
+                                                Binding="{Binding PublishedBy, TargetNullValue='—'}"
+                                                ElementStyle="{StaticResource CenteredTextCell}"
+                                                Width="100" MinWidth="80"/>
+                            <!-- ADR-041 rev #5: Types column shows TypesCountDisplay
+                                 (real count from TypeNames) instead of TypesCount
+                                 (which can be NULL in catalog_versions even when
+                                 family_types rows exist). Tooltip on the cell
+                                 carries the full type-name list as a comma-separated
+                                 string — compact and strict, no row details. -->
+                            <DataGridTextColumn x:Name="ColVersionTypes"
+                                                Binding="{Binding TypesCountDisplay}"
+                                                ElementStyle="{StaticResource CenteredTextCell}"
+                                                Width="70" MinWidth="50"
+                                                ToolTipService.ToolTip="{Binding TypeNamesTooltip}"/>
+                            <!-- Active badge: success-green pill instead of
+                                 accent-blue (less visually aggressive compared
+                                 to the active selection highlight). -->
+                            <DataGridTemplateColumn x:Name="ColVersionActive" Width="100" MinWidth="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource SavedSuccessBrush}"
+                                                CornerRadius="3" Padding="8,2"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock Text="{loc:Loc FM_ActiveBadge}"
+                                                       Foreground="White" FontSize="11"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <TextBlock Grid.Row="0"
+                               Text="{Binding VersionsStatusMessage}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="11"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding HasVersions, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"/>
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Margin="0,8,0,0"
+                                Visibility="{Binding HasVersions, Converter={StaticResource BoolToVisibility}}">
+                        <Button Content="{loc:Loc FM_MakeActive}"
+                                Command="{Binding MakeActiveCommand}"
+                                Style="{DynamicResource PrimaryButton}"
+                                Width="160" Height="28"
+                                Margin="0,0,8,0"
+                                ToolTip="{loc:Loc FM_MakeActive_Tooltip}"/>
+                        <Button Content="{loc:Loc FM_DeleteVersion}"
+                                Command="{Binding DeleteVersionCommand}"
+                                Style="{DynamicResource SecondaryButton}"
+                                Width="100" Height="28"
+                                ToolTip="{loc:Loc FM_DeleteVersion_Tooltip}"/>
                     </StackPanel>
                 </Grid>
             </TabItem>

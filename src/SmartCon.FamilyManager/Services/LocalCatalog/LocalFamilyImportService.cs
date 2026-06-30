@@ -215,7 +215,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 }
 
                 await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
-                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
+                    request.ContentHash, request.HashFormatVersion, request.PublishedBy).ConfigureAwait(false);
 
                 if (existingItem is null && request.Tags is not null)
                 {
@@ -309,7 +309,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     Category: request.Category,
                     Tags: request.Tags,
                     Description: request.Description,
-                    CategoryId: request.CategoryId);
+                    CategoryId: request.CategoryId,
+                    PublishedBy: request.PublishedBy);
 
                 var result = await ImportFileAsync(importRequest, ct);
                 results.Add(result);
@@ -470,12 +471,55 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         PrecomputedVersionLabel: item.PrecomputedVersionLabel,
                         PrecomputedManagedPath: item.PrecomputedManagedPath,
                         ContentHash: item.ContentHash,
-                        HashFormatVersion: item.HashFormatVersion);
+                        HashFormatVersion: item.HashFormatVersion,
+                        PublishedBy: item.PublishedByUser);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
                 {
-                    if (item.Action == FamilyBatchImportAction.IncrementVersion)
+                    if (item.Action == FamilyBatchImportAction.MakeActive)
+                    {
+                        // ADR-041: MakeActive only applies to Duplicate status.
+                        // The content hash matched an existing version, so we
+                        // just switch the active pointer — no file is saved to
+                        // storage, no new version row is inserted.
+                        if (string.IsNullOrEmpty(item.ExistingCatalogItemId) ||
+                            string.IsNullOrEmpty(item.MatchedVersionLabel))
+                        {
+                            result = new FamilyImportResult(
+                                Success: false,
+                                CatalogItemId: item.ExistingCatalogItemId,
+                                VersionId: null,
+                                FileId: null,
+                                FileName: item.FileName,
+                                VersionLabel: item.MatchedVersionLabel,
+                                ErrorMessage: "MakeActive requires ExistingCatalogItemId and MatchedVersionLabel. " +
+                                              "The row's content hash did not match any catalog version.");
+                        }
+                        else
+                        {
+                            using var _maScope = SmartConLogger.BeginScope("LocalImport",
+                                ("Method", "MakeActive"),
+                                ("CatalogItemId", item.ExistingCatalogItemId),
+                                ("VersionLabel", item.MatchedVersionLabel));
+                            var setResult = await _catalogProvider.SetActiveVersionAsync(
+                                item.ExistingCatalogItemId!, item.MatchedVersionLabel!, ct).ConfigureAwait(false);
+                            result = new FamilyImportResult(
+                                Success: setResult.Success,
+                                CatalogItemId: item.ExistingCatalogItemId,
+                                VersionId: null,
+                                FileId: null,
+                                FileName: item.FileName,
+                                VersionLabel: item.MatchedVersionLabel,
+                                ErrorMessage: setResult.ErrorMessage,
+                                WasSkipped: true);
+                            SmartConLogger.Info(
+                                $"MakeActive: prev={(setResult.PreviousVersionLabel ?? "<null>")} " +
+                                $"new={item.MatchedVersionLabel} success={setResult.Success} " +
+                                $"hashSynced={setResult.ContentHashSynced}");
+                        }
+                    }
+                    else if (item.Action == FamilyBatchImportAction.IncrementVersion)
                     {
                         // Source-of-truth rule: when no category is assigned
                         // (TargetCategoryId is null), do not write the picker
@@ -502,7 +546,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             PrecomputedVersionLabel: item.PrecomputedVersionLabel,
                             PrecomputedManagedPath: item.PrecomputedManagedPath,
                             ContentHash: item.ContentHash,
-                            HashFormatVersion: item.HashFormatVersion);
+                            HashFormatVersion: item.HashFormatVersion,
+                            PublishedBy: item.PublishedByUser);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -677,7 +722,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);
                 }
                 await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
-                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
+                    request.ContentHash, request.HashFormatVersion, request.PublishedBy).ConfigureAwait(false);
 
                 tx.Commit();
             }

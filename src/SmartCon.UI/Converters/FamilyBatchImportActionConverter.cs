@@ -19,6 +19,7 @@ public sealed class FamilyBatchImportActionConverter : IValueConverter
             FamilyBatchImportAction.IncrementVersion => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_ActionIncrement) ?? "New Version",
             FamilyBatchImportAction.OverwriteCurrent => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_ActionOverwrite) ?? "Overwrite Current",
             FamilyBatchImportAction.Skip => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_ActionSkip) ?? "Skip",
+            FamilyBatchImportAction.MakeActive => LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_MakeActive) ?? "Make Active",
             _ => action.ToString()
         };
     }

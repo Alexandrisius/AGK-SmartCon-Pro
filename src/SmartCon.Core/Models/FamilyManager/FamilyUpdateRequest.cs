@@ -19,4 +19,5 @@ public sealed record FamilyUpdateRequest(
     string? PrecomputedVersionLabel = null,
     string? PrecomputedManagedPath = null,
     string? ContentHash = null,
-    int? HashFormatVersion = null);
+    int? HashFormatVersion = null,
+    string? PublishedBy = null);

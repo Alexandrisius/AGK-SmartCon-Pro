@@ -330,6 +330,20 @@ public sealed partial class FamilyManagerMainViewModel
             && importItem.ExistingCatalogItemId is not null
             && importItem.ExistingVersionLabel is not null;
 
+        // ADR-041 rev #2: MakeActive is a no-file-write operation. The
+        // incoming file's content hash matched an existing version
+        // (Duplicate status), so the .rfa is ALREADY on disk at
+        // <ExistingCatalogItemId>/<MatchedVersionLabel>/<name>.rfa. We skip
+        // EnsureFamilyDirectories, SaveAs, ExtractAttributesForLoadableTasks
+        // and the ImportFileAsync path (which would INSERT a new
+        // catalog_versions row — exactly the v3-on-duplicate bug rev #2 fixes).
+        // ImportBatchAsync dispatches to SetActiveVersionAsync via the
+        // MakeActive branch in LocalFamilyImportService.ImportBatchAsync.
+        var isMakeActive = importItem.Action == FamilyBatchImportAction.MakeActive
+            && importItem.Status == FamilyBatchImportStatus.Duplicate
+            && !string.IsNullOrEmpty(importItem.ExistingCatalogItemId)
+            && !string.IsNullOrEmpty(importItem.MatchedVersionLabel);
+
         if (isOverwrite)
         {
             resolvedVersionLabel = importItem.ExistingVersionLabel!;
@@ -345,42 +359,47 @@ public sealed partial class FamilyManagerMainViewModel
             resolvedCatalogItemId = importItem.ExistingCatalogItemId!;
         }
 
-        if (string.IsNullOrEmpty(resolvedManagedPath))
+        if (!isMakeActive && string.IsNullOrEmpty(resolvedManagedPath))
         {
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
             return;
         }
 
-        _pathResolver.EnsureFamilyDirectories(resolvedCatalogItemId, resolvedVersionLabel);
+        string? saveAsPath = null;
 
-        var activeDoc = await _awaitableEvent.RaiseAsync(app => _revitContext.GetDocument(), CancellationToken.None);
-
-        var saveAsPath = await _awaitableEvent.RaiseAsync<string?>(obj =>
+        if (!isMakeActive)
         {
-            try
+            _pathResolver.EnsureFamilyDirectories(resolvedCatalogItemId, resolvedVersionLabel);
+
+            var activeDoc = await _awaitableEvent.RaiseAsync(app => _revitContext.GetDocument(), CancellationToken.None);
+
+            saveAsPath = await _awaitableEvent.RaiseAsync<string?>(obj =>
             {
-                if (File.Exists(resolvedManagedPath!))
+                try
                 {
-                    File.SetAttributes(resolvedManagedPath!, File.GetAttributes(resolvedManagedPath!) & ~FileAttributes.ReadOnly);
-                    File.Delete(resolvedManagedPath!);
+                    if (File.Exists(resolvedManagedPath!))
+                    {
+                        File.SetAttributes(resolvedManagedPath!, File.GetAttributes(resolvedManagedPath!) & ~FileAttributes.ReadOnly);
+                        File.Delete(resolvedManagedPath!);
+                    }
+
+                    activeDoc.SaveAs(resolvedManagedPath!, new SaveAsOptions { OverwriteExistingFile = true });
+                    File.SetAttributes(resolvedManagedPath!, File.GetAttributes(resolvedManagedPath!) | FileAttributes.ReadOnly);
+
+                    return resolvedManagedPath;
                 }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Error($"SaveAs to managed storage failed: {ex.Message}");
+                    return null;
+                }
+            });
 
-                activeDoc.SaveAs(resolvedManagedPath!, new SaveAsOptions { OverwriteExistingFile = true });
-                File.SetAttributes(resolvedManagedPath!, File.GetAttributes(resolvedManagedPath!) | FileAttributes.ReadOnly);
-
-                return resolvedManagedPath;
-            }
-            catch (Exception ex)
+            if (string.IsNullOrEmpty(saveAsPath))
             {
-                SmartConLogger.Error($"SaveAs to managed storage failed: {ex.Message}");
-                return null;
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
+                return;
             }
-        });
-
-        if (string.IsNullOrEmpty(saveAsPath))
-        {
-            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
-            return;
         }
 
         var resolvedCategoryId = importItem.TargetCategoryId ?? existingCategoryId;
@@ -399,8 +418,59 @@ public sealed partial class FamilyManagerMainViewModel
         // row and fails with UNIQUE constraint when versionLabel = ExistingVersionLabel).
         // For New/IncrementVersion, keep the existing ImportFileAsync path — it
         // creates a fresh catalog_versions row, which is correct for those actions.
+        // ADR-041 rev #2: for MakeActive, route through ImportBatchAsync too —
+        // it dispatches to SetActiveVersionAsync without touching disk or DB rows.
         FamilyImportResult importResult;
-        if (isOverwrite)
+        if (isMakeActive)
+        {
+            // MatchedVersionLabel is the version the user wants to activate.
+            // No precomputed managed path — the file is already at
+            // <ExistingCatalogItemId>/<MatchedVersionLabel>/<name>.rfa from a
+            // prior import. ImportBatchAsync's MakeActive branch ignores the
+            // FilePath/ManagedPath fields and only reads ExistingCatalogItemId
+            // + MatchedVersionLabel.
+            var batchItem = new FamilyBatchImportItem(
+                FilePath: placeholderFilePath,
+                FileName: displayName,
+                RevitMajorVersion: prepared.RevitMajorVersion,
+                Status: FamilyBatchImportStatus.Duplicate,
+                ExistingCatalogItemId: importItem.ExistingCatalogItemId,
+                ExistingVersionLabel: importItem.ExistingVersionLabel,
+                TargetCategoryId: resolvedCategoryId,
+                TargetCategoryName: resolvedCategoryName,
+                FamilySource: "loadable",
+                TypeCount: importItem.TypeCount,
+                RevitCategory: null,
+                OriginalSourcePath: prepared.SourcePath,
+                SourceTypes: null,
+                Source: null,
+                PrecomputedCatalogItemId: importItem.ExistingCatalogItemId,
+                PrecomputedVersionLabel: importItem.MatchedVersionLabel,
+                PrecomputedManagedPath: null,
+                ContentHash: importItem.ContentHash,
+                HashFormatVersion: importItem.HashFormatVersion,
+                MatchedVersionLabel: importItem.MatchedVersionLabel,
+                LoadableSnapshot: importItem.LoadableSnapshot,
+                SystemSnapshot: null)
+            {
+                Action = FamilyBatchImportAction.MakeActive,
+                PublishedByUser = _revitContext.GetUsername()
+            };
+
+            var batchResult = await _importService.ImportBatchAsync(
+                new[] { batchItem }, resolvedCategoryId, progress, CancellationToken.None);
+            importResult = batchResult.Results.Count > 0
+                ? batchResult.Results[0]
+                : new FamilyImportResult(
+                    Success: false,
+                    CatalogItemId: importItem.ExistingCatalogItemId,
+                    VersionId: null,
+                    FileId: null,
+                    FileName: displayName,
+                    VersionLabel: importItem.MatchedVersionLabel,
+                    ErrorMessage: "ImportBatchAsync returned no results for MakeActive");
+        }
+        else if (isOverwrite)
         {
             var batchItem = new FamilyBatchImportItem(
                 FilePath: saveAsPath!,
@@ -426,7 +496,8 @@ public sealed partial class FamilyManagerMainViewModel
                 LoadableSnapshot: importItem.LoadableSnapshot,
                 SystemSnapshot: null)
             {
-                Action = FamilyBatchImportAction.OverwriteCurrent
+                Action = FamilyBatchImportAction.OverwriteCurrent,
+                PublishedByUser = _revitContext.GetUsername()
             };
 
             var batchResult = await _importService.ImportBatchAsync(
@@ -459,7 +530,8 @@ public sealed partial class FamilyManagerMainViewModel
                 PrecomputedVersionLabel: resolvedVersionLabel,
                 PrecomputedManagedPath: saveAsPath,
                 ContentHash: importItem.ContentHash,
-                HashFormatVersion: importItem.HashFormatVersion);
+                HashFormatVersion: importItem.HashFormatVersion,
+                PublishedBy: _revitContext.GetUsername());
 
             importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
         }
@@ -472,7 +544,16 @@ public sealed partial class FamilyManagerMainViewModel
         // FireAndForget ExtractAttributesForImportedFamilies was replaced by
         // the synchronous ExtractAttributesForLoadableTasks, but the
         // LoadTreeAsync call was left at its old pre-extraction position.
-        if (importResult.Success && importItem.LoadableSnapshot is not null)
+        // ADR-041 rev #2: skip extraction for MakeActive — the activated
+        // version's types/attribute values are already in the DB from the
+        // original import that created that version; re-extracting would
+        // overwrite them with the active document's snapshot (which is
+        // identical anyway), but it would also write to family_types with
+        // a version_id that does not match the activated version's
+        // catalog_versions.id (the snapshot is from the active doc, but
+        // MakeActive didn't change the version handle). Avoid the
+        // confusion: MakeActive = pointer switch only, no DB writes.
+        if (importResult.Success && importItem.LoadableSnapshot is not null && !isMakeActive)
         {
             var attrTask = new LoadableFamilyAttributeTask(
                 importResult.CatalogItemId!,
@@ -490,13 +571,25 @@ public sealed partial class FamilyManagerMainViewModel
 
         var total = 1;
         var success = importResult.Success ? 1 : 0;
-        var skipped = 0;
+        // ADR-041 rev #2: MakeActive returns WasSkipped=true from
+        // ImportBatchAsync (status message should reflect "switched" not
+        // "imported"). The BuildImportStatusMessage helper already accepts
+        // a skipped count, so surface it here.
+        var skipped = importResult.WasSkipped ? 1 : 0;
         var errors = importResult.Success ? 0 : 1;
         StatusMessage = BuildImportStatusMessage(success, skipped, errors, total);
 
         if (importResult.Success)
         {
-            await CloseFamilyDocumentAsync(saveAsPath!);
+            // CloseFamilyDocumentAsync expects the path of the document we
+            // saved via SaveAs. For MakeActive there was no SaveAs (the file
+            // is already on disk from a prior import), so use the active
+            // document's source path (placeholderFilePath = prepared.SourcePath)
+            // — the user was editing this .rfa and expects it to close after
+            // the batch dialog confirms the action, exactly like
+            // IncrementVersion/OverwriteCurrent close the editor.
+            var pathToClose = saveAsPath ?? placeholderFilePath;
+            await CloseFamilyDocumentAsync(pathToClose);
         }
 
         await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -672,6 +765,16 @@ public sealed partial class FamilyManagerMainViewModel
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
             return;
         }
+
+        // ADR-041 rev #5: stamp every item with the publishing user's name
+        // before dispatching. The orchestrator (system or loadable) propagates
+        // this into catalog_versions.published_by via InsertVersionAsync.
+        // _revitContext.GetUsername() returns a cached string field (NOT a
+        // Revit API call — see RevitContext.cs:66-72), so this is safe from
+        // the WPF async thread.
+        var username = _revitContext.GetUsername();
+        foreach (var item in toImport)
+            item.PublishedByUser = username;
 
         var systemItems = toImport.Where(i => i.FamilySource == "system").ToList();
         var loadableItems = toImport.Where(i => i.FamilySource == "loadable").ToList();

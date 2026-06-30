@@ -60,4 +60,5 @@ public sealed record FamilyImportRequest(
     string? PrecomputedVersionLabel = null,
     string? PrecomputedManagedPath = null,
     string? ContentHash = null,
-    int? HashFormatVersion = null);
+    int? HashFormatVersion = null,
+    string? PublishedBy = null);

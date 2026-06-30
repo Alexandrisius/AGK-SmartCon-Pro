@@ -60,6 +60,25 @@ UPDATE (а не INSERT новой строки):
 
 Подробная архитектура — см. [ADR-040](040-overwritecurrent-semantics.md).
 
+## Exception: DeleteVersion (ADR-041)
+
+`DeleteVersionAsync` — явное действие пользователя через вкладку «Версии» окна
+свойств. Полностью удаляет неактивную версию из каталога (hard delete, не
+soft delete):
+
+| Слой | Операция |
+|---|---|
+| `.rfa/.rvt` файлы | Снять ReadOnly с каталога `{dbRoot}/files/{catalogItemId}/{versionLabel}/` → `Directory.Delete(recursive: true)` |
+| `family_assets` | `DELETE WHERE catalog_item_id = @itemId AND version_label = @label` (привязка по label, не FK к versions) |
+| `catalog_versions` | `DELETE WHERE catalog_item_id = @itemId AND version_label = @label` → FK CASCADE удаляет `family_files`, `family_types`, `extracted_attribute_values`, `family_nested_shared_families` (FK на `version_id` добавлены в V17) |
+| `catalog_items.current_version_label` | НЕ меняется (активную версию нельзя удалить — отказ на уровне `CanDeleteVersion` и в `DeleteVersionAsync`) |
+
+Активная версия защищена инвариантом FM-041-INV-01 (ADR-041): у каждого
+`catalog_items` существует ровно одна активная версия. Удаление активной
+запрещено.
+
+Подробная архитектура — см. [ADR-041](041-active-version-management.md).
+
 ## Consequences
 
 - Пользователь не сможет случайно перезаписать или изменить managed-файл через проводник

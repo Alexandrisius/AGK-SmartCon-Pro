@@ -83,7 +83,8 @@ public sealed record FamilyBatchImportItem(
     int? HashFormatVersion = null,
     string? MatchedVersionLabel = null,
     FamilySnapshot? LoadableSnapshot = null,
-    SystemFamilySnapshot? SystemSnapshot = null)
+    SystemFamilySnapshot? SystemSnapshot = null,
+    string? PublishedBy = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =
@@ -94,4 +95,7 @@ public sealed record FamilyBatchImportItem(
 
     /// <summary>Human-readable name of the target category.</summary>
     public string? TargetCategoryName { get; set; } = TargetCategoryName;
+
+    /// <summary>Username of the Revit user who publishes this version (ADR-041 rev #5).</summary>
+    public string? PublishedByUser { get; set; } = PublishedBy;
 }
