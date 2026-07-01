@@ -214,8 +214,16 @@ public static partial class LocalizationService
         ru["FM_Props_NoAttributesDesc"] = "Для извлечения атрибутов семейство будет временно загружено в Revit"; en["FM_Props_NoAttributesDesc"] = "To extract attributes, the family will be temporarily loaded into Revit";
         ru["FM_Props_PresetCategory"] = "Категория: {0}"; en["FM_Props_PresetCategory"] = "Category: {0}";
         ru["FM_Props_NoPresets"] = "Нет пресетов для этой категории"; en["FM_Props_NoPresets"] = "No presets for this category";
-        ru["FM_Props_3DComingSoon"] = "3D-просмотр модели (GLB) — в разработке"; en["FM_Props_3DComingSoon"] = "3D model preview (GLB) — coming soon";
-        ru["FM_Props_3DDesc"] = "Здесь будет интерактивный 3D-просмотр модели семейства. Вы сможете вращать, масштабировать и изучать геометрию перед загрузкой в проект."; en["FM_Props_3DDesc"] = "Interactive 3D preview of the family model will be available here. You will be able to rotate, zoom, and explore geometry before loading into the project.";
+        ru["FM_Props_3DComingSoon"] = "3D-просмотр модели"; en["FM_Props_3DComingSoon"] = "3D model preview";
+        ru["FM_Props_3DDesc"] = "Прокрутите колесо мыши для масштабирования. Перетаскивайте правой кнопкой для вращения. Перетаскивайте левой кнопкой для панорамирования."; en["FM_Props_3DDesc"] = "Scroll wheel to zoom. Right-drag to rotate. Left-drag to pan.";
+        ru["FM_3D_ResetView"] = "Сбросить вид"; en["FM_3D_ResetView"] = "Reset view";
+        ru["FM_3D_ZoomExtents"] = "Показать всё"; en["FM_3D_ZoomExtents"] = "Zoom extents";
+        ru["FM_3D_Wireframe"] = "Каркас"; en["FM_3D_Wireframe"] = "Wireframe";
+        ru["FM_3D_Loading"] = "Загрузка 3D модели..."; en["FM_3D_Loading"] = "Loading 3D model...";
+        ru["FM_3D_NoPreview"] = "3D-превью недоступно для этой версии"; en["FM_3D_NoPreview"] = "No 3D preview for this version";
+        ru["FM_3D_UnsupportedNet48"] = "3D-просмотр недоступен на Revit 2019-2024. Используйте Revit 2025+ для отображения интерактивного 3D-просмотра."; en["FM_3D_UnsupportedNet48"] = "3D preview is unavailable on Revit 2019-2024. Use Revit 2025+ for interactive 3D preview.";
+        ru["FM_3D_InitFailed"] = "Не удалось инициализировать 3D-просмотрщик. Проверьте, что DirectX 11 доступен на этой системе."; en["FM_3D_InitFailed"] = "Failed to initialize 3D viewer. Verify DirectX 11 is available on this system.";
+        ru["FM_3D_LoadFailed"] = "Не удалось загрузить 3D-превью. Проверьте лог smartcon.log для деталей."; en["FM_3D_LoadFailed"] = "Failed to load 3D preview. Check smartcon.log for details.";
         ru["FM_Props_FileInfo"] = "Информация о файле"; en["FM_Props_FileInfo"] = "File Information";
         ru["FM_Props_Title"] = "Свойства семейства"; en["FM_Props_Title"] = "Family Properties";
         ru["FM_Props_NoAssets"] = "Нет файлов"; en["FM_Props_NoAssets"] = "No files";

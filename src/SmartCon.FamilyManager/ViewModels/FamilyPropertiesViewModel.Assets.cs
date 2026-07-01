@@ -49,6 +49,15 @@ public sealed partial class FamilyPropertiesViewModel
             AvatarImagePath = null;
             HasAvatar = false;
         }
+
+        // ADR-042: refresh the 3D preview tab whenever assets are reloaded —
+        // covers Initialize, "selection change in tree", MakeActive (version
+        // switch) and OverwriteCurrent. On net48 this is a silent no-op.
+        // Note: Load3DPreviewAsync checks EffectsManager3D internally — if
+        // the 3D viewer hasn't been initialized yet (Initialize3DInfrastructure
+        // hasn't been called from OnViewModelLoaded), the load is deferred
+        // until the effects manager is ready.
+        await Load3DPreviewAsync(ct).ConfigureAwait(true);
     }
 
     [RelayCommand(CanExecute = nameof(CanWrite))]

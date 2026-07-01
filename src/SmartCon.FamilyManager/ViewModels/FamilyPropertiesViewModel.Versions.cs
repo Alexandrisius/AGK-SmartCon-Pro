@@ -173,6 +173,22 @@ public sealed partial class FamilyPropertiesViewModel
                     SmartConLogger.Warn(
                         $"MakeActive succeeded but Attributes reload failed: {reloadEx.Message} [Action: закройте и откройте окно свойств, чтобы перечитать вкладку «Атрибуты» для новой активной версии]");
                 }
+
+                // ADR-042: reload assets (Model3D GLB + Images + Documents
+                // + ...) for the new active version. Before this call the 3D
+                // preview tab would show the OLD version's GLB until the
+                // window was closed and reopened. GLB is stored per-version
+                // (family_assets.version_label), so simply re-querying is
+                // sufficient — no re-extraction is needed for rollback.
+                try
+                {
+                    await LoadAssetsAsync(ct).ConfigureAwait(true);
+                }
+                catch (Exception reloadEx)
+                {
+                    SmartConLogger.Warn(
+                        $"MakeActive succeeded but Assets reload failed: {reloadEx.Message} [Action: закройте и откройте окно свойств, чтобы перечитать вкладки «Содержимое» и «3D Просмотр» для новой активной версии]");
+                }
             }
             else
             {

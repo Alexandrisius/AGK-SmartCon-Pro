@@ -436,6 +436,14 @@ public static class StringLocalization
         public const string FM_Props_NoPresets = "FM_Props_NoPresets";
         public const string FM_Props_3DComingSoon = "FM_Props_3DComingSoon";
         public const string FM_Props_3DDesc = "FM_Props_3DDesc";
+        public const string FM_3D_ResetView = "FM_3D_ResetView";
+        public const string FM_3D_ZoomExtents = "FM_3D_ZoomExtents";
+        public const string FM_3D_Wireframe = "FM_3D_Wireframe";
+        public const string FM_3D_Loading = "FM_3D_Loading";
+        public const string FM_3D_NoPreview = "FM_3D_NoPreview";
+        public const string FM_3D_UnsupportedNet48 = "FM_3D_UnsupportedNet48";
+        public const string FM_3D_InitFailed = "FM_3D_InitFailed";
+        public const string FM_3D_LoadFailed = "FM_3D_LoadFailed";
         public const string FM_Props_FileInfo = "FM_Props_FileInfo";
         public const string FM_Props_Title = "FM_Props_Title";
         public const string FM_Props_NoAssets = "FM_Props_NoAssets";

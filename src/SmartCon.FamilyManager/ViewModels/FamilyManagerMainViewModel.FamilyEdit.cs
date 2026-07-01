@@ -31,34 +31,67 @@ public sealed partial class FamilyManagerMainViewModel
     {
         using var _scope = SmartConLogger.BeginScope("FMEdit",
             ("Method", "OpenProperties"));
-        if (SelectedItem is null) return;
+        if (SelectedItem is null)
+        {
+            SmartConLogger.Warn("OpenProperties: SelectedItem is null — abort. [Action: select a family first]");
+            return;
+        }
 
         var itemId = SelectedItem.Id;
         var updatedAt = SelectedItem.UpdatedAtUtc != default
             ? SelectedItem.UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
             : null;
 
-        var vm = _viewModelFactory.CreatePropertiesViewModel(
-            SelectedItem.Id,
-            SelectedItem.Name,
-            SelectedItem.Description,
-            SelectedItem.CategoryId,
-            SelectedItem.CategoryName,
-            SelectedItem.Tags,
-            SelectedItem.ContentStatus,
-            SelectedItem.Manufacturer,
-            SelectedItem.VersionLabel,
-            null,
-            null,
-            updatedAt,
-            isReadOnly: !CanEdit);
+        SmartConLogger.Info($"OpenProperties: creating VM for itemId={itemId} name='{SelectedItem.Name}'...");
+        FamilyPropertiesViewModel vm;
+        try
+        {
+            vm = _viewModelFactory.CreatePropertiesViewModel(
+                SelectedItem.Id,
+                SelectedItem.Name,
+                SelectedItem.Description,
+                SelectedItem.CategoryId,
+                SelectedItem.CategoryName,
+                SelectedItem.Tags,
+                SelectedItem.ContentStatus,
+                SelectedItem.Manufacturer,
+                SelectedItem.VersionLabel,
+                null,
+                null,
+                updatedAt,
+                isReadOnly: !CanEdit);
+            SmartConLogger.Info("OpenProperties: VM created, calling InitializeCommand...");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"OpenProperties: VM construction failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            return;
+        }
 
-        vm.InitializeCommand.Execute(null);
-        var result = _dialogService.ShowProperties(vm);
-        if (result != true) return;
+        try
+        {
+            vm.InitializeCommand.Execute(null);
+            SmartConLogger.Info("OpenProperties: InitializeCommand dispatched, calling ShowProperties...");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"OpenProperties: InitializeCommand threw: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            return;
+        }
 
-        await LoadTreeAsync();
-        ExpandAndSelectItem(itemId);
+        try
+        {
+            var result = _dialogService.ShowProperties(vm);
+            SmartConLogger.Info($"OpenProperties: ShowProperties returned result={result}");
+            if (result != true) return;
+
+            await LoadTreeAsync();
+            ExpandAndSelectItem(itemId);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"OpenProperties: ShowProperties failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanEditOps))]

@@ -474,6 +474,11 @@ internal sealed partial class LocalFamilyImportService
                 ct);
         }
 
+        // ADR-042 H3: extract 3D geometry preview for this OVERWRITTEN version.
+        await RunGeometryPipelineHookAsync(
+            absolutePath, item.ExistingCatalogItemId!, currentVersion.Id, currentVersion.VersionLabel,
+            StripFamilyExtension(item.FileName), ct).ConfigureAwait(false);
+
         return new FamilyImportResult(
             Success: true,
             CatalogItemId: item.ExistingCatalogItemId,

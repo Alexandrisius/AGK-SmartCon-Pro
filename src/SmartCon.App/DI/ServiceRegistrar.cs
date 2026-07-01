@@ -221,6 +221,11 @@ public static class ServiceRegistrar
         services.AddSingleton<IContentHashDedupService, SmartCon.FamilyManager.Services.ContentHashDedupService>();
         services.AddSingleton<SmartCon.FamilyManager.Services.FamilyImportPreparationService>();
 
+        // --- FamilyManager 3D Geometry Preview (ADR-042 / Issue #92) ---
+        services.AddSingleton<IFamilyGeometryExtractor, SmartCon.Revit.FamilyManager.RevitFamilyGeometryExtractor>();
+        services.AddSingleton<IGlbWriter, SmartCon.FamilyManager.Services.Geometry.FamilyGeometryGlbWriter>();
+        services.AddSingleton<IFamilyGeometryPipeline, SmartCon.FamilyManager.Services.Geometry.FamilyGeometryPipeline>();
+
         // --- FamilyManager Stale Detection (Phase 24 / ADR-030) ---
         services.AddSingleton<IFamilyVersionStore, RevitFamilyVersionStore>();
         services.AddSingleton<IFamilyVersionWriter, FamilyVersionWriter>();

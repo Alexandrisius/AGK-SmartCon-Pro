@@ -11,7 +11,7 @@ using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, ISaveableViewModel
+public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, ISaveableViewModel, IDisposable
 {
     private readonly string _catalogItemId;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
@@ -134,6 +134,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IFamilyManagerViewModelFactory viewModelFactory,
         IFamilyStorageRenameService renameService)
     {
+        SmartConLogger.Info($"FamilyPropertiesViewModel ctor: start for itemId={catalogItemId} name='{name}'");
         _catalogItemId = catalogItemId;
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -167,6 +168,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _originalTagsText = TagsText;
         _originalContentStatus = contentStatus;
         _originalManufacturer = manufacturer;
+
+        SmartConLogger.Info($"FamilyPropertiesViewModel ctor: done for itemId={catalogItemId}");
     }
 
     [RelayCommand]

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using Autodesk.Revit.UI;
 using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
@@ -39,6 +40,7 @@ public sealed class App : IExternalApplication
             CleanupLegacyStageFolder();
             ServiceLocator.Initialize(application);
             LanguageManager.Initialize();
+            RegisterNativeLibraryResolvers();
 
             var fmProvider = ServiceHost.GetService<FamilyManagerPaneProvider>();
             var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
@@ -54,6 +56,86 @@ public sealed class App : IExternalApplication
             return Result.Failed;
         }
     }
+
+    /// <summary>
+    /// Pre-load the native <c>assimp.dll</c> that ships alongside the add-in
+    /// (under %APPDATA%\SmartCon\2025\) so that SharpAssimp's
+    /// <c>[DllImport("assimp")]</c> can resolve it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why pre-load, not <c>SetDllImportResolver</c>:</b> the resolver
+    /// must be registered on the SharpAssimp assembly BEFORE any P/Invoke
+    /// call. But SharpAssimp has a static constructor that runs when the
+    /// assembly first loads — and the <c>AssemblyLoad</c> event fires
+    /// AFTER the .cctor. So the P/Invoke to <c>LoadLibrary("assimp.dll")</c>
+    /// happens before the resolver callback is wired up, and the resolver is
+    /// never invoked.
+    /// </para>
+    /// <para>
+    /// Pre-loading via <c>LoadLibraryEx</c> with the full path puts the
+    /// module in the process's loaded-modules table. Subsequent
+    /// <c>LoadLibrary("assimp.dll")</c> calls (from SharpAssimp P/Invoke)
+    /// find the already-loaded module by name and return the cached handle.
+    /// This is safe and does not modify global DLL search order — it just
+    /// adds one module to the process early.
+    /// </para>
+    /// </remarks>
+    private static void RegisterNativeLibraryResolvers()
+    {
+#if NET8_0_OR_GREATER
+        var appDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
+        if (string.IsNullOrEmpty(appDir))
+        {
+            SmartConLogger.Warn(
+                "RegisterNativeLibraryResolvers: add-in directory not found " +
+                "[Action: native assimp.dll may fail to load on first 3D preview]");
+            return;
+        }
+
+        var assimpNativePath = Path.Combine(appDir, "assimp.dll");
+        if (!File.Exists(assimpNativePath))
+        {
+            SmartConLogger.Warn(
+                $"RegisterNativeLibraryResolvers: assimp.dll not found at '{assimpNativePath}' " +
+                "[Action: 3D preview will fall back to the 'no preview' placeholder]");
+            return;
+        }
+
+        try
+        {
+            // LOAD_WITH_ALTERED_SEARCH_PATH (0x8) tells LoadLibraryEx to use
+            // the folder of the specified file as part of the search path for
+            // the DLL's own dependencies. Combined with the full path to
+            // assimp.dll, this ensures assimp.dll AND its dependencies
+            // (VC++ runtime, already in System32) are found.
+            const uint LOAD_WITH_ALTERED_SEARCH_PATH = 0x00000008;
+            var handle = LoadLibraryEx(assimpNativePath, IntPtr.Zero, LOAD_WITH_ALTERED_SEARCH_PATH);
+            if (handle != IntPtr.Zero)
+            {
+                SmartConLogger.Info(
+                    $"Native assimp.dll pre-loaded successfully from: {assimpNativePath}");
+            }
+            else
+            {
+                var err = Marshal.GetLastWin32Error();
+                SmartConLogger.Warn(
+                    $"RegisterNativeLibraryResolvers: LoadLibraryEx failed (Win32Error={err}) " +
+                    $"for '{assimpNativePath}' " +
+                    "[Action: 3D preview will fall back to placeholder]");
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"RegisterNativeLibraryResolvers failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: 3D preview will fall back to placeholder; other features unaffected]");
+        }
+#endif
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, BestFitMapping = false)]
+    private static extern IntPtr LoadLibraryEx(string lpFileName, IntPtr hFile, uint dwFlags);
 
     public Result OnShutdown(UIControlledApplication application)
     {

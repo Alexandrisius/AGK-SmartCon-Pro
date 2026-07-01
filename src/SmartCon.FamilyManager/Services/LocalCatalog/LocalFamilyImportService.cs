@@ -27,7 +27,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         IAttributeValueRepository valueRepository,
         IFamilyDataImportRunRepository runRepository,
         IFamilyTypeCatalogBaker typeCatalogBaker,
-        IRevitFileInfoReader? fileInfoReader = null)
+        IRevitFileInfoReader? fileInfoReader = null,
+        IFamilyGeometryPipeline? geometryPipeline = null)
     {
         _database = database;
         _migrator = migrator;
@@ -39,6 +40,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         _valueRepository = valueRepository;
         _runRepository = runRepository;
         _fileInfoReader = fileInfoReader;
+        _geometryPipeline = geometryPipeline;
     }
 
     public async Task<FamilyImportResult> ImportFileAsync(FamilyImportRequest request, CancellationToken ct = default)
@@ -252,6 +254,11 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             // at 1 per .rfa instead of the V2 baseline of 2 (separate
             // ISHaredNestedFamilyExtractor that opened the file a second
             // time).
+
+            // ADR-042 H1: extract 3D geometry preview for this NEW version.
+            await RunGeometryPipelineHookAsync(
+                managedRfaPath, catalogItemId, versionId, versionLabel,
+                StripFamilyExtension(finalMetadata.FileName), ct).ConfigureAwait(false);
 
             return new FamilyImportResult(
                 Success: true,
@@ -751,6 +758,11 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             // at 1 per .rfa instead of the V2 baseline of 2 (separate
             // ISHaredNestedFamilyExtractor that opened the file a second
             // time).
+
+            // ADR-042 H2: extract 3D geometry preview for this INCREMENTED version.
+            await RunGeometryPipelineHookAsync(
+                managedRfaPath, request.CatalogItemId!, versionId, versionLabel,
+                StripFamilyExtension(finalMetadata.FileName), ct).ConfigureAwait(false);
 
             return new FamilyImportResult(
                 Success: true,
