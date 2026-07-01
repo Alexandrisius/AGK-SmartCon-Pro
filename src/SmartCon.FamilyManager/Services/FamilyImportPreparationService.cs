@@ -523,6 +523,7 @@ public sealed class FamilyImportPreparationService
 
         Document? doc = null;
         FamilySnapshot? snapshot = null;
+        IReadOnlyList<FamilyGeometryPerType>? geometryPerType = null;
 
         try
         {
@@ -624,9 +625,16 @@ public sealed class FamilyImportPreparationService
                     "snapshot from raw .rfa");
             }
 
-            snapshot = await _awaitableEvent
-                .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(doc), ct)
+            var extracted = await _awaitableEvent
+                .RaiseAsync(app =>
+                {
+                    var familySnapshot = _snapshotExtractor.ExtractFromFamilyDocument(doc);
+                    var geometry = _snapshotExtractor.ExtractGeometryPerType(doc, ct);
+                    return (familySnapshot, geometry);
+                }, ct)
                 .ConfigureAwait(false);
+            snapshot = extracted.familySnapshot;
+            geometryPerType = extracted.geometry;
 
             _openedDocuments[filePath] = doc;
             SmartConLogger.Debug($"Document held open: {Path.GetFileName(filePath)}");
@@ -668,7 +676,8 @@ public sealed class FamilyImportPreparationService
             Status: dedupResult.Status,
             ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
             ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
+            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
+            GeometryPerType: geometryPerType);
     }
 
     private async Task<PreparedFamilyItem> PrepareSystemCategoryAsync(

@@ -30,23 +30,26 @@ namespace SmartCon.Core.Services.Interfaces;
 public interface IFamilyGeometryPipeline
 {
     /// <summary>
-    /// Runs extract → write GLB → register asset for the given managed
-    /// <c>.rfa</c>. Safe to invoke from any thread — internally marshals
-    /// Revit API calls to the UI thread via
-    /// <c>IFamilyManagerAwaitableEvent</c>.
+    /// Writes N GLBs (one per type) and registers them as auto-extracted
+    /// Model3D assets. When <paramref name="geometryPerType"/> is non-null
+    /// and non-empty, the pipeline uses pre-extracted geometry (H1 batch
+    /// import — no additional <c>OpenDocumentFile</c>). When null, the
+    /// pipeline extracts geometry itself by opening
+    /// <paramref name="managedRfaPath"/> once (H2/H3 — exactly one open).
     /// </summary>
-    /// <param name="managedRfaPath">Absolute path to the managed
-    /// <c>.rfa</c> that was just created/overwritten by the import (H1
-    /// = Insert, H2 = Increment, H3 = OverwriteCurrent).</param>
-    /// <param name="catalogItemId">Catalog item id (the just-committed version's parent).</param>
-    /// <param name="versionId">Version id of the just-committed version row
-    /// (informational — the asset is keyed by version_label, not version_id).</param>
-    /// <param name="versionLabel">Version label of the just-committed version.</param>
-    /// <param name="familyName">Family display name (without extension) —
-    /// becomes family_assets.file_name stem.</param>
+    /// <param name="geometryPerType">Pre-extracted per-type geometry from
+    /// Prepare phase (H1). Pass <c>null</c> for H2/H3 to trigger
+    /// extraction inside the pipeline.</param>
+    /// <param name="managedRfaPath">Path to the managed .rfa. Used only
+    /// when <paramref name="geometryPerType"/> is null (H2/H3 path).</param>
+    /// <param name="catalogItemId">Catalog item id.</param>
+    /// <param name="versionId">Version id.</param>
+    /// <param name="versionLabel">Version label.</param>
+    /// <param name="familyName">Family display name (without extension).</param>
     /// <param name="ct">Cancellation token.</param>
     Task RunAsync(
-        string managedRfaPath,
+        IReadOnlyList<FamilyGeometryPerType>? geometryPerType,
+        string? managedRfaPath,
         string catalogItemId,
         string versionId,
         string versionLabel,

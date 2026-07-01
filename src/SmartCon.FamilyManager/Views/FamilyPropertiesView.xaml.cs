@@ -84,71 +84,19 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
                         SmartConLogger.Info("OnViewport3DXLoaded: Scene3DRoot added to Viewport3DX.Items");
                     }
 
-                    _ = vm.Load3DPreviewAsync(System.Threading.CancellationToken.None);
-                    SmartConLogger.Info("OnViewport3DXLoaded: Load3DPreviewAsync dispatched");
+                    // FitCameraToScene() is called inside Load3DPreviewForTypeAsync (VM).
+                    _ = vm.Load3DPreviewForTypeAsync(vm.Selected3DTypeName, System.Threading.CancellationToken.None);
+                    SmartConLogger.Info("OnViewport3DXLoaded: Load3DPreviewForTypeAsync dispatched (FitCameraToScene handles camera)");
                 }
                 else
                 {
                     SmartConLogger.Info("OnViewport3DXLoaded: viewport has zero size, deferring");
                 }
-
-                DumpViewportState();
             }
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"FamilyPropertiesView.OnViewport3DXLoaded FAILED: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-        }
-    }
-
-    /// <summary>
-    /// DIAGNOSTIC: Dump the Viewport3DX control state — RenderHost,
-    /// EffectsManager, Items count, ActualWidth/Height. This is read
-    /// from code-behind because RenderHost is not a bindable property.
-    /// </summary>
-    private void DumpViewportState()
-    {
-        try
-        {
-            var vp = Properties3DViewport;
-            if (vp is null)
-            {
-                SmartConLogger.Warn("DumpViewportState: Properties3DViewport is null [Action: XAML mc:AlternateContent may have selected the Fallback]");
-                return;
-            }
-
-            var em = vp.GetType().GetProperty("EffectsManager")?.GetValue(vp);
-            SmartConLogger.Info(
-                $"DumpViewportState: Viewport3DX found. " +
-                $"ActualWidth={vp.ActualWidth} ActualHeight={vp.ActualHeight} " +
-                $"IsLoaded={vp.IsLoaded} " +
-                $"EffectsManager={(em?.GetType().Name ?? "<null>")} " +
-                $"Items.Count={vp.Items.Count} " +
-                $"Background={vp.Background} BackgroundColor={vp.BackgroundColor}");
-
-            for (int i = 0; i < vp.Items.Count; i++)
-            {
-                var item = vp.Items[i];
-                SmartConLogger.Info($"  Viewport.Items[{i}]: {item?.GetType().Name ?? "<null>"}");
-
-                if (item is HelixToolkit.Wpf.SharpDX.Element3DPresenter presenter)
-                {
-                    var content = presenter.Content;
-                    SmartConLogger.Info($"    Element3DPresenter.Content: {content?.GetType().Name ?? "<null>"}");
-                    if (content is HelixToolkit.Wpf.SharpDX.SceneNodeGroupModel3D group)
-                    {
-                        var sn = group.SceneNode;
-                        SmartConLogger.Info(
-                            $"    Scene3DRoot.SceneNode: Type={sn.GetType().Name} " +
-                            $"IsAttached={sn.IsAttached} IsRenderable={sn.IsRenderable} " +
-                            $"Items.Count={sn.Items.Count}");
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"DumpViewportState failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 #endif

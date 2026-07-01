@@ -950,3 +950,75 @@ public interface IContentHashDedupService
 - If the name matches and the hash matches any version (current or archived) → `Duplicate` (returns `HashMatch` with the matched version).
 - If the name matches but the hash does not match any version → `Existing`.
 - Cross-source separation: `"loadable"` hashes are never compared against `"system"` hashes and vice versa.
+
+---
+
+## IFamilyGeometryExtractor
+
+Extracts tessellated 3D geometry from a managed `.rfa` file (ADR-042). Implementations MUST run on the Revit UI thread (I-01) because `OpenDocumentFile` / `element.get_Geometry(Options)` / `Face.Triangulate()` are all Revit API calls — callers marshal via `IFamilyManagerAwaitableEvent.RaiseAsync<T>`.
+
+**Файл:** `Services/Interfaces/IFamilyGeometryExtractor.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyGeometryExtractor.cs`
+
+```csharp
+public interface IFamilyGeometryExtractor
+{
+    Task<FamilyGeometryPreview?> ExtractAsync(
+        string managedRfaPath,
+        string catalogItemId,
+        string versionLabel,
+        CancellationToken ct = default);
+}
+```
+
+**Контракт:**
+- Returns `FamilyGeometryPreview` with at least one mesh, or `null` when the family has no visible geometry / an error occurred (logged by the implementation, NOT rethrown — the pipeline treats `null` as "skip GLB write").
+
+---
+
+## IGlbWriter
+
+Serializes a `FamilyGeometryPreview` to a GLB (binary glTF 2.0) file. Pure C# implementation (SharpGLTF.Toolkit) — no Revit API, no WPF (I-09), unit-testable without a Revit process.
+
+**Файл:** `Services/Interfaces/IGlbWriter.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Geometry/FamilyGeometryGlbWriter.cs`
+
+```csharp
+public interface IGlbWriter
+{
+    Task<bool> WriteAsync(
+        FamilyGeometryPreview preview,
+        string outputPath,
+        CancellationToken ct = default);
+}
+```
+
+**Контракт:**
+- Creates the parent directory if it does not exist. Overwrites the file if it already exists.
+- Returns `true` on success; `false` on failure (logged internally, not rethrown — pipeline treats `false` as "skip asset registration").
+
+---
+
+## IFamilyGeometryPipeline
+
+Coordinates the end-to-end 3D geometry preview pipeline triggered from `LocalFamilyImportService` hooks H1/H2/H3 (ADR-042): extract → write GLB → delete previous auto-extracted asset → register new asset.
+
+**Файл:** `Services/Interfaces/IFamilyGeometryPipeline.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Geometry/FamilyGeometryPipeline.cs`
+
+```csharp
+public interface IFamilyGeometryPipeline
+{
+    Task RunAsync(
+        string managedRfaPath,
+        string catalogItemId,
+        string versionId,
+        string versionLabel,
+        string familyName,
+        CancellationToken ct = default);
+}
+```
+
+**Контракт:**
+- Safe to invoke from any thread — internally marshals Revit API calls to the UI thread via `IFamilyManagerAwaitableEvent`.
+- Implementations MUST swallow all exceptions and log a Warn with an `[Action: ...]` suggestion (skill smartcon-logging L9) — geometry preview is a nice-to-have and MUST NOT break the import transaction that already committed before the hook was reached.

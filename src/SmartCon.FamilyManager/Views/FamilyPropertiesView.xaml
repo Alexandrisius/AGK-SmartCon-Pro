@@ -9,7 +9,7 @@
         xmlns:hx="http://helix-toolkit.org/wpf/SharpDX"
         mc:Ignorable="hx"
         Title="{loc:Loc FM_Props_Title}"
-        Width="950" Height="700" MinWidth="800" MinHeight="600"
+        Width="950" Height="900" MinWidth="800" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="False"
@@ -561,6 +561,12 @@
                                                   IsChecked="{Binding IsWireframeVisible, Mode=OneWay}"
                                                   Command="{Binding ToggleWireframe3DCommand}"
                                                   Padding="8,2" Margin="4,0,0,0" />
+                                    <ComboBox ItemsSource="{Binding Available3DTypeNames}"
+                                              SelectedItem="{Binding Selected3DTypeName}"
+                                              MinWidth="200"
+                                              Margin="8,0,0,0"
+                                              VerticalContentAlignment="Center"
+                                              Visibility="{Binding HasMultiple3DTypes, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
                             </Border>
 
@@ -579,7 +585,7 @@
                                             IsRotationEnabled="True"
                                             IsZoomEnabled="True"
                                             UseDefaultGestures="True"
-                                            ZoomExtentsWhenLoaded="True"
+                                            ZoomExtentsWhenLoaded="False"
                                             FrameRate="60"
                                             ModelUpDirection="0,1,0"
                                             TextBrush="White"

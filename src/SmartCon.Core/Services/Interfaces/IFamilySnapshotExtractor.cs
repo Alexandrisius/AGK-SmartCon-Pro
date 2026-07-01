@@ -38,4 +38,22 @@ public interface IFamilySnapshotExtractor
         Document projectDoc,
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory builtInCategory);
+
+    /// <summary>
+    /// Extracts 3D tessellated geometry for EACH family type by iterating
+    /// <c>FamilyManager.CurrentType</c> inside a Transaction+RollBack
+    /// (I-03b). Type-dependent extrusions that return empty
+    /// <c>GeometryElement</c> under one type become visible after
+    /// <c>fm.CurrentType = targetType</c>. The document must already be
+    /// open (caller responsible for <c>OpenDocumentFile</c>) — this method
+    /// does NOT open or close the document.
+    /// </summary>
+    /// <param name="familyDoc">Open family document.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>One <see cref="FamilyGeometryPerType"/> entry per type
+    /// that produces non-empty geometry. Families with no types return
+    /// a single entry with <c>TypeName = ""</c>.</returns>
+    IReadOnlyList<FamilyGeometryPerType> ExtractGeometryPerType(
+        Document familyDoc,
+        CancellationToken ct = default);
 }

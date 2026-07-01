@@ -13,25 +13,20 @@ public interface IFamilyGeometryExtractor
 {
     /// <summary>
     /// Opens the managed <c>.rfa</c> at <paramref name="managedRfaPath"/>,
-    /// traverses every <c>GenericForm</c> element (and shared nested
-    /// <c>FamilyInstance</c> via <c>GetSubComponentIds</c>), tessellates
-    /// each <c>Solid</c>'s faces via <c>Face.Triangulate</c>, and returns
-    /// a <see cref="FamilyGeometryPreview"/> that can be written as GLB.
+    /// iterates all family types via <c>FamilyManager.CurrentType</c> inside
+    /// a Transaction+RollBack (I-03b), traverses every visible
+    /// <c>GenericForm</c> per type, tessellates each <c>Solid</c>'s faces,
+    /// and returns a list of <see cref="FamilyGeometryPerType"/> — one per
+    /// type that produces non-empty geometry.
     /// </summary>
     /// <param name="managedRfaPath">Absolute path to the managed
-    /// <c>.rfa</c> file (per-version, in <c>{dbRoot}/files/{itemId}/{label}/</c>).</param>
-    /// <param name="catalogItemId">Catalog item id — propagated to the
-    /// resulting <see cref="FamilyGeometryPreview.CatalogItemId"/>.</param>
-    /// <param name="versionLabel">Version label — propagated to the
-    /// resulting <see cref="FamilyGeometryPreview.VersionLabel"/>.</param>
+    /// <c>.rfa</c> file.</param>
+    /// <param name="familyName">Family display name (without extension).</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns><see cref="FamilyGeometryPreview"/> with at least one mesh,
-    /// or <c>null</c> when the family has no visible geometry / an error
-    /// occurred (logged by the implementation, NOT rethrown — the pipeline
-    /// treats <c>null</c> as "skip GLB write").</returns>
-    Task<FamilyGeometryPreview?> ExtractAsync(
+    /// <returns>Per-type geometry list, or <c>null</c> on error / no
+    /// visible geometry (logged by the implementation, NOT rethrown).</returns>
+    Task<IReadOnlyList<FamilyGeometryPerType>?> ExtractAsync(
         string managedRfaPath,
-        string catalogItemId,
-        string versionLabel,
+        string familyName,
         CancellationToken ct = default);
 }

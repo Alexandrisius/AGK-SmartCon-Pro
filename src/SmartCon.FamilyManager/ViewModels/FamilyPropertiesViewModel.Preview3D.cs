@@ -1,5 +1,6 @@
 #if NET8_0_OR_GREATER
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,7 +32,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 /// net48 (Revit 2019-2024) — stub partial in the <c>#else</c> branch shows
 /// an "unsupported" message box.</para>
 /// <para><b>Lifecycle:</b> <see cref="Initialize3DInfrastructure"/> must be
-/// called once after construction (lazy DirectX init). <see cref="Load3DPreviewAsync"/>
+/// called once after construction (lazy DirectX init). <see cref="Load3DPreviewForTypeAsync"/>
 /// is called from <c>InitializeAsync</c>/<c>LoadAssetsAsync</c> after assets are
 /// fetched. <see cref="Dispose3DResources"/> is called from the View's
 /// <c>Closed</c> event.</para>
@@ -63,47 +64,34 @@ public sealed partial class FamilyPropertiesViewModel
     /// in XAML — direct child of Viewport3DX (FileLoadDemo pattern).</summary>
     public SceneNodeGroupModel3D Scene3DRoot { get; } = new();
 
-    /// <summary>DIAGNOSTIC test cube geometry — hardcoded, not from Assimp.
-    /// If this renders but the GLB mesh doesn't, problem is in Assimp scene.
-    /// If neither renders, problem is viewport config.</summary>
-    public static HelixToolkit.SharpDX.MeshGeometry3D TestCubeGeometry { get; } = BuildTestCube();
-
-    public static PhongMaterial TestCubeMaterial { get; } = new()
-    {
-        DiffuseColor = new Color4(1f, 0f, 0f, 1f),
-        AmbientColor = new Color4(0.3f, 0.3f, 0.3f, 1f)
-    };
-
-    private static HelixToolkit.SharpDX.MeshGeometry3D BuildTestCube()
-    {
-        var positions = new HelixToolkit.Vector3Collection
-        {
-            new(-0.5f, -0.5f, -0.5f), new(0.5f, -0.5f, -0.5f),
-            new(0.5f, 0.5f, -0.5f), new(-0.5f, 0.5f, -0.5f),
-            new(-0.5f, -0.5f, 0.5f), new(0.5f, -0.5f, 0.5f),
-            new(0.5f, 0.5f, 0.5f), new(-0.5f, 0.5f, 0.5f),
-        };
-        var indices = new HelixToolkit.IntCollection
-        {
-            0,2,1, 0,3,2,
-            4,5,6, 4,6,7,
-            0,1,5, 0,5,4,
-            3,7,6, 3,6,2,
-            0,4,7, 0,7,3,
-            1,2,6, 1,6,5,
-        };
-        return new HelixToolkit.SharpDX.MeshGeometry3D
-        {
-            Positions = positions,
-            Indices = indices,
-            Normals = positions
-        };
-    }
-
     [ObservableProperty] private bool _isLoading3D;
     [ObservableProperty] private bool _has3DPreview;
     [ObservableProperty] private string? _preview3DStatusMessage;
     [ObservableProperty] private bool _isWireframeVisible;
+
+    /// <summary>Type names extracted from auto-extracted GLB assets
+    /// (one per family type). Populated in <see cref="LoadAssetsAsync"/>.
+    /// Empty collection hides the ComboBox.</summary>
+    public ObservableCollection<string> Available3DTypeNames { get; } = new();
+
+    private string? _selected3DTypeName;
+    /// <summary>Currently selected type name from <see cref="Available3DTypeNames"/>.
+    /// When changed, the GLB for this type is loaded into the viewport.</summary>
+    public string? Selected3DTypeName
+    {
+        get => _selected3DTypeName;
+        set
+        {
+            if (SetProperty(ref _selected3DTypeName, value))
+            {
+                _ = Load3DPreviewForTypeAsync(value, System.Threading.CancellationToken.None);
+            }
+        }
+    }
+
+    /// <summary>True when <see cref="Available3DTypeNames"/> has more than
+    /// one entry — drives the ComboBox visibility.</summary>
+    public bool HasMultiple3DTypes => Available3DTypeNames.Count > 1;
 
     /// <summary>Inverse of <see cref="Has3DPreview"/>/<see cref="IsLoading3D"/> —
     /// drives the "no preview available" overlay.</summary>
@@ -156,26 +144,64 @@ public sealed partial class FamilyPropertiesViewModel
     }
 
     /// <summary>
-    /// Find the auto-extracted GLB asset (if any), resolve its path, load it
-    /// via <see cref="GlbSceneLoader"/>, and add it to <see cref="Scene3DRoot"/>.
-    /// Clears any previously-loaded scene first (re-loading on version switch).
+    /// Populates <see cref="Available3DTypeNames"/> from auto-extracted GLB
+    /// assets and selects the first type. Called from <see cref="LoadAssetsAsync"/>
+    /// after assets are loaded.
     /// </summary>
+    public void Populate3DTypeNames()
+    {
+        Available3DTypeNames.Clear();
+
+        foreach (var asset in Model3DAssets)
+        {
+            if (string.IsNullOrEmpty(asset.Description)) continue;
+            if (!asset.Description.StartsWith(AutoExtractedPreviewPrefix, System.StringComparison.Ordinal)) continue;
+            if (!string.Equals(asset.VersionLabel, VersionLabel, System.StringComparison.Ordinal)) continue;
+
+            var suffix = asset.Description![AutoExtractedPreviewPrefix.Length..];
+            var sepIdx = suffix.IndexOf("::", System.StringComparison.Ordinal);
+            var typeName = sepIdx >= 0 && sepIdx + 2 < suffix.Length
+                ? suffix[(sepIdx + 2)..]
+                : "";
+
+            if (!string.IsNullOrEmpty(typeName) && !Available3DTypeNames.Contains(typeName))
+            {
+                Available3DTypeNames.Add(typeName);
+            }
+        }
+
+        OnPropertyChanged(nameof(HasMultiple3DTypes));
+
+        if (Available3DTypeNames.Count > 0 && _selected3DTypeName is null)
+        {
+            _selected3DTypeName = Available3DTypeNames[0];
+            OnPropertyChanged(nameof(Selected3DTypeName));
+        }
+    }
+
+    /// <summary>
+    /// Find the auto-extracted GLB asset for the given type, resolve its path,
+    /// load it via <see cref="GlbSceneLoader"/>, and add it to
+    /// <see cref="Scene3DRoot"/>. Clears any previously-loaded scene first.
+    /// </summary>
+    /// <param name="typeName">Type name from <see cref="Available3DTypeNames"/>,
+    /// or <c>null</c> to load the default (no-type) GLB.</param>
     /// <param name="ct">Cancellation token.</param>
-    public async Task Load3DPreviewAsync(CancellationToken ct)
+    public async Task Load3DPreviewForTypeAsync(string? typeName, CancellationToken ct)
     {
         using var _scope = SmartConLogger.BeginScope("FMProperties3D",
-            ("Method", nameof(Load3DPreviewAsync)));
+            ("Method", nameof(Load3DPreviewForTypeAsync)),
+            ("TypeName", typeName ?? "<null>"));
 
         // Critical: HelixToolkit requires scene.Root.Attach(effectsManager)
         // BEFORE AddNode — otherwise mesh nodes never get GPU vertex buffers
         // allocated and the viewport renders black (issue helix-toolkit #2215).
         // If the viewer hasn't been initialized yet (View.Loaded hasn't fired),
-        // defer the actual load until Initialize3DInfrastructure completes
-        // (it calls Load3DPreviewAsync again at the end).
+        // defer the actual load until Initialize3DInfrastructure completes.
         if (EffectsManager3D is null)
         {
             SmartConLogger.Info(
-                "Load3DPreviewAsync: EffectsManager3D is null — deferring load " +
+                "Load3DPreviewForTypeAsync: EffectsManager3D is null — deferring load " +
                 "until Initialize3DInfrastructure is called from View.Loaded");
             return;
         }
@@ -186,32 +212,21 @@ public sealed partial class FamilyPropertiesViewModel
             Preview3DStatusMessage = null;
             Scene3DRoot.Clear();
 
-            // Diag: list all Model3D assets + their descriptions so we can
-            // understand why the auto-extracted-preview: prefix filter
-            // doesn't pick up the GLB.
-            SmartConLogger.Info(
-                $"Load3DPreviewAsync: Model3DAssets.Count={Model3DAssets.Count}");
-            foreach (var a in Model3DAssets)
-            {
-                var descPreview = a.Description is null
-                    ? "<null>"
-                    : (a.Description.Length > 80 ? a.Description[..80] + "…" : a.Description);
-                SmartConLogger.Info(
-                    $"  Model3D asset: Id={a.Id} FileName={a.FileName} " +
-                    $"VersionLabel={a.VersionLabel ?? "<null>"} IsPrimary={a.IsPrimary} " +
-                    $"Description={descPreview}");
-            }
+            var typeSuffix = typeName is null ? "" : typeName;
+            var descriptionSuffix = "::" + typeSuffix;
 
             var autoAsset = Model3DAssets.FirstOrDefault(a =>
                 !string.IsNullOrEmpty(a.Description)
-                && a.Description!.StartsWith(AutoExtractedPreviewPrefix, System.StringComparison.Ordinal));
+                && a.Description!.EndsWith(descriptionSuffix, System.StringComparison.Ordinal)
+                && a.Description.StartsWith(AutoExtractedPreviewPrefix, System.StringComparison.Ordinal)
+                && string.Equals(a.VersionLabel, VersionLabel, System.StringComparison.Ordinal));
 
             if (autoAsset is null)
             {
                 Has3DPreview = false;
                 Preview3DStatusMessage = LanguageManager.GetString(
                     StringLocalization.Keys.FM_3D_NoPreview) ?? "No 3D preview for this version";
-                SmartConLogger.Info("No auto-extracted GLB asset found — preview will show placeholder");
+                SmartConLogger.Info($"No auto-extracted GLB asset found for type='{typeName}' — preview will show placeholder");
                 return;
             }
 
@@ -229,7 +244,6 @@ public sealed partial class FamilyPropertiesViewModel
 
             // Offload I/O + Assimp parse to ThreadPool (keeps UI responsive
             // for large meshes; Assimp is C++/P-Invoke so ThreadPool-safe).
-            // Heart of the pattern used by the official HelixToolkit FileLoadDemo.
             var scene = await Task.Run(
                 () => GlbSceneLoader.LoadScene(glbPath!),
                 ct).ConfigureAwait(true);
@@ -243,17 +257,11 @@ public sealed partial class FamilyPropertiesViewModel
             }
 
             // scene.Attach creates GPU vertex buffers for each node.
-            // Must be called BEFORE AddNode so nodes are ready when
-            // render host attaches them.
             scene.Attach(EffectsManager3D);
             SmartConLogger.Info("scene.Attach(EffectsManager3D) done");
 
             Scene3DRoot.AddNode(scene);
             SmartConLogger.Info("3D preview loaded and added to Scene3DRoot");
-
-            bool anyAttached = CheckAttachedRecursive(scene);
-            SmartConLogger.Info(
-                $"After Attach+AddNode: any node IsAttached={anyAttached}");
 
             // Walk the loaded scene: ensure every MeshNode has a non-null
             // MaterialCore. Assimp importer sometimes creates meshes without
@@ -270,26 +278,9 @@ public sealed partial class FamilyPropertiesViewModel
             scene.UpdateAllTransformMatrix();
             SmartConLogger.Info("scene.UpdateAllTransformMatrix() done");
 
-            // DIAGNOSTIC: Dump full scene graph state for debugging black viewport.
-            DumpSceneGraph(scene, 0);
-
             FitCameraToScene();
-            Has3DPreview = true;
 
-            // Delayed re-check: render host may attach scene nodes asynchronously
-            // after AddNode. Log IsAttached state after 2 seconds to see if
-            // attachment eventually happened.
-            _ = Task.Delay(TimeSpan.FromSeconds(2), ct).ContinueWith(_ =>
-            {
-                try
-                {
-                    bool attachedNow = CheckAttachedRecursive(scene);
-                    SmartConLogger.Info(
-                        $"2-second delayed check: any node IsAttached={attachedNow}");
-                    DumpSceneGraph(scene, 0);
-                }
-                catch { }
-            }, TaskScheduler.FromCurrentSynchronizationContext());
+            Has3DPreview = true;
         }
         catch (OperationCanceledException)
         {
@@ -298,7 +289,7 @@ public sealed partial class FamilyPropertiesViewModel
         catch (Exception ex)
         {
             SmartConLogger.Warn(
-                $"Load3DPreviewAsync failed: {ex.GetType().Name}: {ex.Message} " +
+                $"Load3DPreviewForTypeAsync failed: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: 3D preview will show error overlay; check smartcon.log for details; " +
                 "re-import the family if the GLB file is corrupted]");
             Has3DPreview = false;
@@ -308,108 +299,6 @@ public sealed partial class FamilyPropertiesViewModel
         finally
         {
             IsLoading3D = false;
-        }
-    }
-
-    /// <summary>
-    /// Check if any node in the scene graph has IsAttached=True.
-    /// Used to diagnose render host timing issues.
-    /// </summary>
-    private static bool CheckAttachedRecursive(SceneNode node)
-    {
-        try
-        {
-            if (node.IsAttached) return true;
-        }
-        catch { }
-        foreach (var child in node.Items)
-        {
-            if (CheckAttachedRecursive(child)) return true;
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// DIAGNOSTIC: Recursively dumps the full state of every node in the
-    /// scene graph — type, name, IsAttached, IsRenderable, Visibility,
-    /// material type + DiffuseColor, geometry position/index counts,
-    /// ModelMatrix. This is needed to diagnose why the viewport renders
-    /// black despite the scene being loaded.
-    /// </summary>
-    private static void DumpSceneGraph(SceneNode node, int depth)
-    {
-        var indent = new string(' ', depth * 2);
-        var nodeType = node.GetType().Name;
-        var name = node.Name ?? "<unnamed>";
-
-        var parts = new List<string> { $"Type={nodeType}", $"Name={name}" };
-
-        try { parts.Add($"IsAttached={node.IsAttached}"); } catch { }
-        try { parts.Add($"IsRenderable={node.IsRenderable}"); } catch { }
-        try { parts.Add($"IsHitTestVisible={node.IsHitTestVisible}"); } catch { }
-        try
-        {
-            var matrix = node.TotalModelMatrix;
-            parts.Add($"MatrixTrans=({matrix.M41:F3},{matrix.M42:F3},{matrix.M43:F3})");
-        }
-        catch { }
-
-        if (node is MeshNode mesh)
-        {
-            try
-            {
-                var mat = mesh.Material;
-                if (mat is null)
-                {
-                    parts.Add("Material=NULL");
-                }
-                else
-                {
-                    parts.Add($"MaterialType={mat.GetType().Name}");
-                    if (mat is PhongMaterialCore phong)
-                    {
-                        var d = phong.DiffuseColor;
-                        var a = phong.AmbientColor;
-                        parts.Add($"Diffuse=({d.Red:F2},{d.Green:F2},{d.Blue:F2},{d.Alpha:F2})");
-                        parts.Add($"Ambient=({a.Red:F2},{a.Green:F2},{a.Blue:F2},{a.Alpha:F2})");
-                    }
-                    else if (mat is PBRMaterialCore pbr)
-                    {
-                        var d = pbr.AlbedoColor;
-                        parts.Add($"Albedo=({d.Red:F2},{d.Green:F2},{d.Blue:F2},{d.Alpha:F2})");
-                    }
-                }
-            }
-            catch (Exception ex) { parts.Add($"Material_ERR={ex.Message}"); }
-
-            try
-            {
-                if (mesh.Geometry is not null)
-                {
-                    var pos = mesh.Geometry.Positions;
-                    var idx = mesh.Geometry.Indices;
-                    parts.Add($"Positions={pos?.Count ?? 0}");
-                    parts.Add($"Indices={idx?.Count ?? 0}");
-
-                    if (pos is not null && pos.Count > 0)
-                    {
-                        var first = pos[0];
-                        parts.Add($"FirstPos=({first.X:F3},{first.Y:F3},{first.Z:F3})");
-                    }
-                }
-                else
-                {
-                    parts.Add("Geometry=NULL");
-                }
-            }
-            catch (Exception ex) { parts.Add($"Geometry_ERR={ex.Message}"); }
-        }
-
-        SmartConLogger.Info($"{indent}SceneNode: {string.Join(" ", parts)}");
-
-        foreach (var child in node.Items)
-        {
-            DumpSceneGraph(child, depth + 1);
         }
     }
 
@@ -435,21 +324,13 @@ public sealed partial class FamilyPropertiesViewModel
                     SpecularShininess = 32.0f
                 };
                 nullCount++;
-                SmartConLogger.Info(
-                    $"EnsureMaterials: assigned default PhongMaterialCore to mesh '{mesh.Name ?? "<unnamed>"}'");
             }
             else
             {
-                SmartConLogger.Info(
-                    $"EnsureMaterials: mesh '{mesh.Name ?? "<unnamed>"}' has Material={mesh.Material.GetType().Name}");
-
                 if (mesh.Material is PhongMaterialCore phong)
                 {
                     var d = phong.DiffuseColor;
                     var a = phong.AmbientColor;
-                    SmartConLogger.Info(
-                        $"EnsureMaterials: Phong DiffuseColor=({d.Red:F3},{d.Green:F3},{d.Blue:F3},{d.Alpha:F3}) " +
-                        $"AmbientColor=({a.Red:F3},{a.Green:F3},{a.Blue:F3},{a.Alpha:F3})");
 
                     var fixedColor = false;
                     if (d.Red < 0.01f && d.Green < 0.01f && d.Blue < 0.01f)
@@ -477,9 +358,6 @@ public sealed partial class FamilyPropertiesViewModel
                 else if (mesh.Material is PBRMaterialCore pbr)
                 {
                     var a = pbr.AlbedoColor;
-                    SmartConLogger.Info(
-                        $"EnsureMaterials: PBR AlbedoColor=({a.Red:F3},{a.Green:F3},{a.Blue:F3},{a.Alpha:F3}) " +
-                        $"Metallic={pbr.MetallicFactor:F2} Roughness={pbr.RoughnessFactor:F2}");
 
                     if (a.Red < 0.01f && a.Green < 0.01f && a.Blue < 0.01f)
                     {
@@ -497,14 +375,6 @@ public sealed partial class FamilyPropertiesViewModel
                     $"EnsureMaterials: mesh '{mesh.Name ?? "<unnamed>"}' has null Geometry " +
                     "[Action: this mesh won't be rendered]");
             }
-            else
-            {
-                var posCount = mesh.Geometry.Positions?.Count ?? 0;
-                var idxCount = mesh.Geometry.Indices?.Count ?? 0;
-                SmartConLogger.Info(
-                    $"EnsureMaterials: mesh '{mesh.Name ?? "<unnamed>"}' geometry: " +
-                    $"positions={posCount}, indices={idxCount}");
-            }
         }
 
         foreach (var child in node.Items)
@@ -517,7 +387,7 @@ public sealed partial class FamilyPropertiesViewModel
     /// Compute the bounding sphere of all meshes in <see cref="Scene3DRoot"/>
     /// and reposition <see cref="Camera3D"/> so the model fits the viewport.
     /// Called after <see cref="Scene3DRoot.AddNode"/> in
-    /// <see cref="Load3DPreviewAsync"/> and from <see cref="ResetCamera3DCommand"/>.
+    /// <see cref="Load3DPreviewForTypeAsync"/> and from <see cref="ResetCamera3DCommand"/>.
     /// </summary>
     private void FitCameraToScene()
     {
@@ -582,10 +452,15 @@ public sealed partial class FamilyPropertiesViewModel
             var maxDim = Math.Max(sizeX, Math.Max(sizeY, sizeZ));
             if (maxDim < 0.0001) maxDim = 1.0;
 
-            // Place camera along the diagonal of the bounding box at a
-            // distance ~3x the largest dimension so the whole model fits
-            // the default 45° vertical FOV of PerspectiveCamera.
-            var distance = maxDim * 3.0;
+            // FOV-aware distance calculation. PerspectiveCamera default FOV=45°.
+            // For a bounding box, the camera must be far enough so the entire
+            // box fits within the FOV. The diagonal of the bounding box is the
+            // worst-case dimension. Use: distance = diag / (2 * tan(FOV/2)) * margin.
+            var diag = Math.Sqrt(sizeX * sizeX + sizeY * sizeY + sizeZ * sizeZ);
+            if (diag < 0.0001) diag = maxDim;
+            var fov = Camera3D.FieldOfView > 0 ? Camera3D.FieldOfView : 45.0;
+            var fovRad = fov * Math.PI / 180.0;
+            var distance = (diag / (2.0 * Math.Tan(fovRad / 2.0))) * 2.5;
             var dir = new Media3D.Vector3D(1, 1, 1);
             dir.Normalize();
 
@@ -603,7 +478,7 @@ public sealed partial class FamilyPropertiesViewModel
 
             SmartConLogger.Info(
                 $"Camera fit to model: center=({center.X:F2},{center.Y:F2},{center.Z:F2}) " +
-                $"maxDim={maxDim:F2} distance={distance:F2}");
+                $"maxDim={maxDim:F2} diag={diag:F2} fov={fov:F1}° distance={distance:F2}");
         }
         catch (Exception ex)
         {
@@ -717,6 +592,12 @@ public sealed partial class FamilyPropertiesViewModel
     partial void OnHas3DPreviewChanged(bool value) => OnPropertyChanged(nameof(HasNo3DPreview));
     partial void OnIsLoading3DChanged(bool value) => OnPropertyChanged(nameof(HasNo3DPreview));
 
+    /// <summary>Net48 stub — no ComboBox (no per-type filtering needed).</summary>
+    public System.Collections.ObjectModel.ObservableCollection<string> Available3DTypeNames { get; } = new();
+    public string? Selected3DTypeName { get => null; set { } }
+    public bool HasMultiple3DTypes => false;
+    public void Populate3DTypeNames() { }
+
     /// <summary>Net48 stub — no initialization required (no DirectX resources).</summary>
     public void Initialize3DInfrastructure()
     {
@@ -726,7 +607,7 @@ public sealed partial class FamilyPropertiesViewModel
     }
 
     /// <summary>Net48 stub — no GLB loading possible.</summary>
-    public Task Load3DPreviewAsync(CancellationToken ct)
+    public Task Load3DPreviewForTypeAsync(string? typeName, CancellationToken ct)
     {
         Has3DPreview = false;
         return Task.CompletedTask;

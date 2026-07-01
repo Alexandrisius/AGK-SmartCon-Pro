@@ -1,5 +1,6 @@
 using System.IO;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
@@ -36,7 +37,8 @@ internal sealed partial class LocalFamilyImportService
     /// pipeline.
     /// </remarks>
     private async Task RunGeometryPipelineHookAsync(
-        string managedRfaPath,
+        IReadOnlyList<FamilyGeometryPerType>? preextractedGeometry,
+        string? managedRfaPath,
         string catalogItemId,
         string versionId,
         string versionLabel,
@@ -53,6 +55,7 @@ internal sealed partial class LocalFamilyImportService
         try
         {
             await _geometryPipeline.RunAsync(
+                preextractedGeometry,
                 managedRfaPath,
                 catalogItemId,
                 versionId,
@@ -66,9 +69,6 @@ internal sealed partial class LocalFamilyImportService
         }
         catch (Exception ex)
         {
-            // Pipeline itself already logs internally — this is the last
-            // defensive line so an unforeseen exception in the await chain
-            // cannot abort the import that already committed.
             SmartConLogger.Warn(
                 $"Geometry pipeline hook unhandled exception: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: import continues; 3D preview will be unavailable for this version]");

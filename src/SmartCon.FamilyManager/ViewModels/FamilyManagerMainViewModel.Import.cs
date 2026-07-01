@@ -125,7 +125,8 @@ public sealed partial class FamilyManagerMainViewModel
                     HashFormatVersion: p.ContentHash?.FormatVersion,
                     MatchedVersionLabel: p.MatchedVersionLabel,
                     LoadableSnapshot: p.LoadableSnapshot,
-                    SystemSnapshot: p.SystemSnapshot)
+                    SystemSnapshot: p.SystemSnapshot,
+                    GeometryPerType: p.GeometryPerType)
                 {
                     Action = status == FamilyBatchImportStatus.Duplicate
                         ? FamilyBatchImportAction.Skip

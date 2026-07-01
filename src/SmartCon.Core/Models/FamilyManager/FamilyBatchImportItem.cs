@@ -84,7 +84,8 @@ public sealed record FamilyBatchImportItem(
     string? MatchedVersionLabel = null,
     FamilySnapshot? LoadableSnapshot = null,
     SystemFamilySnapshot? SystemSnapshot = null,
-    string? PublishedBy = null)
+    string? PublishedBy = null,
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

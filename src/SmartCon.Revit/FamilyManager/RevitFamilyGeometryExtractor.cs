@@ -85,10 +85,9 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));
     }
 
-    public Task<FamilyGeometryPreview?> ExtractAsync(
+    public Task<IReadOnlyList<FamilyGeometryPerType>?> ExtractAsync(
         string managedRfaPath,
-        string catalogItemId,
-        string versionLabel,
+        string familyName,
         CancellationToken ct = default)
     {
 #pragma warning disable CA1510
@@ -103,13 +102,11 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             SmartConLogger.Warn(
                 $"Geometry extraction skipped: file not found '{rfaFileName}' " +
                 "[Action: verify managed storage state; the import succeeded but no 3D preview will be available]");
-            return Task.FromResult<FamilyGeometryPreview?>(null);
+            return Task.FromResult<IReadOnlyList<FamilyGeometryPerType>?>(null);
         }
 
         using var _scope = SmartConLogger.BeginScope("Geo3DExtract",
             ("Method", nameof(ExtractAsync)),
-            ("CatalogItemId", catalogItemId),
-            ("VersionLabel", versionLabel),
             ("FilePath", rfaFileName));
 
         SmartConLogger.Debug($"Starting 3D geometry extraction for '{rfaFileName}'");
@@ -134,7 +131,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                     SmartConLogger.Warn(
                         $"OpenDocumentFile failed for '{rfaFileName}': {ex.Message} " +
                         "[Action: verify file is a valid Revit .rfa; 3D preview will be skipped]");
-                    return Task.FromResult<FamilyGeometryPreview?>(null);
+                    return Task.FromResult<IReadOnlyList<FamilyGeometryPerType>?>(null);
                 }
             }
 
@@ -143,7 +140,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 SmartConLogger.Warn(
                     $"OpenDocumentFile returned null for '{rfaFileName}' " +
                     "[Action: check for corrupted .rfa or Revit version mismatch]");
-                return Task.FromResult<FamilyGeometryPreview?>(null);
+                return Task.FromResult<IReadOnlyList<FamilyGeometryPerType>?>(null);
             }
 
             if (!doc.IsFamilyDocument)
@@ -151,30 +148,29 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 SmartConLogger.Warn(
                     $"Document '{rfaFileName}' is not a family document — skipping geometry extraction " +
                     "[Action: 3D preview is only generated for loadable .rfa families]");
-                return Task.FromResult<FamilyGeometryPreview?>(null);
+                return Task.FromResult<IReadOnlyList<FamilyGeometryPerType>?>(null);
             }
 
-            var familyName = doc.Title.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase)
-                ? doc.Title[..^4]
-                : doc.Title;
+            // Delegate per-type extraction to RevitFamilySnapshotExtractor
+            // which uses Transaction+RollBack to iterate FamilyType entries.
+            var snapshotExtractor = new RevitFamilySnapshotExtractor();
+            var geometryPerType = snapshotExtractor.ExtractGeometryPerType(doc, ct);
 
-            var meshes = ExtractMeshesFromFamilyDoc(doc, ct);
-
-            if (meshes.Count == 0)
+            if (geometryPerType is null || geometryPerType.Count == 0)
             {
                 SmartConLogger.Warn(
                     $"No visible geometry found in '{rfaFileName}' " +
                     "[Action: verify family has visible GenericForm elements with 3D solids; preview will be empty]");
-                return Task.FromResult<FamilyGeometryPreview?>(null);
+                return Task.FromResult<IReadOnlyList<FamilyGeometryPerType>?>(null);
             }
 
-            var preview = new FamilyGeometryPreview(catalogItemId, versionLabel, familyName, meshes);
-
+            var totalMeshes = geometryPerType.Sum(g => g.Meshes.Count);
+            var totalTris = geometryPerType.Sum(g => g.TotalTriangleCount);
             SmartConLogger.Info(
-                $"Geometry extraction complete: '{rfaFileName}', {meshes.Count} meshes, " +
-                $"{preview.TotalVertexCount} verts, {preview.TotalTriangleCount} tris");
+                $"Geometry extraction complete: '{rfaFileName}', {geometryPerType.Count} types, " +
+                $"{totalMeshes} total meshes, {totalTris} total triangles");
 
-            return Task.FromResult<FamilyGeometryPreview?>(preview);
+            return Task.FromResult<IReadOnlyList<FamilyGeometryPerType>?>(geometryPerType);
         }
         finally
         {
@@ -204,7 +200,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         }
     }
 
-    private static List<MeshData> ExtractMeshesFromFamilyDoc(Document familyDoc, CancellationToken ct)
+    internal static List<MeshData> ExtractMeshesFromFamilyDoc(Document familyDoc, CancellationToken ct)
     {
         var result = new List<MeshData>();
 
@@ -212,6 +208,15 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         {
             ComputeReferences = false,
             DetailLevel = ViewDetailLevel.Fine,
+            // IncludeNonVisibleObjects=true: some GenericForm extrusions have
+            // Visible=true but their solid geometry is marked "conditionally
+            // visible" by Revit. With false (default), get_Geometry returns
+            // an empty GeometryElement even though the BoundingBox is valid.
+            // Jeremy Tammik (The Building Coder): "some of this conditionally
+            // visible geometry represents real-world objects." We already
+            // filter by GenericForm.Visible above, so truly hidden forms are
+            // excluded — this flag only recovers conditionally-visible solids
+            // within visible forms.
             IncludeNonVisibleObjects = true
         };
 
@@ -227,6 +232,25 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             $"GenericForm scan: {forms.Count} total ({solidForms.Count} solid, " +
             $"{voidForms.Count} void — voids are skipped because solid forms " +
             "already have void cuts applied)");
+
+        // Log the active FamilyType — type-driven visibility parameters on
+        // GenericForm elements (e.g. "Visible when Type = X") only evaluate
+        // against the currently active type. If a family is opened with a
+        // type that suppresses certain extrusions, get_Geometry will return
+        // an empty GeometryElement for those forms.
+        try
+        {
+            var fm = familyDoc.FamilyManager;
+            var currentType = fm.CurrentType;
+            var currentTypeName = currentType?.Name ?? "<none>";
+            var typeCount = fm.Types.Size;
+            SmartConLogger.Info(
+                $"FamilyManager: ActiveType='{currentTypeName}', TotalTypes={typeCount}");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"FamilyManager type info unavailable: {ex.Message}");
+        }
 
         var nestedInstances = new FilteredElementCollector(familyDoc)
             .OfClass(typeof(FamilyInstance))
@@ -255,17 +279,11 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 $"  Scanning {nodeName}: IsSolid={form.IsSolid}, Visible={isVisible}, " +
                 $"Category={form.Category?.Name ?? "<null>"}");
 
-            try
+            if (!isVisible)
             {
-                var bb = form.get_BoundingBox(null);
-                SmartConLogger.Info(
-                    $"  {nodeName} BoundingBox: " +
-                    (bb is null
-                        ? "null (no 3D geometry)"
-                        : $"min=({bb.Min.X:F3},{bb.Min.Y:F3},{bb.Min.Z:F3}) " +
-                          $"max=({bb.Max.X:F3},{bb.Max.Y:F3},{bb.Max.Z:F3})"));
+                SmartConLogger.Info($"  · {nodeName}: skipped (Visible=false)");
+                continue;
             }
-            catch { }
 
             try
             {
@@ -350,40 +368,25 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             return null;
         }
 
-        int geomCount;
-        try { geomCount = geomElem.Count(); }
-        catch { geomCount = -1; }
-
-        var typeHistogram = new Dictionary<string, int>();
-        int solidWithFaces = 0;
-        int solidEmpty = 0;
-        int instanceCount = 0;
-        int meshCount = 0;
-        int curveCount = 0;
-        int otherCount = 0;
-
+        // Diagnostic: enumerate the geomElem contents before traversal so we
+        // can see whether get_Geometry returned an empty/blank GeometryElement
+        // (known Revit pattern: "null Solid" with SurfaceArea=0, Faces.Size=0,
+        // or GeometryInstance wrapping further objects). This explains why
+        // some Extrusion elements with IsSolid=True, Visible=True produce no
+        // triangles — the geometry is type-dependent or absent at default type.
+        int previewCount = 0;
+        var typeHistogram = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var g in geomElem)
         {
-            var tn = g?.GetType().Name ?? "<null>";
-            typeHistogram.TryGetValue(tn, out var tnCount);
-            typeHistogram[tn] = tnCount + 1;
-
-            if (g is Solid s)
-            {
-                if (s.Faces is not null && s.Faces.Size > 0 && s.SurfaceArea > 0)
-                    solidWithFaces++;
-                else
-                    solidEmpty++;
-            }
-            else if (g is GeometryInstance) instanceCount++;
-            else if (g is Mesh) meshCount++;
-            else if (g is Curve) curveCount++;
-            else otherCount++;
+            previewCount++;
+            var t = g?.GetType().Name ?? "<null>";
+            if (!typeHistogram.TryGetValue(t, out var c)) c = 0;
+            typeHistogram[t] = c + 1;
         }
-
-        SmartConLogger.Info(
-            $"  '{nodeName}': geomCount={geomCount}, solids(valid={solidWithFaces},empty={solidEmpty}), " +
-            $"instances={instanceCount}, meshes={meshCount}, curves={curveCount}, other={otherCount}");
+        var typeSummary = typeHistogram.Count > 0
+            ? string.Join(", ", typeHistogram.Select(kv => $"{kv.Value}x {kv.Key}"))
+            : "<empty>";
+        SmartConLogger.Info($"  '{nodeName}': get_Geometry returned {previewCount} objects [{typeSummary}]");
 
         var positions = new List<float>(256);
         var indices = new List<int>(512);
@@ -412,7 +415,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             Positions: positions.ToArray(),
             Normals: normals.Count == positions.Count ? normals.ToArray() : null,
             Indices: indices.ToArray(),
-            DiffuseColor: FallbackColor,
+            DiffuseColor: GetColorFromGeometry(geomElem, element.Document, nodeName),
             NodeName: nodeName);
     }
 
@@ -438,6 +441,8 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         int solidCount = 0;
         int instanceCount = 0;
         int directMeshCount = 0;
+        int skippedEmptySolid = 0;
+        int unknownTypeCount = 0;
 
         foreach (var geomObj in geomElem)
         {
@@ -446,7 +451,19 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             switch (geomObj)
             {
                 case Solid solid:
-                    if (solid.SurfaceArea <= 0) break;
+                    if (solid.SurfaceArea <= 0)
+                    {
+                        // Diagnostic: Revit sometimes returns "null Solid" placeholders
+                        // (SurfaceArea=0, Faces.Size=0, Volume=0) when geometry is
+                        // type-dependent or absent. Log explicitly so we can
+                        // distinguish "skipped empty" from "no objects at all".
+                        skippedEmptySolid++;
+                        SmartConLogger.Debug(
+                            $"    Solid #{solidCount}: SurfaceArea={solid.SurfaceArea:F4} " +
+                            $"Faces={solid.Faces?.Size ?? 0} Edges={solid.Edges?.Size ?? 0} " +
+                            $"Volume={solid.Volume:F4} → skipped (empty/degenerate)");
+                        break;
+                    }
                     AddSolid(solid, positions, indices, normals);
                     solidCount++;
                     break;
@@ -473,14 +490,21 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                     AddRevitMesh(directMesh, positions, indices, normals);
                     directMeshCount++;
                     break;
+
+                default:
+                    unknownTypeCount++;
+                    SmartConLogger.Debug(
+                        $"    Unknown geometry type '{geomObj?.GetType().Name ?? "<null>"}' → skipped");
+                    break;
             }
         }
 
-        if (solidCount > 0 || instanceCount > 0 || directMeshCount > 0)
+        if (solidCount > 0 || instanceCount > 0 || directMeshCount > 0 || skippedEmptySolid > 0 || unknownTypeCount > 0)
         {
             SmartConLogger.Debug(
                 $"    CollectMesh: {solidCount} solids, {instanceCount} geometry instances, " +
-                $"{directMeshCount} direct meshes → {positions.Count / 3} verts, {indices.Count / 3} tris");
+                $"{directMeshCount} direct meshes, {skippedEmptySolid} empty solids skipped, " +
+                $"{unknownTypeCount} unknown types skipped → {positions.Count / 3} verts, {indices.Count / 3} tris");
         }
     }
 
@@ -696,6 +720,92 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         positions.Add((float)vertex.Z);
         dedup[key] = newIdx;
         return newIdx;
+    }
+
+    /// <summary>
+    /// Resolves a diffuse color from the element's geometry. Language-independent
+    /// and works in family documents where <c>element.Category</c> is null.
+    /// Iterates the geometry, finds the first <c>Solid</c> with faces, and reads
+    /// <c>Face.MaterialElementId</c> — the material assigned to that face.
+    /// Per Jeremy Tammik (The Building Coder): face-level material is the most
+    /// reliable source, especially for family documents.
+    /// If face material is InvalidElementId ("By Category"), falls back to
+    /// <c>doc.OwnerFamily.Category.Material</c>, then <c>FallbackColor</c>.
+    /// </summary>
+    private static Vector4 GetColorFromGeometry(GeometryElement geomElem, Document doc, string nodeName)
+    {
+        try
+        {
+            foreach (var geomObj in geomElem)
+            {
+                if (geomObj is Solid solid && solid.SurfaceArea > 0 && solid.Faces is not null)
+                {
+                    foreach (Face face in solid.Faces)
+                    {
+                        try
+                        {
+                            var materialId = face.MaterialElementId;
+                            if (materialId is not null && materialId != ElementId.InvalidElementId)
+                            {
+                                var material = doc.GetElement(materialId) as Material;
+                                if (material is not null)
+                                {
+                                    var color = material.Color;
+                                    if (color is not null && color.IsValid)
+                                    {
+                                        var result = new Vector4(
+                                            color.Red / 255f,
+                                            color.Green / 255f,
+                                            color.Blue / 255f,
+                                            1f);
+                                        SmartConLogger.Info(
+                                            $"GetColorFromGeometry: '{nodeName}' → face material " +
+                                            $"'{material.Name}' → RGB({color.Red},{color.Green},{color.Blue}) → {result}");
+                                        return result;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            Autodesk.Revit.DB.Family? ownerFamily = null;
+            try { ownerFamily = doc.OwnerFamily; } catch { }
+            if (ownerFamily?.Category is { } familyCat)
+            {
+                var catMaterial = familyCat.Material;
+                if (catMaterial is not null)
+                {
+                    var color = catMaterial.Color;
+                    if (color is not null && color.IsValid)
+                    {
+                        var result = new Vector4(
+                            color.Red / 255f,
+                            color.Green / 255f,
+                            color.Blue / 255f,
+                            1f);
+                        SmartConLogger.Info(
+                            $"GetColorFromGeometry: '{nodeName}' → OwnerFamily.Category " +
+                            $"'{familyCat.Name}' material '{catMaterial.Name}' → " +
+                            $"RGB({color.Red},{color.Green},{color.Blue}) → {result}");
+                        return result;
+                    }
+                }
+            }
+
+            SmartConLogger.Info(
+                $"GetColorFromGeometry: '{nodeName}' → no face material, no category material → FallbackColor");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"GetColorFromGeometry: failed for '{nodeName}': {ex.Message} " +
+                "[Action: using fallback gray color for this mesh]");
+        }
+
+        return FallbackColor;
     }
 
     /// <summary>

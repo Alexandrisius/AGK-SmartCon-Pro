@@ -20,4 +20,5 @@ public sealed record FamilyUpdateRequest(
     string? PrecomputedManagedPath = null,
     string? ContentHash = null,
     int? HashFormatVersion = null,
-    string? PublishedBy = null);
+    string? PublishedBy = null,
+    IReadOnlyList<FamilyGeometryPerType>? PreextractedGeometry = null);

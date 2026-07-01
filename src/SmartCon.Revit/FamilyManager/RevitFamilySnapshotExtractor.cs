@@ -57,6 +57,111 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             SharedNestedFamilyNames: sharedNested);
     }
 
+    public IReadOnlyList<FamilyGeometryPerType> ExtractGeometryPerType(
+        Document familyDoc,
+        CancellationToken ct = default)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(familyDoc);
+#else
+        if (familyDoc is null) throw new ArgumentNullException(nameof(familyDoc));
+#endif
+
+        using var _scope = SmartConLogger.BeginScope("Geo3DPerType",
+            ("Method", nameof(ExtractGeometryPerType)));
+
+        var result = new List<FamilyGeometryPerType>();
+        var familyName = familyDoc.Title;
+        if (familyName.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
+            familyName = familyName[..^4];
+
+        var fm = familyDoc.FamilyManager;
+        var typeCount = fm.Types.Size;
+
+        SmartConLogger.Info($"ExtractGeometryPerType: familyName='{familyName}', typeCount={typeCount}");
+
+        if (typeCount <= 1)
+        {
+            ct.ThrowIfCancellationRequested();
+            var meshes = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
+            var typeName = fm.CurrentType?.Name ?? "";
+            result.Add(new FamilyGeometryPerType(typeName, familyName, meshes));
+            SmartConLogger.Info(
+                $"ExtractGeometryPerType: single type '{typeName}' → {meshes.Count} meshes, " +
+                $"{(meshes.Count > 0 ? meshes.Sum(m => m.TriangleCount) : 0)} triangles");
+            return result;
+        }
+
+        // Multiple types: iterate with Transaction+RollBack (I-03b).
+        // Precedent: RevitFamilyDataExtractionService.cs:227 uses the
+        // same pattern for temp type creation in family documents.
+        FamilyType? originalType = null;
+        try { originalType = fm.CurrentType; }
+        catch { }
+
+        using (var tx = new Transaction(familyDoc, "SmartCon_GeometryPerType"))
+        {
+            tx.Start();
+            try
+            {
+                foreach (FamilyType ft in fm.Types)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        fm.CurrentType = ft;
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Warn(
+                            $"ExtractGeometryPerType: failed to switch to type '{ft.Name}': {ex.Message} " +
+                            "[Action: type geometry will be skipped]");
+                        continue;
+                    }
+
+                    try
+                    {
+                        familyDoc.Regenerate();
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Debug($"Regenerate failed for type '{ft.Name}': {ex.Message}");
+                    }
+
+                    var meshes = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
+
+                    if (meshes.Count > 0 && !meshes.All(m => m.IsEmpty))
+                    {
+                        var triCount = meshes.Sum(m => m.TriangleCount);
+                        result.Add(new FamilyGeometryPerType(ft.Name, familyName, meshes));
+                        SmartConLogger.Info(
+                            $"ExtractGeometryPerType: type '{ft.Name}' → {meshes.Count} meshes, {triCount} triangles");
+                    }
+                    else
+                    {
+                        SmartConLogger.Info(
+                            $"ExtractGeometryPerType: type '{ft.Name}' → no geometry extracted");
+                    }
+                }
+            }
+            finally
+            {
+                if (originalType is not null)
+                {
+                    try { fm.CurrentType = originalType; }
+                    catch { }
+                }
+                tx.RollBack();
+            }
+        }
+
+        SmartConLogger.Info(
+            $"ExtractGeometryPerType: extracted {result.Count}/{typeCount} types with geometry for '{familyName}'");
+
+        return result;
+    }
+
     public SystemFamilySnapshot ExtractFromProject(
         Document projectDoc,
         IReadOnlyList<string> typeUniqueIds,

@@ -257,7 +257,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
             // ADR-042 H1: extract 3D geometry preview for this NEW version.
             await RunGeometryPipelineHookAsync(
-                managedRfaPath, catalogItemId, versionId, versionLabel,
+                request.PreextractedGeometry,
+                managedRfaPath,
+                catalogItemId, versionId, versionLabel,
                 StripFamilyExtension(finalMetadata.FileName), ct).ConfigureAwait(false);
 
             return new FamilyImportResult(
@@ -479,7 +481,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         PrecomputedManagedPath: item.PrecomputedManagedPath,
                         ContentHash: item.ContentHash,
                         HashFormatVersion: item.HashFormatVersion,
-                        PublishedBy: item.PublishedByUser);
+                        PublishedBy: item.PublishedByUser,
+                        PreextractedGeometry: item.GeometryPerType);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
@@ -554,7 +557,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             PrecomputedManagedPath: item.PrecomputedManagedPath,
                             ContentHash: item.ContentHash,
                             HashFormatVersion: item.HashFormatVersion,
-                            PublishedBy: item.PublishedByUser);
+                        PublishedBy: item.PublishedByUser,
+                        PreextractedGeometry: item.GeometryPerType);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -761,7 +765,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
 
             // ADR-042 H2: extract 3D geometry preview for this INCREMENTED version.
             await RunGeometryPipelineHookAsync(
-                managedRfaPath, request.CatalogItemId!, versionId, versionLabel,
+                request.PreextractedGeometry,
+                managedRfaPath,
+                request.CatalogItemId!, versionId, versionLabel,
                 StripFamilyExtension(finalMetadata.FileName), ct).ConfigureAwait(false);
 
             return new FamilyImportResult(

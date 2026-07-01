@@ -564,7 +564,8 @@ public sealed partial class FamilyManagerMainViewModel
                 PrecomputedManagedPath: saveAsPath,
                 ContentHash: importItem.ContentHash,
                 HashFormatVersion: importItem.HashFormatVersion,
-                PublishedBy: _revitContext.GetUsername());
+                PublishedBy: _revitContext.GetUsername(),
+                PreextractedGeometry: importItem.GeometryPerType);
 
             importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
         }

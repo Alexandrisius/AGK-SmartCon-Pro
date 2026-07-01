@@ -50,7 +50,8 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
     }
 
     public async Task RunAsync(
-        string managedRfaPath,
+        IReadOnlyList<FamilyGeometryPerType>? geometryPerType,
+        string? managedRfaPath,
         string catalogItemId,
         string versionId,
         string versionLabel,
@@ -62,78 +63,94 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             ("CatalogItemId", catalogItemId),
             ("VersionLabel", versionLabel),
             ("VersionId", versionId),
-            ("FilePath", Path.GetFileName(managedRfaPath)));
+            ("FilePath", Path.GetFileName(managedRfaPath ?? "")));
 
-        string? tempPath = null;
-        try
+        // 1. Obtain geometry: either pre-extracted from Prepare (H1)
+        //    or extract now from managed .rfa (H2/H3).
+        IReadOnlyList<FamilyGeometryPerType>? geometry = geometryPerType;
+
+        if (geometry is null || geometry.Count == 0)
         {
-            // 1. Extract geometry on the Revit UI thread (I-01).
-            //    ExtractAsync runs synchronously and returns Task.FromResult
-            //    — GetAwaiter().GetResult() is safe (no deadlock risk).
-            var preview = await _awaitableEvent.RaiseAsync(
-                (app) => _extractor.ExtractAsync(managedRfaPath, catalogItemId, versionLabel, ct).GetAwaiter().GetResult(),
+            if (string.IsNullOrEmpty(managedRfaPath))
+            {
+                SmartConLogger.Warn(
+                    $"Geometry pipeline skipped: no pre-extracted geometry and no managedRfaPath for '{familyName}' v{versionLabel} " +
+                    "[Action: import continues; 3D preview will be unavailable for this version]");
+                return;
+            }
+
+            // H2/H3 path: extract geometry from managed .rfa (one OpenDocumentFile).
+            geometry = await _awaitableEvent.RaiseAsync(
+                (app) => _extractor.ExtractAsync(managedRfaPath!, familyName, ct).GetAwaiter().GetResult(),
                 ct).ConfigureAwait(false);
 
-            if (preview is null || preview.IsEmpty)
+            if (geometry is null || geometry.Count == 0)
             {
                 SmartConLogger.Info(
                     $"Geometry pipeline skipped: no preview extracted for '{familyName}' v{versionLabel}");
                 return;
             }
+        }
 
-            // 2. Write GLB to a temporary file (IFamilyAssetService.AddAssetAsync
-            //    copies it into managed storage afterwards).
-            tempPath = Path.Combine(Path.GetTempPath(), $"sc_preview_{Guid.NewGuid():N}.glb");
-            var ok = await _glbWriter.WriteAsync(preview, tempPath, ct).ConfigureAwait(false);
-            if (!ok)
+        // 2. Delete any previous auto-extracted Preview assets for this
+        //    (catalog_item_id, version_label) — supports OverwriteCurrent
+        //    (ADR-040) where the same version is re-imported with new
+        //    geometry.
+        await DeletePreviousAutoExtractedAssetAsync(catalogItemId, versionLabel, ct).ConfigureAwait(false);
+
+        // 3. Write N GLBs (one per type) and register each as a Model3D asset.
+        foreach (var gpt in geometry)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (gpt.IsEmpty)
             {
-                SmartConLogger.Warn(
-                    $"GLB write failed for '{familyName}' v{versionLabel} " +
-                    "[Action: import continues; 3D preview will be unavailable for this version]");
-                return;
+                SmartConLogger.Info(
+                    $"Skipping type '{gpt.TypeName}' — empty geometry");
+                continue;
             }
 
-            // 3. Delete any previous auto-extracted Preview asset for this
-            //    (catalog_item_id, version_label) — supports OverwriteCurrent
-            //    (ADR-040) where the same version is re-imported with new
-            //    geometry. Without this, every OverwriteCurrent would
-            //    accumulate a new GLB alongside the old one.
-            await DeletePreviousAutoExtractedAssetAsync(catalogItemId, versionLabel, ct).ConfigureAwait(false);
+            var preview = new FamilyGeometryPreview(
+                catalogItemId, versionLabel,
+                string.IsNullOrEmpty(gpt.TypeName) ? gpt.FamilyName : $"{gpt.FamilyName} [{gpt.TypeName}]",
+                gpt.Meshes);
 
-            // 4. Register the GLB through the asset service, marking it with
-            //    the auto-extracted-preview: prefix so the UI can tell it
-            //    apart from user-uploaded Model3D files.
-            var description = FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + familyName;
-            var asset = await _assetService.AddAssetAsync(
-                catalogItemId, versionLabel, FamilyAssetType.Model3D, tempPath, description, ct).ConfigureAwait(false);
-
-            SmartConLogger.Info(
-                $"Geometry pipeline OK: GLB registered as asset {asset.Id}, file='{asset.FileName}', " +
-                $"{preview.Meshes.Count} meshes, {preview.TotalTriangleCount} triangles");
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                $"Geometry pipeline failed for '{familyName}' v{versionLabel}: " +
-                $"{ex.GetType().Name}: {ex.Message} " +
-                "[Action: import continues; 3D preview will be unavailable for this version — check smartcon.log for details]");
-        }
-        finally
-        {
-            if (tempPath is not null)
+            string? tempPath = null;
+            try
             {
-                try
+                tempPath = Path.Combine(Path.GetTempPath(),
+                    $"sc_preview_{Guid.NewGuid():N}.glb");
+                var ok = await _glbWriter.WriteAsync(preview, tempPath, ct).ConfigureAwait(false);
+                if (!ok)
                 {
-                    if (File.Exists(tempPath))
-                        File.Delete(tempPath);
+                    SmartConLogger.Warn(
+                        $"GLB write failed for type '{gpt.TypeName}' '{familyName}' v{versionLabel} " +
+                        "[Action: import continues; this type's 3D preview will be unavailable]");
+                    continue;
                 }
-                catch (Exception cleanupEx)
+
+                // Description encodes the type name so the UI can
+                // filter/select per-type assets.
+                var description = gpt.TypeName.Length == 0
+                    ? FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + familyName + "::"
+                    : FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + familyName + "::" + gpt.TypeName;
+
+                var asset = await _assetService.AddAssetAsync(
+                    catalogItemId, versionLabel, FamilyAssetType.Model3D, tempPath, description, ct).ConfigureAwait(false);
+
+                SmartConLogger.Info(
+                    $"Geometry pipeline OK: type='{gpt.TypeName}', GLB asset={asset.Id}, file='{asset.FileName}', " +
+                    $"{gpt.Meshes.Count} meshes, {gpt.TotalTriangleCount} triangles");
+            }
+            finally
+            {
+                if (tempPath is not null)
                 {
-                    SmartConLogger.Debug($"Temp GLB cleanup failed for '{Path.GetFileName(tempPath)}': {cleanupEx.Message}");
+                    try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+                    catch (Exception cleanupEx)
+                    {
+                        SmartConLogger.Debug($"Temp GLB cleanup failed for '{Path.GetFileName(tempPath)}': {cleanupEx.Message}");
+                    }
                 }
             }
         }

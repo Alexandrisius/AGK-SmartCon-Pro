@@ -43,4 +43,5 @@ public sealed record PreparedFamilyItem(
     FamilyBatchImportStatus Status = FamilyBatchImportStatus.New,
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
-    string? MatchedVersionLabel = null);
+    string? MatchedVersionLabel = null,
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null);
