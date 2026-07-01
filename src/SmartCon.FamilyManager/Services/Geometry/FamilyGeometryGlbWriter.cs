@@ -1,11 +1,6 @@
-#if NET8_0_OR_GREATER
 using System.IO;
 using System.Numerics;
-using SharpGLTF.Geometry;
-using SharpGLTF.Geometry.VertexTypes;
-using SharpGLTF.Materials;
-using SharpGLTF.Scenes;
-#endif
+using SharpGLTF.Schema2;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -13,17 +8,25 @@ using SmartCon.Core.Services.Interfaces;
 namespace SmartCon.FamilyManager.Services.Geometry;
 
 /// <summary>
-/// Pure-C# GLB writer (SharpGLTF.Toolkit). Serializes a
-/// <see cref="FamilyGeometryPreview"/> into a binary glTF 2.0 file
-/// that can be loaded by <see cref="GlbSceneLoader"/> for display in
+/// Pure-C# GLB writer (SharpGLTF.Core Schema2 low-level API). Serializes a
+/// <see cref="FamilyGeometryPreview"/> into a binary glTF 2.0 file that can
+/// be loaded by <see cref="GlbSceneLoader"/> for display in
 /// <c>HelixToolkit.Wpf.SharpDX.Viewport3DX</c>.
 /// </summary>
 /// <remarks>
-/// <b>Multi-version:</b> SharpGLTF.Toolkit 1.0.4 transitively requires
-/// System.Text.Json 9.x which breaks net48 (CS1739 error AppendFormatted).
-/// For net8.0-windows (Revit 2025+) the full SharpGLTF implementation runs;
-/// for net48 (Revit 2019-2024) the stub logs a Warn and returns false —
-/// the pipeline then skips asset registration. 3D preview unavailable on net48.
+/// <b>ADR-042:</b> Uses SharpGLTF.Core (netstandard2.0) — not SharpGLTF.Toolkit.
+/// Toolkit was replaced because it transitively requires System.Text.Json 9.x
+/// which breaks net48 (CS1739 AppendFormatted). Core targets netstandard2.0
+/// and works on both net8.0-windows (Revit 2025+) and net48 (Revit 2019-2024).
+/// <para>
+/// The writer uses the low-level Schema2 API directly:
+/// <c>ModelRoot.CreateModel</c> → <c>UseBufferView</c> → <c>CreateAccessor</c> →
+/// <c>SetVertexData</c>/<c>SetIndexData</c> → <c>CreateMesh</c> →
+/// <c>CreatePrimitive</c> → <c>SetVertexAccessor</c>/<c>SetIndexAccessor</c> →
+/// <c>SaveGLB</c>. This is the same pipeline that Toolkit's
+/// <c>MeshBuilder</c>/<c>SceneBuilder</c> use internally, but without the
+/// System.Text.Json dependency.
+/// </para>
 /// </remarks>
 public sealed class FamilyGeometryGlbWriter : IGlbWriter
 {
@@ -36,27 +39,27 @@ public sealed class FamilyGeometryGlbWriter : IGlbWriter
     /// </summary>
     public const string AutoExtractedAssetDescriptionPrefix = "auto-extracted-preview:";
 
+    /// <summary>
+    /// Revit uses a Z-up coordinate system (X right, Y forward, Z up).
+    /// glTF 2.0 specification defines Y-up (X right, Y up, Z toward viewer).
+    /// This rotation (-90° around X axis) maps Revit Z-up to glTF Y-up:
+    /// (x, y, z) → (x, z, -y), preserving winding order (det=1, proper rotation).
+    /// Applied to the root node's WorldMatrix so all child meshes inherit it.
+    /// </summary>
+    private static readonly Matrix4x4 RevitToGltf = Matrix4x4.CreateRotationX(-(float)Math.PI / 2f);
+
     public Task<bool> WriteAsync(
         FamilyGeometryPreview preview,
         string outputPath,
         CancellationToken ct = default)
     {
-#if NET8_0_OR_GREATER
-        return WriteCoreNet8(preview, outputPath, ct);
-#else
-        SmartConLogger.Warn(
-            "GLB write is unsupported on net48 — SharpGLTF.Toolkit requires System.Text.Json 9.x " +
-            "which breaks net48 interpolation. [Action: 3D preview unavailable on Revit 2019-2024; " +
-            "use Revit 2025+ (net8.0) to generate GLB previews]");
-        return Task.FromResult(false);
-#endif
-    }
+        if (preview is null) throw new ArgumentNullException(nameof(preview));
+        if (outputPath is null) throw new ArgumentNullException(nameof(outputPath));
 
-#if NET8_0_OR_GREATER
-    private static async Task<bool> WriteCoreNet8(FamilyGeometryPreview preview, string outputPath, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(preview);
-        ArgumentNullException.ThrowIfNull(outputPath);
+        using var _scope = SmartConLogger.BeginScope("GlbWrite",
+            ("Method", nameof(WriteAsync)),
+            ("FamilyName", preview.FamilyName),
+            ("FilePath", Path.GetFileName(outputPath)));
 
         if (preview.IsEmpty)
         {
@@ -64,11 +67,10 @@ public sealed class FamilyGeometryGlbWriter : IGlbWriter
                 $"GLB write skipped: preview is empty (CatalogItemId={preview.CatalogItemId}, " +
                 $"VersionLabel={preview.VersionLabel}). [Action: ensure the .rfa has visible 3D geometry; " +
                 $"if not, the 3D preview tab will show 'no geometry' which is expected for annotations]");
-            return false;
+            return Task.FromResult(false);
         }
 
-        var ok = WriteCore(preview, outputPath);
-        return await Task.FromResult(ok).ConfigureAwait(false);
+        return Task.FromResult(WriteCore(preview, outputPath));
     }
 
     private static bool WriteCore(FamilyGeometryPreview preview, string outputPath)
@@ -79,20 +81,28 @@ public sealed class FamilyGeometryGlbWriter : IGlbWriter
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
-            var scene = new SceneBuilder(preview.FamilyName);
+            var model = ModelRoot.CreateModel();
+            var scene = model.UseScene(0);
+            var rootNode = scene.CreateNode(preview.FamilyName);
+            rootNode.WorldMatrix = RevitToGltf;
 
+            var meshIndex = 0;
             foreach (var mesh in preview.Meshes)
             {
-                if (mesh.IsEmpty) continue;
-                AddMeshToScene(scene, mesh);
+                if (mesh.IsEmpty)
+                {
+                    SmartConLogger.Debug($"  GLB mesh #{meshIndex} '{mesh.NodeName}' is empty — skipped");
+                    meshIndex++;
+                    continue;
+                }
+                AddMeshToScene(model, rootNode, mesh);
+                meshIndex++;
             }
 
-            var model = scene.ToGltf2();
             model.SaveGLB(outputPath);
 
             SmartConLogger.Info(
-                $"GLB written: {Path.GetFileName(outputPath)}, " +
-                $"{preview.Meshes.Count} meshes, {preview.TotalVertexCount} verts, " +
+                $"GLB written: {preview.Meshes.Count} meshes, {preview.TotalVertexCount} verts, " +
                 $"{preview.TotalTriangleCount} tris");
 
             return true;
@@ -107,85 +117,128 @@ public sealed class FamilyGeometryGlbWriter : IGlbWriter
     }
 
     /// <summary>
-    /// Revit uses a Z-up coordinate system (X right, Y forward, Z up).
-    /// glTF 2.0 specification defines Y-up (X right, Y up, Z toward viewer).
-    /// This rotation (-90° around X axis) maps Revit Z-up to glTF Y-up:
-    /// (x, y, z) → (x, z, -y), preserving winding order (det=1, proper rotation).
-    /// Without this, models appear lying flat — the front face points up instead
-    /// of toward the viewer. SharpGLTF's <c>AddRigidMesh</c> applies the matrix
-    /// to both positions AND normals (via inverse-transpose), so lighting stays
-    /// correct.
+    /// Creates a glTF mesh with POSITION (+ optional NORMAL) and INDICES accessors,
+    /// attaches it to a child node of <paramref name="parentNode"/>.
+    /// Each <see cref="MeshData"/> becomes one <see cref="Mesh"/> with one
+    /// <see cref="MeshPrimitive"/>.
     /// </summary>
-    private static readonly Matrix4x4 RevitToGltf = Matrix4x4.CreateRotationX(-MathF.PI / 2f);
-
-    private static void AddMeshToScene(SceneBuilder scene, MeshData mesh)
+    private static void AddMeshToScene(ModelRoot model, Node parentNode, MeshData mesh)
     {
         SmartConLogger.Debug(
             $"  GLB mesh '{mesh.NodeName}': {mesh.VertexCount} verts, " +
             $"{mesh.TriangleCount} tris, normals={(mesh.Normals is not null ? "yes" : "no")}");
 
-        var material = new MaterialBuilder($"mat_{mesh.NodeName}")
-            .WithDoubleSide(false)
-            .WithMetallicRoughnessShader()
-            .WithChannelParam(KnownChannel.BaseColor, KnownProperty.RGBA, mesh.DiffuseColor);
+        var material = CreateMaterialWithBaseColor(model, mesh);
 
-        if (mesh.Normals is null)
+        var gltfMesh = model.CreateMesh(mesh.NodeName);
+        var primitive = gltfMesh.CreatePrimitive();
+        primitive.DrawPrimitiveType = PrimitiveType.TRIANGLES;
+        primitive.Material = material;
+
+        var posAccessor = CreatePositionAccessor(model, mesh);
+        primitive.SetVertexAccessor("POSITION", posAccessor);
+
+        if (mesh.Normals is not null && mesh.Normals.Length == mesh.Positions.Length)
         {
-            AddPositionOnlyMesh(scene, mesh, material);
+            var nrmAccessor = CreateNormalAccessor(model, mesh);
+            primitive.SetVertexAccessor("NORMAL", nrmAccessor);
+        }
+
+        var idxAccessor = CreateIndexAccessor(model, mesh);
+        primitive.SetIndexAccessor(idxAccessor);
+
+        var childNode = parentNode.CreateNode();
+        childNode.Mesh = gltfMesh;
+    }
+
+    /// <summary>
+    /// Creates a PBR Metallic Roughness material with the mesh's diffuse color
+    /// as the BaseColor factor. Uses Core API: <c>InitializePBRMetallicRoughness</c>
+    /// + <c>FindChannel("BaseColor").Value.Color</c> setter.
+    /// </summary>
+    private static Material CreateMaterialWithBaseColor(ModelRoot model, MeshData mesh)
+    {
+        var material = model.CreateMaterial($"mat_{mesh.NodeName}");
+        material.InitializePBRMetallicRoughness();
+
+        var channel = material.FindChannel("BaseColor");
+        if (channel.HasValue)
+        {
+            var ch = channel.Value;
+            ch.Color = mesh.DiffuseColor;
         }
         else
         {
-            AddPositionNormalMesh(scene, mesh, material);
-        }
-    }
-
-    private static void AddPositionOnlyMesh(SceneBuilder scene, MeshData mesh, MaterialBuilder material)
-    {
-        var mb = new MeshBuilder<VertexPosition>("mesh_" + mesh.NodeName);
-        var prim = mb.UsePrimitive(material);
-        var positions = mesh.Positions;
-        var indices = mesh.Indices;
-
-        for (int i = 0; i + 2 < indices.Length; i += 3)
-        {
-            int i0 = indices[i] * 3;
-            int i1 = indices[i + 1] * 3;
-            int i2 = indices[i + 2] * 3;
-            var v0 = new VertexPosition(positions[i0], positions[i0 + 1], positions[i0 + 2]);
-            var v1 = new VertexPosition(positions[i1], positions[i1 + 1], positions[i1 + 2]);
-            var v2 = new VertexPosition(positions[i2], positions[i2 + 1], positions[i2 + 2]);
-            prim.AddTriangle(v0, v1, v2);
+            SmartConLogger.Warn(
+                $"Material 'mat_{mesh.NodeName}': FindChannel('BaseColor') returned null " +
+                "[Action: material will use default white BaseColor; verify SharpGLTF.Core API version]");
         }
 
-        scene.AddRigidMesh(mb, RevitToGltf);
+        return material;
     }
 
-    private static void AddPositionNormalMesh(SceneBuilder scene, MeshData mesh, MaterialBuilder material)
+    /// <summary>
+    /// Creates an accessor for POSITION vertex data (VEC3 FLOAT).
+    /// Converts <c>float[]</c> to <c>byte[]</c> via <c>Buffer.BlockCopy</c>,
+    /// wraps in a BufferView with <see cref="BufferMode.ARRAY_BUFFER"/> target,
+    /// then calls <see cref="Accessor.SetVertexData"/>.
+    /// </summary>
+    private static Accessor CreatePositionAccessor(ModelRoot model, MeshData mesh)
     {
-        var mb = new MeshBuilder<VertexPositionNormal>("mesh_" + mesh.NodeName);
-        var prim = mb.UsePrimitive(material);
         var positions = mesh.Positions;
+        var vertexCount = mesh.VertexCount;
+        var byteCount = positions.Length * sizeof(float);
+
+        var bytes = new byte[byteCount];
+        System.Buffer.BlockCopy(positions, 0, bytes, 0, byteCount);
+
+        var bufferView = model.UseBufferView(bytes, 0, byteCount, 0, BufferMode.ARRAY_BUFFER);
+
+        var accessor = model.CreateAccessor("POSITION_" + mesh.NodeName);
+        accessor.SetVertexData(bufferView, 0, vertexCount, DimensionType.VEC3, EncodingType.FLOAT, false);
+        return accessor;
+    }
+
+    /// <summary>
+    /// Creates an accessor for NORMAL vertex data (VEC3 FLOAT).
+    /// Same pattern as <see cref="CreatePositionAccessor"/> but only called
+    /// when <see cref="MeshData.Normals"/> is non-null and matches positions length.
+    /// </summary>
+    private static Accessor CreateNormalAccessor(ModelRoot model, MeshData mesh)
+    {
         var normals = mesh.Normals!;
-        var indices = mesh.Indices;
+        var vertexCount = mesh.VertexCount;
+        var byteCount = normals.Length * sizeof(float);
 
-        for (int i = 0; i + 2 < indices.Length; i += 3)
-        {
-            int i0 = indices[i] * 3;
-            int i1 = indices[i + 1] * 3;
-            int i2 = indices[i + 2] * 3;
-            var v0 = new VertexPositionNormal(
-                positions[i0], positions[i0 + 1], positions[i0 + 2],
-                normals[i0], normals[i0 + 1], normals[i0 + 2]);
-            var v1 = new VertexPositionNormal(
-                positions[i1], positions[i1 + 1], positions[i1 + 2],
-                normals[i1], normals[i1 + 1], normals[i1 + 2]);
-            var v2 = new VertexPositionNormal(
-                positions[i2], positions[i2 + 1], positions[i2 + 2],
-                normals[i2], normals[i2 + 1], normals[i2 + 2]);
-            prim.AddTriangle(v0, v1, v2);
-        }
+        var bytes = new byte[byteCount];
+        System.Buffer.BlockCopy(normals, 0, bytes, 0, byteCount);
 
-        scene.AddRigidMesh(mb, RevitToGltf);
+        var bufferView = model.UseBufferView(bytes, 0, byteCount, 0, BufferMode.ARRAY_BUFFER);
+
+        var accessor = model.CreateAccessor("NORMAL_" + mesh.NodeName);
+        accessor.SetVertexData(bufferView, 0, vertexCount, DimensionType.VEC3, EncodingType.FLOAT, false);
+        return accessor;
     }
-#endif
+
+    /// <summary>
+    /// Creates an accessor for triangle indices (SCALAR UNSIGNED_INT).
+    /// glTF 2.0 spec requires index encoding as UNSIGNED_BYTE, UNSIGNED_SHORT,
+    /// or UNSIGNED_INT. We use UNSIGNED_INT (4 bytes per index) for uniformity
+    /// — works for meshes with >65535 vertices. BufferView target is
+    /// <see cref="BufferMode.ELEMENT_ARRAY_BUFFER"/>.
+    /// </summary>
+    private static Accessor CreateIndexAccessor(ModelRoot model, MeshData mesh)
+    {
+        var indices = mesh.Indices;
+        var byteCount = indices.Length * sizeof(uint);
+
+        var bytes = new byte[byteCount];
+        System.Buffer.BlockCopy(indices, 0, bytes, 0, byteCount);
+
+        var bufferView = model.UseBufferView(bytes, 0, byteCount, 0, BufferMode.ELEMENT_ARRAY_BUFFER);
+
+        var accessor = model.CreateAccessor("INDICES_" + mesh.NodeName);
+        accessor.SetIndexData(bufferView, 0, indices.Length, IndexEncodingType.UNSIGNED_INT);
+        return accessor;
+    }
 }

@@ -4,7 +4,7 @@ namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
 /// Serializes a <see cref="FamilyGeometryPreview"/> to a GLB (binary glTF 2.0)
-/// file. Pure C# implementation (SharpGLTF.Toolkit) — no Revit API, no WPF
+/// file. Pure C# implementation (SharpGLTF.Core) — no Revit API, no WPF
 /// (I-09), unit-testable without a Revit process.
 /// </summary>
 public interface IGlbWriter

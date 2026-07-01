@@ -61,14 +61,22 @@
     <PackageVersion Include="UTF.Unknown" Version="2.6.0" />
 
     <!--
-      SharpGLTF — GLB writer/reader (ADR-042). netstandard2.0 + net8.0 → работает на net48 + net8.
+      SharpGLTF.Core — low-level GLB writer/reader (ADR-042). netstandard2.0 → работает на net48 + net8.
 
-      v1.0.6 (Dec 2025) требует System.Text.Json >= 10.0.1 — но последний ломает net48
-      (CS1739 AppendFormatted на net48). Поэтому используем v1.0.4 (May 2025) — последняя версия,
-      которая зависит от System.Text.Json 8.x, совместимой с нашим замороженным 8.0.6.
+      SharpGLTF.Toolkit (SceneBuilder/MeshBuilder/MaterialBuilder fluent API) заменён на
+      SharpGLTF.Core (Schema2 low-level API: ModelRoot.CreateModel → CreateBuffer →
+      CreateAccessor → SetVertexData/SetIndexData → CreateMesh → CreatePrimitive →
+      SetVertexAccessor/SetIndexAccessor → SaveGLB).
 
-      SharpGLTF.Toolkit включает Core как transitive dependency (MeshBuilder/MaterialBuilder/SceneBuilder API). -->
-    <PackageVersion Include="SharpGLTF.Toolkit" Version="1.0.4" />
+      Причина замены: SharpGLTF.Toolkit 1.0.4 транзитивно тянет System.Text.Json >= 9.0.4,
+      который ломает net48 (CS1739 AppendFormatted — DefaultInterpolatedStringHandler changes).
+      SharpGLTF.Core 1.0.3 — последняя версия, зависящая от System.Text.Json 8.0.5
+      (совместима с нашим замороженным 8.0.6 → работает на обоих TFM).
+
+      v1.0.4 bump'нул System.Text.Json до 9.0.4 → ломает net48. v1.0.3 — единственная
+      stable версия Core без System.Text.Json 9.x зависимости. Все Schema2 API
+      (ModelRoot, CreateMesh, CreateAccessor, SetVertexData, etc.) идентичны v1.0.4. -->
+    <PackageVersion Include="SharpGLTF.Core" Version="1.0.3" />
 
     <!-- HelixToolkit.Wpf.SharpDX — DirectX 11 WPF 3D viewer (ADR-042). net48 + net8.0-windows7.0.
          HelixToolkit.Toolkit.Wpf.SharpDX транситивно тянет HelixToolkit.Maths, HelixToolkit.SharpDX,

@@ -33,6 +33,7 @@ public sealed class App : IExternalApplication
             System.Net.SecurityProtocolType.Tls13;
 #endif
         AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+        RegisterGlobalExceptionHandlers();
         try
         {
             ApplyUpdaterSelfUpdate();
@@ -136,6 +137,66 @@ public sealed class App : IExternalApplication
             SmartConLogger.Warn(
                 $"RegisterNativeLibraryResolvers failed: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: 3D preview will fall back to placeholder; other features unaffected]");
+        }
+    }
+
+    /// <summary>
+    /// Subscribes to global exception sinks so silent WPF / XAML / async failures
+    /// show up in smartcon.log. Without this, exceptions thrown during
+    /// <c>InitializeComponent</c> or in <c>Dispatcher</c> render thread are
+    /// swallowed by WPF and never reach user-visible code, leaving batch import
+    /// dialogs blank (white window, no error trace).
+    /// </summary>
+    /// <remarks>
+    /// The handlers do NOT suppress exceptions (<c>e.Handled = false</c>,
+    /// <c>SetErrorHandled = false</c>) — they only log so the failure is
+    /// diagnosed while it still propagates to standard WPF unhandled-exception UI.
+    /// </remarks>
+    private static void RegisterGlobalExceptionHandlers()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            try
+            {
+                var ex = args.ExceptionObject as Exception;
+                SmartConLogger.Error(
+                    $"[AppDomain.UnhandledException] IsTerminating={args.IsTerminating}, " +
+                    $"Type={ex?.GetType().Name ?? "?"}: {ex?.Message ?? args.ExceptionObject}");
+                if (ex?.StackTrace is not null)
+                    SmartConLogger.Error($"Stack: {ex.StackTrace}");
+            }
+            catch { /* logging must never throw */ }
+        };
+
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            try
+            {
+                SmartConLogger.Error(
+                    $"[TaskScheduler.UnobservedTaskException] Type={args.Exception.GetType().Name}: {args.Exception.Message}\n{args.Exception.StackTrace}");
+            }
+            catch { }
+        };
+
+        try
+        {
+            var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            dispatcher.UnhandledException += (_, args) =>
+            {
+                try
+                {
+                    SmartConLogger.Error(
+                        $"[Dispatcher.UnhandledException] Type={args.Exception.GetType().Name}: {args.Exception.Message}\n{args.Exception.StackTrace}");
+                }
+                catch { }
+                args.Handled = false;
+            };
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"RegisterGlobalExceptionHandlers: could not subscribe to Dispatcher.UnhandledException: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: non-critical — AppDomain.UnhandledException will still catch silent failures]");
         }
     }
 

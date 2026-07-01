@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -50,6 +49,11 @@ public sealed partial class FamilyManagerMainViewModel
     /// </summary>
     private async Task ShowBatchImportDialogAsync(string[] paths, string? categoryId, string? forcedExistingItemId = null)
     {
+        using var _scope = SmartConLogger.BeginScope("BatchImport",
+            ("Method", nameof(ShowBatchImportDialogAsync)),
+            ("Paths", paths.Length),
+            ("CategoryId", categoryId ?? "<none>"));
+
         IsLoading = true;
         try
         {
@@ -67,7 +71,9 @@ public sealed partial class FamilyManagerMainViewModel
                 }
             }
 
+            SmartConLogger.Info($"Preparing {paths.Length} file(s)...");
             var preparedItems = await _preparationService.PrepareForFileImportAsync(paths, CancellationToken.None);
+            SmartConLogger.Info($"Prepared {preparedItems.Count} items");
             var items = new List<FamilyBatchImportItem>(preparedItems.Count);
 
             foreach (var p in preparedItems)
@@ -130,10 +136,11 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     Action = status == FamilyBatchImportStatus.Duplicate
                         ? FamilyBatchImportAction.Skip
-                        : FamilyBatchImportAction.IncrementVersion
+                         : FamilyBatchImportAction.IncrementVersion
                 });
             }
 
+            SmartConLogger.Info($"Built {items.Count} batch items, creating ViewModel...");
             using var vm = new FamilyBatchImportViewModel(
                 items,
                 _dialogService,
@@ -144,19 +151,16 @@ public sealed partial class FamilyManagerMainViewModel
                 importPrecomputer: _importPrecomputer,
                 dedupService: _dedupService);
 
-            var dispatcher = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
             var preShowWs = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
             SmartConLogger.Info(
-                $"[DIAG ShowDialog.entry] items={items.Count}, " +
-                $"dispatcher.HasShutdownStarted={dispatcher.HasShutdownStarted}, " +
-                $"WS={preShowWs}MB");
+                $"ShowDialog.entry: items={items.Count}, thread={Environment.CurrentManagedThreadId}, WS={preShowWs}MB");
 
             var showSw = Stopwatch.StartNew();
             var result = _dialogService.ShowBatchImportDialog(vm);
             showSw.Stop();
             var postShowWs = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
             SmartConLogger.Info(
-                $"[DIAG ShowDialog.exit] result={result}, elapsed={showSw.ElapsedMilliseconds}ms, " +
+                $"ShowDialog.exit: result={result}, elapsed={showSw.ElapsedMilliseconds}ms, " +
                 $"WS={postShowWs}MB (delta={postShowWs - preShowWs}MB)");
 
             if (showSw.ElapsedMilliseconds < 50)
@@ -256,6 +260,8 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     FireAndForget(async () =>
                     {
+                        SmartConLogger.Debug(
+                            $"UC1.SnapshotExtract FireAndForget entered: tasks={snapshotTasks.Count}, thread={Environment.CurrentManagedThreadId}");
                         SmartConLogger.FreezeThreadPool("UC1.SnapshotExtract.start");
                         try
                         {
@@ -292,7 +298,9 @@ public sealed partial class FamilyManagerMainViewModel
             FireAndForget(async () =>
             {
                 await Task.Delay(TimeSpan.FromSeconds(10));
-                StatusMessage = string.Empty;
+                SmartConLogger.Debug(
+                    $"Auto-clearing StatusMessage (thread={Environment.CurrentManagedThreadId}, marshalling via _dispatcher)");
+                _ = _dispatcher.InvokeAsync(() => StatusMessage = string.Empty);
             }, nameof(ImportFilesAsync));
         }
         catch (Exception ex)

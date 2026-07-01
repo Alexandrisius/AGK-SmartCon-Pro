@@ -56,13 +56,13 @@ public static class GlbSceneLoader
                 ("Method", nameof(LoadScene)),
                 ("FilePath", Path.GetFileName(glbPath)));
 
-            var importer = new Importer();
+            using var importer = new Importer();
             var scene = importer.Load(glbPath);
 
             if (scene is null || scene.Root is null)
             {
                 SmartConLogger.Warn(
-                    $"GLB parse returned empty scene '{Path.GetFileName(glbPath)}' " +
+                    "GLB parse returned empty scene " +
                     "[Action: 3D preview will be unavailable — re-import the family or check the GLB file]");
                 return null;
             }
