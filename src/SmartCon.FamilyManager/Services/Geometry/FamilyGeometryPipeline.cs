@@ -119,7 +119,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             try
             {
                 tempPath = Path.Combine(Path.GetTempPath(),
-                    $"sc_preview_{Guid.NewGuid():N}.glb");
+                    $"sc_preview_{Guid.NewGuid().ToString("N")}.glb");
                 var ok = await _glbWriter.WriteAsync(preview, tempPath, ct).ConfigureAwait(false);
                 if (!ok)
                 {

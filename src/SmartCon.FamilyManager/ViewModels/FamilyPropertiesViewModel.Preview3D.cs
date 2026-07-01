@@ -1,4 +1,3 @@
-#if NET8_0_OR_GREATER
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -28,9 +27,14 @@ namespace SmartCon.FamilyManager.ViewModels;
 /// <see cref="GlbSceneLoader"/> (which wraps
 /// <c>HelixToolkit.Wpf.SharpDX.Assimp.Importer</c>) and the resulting
 /// <see cref="SceneNode"/> is added to <see cref="Scene3DRoot"/>.</para>
-/// <para><b>Multi-version:</b> net8.0-windows (Revit 2025+) — full viewer.
-/// net48 (Revit 2019-2024) — stub partial in the <c>#else</c> branch shows
-/// an "unsupported" message box.</para>
+/// <para><b>Multi-version:</b> HelixToolkit.Wpf.SharpDX 3.1.2 supports both
+/// net8.0-windows (R2025+) and net48 (R2019-R2024). Workaround for HelixToolkit's
+/// conflict with PolySharp's source-generated DefaultInterpolatedStringHandler
+/// (which breaks $"...{x:F0}..." overload resolution): all format-specifier
+/// interpolations have been refactored to explicit <c>.ToString("F0")</c> calls
+/// so compilation succeeds on net48 when HelixToolkit transitively pulls
+/// System.Runtime 4.3.0 via SharpDX. This means full 3D preview is now
+/// available on both R2025+ (net8) and R2019-R2024 (net48).</para>
 /// <para><b>Lifecycle:</b> <see cref="Initialize3DInfrastructure"/> must be
 /// called once after construction (lazy DirectX init). <see cref="Load3DPreviewForTypeAsync"/>
 /// is called from <c>InitializeAsync</c>/<c>LoadAssetsAsync</c> after assets are
@@ -155,7 +159,7 @@ public sealed partial class FamilyPropertiesViewModel
         foreach (var asset in Model3DAssets)
         {
             if (string.IsNullOrEmpty(asset.Description)) continue;
-            if (!asset.Description.StartsWith(AutoExtractedPreviewPrefix, System.StringComparison.Ordinal)) continue;
+            if (!asset.Description!.StartsWith(AutoExtractedPreviewPrefix, System.StringComparison.Ordinal)) continue;
             if (!string.Equals(asset.VersionLabel, VersionLabel, System.StringComparison.Ordinal)) continue;
 
             var suffix = asset.Description![AutoExtractedPreviewPrefix.Length..];
@@ -477,8 +481,8 @@ public sealed partial class FamilyPropertiesViewModel
             Camera3D.FarPlaneDistance = maxDim * 1000.0;
 
             SmartConLogger.Info(
-                $"Camera fit to model: center=({center.X:F2},{center.Y:F2},{center.Z:F2}) " +
-                $"maxDim={maxDim:F2} diag={diag:F2} fov={fov:F1}° distance={distance:F2}");
+                $"Camera fit to model: center=({center.X.ToString("F2")},{center.Y.ToString("F2")},{center.Z.ToString("F2")}) " +
+                $"maxDim={maxDim.ToString("F2")} diag={diag.ToString("F2")} fov={fov.ToString("F1")}° distance={distance.ToString("F2")}");
         }
         catch (Exception ex)
         {
@@ -563,65 +567,3 @@ public sealed partial class FamilyPropertiesViewModel
 
     void System.IDisposable.Dispose() => Dispose3DResources();
 }
-#else
-using System.Threading;
-using System.Threading.Tasks;
-using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using SmartCon.UI;
-
-namespace SmartCon.FamilyManager.ViewModels;
-
-/// <summary>
-/// Net48 stub partial for the 3D preview tab.
-/// </summary>
-/// <remarks>
-/// <b>ADR-042:</b> HelixToolkit.Wpf.SharpDX + HelixToolkit.SharpDX.Assimp
-/// are net8.0-windows only (breaks DefaultInterpolatedStringHandler on net48).
-/// The 3D preview tab on net48 (Revit 2019-2024) shows a static message box
-/// telling the user the feature requires Revit 2025+. All methods are no-ops.
-/// </remarks>
-public sealed partial class FamilyPropertiesViewModel
-{
-    [ObservableProperty] private bool _isLoading3D;
-    [ObservableProperty] private bool _has3DPreview;
-    [ObservableProperty] private string? _preview3DStatusMessage;
-
-    public bool HasNo3DPreview => !Has3DPreview && !IsLoading3D;
-
-    partial void OnHas3DPreviewChanged(bool value) => OnPropertyChanged(nameof(HasNo3DPreview));
-    partial void OnIsLoading3DChanged(bool value) => OnPropertyChanged(nameof(HasNo3DPreview));
-
-    /// <summary>Net48 stub — no ComboBox (no per-type filtering needed).</summary>
-    public System.Collections.ObjectModel.ObservableCollection<string> Available3DTypeNames { get; } = new();
-    public string? Selected3DTypeName { get => null; set { } }
-    public bool HasMultiple3DTypes => false;
-    public void Populate3DTypeNames() { }
-
-    /// <summary>Net48 stub — no initialization required (no DirectX resources).</summary>
-    public void Initialize3DInfrastructure()
-    {
-        Preview3DStatusMessage = LanguageManager.GetString(
-            StringLocalization.Keys.FM_3D_UnsupportedNet48);
-        Has3DPreview = false;
-    }
-
-    /// <summary>Net48 stub — no GLB loading possible.</summary>
-    public Task Load3DPreviewForTypeAsync(string? typeName, CancellationToken ct)
-    {
-        Has3DPreview = false;
-        return Task.CompletedTask;
-    }
-
-    [RelayCommand]
-    private void ResetCamera3D() { }
-
-    [RelayCommand]
-    private void ToggleWireframe3D() { }
-
-    /// <summary>Net48 stub — nothing to dispose.</summary>
-    public void Dispose3DResources() { }
-
-    void System.IDisposable.Dispose() => Dispose3DResources();
-}
-#endif

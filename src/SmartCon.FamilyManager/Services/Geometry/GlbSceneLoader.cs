@@ -1,4 +1,3 @@
-#if NET8_0_OR_GREATER
 using System.IO;
 using HelixToolkit.SharpDX.Model.Scene;
 using HelixToolkit.Wpf.SharpDX;
@@ -24,6 +23,12 @@ namespace SmartCon.FamilyManager.Services.Geometry;
 /// converter (cross-namespace MeshGeometry3D/Geometry3D mismatch was never
 /// resolved cleanly; the Assimp path is the approach used by the official
 /// HelixToolkit FileLoadDemo).</para>
+/// <para><b>Multi-version:</b> HelixToolkit.Wpf.SharpDX + HelixToolkit.SharpDX.Assimp 3.1.2
+/// are now available on both net8.0-windows (Revit 2025+) AND net48 (Revit 2019-2024).
+/// HelixToolkit's transitive System.Runtime 4.3.0 conflicts with PolySharp's
+/// DefaultInterpolatedStringHandler overload resolution for $"...{x:F0}..." format
+/// specifiers — workaround: all such interpolations have been refactored to use
+/// <c>.ToString("F0")</c>. See ADR-042 update for full context.</para>
 /// </remarks>
 public static class GlbSceneLoader
 {
@@ -120,29 +125,3 @@ public static class GlbSceneLoader
         }
     }
 }
-#else
-using System.IO;
-using SmartCon.Core.Logging;
-
-namespace SmartCon.FamilyManager.Services.Geometry;
-
-/// <summary>
-/// Net48 stub. HelixToolkit.Wpf.SharpDX + HelixToolkit.SharpDX.Assimp are
-/// net8.0-windows only (see SmartCon.FamilyManager.csproj and ADR-042).
-/// </summary>
-public static class GlbSceneLoader
-{
-    /// <summary>
-    /// Net48 stub — always returns <see langword="null"/> with a Warn log.
-    /// 3D preview is only available on net8.0-windows (Revit 2025+).
-    /// </summary>
-    public static object? LoadScene(string glbPath)
-    {
-        SmartConLogger.Warn(
-            $"3D preview viewer is unsupported on net48 (Revit 2019-2024). " +
-            $"GLB file '{Path.GetFileName(glbPath)}' exists but cannot be loaded. " +
-            "[Action: use Revit 2025+ to view 3D preview]");
-        return null;
-    }
-}
-#endif

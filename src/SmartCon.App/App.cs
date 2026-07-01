@@ -59,8 +59,8 @@ public sealed class App : IExternalApplication
 
     /// <summary>
     /// Pre-load the native <c>assimp.dll</c> that ships alongside the add-in
-    /// (under %APPDATA%\SmartCon\2025\) so that SharpAssimp's
-    /// <c>[DllImport("assimp")]</c> can resolve it.
+    /// (under %APPDATA%\SmartCon\2025\ for net8.0-windows OR %APPDATA%\SmartCon\2021\
+    /// for net48) so that SharpAssimp's <c>[DllImport("assimp")]</c> can resolve it.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -80,10 +80,16 @@ public sealed class App : IExternalApplication
     /// This is safe and does not modify global DLL search order — it just
     /// adds one module to the process early.
     /// </para>
+    /// <para>
+    /// <b>Multi-version:</b> works on both net8.0-windows (Revit 2025+) and
+    /// net48 (Revit 2019-2024). <c>LoadLibraryEx</c> is a Win32 API callable
+    /// from both frameworks; the native assimp.dll is a single binary shipped
+    /// via HelixToolkit.SharpDX.Assimp's <c>runtimes/win-x64/native/assimp.dll</c>,
+    /// also published into the add-in directory by the build pipeline.
+    /// </para>
     /// </remarks>
     private static void RegisterNativeLibraryResolvers()
     {
-#if NET8_0_OR_GREATER
         var appDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
         if (string.IsNullOrEmpty(appDir))
         {
@@ -131,7 +137,6 @@ public sealed class App : IExternalApplication
                 $"RegisterNativeLibraryResolvers failed: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: 3D preview will fall back to placeholder; other features unaffected]");
         }
-#endif
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, BestFitMapping = false)]

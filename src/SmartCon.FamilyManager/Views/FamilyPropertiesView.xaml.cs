@@ -1,7 +1,5 @@
 using System.Windows;
-#if NET8_0_OR_GREATER
 using HelixToolkit.Wpf.SharpDX;
-#endif
 using SmartCon.Core.Logging;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.UI;
@@ -57,7 +55,6 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
         // 3D init is deferred to OnViewport3DXLoaded (fires when user opens 3D tab)
     }
 
-#if NET8_0_OR_GREATER
     /// <summary>
     /// Called when Viewport3DX itself becomes loaded (i.e. when the user
     /// switches to the 3D tab). WPF TabControl lazy-renders non-active tabs,
@@ -99,7 +96,6 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
             SmartConLogger.Error($"FamilyPropertiesView.OnViewport3DXLoaded FAILED: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
         }
     }
-#endif
 
     private void OnViewModelClosed(object? sender, System.EventArgs e)
     {

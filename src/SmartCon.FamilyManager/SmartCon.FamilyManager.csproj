@@ -30,22 +30,20 @@
     <PackageReference Include="UTF.Unknown" />
   </ItemGroup>
 
-  <!-- ADR-042: 3D geometry preview — GLB (SharpGLTF) + DirectX 11 viewer (HelixToolkit.Wpf.SharpDX).
-
-       ОБА пакета только для net8.0-windows (Revit 2025+):
-       - HelixToolkit.Wpf.SharpDX 3.1.2 transitively тянет System.Runtime.CompilerServices.Unsafe 6.1.2
-         и System.Memory 4.6.3 — которые ломают AppendFormatted на net48 (CS1739 error)
-         в существующих interpolation strings типа $"{x:F0}".
-       - SharpGLTF.Toolkit 1.0.4 транзитивно тянет System.Text.Json >= 9.0.4 — тоже ломает net48.
-
-       В net48 (Revit 2019-2024) 3D preview недоступен. Pipeline silent no-op: в stub's writer
-       логируется Warn и возвращается false; viewer ViewModel показывает "unsupported" сообщение.
-       В net8.0-windows полный pipeline: extractor (Revit API не в этом проекте) → SharpGLTF
-       writer → HelixToolkit viewer. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
-    <PackageReference Include="SharpGLTF.Toolkit" />
+  <!-- ADR-042: 3D geometry preview — HelixToolkit.Wpf.SharpDX для ОБЕИХ TFM (net8 + net48).
+       Root cause (Task 4): HelixToolkit.Wpf.SharpDX transitively pulls SharpDX → System.Runtime 4.3.0
+       ref assembly. PolySharp's source-generated DefaultInterpolatedStringHandler loses overload
+       resolution to that ref assembly for format-specifier interpolations like $"...{x:F0}...".
+       Workaround: format specifiers must be `.ToString("F0")` not `{x:F0}` inline (see
+       SmartConLogger call sites — StickyCategoryHeaderBehavior.cs, FamilyManagerAwaitableEvent.cs,
+       FamilyGeometryPipeline.cs). With this workaround, HelixToolkit works on net48 too. -->
+  <ItemGroup>
     <PackageReference Include="HelixToolkit.Wpf.SharpDX" />
     <PackageReference Include="HelixToolkit.SharpDX.Assimp" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <PackageReference Include="SharpGLTF.Toolkit" />
   </ItemGroup>
 
   <ItemGroup>
