@@ -151,17 +151,18 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 return (false, null);
             }
 
-            var loadOptions = FamilyLoadOptions.Default with
-            {
-                OverwriteParameterValues = overwriteParameterValues,
-            };
-
-            // IFamilyLoadService.LoadFamilyAsync is a sync wrapper (Task.FromResult) — safe to block.
-            // See revit-api-best-practice: ".GetAwaiter().GetResult() directly — deadlock-free".
+            // Issue #101: Stale Update must reload the family while preserving
+            // the set of types currently loaded in the project. A plain
+            // LoadFamily pulls in EVERY type defined in the .rfa (could be 50),
+            // even if the user originally loaded only one via LoadFamilySymbol.
+            // ReloadFamilyPreservingLoadedTypesAsync snapshots the loaded
+            // symbols first and calls LoadFamilySymbol per type. When the
+            // family is not loaded yet (no symbols to preserve) it falls back
+            // to a full LoadFamilyAsync internally.
             var result = await _awaitable.RaiseAsync(
-                _ => _loadService.LoadFamilyAsync(
+                _ => _loadService.ReloadFamilyPreservingLoadedTypesAsync(
                     resolved,
-                    loadOptions,
+                    overwriteParameterValues,
                     onStatusMessage: null,
                     onSharedDecision: req => _dialogService.ShowSharedFamiliesLoadModeDialog(req),
                     ct: ct).GetAwaiter().GetResult(),

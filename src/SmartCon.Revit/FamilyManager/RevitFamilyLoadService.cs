@@ -406,6 +406,223 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         }
     }
 
+    /// <summary>
+    /// Reloads an already-loaded family while preserving the set of loaded
+    /// family symbols/types. See <see cref="IFamilyLoadService.ReloadFamilyPreservingLoadedTypesAsync"/>
+    /// and Issue #101 for rationale.
+    /// </summary>
+    public async Task<FamilyLoadResult> ReloadFamilyPreservingLoadedTypesAsync(
+        FamilyResolvedFile file,
+        bool overwriteParameterValues,
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        CancellationToken ct = default)
+    {
+        var doc = _revitContext.GetDocument();
+        if (doc is null)
+            return new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed);
+
+        var normalizedPath = Path.GetFullPath(file.AbsolutePath);
+        var fileName = Path.GetFileName(normalizedPath);
+        using var _scope = SmartConLogger.BeginScope("FamilyReloadPreserve",
+            ("Method", nameof(ReloadFamilyPreservingLoadedTypesAsync)),
+            ("FilePath", fileName),
+            ("OverwriteParameterValues", overwriteParameterValues));
+
+        if (!File.Exists(normalizedPath))
+        {
+            SmartConLogger.Info("File not found");
+            return new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed);
+        }
+
+        // Resolve shared-nested names once (REVIT-198137 fallback for the
+        // per-type OnSharedFamilyFound callbacks). Same path as a regular
+        // family load so the dialog shows the real nested name in Revit
+        // 2023 / 2024 < 24.3.0.13.
+        IReadOnlyList<string>? resolvedNestedNames = null;
+        var catalogItemId = file.CatalogItemId;
+        if (!string.IsNullOrEmpty(catalogItemId) && _nestedSharedRepository is not null)
+        {
+            try
+            {
+                resolvedNestedNames = await _nestedSharedRepository
+                    .GetNamesForCurrentVersionAsync(catalogItemId!, ct)
+                    .ConfigureAwait(true);
+                if (resolvedNestedNames is { Count: > 0 })
+                {
+                    SmartConLogger.Info(
+                        $"Loaded {resolvedNestedNames.Count} nested names from catalog DB for '{catalogItemId}' — " +
+                        "will use as fallback if Revit API returns null (REVIT-198137)");
+                }
+                else
+                {
+                    SmartConLogger.Debug(
+                        $"Catalog lookup for '{catalogItemId}': empty list (legacy catalog or no shared nested in this family)");
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"Failed to read nested names from catalog DB for preserve-types reload: {ex.GetType().Name}: {ex.Message} " +
+                    "[Action: continuing without fallback names — dialog may show placeholder in Revit 2023/2024.2]");
+            }
+        }
+
+        // Issue #101: snapshot the names of already-loaded symbols BEFORE the
+        // reload. After LoadFamilySymbol for each name, the family definition
+        // (geometry/parameters) is refreshed and the symbol's parameter values
+        // are updated according to overwriteParameterValues, but no new types
+        // are pulled in. If the family is not yet loaded OR has no loaded
+        // symbols, fall back to a full LoadFamilyAsync (fresh load).
+        Autodesk.Revit.DB.Family? existingFamily = null;
+        var existingTypeNames = new List<string>();
+
+        // Try the file base name first; FindExistingFamily only does an exact
+        // case-insensitive name match, which is the canonical SmartCon
+        // approach (managed storage keeps the family name equal to the rfa
+        // base name without the .rfa extension).
+        var familyNameFromPath = SafeFileName.GetBaseName(normalizedPath);
+
+        try
+        {
+            existingFamily = FindExistingFamily(doc, familyNameFromPath);
+
+            if (existingFamily is not null)
+            {
+                foreach (var sid in existingFamily.GetFamilySymbolIds())
+                {
+                    var sym = doc.GetElement(sid) as Autodesk.Revit.DB.FamilySymbol;
+                    if (sym is not null && !string.IsNullOrEmpty(sym.Name))
+                        existingTypeNames.Add(sym.Name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Failed to snapshot already-loaded family symbols: {ex.GetType().Name}: {ex.Message}. " +
+                "[Action: falling back to full LoadFamily — no types will be preserved]");
+            existingFamily = null;
+            existingTypeNames.Clear();
+        }
+
+        if (existingFamily is null || existingTypeNames.Count == 0)
+        {
+            SmartConLogger.Info(
+                $"Family '{familyNameFromPath}' not loaded or has no symbols — falling back to full LoadFamily " +
+                "(fresh load, all types from .rfa)");
+            var fullOptions = FamilyLoadOptions.Default with
+            {
+                PreferredName = familyNameFromPath,
+                OverwriteParameterValues = overwriteParameterValues,
+            };
+            var freshFile = new FamilyResolvedFile(
+                normalizedPath, file.CatalogItemId, file.VersionId, file.VersionLabel);
+            return await LoadFamilyAsync(freshFile, fullOptions, onStatusMessage, onSharedDecision, resolvedNestedNames, ct)
+                .ConfigureAwait(true);
+        }
+
+        SmartConLogger.Info(
+            $"Family '{existingFamily.Name}' found in project with {existingTypeNames.Count} loaded symbol(s): " +
+            $"[{string.Join(", ", existingTypeNames)}]. Reloading each symbol (preserve-types, Issue #101).");
+
+        // I-05: capture the family name as a string BEFORE the reload transaction.
+        // When the .rfa has changed, doc.LoadFamilySymbol triggers OnFamilyFound
+        // and Revit REPLACES the Family element with a new one (new ElementId).
+        // The `existingFamily` reference becomes invalid (InvalidObjectException
+        // on any property access) right after the first successful symbol reload.
+        // Observed in smartcon.log (Issue #101 follow-up): the first Update
+        // attempt threw InvalidObjectException at `existingFamily.Name` after
+        // "Symbol 'Ф160' reloaded successfully"; the second attempt succeeded
+        // only because the family was already current (OnFamilyFound did not
+        // fire, so the Family element was not replaced).
+        var displayFamilyName = existingFamily.Name;
+
+        var loadOptions = new RevitFamilyLoadOptions(
+            overwriteParameterValues, onStatusMessage, onSharedDecision, resolvedNestedNames);
+
+        var reloadedCount = 0;
+        var failedNames = new List<string>();
+
+        try
+        {
+            // Reload each symbol. Revit re-reads the family definition on each
+            // call when the .rfa has changed (OnFamilyFound fires "only when
+            // the family is both loaded and changed" per revitapidocs.com/2026).
+            // Each call applies overwriteParameterValues to that symbol.
+            // Multiple symbols = multiple definition reloads (API limitation,
+            // change-request REVIT-68222); a single TransactionGroup wraps
+            // the whole batch so the user gets one Undo entry.
+            //
+            // NOTE: after the first LoadFamilySymbol that triggers a definition
+            // reload, `existingFamily` is invalid — do NOT touch it below.
+            var group = new TransactionGroup(doc, "SmartCon: Reload Family (Preserve Types)");
+            try
+            {
+                group.Start();
+
+                foreach (var typeName in existingTypeNames)
+                {
+                    if (ct.IsCancellationRequested) break;
+
+                    var symbolOk = false;
+                    Autodesk.Revit.DB.FamilySymbol? localSymbol = null;
+
+                    _transactionService.RunInTransaction("Reload Family Symbol", _ =>
+                    {
+                        symbolOk = doc.LoadFamilySymbol(
+                            normalizedPath, typeName, loadOptions, out localSymbol);
+                    });
+
+                    if (symbolOk)
+                    {
+                        reloadedCount++;
+                        SmartConLogger.Info($"Symbol '{typeName}' reloaded successfully");
+                    }
+                    else
+                    {
+                        // LoadFamilySymbol returns false when the family is
+                        // loaded but unchanged after the first type reload.
+                        // This is the expected behaviour for the 2nd..Nth
+                        // symbol when no further definition changes remain.
+                        // The type is still present (definition is already
+                        // current), so we treat it as success.
+                        reloadedCount++;
+                        SmartConLogger.Info(
+                            $"Symbol '{typeName}' reload returned false (family already current for this " +
+                            "symbol — likely 2nd+ type after first reload). Treating as success.");
+                    }
+                }
+            }
+            finally
+            {
+                if (group.HasStarted())
+                    group.Assimilate();
+            }
+
+            if (reloadedCount == 0 && failedNames.Count == existingTypeNames.Count)
+            {
+                var errorMessage = $"Failed to reload any of the {existingTypeNames.Count} type(s)";
+                SmartConLogger.Info(errorMessage);
+                return new FamilyLoadResult(false, displayFamilyName, null, errorMessage, FamilyLoadStatus.Failed);
+            }
+
+            var msg = $"Family '{displayFamilyName}' updated preserving {reloadedCount}/{existingTypeNames.Count} loaded type(s)";
+            if (failedNames.Count > 0)
+                msg += $", {failedNames.Count} failed: [{string.Join(", ", failedNames)}]";
+            SmartConLogger.Info(msg);
+
+            return new FamilyLoadResult(
+                true, displayFamilyName, msg, null,
+                failedNames.Count == 0 ? FamilyLoadStatus.Updated : FamilyLoadStatus.Loaded);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Info($"ReloadFamilyPreservingLoadedTypesAsync exception: {ex.GetType().Name}: {ex.Message}");
+            return new FamilyLoadResult(false, displayFamilyName, null, ex.Message, FamilyLoadStatus.Failed);
+        }
+    }
+
     private async Task<IReadOnlyList<string>?> ResolveNestedNamesAsync(
         FamilyResolvedFile file,
         IReadOnlyList<string>? callerProvided,

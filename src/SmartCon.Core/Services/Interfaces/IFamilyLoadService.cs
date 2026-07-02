@@ -63,4 +63,44 @@ public interface IFamilyLoadService
         IReadOnlyList<string>? nestedSharedNames = null,
         string? catalogItemId = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Reloads an already-loaded family from <paramref name="file"/> while
+    /// preserving the set of family types/symbols currently loaded in the
+    /// project. Used by the Stale Update command (Issue #101) to avoid
+    /// pulling in every type defined in the .rfa when the user originally
+    /// loaded only a subset via <see cref="LoadFamilySymbolAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// Implementation strategy (Revit API): for each already-loaded
+    /// <c>FamilySymbol</c> name call <c>Document.LoadFamilySymbol</c> with the
+    /// same <c>IFamilyLoadOptions</c> instance. Each call reloads the family
+    /// definition (geometry/parameters) when the .rfa has changed, and
+    /// applies <paramref name="overwriteParameterValues"/> to that symbol.
+    /// Types that exist in the .rfa but were never loaded into the project
+    /// stay unloaded. See Issue #101 root-cause analysis and Exa research
+    /// (revitapidocs.com/2026 OnFamilyFound: triggered only when family is
+    /// both loaded and changed; forum Autodesk "Reloading multiple family
+    /// types": cyclic <c>LoadFamilySymbol</c> per type is the documented
+    /// workaround for REVIT-68222).
+    /// <para>
+    /// Falls back to <see cref="LoadFamilyAsync"/> when the family is not yet
+    /// loaded in the project (fresh load — no types to preserve) or when no
+    /// loaded symbols can be enumerated.
+    /// </para>
+    /// </remarks>
+    /// <param name="file">Resolved family file (path + catalog ids).</param>
+    /// <param name="overwriteParameterValues">
+    /// When <c>true</c>, existing parameter values on each loaded symbol are
+    /// overwritten with the values from the .rfa. When <c>false</c> ("Сохранить
+    /// параметры" mode), existing parameter values are preserved.</param>
+    /// <param name="onStatusMessage">Optional status callback (see LoadFamilyAsync).</param>
+    /// <param name="onSharedDecision">Optional shared-nested decision callback (see LoadFamilyAsync).</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<FamilyLoadResult> ReloadFamilyPreservingLoadedTypesAsync(
+        FamilyResolvedFile file,
+        bool overwriteParameterValues,
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        CancellationToken ct = default);
 }

@@ -52,6 +52,69 @@ public sealed partial class FamilyManagerMainViewModel
         await ExecuteLoadOrUpdateAsync(overwriteParameterValues: false);
     }
 
+    // ── Issue #101: dedicated Stale Update commands ───────────────────
+    // "Обновить" (single leaf) was previously wired to LoadToProject*Command,
+    // which calls Document.LoadFamily and pulls in EVERY type defined in the
+    // .rfa — even if the user originally loaded only one type via
+    // LoadFamilySymbol. These dedicated commands delegate to
+    // IStaleFamilyUpdater.UpdateFamilyAsync, whose UpdateFamilyCoreAsync now
+    // calls ReloadFamilyPreservingLoadedTypesAsync (per-type LoadFamilySymbol)
+    // so only the already-loaded types are refreshed.
+
+    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    private async Task UpdateStale()
+    {
+        await ExecuteUpdateStaleAsync(overwriteParameterValues: true);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadToProject))]
+    private async Task UpdateStaleKeepParams()
+    {
+        await ExecuteUpdateStaleAsync(overwriteParameterValues: false);
+    }
+
+    private async Task ExecuteUpdateStaleAsync(bool overwriteParameterValues)
+    {
+        if (SelectedItem is null) return;
+
+        var selectedId = SelectedItem.Id;
+        var selectedName = SelectedItem.Name;
+        var targetRevit = CurrentRevitVersion;
+
+        await _awaitableEvent.RaiseAsyncTask(async _ =>
+        {
+            try
+            {
+                var success = await _staleUpdater.UpdateFamilyAsync(
+                    selectedId, overwriteParameterValues, CancellationToken.None)
+                    .ConfigureAwait(true);
+
+                if (success)
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadSuccess) ?? "Family \"{0}\" updated to latest version",
+                        selectedName);
+
+                    _staleDetector.MarkUpdated([selectedId]);
+                    InvalidateLoadedFamilyNamesCache();
+                    await LoadTreeAsync().ConfigureAwait(true);
+                }
+                else
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Update error: {0}",
+                        selectedName);
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Update error: {0}",
+                    ex.Message);
+            }
+        });
+    }
+
     private async Task ExecuteLoadOrUpdateAsync(bool overwriteParameterValues)
     {
         if (SelectedItem is null) return;
