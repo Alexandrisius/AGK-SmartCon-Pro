@@ -191,12 +191,13 @@ public sealed partial class FamilyManagerMainViewModel
             // развёрнутые через expandAll=true, остаются видимыми развёрнутыми даже после
             // возврата VM.IsExpanded=false.
             //
-            // ВАЖНО: вызываем ТОЛЬКО при возврате из поиска (_savedExpandedCategoryIds.Count > 0).
-            // При DnD категоризации / placement / Refresh без поиска saved пуст — в этом случае
-            // BuildCategoryNode и AttachTypesToNodes уже установили правильные IsExpanded на
-            // основе expandedIds/expandedFamilyIds (CollectExpandedIds из текущего TreeNodes),
-            // и CollapseAll здесь сломает состояние пользователя (регрессия от #86).
-            if (!expandAll && _savedExpandedCategoryIds.Count > 0)
+            // Ранее условие проверяло `_savedExpandedCategoryIds.Count > 0`, но при старте
+            // поиска с полностью свёрнутым деревом saved пуст → условие ложно → категории
+            // оставались развёрнутыми после очистки поиска. Теперь проверяем
+            // `_previousLoadWasSearch` — был ли предыдущий LoadTreeAsync вызван поиском.
+            // При DnD/Refresh без поиска _previousLoadWasSearch=false → CollapseAll
+            // пропускается (BuildCategoryNode уже корректно выставил IsExpanded).
+            if (!expandAll && _previousLoadWasSearch)
             {
                 SmartConLogger.Info(
                     $"FMTree.LoadTreeAsync: returning from search — CollapseAll + Restore " +
@@ -211,8 +212,10 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 SmartConLogger.Debug(
                     $"FMTree.LoadTreeAsync: no-collapse path taken " +
-                    $"(expandAll={expandAll}, savedCatIds={_savedExpandedCategoryIds.Count})");
+                    $"(expandAll={expandAll}, previousLoadWasSearch={_previousLoadWasSearch})");
             }
+
+            _previousLoadWasSearch = expandAll;
 
             stageSw.Restart();
             TreeNodes = rootNodes;

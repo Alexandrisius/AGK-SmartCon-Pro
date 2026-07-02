@@ -68,6 +68,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
     private bool _lastSearchActive;
+    private bool _previousLoadWasSearch;
     private readonly HashSet<string> _savedExpandedCategoryIds = new();
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
     private HashSet<string>? _loadedFamilyNamesCache;
