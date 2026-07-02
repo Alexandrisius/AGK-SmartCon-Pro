@@ -152,14 +152,14 @@ public sealed partial class FamilyManagerMainViewModel
                 dedupService: _dedupService);
 
             var preShowWs = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
-            SmartConLogger.Info(
+            SmartConLogger.Freeze(
                 $"ShowDialog.entry: items={items.Count}, thread={Environment.CurrentManagedThreadId}, WS={preShowWs}MB");
 
             var showSw = Stopwatch.StartNew();
             var result = _dialogService.ShowBatchImportDialog(vm);
             showSw.Stop();
             var postShowWs = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
-            SmartConLogger.Info(
+            SmartConLogger.Freeze(
                 $"ShowDialog.exit: result={result}, elapsed={showSw.ElapsedMilliseconds}ms, " +
                 $"WS={postShowWs}MB (delta={postShowWs - preShowWs}MB)");
 

@@ -11,13 +11,13 @@ public partial class FamilyBatchImportView : DialogWindowBase
 {
     public FamilyBatchImportView(FamilyBatchImportViewModel viewModel)
     {
-        SmartConLogger.Info($"FamilyBatchImportView.ctor: start (vm.Items.Count={viewModel.Items.Count})");
+        SmartConLogger.Freeze($"FamilyBatchImportView.ctor: start (vm.Items.Count={viewModel.Items.Count})");
 
         try
         {
-            SmartConLogger.Info("FamilyBatchImportView.ctor: calling InitializeComponent");
+            SmartConLogger.Freeze("FamilyBatchImportView.ctor: calling InitializeComponent");
             InitializeComponent();
-            SmartConLogger.Info("FamilyBatchImportView.ctor: InitializeComponent OK");
+            SmartConLogger.Freeze("FamilyBatchImportView.ctor: InitializeComponent OK");
         }
         catch (Exception ex)
         {
@@ -44,6 +44,6 @@ public partial class FamilyBatchImportView : DialogWindowBase
         ColStatus.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Status);
         ColCategory.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Category);
         ColAction.Header = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Action);
-        SmartConLogger.Info("FamilyBatchImportView.ctor: done");
+        SmartConLogger.Freeze("FamilyBatchImportView.ctor: done");
     }
 }

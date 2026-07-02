@@ -1,10 +1,11 @@
+using SmartCon.App.Diagnostics;
+using SmartCon.Core.Logging;
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Context;
 using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Interop;
-using SmartCon.Core.Logging;
-using SmartCon.Core.Services.Interfaces;
-using SmartCon.Revit.Context;
 
 namespace SmartCon.App.DI;
 
@@ -58,7 +59,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         var factorySw = Stopwatch.StartNew();
         try
         {
-            SmartConLogger.Debug($"Creating view for '{vmType.Name}' (factory call)");
+            SmartConLogger.Freeze($"Creating view for '{vmType.Name}' (factory call)");
             window = factory(viewModel);
         }
         catch (Exception ex)
@@ -71,7 +72,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         {
             factorySw.Stop();
         }
-        SmartConLogger.Info($"View created for '{vmType.Name}' in {factorySw.ElapsedMilliseconds}ms (type={window.GetType().Name})");
+        SmartConLogger.Freeze($"View created for '{vmType.Name}' in {factorySw.ElapsedMilliseconds}ms (type={window.GetType().Name})");
 
         var showDialogSw = Stopwatch.StartNew();
         try
@@ -81,7 +82,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         finally
         {
             showDialogSw.Stop();
-            SmartConLogger.Info($"ShowDialog returned in {showDialogSw.ElapsedMilliseconds}ms for '{vmType.Name}'");
+            SmartConLogger.Freeze($"ShowDialog returned in {showDialogSw.ElapsedMilliseconds}ms for '{vmType.Name}'");
         }
     }
 
@@ -103,7 +104,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
                 })
                 .Select(a => a.GetName().Name + " " + a.GetName().Version)
                 .ToList();
-            SmartConLogger.Debug(
+            SmartConLogger.Freeze(
                 $"[{context}] Loaded assemblies ({loaded.Count}): " +
                 string.Join(", ", loaded));
         }
@@ -120,7 +121,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
 
         var appCurrent = Application.Current;
         var uiDispatcher = appCurrent?.Dispatcher ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
-        SmartConLogger.Debug(
+        SmartConLogger.Freeze(
             $"Pre-ShowDialog snapshot: App.Current={(appCurrent is null ? "NULL" : "non-null")}, " +
             $"AppDispatcher.Thread={uiDispatcher.Thread.ManagedThreadId}, " +
             $"AppDispatcher.HasShutdownStarted={uiDispatcher.HasShutdownStarted}, " +
@@ -131,6 +132,12 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         bool? result;
         try
         {
+#if NET48
+            using var _recovery = BatchDialogRenderRecovery.Attach(window);
+#endif
+#if DEBUG
+            WhiteDialogDiagnostics.Attach(window, window.GetType().Name);
+#endif
             result = window.ShowDialog();
         }
         catch (Exception ex)
@@ -140,7 +147,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
             throw;
         }
 
-        SmartConLogger.Debug(
+        SmartConLogger.Freeze(
             $"Post-ShowDialog: ActualWidth={window.ActualWidth}, " +
             $"ActualHeight={window.ActualHeight}, " +
             $"Content={(window.Content?.GetType().Name ?? "null")}, " +
@@ -169,7 +176,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         }
         catch (Exception ex)
         {
-            SmartConLogger.Debug(
+            SmartConLogger.Freeze(
                 $"GetOwnerHandle: UIApplication.MainWindowHandle failed: {ex.GetType().Name}: {ex.Message} — falling back to Process.MainWindowHandle");
         }
         return Process.GetCurrentProcess().MainWindowHandle;
