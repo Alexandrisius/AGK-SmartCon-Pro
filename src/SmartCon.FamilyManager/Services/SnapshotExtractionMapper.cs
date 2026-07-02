@@ -56,7 +56,9 @@ internal static class SnapshotExtractionMapper
 
         var types = new List<FamilyExtractionTypeValues>(snapshot.Types.Count);
         var sortOrder = 0;
-        foreach (var t in snapshot.Types.OrderBy(t => t.Name, StringComparer.Ordinal))
+        foreach (var t in snapshot.Types
+            .Where(t => !string.IsNullOrWhiteSpace(t.Name))
+            .OrderBy(t => t.Name, StringComparer.Ordinal))
         {
             var values = new List<FamilyExtractionValueResult>(t.Values.Count);
             foreach (var v in t.Values)
@@ -111,7 +113,9 @@ internal static class SnapshotExtractionMapper
 
         var types = new List<FamilyExtractionTypeValues>(snapshot.Types.Count);
         var sortOrder = 0;
-        foreach (var t in snapshot.Types.OrderBy(t => t.Name, StringComparer.Ordinal))
+        foreach (var t in snapshot.Types
+            .Where(t => !string.IsNullOrWhiteSpace(t.Name))
+            .OrderBy(t => t.Name, StringComparer.Ordinal))
         {
             var values = new List<FamilyExtractionValueResult>(t.Values.Count);
             foreach (var v in t.Values)
@@ -163,7 +167,9 @@ internal static class SnapshotExtractionMapper
 
         var result = new List<FamilyTypeDescriptor>(snapshot.Types.Count);
         var sortOrder = 0;
-        foreach (var t in snapshot.Types.OrderBy(t => t.Name, StringComparer.Ordinal))
+        foreach (var t in snapshot.Types
+            .Where(t => !string.IsNullOrWhiteSpace(t.Name))
+            .OrderBy(t => t.Name, StringComparer.Ordinal))
         {
             result.Add(new FamilyTypeDescriptor(
                 Id: Guid.NewGuid().ToString(),

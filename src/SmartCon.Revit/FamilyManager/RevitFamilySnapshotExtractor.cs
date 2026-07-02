@@ -84,8 +84,14 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         if (typeCount <= 1)
         {
             ct.ThrowIfCancellationRequested();
-            var meshes = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
             var typeName = fm.CurrentType?.Name ?? "";
+            if (string.IsNullOrWhiteSpace(typeName))
+            {
+                SmartConLogger.Info("ExtractGeometryPerType: single unnamed default type — no geometry extracted");
+                return result;
+            }
+
+            var meshes = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
             result.Add(new FamilyGeometryPerType(typeName, familyName, meshes));
             SmartConLogger.Info(
                 $"ExtractGeometryPerType: single type '{typeName}' → {meshes.Count} meshes, " +
@@ -112,6 +118,12 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 foreach (FamilyType ft in fm.Types)
                 {
                     ct.ThrowIfCancellationRequested();
+
+                    if (string.IsNullOrWhiteSpace(ft.Name))
+                    {
+                        SmartConLogger.Debug("ExtractGeometryPerType: skipping unnamed default type");
+                        continue;
+                    }
 
                     try
                     {
@@ -172,16 +184,6 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     + ", IsReadOnly=" + familyDoc.IsReadOnly);
             }
         }
-
-        // REVIT-236376 / REVIT-237190: a Transaction on a held-open family
-        // document (even with RollBack) can leave the WPF render thread in a
-        // zombie state on net48 Revit 2019-2024. The next WPF ShowDialog
-        // then blocks ~9 seconds waiting for the render thread to pump
-        // paint messages — perceived as a "white dialog". The InfoCenter
-        // balloon nudge flips Win32 focus and resyncs the render thread.
-        // This is the SAME workaround already used by
-        // RevitFamilyGeometryExtractor.ExtractAsync after Close(false).
-        RevitBalloonNudge.Nudge("SmartCon: 3D geometry extraction done");
 
         SmartConLogger.Info(
             $"ExtractGeometryPerType: extracted {result.Count}/{typeCount} types with geometry for '{familyName}'");
@@ -330,17 +332,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 
         foreach (FamilyType familyType in fm.Types)
         {
-            string typeName;
             if (string.IsNullOrWhiteSpace(familyType.Name))
             {
-                SmartConLogger.Debug($"  ExtractTypes: using synthetic name '<default>' for unnamed type");
-                typeName = "<default>";
-            }
-            else
-            {
-                typeName = familyType.Name;
+                SmartConLogger.Debug("  ExtractTypes: skipping unnamed default type");
+                continue;
             }
 
+            var typeName = familyType.Name;
             var values = new List<FamilyParameterValue>();
 
             foreach (var pair in paramMap)

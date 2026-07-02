@@ -63,6 +63,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IDispatcher _dispatcher;
     private readonly FamilyImportPreparationService _preparationService;
     private readonly IContentHashDedupService _dedupService;
+    private readonly IUiFreezeRecoveryService _freezeRecovery;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -173,6 +174,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         SmartConLogger.Debug($"FamilyManagerMainViewModel.ctor: _dispatcher captured");
         _preparationService = services.PreparationService;
         _dedupService = services.DedupService;
+        _freezeRecovery = services.FreezeRecovery;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;

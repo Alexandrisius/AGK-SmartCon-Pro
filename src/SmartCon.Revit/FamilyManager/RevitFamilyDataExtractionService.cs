@@ -169,11 +169,6 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 SmartConLogger.Debug(
                     $"Marshal.ReleaseComObject skipped (RevitAPI doc is not a real COM object): {ex.Message}");
             }
-
-            // Freeze workaround (REVIT-236376 / REVIT-237190): see
-            // RevitBalloonNudge.cs — force a Win32 focus event after every
-            // OpenDocumentFile + Close cycle so the WPF render thread resyncs.
-            RevitBalloonNudge.Nudge($"SmartCon: extracted {Path.GetFileName(managedRfaPath)}");
         }
     }
 

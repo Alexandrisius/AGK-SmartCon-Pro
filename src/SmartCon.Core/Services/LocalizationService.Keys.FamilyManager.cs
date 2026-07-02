@@ -51,6 +51,7 @@ public static partial class LocalizationService
         ru["FM_ImportStatusSkipped"] = "Пропущено: {0}"; en["FM_ImportStatusSkipped"] = "Skipped: {0}";
         ru["FM_ImportStatusSkippedIdentical"] = " (идентично)"; en["FM_ImportStatusSkippedIdentical"] = " (identical)";
         ru["FM_ImportStatusErrors"] = "Ошибок: {0}"; en["FM_ImportStatusErrors"] = "Errors: {0}";
+        ru["FM_ImportCompleted"] = "Импорт {0}/{1} семейств завершён"; en["FM_ImportCompleted"] = "Import of {0}/{1} families completed";
         ru["FM_FamilyFileNotFound"] = "Файл семейства не найден"; en["FM_FamilyFileNotFound"] = "Family file not found";
         ru["FM_ImportDataResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportDataResultFormat"] = "Imported: {0} types, {1} values found";
         ru["FM_ImportDataError"] = "Ошибка импорта: {0}"; en["FM_ImportDataError"] = "Import error: {0}";

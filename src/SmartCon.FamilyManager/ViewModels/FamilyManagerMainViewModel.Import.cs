@@ -294,6 +294,11 @@ public sealed partial class FamilyManagerMainViewModel
                 await LoadTreeAsync();
             }
 
+            var completedMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportCompleted) ?? "Import {0}/{1} families completed",
+                importResult.SuccessCount, importResult.TotalFiles);
+            _freezeRecovery.Nudge(completedMessage);
+
             // Auto-clear status after 10 seconds
             FireAndForget(async () =>
             {

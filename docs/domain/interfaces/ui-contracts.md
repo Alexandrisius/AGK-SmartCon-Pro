@@ -61,3 +61,26 @@ public interface ISaveableViewModel
     Task SaveAsync();
 }
 ```
+
+---
+
+## IUiFreezeRecoveryService
+
+Platform-specific workaround that forces the WPF/render thread to re-sync
+with the UI thread. On Revit net48 this is typically implemented by
+triggering an InfoCenter balloon, whose Win32 window creation produces the
+focus flip needed to recover from the well-known WPF render-thread zombie
+state (REVIT-236376 / REVIT-237190).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IUiFreezeRecoveryService.cs`
+**Реализация:** `RevitUiFreezeRecoveryService` (`SmartCon.Revit/FamilyManager/RevitUiFreezeRecoveryService.cs`) — делегирует в `RevitBalloonNudge.Nudge`.
+
+```csharp
+public interface IUiFreezeRecoveryService
+{
+    void Nudge(string message);
+}
+```
+
+Используется для единого финального балуна «Импорт N/N семейств завершён»
+в конце `ShowBatchImportDialogAsync`.

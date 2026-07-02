@@ -194,8 +194,6 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                     SmartConLogger.Debug(
                         $"Marshal.ReleaseComObject skipped (managed wrapper, not COM): {ex.Message}");
                 }
-
-                RevitBalloonNudge.Nudge($"SmartCon: extracted 3D preview for {rfaFileName}");
             }
         }
     }

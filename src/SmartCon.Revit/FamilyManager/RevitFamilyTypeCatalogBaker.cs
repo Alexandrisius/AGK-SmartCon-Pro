@@ -128,8 +128,6 @@ public sealed class RevitFamilyTypeCatalogBaker : IFamilyTypeCatalogBaker
 
                     try { Marshal.ReleaseComObject(familyDoc); } catch { /* ignore */ }
                 }
-
-                RevitBalloonNudge.Nudge($"SmartCon: baked {sourceFileName}");
             }
         }, ct).ConfigureAwait(false);
     }

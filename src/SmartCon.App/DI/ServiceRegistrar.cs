@@ -151,6 +151,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IViewRepository, RevitViewRepository>();
         services.AddSingleton<IShareSettingsViewModelFactory, ShareSettingsViewModelFactory>();
 
+        services.AddSingleton<IUiFreezeRecoveryService, RevitUiFreezeRecoveryService>();
+
         // --- FamilyManager (Phase 13) ---
         services.AddSingleton<LocalCatalogDatabase>();
         services.AddSingleton<ILocalCatalogMigrator, LocalCatalogMigrator>();

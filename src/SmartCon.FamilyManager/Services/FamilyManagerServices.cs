@@ -76,4 +76,10 @@ public sealed record FamilyManagerServices(
     IFamilySnapshotExtractor SnapshotExtractor,
     IFamilyContentHasher ContentHasher,
     IContentHashDedupService DedupService,
+    /// <summary>
+    /// 3D-preview / white-dialog fix: platform-specific workaround that
+    /// resyncs the WPF render thread after Revit API operations that can
+    /// leave it in a zombie state on net48 (REVIT-236376 / REVIT-237190).
+    /// </summary>
+    IUiFreezeRecoveryService FreezeRecovery,
     FamilyImportPreparationService PreparationService);
