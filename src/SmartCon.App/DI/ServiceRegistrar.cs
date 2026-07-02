@@ -120,9 +120,9 @@ public static class ServiceRegistrar
         services.AddSingleton<ISettingsViewModelFactory, SettingsViewModelFactory>();
 
         // --- Dialog Presenter (C-3: VM→View mapping, decoupling from concrete Views) ---
-        services.AddSingleton(_ =>
+        services.AddSingleton(sp =>
         {
-            var presenter = new WpfDialogPresenter();
+            var presenter = new WpfDialogPresenter(sp.GetRequiredService<IRevitContext>());
             presenter.Register<MiniTypeSelectorViewModel>(vm => new MiniTypeSelectorView(vm));
             presenter.Register<FamilySelectorViewModel>(vm => new FamilySelectorView(vm));
             presenter.Register<AboutViewModel>(vm => new AboutView(vm));

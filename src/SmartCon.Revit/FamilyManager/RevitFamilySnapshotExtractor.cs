@@ -4,6 +4,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Util;
 
 namespace SmartCon.Revit.FamilyManager;
 
@@ -102,6 +103,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         using (var tx = new Transaction(familyDoc, "SmartCon_GeometryPerType"))
         {
             tx.Start();
+            SmartConLogger.Debug(
+                "Geo3DPerType: Transaction.Started, familyDoc.IsModified=" + familyDoc.IsModified
+                + ", IsReadOnly=" + familyDoc.IsReadOnly
+                + ", IsValidObject=" + familyDoc.IsValidObject);
             try
             {
                 foreach (FamilyType ft in fm.Types)
@@ -120,14 +125,21 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                         continue;
                     }
 
-                    try
-                    {
-                        familyDoc.Regenerate();
-                    }
-                    catch (Exception ex)
-                    {
-                        SmartConLogger.Debug($"Regenerate failed for type '{ft.Name}': {ex.Message}");
-                    }
+                    // NOTE: Regenerate() removed — Jeremy Tammik (Autodesk):
+                    // "Whenever a transaction is committed, Revit regenerates
+                    // the document for you anyway." Inside an uncommitted
+                    // transaction, calling Regenerate on a held-open family
+                    // document triggers Revit's view-update machinery, which
+                    // on net48 (Revit 2019-2024) can leave the WPF render
+                    // thread in a zombie state — the next ShowDialog then
+                    // blocks ~9 seconds waiting for the render thread to pump
+                    // paint messages (intermittent, depending on whether
+                    // layout completed before the held-open document state
+                    // was modified). Switching fm.CurrentType already updates
+                    // the in-memory family model; get_Geometry sees the new
+                    // type's parameter values without explicit Regenerate.
+                    // See: docs/adr/042-familymanager-3d-preview.md (net48
+                    // white-dialog bug).
 
                     var meshes = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
 
@@ -152,9 +164,24 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     try { fm.CurrentType = originalType; }
                     catch { }
                 }
+                SmartConLogger.Debug(
+                    "Geo3DPerType: before RollBack, familyDoc.IsModified=" + familyDoc.IsModified);
                 tx.RollBack();
+                SmartConLogger.Debug(
+                    "Geo3DPerType: after RollBack, familyDoc.IsModified=" + familyDoc.IsModified
+                    + ", IsReadOnly=" + familyDoc.IsReadOnly);
             }
         }
+
+        // REVIT-236376 / REVIT-237190: a Transaction on a held-open family
+        // document (even with RollBack) can leave the WPF render thread in a
+        // zombie state on net48 Revit 2019-2024. The next WPF ShowDialog
+        // then blocks ~9 seconds waiting for the render thread to pump
+        // paint messages — perceived as a "white dialog". The InfoCenter
+        // balloon nudge flips Win32 focus and resyncs the render thread.
+        // This is the SAME workaround already used by
+        // RevitFamilyGeometryExtractor.ExtractAsync after Close(false).
+        RevitBalloonNudge.Nudge("SmartCon: 3D geometry extraction done");
 
         SmartConLogger.Info(
             $"ExtractGeometryPerType: extracted {result.Count}/{typeCount} types with geometry for '{familyName}'");

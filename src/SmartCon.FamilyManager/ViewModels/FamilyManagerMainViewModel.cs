@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Text;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -220,6 +222,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private async Task InitializeAsync()
     {
+        DumpLoadedAssembliesBeforeTruncate();
         SmartConLogger.TruncateMainLog();
         _sessionStart = DateTime.Now;
 
@@ -231,6 +234,28 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             return;
         }
         _ = RefreshTreeViaExternalEventAsync();
+    }
+
+    private static void DumpLoadedAssembliesBeforeTruncate()
+    {
+        try
+        {
+            var appDir = Path.GetDirectoryName(typeof(FamilyManagerMainViewModel).Assembly.Location);
+            var asmLogPath = Path.Combine(appDir ?? ".", "assembly-load.log");
+            var sb = new StringBuilder();
+            sb.AppendLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] === PRE-TRUNCATE DUMP: all currently-loaded HelixToolkit/SharpDX/SharpGLTF/Assimp assemblies ===");
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var n = a.GetName().Name ?? "";
+                if (n.Contains("HelixToolkit") || n.Contains("SharpGLTF") ||
+                    n.Contains("SharpDX") || n.Contains("Assimp") ||
+                    n.Contains("SmartCon"))
+                    sb.AppendLine($"  {n} v{a.GetName().Version} from={a.Location}");
+            }
+            sb.AppendLine(new string('=', 80));
+            File.AppendAllText(asmLogPath, sb.ToString());
+        }
+        catch { }
     }
 
     private static void FireAndForget(Task task, string operationName)

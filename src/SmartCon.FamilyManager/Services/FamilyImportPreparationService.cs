@@ -625,16 +625,22 @@ public sealed class FamilyImportPreparationService
                     "snapshot from raw .rfa");
             }
 
-            var extracted = await _awaitableEvent
-                .RaiseAsync(app =>
-                {
-                    var familySnapshot = _snapshotExtractor.ExtractFromFamilyDocument(doc);
-                    var geometry = _snapshotExtractor.ExtractGeometryPerType(doc, ct);
-                    return (familySnapshot, geometry);
-                }, ct)
+            // Phase: snapshot + hashing only. 3D geometry extraction is
+            // DEFERRED to the post-confirmation geometry pipeline
+            // (FamilyGeometryPipeline.RunAsync → IFamilyGeometryExtractor.ExtractAsync)
+            // so it runs on a freshly-opened managed .rfa AFTER the user
+            // confirms the batch dialog, not on a held-open document BEFORE.
+            // Rationale (white-dialog bug): ExtractGeometryPerType uses
+            // Transaction + RollBack on a held-open family document,
+            // which on net48 R2019-2024 leaves the WPF render thread in a
+            // zombie state — the following ShowDialog blocks ~9s waiting
+            // for paint (white window). Deferring extraction (passing null)
+            // keeps Prepare fast and the dialog responsive.
+            var familySnapshot = await _awaitableEvent
+                .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(doc), ct)
                 .ConfigureAwait(false);
-            snapshot = extracted.familySnapshot;
-            geometryPerType = extracted.geometry;
+            snapshot = familySnapshot;
+            // geometryPerType stays null → pipeline extracts post-confirm.
 
             _openedDocuments[filePath] = doc;
             SmartConLogger.Debug($"Document held open: {Path.GetFileName(filePath)}");

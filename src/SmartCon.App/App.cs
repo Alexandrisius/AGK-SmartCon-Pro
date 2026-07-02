@@ -33,6 +33,7 @@ public sealed class App : IExternalApplication
             System.Net.SecurityProtocolType.Tls13;
 #endif
         AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+        AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoad;
         RegisterGlobalExceptionHandlers();
         try
         {
@@ -154,6 +155,11 @@ public sealed class App : IExternalApplication
     /// </remarks>
     private static void RegisterGlobalExceptionHandlers()
     {
+        var logPath = Path.Combine(Path.GetDirectoryName(typeof(App).Assembly.Location) ?? ".", "assembly-load.log");
+        void Mark(string step) => File.AppendAllText(logPath,
+            "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] RGEH step: " + step + "\n");
+
+        Mark("1: about to subscribe AppDomain.UnhandledException");
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
             try
@@ -168,6 +174,7 @@ public sealed class App : IExternalApplication
             catch { /* logging must never throw */ }
         };
 
+        Mark("2: about to subscribe TaskScheduler.UnobservedTaskException");
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
         {
             try
@@ -178,9 +185,11 @@ public sealed class App : IExternalApplication
             catch { }
         };
 
+        Mark("3: about to access Dispatcher.CurrentDispatcher");
         try
         {
             var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            Mark("3a: Dispatcher.CurrentDispatcher returned, thread=" + dispatcher.Thread.ManagedThreadId);
             dispatcher.UnhandledException += (_, args) =>
             {
                 try
@@ -191,13 +200,16 @@ public sealed class App : IExternalApplication
                 catch { }
                 args.Handled = false;
             };
+            Mark("3b: subscribed to Dispatcher.UnhandledException");
         }
         catch (Exception ex)
         {
+            Mark("3-EX: Dispatcher access failed: " + ex.GetType().Name + ": " + ex.Message);
             SmartConLogger.Warn(
                 $"RegisterGlobalExceptionHandlers: could not subscribe to Dispatcher.UnhandledException: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: non-critical — AppDomain.UnhandledException will still catch silent failures]");
         }
+        Mark("4: RegisterGlobalExceptionHandlers done");
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, BestFitMapping = false)]
@@ -313,5 +325,40 @@ public sealed class App : IExternalApplication
         if (pluginDir is null) return null;
         var path = Path.Combine(pluginDir, name + ".dll");
         return File.Exists(path) ? Assembly.LoadFrom(path) : null;
+    }
+
+    /// <summary>
+    /// Logs every HelixToolkit/SharpDX/SharpGLTF/Assimp assembly load with a
+    /// minimal stack trace so we can identify WHO and WHEN loads these heavy
+    /// assemblies. HelixToolkit is suspected of hooking the WPF render thread
+    /// on first load (see helix-toolkit issue #1690 D3DImage.Lock() deadlock),
+    /// which can cause subsequent modal dialogs to render white on net48.
+    /// Writes to a SEPARATE file (assembly-load.log) so TruncateMainLog
+    /// cannot eat the log lines.
+    /// </summary>
+    private static void OnAssemblyLoad(object? sender, AssemblyLoadEventArgs args)
+    {
+        try
+        {
+            var name = args.LoadedAssembly.GetName().Name ?? "";
+            if (!name.Contains("HelixToolkit")
+                && !name.Contains("SharpGLTF")
+                && !name.Contains("SharpDX")
+                && !name.Contains("Assimp"))
+                return;
+
+            var stack = new StackTrace(2, false).ToString();
+            if (stack.Length > 2000) stack = stack[..2000] + "...";
+
+            var logDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
+            var asmLogPath = Path.Combine(logDir ?? ".", "assembly-load.log");
+            var line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] thread=" + Environment.CurrentManagedThreadId + " " +
+                       $"LOADED: {name} v{args.LoadedAssembly.GetName().Version}\nStackTrace:\n{stack}\n" +
+                       new string('-', 80) + "\n";
+            File.AppendAllText(asmLogPath, line);
+        }
+        catch
+        {
+        }
     }
 }

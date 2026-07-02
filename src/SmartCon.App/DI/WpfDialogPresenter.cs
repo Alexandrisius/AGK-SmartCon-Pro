@@ -4,12 +4,21 @@ using System.Windows;
 using System.Windows.Interop;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Context;
 
 namespace SmartCon.App.DI;
 
 public sealed class WpfDialogPresenter : IDialogPresenter
 {
     private readonly Dictionary<Type, Func<object, Window>> _mappings = [];
+    private readonly IRevitContext? _revitContext;
+
+    public WpfDialogPresenter() : this(null) { }
+
+    public WpfDialogPresenter(IRevitContext? revitContext)
+    {
+        _revitContext = revitContext;
+    }
 
     public void Register<TViewModel>(Func<TViewModel, Window> factory) where TViewModel : class
     {
@@ -20,7 +29,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
     {
         if (!_mappings.TryGetValue(typeof(TViewModel), out var factory))
             throw new InvalidOperationException($"No view registered for ViewModel type '{typeof(TViewModel).Name}'");
-        return ShowDialogInternal(factory(viewModel));
+        return ShowDialogInternal(factory(viewModel), _revitContext);
     }
 
     public bool? ShowDialog(object viewModel)
@@ -67,7 +76,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         var showDialogSw = Stopwatch.StartNew();
         try
         {
-            return ShowDialogInternal(window);
+            return ShowDialogInternal(window, _revitContext);
         }
         finally
         {
@@ -103,10 +112,11 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         }
     }
 
-    private static bool? ShowDialogInternal(Window window)
+    private static bool? ShowDialogInternal(Window window, IRevitContext? revitContext)
     {
+        var ownerHandle = GetOwnerHandle(revitContext);
         var helper = new WindowInteropHelper(window);
-        helper.Owner = Process.GetCurrentProcess().MainWindowHandle;
+        helper.Owner = ownerHandle;
 
         var appCurrent = Application.Current;
         var uiDispatcher = appCurrent?.Dispatcher ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
@@ -116,7 +126,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
             $"AppDispatcher.HasShutdownStarted={uiDispatcher.HasShutdownStarted}, " +
             $"currentThread={Environment.CurrentManagedThreadId}, " +
             $"window.Dispatcher.Thread={window.Dispatcher.Thread.ManagedThreadId}, " +
-            $"windowType={window.GetType().Name}");
+            $"windowType={window.GetType().Name}, ownerHandle={ownerHandle}");
 
         bool? result;
         try
@@ -138,5 +148,30 @@ public sealed class WpfDialogPresenter : IDialogPresenter
             $"IsActive={window.IsActive}, result={result}");
 
         return result;
+    }
+
+    /// <summary>
+    /// Returns the Revit main window handle. Uses UIApplication.MainWindowHandle
+    /// (the Autodesk-recommended API since Revit 2019 — see Autodesk forum
+    /// "Addin WPF Window Stops Responding": Process.MainWindowHandle is no longer
+    /// reliable since Revit 2019). Falls back to Process.MainWindowHandle when
+    /// IRevitContext is not available (e.g. in unit tests or before startup).
+    /// </summary>
+    private static IntPtr GetOwnerHandle(IRevitContext? revitContext)
+    {
+        try
+        {
+            if (revitContext is RevitContext ctx)
+            {
+                var handle = ctx.GetUIApplication().MainWindowHandle;
+                if (handle != IntPtr.Zero) return handle;
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"GetOwnerHandle: UIApplication.MainWindowHandle failed: {ex.GetType().Name}: {ex.Message} — falling back to Process.MainWindowHandle");
+        }
+        return Process.GetCurrentProcess().MainWindowHandle;
     }
 }
