@@ -73,6 +73,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | [`invariants.md`](invariants.md) | Жёсткие правила I-01..I-17. Нарушение = баг. | **ВСЕГДА** |
 | [`multi-version-guide.md`](multi-version-guide.md) | Стандарт multi-version: 10 правил, шаблоны, чеклист | При создании нового функционала |
 | [`adr/README.md`](adr/README.md) | Индекс Architecture Decision Records | При вопросах «почему так сделано?» |
+| [`known-workarounds.md`](known-workarounds.md) | Реестр workaround'ов (Issue, файл, платформа, статус) | При вопросах «что это за странный код?» |
 | [`references.md`](references.md) | Внешние ссылки на документацию Revit API | При работе с конкретными API |
 
 ---

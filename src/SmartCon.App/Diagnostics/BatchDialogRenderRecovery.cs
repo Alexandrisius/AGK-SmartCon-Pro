@@ -10,7 +10,7 @@ namespace SmartCon.App.Diagnostics;
 
 /// <summary>
 /// Production workaround for the "white WPF dialog" bug on Revit net48
-/// (Issue #92). After <c>OpenDocumentFile</c> + family upgrade, Revit
+/// (Issue #95). After <c>OpenDocumentFile</c> + family upgrade, Revit
 /// internally kills the WPF render thread. <c>Window.ShowDialog()</c>
 /// then shows a window with <c>WM_ERASEBKGND</c> (white) but no
 /// <c>WM_PAINT</c> — the content area stays blank until the user

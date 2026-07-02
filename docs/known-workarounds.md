@@ -1,0 +1,22 @@
+# Known Workarounds
+
+> Единый реестр всех workaround'ов в проекте SmartCon.
+> Загружать: при вопросе «почему этот код делает что-то странное?»
+> Каждый workaround ссылается на Issue с полным root cause и rationale.
+
+## Активные workaround'ы
+
+| Issue | Workaround | Файл | Платформа | Описание |
+|---|---|---|---|---|
+| [#95](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/95) | Off-screen render recovery | `src/SmartCon.App/Diagnostics/BatchDialogRenderRecovery.cs` | net48 (R19–R24) | Белый batch-диалог после OpenDocumentFile + family upgrade. Revit убивает WPF render thread. Окно показывается off-screen, лечится WM_ENTERSIZEMOVE + SetWindowPos + RedrawWindow, затем перемещается на центр при WM_PAINT. |
+| [#77](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/77) | Shared nested persist fallback | `src/SmartCon.Revit/FamilyManager/RevitFamilyTypeCatalogBaker.cs` | All | REVIT-198137: Revit 2023/2024.2 теряет shared nested family names после SaveAs. Имена извлекаются до закрытия документа и сохраняются отдельно. |
+| [#74](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/74) | BalloonNudge after family upgrade | `src/SmartCon.Revit/Util/RevitBalloonNudge.cs` | All | REVIT-236376 / REVIT-237190: Revit freeze после family upgrade dialog. InfoCenter balloon через AdWindows.dll форсирует Win32 focus event. Используется только для финального балуна «Импорт завершён». |
+| — | VendorId workaround | `src/SmartCon.Revit/.../*Schema*.cs` | All | `SchemaBuilder.SetVendorId` требует ≥4 символа, но `.addin` VendorId="AGK" (3 символа). Решение: использовать `AGKSMARTCON` в Schema + `AccessLevel.Public/Public`. |
+
+## Устаревшие workaround'ы (удалены)
+
+| Issue | Workaround | Почему удалён | Коммит |
+|---|---|---|---|
+| — | BalloonNudge pre-ShowDialog | Не предотвращал белый диалог на net48. См. #95. | `f2465f0` |
+| — | BalloonNudge в ExtractGeometryPerType | Лишний шум, не решал проблему. | `2ff43d1` |
+| — | NullUiFreezeRecoveryService | Заменён на RevitUiFreezeRecoveryService для финального балуна. | `2ff43d1` |
