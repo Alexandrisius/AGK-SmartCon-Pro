@@ -87,8 +87,20 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             var typeName = fm.CurrentType?.Name ?? "";
             if (string.IsNullOrWhiteSpace(typeName))
             {
-                SmartConLogger.Info("ExtractGeometryPerType: single unnamed default type — no geometry extracted");
-                return result;
+                // Family with no types created (typeCount=0) OR a single unnamed
+                // default type (typeCount=1, Name=""). This is a normal family
+                // where the user didn't create explicit types — the geometry
+                // lives in the family document itself, not in any type.
+                // Jeremy Tammik (The Building Coder): "A family loaded into a
+                // project that has no types in it will get a default type
+                // assigned to it in the project editor that's the same as the
+                // short family file name." We mirror that here: use familyName
+                // as the type name so the viewer and tree show it consistently.
+                // Previously this returned an empty result, skipping geometry
+                // extraction entirely — the 3D viewer showed nothing.
+                typeName = familyName;
+                SmartConLogger.Info(
+                    $"ExtractGeometryPerType: no named type — using family name '{familyName}' as type name");
             }
 
             var meshes = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
