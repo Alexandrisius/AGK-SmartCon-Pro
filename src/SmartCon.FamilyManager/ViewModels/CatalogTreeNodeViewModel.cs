@@ -85,4 +85,20 @@ public abstract partial class CatalogTreeNodeViewModel : ObservableObject
 
     public abstract bool IsCategory { get; }
     public virtual bool IsType => false;
+
+    /// <summary>
+    /// Re-raises <see cref="INotifyPropertyChanged.PropertyChanged"/> for the
+    /// <see cref="IsExpanded"/> property without changing the underlying value.
+    /// Used by <see cref="FamilyManagerMainViewModel.LoadTreeAsync"/> after the
+    /// <c>TreeNodes</c> collection swap to compensate for a known WPF TreeView
+    /// container-generation quirk where a TwoWay IsExpanded binding fails to
+    /// pick up the VM source value on the freshly-created container. This is a
+    /// no-op on platforms where the binding already worked — it just emits an
+    /// extra notification which the View either ignores (no subscribers) or
+    /// uses to re-sync the TreeViewItem.IsExpanded visual state.
+    /// </summary>
+    internal void NotifyIsExpandedChanged()
+    {
+        OnPropertyChanged(nameof(IsExpanded));
+    }
 }

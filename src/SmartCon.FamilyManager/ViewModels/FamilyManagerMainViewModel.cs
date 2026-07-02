@@ -369,6 +369,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     partial void OnSearchTextChanged(string value)
     {
         var isSearchNow = !string.IsNullOrWhiteSpace(value);
+        var savedCatCount = _savedExpandedCategoryIds.Count;
+        var savedFamCount = _savedExpandedFamilyIds.Count;
 
         if (isSearchNow && !_lastSearchActive)
         {
@@ -378,6 +380,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
 
         _lastSearchActive = isSearchNow;
+
+        // DIAG-DUMP (Issue: net48 tree-expand after search).
+        // Tracks the lifecycle of the search box so we can correlate the user
+        // typing a term with the eventual TreeViewItem.IsExpanded state.
+        // Without this, the search logic in OnSearchTextChanged → DebouncedSearchAsync
+        // → LoadTreeAsync is invisible in the log.
+        SmartConLogger.Info(
+            $"FMTree.SearchTextChanged: newValue='{value}' isSearch={isSearchNow} " +
+            $"prevSearchActive={!isSearchNow != _lastSearchActive} " +
+            $"savedCats={savedCatCount} savedFams={savedFamCount} " +
+            $"treeNodesBefore={TreeNodes.Count}");
 
         var newCts = new CancellationTokenSource();
         var oldCts = Interlocked.Exchange(ref _searchCts, newCts);
@@ -391,10 +404,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         try
         {
             await Task.Delay(300, ct);
+            // DIAG-DUMP: search debounce elapsed, now triggering LoadTreeAsync
+            SmartConLogger.Debug(
+                $"FMTree.DebouncedSearch: 300ms elapsed, calling LoadTreeAsync. " +
+                $"thread={Environment.CurrentManagedThreadId} syncCtx={SynchronizationContext.Current?.GetType().Name ?? "<none>"}");
             await LoadTreeAsync(ct);
         }
         catch (OperationCanceledException)
         {
+            SmartConLogger.Debug(
+                $"FMTree.DebouncedSearch: cancelled (newer keystroke took over)");
         }
     }
 

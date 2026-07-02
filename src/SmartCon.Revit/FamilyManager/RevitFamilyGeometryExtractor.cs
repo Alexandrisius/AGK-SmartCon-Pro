@@ -504,6 +504,17 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 $"{directMeshCount} direct meshes, {skippedEmptySolid} empty solids skipped, " +
                 $"{unknownTypeCount} unknown types skipped → {positions.Count / 3} verts, {indices.Count / 3} tris");
         }
+
+        // Issue #99 fix: each triangle accumulated its face-normal into shared
+        // vertex positions (AccumulateTriangleNormal). Final pass renormalises
+        // every accumulated vector to unit length so the GLB consumer (HelixToolkit
+        // Phong shader) interprets them as standard glTF normals. Skipping this
+        // pass would leave shared vertices with a magnitude proportional to the
+        // number of contributing triangles, producing inconsistent diffuse shading.
+        if (positions.Count > 0)
+        {
+            NormalizeVertexNormals(positions, normals);
+        }
     }
 
     private static void AddSolid(Solid solid, List<float> positions, List<int> indices, List<float> normals)
@@ -513,45 +524,21 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         var faceCount = solid.Faces.Size;
         var beforeTris = indices.Count / 3;
 
-        try
-        {
-            using var controls = new SolidOrShellTessellationControls();
-            controls.LevelOfDetail = 1.0;
-
-            using var tessellated = SolidUtils.TessellateSolidOrShell(solid, controls);
-            if (tessellated is not null && tessellated.ShellComponentCount > 0)
-            {
-                for (int ci = 0; ci < tessellated.ShellComponentCount; ci++)
-                {
-                    TriangulatedShellComponent? component;
-                    try
-                    {
-                        component = tessellated.GetShellComponent(ci);
-                    }
-                    catch (Exception ex)
-                    {
-                        SmartConLogger.Debug(
-                            $"    AddSolid: GetShellComponent({ci}) failed: {ex.Message}");
-                        continue;
-                    }
-
-                    if (component is null || component.TriangleCount == 0) continue;
-                    AddTriangulatedComponent(component, positions, indices, normals);
-                }
-
-                var afterTris = indices.Count / 3;
-                SmartConLogger.Debug(
-                    $"    AddSolid(TessellateSolidOrShell): {faceCount} faces → {afterTris - beforeTris} triangles");
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Debug(
-                $"    AddSolid: TessellateSolidOrShell failed ({ex.GetType().Name}), " +
-                $"falling back to Face.Triangulate: {ex.Message}");
-        }
-
+        // Issue #99 fix (verified via logs 2026-07-03):
+        // SolidUtils.TessellateSolidOrShell with LevelOfDetail=1.0 (default,
+        // without an explicit Accuracy) produces too few axial segments
+        // for small cylinders (10-20mm diameter) due to Revit's internal
+        // area-scaled tessellation heuristic. Cylinders > ~30mm display fine
+        // because the larger surface area forces more triangles.
+        //
+        // Setting controls.Accuracy = 0.0001 ft throws an InternalException
+        // ("Input 'accuracy' is invalid"), causing the old code to fall back
+        // to Face.Triangulate(1.0). That fallback path produced visually
+        // superior results (1747 tris for the 16mm pipe bend vs 412 from
+        // TessellateSolidOrShell) — so we promote it to the primary path.
+        // Per-face triangulation also gives shared vertices that the dedup
+        // pass + AccumulateTriangleNormal + NormalizeVertexNormals pipeline
+        // turns into smooth (Gouraud-style) normals across face boundaries.
         foreach (Face face in solid.Faces)
         {
             try
@@ -562,79 +549,15 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             }
             catch (Exception ex)
             {
-                SmartConLogger.Debug($"    AddSolid: Face.Triangulate failed: {ex.Message}");
+                SmartConLogger.Debug($"    AddSolid: Face.Triangulate(1.0) failed: {ex.Message}");
             }
         }
 
-        var fallbackTris = indices.Count / 3 - beforeTris;
+        var producedTris = indices.Count / 3 - beforeTris;
         SmartConLogger.Debug(
-            $"    AddSolid(Face.Triangulate fallback): {faceCount} faces → {fallbackTris} triangles");
+            $"    AddSolid(Face.Triangulate): {faceCount} face(s) → {producedTris} triangles");
     }
 
-    private static void AddTriangulatedComponent(
-        TriangulatedShellComponent component,
-        List<float> positions,
-        List<int> indices,
-        List<float> normals)
-    {
-        var vertexCount = component.VertexCount;
-        if (vertexCount == 0 || component.TriangleCount == 0) return;
-
-        var vertices = new List<XYZ>(vertexCount);
-        for (int vi = 0; vi < vertexCount; vi++)
-        {
-            try
-            {
-                vertices.Add(component.GetVertex(vi));
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Debug(
-                    $"    AddTriangulatedComponent: GetVertex({vi}) failed: {ex.Message}");
-                return;
-            }
-        }
-
-        var numTriangles = component.TriangleCount;
-        var dedup = new Dictionary<string, int>(vertexCount);
-
-        for (int i = 0; i < numTriangles; i++)
-        {
-            TriangleInShellComponent tri;
-            try
-            {
-                tri = component.GetTriangle(i);
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Debug($"    AddTriangulatedComponent: GetTriangle({i}) failed: {ex.Message}");
-                continue;
-            }
-
-            var v0 = vertices[tri.VertexIndex0];
-            var v1 = vertices[tri.VertexIndex1];
-            var v2 = vertices[tri.VertexIndex2];
-
-            int idx0 = AddVertex(v0, dedup, positions);
-            int idx1 = AddVertex(v1, dedup, positions);
-            int idx2 = AddVertex(v2, dedup, positions);
-
-            AddTriangleNormals(v0, v1, v2, idx0, idx1, idx2, positions, normals);
-
-            indices.Add(idx0);
-            indices.Add(idx1);
-            indices.Add(idx2);
-        }
-    }
-
-    /// <summary>
-    /// Read vertices and triangle indices from a Revit <see cref="Mesh"/>. The
-    /// Revit Mesh provides a <see cref="Mesh.Vertices"/> array and an indexer
-    /// <see cref="Mesh.this[int]"/> returning a <see cref="MeshTriangle"/> whose
-    /// own indexer exposes the three vertex indices. We deduplicate vertices
-    /// by exact position using a float-based key (Revit meshes are often
-    /// heavily degenerate — same XYZ repeated across triangles).
-    /// </summary>
     private static void AddRevitMesh(Mesh mesh, List<float> positions, List<int> indices, List<float> normals)
     {
         var vertices = mesh.Vertices;
@@ -668,7 +591,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             int idx1 = AddVertex(v1, dedup, positions);
             int idx2 = AddVertex(v2, dedup, positions);
 
-            AddTriangleNormals(v0, v1, v2, idx0, idx1, idx2, positions, normals);
+            AccumulateTriangleNormal(v0, v1, v2, idx0, idx1, idx2, positions, normals);
 
             indices.Add(idx0);
             indices.Add(idx1);
@@ -676,7 +599,28 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         }
     }
 
-    private static void AddTriangleNormals(
+    /// <summary>
+    /// Accumulates a triangle's face-normal into the per-vertex normal buffers.
+    /// Issue #99 fix: previously this method OVERWROTE (assign '=') each shared
+    /// vertex's normal with the triangle's face normal, producing flat shading —
+    /// each visible facet stood out even at high triangle counts. Switching to
+    /// accumulation ('+=') plus a final <see cref="NormalizeVertexNormals"/> pass
+    /// produces Gouraud-style smooth shading across shared vertices.
+    /// </summary>
+    /// <remarks>
+    /// Winding: Jeremy Tammik (The Building Coder) documents that Revit's
+    /// tessellated mesh vertices are oriented consistently so the cross-product
+    /// (v1-v0) × (v2-v0) always points outward from the solid. This guarantees
+    /// that accumulating normals from neighbouring triangles averages compatible
+    /// outward-facing vectors rather than producing "folded" or inverted normals.
+    /// <para>
+    /// Degenerate triangles (zero area; cross-product length ≤ 1e-12) are
+    /// skipped entirely. The old fallback of "(0,0,1)" on degenerate triangles
+    /// corrupted accumulated normals on shared vertices and produced rendering
+    /// artefacts on edge seams.
+    /// </para>
+    /// </remarks>
+    private static void AccumulateTriangleNormal(
         XYZ v0, XYZ v1, XYZ v2,
         int idx0, int idx1, int idx2,
         List<float> positions, List<float> normals)
@@ -691,19 +635,59 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         var ny = az * bx - ax * bz;
         var nz = ax * by - ay * bx;
         var len = Math.Sqrt(nx * nx + ny * ny + nz * nz);
-        if (len > 1e-12)
+        if (len <= 1e-12)
         {
-            nx /= len; ny /= len; nz /= len;
+            // Degenerate triangle (zero area). Skip — do not corrupt the
+            // accumulated normals of shared vertices with a fallback vector.
+            return;
         }
-        else
-        {
-            nx = 0; ny = 0; nz = 1;
-        }
+        nx /= len; ny /= len; nz /= len;
 
+        // Pad normals buffer lazily to match positions buffer length. Each new
+        // vertex added via AddVertex pushes 3 floats into positions, so we grow
+        // normals to the same length on first write to that index.
         while (normals.Count < positions.Count) normals.Add(0f);
-        normals[idx0 * 3] = (float)nx; normals[idx0 * 3 + 1] = (float)ny; normals[idx0 * 3 + 2] = (float)nz;
-        normals[idx1 * 3] = (float)nx; normals[idx1 * 3 + 1] = (float)ny; normals[idx1 * 3 + 2] = (float)nz;
-        normals[idx2 * 3] = (float)nx; normals[idx2 * 3 + 1] = (float)ny; normals[idx2 * 3 + 2] = (float)nz;
+        normals[idx0 * 3] += (float)nx; normals[idx0 * 3 + 1] += (float)ny; normals[idx0 * 3 + 2] += (float)nz;
+        normals[idx1 * 3] += (float)nx; normals[idx1 * 3 + 1] += (float)ny; normals[idx1 * 3 + 2] += (float)nz;
+        normals[idx2 * 3] += (float)nx; normals[idx2 * 3 + 1] += (float)ny; normals[idx2 * 3 + 2] += (float)nz;
+    }
+
+    /// <summary>
+    /// Normalises every accumulated vertex normal to unit length. Called after
+    /// all triangle contributions have been added via
+    /// <see cref="AccumulateTriangleNormal"/>. Without this pass, vertices shared
+    /// by many triangles carry an un-normalised sum-of-face-normals vector, which
+    /// glTF viewers interpret as a non-unit normal — producing diffuse lighting
+    /// brighter than intended (or NaN if magnitude is zero).
+    /// </summary>
+    private static void NormalizeVertexNormals(List<float> positions, List<float> normals)
+    {
+        // Pad to the same length as positions to cover vertices that were never
+        // touched by a triangle (rare, but possible for orphan vertices created
+        // during dedup races).
+        while (normals.Count < positions.Count) normals.Add(0f);
+
+        for (int i = 0; i < positions.Count; i += 3)
+        {
+            var nx = (double)normals[i];
+            var ny = (double)normals[i + 1];
+            var nz = (double)normals[i + 2];
+            var len = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            if (len > 1e-12)
+            {
+                normals[i] = (float)(nx / len);
+                normals[i + 1] = (float)(ny / len);
+                normals[i + 2] = (float)(nz / len);
+            }
+            else
+            {
+                // Vertex with no contributing triangle (degenerate). Use a
+                // safe default upward normal rather than leaving (0,0,0).
+                normals[i] = 0f;
+                normals[i + 1] = 0f;
+                normals[i + 2] = 1f;
+            }
+        }
     }
 
     private static int AddVertex(XYZ vertex, Dictionary<string, int> dedup, List<float> positions)
@@ -820,4 +804,5 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         return id.IntegerValue;
 #endif
     }
+
 }
