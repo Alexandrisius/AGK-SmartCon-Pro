@@ -34,6 +34,7 @@
    - `docs/invariants.md` — выучить жёсткие правила I-01..I-17
    - `docs/architecture/dependency-rule.md` — понять куда класть код
    - `docs/architecture/solution-structure.md` — понять структуру проектов
+   - `docs/known-workarounds.md` — проверить, не существует ли уже workaround для этой проблемы
 
 2. **Провести глубокое исследование через Exa**:
    - **НИКОГДА не предполагай** — Revit API нишевый, нейросети на нём плохо обучены
@@ -275,6 +276,35 @@ GitHub Issues — это **официальная база знаний** про
 - `is:issue "Import Active File"`
 - `is:issue label:bug label:FamilyManager`
 
+### Workaround'ы и их документирование
+
+**Единый реестр:** `docs/known-workarounds.md` — таблица всех активных и удалённых
+workaround'ов с указанием Issue, файла, платформы и описания. **Загружай ВСЕГДА**
+перед началом работы над багом — возможно workaround уже существует.
+
+**Где искать известные workaround'ы агенту:**
+1. `docs/known-workarounds.md` — единый реестр (Issue, файл, платформа, статус)
+2. Кодовые комментарии вида `// See #95 for root cause and workaround rationale`
+3. ADR (для архитектурных workaround'ов) — `docs/adr/README.md`
+4. GitHub Issues с лейблом `bug` — полный root cause + Resolution
+
+**Когда создавать Issue для workaround'а:**
+- Каждый workaround, который «лечит» симптом (не root cause), должен быть
+  задокументирован в отдельном Issue с комментарием-резюме `Resolution`.
+- В Resolution укажи: что делает workaround, почему выбран этот подход,
+  какие альтернативы отвергнуты, verification, scope.
+- В коде добавь комментарий-ссылку: `// See #N for root cause and workaround rationale`
+- Обнови `docs/known-workarounds.md` — добавь строку в таблицу активных workaround'ов.
+- Если workaround удалён — перенеси его в секцию «Устаревшие workaround'ы»
+  с указанием коммита удаления.
+
+**Когда НЕ нужен ADR для workaround'а:**
+- Temporary workaround (живёт пока баг upstream не фиксят) — **GitHub Issue достаточно**
+- Архитектурное решение «как обойти системное ограничение навсегда» — **нужен ADR**
+- Правило: если откат занимает <2 недель → Issue. Если >2 недель → ADR.
+- Best practice (Spotify, Microsoft): temporary workarounds → **SKIP ADR**.
+  Use GitHub Issue + Resolution comment + code comment + `known-workarounds.md`.
+
 ## Точка входа в документацию
 
 **Единый источник правды (SSOT)** находится в папке `docs/`. Начинай с:
@@ -282,6 +312,7 @@ GitHub Issues — это **официальная база знаний** про
 1. **`docs/README.md`** — индекс всех документов, карта навигации
 2. **`docs/invariants.md`** — жёсткие правила (I-01..I-17). **Загружай ВСЕГДА.**
 3. **`docs/architecture/dependency-rule.md`** — куда класть код. **Загружай ВСЕГДА.**
+4. **`docs/known-workarounds.md`** — реестр workaround'ов. **Загружай перед фиксами багов.**
 
 Остальные документы — по контексту задачи (см. карту в `docs/README.md`).
 
@@ -332,6 +363,7 @@ GitHub Issues — это **официальная база знаний** про
   - **`FilePath` в scope = `Path.GetFileName()`, не full path** — full path в scope + повтор в message = 100+ chars spam в каждой строке. Убери path из message (L8).
   - **`Warn` без `[Action: ...]`** — оператор читает лог и не знает что делать. Каждый Warn должен заканчиваться конкретным actionable предложением (L9). Примеры: см. skill `smartcon-logging` → `references/recent-patterns.md` §"L9".
   - **`BeginScope` вокруг долгого метода (>1 сек с тяжёлой inner работой)** — 7803 строк лога из-за одного scope в PipeConnect Editor. Убирай внешний scope, оставь только inner (C15).
+- **Format specifiers `{x:F0}`, `{date:format}` в interpolated strings ЗАПРЕЩЕНЫ** в файлах, транзитивно ссылающихся на HelixToolkit/SharpDX (FamilyManager, App/Diagnostics) на net48 — CS1739. Используй `.ToString("F0", CultureInfo.InvariantCulture)`. См. #97.
 
 ## Инструменты поиска
 
