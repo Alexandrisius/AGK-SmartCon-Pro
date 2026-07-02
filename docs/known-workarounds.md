@@ -9,8 +9,8 @@
 | Issue | Workaround | Файл | Платформа | Описание |
 |---|---|---|---|---|
 | [#95](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/95) | Off-screen render recovery | `src/SmartCon.App/Diagnostics/BatchDialogRenderRecovery.cs` | net48 (R19–R24) | Белый batch-диалог после OpenDocumentFile + family upgrade. Revit убивает WPF render thread. Окно показывается off-screen, лечится WM_ENTERSIZEMOVE + SetWindowPos + RedrawWindow, затем перемещается на центр при WM_PAINT. |
+| [#96](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/96) | BalloonNudge (DockablePane freeze) | `src/SmartCon.Revit/Util/RevitBalloonNudge.cs` | All (net48 + net8) | REVIT-236376 / REVIT-237190: DockablePane freezes после OpenDocumentFile+Close (bake-in). InfoCenter balloon через AdWindows.dll форсирует Win32 focus event. Не gated to net48 — применяется и на net8 т.к. баг non-deterministic. Финальный балун «Импорт завершён». |
 | [#77](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/77) | Shared nested persist fallback | `src/SmartCon.Revit/FamilyManager/RevitFamilyTypeCatalogBaker.cs` | All | REVIT-198137: Revit 2023/2024.2 теряет shared nested family names после SaveAs. Имена извлекаются до закрытия документа и сохраняются отдельно. |
-| [#74](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/74) | BalloonNudge after family upgrade | `src/SmartCon.Revit/Util/RevitBalloonNudge.cs` | All | REVIT-236376 / REVIT-237190: Revit freeze после family upgrade dialog. InfoCenter balloon через AdWindows.dll форсирует Win32 focus event. Используется только для финального балуна «Импорт завершён». |
 | — | VendorId workaround | `src/SmartCon.Revit/.../*Schema*.cs` | All | `SchemaBuilder.SetVendorId` требует ≥4 символа, но `.addin` VendorId="AGK" (3 символа). Решение: использовать `AGKSMARTCON` в Schema + `AccessLevel.Public/Public`. |
 
 ## Устаревшие workaround'ы (удалены)
