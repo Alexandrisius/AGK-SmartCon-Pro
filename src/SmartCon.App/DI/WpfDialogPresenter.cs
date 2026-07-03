@@ -1,3 +1,6 @@
+#if NET48
+using SmartCon.App.Diagnostics;
+#endif
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Context;
