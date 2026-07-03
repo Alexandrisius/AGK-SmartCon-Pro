@@ -29,5 +29,6 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    target-branch: develop
     labels:
       - ci
