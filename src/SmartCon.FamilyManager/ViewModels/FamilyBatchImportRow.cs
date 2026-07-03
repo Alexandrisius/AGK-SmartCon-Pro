@@ -73,10 +73,55 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     [ObservableProperty]
     private string? _precomputedVersionLabel;
 
+    /// <summary>
+    /// Phase 27: content hash (hex string) computed during Phase 1 Prepare.
+    /// Survives the dialog round-trip so Phase 3 Commit can store it in
+    /// the catalog. Null if hash was not computed (error or legacy).
+    /// </summary>
+    [ObservableProperty]
+    private string? _precomputedContentHash;
+
+    /// <summary>
+    /// Phase 27: hash format version (1 for the current algorithm).
+    /// Survives the dialog round-trip alongside <see cref="PrecomputedContentHash"/>.
+    /// </summary>
+    [ObservableProperty]
+    private int? _hashFormatVersion;
+
+    /// <summary>
+    /// Phase 27: version label that the content hash matched (e.g. "v2").
+    /// Displayed in the dialog as "Duplicate (v2)". Null when status is
+    /// not Duplicate.
+    /// </summary>
+    [ObservableProperty]
+    private string? _matchedVersionLabel;
+
     [ObservableProperty]
     private int? _typeCount;
 
     public string? RevitCategory { get; }
+
+    /// <summary>
+    /// Phase 27: source type descriptors for system families. Survives the
+    /// dialog round-trip so <see cref="SystemFamilyImportOrchestrator"/> can
+    /// persist <see cref="FamilyTypeDescriptor"/> rows without re-extracting
+    /// from the staged .rvt. <c>null</c> for loadable families.
+    /// </summary>
+    public IReadOnlyList<FamilySourceTypeInfo>? SourceTypes { get; }
+
+    /// <summary>
+    /// Phase 27: in-memory loadable snapshot from Prepare. Survives the dialog
+    /// round-trip so Commit can write types + values WITHOUT re-opening the
+    /// managed .rfa. <c>null</c> for system families.
+    /// </summary>
+    public FamilySnapshot? LoadableSnapshot { get; }
+
+    /// <summary>
+    /// Phase 27: in-memory system snapshot from Prepare. Survives the dialog
+    /// round-trip so Commit can write types + values WITHOUT re-opening the
+    /// staged .rvt. <c>null</c> for loadable families.
+    /// </summary>
+    public SystemFamilySnapshot? SystemSnapshot { get; }
 
     /// <summary>
     /// VM-owned selection state. Bound to <c>DataGridRow.IsSelected</c> in
@@ -135,6 +180,9 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         RevitMajorVersion = item.RevitMajorVersion;
         FamilySource = item.FamilySource;
         Source = item.Source;
+        SourceTypes = item.SourceTypes;
+        LoadableSnapshot = item.LoadableSnapshot;
+        SystemSnapshot = item.SystemSnapshot;
         _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;
         Status = item.Status;
@@ -146,6 +194,9 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _precomputedCatalogItemId = item.PrecomputedCatalogItemId;
         _precomputedVersionLabel = item.PrecomputedVersionLabel;
         _precomputedManagedPath = item.PrecomputedManagedPath;
+        _precomputedContentHash = item.ContentHash;
+        _hashFormatVersion = item.HashFormatVersion;
+        _matchedVersionLabel = item.MatchedVersionLabel;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
         // Display rule for the category cell:
@@ -175,6 +226,12 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     {
         FamilyBatchImportStatus.New => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.Skip],
         FamilyBatchImportStatus.Existing => [FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.OverwriteCurrent, FamilyBatchImportAction.Skip],
+        // ADR-041: MakeActive only for Duplicate — the incoming file's content
+        // is already in the catalog as one of the existing versions. The user
+        // signals "I'm importing this duplicate because I want that version to
+        // become active." No file is saved — only current_version_label is
+        // switched (and content_hash is synchronized on the item).
+        FamilyBatchImportStatus.Duplicate => [FamilyBatchImportAction.Skip, FamilyBatchImportAction.IncrementVersion, FamilyBatchImportAction.MakeActive],
         _ => [FamilyBatchImportAction.Skip]
     };
 
@@ -190,6 +247,15 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         // Previously the list was built once in the constructor, so a
         // rename Existing → New kept OverwriteCurrent (or vice versa).
         AvailableActions = BuildAvailableActions(value);
+
+        // Phase 27: Duplicate defaults to Skip (no point creating a new
+        // version with identical content). User can manually switch to
+        // IncrementVersion if they want to force a new version.
+        if (value == FamilyBatchImportStatus.Duplicate)
+        {
+            Action = FamilyBatchImportAction.Skip;
+            return;
+        }
 
         // Validate current Action against the new available set; if the
         // user previously selected OverwriteCurrent and the row became

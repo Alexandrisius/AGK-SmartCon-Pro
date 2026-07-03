@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Text;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -59,10 +61,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IClock _clock;
     private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
     private readonly IDispatcher _dispatcher;
+    private readonly FamilyImportPreparationService _preparationService;
+    private readonly IContentHashDedupService _dedupService;
+    private readonly IUiFreezeRecoveryService _freezeRecovery;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
     private bool _lastSearchActive;
+    private bool _previousLoadWasSearch;
     private readonly HashSet<string> _savedExpandedCategoryIds = new();
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
     private HashSet<string>? _loadedFamilyNamesCache;
@@ -167,6 +173,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         // WpfDispatcher (DI-registered) is net48-safe and unit-testable.
         _dispatcher = services.Dispatcher;
         SmartConLogger.Debug($"FamilyManagerMainViewModel.ctor: _dispatcher captured");
+        _preparationService = services.PreparationService;
+        _dedupService = services.DedupService;
+        _freezeRecovery = services.FreezeRecovery;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -185,9 +194,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         try
         {
             var versionStr = _revitContext.GetRevitVersion();
+            SmartConLogger.Debug($"DetectRevitVersion: GetRevitVersion() returned '{versionStr}' (len={versionStr?.Length ?? 0})");
             if (int.TryParse(versionStr, out var v))
             {
                 CurrentRevitVersion = v;
+                SmartConLogger.Debug($"DetectRevitVersion: parsed successfully → CurrentRevitVersion={v}");
+            }
+            else
+            {
+                SmartConLogger.Warn($"DetectRevitVersion: int.TryParse('{versionStr}') returned false — CurrentRevitVersion stays 0. [Action: check Application.VersionNumber format, may need InvariantCulture parse]");
             }
         }
         catch (Exception ex)
@@ -210,9 +225,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private async Task InitializeAsync()
     {
+        DumpLoadedAssembliesBeforeTruncate();
         SmartConLogger.TruncateMainLog();
         _sessionStart = DateTime.Now;
-        SmartConLogger.LogSessionStart($"FamilyManager (Revit {CurrentRevitVersion})");
 
         await _databaseManager.InitializeAsync().ConfigureAwait(true);
         RefreshConnections();
@@ -222,6 +237,28 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             return;
         }
         _ = RefreshTreeViaExternalEventAsync();
+    }
+
+    private static void DumpLoadedAssembliesBeforeTruncate()
+    {
+        try
+        {
+            var appDir = Path.GetDirectoryName(typeof(FamilyManagerMainViewModel).Assembly.Location);
+            var asmLogPath = Path.Combine(appDir ?? ".", "assembly-load.log");
+            var sb = new StringBuilder();
+            sb.AppendLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] === PRE-TRUNCATE DUMP: all currently-loaded HelixToolkit/SharpDX/SharpGLTF/Assimp assemblies ===");
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var n = a.GetName().Name ?? "";
+                if (n.Contains("HelixToolkit") || n.Contains("SharpGLTF") ||
+                    n.Contains("SharpDX") || n.Contains("Assimp") ||
+                    n.Contains("SmartCon"))
+                    sb.AppendLine($"  {n} v{a.GetName().Version} from={a.Location}");
+            }
+            sb.AppendLine(new string('=', 80));
+            File.AppendAllText(asmLogPath, sb.ToString());
+        }
+        catch { }
     }
 
     private static void FireAndForget(Task task, string operationName)
@@ -262,6 +299,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private async Task RefreshAccessAndLoadTreeAsync()
     {
+        DetectRevitVersion();
+        SmartConLogger.LogSessionStart($"FamilyManager (Revit {CurrentRevitVersion})");
+
         if (!HasActiveDatabase)
         {
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
@@ -272,7 +312,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             return;
         }
 
-        DetectRevitVersion();
         _accessControl.InvalidateCache();
 
         try
@@ -331,6 +370,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     partial void OnSearchTextChanged(string value)
     {
         var isSearchNow = !string.IsNullOrWhiteSpace(value);
+        var savedCatCount = _savedExpandedCategoryIds.Count;
+        var savedFamCount = _savedExpandedFamilyIds.Count;
 
         if (isSearchNow && !_lastSearchActive)
         {
@@ -340,6 +381,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
 
         _lastSearchActive = isSearchNow;
+
+        // DIAG-DUMP (Issue: net48 tree-expand after search).
+        // Tracks the lifecycle of the search box so we can correlate the user
+        // typing a term with the eventual TreeViewItem.IsExpanded state.
+        // Without this, the search logic in OnSearchTextChanged → DebouncedSearchAsync
+        // → LoadTreeAsync is invisible in the log.
+        SmartConLogger.Info(
+            $"FMTree.SearchTextChanged: newValue='{value}' isSearch={isSearchNow} " +
+            $"prevSearchActive={!isSearchNow != _lastSearchActive} " +
+            $"savedCats={savedCatCount} savedFams={savedFamCount} " +
+            $"treeNodesBefore={TreeNodes.Count}");
 
         var newCts = new CancellationTokenSource();
         var oldCts = Interlocked.Exchange(ref _searchCts, newCts);
@@ -353,10 +405,16 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         try
         {
             await Task.Delay(300, ct);
+            // DIAG-DUMP: search debounce elapsed, now triggering LoadTreeAsync
+            SmartConLogger.Debug(
+                $"FMTree.DebouncedSearch: 300ms elapsed, calling LoadTreeAsync. " +
+                $"thread={Environment.CurrentManagedThreadId} syncCtx={SynchronizationContext.Current?.GetType().Name ?? "<none>"}");
             await LoadTreeAsync(ct);
         }
         catch (OperationCanceledException)
         {
+            SmartConLogger.Debug(
+                $"FMTree.DebouncedSearch: cancelled (newer keystroke took over)");
         }
     }
 

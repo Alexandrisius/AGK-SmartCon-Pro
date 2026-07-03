@@ -320,7 +320,7 @@ internal sealed partial class LocalFamilyImportService
         }
     }
 
-    private static string ReadTypeCatalogWithEncodingFallback(string filePath)
+    internal static string ReadTypeCatalogWithEncodingFallback(string filePath)
     {
         var utf8Bytes = File.ReadAllBytes(filePath);
 

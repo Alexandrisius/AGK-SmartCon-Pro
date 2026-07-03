@@ -68,7 +68,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("15", version);
+        Assert.Equal("19", version);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("15", version);
+        Assert.Equal("19", version);
 
         using var tableCmd = verify.CreateCommand();
         tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_nested_shared_families'";
@@ -181,7 +181,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("15", version);
+        Assert.Equal("19", version);
     }
 
     [Fact]
@@ -289,7 +289,7 @@ public sealed class LocalCatalogMigratorTests
         // Test technique: V15 has already been applied via MigrateAsync(), so
         // the FK is already in place. We temporarily disable FK enforcement
         // to insert the orphan row, then run the V15 migration again. Since
-        // the schema_version is already 15, the migration short-circuits —
+        // the schema_version is already 16, the migration short-circuits —
         // so we use a separate test technique: directly call the migration
         // SQL (which does the orphan cleanup first) to validate the SQL
         // constant in isolation.
@@ -450,7 +450,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("15", version);
+        Assert.Equal("19", version);
 
         foreach (var (table, column) in new[]
         {

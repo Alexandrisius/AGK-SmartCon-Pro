@@ -6,7 +6,7 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFamilyCatalogProvider
+internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFamilyCatalogProvider
 {
     private readonly LocalCatalogDatabase _database;
 
@@ -305,7 +305,9 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             item.CreatedAtUtc,
             item.UpdatedAtUtc,
             item.FamilySource,
-            item.RevitCategory);
+            item.RevitCategory,
+            item.ContentHash,
+            item.HashFormatVersion);
     }
 
     public async Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default)
@@ -433,6 +435,8 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         var categoryId = TryGetString(reader, "category_id");
         var familySource = TryGetString(reader, "family_source") ?? "loadable";
         var revitCategory = TryGetString(reader, "revit_category");
+        var contentHash = TryGetString(reader, "content_hash");
+        int? hashFormatVersion = TryGetInt(reader, "hash_format_version");
 
         return new FamilyCatalogItem(
             Id: reader.GetString(reader.GetOrdinal("id")),
@@ -457,7 +461,9 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             CreatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("created_at_utc"))),
             UpdatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("updated_at_utc"))),
             FamilySource: familySource,
-            RevitCategory: revitCategory);
+            RevitCategory: revitCategory,
+            ContentHash: contentHash,
+            HashFormatVersion: hashFormatVersion);
     }
 
     private static FamilyCatalogVersion ReadCatalogVersion(SqliteDataReader reader) => new(
@@ -472,7 +478,10 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         ParametersCount: reader.IsDBNull(reader.GetOrdinal("parameters_count"))
             ? null
             : reader.GetInt32(reader.GetOrdinal("parameters_count")),
-        PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
+        PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))),
+        ContentHash: TryGetString(reader, "content_hash"),
+        HashFormatVersion: TryGetInt(reader, "hash_format_version"),
+        PublishedBy: TryGetString(reader, "published_by"));
 
     private static FamilyFileRecord ReadFileRecord(SqliteDataReader reader) => new(
         Id: reader.GetString(reader.GetOrdinal("id")),
@@ -522,6 +531,77 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                 return reader.GetString(i);
         }
         return null;
+    }
+
+    private static int? TryGetInt(SqliteDataReader reader, string columnName)
+    {
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            if (reader.GetName(i) == columnName && !reader.IsDBNull(i))
+                return reader.GetInt32(i);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Cross-version content-hash search. Looks for a matching
+    /// <c>content_hash</c> across ALL versions (current and archived) of
+    /// ALL catalog items, filtered by <paramref name="familySource"/> to
+    /// enforce cross-source separation (system hashes never match
+    /// loadable hashes) and by <paramref name="hashFormatVersion"/> so
+    /// old-format hashes do not produce false duplicate matches against
+    /// new-format ones.
+    /// </summary>
+    /// <param name="hexHash">SHA-256 hex string.</param>
+    /// <param name="hashFormatVersion">Hash format version (must match
+    /// <c>hash_format_version</c> column).</param>
+    /// <param name="familySource"><c>"loadable"</c> or <c>"system"</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A <see cref="ContentHashMatch"/> if a match was found,
+    /// or <c>null</c> if no version has this hash.</returns>
+    public async Task<ContentHashMatch?> FindByContentHashAcrossVersionsAsync(
+        string hexHash,
+        int hashFormatVersion,
+        string familySource,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(hexHash))
+            return null;
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT cv.catalog_item_id AS itemId,
+                   cv.version_label AS versionLabel,
+                   ci.current_version_label AS currentLabel
+            FROM catalog_versions cv
+            JOIN catalog_items ci ON cv.catalog_item_id = ci.id
+            WHERE cv.content_hash = @hash
+              AND cv.hash_format_version = @fmt
+              AND ci.family_source = @source
+            ORDER BY cv.published_at_utc DESC
+            LIMIT 1
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@hash", hexHash));
+        cmd.Parameters.Add(new SqliteParameter("@fmt", hashFormatVersion));
+        cmd.Parameters.Add(new SqliteParameter("@source", familySource));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            return null;
+
+        var itemId = reader.GetString(reader.GetOrdinal("itemId"));
+        var versionLabel = reader.GetString(reader.GetOrdinal("versionLabel"));
+        var currentLabel = reader.IsDBNull(reader.GetOrdinal("currentLabel"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("currentLabel"));
+        var isCurrent = string.Equals(versionLabel, currentLabel, StringComparison.Ordinal);
+
+        return new ContentHashMatch(
+            CatalogItemId: itemId,
+            MatchedVersionLabel: versionLabel,
+            IsCurrentVersion: isCurrent);
     }
 }
 

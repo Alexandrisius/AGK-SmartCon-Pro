@@ -13,6 +13,7 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="TypesCount">Number of family types if extracted.</param>
 /// <param name="ParametersCount">Number of family parameters if extracted.</param>
 /// <param name="PublishedAtUtc">When this version was published.</param>
+/// <param name="PublishedBy">Username of the Revit user who published this version (ADR-041 rev #5).</param>
 public sealed record FamilyCatalogVersion(
     string Id,
     string CatalogItemId,
@@ -21,4 +22,7 @@ public sealed record FamilyCatalogVersion(
     int RevitMajorVersion,
     int? TypesCount,
     int? ParametersCount,
-    DateTimeOffset PublishedAtUtc);
+    DateTimeOffset PublishedAtUtc,
+    string? ContentHash = null,
+    int? HashFormatVersion = null,
+    string? PublishedBy = null);

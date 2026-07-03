@@ -35,7 +35,7 @@ public sealed class SystemFamilyAttributeExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAndSaveAsync_MissingManagedRvt_SkipsAndDoesNotCallSave()
+    public async Task ExtractAndSaveAsync_NullSnapshot_SkipsAndDoesNotCallSave()
     {
         var extraction = new StubExtraction();
         var dataImport = new StubDataImport();
@@ -44,35 +44,36 @@ public sealed class SystemFamilyAttributeExtractorTests
             extraction,
             dataImport);
 
-        var missing = new SystemFamilyExtractionTask(
+        // Phase 27: null snapshot means Prepare did not produce one — the
+        // extractor must warn + skip (no re-open fallback in production).
+        var nullSnapshotTask = new SystemFamilyExtractionTask(
             "cat-1", @"C:\non-existent\managed.rvt", new[] { "TypeA" }, null, null);
 
-        await sut.ExtractAndSaveAsync(new[] { missing });
+        await sut.ExtractAndSaveAsync(new[] { nullSnapshotTask });
 
         Assert.Equal(0, extraction.CallCount);
         Assert.Equal(0, dataImport.SaveCount);
     }
 
     [Fact]
-    public async Task ExtractAndSaveAsync_SuccessfulExtraction_AwaitsSaveAndRetainsManagedRvt()
+    public async Task ExtractAndSaveAsync_WithSnapshot_CallsSaveAndRetainsManagedRvt()
     {
         var managedRvt = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
         File.WriteAllBytes(managedRvt, new byte[] { 0x00 });
         try
         {
-            var extraction = new StubExtraction();
             var dataImport = new StubDataImport(saveDelayMs: 50);
             var sut = new SystemFamilyAttributeExtractor(
                 new InlineAwaitableEvent(),
-                extraction,
+                new StubExtraction(),
                 dataImport);
 
             var task = new SystemFamilyExtractionTask(
-                "cat-1", managedRvt, new[] { "TypeA" }, null, null);
+                "cat-1", managedRvt, new[] { "TypeA" }, null, null,
+                Snapshot: MakeSystemSnapshot("TypeA"));
 
             await sut.ExtractAndSaveAsync(new[] { task });
 
-            Assert.Equal(1, extraction.CallCount);
             Assert.Equal(1, dataImport.SaveCount);
             // v2.0.0: managed .rvt must remain on disk (I-16 immutable) so
             // Edit System Family can resolve it through LocalFamilyFileResolver.
@@ -86,37 +87,7 @@ public sealed class SystemFamilyAttributeExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAndSaveAsync_ExtractionFails_DoesNotCallSaveButRetainsFile()
-    {
-        var managedRvt = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
-        File.WriteAllBytes(managedRvt, new byte[] { 0x00 });
-        try
-        {
-            var extraction = new StubExtraction(forceFail: true);
-            var dataImport = new StubDataImport();
-            var sut = new SystemFamilyAttributeExtractor(
-                new InlineAwaitableEvent(),
-                extraction,
-                dataImport);
-
-            var task = new SystemFamilyExtractionTask(
-                "cat-1", managedRvt, new[] { "TypeA" }, null, null);
-
-            await sut.ExtractAndSaveAsync(new[] { task });
-
-            Assert.Equal(1, extraction.CallCount);
-            Assert.Equal(0, dataImport.SaveCount);
-            Assert.True(File.Exists(managedRvt),
-                "Managed .rvt stays on disk even when extraction failed");
-        }
-        finally
-        {
-            try { if (File.Exists(managedRvt)) File.Delete(managedRvt); } catch { }
-        }
-    }
-
-    [Fact]
-    public async Task ExtractAndSaveAsync_MultipleTasks_AwaitsAllSaves()
+    public async Task ExtractAndSaveAsync_MultipleTasksWithSnapshot_AwaitsAllSaves()
     {
         var managedRvt1 = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
         var managedRvt2 = Path.Combine(Path.GetTempPath(), $"sf-test-{Guid.NewGuid():N}.rvt");
@@ -124,22 +95,22 @@ public sealed class SystemFamilyAttributeExtractorTests
         File.WriteAllBytes(managedRvt2, new byte[] { 0x00 });
         try
         {
-            var extraction = new StubExtraction();
             var dataImport = new StubDataImport(saveDelayMs: 30);
             var sut = new SystemFamilyAttributeExtractor(
                 new InlineAwaitableEvent(),
-                extraction,
+                new StubExtraction(),
                 dataImport);
 
             var tasks = new[]
             {
-                new SystemFamilyExtractionTask("cat-1", managedRvt1, new[] { "T1" }, null, null),
-                new SystemFamilyExtractionTask("cat-2", managedRvt2, new[] { "T2" }, null, null),
+                new SystemFamilyExtractionTask("cat-1", managedRvt1, new[] { "T1" }, null, null,
+                    Snapshot: MakeSystemSnapshot("T1")),
+                new SystemFamilyExtractionTask("cat-2", managedRvt2, new[] { "T2" }, null, null,
+                    Snapshot: MakeSystemSnapshot("T2")),
             };
 
             await sut.ExtractAndSaveAsync(tasks);
 
-            Assert.Equal(2, extraction.CallCount);
             Assert.Equal(2, dataImport.SaveCount);
             Assert.True(File.Exists(managedRvt1));
             Assert.True(File.Exists(managedRvt2));
@@ -158,15 +129,15 @@ public sealed class SystemFamilyAttributeExtractorTests
         File.WriteAllBytes(managedRvt, new byte[] { 0x00 });
         try
         {
-            var extraction = new StubExtraction();
             var dataImport = new StubDataImport(throwOnSave: true);
             var sut = new SystemFamilyAttributeExtractor(
                 new InlineAwaitableEvent(),
-                extraction,
+                new StubExtraction(),
                 dataImport);
 
             var task = new SystemFamilyExtractionTask(
-                "cat-1", managedRvt, new[] { "TypeA" }, null, null);
+                "cat-1", managedRvt, new[] { "TypeA" }, null, null,
+                Snapshot: MakeSystemSnapshot("TypeA"));
 
             await sut.ExtractAndSaveAsync(new[] { task });
 
@@ -179,6 +150,19 @@ public sealed class SystemFamilyAttributeExtractorTests
             try { if (File.Exists(managedRvt)) File.Delete(managedRvt); } catch { }
         }
     }
+
+    /// <summary>
+    /// Builds a minimal <see cref="SystemFamilySnapshot"/> with the given type
+    /// names and no parameter values — enough for <c>SnapshotExtractionMapper</c>
+    /// to produce a successful <see cref="FamilyExtractionResult"/>.
+    /// </summary>
+    private static SystemFamilySnapshot MakeSystemSnapshot(params string[] typeNames) =>
+        new(
+            CategoryName: "TestCategory",
+            CategoryId: -2008044,
+            Types: typeNames
+                .Select(n => new SystemTypeSnapshot(n, Array.Empty<SystemParameterValue>()))
+                .ToList());
 
     /// <summary>
     /// Inlines the action on a real <see cref="FamilyManagerAwaitableEvent"/>

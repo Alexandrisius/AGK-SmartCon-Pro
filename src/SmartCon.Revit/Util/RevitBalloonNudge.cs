@@ -43,10 +43,12 @@ public static class RevitBalloonNudge
     /// </summary>
     public static void Nudge(string message)
     {
+        SmartConLogger.Freeze($"RevitBalloonNudge.Nudge invoked: message='{message}'");
+
 #if NO_ADWINDOWS
         if (_warnedOnce) return;
         _warnedOnce = true;
-        SmartConLogger.Debug(
+        SmartConLogger.Freeze(
             "RevitBalloonNudge skipped: AdWindows.dll was not found on this build machine. " +
             "The family-upgrade freeze workaround is unavailable; " +
             "right-click on the DockablePane will still recover the UI.");

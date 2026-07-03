@@ -12,5 +12,13 @@ public enum FamilyBatchImportAction
     OverwriteCurrent,
 
     /// <summary>Skip this file.</summary>
-    Skip
+    Skip,
+
+    /// <summary>
+    /// Switch the active version pointer to the existing duplicate version found
+    /// by content-hash. Does NOT save the incoming file — only updates
+    /// <c>catalog_items.current_version_label</c> to point at the matched version.
+    /// Available only for <see cref="FamilyBatchImportStatus.Duplicate"/>.
+    /// </summary>
+    MakeActive
 }

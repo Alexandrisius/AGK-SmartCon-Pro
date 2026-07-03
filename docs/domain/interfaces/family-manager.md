@@ -20,9 +20,14 @@ public interface IFamilyCatalogProvider
     Task<IReadOnlyList<FamilyCatalogItem>> SearchAsync(FamilyCatalogQuery query, CancellationToken ct = default);
     Task<FamilyCatalogItem?> GetItemAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default);
+    Task<FamilyCatalogVersion?> GetVersionByIdAsync(string catalogItemId, string versionId, CancellationToken ct = default);
+    Task<FamilyCatalogVersion?> GetVersionByLabelAsync(string catalogItemId, string versionLabel, int targetRevitMajorVersion = 0, CancellationToken ct = default);
     Task<FamilyFileRecord?> GetFileAsync(string fileId, CancellationToken ct = default);
     Task<int> GetItemCountAsync(CancellationToken ct = default);
     Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default);
+    Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default);
+    Task<ContentHashMatch?> FindByContentHashAcrossVersionsAsync(string hexHash, int hashFormatVersion, string familySource, CancellationToken ct = default);
+    Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default);
 }
 ```
 
@@ -40,8 +45,10 @@ public interface IWritableFamilyCatalogProvider
 {
     Task<FamilyImportResult> ImportAsync(FamilyImportRequest request, CancellationToken ct = default);
     Task<FamilyBatchImportResult> ImportFolderAsync(FamilyFolderImportRequest request, IProgress<FamilyImportProgress>? progress, CancellationToken ct = default);
-    Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default);
+    Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? category, IReadOnlyList<string>? tags, ContentStatus? status, string? manufacturer = null, CancellationToken ct = default);
     Task<bool> DeleteItemAsync(string id, CancellationToken ct = default);
+    Task<SetActiveVersionResult> SetActiveVersionAsync(string catalogItemId, string versionLabel, CancellationToken ct = default);
+    Task<DeleteVersionResult> DeleteVersionAsync(string catalogItemId, string versionLabel, CancellationToken ct = default);
 }
 ```
 
@@ -89,8 +96,20 @@ public interface IFamilyTypeCatalogBaker
         TypeCatalogParseResult catalog,
         string outputRfaPath,
         CancellationToken ct = default);
+
+    Task<FamilyTypeCatalogBakingResult> BakeInExistingDocumentAsync(
+        object familyDoc,
+        TypeCatalogParseResult catalog,
+        CancellationToken ct = default);
 }
 ```
+
+**Два метода:**
+- `BakeAsync` — открывает .rfa по пути, bake, SaveAs, Close (Commit-фаза, ADR-033)
+- `BakeInExistingDocumentAsync` (ADR-039) — bake в уже открытом family document
+  (Prepare-фаза). `object familyDoc` — opaque Document (I-09). Без
+  OpenDocumentFile/SaveAs/Close. Используется Phase 27B для bake в held-open
+  документе до extraction snapshot.
 
 **Зависимости:** `IFamilyManagerAwaitableEvent`, `ITransactionService`, `ITypeCatalogValueApplier`, `IFormulaSolver`. Все Revit API операции маршалятся через `IFamilyManagerAwaitableEvent` callback (I-01).
 
@@ -858,3 +877,148 @@ public interface IFamilyImportPrecomputer
 
 `OnRowNameChanged` дополнительно оборачивает вызов в `Task.Delay(250 ms)` debouncer, чтобы DB-lookup не срабатывал на каждое нажатие клавиши. Cancellation token отменяет предыдущий pending-вызов при следующем нажатии.
 
+---
+
+## IFamilySnapshotExtractor
+
+Extracts structured snapshots from open Revit documents for content-hash computation. All methods must be called on the Revit UI thread (I-01) — the caller is responsible for marshalling via `IFamilyManagerAwaitableEvent.RaiseAsync`.
+
+**Файл:** `Services/Interfaces/IFamilySnapshotExtractor.cs`
+
+```csharp
+public interface IFamilySnapshotExtractor
+{
+    FamilySnapshot ExtractFromFamilyDocument(Document familyDoc);
+    SystemFamilySnapshot ExtractFromProject(
+        Document projectDoc,
+        IReadOnlyList<string> typeUniqueIds,
+        BuiltInCategory builtInCategory);
+}
+```
+
+- `ExtractFromFamilyDocument` — extracts a `FamilySnapshot` (parameters, types, values, geometry, shared nested names) from an open family document. The document must be a family document (`IsFamilyDocument == true`).
+- `ExtractFromProject` — extracts a `SystemFamilySnapshot` (category + types + parameter values) from an open project document.
+
+**Caller contract:** the active document may be the source project or a managed-storage mini-rvt (after `EditFamily` + `SaveAs`). The extracted hash is stable across both because it is based on in-memory content, not file bytes.
+
+---
+
+## IFamilyContentHasher
+
+Computes a stable `FamilyContentHash` from a snapshot. Pure C# — no Revit API calls. The hash is a SHA-256 of a canonical string built from the snapshot data. Stable across SaveAs, rename, and Revit upgrade because it is based on in-memory content, not file bytes.
+
+**Файл:** `Services/Interfaces/IFamilyContentHasher.cs`
+
+```csharp
+public interface IFamilyContentHasher
+{
+    FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot);
+    FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot);
+}
+```
+
+- `ComputeForLoadable` — returns `null` if the snapshot is null or empty (no parameters, no types, no geometry).
+- `ComputeForSystem` — returns `null` if the snapshot is null or has no types.
+
+**v2.0.0 stability rules:**
+- Blank parameter values are excluded from the canonical string (`HasValue=false`, empty string, `INVALID`, `UNSUPPORTED`, `READERROR`). Numeric zero is meaningful (e.g. IFC=0).
+- The auto-generated `Код IfcGUID` parameter is excluded because Revit regenerates it on every `.rvt` save — including it would make identical content produce different hashes across source project and mini-rvt.
+- Parameter values are sorted by parameter name for deterministic output.
+
+---
+
+## IContentHashDedupService
+
+Content-hash dedup service. Combines the name-based lookup with the cross-version hash search to produce the final `FamilyBatchImportStatus` for a batch-import row.
+
+**Файл:** `Services/Interfaces/IContentHashDedupService.cs`
+
+```csharp
+public interface IContentHashDedupService
+{
+    Task<ContentHashDedupResult> CheckAsync(
+        string normalizedName,
+        FamilyContentHash? contentHash,
+        string familySource,
+        CancellationToken ct = default);
+}
+```
+
+**Business rules (from the business plan):**
+- If the normalized name is NOT in the catalog → `New` (hash is not checked — dedup only applies when names match).
+- If the name matches but no hash is available → `Existing` (fallback to name-only dedup).
+- If the name matches and the hash matches any version (current or archived) → `Duplicate` (returns `HashMatch` with the matched version).
+- If the name matches but the hash does not match any version → `Existing`.
+- Cross-source separation: `"loadable"` hashes are never compared against `"system"` hashes and vice versa.
+
+---
+
+## IFamilyGeometryExtractor
+
+Extracts tessellated 3D geometry from a managed `.rfa` file (ADR-042). Implementations MUST run on the Revit UI thread (I-01) because `OpenDocumentFile` / `element.get_Geometry(Options)` / `Face.Triangulate()` are all Revit API calls — callers marshal via `IFamilyManagerAwaitableEvent.RaiseAsync<T>`.
+
+**Файл:** `Services/Interfaces/IFamilyGeometryExtractor.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyGeometryExtractor.cs`
+
+```csharp
+public interface IFamilyGeometryExtractor
+{
+    Task<FamilyGeometryPreview?> ExtractAsync(
+        string managedRfaPath,
+        string catalogItemId,
+        string versionLabel,
+        CancellationToken ct = default);
+}
+```
+
+**Контракт:**
+- Returns `FamilyGeometryPreview` with at least one mesh, or `null` when the family has no visible geometry / an error occurred (logged by the implementation, NOT rethrown — the pipeline treats `null` as "skip GLB write").
+
+---
+
+## IGlbWriter
+
+Serializes a `FamilyGeometryPreview` to a GLB (binary glTF 2.0) file. Pure C# implementation (SharpGLTF.Toolkit) — no Revit API, no WPF (I-09), unit-testable without a Revit process.
+
+**Файл:** `Services/Interfaces/IGlbWriter.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Geometry/FamilyGeometryGlbWriter.cs`
+
+```csharp
+public interface IGlbWriter
+{
+    Task<bool> WriteAsync(
+        FamilyGeometryPreview preview,
+        string outputPath,
+        CancellationToken ct = default);
+}
+```
+
+**Контракт:**
+- Creates the parent directory if it does not exist. Overwrites the file if it already exists.
+- Returns `true` on success; `false` on failure (logged internally, not rethrown — pipeline treats `false` as "skip asset registration").
+
+---
+
+## IFamilyGeometryPipeline
+
+Coordinates the end-to-end 3D geometry preview pipeline triggered from `LocalFamilyImportService` hooks H1/H2/H3 (ADR-042): extract → write GLB → delete previous auto-extracted asset → register new asset.
+
+**Файл:** `Services/Interfaces/IFamilyGeometryPipeline.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Geometry/FamilyGeometryPipeline.cs`
+
+```csharp
+public interface IFamilyGeometryPipeline
+{
+    Task RunAsync(
+        string managedRfaPath,
+        string catalogItemId,
+        string versionId,
+        string versionLabel,
+        string familyName,
+        CancellationToken ct = default);
+}
+```
+
+**Контракт:**
+- Safe to invoke from any thread — internally marshals Revit API calls to the UI thread via `IFamilyManagerAwaitableEvent`.
+- Implementations MUST swallow all exceptions and log a Warn with an `[Action: ...]` suggestion (skill smartcon-logging L9) — geometry preview is a nice-to-have and MUST NOT break the import transaction that already committed before the hook was reached.

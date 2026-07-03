@@ -27,7 +27,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         IAttributeValueRepository valueRepository,
         IFamilyDataImportRunRepository runRepository,
         IFamilyTypeCatalogBaker typeCatalogBaker,
-        IRevitFileInfoReader? fileInfoReader = null)
+        IRevitFileInfoReader? fileInfoReader = null,
+        IFamilyGeometryPipeline? geometryPipeline = null)
     {
         _database = database;
         _migrator = migrator;
@@ -39,6 +40,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
         _valueRepository = valueRepository;
         _runRepository = runRepository;
         _fileInfoReader = fileInfoReader;
+        _geometryPipeline = geometryPipeline;
     }
 
     public async Task<FamilyImportResult> ImportFileAsync(FamilyImportRequest request, CancellationToken ct = default)
@@ -210,10 +212,12 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 }
                 else
                 {
-                    await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct).ConfigureAwait(false);
+                    await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct,
+                        request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
                 }
 
-                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
+                await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
+                    request.ContentHash, request.HashFormatVersion, request.PublishedBy).ConfigureAwait(false);
 
                 if (existingItem is null && request.Tags is not null)
                 {
@@ -250,6 +254,13 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             // at 1 per .rfa instead of the V2 baseline of 2 (separate
             // ISHaredNestedFamilyExtractor that opened the file a second
             // time).
+
+            // ADR-042 H1: extract 3D geometry preview for this NEW version.
+            await RunGeometryPipelineHookAsync(
+                request.PreextractedGeometry,
+                managedRfaPath,
+                catalogItemId, versionId, versionLabel,
+                StripFamilyExtension(finalMetadata.FileName), ct).ConfigureAwait(false);
 
             return new FamilyImportResult(
                 Success: true,
@@ -307,7 +318,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     Category: request.Category,
                     Tags: request.Tags,
                     Description: request.Description,
-                    CategoryId: request.CategoryId);
+                    CategoryId: request.CategoryId,
+                    PublishedBy: request.PublishedBy);
 
                 var result = await ImportFileAsync(importRequest, ct);
                 results.Add(result);
@@ -466,12 +478,58 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         OriginalSourcePath: item.OriginalSourcePath,
                         PrecomputedCatalogItemId: item.PrecomputedCatalogItemId,
                         PrecomputedVersionLabel: item.PrecomputedVersionLabel,
-                        PrecomputedManagedPath: item.PrecomputedManagedPath);
+                        PrecomputedManagedPath: item.PrecomputedManagedPath,
+                        ContentHash: item.ContentHash,
+                        HashFormatVersion: item.HashFormatVersion,
+                        PublishedBy: item.PublishedByUser,
+                        PreextractedGeometry: item.GeometryPerType);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
                 {
-                    if (item.Action == FamilyBatchImportAction.IncrementVersion)
+                    if (item.Action == FamilyBatchImportAction.MakeActive)
+                    {
+                        // ADR-041: MakeActive only applies to Duplicate status.
+                        // The content hash matched an existing version, so we
+                        // just switch the active pointer — no file is saved to
+                        // storage, no new version row is inserted.
+                        if (string.IsNullOrEmpty(item.ExistingCatalogItemId) ||
+                            string.IsNullOrEmpty(item.MatchedVersionLabel))
+                        {
+                            result = new FamilyImportResult(
+                                Success: false,
+                                CatalogItemId: item.ExistingCatalogItemId,
+                                VersionId: null,
+                                FileId: null,
+                                FileName: item.FileName,
+                                VersionLabel: item.MatchedVersionLabel,
+                                ErrorMessage: "MakeActive requires ExistingCatalogItemId and MatchedVersionLabel. " +
+                                              "The row's content hash did not match any catalog version.");
+                        }
+                        else
+                        {
+                            using var _maScope = SmartConLogger.BeginScope("LocalImport",
+                                ("Method", "MakeActive"),
+                                ("CatalogItemId", item.ExistingCatalogItemId),
+                                ("VersionLabel", item.MatchedVersionLabel));
+                            var setResult = await _catalogProvider.SetActiveVersionAsync(
+                                item.ExistingCatalogItemId!, item.MatchedVersionLabel!, ct).ConfigureAwait(false);
+                            result = new FamilyImportResult(
+                                Success: setResult.Success,
+                                CatalogItemId: item.ExistingCatalogItemId,
+                                VersionId: null,
+                                FileId: null,
+                                FileName: item.FileName,
+                                VersionLabel: item.MatchedVersionLabel,
+                                ErrorMessage: setResult.ErrorMessage,
+                                WasSkipped: true);
+                            SmartConLogger.Info(
+                                $"MakeActive: prev={(setResult.PreviousVersionLabel ?? "<null>")} " +
+                                $"new={item.MatchedVersionLabel} success={setResult.Success} " +
+                                $"hashSynced={setResult.ContentHashSynced}");
+                        }
+                    }
+                    else if (item.Action == FamilyBatchImportAction.IncrementVersion)
                     {
                         // Source-of-truth rule: when no category is assigned
                         // (TargetCategoryId is null), do not write the picker
@@ -496,7 +554,11 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             FileName: item.FileName,
                             OriginalSourcePath: item.OriginalSourcePath,
                             PrecomputedVersionLabel: item.PrecomputedVersionLabel,
-                            PrecomputedManagedPath: item.PrecomputedManagedPath);
+                            PrecomputedManagedPath: item.PrecomputedManagedPath,
+                            ContentHash: item.ContentHash,
+                            HashFormatVersion: item.HashFormatVersion,
+                        PublishedBy: item.PublishedByUser,
+                        PreextractedGeometry: item.GeometryPerType);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -664,12 +726,14 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             try
             {
                 await InsertFileRecordAsync(connection, fileRecordId, relativePath, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
-                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct).ConfigureAwait(false);
+                await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct,
+                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(request.CategoryId))
                 {
                     await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);
                 }
-                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
+                await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
+                    request.ContentHash, request.HashFormatVersion, request.PublishedBy).ConfigureAwait(false);
 
                 tx.Commit();
             }
@@ -698,6 +762,13 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             // at 1 per .rfa instead of the V2 baseline of 2 (separate
             // ISHaredNestedFamilyExtractor that opened the file a second
             // time).
+
+            // ADR-042 H2: extract 3D geometry preview for this INCREMENTED version.
+            await RunGeometryPipelineHookAsync(
+                request.PreextractedGeometry,
+                managedRfaPath,
+                request.CatalogItemId!, versionId, versionLabel,
+                StripFamilyExtension(finalMetadata.FileName), ct).ConfigureAwait(false);
 
             return new FamilyImportResult(
                 Success: true,

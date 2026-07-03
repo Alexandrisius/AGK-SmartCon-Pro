@@ -1157,7 +1157,7 @@ internal sealed class InMemoryStaleDetector : IStaleDetector
 | I-14 | SQLite Thread Safety | Через `LocalCatalogDatabase` (I-14 — V12 migration) |
 | I-15 | Dockable Panel Lifecycle | Не затрагиваем |
 | I-16 | Managed Storage Immutability | Не затрагиваем (пишем в .rfa из managed storage через `IFamilyFileResolver`) |
-| I-17 | Поиск — Exa/REF разделение | Все best practices проверены через Exa (см. ADR-030 §Источники) |
+| I-17 | Поиск — Exa/Context7 разделение | Все best practices проверены через Exa (см. ADR-030 §Источники) |
 
 ---
 

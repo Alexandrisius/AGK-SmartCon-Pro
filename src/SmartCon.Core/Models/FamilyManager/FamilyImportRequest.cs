@@ -58,4 +58,8 @@ public sealed record FamilyImportRequest(
     string? OriginalSourcePath = null,
     string? PrecomputedCatalogItemId = null,
     string? PrecomputedVersionLabel = null,
-    string? PrecomputedManagedPath = null);
+    string? PrecomputedManagedPath = null,
+    string? ContentHash = null,
+    int? HashFormatVersion = null,
+    string? PublishedBy = null,
+    IReadOnlyList<FamilyGeometryPerType>? PreextractedGeometry = null);

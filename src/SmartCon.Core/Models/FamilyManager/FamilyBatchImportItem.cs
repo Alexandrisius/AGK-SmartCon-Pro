@@ -44,6 +44,23 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// using <see cref="PrecomputedCatalogItemId"/> +
 /// <see cref="PrecomputedVersionLabel"/> + file name.
 /// </param>
+/// <param name="MatchedVersionLabel">
+/// v2.0.0: when <see cref="Status"/> is <see cref="FamilyBatchImportStatus.Duplicate"/>,
+/// the version label whose stored hash matched this row's hash (e.g. "v2").
+/// Displayed in the dialog as "Duplicate (v2)". <c>null</c> otherwise.
+/// </param>
+/// <param name="LoadableSnapshot">
+/// Phase 27: in-memory snapshot of the loadable family extracted during
+/// Phase 1 Prepare. Survives the dialog round-trip so Phase 3 Commit can
+/// write types + parameter values to the catalog WITHOUT re-opening the
+/// managed .rfa. <c>null</c> for system families or when Prepare failed.
+/// </param>
+/// <param name="SystemSnapshot">
+/// Phase 27: in-memory snapshot of the system family extracted during
+/// Phase 1 Prepare. Survives the dialog round-trip so Phase 3 Commit can
+/// write types + parameter values WITHOUT re-opening the staged .rvt.
+/// <c>null</c> for loadable families or when Prepare failed.
+/// </param>
 public sealed record FamilyBatchImportItem(
     string FilePath,
     string FileName,
@@ -61,7 +78,14 @@ public sealed record FamilyBatchImportItem(
     FamilyImportSource? Source = null,
     string? PrecomputedCatalogItemId = null,
     string? PrecomputedVersionLabel = null,
-    string? PrecomputedManagedPath = null)
+    string? PrecomputedManagedPath = null,
+    string? ContentHash = null,
+    int? HashFormatVersion = null,
+    string? MatchedVersionLabel = null,
+    FamilySnapshot? LoadableSnapshot = null,
+    SystemFamilySnapshot? SystemSnapshot = null,
+    string? PublishedBy = null,
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =
@@ -72,4 +96,7 @@ public sealed record FamilyBatchImportItem(
 
     /// <summary>Human-readable name of the target category.</summary>
     public string? TargetCategoryName { get; set; } = TargetCategoryName;
+
+    /// <summary>Username of the Revit user who publishes this version (ADR-041 rev #5).</summary>
+    public string? PublishedByUser { get; set; } = PublishedBy;
 }

@@ -39,9 +39,50 @@ File.SetAttributes(absolutePath, File.GetAttributes(absolutePath) | FileAttribut
 
 **Исключение:** удаление файла не требует установки ReadOnly обратно.
 
+## Exception: OverwriteCurrent (ADR-040)
+
+`OverwriteCurrent` — явное действие пользователя через batch dialog (комбо-бокс
+"Перезаписать текущую версию"), НЕ silent change. Оно нарушает базовый принцип
+"изменения = новая версия", но оправдано UX-сценарием: пользователь внёс
+незначительные правки в семейство и не хочет плодить новые версии.
+
+При `OverwriteCurrent` managed-файл текущей версии перезаписывается по тому же
+пути (`{catalogItemId}/{currentVersionLabel}/`), а запись в `catalog_versions`
+UPDATE (а не INSERT новой строки):
+
+| Слой | Операция |
+|---|---|
+| `.rfa/.rvt` файл | Снять ReadOnly → SaveAs с `OverwriteExistingFile=true` → установить ReadOnly |
+| `catalog_versions` | UPDATE `content_hash`, `hash_format_version`, `types_count`, `parameters_count`, `published_at_utc` WHERE `id = currentVersionId`. `id`, `version_label`, `revit_major_version` НЕ меняются |
+| `family_files` | UPDATE `file_name`, `imported_at_utc` WHERE `id = currentFileId`. `relative_path` остаётся (путь не меняется) |
+| `catalog_items` | UPDATE `name`, `normalized_name`, `updated_at_utc`, `content_hash`, `current_version_label` остаётся |
+| `family_types` | DELETE+INSERT через `SyncTypesAsync` (collapse to current version, ADR-036) |
+
+Подробная архитектура — см. [ADR-040](040-overwritecurrent-semantics.md).
+
+## Exception: DeleteVersion (ADR-041)
+
+`DeleteVersionAsync` — явное действие пользователя через вкладку «Версии» окна
+свойств. Полностью удаляет неактивную версию из каталога (hard delete, не
+soft delete):
+
+| Слой | Операция |
+|---|---|
+| `.rfa/.rvt` файлы | Снять ReadOnly с каталога `{dbRoot}/files/{catalogItemId}/{versionLabel}/` → `Directory.Delete(recursive: true)` |
+| `family_assets` | `DELETE WHERE catalog_item_id = @itemId AND version_label = @label` (привязка по label, не FK к versions) |
+| `catalog_versions` | `DELETE WHERE catalog_item_id = @itemId AND version_label = @label` → FK CASCADE удаляет `family_files`, `family_types`, `extracted_attribute_values`, `family_nested_shared_families` (FK на `version_id` добавлены в V17) |
+| `catalog_items.current_version_label` | НЕ меняется (активную версию нельзя удалить — отказ на уровне `CanDeleteVersion` и в `DeleteVersionAsync`) |
+
+Активная версия защищена инвариантом FM-041-INV-01 (ADR-041): у каждого
+`catalog_items` существует ровно одна активная версия. Удаление активной
+запрещено.
+
+Подробная архитектура — см. [ADR-041](041-active-version-management.md).
+
 ## Consequences
 
 - Пользователь не сможет случайно перезаписать или изменить managed-файл через проводник
 - Revit может читать ReadOnly-файлы без ограничений (LoadFamily не требует записи)
 - Код, работающий с managed storage, должен учитывать флаг при любых файловых операциях
 - Встроен в `LocalFamilyImportService.ImportFileAsync()` при начальном импорте
+- `OverwriteCurrent` — единственное исключение, при котором managed-файл текущей версии перезаписывается (см. ADR-040)

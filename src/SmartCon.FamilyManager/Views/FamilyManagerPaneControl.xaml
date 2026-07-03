@@ -556,10 +556,10 @@
                             </Style>
                         </MenuItem.Style>
                         <MenuItem Header="{loc:Loc FM_UpdateKeepParams}"
-                                  Command="{Binding LoadToProjectKeepParamsCommand}"
+                                  Command="{Binding UpdateStaleKeepParamsCommand}"
                                   Style="{StaticResource ModernMenuItem}" />
                         <MenuItem Header="{loc:Loc FM_UpdateOverwriteParams}"
-                                  Command="{Binding LoadToProjectCommand}"
+                                  Command="{Binding UpdateStaleCommand}"
                                   Style="{StaticResource ModernMenuItem}" />
                     </MenuItem>
                     <MenuItem>

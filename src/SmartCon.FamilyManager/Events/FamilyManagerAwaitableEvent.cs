@@ -192,7 +192,7 @@ public sealed class FamilyManagerAwaitableEvent : IFamilyManagerAwaitableEvent
             var waitedMs = (Stopwatch.GetTimestamp() - entry.EnqueuedAt) * 1000.0 / Stopwatch.Frequency;
             SmartConLogger.Debug(
                 $"[AwaitableEvent] Execute[{processed}]: start, " +
-                $"waited={waitedMs:F0}ms (pending={_queue.Count})");
+                $"waited={waitedMs.ToString("F0")}ms (pending={_queue.Count})");
             // All enqueued Action trampolines (WrapForCancellation and
             // the generic-typed closure) catch their own exceptions and
             // route them to the matching TaskCompletionSource. If an

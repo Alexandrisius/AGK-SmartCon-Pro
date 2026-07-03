@@ -402,9 +402,9 @@ public static class StickyCategoryHeaderBehavior
         foreach (var idx in stackIndices)
             occupiedTop += heightsForOccupied[idx] > 0 ? heightsForOccupied[idx] : 0;
 
-        var summary = $"[Sticky] scroll={scrollOffset:F0} viewport={viewportHeight:F0} " +
+        var summary = $"[Sticky] scroll={scrollOffset.ToString("F0")} viewport={viewportHeight.ToString("F0")} " +
                       $"vmCount={allCategoryVMs.Count} tviCount={tviCount} " +
-                      $"stackSize={stackIndices.Count} occupiedTop={occupiedTop:F0}";
+                      $"stackSize={stackIndices.Count} occupiedTop={occupiedTop.ToString("F0")}";
         SmartConLogger.Debug(summary);
 
         var tviChanged = tviCount != state.LastLoggedTviCount;
@@ -412,15 +412,15 @@ public static class StickyCategoryHeaderBehavior
         if (!tviChanged && !dumpSample) return;
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"[Sticky] DIAG: scroll={scrollOffset:F0}, viewport={viewportHeight:F0}, " +
-                      $"vmCount={allCategoryVMs.Count}, tviCount={tviCount}, stackSize={stackIndices.Count}, occupiedTop={occupiedTop:F0}");
+        sb.AppendLine($"[Sticky] DIAG: scroll={scrollOffset.ToString("F0")}, viewport={viewportHeight.ToString("F0")}, " +
+                      $"vmCount={allCategoryVMs.Count}, tviCount={tviCount}, stackSize={stackIndices.Count}, occupiedTop={occupiedTop.ToString("F0")}");
         sb.AppendLine("[Sticky] VM tree (idx | depth | name | top | height | parentIdx):");
         for (int i = 0; i < allCategoryVMs.Count; i++)
         {
             var vm = allCategoryVMs[i];
             var depth = ComputeDepth(allCategoryVMs, parentIndicesList, i);
             var topStr = double.IsPositiveInfinity(topsList[i]) ? "+Inf" : topsList[i].ToString("F0");
-            sb.AppendLine($"  [{i}] d={depth} '{vm.DisplayName}' top={topStr} h={heightsList[i]:F0} parent={parentIndicesList[i]}");
+            sb.AppendLine($"  [{i}] d={depth} '{vm.DisplayName}' top={topStr} h={heightsList[i].ToString("F0")} parent={parentIndicesList[i]}");
         }
         if (stackIndices.Count > 0)
         {

@@ -6,36 +6,11 @@ namespace SmartCon.FamilyManager.ViewModels;
 
 /// <summary>
 /// Partial class extension for extraction helpers.
-/// Wraps the sync <see cref="IFamilyDataExtractionService.ExtractFromManagedFile"/>
-/// call (which invokes Revit API) in <see cref="IFamilyManagerAwaitableEvent"/>
-/// to marshal onto the Revit UI thread (I-01).
-///
-/// Debug-level logging emits one <c>SaveSharedNestedNames</c> line per
-/// extraction so an operator can confirm the issue #77 (REVIT-198137)
-/// fallback list was persisted for each .rfa — visible as
-/// <c>SaveSharedNestedNames: persisting Count=N names for ...</c> followed
-/// by a repository line <c>Persisted N unique nested names (input=N)</c>.
+/// Contains <see cref="SaveSharedNestedNamesAsync"/> — persistence of
+/// shared-nested family names extracted alongside types and parameters.
 /// </summary>
 public sealed partial class FamilyManagerMainViewModel
 {
-    /// <summary>
-    /// Single entry point for all managed-storage import paths. Reads baked-in
-    /// family types and parameters from the managed .rfa (ADR-033), and as a
-    /// side-effect populates <see cref="FamilyExtractionResult.SharedNestedFamilyNames"/>
-    /// inside the same Revit OpenDocumentFile+Close cycle (ADR-034 §2).
-    /// </summary>
-    private async Task<FamilyExtractionResult> ExtractFromManagedFileAsync(
-        string managedRfaPath,
-        IReadOnlyList<string> expectedParameterNames,
-        CancellationToken ct)
-    {
-        return await _awaitableEvent
-            .RaiseAsync<FamilyExtractionResult>(
-                _ => _extractionService.ExtractFromManagedFile(managedRfaPath, expectedParameterNames, ct),
-                ct)
-            .ConfigureAwait(false);
-    }
-
     /// <summary>
     /// Persists the shared-nested family names extracted alongside types and
     /// parameters, so the load path can render real names in the SmartCon
@@ -73,8 +48,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (sharedNames is null || sharedNames.Count == 0)
         {
             SmartConLogger.Debug(
-                $"SaveSharedNestedNames: skipped (no shared-nested names extracted for '{catalogItemId}', " +
-                "v={versionId})");
+                $"SaveSharedNestedNames: skipped (no shared-nested names extracted for CatalogItemId={catalogItemId}, VersionId={versionId})");
             return;
         }
 

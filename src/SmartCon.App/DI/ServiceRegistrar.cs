@@ -120,9 +120,9 @@ public static class ServiceRegistrar
         services.AddSingleton<ISettingsViewModelFactory, SettingsViewModelFactory>();
 
         // --- Dialog Presenter (C-3: VM→View mapping, decoupling from concrete Views) ---
-        services.AddSingleton(_ =>
+        services.AddSingleton(sp =>
         {
-            var presenter = new WpfDialogPresenter();
+            var presenter = new WpfDialogPresenter(sp.GetRequiredService<IRevitContext>());
             presenter.Register<MiniTypeSelectorViewModel>(vm => new MiniTypeSelectorView(vm));
             presenter.Register<FamilySelectorViewModel>(vm => new FamilySelectorView(vm));
             presenter.Register<AboutViewModel>(vm => new AboutView(vm));
@@ -150,6 +150,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IFileNameParser, RevitFileNameParser>();
         services.AddSingleton<IViewRepository, RevitViewRepository>();
         services.AddSingleton<IShareSettingsViewModelFactory, ShareSettingsViewModelFactory>();
+
+        services.AddSingleton<IUiFreezeRecoveryService, RevitUiFreezeRecoveryService>();
 
         // --- FamilyManager (Phase 13) ---
         services.AddSingleton<LocalCatalogDatabase>();
@@ -214,6 +216,17 @@ public static class ServiceRegistrar
         services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
+
+        // --- FamilyManager Content Hash Dedup (Phase 27 / Issue #88) ---
+        services.AddSingleton<IFamilySnapshotExtractor, SmartCon.Revit.FamilyManager.RevitFamilySnapshotExtractor>();
+        services.AddSingleton<IFamilyContentHasher, SmartCon.Core.Services.Implementation.FamilyContentHasher>();
+        services.AddSingleton<IContentHashDedupService, SmartCon.FamilyManager.Services.ContentHashDedupService>();
+        services.AddSingleton<SmartCon.FamilyManager.Services.FamilyImportPreparationService>();
+
+        // --- FamilyManager 3D Geometry Preview (ADR-042 / Issue #92) ---
+        services.AddSingleton<IFamilyGeometryExtractor, SmartCon.Revit.FamilyManager.RevitFamilyGeometryExtractor>();
+        services.AddSingleton<IGlbWriter, SmartCon.FamilyManager.Services.Geometry.FamilyGeometryGlbWriter>();
+        services.AddSingleton<IFamilyGeometryPipeline, SmartCon.FamilyManager.Services.Geometry.FamilyGeometryPipeline>();
 
         // --- FamilyManager Stale Detection (Phase 24 / ADR-030) ---
         services.AddSingleton<IFamilyVersionStore, RevitFamilyVersionStore>();

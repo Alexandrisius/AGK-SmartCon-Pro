@@ -46,13 +46,43 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
 
             foreach (var item in items)
             {
+                // ADR-040: match by CatalogItemId first (precise key, works
+                // for OverwriteCurrent where r.FileName has no extension but
+                // item.FilePath does). Fall back to filename comparison for
+                // edge cases where CatalogItemId is not set (e.g. UC-1 New
+                // path where the id is allocated inside ImportFileAsync).
+                var expectedCatalogItemId = item.ExistingCatalogItemId ?? item.PrecomputedCatalogItemId;
                 var matchingResult = importResult.Results.FirstOrDefault(r =>
-                    !string.IsNullOrEmpty(r.FileName) &&
-                    string.Equals(Path.GetFileName(item.FilePath), r.FileName, StringComparison.OrdinalIgnoreCase));
+                    !string.IsNullOrEmpty(r.CatalogItemId)
+                    && !string.IsNullOrEmpty(expectedCatalogItemId)
+                    && string.Equals(r.CatalogItemId, expectedCatalogItemId, StringComparison.OrdinalIgnoreCase));
+                if (matchingResult is null)
+                {
+                    matchingResult = importResult.Results.FirstOrDefault(r =>
+                        !string.IsNullOrEmpty(r.FileName) &&
+                        !string.IsNullOrEmpty(item.FileName) &&
+                        string.Equals(
+                            Path.GetFileNameWithoutExtension(r.FileName),
+                            Path.GetFileNameWithoutExtension(item.FileName),
+                            StringComparison.OrdinalIgnoreCase));
+                }
 
-                if (matchingResult is null) continue;
-                if (!matchingResult.Success || string.IsNullOrEmpty(matchingResult.CatalogItemId))
+                if (matchingResult is null)
+                {
+                    SmartConLogger.Warn(
+                        $"No matching import result for system row '{item.FileName}' " +
+                        $"(expectedCatalogItemId='{expectedCatalogItemId ?? "<null>"}', FilePath='{item.FilePath}') " +
+                        $"[Action: проверьте, что ImportBatchAsync вернул CatalogItemId для этого item]");
                     continue;
+                }
+                if (!matchingResult.Success || string.IsNullOrEmpty(matchingResult.CatalogItemId))
+                {
+                    SmartConLogger.Warn(
+                        $"Matching result for system row '{item.FileName}' is not successful " +
+                        $"(Success={matchingResult.Success}, ErrorMessage='{matchingResult.ErrorMessage}', CatalogItemId='{matchingResult.CatalogItemId ?? "<null>"}') " +
+                        $"[Action: проверьте логи ImportBatchAsync/OverwriteCurrentAsync для причины ошибки]");
+                    continue;
+                }
 
                 var types = item.SourceTypes;
                 if (types is null || types.Count == 0)
@@ -69,7 +99,9 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
                     matchingResult.ManagedFilePath ?? item.FilePath,
                     types.Select(t => t.Name).ToList(),
                     matchingResult.VersionId,
-                    matchingResult.FileId));
+                    matchingResult.FileId,
+                    Snapshot: item.SystemSnapshot,
+                    RevitMajorVersion: item.RevitMajorVersion));
             }
         }
         catch (Exception ex)

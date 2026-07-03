@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -112,8 +113,8 @@ internal sealed partial class LocalFamilyImportService
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, category_id, manufacturer, content_status, current_version_label, published_by, family_source, revit_category, created_at_utc, updated_at_utc)
-            VALUES (@id, @name, @normalizedName, @description, @categoryName, @categoryId, @manufacturer, @status, @versionLabel, @publishedBy, @familySource, @revitCategory, @createdAtUtc, @updatedAtUtc)
+            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, category_id, manufacturer, content_status, current_version_label, published_by, family_source, revit_category, content_hash, hash_format_version, created_at_utc, updated_at_utc)
+            VALUES (@id, @name, @normalizedName, @description, @categoryName, @categoryId, @manufacturer, @status, @versionLabel, @publishedBy, @familySource, @revitCategory, @contentHash, @hashFmt, @createdAtUtc, @updatedAtUtc)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@name", displayName));
@@ -127,24 +128,32 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@publishedBy", DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@familySource", request.FamilySource));
         cmd.Parameters.Add(new SqliteParameter("@revitCategory", request.RevitCategory ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@contentHash", request.ContentHash ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@hashFmt", request.HashFormatVersion ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@createdAtUtc", now.ToString("o")));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task UpdateCatalogItemWithNameAsync(SqliteConnection connection, string id,
-        string newName, string normalizedName, string versionLabel, DateTimeOffset now, CancellationToken ct)
+        string newName, string normalizedName, string versionLabel, DateTimeOffset now, CancellationToken ct,
+        string? contentHash = null, int? hashFormatVersion = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             UPDATE catalog_items
-            SET name = @name, normalized_name = @normalizedName, current_version_label = @versionLabel, updated_at_utc = @updatedAtUtc
+            SET name = @name, normalized_name = @normalizedName, current_version_label = @versionLabel,
+                content_hash = COALESCE(@contentHash, content_hash),
+                hash_format_version = COALESCE(@hashFmt, hash_format_version),
+                updated_at_utc = @updatedAtUtc
             WHERE id = @id
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@name", newName));
         cmd.Parameters.Add(new SqliteParameter("@normalizedName", normalizedName));
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
+        cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -166,14 +175,22 @@ internal sealed partial class LocalFamilyImportService
     }
 
     private static async Task UpdateCatalogItemVersionAsync(SqliteConnection connection, string id,
-        string versionLabel, DateTimeOffset now, CancellationToken ct)
+        string versionLabel, DateTimeOffset now, CancellationToken ct,
+        string? contentHash = null, int? hashFormatVersion = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            UPDATE catalog_items SET current_version_label = @versionLabel, updated_at_utc = @updatedAtUtc WHERE id = @id
+            UPDATE catalog_items
+            SET current_version_label = @versionLabel,
+                content_hash = COALESCE(@contentHash, content_hash),
+                hash_format_version = COALESCE(@hashFmt, hash_format_version),
+                updated_at_utc = @updatedAtUtc
+            WHERE id = @id
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
+        cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -181,12 +198,14 @@ internal sealed partial class LocalFamilyImportService
     private static async Task InsertVersionAsync(SqliteConnection connection, string versionId,
         string catalogItemId, string fileId, string versionLabel,
         FamilyMetadataExtractionResult metadata, int revitVersion,
-        DateTimeOffset now, CancellationToken ct)
+        DateTimeOffset now, CancellationToken ct,
+        string? contentHash = null, int? hashFormatVersion = null,
+        string? publishedBy = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, types_count, parameters_count, published_at_utc)
-            VALUES (@id, @catalogItemId, @fileId, @versionLabel, @revitMajorVersion, @typesCount, @parametersCount, @publishedAtUtc)
+            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, types_count, parameters_count, content_hash, hash_format_version, published_at_utc, published_by)
+            VALUES (@id, @catalogItemId, @fileId, @versionLabel, @revitMajorVersion, @typesCount, @parametersCount, @contentHash, @hashFmt, @publishedAtUtc, @publishedBy)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", versionId));
         cmd.Parameters.Add(new SqliteParameter("@catalogItemId", catalogItemId));
@@ -197,7 +216,47 @@ internal sealed partial class LocalFamilyImportService
             metadata.Types is not null ? (object)metadata.Types.Count : DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@parametersCount",
             metadata.Parameters is not null ? (object)metadata.Parameters.Count : DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@publishedAtUtc", now.ToString("o")));
+        cmd.Parameters.Add(new SqliteParameter("@publishedBy", publishedBy ?? (object)DBNull.Value));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// ADR-040: Updates the catalog_versions row for the current version
+    /// in place (no new row, no version_label change). Used by
+    /// <see cref="OverwriteCurrentAsync"/> to reflect the new content_hash,
+    /// types_count, parameters_count and published_at_utc after the managed
+    /// .rfa/.rvt file was overwritten on disk.
+    /// </summary>
+    private static async Task UpdateVersionAsync(SqliteConnection connection,
+        string versionId, FamilyMetadataExtractionResult metadata,
+        DateTimeOffset now,
+        string? contentHash, int? hashFormatVersion,
+        string? publishedBy,
+        CancellationToken ct)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE catalog_versions
+            SET types_count = @typesCount,
+                parameters_count = @parametersCount,
+                content_hash = @contentHash,
+                hash_format_version = @hashFmt,
+                published_at_utc = @publishedAtUtc,
+                published_by = @publishedBy
+            WHERE id = @versionId
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+        cmd.Parameters.Add(new SqliteParameter("@typesCount",
+            metadata.Types is not null ? (object)metadata.Types.Count : DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@parametersCount",
+            metadata.Parameters is not null ? (object)metadata.Parameters.Count : DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@publishedAtUtc", now.ToString("o")));
+        cmd.Parameters.Add(new SqliteParameter("@publishedBy", publishedBy ?? (object)DBNull.Value));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
@@ -252,12 +311,20 @@ internal sealed partial class LocalFamilyImportService
 
     /// <summary>
     /// Overwrites the file for the current version without changing current_version_label.
+    /// ADR-040: also UPDATEs catalog_versions (content_hash, types_count,
+    /// parameters_count, published_at_utc) in place so stale detection and
+    /// the catalog UI reflect the new content. The .rfa/.rvt file at the
+    /// current version's managed path is replaced on disk; no new
+    /// catalog_versions row is inserted.
     /// </summary>
     private async Task<FamilyImportResult> OverwriteCurrentAsync(FamilyBatchImportItem item, CancellationToken ct)
     {
         var currentVersion = await FindCurrentVersionAsync(item.ExistingCatalogItemId!, ct);
         if (currentVersion is null)
         {
+            SmartConLogger.Warn(
+                $"OverwriteCurrentAsync: current version not found for catalogItemId='{item.ExistingCatalogItemId}' " +
+                $"[Action: проверьте, что catalog_items.current_version_label указывает на существующую catalog_versions строку]");
             return new FamilyImportResult(
                 Success: false,
                 CatalogItemId: item.ExistingCatalogItemId,
@@ -280,6 +347,9 @@ internal sealed partial class LocalFamilyImportService
         if (string.IsNullOrEmpty(relativePath))
         {
             tx.Rollback();
+            SmartConLogger.Warn(
+                $"OverwriteCurrentAsync: current file path not found for fileId='{currentVersion.FileId}' " +
+                $"[Action: проверьте family_files.relative_path для текущей версии]");
             return new FamilyImportResult(
                 Success: false,
                 CatalogItemId: item.ExistingCatalogItemId,
@@ -317,6 +387,24 @@ internal sealed partial class LocalFamilyImportService
                     ErrorMessage: "Managed family file was not created after Type Catalog processing");
             }
 
+            // ADR-040: extract final metadata from the overwritten file so
+            // types_count/parameters_count reflect the new content. The
+            // FileMetadataExtractionService is a lightweight FileInfo-based
+            // reader (no Revit API); Types/Parameters may be null, which
+            // UpdateVersionAsync translates to DBNull (matching ImportFileAsync
+            // behaviour). content_hash/hash_format_version come from the
+            // Prepare-phase computation (item.ContentHash/HashFormatVersion).
+            var finalMetadata = await _metadataService.ExtractAsync(absolutePath, ct);
+            var now = DateTimeOffset.UtcNow;
+
+            // ADR-040: determine the file extension from FamilySource so
+            // system families (.rvt) get the correct file_name in
+            // family_files. Previously this was hardcoded to ".rfa", which
+            // produced "Трубы.rfa" for a system Pipe family.
+            var extension = string.Equals(item.FamilySource, "system", StringComparison.OrdinalIgnoreCase)
+                ? ".rvt"
+                : ".rfa";
+
             // Update family_files (v2.0.0: no sha256/size_bytes columns)
             using var updateFileCmd = connection.CreateCommand();
             updateFileCmd.CommandText = """
@@ -325,14 +413,14 @@ internal sealed partial class LocalFamilyImportService
                 WHERE id = @fileId
                 """;
             updateFileCmd.Parameters.Add(new SqliteParameter("@fileId", currentVersion.FileId));
-            // v2.0.1: write the user-edited name + ".rfa" to the
+            // v2.0.1: write the user-edited name + extension to the
             // family_files.file_name column so a rename in the batch
             // dialog is reflected in the file_name too. Previously this
             // was sourceMetadata.FileName (the staged source file),
             // which could disagree with the catalog row's name after
             // a rename.
-            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", item.FileName + ".rfa"));
-            updateFileCmd.Parameters.Add(new SqliteParameter("@importedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@fileName", item.FileName + extension));
+            updateFileCmd.Parameters.Add(new SqliteParameter("@importedAtUtc", now.ToString("o")));
             await updateFileCmd.ExecuteNonQueryAsync(ct);
 
             // v2.0.1: always reflect the user-edited FileName in the
@@ -340,16 +428,34 @@ internal sealed partial class LocalFamilyImportService
             // (or category) and left catalog_items.name on its original
             // value, so a rename + OverwriteCurrent wrote a new file at
             // the renamed path but the catalog row kept the old name.
+            // ADR-040: also update content_hash/hash_format_version so the
+            // catalog item reflects the new content for stale detection.
             var normalizedNewName = FamilyNameNormalizer.Normalize(item.FileName);
-            await UpdateCatalogItemWithNameAsync(connection, item.ExistingCatalogItemId!, item.FileName, normalizedNewName, currentVersion.VersionLabel, DateTimeOffset.UtcNow, ct);
+            await UpdateCatalogItemWithNameAsync(connection, item.ExistingCatalogItemId!, item.FileName, normalizedNewName, currentVersion.VersionLabel, now, ct,
+                item.ContentHash, item.HashFormatVersion);
 
             // Update category_id + category_name if the user picked one.
             if (!string.IsNullOrEmpty(item.TargetCategoryId))
             {
-                await UpdateCatalogItemCategoryAsync(connection, item.ExistingCatalogItemId!, item.TargetCategoryId, item.TargetCategoryName, DateTimeOffset.UtcNow, ct);
+                await UpdateCatalogItemCategoryAsync(connection, item.ExistingCatalogItemId!, item.TargetCategoryId, item.TargetCategoryName, now, ct);
             }
 
+            // ADR-040: UPDATE catalog_versions in place (no new row).
+            // content_hash, hash_format_version, types_count,
+            // parameters_count and published_at_utc reflect the new
+            // content; id/version_label/revit_major_version stay the same
+            // so FK references (family_types.version_id) remain valid.
+            await UpdateVersionAsync(connection, currentVersion.Id, finalMetadata, now,
+                item.ContentHash, item.HashFormatVersion, item.PublishedByUser, ct);
+
             tx.Commit();
+
+            SmartConLogger.Info(
+                $"OverwriteCurrent: updated catalog_versions id='{currentVersion.Id}', " +
+                $"versionLabel='{currentVersion.VersionLabel}', " +
+                $"content_hash='{item.ContentHash ?? "<null>"}', " +
+                $"types_count={(finalMetadata.Types is not null ? finalMetadata.Types.Count.ToString() : "<null>")}, " +
+                $"file_name='{item.FileName + extension}'");
         }
         catch
         {
@@ -368,7 +474,14 @@ internal sealed partial class LocalFamilyImportService
                 ct);
         }
 
-return new FamilyImportResult(
+        // ADR-042 H3: extract 3D geometry preview for this OVERWRITTEN version.
+        await RunGeometryPipelineHookAsync(
+            null,
+            absolutePath,
+            item.ExistingCatalogItemId!, currentVersion.Id, currentVersion.VersionLabel,
+            StripFamilyExtension(item.FileName), ct).ConfigureAwait(false);
+
+        return new FamilyImportResult(
             Success: true,
             CatalogItemId: item.ExistingCatalogItemId,
             VersionId: currentVersion.Id,

@@ -47,3 +47,9 @@
 | [034](034-shared-nested-persist-fallback.md) | Persist shared nested family names at import time (REVIT-198137 в Revit 2023/2024.2, Issue #77) | accepted | 2026-06-23 |
 | [035](035-remove-temp-logic-v2.md) | Удаление temp-логики в импорте семейств (Issue #73) | accepted | 2026-06-24 |
 | [036](036-active-family-type-sync.md) | Sync типов при импорте активного семейства — bug #1 (ghost types) + bug #2 (UI refresh) (Issue #85) | accepted | 2026-06-25 |
+| [037](037-tree-expand-collapse.md) | Tree Expand/Collapse — UX tree behavior | accepted | 2026-06-12 |
+| [038](038-sticky-category-headers.md) | Sticky Category Headers in catalog tree | accepted | 2026-06-13 |
+| [039](039-snapshot-driven-commit.md) | Snapshot-driven Commit — content-hash from family snapshot, not re-open | accepted | 2026-06-17 |
+| [040](040-overwritecurrent-semantics.md) | OverwriteCurrent — UPDATE catalog_versions in place + managed file rotation | accepted | 2026-06-29 |
+| [041](041-active-version-management.md) | Active Version Management — SetActive/DeleteVersion + per-version types/attributes | accepted | 2026-06-30 |
+| [042](042-familymanager-3d-preview.md) | FamilyManager 3D Geometry Preview — GLB extraction (SharpGLTF) + HelixToolkit.Wpf.SharpDX viewer (Issue #92) | accepted | 2026-07-01 |

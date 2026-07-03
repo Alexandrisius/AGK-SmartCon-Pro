@@ -46,53 +46,49 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
         if (tasks.Count == 0) return;
 
         SmartConLogger.Debug(
-            $"[SystemImport.Extract] Awaiting extraction for {tasks.Count} .rvt task(s) via AwaitableEvent...");
+            $"[SystemImport.Extract] Awaiting extraction for {tasks.Count} .rvt task(s)...");
 
         var pendingSaves = new List<Task>();
 
-        await _awaitableEvent.RaiseAsync(_ =>
+        // Phase 27: snapshot-based extraction is pure C# and does NOT need
+        // the Revit UI thread (no OpenDocumentFile). Only the legacy null-
+        // snapshot path would need ExternalEvent, but production now always
+        // provides a snapshot from Prepare. We iterate inline and fire saves
+        // in parallel; no AwaitableEvent marshalling required.
+        foreach (var task in tasks)
         {
-            foreach (var task in tasks)
+            try
             {
-                try
-                {
-                    if (!File.Exists(task.ManagedRvtPath))
-                    {
-                        SmartConLogger.Warn(
-                            $"[SystemImport.Extract] Managed .rvt not found for extraction: {task.ManagedRvtPath} [Action: проверьте, что антивирус не удалил файл, или повторите импорт категории]");
-                        continue;
-                    }
-
-                    var extraction = _extraction.ExtractFromRvt(
-                        task.ManagedRvtPath, task.TypeNames);
-                    if (extraction.Success)
-                    {
-                        // v2.0.0 hotfix: SaveExtractionResultAsync is already
-                        // an async method that returns a Task. The previous
-                        // implementation wrapped it in Task.Run, which (a)
-                        // double-scheduled the work onto the thread pool,
-                        // and (b) created a flaky race in unit tests where
-                        // the second task's extraction appeared to be
-                        // skipped when both saves hit the thread pool at
-                        // the same time. Call the async method directly and
-                        // let Task.WhenAll drive completion.
-                        var saveTask = SaveExtractionSafelyAsync(task, extraction);
-                        pendingSaves.Add(saveTask);
-                    }
-                    else
-                    {
-                        SmartConLogger.Warn(
-                            $"[SystemImport.Extract] Extraction failed for '{Path.GetFileName(task.ManagedRvtPath)}': " +
-                            $"{extraction.ErrorMessage} [Action: проверьте логи Revit; категория будет записана без extracted attributes]");
-                    }
-                }
-                catch (Exception ex)
+                if (task.Snapshot is null)
                 {
                     SmartConLogger.Warn(
-                        $"[SystemImport.Extract] Extraction exception for '{task.ManagedRvtPath}': {ex.Message} [Action: проверьте логи Revit; batch продолжит с другими категориями]");
+                        $"[SystemImport.Extract] Snapshot is null for '{Path.GetFileName(task.ManagedRvtPath)}' " +
+                        $"(CatalogItemId={task.CatalogItemId}) — cannot extract without re-open. " +
+                        "[Action: check Prepare logs — snapshot extraction may have failed; re-import the category to fix]");
+                    continue;
+                }
+
+                var extraction = SnapshotExtractionMapper.ToExtractionResult(
+                    task.Snapshot, task.RevitMajorVersion);
+
+                if (extraction.Success)
+                {
+                    var saveTask = SaveExtractionSafelyAsync(task, extraction);
+                    pendingSaves.Add(saveTask);
+                }
+                else
+                {
+                    SmartConLogger.Warn(
+                        $"[SystemImport.Extract] Snapshot extraction failed for '{Path.GetFileName(task.ManagedRvtPath)}': " +
+                        $"{extraction.ErrorMessage} [Action: check snapshot mapper logs for details]");
                 }
             }
-        }, ct);
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"[SystemImport.Extract] Extraction exception for '{task.ManagedRvtPath}': {ex.Message} [Action: проверьте логи SmartCon; batch продолжит с другими категориями]");
+            }
+        }
 
         if (pendingSaves.Count > 0)
         {
@@ -116,7 +112,7 @@ internal sealed class SystemFamilyAttributeExtractor : ISystemFamilyAttributeExt
         }
 
         SmartConLogger.Info(
-            $"[SystemImport.Extract] ✓ Extraction phase complete ({pendingSaves.Count} file(s) saved)");
+            $"[SystemImport.Extract] ✓ Extraction phase complete ({pendingSaves.Count} file(s) saved) [from snapshot, no re-open]");
     }
 
     private async Task SaveExtractionSafelyAsync(

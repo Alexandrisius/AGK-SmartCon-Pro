@@ -235,9 +235,6 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             }
             newDoc.SaveAs(managedRvtPath, new SaveAsOptions { OverwriteExistingFile = true });
             File.SetAttributes(managedRvtPath, File.GetAttributes(managedRvtPath) | FileAttributes.ReadOnly);
-            newDoc.Close(false);
-            try { Marshal.ReleaseComObject(newDoc); } catch { }
-            newDoc = null;
 
             SmartConLogger.Info(
                 $"'{displayName}': copied={copiedTypeIds.Count}, placed={placedCount}");
@@ -248,12 +245,15 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         catch (Exception ex)
         {
             SmartConLogger.Error($"Failed: {ex.GetType().Name}: {ex.Message}");
+            return new CreateCleanProjectResult(false, null, ex.Message, 0);
+        }
+        finally
+        {
             if (newDoc is not null)
             {
                 try { newDoc.Close(false); } catch { }
                 try { Marshal.ReleaseComObject(newDoc); } catch { }
             }
-            return new CreateCleanProjectResult(false, null, ex.Message, 0);
         }
     }
 
