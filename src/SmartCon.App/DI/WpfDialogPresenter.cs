@@ -1,4 +1,3 @@
-using SmartCon.App.Diagnostics;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Context;
@@ -134,9 +133,6 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         {
 #if NET48
             using var _recovery = BatchDialogRenderRecovery.Attach(window);
-#endif
-#if DEBUG
-            WhiteDialogDiagnostics.Attach(window, window.GetType().Name);
 #endif
             result = window.ShowDialog();
         }
