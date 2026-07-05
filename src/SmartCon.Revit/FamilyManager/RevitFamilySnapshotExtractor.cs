@@ -139,7 +139,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 
                     try
                     {
+                        var typeBefore = fm.CurrentType?.Name ?? "<none>";
                         fm.CurrentType = ft;
+                        var typeAfter = fm.CurrentType?.Name ?? "<none>";
+                        SmartConLogger.Debug(
+                            $"ExtractGeometryPerType: switched type '{ft.Name}' (before='{typeBefore}', after='{typeAfter}')");
                     }
                     catch (Exception ex)
                     {

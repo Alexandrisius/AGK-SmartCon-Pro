@@ -198,7 +198,9 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         }
     }
 
-    internal static List<MeshData> ExtractMeshesFromFamilyDoc(Document familyDoc, CancellationToken ct)
+    internal static List<MeshData> ExtractMeshesFromFamilyDoc(
+        Document familyDoc,
+        CancellationToken ct)
     {
         var result = new List<MeshData>();
 
@@ -226,37 +228,34 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         var solidForms = forms.Where(f => f.IsSolid).ToList();
         var voidForms = forms.Where(f => !f.IsSolid).ToList();
 
-        SmartConLogger.Info(
-            $"GenericForm scan: {forms.Count} total ({solidForms.Count} solid, " +
-            $"{voidForms.Count} void — voids are skipped because solid forms " +
-            "already have void cuts applied)");
-
-        // Log the active FamilyType — type-driven visibility parameters on
-        // GenericForm elements (e.g. "Visible when Type = X") only evaluate
-        // against the currently active type. If a family is opened with a
-        // type that suppresses certain extrusions, get_Geometry will return
-        // an empty GeometryElement for those forms.
-        try
-        {
-            var fm = familyDoc.FamilyManager;
-            var currentType = fm.CurrentType;
-            var currentTypeName = currentType?.Name ?? "<none>";
-            var typeCount = fm.Types.Size;
             SmartConLogger.Info(
-                $"FamilyManager: ActiveType='{currentTypeName}', TotalTypes={typeCount}");
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Debug($"FamilyManager type info unavailable: {ex.Message}");
-        }
+                $"GenericForm scan: {forms.Count} total ({solidForms.Count} solid, " +
+                $"{voidForms.Count} void — voids are skipped because solid forms " +
+                "already have void cuts applied)");
 
-        var nestedInstances = new FilteredElementCollector(familyDoc)
-            .OfClass(typeof(FamilyInstance))
-            .Cast<FamilyInstance>()
-            .ToList();
+            // Type-driven visibility parameters (e.g. "Visible when Type = X") only
+            // evaluate against the currently active family type.
+            try
+            {
+                var fm = familyDoc.FamilyManager;
+                var currentType = fm.CurrentType;
+                var currentTypeName = currentType?.Name ?? "<none>";
+                var typeCount = fm.Types.Size;
+                SmartConLogger.Debug(
+                    $"FamilyManager: ActiveType='{currentTypeName}', TotalTypes={typeCount}");
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Debug($"FamilyManager type info unavailable: {ex.Message}");
+            }
 
-        SmartConLogger.Info(
-            $"FamilyInstance (nested families) scan: {nestedInstances.Count} found");
+            var nestedInstances = new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(FamilyInstance))
+                .Cast<FamilyInstance>()
+                .ToList();
+
+            SmartConLogger.Info(
+                $"FamilyInstance (nested families) scan: {nestedInstances.Count} found");
 
         var totalProcessed = 0;
         var totalSkipped = 0;
@@ -273,13 +272,22 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             try { isVisible = form.Visible; }
             catch { isVisible = true; }
 
-            SmartConLogger.Info(
+            var isVisibleParam = GetIsVisibleParam(form);
+            SmartConLogger.Debug(
                 $"  Scanning {nodeName}: IsSolid={form.IsSolid}, Visible={isVisible}, " +
+                $"IS_VISIBLE_PARAM={FormatNullableInt(isVisibleParam)}, " +
                 $"Category={form.Category?.Name ?? "<null>"}");
 
             if (!isVisible)
             {
                 SmartConLogger.Info($"  · {nodeName}: skipped (Visible=false)");
+                continue;
+            }
+
+            if (isVisibleParam == 0)
+            {
+                SmartConLogger.Info(
+                    $"  · {nodeName}: skipped (IS_VISIBLE_PARAM=0)");
                 continue;
             }
 
@@ -302,19 +310,19 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 {
                     result.Add(mesh);
                     totalProcessed++;
-                    SmartConLogger.Info(
+                    SmartConLogger.Debug(
                         $"  ✔ {nodeName}: {mesh.VertexCount} verts, {mesh.TriangleCount} tris");
                 }
                 else
                 {
                     totalEmpty++;
-                    SmartConLogger.Info($"  · {nodeName}: no geometry extracted");
+                    SmartConLogger.Debug($"  · {nodeName}: no geometry extracted");
                 }
             }
             catch (Exception ex)
             {
                 totalSkipped++;
-                SmartConLogger.Info(
+                SmartConLogger.Debug(
                     $"  ✗ {nodeName}: {ex.GetType().Name}: {ex.Message}");
             }
         }
@@ -327,12 +335,23 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             var instId = GetElementIdInt(inst.Id);
             var nodeName = $"Nested[{symbolName}]_{instId}";
 
+            var instVisibleParam = GetIsVisibleParam(inst);
+            SmartConLogger.Debug(
+                $"  Scanning {nodeName}: IS_VISIBLE_PARAM={FormatNullableInt(instVisibleParam)}");
+
             // Issue #102: detail-level pre-filter for nested FamilyInstance.
             // This is the primary entry path for coarse-only symbolic graphics
             // (e.g. "Низкая детализация" families) into the Fine-detail 3D preview:
             // the nested FamilyInstance loop had NO visibility filter at all before #102.
             // GEOM_VISIBILITY_PARAM bitfield: Coarse=1<<13, Medium=1<<14, Fine=1<<15.
             // Value 0 = detail component family with unconditional visibility.
+            if (instVisibleParam == 0)
+            {
+                SmartConLogger.Info(
+                    $"  · {nodeName}: skipped (IS_VISIBLE_PARAM=0)");
+                continue;
+            }
+
             if (!IsShownAtDetailLevel(inst, ViewDetailLevel.Fine, out var detailSkipReason))
             {
                 SmartConLogger.Info(
@@ -347,7 +366,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 {
                     result.Add(mesh);
                     totalProcessed++;
-                    SmartConLogger.Info(
+                    SmartConLogger.Debug(
                         $"  ✔ {nodeName}: {mesh.VertexCount} verts, {mesh.TriangleCount} tris");
                 }
                 else
@@ -391,26 +410,6 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             return null;
         }
 
-        // Diagnostic: enumerate the geomElem contents before traversal so we
-        // can see whether get_Geometry returned an empty/blank GeometryElement
-        // (known Revit pattern: "null Solid" with SurfaceArea=0, Faces.Size=0,
-        // or GeometryInstance wrapping further objects). This explains why
-        // some Extrusion elements with IsSolid=True, Visible=True produce no
-        // triangles — the geometry is type-dependent or absent at default type.
-        int previewCount = 0;
-        var typeHistogram = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var g in geomElem)
-        {
-            previewCount++;
-            var t = g?.GetType().Name ?? "<null>";
-            if (!typeHistogram.TryGetValue(t, out var c)) c = 0;
-            typeHistogram[t] = c + 1;
-        }
-        var typeSummary = typeHistogram.Count > 0
-            ? string.Join(", ", typeHistogram.Select(kv => $"{kv.Value}x {kv.Key}"))
-            : "<empty>";
-        SmartConLogger.Info($"  '{nodeName}': get_Geometry returned {previewCount} objects [{typeSummary}]");
-
         var positions = new List<float>(256);
         var indices = new List<int>(512);
         var normals = new List<float>(768);
@@ -428,7 +427,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
 
         if (positions.Count < 3 || indices.Count < 3)
         {
-            SmartConLogger.Info(
+            SmartConLogger.Debug(
                 $"  '{nodeName}': traversal produced no triangles " +
                 $"(positions={positions.Count}, indices={indices.Count})");
             return null;
@@ -765,7 +764,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                                             color.Green / 255f,
                                             color.Blue / 255f,
                                             1f);
-                                        SmartConLogger.Info(
+                                        SmartConLogger.Debug(
                                             $"GetColorFromGeometry: '{nodeName}' → face material " +
                                             $"'{material.Name}' → RGB({color.Red},{color.Green},{color.Blue}) → {result}");
                                         return result;
@@ -793,7 +792,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                             color.Green / 255f,
                             color.Blue / 255f,
                             1f);
-                        SmartConLogger.Info(
+                        SmartConLogger.Debug(
                             $"GetColorFromGeometry: '{nodeName}' → OwnerFamily.Category " +
                             $"'{familyCat.Name}' material '{catMaterial.Name}' → " +
                             $"RGB({color.Red},{color.Green},{color.Blue}) → {result}");
@@ -802,7 +801,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 }
             }
 
-            SmartConLogger.Info(
+            SmartConLogger.Debug(
                 $"GetColorFromGeometry: '{nodeName}' → no face material, no category material → FallbackColor");
         }
         catch (Exception ex)
@@ -829,6 +828,22 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         return id.IntegerValue;
 #endif
     }
+
+    private static int? GetIsVisibleParam(Element element)
+    {
+        try
+        {
+            var p = element.get_Parameter(BuiltInParameter.IS_VISIBLE_PARAM);
+            if (p is null || !p.HasValue) return null;
+            return p.AsInteger();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string FormatNullableInt(int? value) => value.HasValue ? value.Value.ToString() : "<null>";
 
     /// <summary>
     /// Checks whether a family element is visible at the given detail level.
