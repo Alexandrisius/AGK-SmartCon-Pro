@@ -37,6 +37,13 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [ObservableProperty] private string? _manufacturer;
     [ObservableProperty] private string? _versionLabel;
     [ObservableProperty] private string? _fileSizeText;
+
+    partial void OnVersionLabelChanged(string? value)
+    {
+        // A new version/family was selected: the next 3D preview load should
+        // fit the camera to the new scene rather than keep the old camera.
+        _isFirst3DLoad = true;
+    }
     [ObservableProperty] private string? _createdAtText;
     [ObservableProperty] private string? _updatedAtText;
 

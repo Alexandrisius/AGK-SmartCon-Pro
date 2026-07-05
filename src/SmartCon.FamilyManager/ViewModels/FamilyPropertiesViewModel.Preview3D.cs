@@ -45,6 +45,11 @@ public sealed partial class FamilyPropertiesViewModel
 {
     private const string AutoExtractedPreviewPrefix = "auto-extracted-preview:";
 
+    private bool _isFirst3DLoad = true;
+    private Media3D.Point3D _savedCameraPosition;
+    private Media3D.Vector3D _savedCameraLookDirection;
+    private Media3D.Vector3D _savedCameraUpDirection;
+
     private IEffectsManager? _effectsManager3D;
     /// <summary>DirectX 11 resource manager (1:1 with the viewport).
     /// Must raise PropertyChanged so XAML binding updates after init.</summary>
@@ -214,6 +219,20 @@ public sealed partial class FamilyPropertiesViewModel
         {
             IsLoading3D = true;
             Preview3DStatusMessage = null;
+
+            // Preserve the user's camera when only switching types. The first
+            // load (or any load after a version/family change) should fit the
+            // camera to the new scene; subsequent type swaps keep the camera.
+            var preserveCamera = false;
+            if (!_isFirst3DLoad && Camera3D is { } camera)
+            {
+                preserveCamera = true;
+                _savedCameraPosition = camera.Position;
+                _savedCameraLookDirection = camera.LookDirection;
+                _savedCameraUpDirection = camera.UpDirection;
+                SmartConLogger.Debug("Load3DPreviewForTypeAsync: preserving user camera for type swap");
+            }
+
             Scene3DRoot.Clear();
 
             var typeSuffix = typeName is null ? "" : typeName;
@@ -282,7 +301,15 @@ public sealed partial class FamilyPropertiesViewModel
             scene.UpdateAllTransformMatrix();
             SmartConLogger.Info("scene.UpdateAllTransformMatrix() done");
 
-            FitCameraToScene();
+            if (_isFirst3DLoad)
+            {
+                FitCameraToScene();
+                _isFirst3DLoad = false;
+            }
+            else if (preserveCamera)
+            {
+                RestoreCameraState();
+            }
 
             Has3DPreview = true;
         }
@@ -303,6 +330,30 @@ public sealed partial class FamilyPropertiesViewModel
         finally
         {
             IsLoading3D = false;
+        }
+    }
+
+    /// <summary>
+    /// Restores the camera position, look direction and up direction that were
+    /// saved before a type swap. If the saved state is invalid or the camera
+    /// object is missing, falls back to <see cref="FitCameraToScene"/>.
+    /// </summary>
+    private void RestoreCameraState()
+    {
+        if (Camera3D is null) return;
+
+        try
+        {
+            Camera3D.Position = _savedCameraPosition;
+            Camera3D.LookDirection = _savedCameraLookDirection;
+            Camera3D.UpDirection = _savedCameraUpDirection;
+            SmartConLogger.Debug("Camera state restored after type swap");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"RestoreCameraState failed: {ex.Message} [Action: falling back to FitCameraToScene]");
+            FitCameraToScene();
         }
     }
 

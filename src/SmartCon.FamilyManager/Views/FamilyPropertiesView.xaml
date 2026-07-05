@@ -552,11 +552,6 @@
                                             Command="{Binding ResetCamera3DCommand}"
                                             Style="{DynamicResource GhostButton}"
                                             Padding="8,2" />
-                                    <Button Content="{loc:Loc FM_3D_ZoomExtents}"
-                                            Command="hx:ViewportCommands.ZoomExtents"
-                                            CommandTarget="{Binding ElementName=Properties3DViewport}"
-                                            Style="{DynamicResource GhostButton}"
-                                            Padding="8,2" Margin="4,0,0,0" />
                                     <ToggleButton Content="{loc:Loc FM_3D_Wireframe}"
                                                   IsChecked="{Binding IsWireframeVisible, Mode=OneWay}"
                                                   Command="{Binding ToggleWireframe3DCommand}"
@@ -591,7 +586,6 @@
                                             TextBrush="White"
                                             Loaded="OnViewport3DXLoaded">
                                 <hx:Viewport3DX.InputBindings>
-                                    <KeyBinding Command="hx:ViewportCommands.ZoomExtents" Gesture="Control+E"/>
                                     <MouseBinding Command="hx:ViewportCommands.Rotate" Gesture="RightClick"/>
                                     <MouseBinding Command="hx:ViewportCommands.Zoom" Gesture="MiddleClick"/>
                                     <MouseBinding Command="hx:ViewportCommands.Pan" Gesture="LeftClick"/>
