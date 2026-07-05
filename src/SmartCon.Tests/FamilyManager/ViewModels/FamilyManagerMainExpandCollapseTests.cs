@@ -222,4 +222,38 @@ public sealed class FamilyManagerMainExpandCollapseTests
 
         Assert.True(root.IsAnyDescendantCollapsed);
     }
+
+    [Fact]
+    public void CollectExpandedIds_DeepTree_CollectsOnlyExpandedNodes()
+    {
+        var root = MakeCat("root", "Root");
+        var mid = MakeCat("mid", "Mid");
+        var leaf1 = MakeCat("leaf1", "Leaf1");
+        var leaf2 = MakeCat("leaf2", "Leaf2");
+        var familyA = MakeLeaf("fa", "Family A");
+        var familyB = MakeLeaf("fb", "Family B");
+
+        leaf1.Children.Add(familyA);
+        leaf2.Children.Add(familyB);
+        mid.Children.Add(leaf1);
+        mid.Children.Add(leaf2);
+        root.Children.Add(mid);
+
+        root.IsExpanded = true;
+        mid.IsExpanded = true;
+        leaf1.IsExpanded = true;
+        familyA.IsExpanded = true;
+
+        var catIds = new HashSet<string>();
+        var famIds = new HashSet<string>();
+        FamilyManagerMainViewModel.CollectExpandedIds(
+            new ObservableCollection<CatalogTreeNodeViewModel> { root }, catIds, famIds);
+
+        Assert.Contains("root", catIds);
+        Assert.Contains("mid", catIds);
+        Assert.Contains("leaf1", catIds);
+        Assert.DoesNotContain("leaf2", catIds);
+        Assert.Contains("fa", famIds);
+        Assert.DoesNotContain("fb", famIds);
+    }
 }

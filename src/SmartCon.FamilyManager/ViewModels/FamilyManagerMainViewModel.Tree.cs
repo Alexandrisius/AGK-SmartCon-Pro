@@ -140,14 +140,10 @@ public sealed partial class FamilyManagerMainViewModel
                 }, isStale: isStale, staleReason: staleReason));
             }
             _noCategoryNode.FamilyCount = uncategorized.Count;
-            // Issue #98 fix: previously this line only honoured the search-inactive
-            // restore path (`!expandAll && expandedIds.Contains(...)`) — meaning
-            // that during an active search (expandAll=true), the "Без категории"
-            // node stayed at its default IsExpanded=false. The matching family
-            // existed in the tree but was hidden under a collapsed parent.
-            // Mirror the logic from BuildCategoryNode:279-293 so the _noCategoryNode
-            // expands on search exactly like ordinary category nodes do.
-            var noCatExpandedBefore = _noCategoryNode.IsExpanded;
+            // Mirror the logic from BuildCategoryNode so the _noCategoryNode
+            // expands on search exactly like ordinary category nodes do, and
+            // stays open after the last family is removed when the user already
+            // had it expanded.
             if (expandAll)
             {
                 if (_noCategoryNode.FamilyCount > 0)
@@ -157,10 +153,6 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 _noCategoryNode.IsExpanded = true;
             }
-            SmartConLogger.Debug(
-                $"FMTree.BuildNoCategory: familyCount={_noCategoryNode.FamilyCount} " +
-                $"isExpandedSet={_noCategoryNode.IsExpanded != noCatExpandedBefore} " +
-                $"expandAll={expandAll} finalIsExpanded={_noCategoryNode.IsExpanded}");
             _noCategoryNode.AttachCollapseTracking();
             rootNodes.Add(_noCategoryNode);
 
@@ -199,20 +191,11 @@ public sealed partial class FamilyManagerMainViewModel
             // пропускается (BuildCategoryNode уже корректно выставил IsExpanded).
             if (!expandAll && _previousLoadWasSearch)
             {
-                SmartConLogger.Info(
-                    $"FMTree.LoadTreeAsync: returning from search — CollapseAll + Restore " +
-                    $"(savedCatIds={_savedExpandedCategoryIds.Count}, savedFamIds={_savedExpandedFamilyIds.Count})");
                 CollapseAll(rootNodes);
                 RestoreExpandedState(rootNodes, _savedExpandedCategoryIds);
                 RestoreExpandedFamilies(rootNodes, _savedExpandedFamilyIds);
                 _savedExpandedCategoryIds.Clear();
                 _savedExpandedFamilyIds.Clear();
-            }
-            else
-            {
-                SmartConLogger.Debug(
-                    $"FMTree.LoadTreeAsync: no-collapse path taken " +
-                    $"(expandAll={expandAll}, previousLoadWasSearch={_previousLoadWasSearch})");
             }
 
             _previousLoadWasSearch = expandAll;
@@ -220,27 +203,6 @@ public sealed partial class FamilyManagerMainViewModel
             stageSw.Restart();
             TreeNodes = rootNodes;
             SmartConLogger.Freeze($"LoadTreeAsync: TreeNodes= took {stageSw.ElapsedMilliseconds}ms (WPF binding sync)");
-
-            // Issue #98 defensive fix: WPF TreeView has documented quirks
-            // (microsoft-ui-xaml #9549, #2112; reported on net48 specifically)
-            // where the TwoWay IsExpanded binding can miss the initial source
-            // value during container generation after an ItemsSource swap. Even
-            // when the VM property is correctly set to true, the TreeViewItem
-            // container may render collapsed. Re-raising PropertyChanged for any
-            // already-expanded category forces the binding to re-evaluate after
-            // the new containers exist. This is a no-op on platforms where the
-            // binding already worked — it just emits an extra notification.
-            //
-            // We only re-notify ROOT categories here: child category containers
-            // are realised later (when their parent expands), at which point the
-            // binding reads the current VM value correctly without our help.
-            foreach (var node in rootNodes)
-            {
-                if (node is CategoryNodeViewModel cat && cat.IsExpanded)
-                {
-                    cat.NotifyIsExpandedChanged();
-                }
-            }
 
             // Re-apply per-category roll-up from the cached snapshot. BuildCategoryNode
             // only sets IsStale on leaves; the HasStale/StaleCount on category nodes
@@ -320,20 +282,25 @@ public sealed partial class FamilyManagerMainViewModel
         vm.FamilyCount = familyCount;
         var isExpandedApplied = false;
         var isExpandedReason = "no-expand";
-        if (familyCount > 0)
+        // The user's intent to keep this category expanded must survive even when
+        // its last family is removed during the same refresh: rebuild with
+        // familyCount=0 must not silently drop the IsExpanded state.
+        // expandAll=true still respects familyCount so we don't expand empty
+        // brand-new branches that just appeared in the catalog.
+        if (expandAll)
         {
-            if (expandAll)
+            if (familyCount > 0)
             {
                 vm.IsExpanded = true;
                 isExpandedApplied = true;
                 isExpandedReason = "expandAll=true";
             }
-            else if (expandedIds is not null && expandedIds.Contains(catNode.Id))
-            {
-                vm.IsExpanded = true;
-                isExpandedApplied = true;
-                isExpandedReason = $"in-expandedIds";
-            }
+        }
+        else if (expandedIds is not null && expandedIds.Contains(catNode.Id))
+        {
+            vm.IsExpanded = true;
+            isExpandedApplied = true;
+            isExpandedReason = $"in-expandedIds";
         }
         // DIAG-DUMP (Issue: net48 tree-expand after search).
         // Logged at Debug to avoid log spam - 5 categories per rebuild is

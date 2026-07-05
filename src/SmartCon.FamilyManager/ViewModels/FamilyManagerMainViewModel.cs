@@ -521,7 +521,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         return count;
     }
 
-    private static void CollectExpandedIds(ObservableCollection<CatalogTreeNodeViewModel>? nodes, HashSet<string> catIds, HashSet<string>? familyIds)
+    internal static void CollectExpandedIds(ObservableCollection<CatalogTreeNodeViewModel>? nodes, HashSet<string> catIds, HashSet<string>? familyIds)
     {
         if (nodes is null) return;
         foreach (var node in nodes)
