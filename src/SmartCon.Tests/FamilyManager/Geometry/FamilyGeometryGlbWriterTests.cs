@@ -235,5 +235,124 @@ public sealed class FamilyGeometryGlbWriterTests : IDisposable
         Assert.True(ok);
         Assert.True(File.Exists(path));
     }
+
+    /// <summary>
+    /// Issue #108: verifies that a preview with multiple meshes carrying
+    /// different <c>DiffuseColor</c> values produces a GLB with one PBR
+    /// material per mesh, each retaining its BaseColor factor. This is the
+    /// round-trip guarantee for per-face material extraction — the extractor
+    /// now groups faces by <c>Face.MaterialElementId</c> and emits one
+    /// <see cref="MeshData"/> per material; the writer must preserve those
+    /// colors so the HelixToolkit viewer renders them distinctly.
+    /// </summary>
+    [Fact]
+    public async Task WriteAsync_MultipleMeshesDifferentColors_PreservesMaterialColors()
+    {
+        var red = new Vector4(1f, 0f, 0f, 1f);
+        var green = new Vector4(0f, 1f, 0f, 1f);
+        var blue = new Vector4(0f, 0f, 1f, 1f);
+
+        var preview = new FamilyGeometryPreview(
+            CatalogItemId: "multi-color-item",
+            VersionLabel: "v1",
+            FamilyName: "MultiColorFamily",
+            Meshes: new[]
+            {
+                new MeshData(
+                    Positions: new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 },
+                    Normals: new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+                    Indices: new int[] { 0, 1, 2 },
+                    DiffuseColor: red,
+                    NodeName: "Pipe__mat0"),
+                new MeshData(
+                    Positions: new float[] { 2, 0, 0, 3, 0, 0, 2, 1, 0 },
+                    Normals: new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+                    Indices: new int[] { 0, 1, 2 },
+                    DiffuseColor: green,
+                    NodeName: "Nut__mat1"),
+                new MeshData(
+                    Positions: new float[] { 4, 0, 0, 5, 0, 0, 4, 1, 0 },
+                    Normals: new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+                    Indices: new int[] { 0, 1, 2 },
+                    DiffuseColor: blue,
+                    NodeName: "Handle__mat2")
+            });
+
+        var path = Path.Combine(_tempDir, "multi_color.glb");
+        var ok = await _writer.WriteAsync(preview, path);
+
+        Assert.True(ok);
+
+        var model = ModelRoot.Load(path);
+        Assert.Equal(3, model.LogicalMeshes.Count);
+
+        // Each mesh primitive should reference a distinct material with the
+        // correct BaseColor factor. SharpGLTF stores BaseColor as a Vector4
+        // in the PBRMetallicRoughness extension.
+        var colors = new List<Vector4>();
+        foreach (var mesh in model.LogicalMeshes)
+        {
+            Assert.NotEmpty(mesh.Primitives);
+            var material = mesh.Primitives[0].Material;
+            Assert.NotNull(material);
+            var channel = material!.FindChannel("BaseColor");
+            Assert.True(channel.HasValue,
+                $"Material for mesh '{mesh.Name}' has no BaseColor channel");
+            colors.Add(channel.Value.Color);
+        }
+
+        // Colors should round-trip within float precision. Order may differ
+        // from insertion because SharpGLTF deduplicates materials by value —
+        // but since all three colors are distinct, all three must be present.
+        Assert.Contains(colors, c => Math.Abs(c.X - red.X) < 0.001f && Math.Abs(c.Z - red.Z) < 0.001f);
+        Assert.Contains(colors, c => Math.Abs(c.Y - green.Y) < 0.001f && Math.Abs(c.X - green.X) < 0.001f);
+        Assert.Contains(colors, c => Math.Abs(c.Z - blue.Z) < 0.001f && Math.Abs(c.Y - blue.Y) < 0.001f);
+    }
+
+    /// <summary>
+    /// Issue #108: verifies that a single mesh with the fallback gray color
+    /// (0.65, 0.65, 0.65, 1) — the <c>FallbackColor</c> used when no material
+    /// is resolved — round-trips through the GLB writer and preserves the
+    /// gray BaseColor. This covers the family-with-no-materials path that
+    /// nested <c>FamilyInstance</c> elements previously fell into before the
+    /// per-face extraction fix.
+    /// </summary>
+    [Fact]
+    public async Task WriteAsync_FallbackGrayColor_PreservesBaseColor()
+    {
+        var fallbackGray = new Vector4(0.65f, 0.65f, 0.65f, 1f);
+
+        var preview = new FamilyGeometryPreview(
+            CatalogItemId: "gray-item",
+            VersionLabel: "v1",
+            FamilyName: "GrayFamily",
+            Meshes: new[]
+            {
+                new MeshData(
+                    Positions: new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 },
+                    Normals: null,
+                    Indices: new int[] { 0, 1, 2 },
+                    DiffuseColor: fallbackGray,
+                    NodeName: "NoMaterial")
+            });
+
+        var path = Path.Combine(_tempDir, "gray.glb");
+        var ok = await _writer.WriteAsync(preview, path);
+
+        Assert.True(ok);
+
+        var model = ModelRoot.Load(path);
+        Assert.NotEmpty(model.LogicalMeshes);
+        var material = model.LogicalMeshes[0].Primitives[0].Material;
+        Assert.NotNull(material);
+        var channel = material!.FindChannel("BaseColor");
+        Assert.True(channel.HasValue);
+
+        var color = channel.Value.Color;
+        Assert.InRange(color.X, 0.64f, 0.66f);
+        Assert.InRange(color.Y, 0.64f, 0.66f);
+        Assert.InRange(color.Z, 0.64f, 0.66f);
+        Assert.Equal(1f, color.W);
+    }
 }
 #endif

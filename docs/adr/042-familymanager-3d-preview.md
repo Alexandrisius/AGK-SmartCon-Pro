@@ -174,7 +174,8 @@ SmartConLogger.Warn($"Geometry extraction failed: {ex.Message} [Action: check fa
 
 ## Out-of-scope (фон для будущих фаз)
 
-- PBR materials с metallic/roughness textures — MVP даёт diffuse color на категорию
+- PBR materials с metallic/roughness textures — per-face material extraction реализован (Issue #108: группировка faces по `Face.MaterialElementId`, один `MeshData` на материал), но PBR textures/metalness/roughness — Phase 2
+- Appearance Asset Color (`generic_diffuse`) — Phase 2. `Material.Color` покрывает большинство семей; для материалов imported from Rhino/SAT с invalid `Material.Color` нужен `AppearanceAssetElement.GetRenderingAsset()` → `AssetPropertyDoubleArray4d`
 - Animation & skinning
 - RPC/Plant rendering
 - Draco/Meshopt GLB compression
@@ -186,5 +187,5 @@ SmartConLogger.Warn($"Geometry extraction failed: {ex.Message} [Action: check fa
 - Build R24 (net48): `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24` ✅ 0 errors, 0 warnings
 - Build R21 (net48): `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21` ✅ 0 errors, 0 warnings
 - Build R19 (net48): `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19` ✅ 0 errors, 0 warnings
-- Tests: `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` ✅ 1688/1688 passed (7 FamilyGeometryGlbWriterTests + 5 GlbSceneLoaderTests + 1676 existing)
+- Tests: `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` ✅ 1690/1690 passed (9 FamilyGeometryGlbWriterTests + 5 GlbSceneLoaderTests + 1676 existing) — Issue #108 добавил `WriteAsync_MultipleMeshesDifferentColors_PreservesMaterialColors` + `WriteAsync_FallbackGrayColor_PreservesBaseColor`
 - Manual: импорт `.rfa` в Revit 2025 → открыть окно свойств семейства → вкладка «3D Просмотр» → должна появиться интерактивная 3D-модель (вращение правой кнопкой, zoom колесом, pan левой кнопкой). Переключение активной версии в вкладке «Версии» перезагружает превью (через `LoadAssetsAsync` → `Load3DPreviewAsync`). На net48 (Revit 2019-2024) показывается placeholder «3D-просмотр недоступен».
