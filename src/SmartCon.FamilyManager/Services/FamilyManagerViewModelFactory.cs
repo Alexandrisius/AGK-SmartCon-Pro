@@ -62,14 +62,14 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
         string catalogItemId, string name, string? description,
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
-        ContentStatus contentStatus, string? manufacturer, string? versionLabel,
-        string? fileSizeText, string? createdAtText, string? updatedAtText,
+        ContentStatus contentStatus, string? versionLabel,
+        string? createdAtText, string? updatedAtText,
         bool isReadOnly = false)
     {
         return new FamilyPropertiesViewModel(
             catalogItemId, name, description,
             categoryId, categoryPath, tags, contentStatus,
-            manufacturer, versionLabel, fileSizeText, createdAtText, updatedAtText,
+            versionLabel, createdAtText, updatedAtText,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService)
         { IsReadOnly = isReadOnly };

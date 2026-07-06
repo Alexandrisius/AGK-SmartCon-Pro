@@ -11,8 +11,8 @@ public interface IFamilyManagerViewModelFactory
     FamilyPropertiesViewModel CreatePropertiesViewModel(
         string catalogItemId, string name, string? description,
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
-        ContentStatus contentStatus, string? manufacturer, string? versionLabel,
-        string? fileSizeText, string? createdAtText, string? updatedAtText,
+        ContentStatus contentStatus, string? versionLabel,
+        string? createdAtText, string? updatedAtText,
         bool isReadOnly = false);
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();

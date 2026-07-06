@@ -158,7 +158,6 @@ internal sealed class StaleDetector : IStaleDetector
             CategoryFilter: singleCategoryId,
             StatusFilter: null,
             Tags: null,
-            ManufacturerFilter: null,
             Sort: FamilyCatalogSort.NameAsc,
             Offset: 0,
             Limit: int.MaxValue,

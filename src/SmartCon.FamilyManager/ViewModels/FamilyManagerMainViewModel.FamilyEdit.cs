@@ -54,9 +54,7 @@ public sealed partial class FamilyManagerMainViewModel
                 SelectedItem.CategoryName,
                 SelectedItem.Tags,
                 SelectedItem.ContentStatus,
-                SelectedItem.Manufacturer,
                 SelectedItem.VersionLabel,
-                null,
                 null,
                 updatedAt,
                 isReadOnly: !CanEdit);

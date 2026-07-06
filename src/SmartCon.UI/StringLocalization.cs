@@ -246,6 +246,8 @@ public static class StringLocalization
         public const string FM_Category = "FM_Category";
         public const string FM_Tags = "FM_Tags";
         public const string FM_Status = "FM_Status";
+        public const string FM_Status_Active = "FM_Status_Active";
+        public const string FM_Status_Deprecated = "FM_Status_Deprecated";
         public const string FM_ImportSuccess = "FM_ImportSuccess";
         public const string FM_ImportError = "FM_ImportError";
         public const string FM_ImportPrepareError = "FM_ImportPrepareError";
@@ -412,9 +414,7 @@ public static class StringLocalization
         public const string FM_Warn_FilesNotDeleted_Title = "FM_Warn_FilesNotDeleted_Title";
         public const string FM_Warn_FilesNotDeleted_Body = "FM_Warn_FilesNotDeleted_Body";
         public const string FM_BatchImport_MakeActive = "FM_BatchImport_MakeActive";
-        public const string FM_Props_Manufacturer = "FM_Props_Manufacturer";
         public const string FM_Props_Version = "FM_Props_Version";
-        public const string FM_Props_Size = "FM_Props_Size";
         public const string FM_Props_Created = "FM_Props_Created";
         public const string FM_Props_Updated = "FM_Props_Updated";
         public const string FM_Props_NoAvatar = "FM_Props_NoAvatar";

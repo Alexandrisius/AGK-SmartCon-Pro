@@ -68,13 +68,6 @@ internal static class LocalCatalogQueryBuilder
             parameters.Add(new SqliteParameter(paramName, query.StatusFilter.Value.ToString()));
         }
 
-        if (!string.IsNullOrWhiteSpace(query.ManufacturerFilter))
-        {
-            var paramName = $"@manufacturer_{paramIndex++}";
-            conditions.Add($"ci.manufacturer = {paramName}");
-            parameters.Add(new SqliteParameter(paramName, query.ManufacturerFilter));
-        }
-
         if (query.Tags is not null && query.Tags.Count > 0)
         {
             for (var i = 0; i < query.Tags.Count; i++)

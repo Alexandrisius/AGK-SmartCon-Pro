@@ -25,7 +25,7 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         throw new NotSupportedException("Use IFamilyImportService for import operations.");
     }
 
-    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, string? manufacturer = null, CancellationToken ct = default)
+    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
@@ -57,12 +57,6 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             {
                 setClauses.Add("content_status = @status");
                 cmd.Parameters.Add(new SqliteParameter("@status", status.Value.ToString()));
-            }
-
-            if (manufacturer is not null)
-            {
-                setClauses.Add("manufacturer = @manufacturer");
-                cmd.Parameters.Add(new SqliteParameter("@manufacturer", manufacturer));
             }
 
             setClauses.Add("updated_at_utc = @updatedAtUtc");
@@ -450,7 +444,9 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             Manufacturer: reader.IsDBNull(reader.GetOrdinal("manufacturer"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("manufacturer")),
-            ContentStatus: (ContentStatus)Enum.Parse(typeof(ContentStatus), reader.GetString(reader.GetOrdinal("content_status"))),
+            ContentStatus: ContentStatusParser.Parse(reader.IsDBNull(reader.GetOrdinal("content_status"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("content_status"))),
             CurrentVersionLabel: reader.IsDBNull(reader.GetOrdinal("current_version_label"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("current_version_label")),

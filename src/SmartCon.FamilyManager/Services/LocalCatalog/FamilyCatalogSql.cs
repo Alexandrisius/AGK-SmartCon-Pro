@@ -19,6 +19,12 @@ internal static class FamilyCatalogSql
         )
         """;
 
+    // The `manufacturer` column is kept for backward compatibility but is no
+    // longer surfaced in the UI. The "Производитель" field was removed from the
+    // Family Properties dialog because category parameter schemas already
+    // expose "Изготовитель" on the ATTRIBUTES tab when present. No DB migration
+    // is performed — the column stays nullable and is simply not written by
+    // UpdateItemAsync. See #109 for rationale.
     public const string CreateCatalogItems = """
         CREATE TABLE IF NOT EXISTS catalog_items (
             id TEXT PRIMARY KEY,

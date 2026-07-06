@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 using HelixToolkit.Wpf.SharpDX;
 using SmartCon.Core.Logging;
 using SmartCon.FamilyManager.ViewModels;
@@ -127,5 +128,22 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
         ColVersionAuthor.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Author) ?? "Author";
         ColVersionTypes.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Types) ?? "Types";
         ColVersionActive.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Active) ?? "Status";
+    }
+
+    /// <summary>
+    /// PreviewKeyDown for the tag input TextBox. Suppresses the comma key and
+    /// immediately commits the current text as a tag chip (Gmail/GitHub-style).
+    /// PreviewKeyDown is used (not KeyDown) because it fires BEFORE the character
+    /// is inserted into the text — e.Handled=true prevents the comma from appearing.
+    /// This is UI input plumbing (not business logic) — the actual tag validation
+    /// and collection update live in FamilyPropertiesViewModel.AddTagCommand.
+    /// </summary>
+    private void TagInputBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.OemComma) return;
+        if (DataContext is not FamilyPropertiesViewModel vm) return;
+        e.Handled = true;
+        if (!string.IsNullOrWhiteSpace(TagInputBox.Text))
+            vm.AddTagCommand.Execute(TagInputBox.Text);
     }
 }

@@ -41,8 +41,10 @@ public static partial class LocalizationService
         ru["FM_Name"] = "Имя"; en["FM_Name"] = "Name";
         ru["FM_Description"] = "Описание"; en["FM_Description"] = "Description";
         ru["FM_Category"] = "Категория"; en["FM_Category"] = "Category";
-        ru["FM_Tags"] = "Теги (через запятую)"; en["FM_Tags"] = "Tags (comma-separated)";
+        ru["FM_Tags"] = "Теги"; en["FM_Tags"] = "Tags";
         ru["FM_Status"] = "Статус"; en["FM_Status"] = "Status";
+        ru["FM_Status_Active"] = "Актуальное"; en["FM_Status_Active"] = "Current";
+        ru["FM_Status_Deprecated"] = "Неактуальное"; en["FM_Status_Deprecated"] = "Deprecated";
         ru["FM_ImportSuccess"] = "Импортировано: {0}"; en["FM_ImportSuccess"] = "Imported: {0}";
         ru["FM_ImportError"] = "Ошибка импорта: {0}"; en["FM_ImportError"] = "Import error: {0}";
         ru["FM_ImportPrepareError"] = "Ошибка подготовки"; en["FM_ImportPrepareError"] = "Preparation error";
@@ -192,9 +194,7 @@ public static partial class LocalizationService
         ru["FM_Warn_FilesNotDeleted_Title"] = "Файлы не удалены"; en["FM_Warn_FilesNotDeleted_Title"] = "Files not deleted";
         ru["FM_Warn_FilesNotDeleted_Body"] = "Версия удалена из базы, но файлы на диске остались (вероятно, заблокированы Revit или другим процессом). Путь: {0}"; en["FM_Warn_FilesNotDeleted_Body"] = "Version was deleted from the database but some files remain on disk (likely locked by Revit or another process). Path: {0}";
         ru["FM_BatchImport_MakeActive"] = "Сделать активной"; en["FM_BatchImport_MakeActive"] = "Make Active";
-        ru["FM_Props_Manufacturer"] = "Производитель"; en["FM_Props_Manufacturer"] = "Manufacturer";
         ru["FM_Props_Version"] = "Версия"; en["FM_Props_Version"] = "Version";
-        ru["FM_Props_Size"] = "Размер"; en["FM_Props_Size"] = "Size";
         ru["FM_Props_Created"] = "Создано"; en["FM_Props_Created"] = "Created";
         ru["FM_Props_Updated"] = "Обновлено"; en["FM_Props_Updated"] = "Updated";
         ru["FM_Props_NoAvatar"] = "Нет изображения"; en["FM_Props_NoAvatar"] = "No image";

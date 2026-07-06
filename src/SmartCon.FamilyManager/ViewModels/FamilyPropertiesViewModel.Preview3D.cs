@@ -616,5 +616,9 @@ public sealed partial class FamilyPropertiesViewModel
         }
     }
 
-    void System.IDisposable.Dispose() => Dispose3DResources();
+    void System.IDisposable.Dispose()
+    {
+        Tags.CollectionChanged -= OnTagsCollectionChanged;
+        Dispose3DResources();
+    }
 }

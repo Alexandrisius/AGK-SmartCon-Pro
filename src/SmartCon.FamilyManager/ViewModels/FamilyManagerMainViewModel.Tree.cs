@@ -38,7 +38,6 @@ public sealed partial class FamilyManagerMainViewModel
                 CategoryFilter: null,
                 StatusFilter: null,
                 Tags: null,
-                ManufacturerFilter: null,
                 Sort: FamilyCatalogSort.NameAsc,
                 Offset: 0,
                 Limit: int.MaxValue);

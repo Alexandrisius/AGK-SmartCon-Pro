@@ -11,13 +11,12 @@ public sealed class LocalCatalogQueryBuilderTests
         string? categoryFilter = null,
         ContentStatus? statusFilter = null,
         IReadOnlyList<string>? tags = null,
-        string? manufacturerFilter = null,
         FamilyCatalogSort sort = FamilyCatalogSort.NameAsc,
         int offset = 0,
         int limit = 50,
         bool includeUncategorized = false,
         IReadOnlyList<string>? categoryIdsFilter = null) =>
-        new(searchText, categoryFilter, statusFilter, tags, manufacturerFilter, sort, offset, limit,
+        new(searchText, categoryFilter, statusFilter, tags, sort, offset, limit,
             includeUncategorized, categoryIdsFilter);
 
     [Fact]
@@ -77,18 +76,6 @@ public sealed class LocalCatalogQueryBuilderTests
         Assert.Contains("ci.content_status =", sql);
         Assert.Single(parameters);
         Assert.Equal("Deprecated", parameters[0].Value);
-    }
-
-    [Fact]
-    public void BuildWhereClause_ManufacturerFilter_AddsManufacturerCondition()
-    {
-        var query = MakeQuery(manufacturerFilter: "Acme Corp");
-
-        var (sql, parameters) = LocalCatalogQueryBuilder.BuildWhereClause(query);
-
-        Assert.Contains("ci.manufacturer =", sql);
-        Assert.Single(parameters);
-        Assert.Equal("Acme Corp", parameters[0].Value);
     }
 
     [Fact]

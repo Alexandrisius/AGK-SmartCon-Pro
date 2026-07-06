@@ -63,4 +63,10 @@ public interface IFamilyCatalogProvider
         CancellationToken ct = default);
 
     Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default);
+
+    /// <summary>
+    /// Get all distinct tags used across the catalog, ordered alphabetically.
+    /// Used for autocomplete suggestions in the tag editor.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetAllTagsAsync(CancellationToken ct = default);
 }

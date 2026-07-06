@@ -52,12 +52,12 @@
 
         <Grid Grid.Row="0" Margin="0,0,0,16">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260"/>
+                <ColumnDefinition Width="290"/>
                 <ColumnDefinition Width="16"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Width="250" Height="180"
+            <Border Grid.Column="0" Width="280" Height="210"
                     CornerRadius="8" BorderThickness="1"
                     BorderBrush="{DynamicResource BorderAltBrush}"
                     Background="{DynamicResource SurfaceBrush}">
@@ -70,7 +70,8 @@
                         </TextBlock.Visibility>
                     </TextBlock>
                     <Image Source="{Binding AvatarImagePath, Converter={StaticResource PathToBitmapImageConverter}}"
-                           Stretch="Uniform" StretchDirection="Both"
+                           Stretch="UniformToFill" StretchDirection="Both"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
                            Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibility}}"/>
                     <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center"
                                 Orientation="Horizontal" Margin="0,0,0,8"
@@ -119,33 +120,89 @@
                     <TextBlock Text="{loc:Loc FM_Status}" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" Margin="0,0,8,0"/>
                     <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableStatuses}"
-                              SelectedItem="{Binding ContentStatus}"
+                              DisplayMemberPath="DisplayName"
+                              SelectedItem="{Binding SelectedStatus}"
                               IsEnabled="{Binding CanWriteProperty}"
                               Style="{DynamicResource CompactComboBox}"/>
                 </Grid>
 
-                <TextBlock Text="{loc:Loc FM_Props_Manufacturer}" Margin="0,0,0,4"
-                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
-                <TextBox Text="{Binding Manufacturer, UpdateSourceTrigger=PropertyChanged}"
-                         IsReadOnly="{Binding IsReadOnly}"
-                         Padding="4,2" Margin="0,0,0,8"
-                         Style="{DynamicResource CompactTextBox}"/>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{loc:Loc FM_Tags}" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" Margin="0,0,8,0"/>
+                    <Border Grid.Column="1" BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                            CornerRadius="4" Padding="4,3"
+                            Background="{DynamicResource SurfaceBrush}">
+                        <StackPanel Orientation="Horizontal">
+                            <ItemsControl ItemsSource="{Binding Tags}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="11"
+                                                Background="{DynamicResource HoverAltSurfaceBrush}"
+                                                BorderBrush="{DynamicResource BorderAltBrush}"
+                                                BorderThickness="1"
+                                                Margin="0,0,4,0" Padding="8,2">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding}" VerticalAlignment="Center" FontSize="12"/>
+                                                <Button Content="&#xD7;"
+                                                        Command="{Binding DataContext.RemoveTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Padding="2,0" Margin="6,0,0,0" FontSize="13"
+                                                        Height="16" Width="16"
+                                                        Style="{DynamicResource GhostButton}"
+                                                        Visibility="{Binding DataContext.IsReadOnly, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
 
-                <TextBlock Text="{loc:Loc FM_Tags}" Margin="0,0,0,4"
-                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
-                <TextBox Text="{Binding TagsText, UpdateSourceTrigger=PropertyChanged}"
-                         IsReadOnly="{Binding IsReadOnly}"
-                         Padding="4,2" Margin="0,0,0,8"
-                         Style="{DynamicResource CompactTextBox}"/>
+                            <TextBox x:Name="TagInputBox"
+                                     Text="{Binding TagInput, UpdateSourceTrigger=PropertyChanged}"
+                                     IsReadOnly="{Binding IsReadOnly}"
+                                     BorderThickness="0" Background="Transparent"
+                                     Padding="2,2" MinWidth="100"
+                                     VerticalAlignment="Center"
+                                     PreviewKeyDown="TagInputBox_PreviewKeyDown">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter"
+                                                Command="{Binding AddTagCommand}"
+                                                CommandParameter="{Binding Text, ElementName=TagInputBox}"/>
+                                </TextBox.InputBindings>
+                            </TextBox>
 
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11">
-                        <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
-                    </TextBlock>
-                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="16,0,0,0">
-                        <Run Text="{loc:Loc FM_Props_Size}"/>: <Run Text="{Binding FileSizeText, Mode=OneWay}"/>
-                    </TextBlock>
-                </StackPanel>
+                            <Popup IsOpen="{Binding HasTagSuggestions, Mode=OneWay}"
+                                   PlacementTarget="{Binding ElementName=TagInputBox}"
+                                   StaysOpen="False" MaxHeight="200" AllowsTransparency="True">
+                                <Border BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                                        Background="{DynamicResource SurfaceBrush}" MinWidth="200">
+                                    <ListBox ItemsSource="{Binding FilteredTagSuggestions}"
+                                             SelectedItem="{Binding SelectedSuggestion, Mode=TwoWay}"
+                                             Padding="0" BorderThickness="0">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Padding" Value="8,4"/>
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                    </ListBox>
+                                </Border>
+                            </Popup>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11">
+                    <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
+                </TextBlock>
             </StackPanel>
         </Grid>
 
