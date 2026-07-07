@@ -73,6 +73,21 @@ public enum ContentStatus
 
 ---
 
+## ContentStatusParser
+
+Парсер строки `content_status` из БД каталога в `ContentStatus`. Маппит legacy-значение `Retired` в `ContentStatus.Deprecated`, чтобы старые записи оставались читаемыми после перехода UI на двухстатусную модель Active/Deprecated. См. `docs/known-workarounds.md` и issue #109.
+
+**Файл:** `ContentStatusParser.cs`
+
+```csharp
+public static class ContentStatusParser
+{
+    public static ContentStatus Parse(string? value);
+}
+```
+
+---
+
 ## FamilyAssetType
 
 Тип вспомогательного ассета (изображение, документ и т.д.), прикреплённого к семейству.
