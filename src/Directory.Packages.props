@@ -76,7 +76,7 @@
       v1.0.4 bump'нул System.Text.Json до 9.0.4 → ломает net48. v1.0.3 — единственная
       stable версия Core без System.Text.Json 9.x зависимости. Все Schema2 API
       (ModelRoot, CreateMesh, CreateAccessor, SetVertexData, etc.) идентичны v1.0.4. -->
-    <PackageVersion Include="SharpGLTF.Core" Version="1.0.3" />
+    <PackageVersion Include="SharpGLTF.Core" Version="1.0.6" />
 
     <!-- HelixToolkit.Wpf.SharpDX — DirectX 11 WPF 3D viewer (ADR-042). net48 + net8.0-windows7.0.
          HelixToolkit.Toolkit.Wpf.SharpDX транситивно тянет HelixToolkit.Maths, HelixToolkit.SharpDX,
