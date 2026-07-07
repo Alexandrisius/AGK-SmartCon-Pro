@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Common;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -43,7 +45,7 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"CategoryPicker LoadTreeAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"CategoryPicker.LoadTreeAsync: failed: {ex.Message} [Action: закройте и откройте picker снова; проверьте БД каталога]");
         }
 
         var tree = new CategoryTree(nodes);
@@ -113,9 +115,14 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
     partial void OnSearchTextChanged(string value)
     {
-        SmartConLogger.Freeze("CategoryPicker: FireAndForgetAsync.LoadTreeAsync");
-        SmartConLogger.FreezeThreadPool("CategoryPicker.Before.FireAndForgetAsync");
-        _ = FireAndForgetAsync(() => LoadTreeAsync());
+        // OnSearchTextChanged fires on the UI thread (PropertyChanged setter),
+        // so Dispatcher.CurrentDispatcher returns the UI thread dispatcher.
+        var dispatcher = System.Windows.Application.Current?.Dispatcher
+            ?? Dispatcher.CurrentDispatcher;
+        if (!dispatcher.HasShutdownStarted)
+        {
+            _ = dispatcher.InvokeAsync(() => LoadTreeAsync());
+        }
     }
 
     [RelayCommand]
@@ -141,15 +148,22 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
     [RelayCommand]
     private void Cancel() => RequestClose?.Invoke(false);
 
-    private static async Task FireAndForgetAsync(Func<Task> taskFactory)
+    private static void FireAndForget(Func<Task> taskFactory, string operationName)
     {
-        try
+        Guard.ThrowIfNull(taskFactory);
+        _ = Task.Run(async () =>
         {
-            await taskFactory();
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"FireAndForget: {ex}");
-        }
+            try
+            {
+                await taskFactory().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Error($"FireAndForget({operationName}): {ex.GetBaseException()}");
+            }
+        });
     }
 }

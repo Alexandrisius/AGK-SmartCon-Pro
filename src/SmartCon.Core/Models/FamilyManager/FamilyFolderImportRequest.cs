@@ -17,4 +17,5 @@ public sealed record FamilyFolderImportRequest(
     string? Category,
     IReadOnlyList<string>? Tags,
     string? Description,
-    string? CategoryId = null);
+    string? CategoryId = null,
+    string? PublishedBy = null);

@@ -9,10 +9,17 @@ namespace SmartCon.Core.Services.Interfaces;
 public interface ITransactionService
 {
     /// <summary>
-    /// Starts a Transaction, executes action, commits.
+    /// Starts a Transaction on the active document, executes action, commits.
     /// On exception — rolls back. Returns false on failure.
     /// </summary>
     bool RunInTransaction(string name, Action<Document> action);
+
+    /// <summary>
+    /// Starts a Transaction on the supplied document, executes action, commits.
+    /// Use for documents other than the active one (e.g. freshly created project
+    /// documents from <c>Application.NewProjectDocument</c>).
+    /// </summary>
+    bool RunInTransaction(Document document, string name, Action<Document> action);
 
     /// <summary>
     /// Starts a TransactionGroup. Used for one-shot operations (single Undo record).

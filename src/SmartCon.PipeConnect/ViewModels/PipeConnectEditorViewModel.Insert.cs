@@ -15,7 +15,7 @@ public sealed partial class PipeConnectEditorViewModel
 
     private bool InsertReducerCore(FittingCardItem reducer, bool moveDynamic)
     {
-        SmartConLogger.Info($"[InsertReducer] START reducer={reducer.DisplayName}");
+        SmartConLogger.Info($"START reducer={reducer.DisplayName}");
         var primary = reducer.PrimaryFitting;
         if (primary is null) return false;
 
@@ -33,7 +33,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             if (_primaryReducerId is not null)
             {
-                SmartConLogger.Info($"[InsertReducer] Deleted old reducer id={_primaryReducerId.GetValue()}");
+                SmartConLogger.Info($"Deleted old reducer id={_primaryReducerId.GetValue()}");
                 _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
                 _virtualCtcStore.RemoveForElement(_primaryReducerId);
                 _primaryReducerId = null;
@@ -43,11 +43,11 @@ public sealed partial class PipeConnectEditorViewModel
                 doc, primary.FamilyName, primary.SymbolName, alignTarget.Origin);
             if (insertedId is null)
             {
-                SmartConLogger.Warn("[InsertReducer] InsertFitting returned null");
+                SmartConLogger.Warn("InsertFitting returned null");
                 return;
             }
 
-            SmartConLogger.Info($"[InsertReducer] Inserted id={insertedId.GetValue()}");
+            SmartConLogger.Info($"Inserted id={insertedId.GetValue()}");
 
             doc.Regenerate();
 
@@ -80,7 +80,7 @@ public sealed partial class PipeConnectEditorViewModel
             ReflectReducerCtcCommand.NotifyCanExecuteChanged();
             StatusMessage = string.Format(LocalizationService.GetString("Status_ReducerSet"), reducer.DisplayName);
             SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false, alignTarget);
-            SmartConLogger.Info($"[InsertReducer] DONE reducerId={_primaryReducerId.GetValue()}");
+            SmartConLogger.Info($"DONE reducerId={_primaryReducerId.GetValue()}");
             return true;
         }
 
@@ -96,6 +96,8 @@ public sealed partial class PipeConnectEditorViewModel
     [RelayCommand(CanExecute = nameof(CanInsertReducer))]
     private void InsertReducer()
     {
+        using var _scope = SmartConLogger.BeginScope("EditorInsert",
+            ("Method", "InsertReducer"));
         if (SelectedReducer is null) return;
         IsBusy = true;
         StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
@@ -110,7 +112,7 @@ public sealed partial class PipeConnectEditorViewModel
                 StatusMessage = string.Format(LocalizationService.GetString("Status_FamilyNotFound"), primary.FamilyName);
             }
         }
-        catch (Exception ex) { SmartConLogger.Error($"[InsertReducer] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
+        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
@@ -187,7 +189,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             ReflectElementCtc(_currentFittingId, isReducer: false);
         }
-        catch (Exception ex) { SmartConLogger.Error($"[ReflectFittingCtc] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
+        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
@@ -200,13 +202,15 @@ public sealed partial class PipeConnectEditorViewModel
         {
             ReflectElementCtc(_primaryReducerId, isReducer: true);
         }
-        catch (Exception ex) { SmartConLogger.Error($"[ReflectReducerCtc] Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
+        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
     [RelayCommand(CanExecute = nameof(CanInsertFitting))]
     private void InsertFitting()
     {
+        using var _scope = SmartConLogger.BeginScope("EditorInsert",
+            ("Method", "InsertFitting"));
         if (SelectedFitting is null) return;
 
         IsBusy = true;
@@ -218,7 +222,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[InsertFitting] Failed: {ex.Message}");
+            SmartConLogger.Error($"Failed: {ex.Message}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Insert"), ex.Message);
         }
         finally
@@ -229,11 +233,11 @@ public sealed partial class PipeConnectEditorViewModel
 
     private void InsertFittingSilent(FittingCardItem fitting, bool adjustDynamicToFit = true)
     {
-        SmartConLogger.Info($"[InsertFitting] START fitting={fitting.DisplayName}, adjustDynamic={adjustDynamicToFit}");
+        SmartConLogger.Info($"START fitting={fitting.DisplayName}, adjustDynamic={adjustDynamicToFit}");
 
         if (fitting.IsDirectConnect)
         {
-            SmartConLogger.Info("[InsertFitting] Direct connect branch — skip fitting");
+            SmartConLogger.Info("Direct connect branch — skip fitting");
             _activeFittingRule = null;
             _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_DirectConnect"), doc =>
             {
@@ -275,7 +279,7 @@ public sealed partial class PipeConnectEditorViewModel
 
             if (!isReducerFittingTopology && _primaryReducerId is not null)
             {
-                SmartConLogger.Info($"[InsertFitting] Deleting old reducer id={_primaryReducerId.GetValue()} (fitting changed)");
+                SmartConLogger.Info($"Deleting old reducer id={_primaryReducerId.GetValue()} (fitting changed)");
                 _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
                 _virtualCtcStore.RemoveForElement(_primaryReducerId);
                 _primaryReducerId = null;
@@ -287,7 +291,7 @@ public sealed partial class PipeConnectEditorViewModel
 
             if (insertedId is null) return;
 
-            SmartConLogger.Info($"[InsertFitting] Inserted id={insertedId.GetValue()}");
+            SmartConLogger.Info($"Inserted id={insertedId.GetValue()}");
             doc.Regenerate();
 
             ctcOverrides = GuessCtcForFitting(insertedId, fitting.Rule);
@@ -314,7 +318,7 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (insertedId is null)
         {
-            SmartConLogger.Warn("[InsertFitting] InsertFitting returned null — family not found");
+            SmartConLogger.Warn("InsertFitting returned null — family not found");
             StatusMessage = string.Format(LocalizationService.GetString("Status_FamilyNotFoundInProject"), primary.FamilyName);
             return;
         }
@@ -349,7 +353,7 @@ public sealed partial class PipeConnectEditorViewModel
                 }
                 else
                 {
-                    SmartConLogger.Warn("[InsertFitting] Reducer needed but no reducer families found in mapping " +
+                    SmartConLogger.Warn("Reducer needed but no reducer families found in mapping " +
                         $"for pair fitConn2_CTC={fitConn2ForCheck.ConnectionTypeCode.Value} ↔ dyn_CTC={_activeDynamic.ConnectionTypeCode.Value}");
                     _needsPrimaryReducer = true;
                     IsReducerVisible = true;
@@ -357,6 +361,7 @@ public sealed partial class PipeConnectEditorViewModel
             }
         }
 
-        SmartConLogger.Info($"[InsertFitting] DONE fittingId={_currentFittingId?.GetValue()}");
+        SmartConLogger.Info($"DONE fittingId={_currentFittingId?.GetValue()}");
     }
 }
+

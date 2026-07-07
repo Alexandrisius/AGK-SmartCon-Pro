@@ -165,6 +165,8 @@ public static partial class LocalizationService
         en["About_WillInstallOnClose"] = "v{0} will be installed when Revit closes.";
         ru["About_DownloadError"] = "Ошибка загрузки: {0}";
         en["About_DownloadError"] = "Download error: {0}";
+        ru["About_NetworkError"] = "Сетевая ошибка: {0}";
+        en["About_NetworkError"] = "Network error: {0}";
         ru["About_PendingUpdate"] = "Ожидаемое обновление будет установлено при закрытии Revit.";
         en["About_PendingUpdate"] = "Pending update will be installed when Revit closes.";
 

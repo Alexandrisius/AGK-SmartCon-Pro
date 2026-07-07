@@ -19,14 +19,16 @@ internal static class EditFamilySession
     {
         if (doc.IsModifiable)
         {
-            SmartConLogger.Lookup("  doc.IsModifiable=true → EditFamily forbidden → return default");
+            using var _scope = SmartConLogger.BeginScope("Lookup", ("Method", "EditFamilySession.Run"), ("Reason", "DocIsModifiable"));
+            SmartConLogger.Debug("doc.IsModifiable=true → EditFamily forbidden → return default");
             return default;
         }
 
         var family = instance.Symbol?.Family;
         if (family is null)
         {
-            SmartConLogger.Lookup("  family=null → return default");
+            using var _scope = SmartConLogger.BeginScope("Lookup", ("Method", "EditFamilySession.Run"), ("Reason", "FamilyNull"));
+            SmartConLogger.Debug("family=null → return default");
             return default;
         }
 
@@ -36,7 +38,8 @@ internal static class EditFamilySession
             familyDoc = doc.EditFamily(family);
             if (familyDoc is null)
             {
-                SmartConLogger.Lookup("  EditFamily returned null → return default");
+                using var _scope = SmartConLogger.BeginScope("Lookup", ("Method", "EditFamilySession.Run"), ("Reason", "EditFamilyNull"));
+                SmartConLogger.Debug("EditFamily returned null → return default");
                 return default;
             }
 
@@ -44,8 +47,9 @@ internal static class EditFamilySession
         }
         catch (Exception ex)
         {
-            SmartConLogger.Lookup($"  EditFamily exception: {ex.GetType().Name}: {ex.Message}");
-            SmartConLogger.Warn($"[EditFamilySession] Failed for '{family.Name}': {ex.Message}");
+            using var _scope = SmartConLogger.BeginScope("EditFamilySession", ("FamilyName", family.Name));
+            SmartConLogger.Debug($"EditFamily exception: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Warn($"Failed for '{family.Name}': {ex.Message}");
             return default;
         }
         finally

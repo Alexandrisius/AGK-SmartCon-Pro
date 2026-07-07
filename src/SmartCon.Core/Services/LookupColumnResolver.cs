@@ -14,6 +14,9 @@ public static class LookupColumnResolver
         IReadOnlyList<(string? Name, string? Formula)> paramSnapshot,
         IReadOnlyDictionary<string, string> formulaByName)
     {
+        using var _scope = SmartConLogger.BeginScope("LookupCol",
+            ("Method", "FindQueryParamsForTable"),
+            ("TableName", tableName));
         List<string>? widest = null;
 
         foreach (var (fpName, fpFormula) in paramSnapshot)

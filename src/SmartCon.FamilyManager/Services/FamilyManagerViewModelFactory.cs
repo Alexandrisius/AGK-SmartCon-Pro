@@ -7,6 +7,7 @@ namespace SmartCon.FamilyManager.Services;
 public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFactory
 {
     private readonly IWritableFamilyCatalogProvider _writableProvider;
+    private readonly IFamilyCatalogProvider _catalogProvider;
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyAssetService _assetService;
     private readonly IAttributePresetService _presetService;
@@ -16,14 +17,15 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyDataImportRunRepository _runRepository;
     private readonly IFamilyTypeRepository _typeRepository;
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
-    private readonly IFamilyMetadataPackageService _packageService;
     private readonly IDbUserRepository _userRepo;
     private readonly IDbAccessControlService _accessControl;
     private readonly IUserIdentityService _identityService;
     private readonly IFamilyStorageRenameService _renameService;
+    private readonly IFamilyManagerMetadataMediator _metadataMediator;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
+        IFamilyCatalogProvider catalogProvider,
         ICategoryRepository categoryRepository,
         IFamilyAssetService assetService,
         IAttributePresetService presetService,
@@ -33,13 +35,14 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyDataImportRunRepository runRepository,
         IFamilyTypeRepository typeRepository,
         IAttributeDefinitionRepository attributeDefRepository,
-        IFamilyMetadataPackageService packageService,
         IDbUserRepository userRepo,
         IDbAccessControlService accessControl,
         IUserIdentityService identityService,
-        IFamilyStorageRenameService renameService)
+        IFamilyStorageRenameService renameService,
+        IFamilyManagerMetadataMediator metadataMediator)
     {
         _writableProvider = writableProvider;
+        _catalogProvider = catalogProvider;
         _categoryRepository = categoryRepository;
         _assetService = assetService;
         _presetService = presetService;
@@ -49,25 +52,25 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _runRepository = runRepository;
         _typeRepository = typeRepository;
         _attributeDefRepository = attributeDefRepository;
-        _packageService = packageService;
         _userRepo = userRepo;
         _accessControl = accessControl;
         _identityService = identityService;
         _renameService = renameService;
+        _metadataMediator = metadataMediator;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
         string catalogItemId, string name, string? description,
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
-        ContentStatus contentStatus, string? manufacturer, string? versionLabel,
-        string? fileSizeText, string? createdAtText, string? updatedAtText,
+        ContentStatus contentStatus, string? versionLabel,
+        string? createdAtText, string? updatedAtText,
         bool isReadOnly = false)
     {
         return new FamilyPropertiesViewModel(
             catalogItemId, name, description,
             categoryId, categoryPath, tags, contentStatus,
-            manufacturer, versionLabel, fileSizeText, createdAtText, updatedAtText,
-            _writableProvider, _categoryRepository, _assetService, _presetService, _dialogService,
+            versionLabel, createdAtText, updatedAtText,
+            _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService)
         { IsReadOnly = isReadOnly };
     }
@@ -75,13 +78,13 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
     {
         return new CategoryTreeEditorViewModel(
-            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _packageService, this);
+            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this);
     }
 
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()
     {
         return new AttributeLibraryViewModel(
-            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository);
+            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository, _metadataMediator);
     }
 
     public CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true)

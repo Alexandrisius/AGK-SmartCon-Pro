@@ -1,9 +1,11 @@
 using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text.Json;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.Updates;
@@ -27,6 +29,9 @@ public sealed class GitHubUpdateService : IUpdateService
 
     private static readonly int[] s_supportedRevitVersions = [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
 
+    private const int MaxRetries = 3;
+    private const int TransientFaultDelayMs = 500;
+
     public GitHubUpdateService(IUpdateSettingsRepository settingsRepo)
     {
         _settingsRepo = settingsRepo;
@@ -37,6 +42,30 @@ public sealed class GitHubUpdateService : IUpdateService
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "SmartCon-UpdateService");
         _httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+
+#if NET48
+        // On .NET Framework 4.8 the only way to influence HttpClient's socket layer is via
+        // ServicePointManager (HttpClient → HttpWebRequest → WinHTTP). Setting ReusePort = true
+        // enables the native SO_REUSE_UNICASTPORT socket option, which **defers source-port
+        // allocation** until ConnectEx and chooses the port with the 4-tuple in mind. This
+        // makes the connection succeed even when the kernel's ephemeral port range has been
+        // partially blocked by Hyper-V / winnat / Docker exclusions, which would otherwise
+        // surface as WSAEACCES (10013) on a random subset of attempts.
+        //
+        // On .NET 5+ this property is a no-op and SocketsHttpHandler enables ReuseUnicastPort
+        // by default, so we do not need to do anything for R25+.
+        //
+        // See: https://learn.microsoft.com/dotnet/api/system.net.servicepointmanager.reuseport
+        //      https://stackoverflow.com/q/44548444
+        try
+        {
+            System.Net.ServicePointManager.ReusePort = true;
+        }
+        catch
+        {
+            // Best-effort: never let a static property tweak break update checks.
+        }
+#endif
     }
 
     public string GetCurrentVersion()
@@ -65,15 +94,36 @@ public sealed class GitHubUpdateService : IUpdateService
             _httpClient.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", settings.GitHubToken);
 
-        HttpResponseMessage response;
-        try
+        HttpResponseMessage response = null!;
+        var lastTransient = (Exception?)null;
+        for (var attempt = 0; attempt < MaxRetries; attempt++)
         {
-            response = await _httpClient.GetAsync(url).ConfigureAwait(false);
+            try
+            {
+                response = await _httpClient.GetAsync(url).ConfigureAwait(false);
+                lastTransient = null;
+                break;
+            }
+            catch (HttpRequestException ex) when (ex.InnerException is SocketException se && se.SocketErrorCode == SocketError.AccessDenied)
+            {
+                // WSAEACCES (10013): ephemeral source port fell into a Windows-reserved range
+                // (Hyper-V / winnat / Docker exclusion zones) or a leftover WFP rule from a
+                // previous security product is blocking the connection. Retry — the next
+                // attempt will get a different ephemeral port and may bypass the conflict.
+                lastTransient = ex;
+                if (attempt + 1 < MaxRetries)
+                    await Task.Delay(TransientFaultDelayMs).ConfigureAwait(false);
+            }
+            catch (HttpRequestException)
+            {
+                // Non-transient HTTP failure: surface immediately, do not retry.
+                throw;
+            }
         }
-        catch (HttpRequestException ex)
+
+        if (lastTransient is not null)
         {
-            throw new InvalidOperationException(
-                $"Network error checking updates ({settings.GitHubOwner}/{settings.GitHubRepo}): {ex.Message}", ex);
+            throw new InvalidOperationException(BuildNetworkErrorMessage(settings, lastTransient), lastTransient);
         }
 
         if (!response.IsSuccessStatusCode)
@@ -548,6 +598,14 @@ public sealed class GitHubUpdateService : IUpdateService
         }
 
         return result;
+    }
+
+    private static string BuildNetworkErrorMessage(Core.Models.UpdateSettings settings, Exception ex)
+    {
+        var detail = ex.InnerException?.Message ?? ex.Message;
+        return string.Format(
+            LocalizationService.GetString("About_NetworkError"),
+            $"{settings.GitHubOwner}/{settings.GitHubRepo}: {detail}");
     }
 
     private static string? ExtractArtifactTag(string assetName)

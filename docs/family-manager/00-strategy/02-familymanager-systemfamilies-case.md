@@ -150,7 +150,7 @@ FamilyManager (FM) на данный момент поддерживает то�
 
 - `docs/invariants.md` — жёсткие правила проекта (I-01..I-17).
 - `docs/family-manager/README.md` — документация FamilyManager.
-- `docs/domain/models.md` — доменные модели.
+- `docs/domain/models/README.md` — индекс доменных моделей (разбиты по модулям).
 - `docs/adr/` — Architecture Decision Records.
 
 ---

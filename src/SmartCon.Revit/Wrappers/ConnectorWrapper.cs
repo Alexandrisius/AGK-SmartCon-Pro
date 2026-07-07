@@ -24,17 +24,21 @@ public static class ConnectorWrapper
 #endif
 
         var cs = connector.CoordinateSystem;
+        var description = GetConnectionDescription(connector);
+        var parsed = ConnectorDescription.Parse(description);
 
         return new ConnectorProxy
         {
-            OwnerElementId = connector.Owner.Id,
+            OwnerElementId = connector.Owner!.Id,
             ConnectorIndex = (int)connector.Id,
             Origin = cs.Origin,
             BasisZ = cs.BasisZ,
             BasisX = cs.BasisX,
             Radius = connector.Radius,
             Domain = connector.Domain,
-            ConnectionTypeCode = ConnectionTypeCode.Parse(GetConnectionDescription(connector)),
+            ConnectionTypeCode = parsed.Code,
+            ConnectionName = parsed.Name,
+            ConnectionDescription = parsed.Description,
             IsFree = !connector.IsConnected
         };
     }
@@ -61,7 +65,11 @@ public static class ConnectorWrapper
             // BuiltInParameter.ALL_MODEL_DESCRIPTION — языконезависимый системный параметр «Описание».
             return elemType?.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION)?.AsString();
         }
-        catch (Exception ex) { SmartConLogger.Warn($"[ConnectorWrapper] GetTypeDescriptionSafe: {ex.GetType().Name}: {ex.Message}"); return null; }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"ConnectorWrapper.GetTypeDescriptionSafe: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 
     private static string? GetConnectorDescriptionSafe(Connector connector)

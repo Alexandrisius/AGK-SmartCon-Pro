@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
@@ -9,10 +10,10 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
 {
     private readonly LocalCatalogDatabase _database;
     private readonly StoragePathResolver _pathResolver;
-    private readonly LocalCatalogMigrator _migrator;
+    private readonly ILocalCatalogMigrator _migrator;
     private string? _migratedDbPath;
 
-    public LocalFamilyAssetService(LocalCatalogDatabase database, StoragePathResolver pathResolver, LocalCatalogMigrator migrator)
+    public LocalFamilyAssetService(LocalCatalogDatabase database, StoragePathResolver pathResolver, ILocalCatalogMigrator migrator)
     {
         _database = database;
         _pathResolver = pathResolver;
@@ -47,19 +48,19 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         var counter = 1;
         while (File.Exists(destPath))
         {
-            var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+            var nameWithoutExt = SafeFileName.GetBaseName(fileName);
             var ext = Path.GetExtension(fileName);
             destPath = Path.Combine(destDir, $"{nameWithoutExt}_{counter}{ext}");
             counter++;
         }
 
-        File.Copy(sourceFilePath, destPath);
+        await Task.Run(() => File.Copy(sourceFilePath, destPath), ct);
 
         var relativePath = _pathResolver.GetRelativePath(destPath);
         var now = DateTimeOffset.UtcNow;
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO family_assets (id, catalog_item_id, version_label, asset_type, file_name, relative_path, size_bytes, description, created_at_utc, is_primary)
@@ -74,7 +75,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         cmd.Parameters.Add(new SqliteParameter("@sizeBytes", fileInfo.Length));
         cmd.Parameters.Add(new SqliteParameter("@description", (object?)description ?? DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@createdAtUtc", now.ToString("o")));
-        await cmd.ExecuteNonQueryAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
         return new FamilyAsset(id, catalogItemId, versionLabel, assetType, Path.GetFileName(destPath), relativePath, fileInfo.Length, description, now, false);
     }
@@ -83,7 +84,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     {
         await EnsureMigratedAsync(ct);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
 
         if (versionLabel is not null)
@@ -99,7 +100,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         }
 
         var assets = new List<FamilyAsset>();
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct))
         {
             assets.Add(ReadAsset(reader));
@@ -113,7 +114,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         await EnsureMigratedAsync(ct);
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         string? relativePath;
         using (var selectCmd = connection.CreateCommand())
@@ -137,8 +138,11 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
                 var absolutePath = Path.Combine(_database.GetDatabaseRoot(), relativePath);
                 try
                 {
-                    if (File.Exists(absolutePath))
-                        File.Delete(absolutePath);
+                    await Task.Run(() =>
+                    {
+                        if (File.Exists(absolutePath))
+                            File.Delete(absolutePath);
+                    }, ct);
                 }
                 catch
                 {
@@ -153,12 +157,12 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     {
         await EnsureMigratedAsync(ct);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT relative_path FROM family_assets WHERE id = @id";
         cmd.Parameters.Add(new SqliteParameter("@id", assetId));
 
-        var relativePath = await cmd.ExecuteScalarAsync(ct) as string;
+        var relativePath = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
         if (relativePath is null)
             return null;
 
@@ -171,7 +175,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         await EnsureMigratedAsync(ct);
 
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
         string? catalogItemId;
         using (var readCmd = connection.CreateCommand())
@@ -213,11 +217,11 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     {
         await EnsureMigratedAsync(ct);
         using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT * FROM family_assets WHERE catalog_item_id = @itemId AND asset_type = 'Image' AND is_primary = 1 LIMIT 1";
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
-        using var reader = await cmd.ExecuteReaderAsync(ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (await reader.ReadAsync(ct))
             return ReadAsset(reader);
         return null;

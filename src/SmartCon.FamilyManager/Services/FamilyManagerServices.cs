@@ -1,0 +1,85 @@
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Events;
+using SmartCon.FamilyManager.Services.LocalCatalog;
+using SmartCon.FamilyManager.Services.Stale;
+
+namespace SmartCon.FamilyManager.Services;
+
+public sealed record FamilyManagerServices(
+    IFamilyCatalogProvider CatalogProvider,
+    IWritableFamilyCatalogProvider WritableProvider,
+    IFamilyImportService ImportService,
+    /// <summary>
+    /// v2.0.0: precomputer that allocates the canonical
+    /// (CatalogItemId, VersionLabel, ManagedPath) triple for a given
+    /// display name. Used by the batch-import dialog's rename handler
+    /// so the round-trip from the dialog back to <c>ImportFileAsync</c>
+    /// always carries consistent values (the dialog pre-build and the
+    /// dialog rename share the same single source of truth).
+    /// </summary>
+    IFamilyImportPrecomputer ImportPrecomputer,
+    /// <summary>
+    /// v2.0.0: storage path resolver. Injected as a record member so
+    /// <c>FamilyManagerMainViewModel.ProcessFamilyImportAsync</c> can
+    /// call <c>EnsureFamilyDirectories</c> before <c>Document.SaveAs</c>
+    /// — Revit requires the target directory to exist beforehand and
+    /// ComputeManagedFilePath alone does not create it.
+    /// </summary>
+    StoragePathResolver PathResolver,
+    IFamilyFileResolver FileResolver,
+    IFamilyLoadService LoadService,
+    IFamilyManagerDialogService DialogService,
+    IFamilyManagerAwaitableEvent AwaitableEvent,
+    IFamilyManagerViewModelFactory ViewModelFactory,
+    IRevitContext RevitContext,
+    IDatabaseManager DatabaseManager,
+    ITransactionService TransactionService,
+    ICategoryRepository CategoryRepository,
+    IFamilyTypeRepository TypeRepository,
+    IFamilyDataExtractionService ExtractionService,
+    IFamilyDataImportService DataImportService,
+    IDbAccessControlService AccessControl,
+    IFamilySearchService FamilySearchService,
+    IFamilyPlacementService FamilyPlacementService,
+    IFamilyPlacementDragService PlacementDragService,
+    IRevitFileInfoReader FileInfoReader,
+    IFamilyMetadataExtractionService MetadataService,
+    ISystemFamilyPlacementService SystemFamilyPlacementService,
+    ISystemFamilyRevitOperations SystemFamilyRevitOps,
+    ISystemFamilyIsolationProjectService SystemFamilyIsolationProject,
+    ISystemFamilyAttributeExtractor SystemFamilyAttributeExtractor,
+    ISystemFamilyImportOrchestrator SystemFamilyImportOrchestrator,
+    IActiveDocumentClassifier ActiveDocumentClassifier,
+    ILoadableFamilyScanner LoadableFamilyScanner,
+    ILoadableFamilyImportOrchestrator LoadableFamilyImportOrchestrator,
+    IFamilyVersionStore VersionStore,
+    IStaleDetector StaleDetector,
+    IStaleFamilyUpdater StaleUpdater,
+    IStaleCategoryAggregator StaleCategoryAggregator,
+    IFamilyFinder FamilyFinder,
+    IFamilyVersionWriter VersionWriter,
+    IClock Clock,
+    ISharedNestedFamilyRepository SharedNestedRepository,
+    /// <summary>
+    /// v2.0.0 (ADR-036, M-019-003): UI dispatcher. Injected instead of
+    /// <c>Application.Current?.Dispatcher</c> because the latter is
+    /// <c>null</c> in net48 Revit addins (known WPF/Revit interaction
+    /// bug, see ADR-025 M-019-003). The injected <see cref="IDispatcher"/>
+    /// is unit-testable (<c>WpfDispatcher</c> is net48-safe) and is the
+    /// canonical way to marshal FireAndForget callbacks back to the UI
+    /// thread per ADR-031.
+    /// </summary>
+    IDispatcher Dispatcher,
+    /// <summary>
+    /// Phase 27 / Issue #88: content-hash dedup infrastructure.
+    /// </summary>
+    IFamilySnapshotExtractor SnapshotExtractor,
+    IFamilyContentHasher ContentHasher,
+    IContentHashDedupService DedupService,
+    /// <summary>
+    /// 3D-preview / white-dialog fix: platform-specific workaround that
+    /// resyncs the WPF render thread after Revit API operations that can
+    /// leave it in a zombie state on net48 (REVIT-236376 / REVIT-237190).
+    /// </summary>
+    IUiFreezeRecoveryService FreezeRecovery,
+    FamilyImportPreparationService PreparationService);

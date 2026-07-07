@@ -5,6 +5,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    target-branch: develop
     labels:
       - dependencies
     ignore:
@@ -18,7 +19,7 @@ updates:
       - dependency-name: "coverlet.collector"
         versions: [">= 7.0.0"]
       - dependency-name: "PolySharp"
-        versions: [">= 2.0.0"]
+        versions: [">= 1.16.0"]
       - dependency-name: "Microsoft.Data.Sqlite"
         versions: [">= 9.0.0"]
       - dependency-name: "SQLitePCLRaw.bundle_e_sqlite3"
@@ -28,5 +29,6 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    target-branch: develop
     labels:
       - ci

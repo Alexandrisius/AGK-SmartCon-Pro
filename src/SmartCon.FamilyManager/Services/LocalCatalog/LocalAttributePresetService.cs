@@ -8,10 +8,10 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
 {
     private readonly LocalCatalogDatabase _database;
     private readonly ICategoryRepository _categoryRepository;
-    private readonly LocalCatalogMigrator _migrator;
+    private readonly ILocalCatalogMigrator _migrator;
     private string? _migratedDbPath;
 
-    public LocalAttributePresetService(LocalCatalogDatabase database, ICategoryRepository categoryRepository, LocalCatalogMigrator migrator)
+    public LocalAttributePresetService(LocalCatalogDatabase database, ICategoryRepository categoryRepository, ILocalCatalogMigrator migrator)
     {
         _database = database;
         _categoryRepository = categoryRepository;

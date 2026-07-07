@@ -17,7 +17,7 @@ public sealed class LocalCatalogProviderTests
     private static async Task SeedItemAsync(TempCatalogFixture fixture, string id, string name, string normalizedName,
         string? category = null, string? status = "Active", string[]? tags = null)
     {
-        using var connection = new SqliteConnection(fixture.ConnectionString);
+        using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
 
         using var cmd = connection.CreateCommand();
@@ -56,7 +56,7 @@ public sealed class LocalCatalogProviderTests
     public async Task SearchAsync_EmptyDb_ReturnsEmptyList()
     {
         using var fixture = await CreateAndMigrate();
-        var query = new FamilyCatalogQuery(null, null, null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
+        var query = new FamilyCatalogQuery(null, null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
         var results = await fixture.GetProvider().SearchAsync(query);
         Assert.Empty(results);
     }
@@ -83,7 +83,7 @@ public sealed class LocalCatalogProviderTests
         using var fixture = await CreateAndMigrate();
         await SeedItemAsync(fixture, "item1", "Pipe Fitting", "pipe fitting", "Pipes");
 
-        var query = new FamilyCatalogQuery("pipe", null, null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
+        var query = new FamilyCatalogQuery("pipe", null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
         var results = await fixture.GetProvider().SearchAsync(query);
 
         Assert.Single(results);
@@ -110,7 +110,7 @@ public sealed class LocalCatalogProviderTests
         await SeedItemAsync(fixture, "c1", "Pipe A", "pipe a");
         await SeedItemAsync(fixture, "c2", "Valve B", "valve b");
 
-        using var conn = new SqliteConnection(fixture.ConnectionString);
+        using var conn = fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var catCmd = conn.CreateCommand();
         catCmd.CommandText = "INSERT INTO categories (id, name, sort_order, created_at_utc) VALUES ('cat1', 'Pipes', 0, @t)";
@@ -121,7 +121,7 @@ public sealed class LocalCatalogProviderTests
         updCmd.CommandText = "UPDATE catalog_items SET category_id = 'cat1' WHERE id = 'c1'";
         await updCmd.ExecuteNonQueryAsync();
 
-        var query = new FamilyCatalogQuery(null, "cat1", null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
+        var query = new FamilyCatalogQuery(null, "cat1", null, null, FamilyCatalogSort.NameAsc, 0, 50);
         var results = await fixture.GetProvider().SearchAsync(query);
 
         Assert.Single(results);
@@ -135,7 +135,7 @@ public sealed class LocalCatalogProviderTests
         await SeedItemAsync(fixture, "s1", "Active Item", "active item", null, "Active");
         await SeedItemAsync(fixture, "s2", "Deprecated Item", "deprecated item", null, "Deprecated");
 
-        var query = new FamilyCatalogQuery(null, null, ContentStatus.Active, null, null, FamilyCatalogSort.NameAsc, 0, 50);
+        var query = new FamilyCatalogQuery(null, null, ContentStatus.Active, null, FamilyCatalogSort.NameAsc, 0, 50);
         var results = await fixture.GetProvider().SearchAsync(query);
 
         Assert.Single(results);

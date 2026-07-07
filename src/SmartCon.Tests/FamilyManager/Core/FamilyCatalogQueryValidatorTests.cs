@@ -9,7 +9,7 @@ public sealed class FamilyCatalogQueryValidatorTests
     [Fact]
     public void Validate_ClampsNegativeOffsetToZero()
     {
-        var query = new FamilyCatalogQuery(null, null, null, null, null, FamilyCatalogSort.NameAsc, -5, 50);
+        var query = new FamilyCatalogQuery(null, null, null, null, FamilyCatalogSort.NameAsc, -5, 50);
         var result = FamilyCatalogQueryValidator.Validate(query);
         Assert.Equal(0, result.Offset);
     }
@@ -17,7 +17,7 @@ public sealed class FamilyCatalogQueryValidatorTests
     [Fact]
     public void Validate_ClampsZeroLimitTo50()
     {
-        var query = new FamilyCatalogQuery(null, null, null, null, null, FamilyCatalogSort.NameAsc, 0, 0);
+        var query = new FamilyCatalogQuery(null, null, null, null, FamilyCatalogSort.NameAsc, 0, 0);
         var result = FamilyCatalogQueryValidator.Validate(query);
         Assert.Equal(50, result.Limit);
     }
@@ -25,7 +25,7 @@ public sealed class FamilyCatalogQueryValidatorTests
     [Fact]
     public void Validate_ClampsLargeLimitTo500()
     {
-        var query = new FamilyCatalogQuery(null, null, null, null, null, FamilyCatalogSort.NameAsc, 0, 1000);
+        var query = new FamilyCatalogQuery(null, null, null, null, FamilyCatalogSort.NameAsc, 0, 1000);
         var result = FamilyCatalogQueryValidator.Validate(query);
         Assert.Equal(500, result.Limit);
     }
@@ -33,7 +33,7 @@ public sealed class FamilyCatalogQueryValidatorTests
     [Fact]
     public void Validate_ValidQuery_Unchanged()
     {
-        var query = new FamilyCatalogQuery("pipe", "Pipes", null, null, null, FamilyCatalogSort.NameAsc, 10, 100);
+        var query = new FamilyCatalogQuery("pipe", "Pipes", null, null, FamilyCatalogSort.NameAsc, 10, 100);
         var result = FamilyCatalogQueryValidator.Validate(query);
         Assert.Equal("pipe", result.SearchText);
         Assert.Equal("Pipes", result.CategoryFilter);

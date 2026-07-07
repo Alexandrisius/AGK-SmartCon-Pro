@@ -28,7 +28,8 @@ public sealed class PipeConnectRotationHandler(
         int angleDeg)
     {
         var dynId = ctx.DynamicConnector.OwnerElementId;
-        SmartConLogger.Info($"[Rotate] START angle={angleDeg}°, dynId={dynId.GetValue()}, fitting={fittingId?.GetValue()}, reducer={reducerId?.GetValue()}");
+        using var _scope = SmartConLogger.BeginScope("Rotate", ("DynId", dynId.GetValue()), ("Angle", angleDeg));
+        SmartConLogger.Info($"START fitting={fittingId?.GetValue()}, reducer={reducerId?.GetValue()}");
 
         groupSession.RunInTransaction(LocalizationService.GetString("Tx_Rotate"), d =>
         {
@@ -80,7 +81,7 @@ public sealed class PipeConnectRotationHandler(
                 }
             }
 
-            SmartConLogger.Debug($"[Rotate] Rotating {idsToRotate.Count} elements");
+            SmartConLogger.Debug($"Rotating {idsToRotate.Count} elements");
             transformSvc.RotateElements(d, idsToRotate, axisOrigin, axisDir, radians);
             d.Regenerate();
 
@@ -94,19 +95,19 @@ public sealed class PipeConnectRotationHandler(
                     staticBZ, elemBasisY, axisOrigin);
                 if (globalYSnap is not null)
                 {
-                    SmartConLogger.Debug("[Rotate] GlobalYSnap applied");
+                    SmartConLogger.Debug("GlobalYSnap applied");
                     transformSvc.RotateElement(d, dynId,
                         axisOrigin, globalYSnap.Axis, globalYSnap.AngleRadians);
                 }
                 else
                 {
-                    SmartConLogger.Debug("[Rotate] GlobalYSnap skipped (null)");
+                    SmartConLogger.Debug("GlobalYSnap skipped (null)");
                 }
             }
 
             d.Regenerate();
         });
 
-        SmartConLogger.Info($"[Rotate] DONE angle={angleDeg}°");
+        SmartConLogger.Info($"DONE angle={angleDeg}°");
     }
 }

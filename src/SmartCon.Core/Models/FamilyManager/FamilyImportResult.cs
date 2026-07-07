@@ -10,7 +10,8 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="FileName">Imported file name.</param>
 /// <param name="VersionLabel">Assigned version label (e.g. "v1", "v2").</param>
 /// <param name="ErrorMessage">Error message if failed.</param>
-/// <param name="WasSkippedAsDuplicate">True if skipped because same SHA256 already exists for this Revit version.</param>
+/// <param name="ManagedFilePath">Absolute path to the file as registered in managed storage.</param>
+/// <param name="WasSkipped">True if the user selected Skip in the batch dialog. Renamed from <c>WasSkippedAsDuplicate</c> in v2.0.0 — the value never implied SHA256 dedup in production; it is always set when the user picks Skip in the batch UI.</param>
 /// <param name="WasNewVersion">True if a new version was created for an existing family.</param>
 public sealed record FamilyImportResult(
     bool Success,
@@ -20,5 +21,6 @@ public sealed record FamilyImportResult(
     string? FileName,
     string? VersionLabel,
     string? ErrorMessage,
-    bool WasSkippedAsDuplicate = false,
+    string? ManagedFilePath = null,
+    bool WasSkipped = false,
     bool WasNewVersion = false);

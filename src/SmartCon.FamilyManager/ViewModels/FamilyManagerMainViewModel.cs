@@ -1,13 +1,18 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Text;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Common;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services;
+using SmartCon.FamilyManager.Services.LocalCatalog;
+using SmartCon.FamilyManager.Services.Stale;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -20,11 +25,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyCatalogProvider _catalogProvider;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
     private readonly IFamilyImportService _importService;
+    private readonly IFamilyImportPrecomputer _importPrecomputer;
+    private readonly StoragePathResolver _pathResolver;
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IFamilyLoadService _loadService;
-    private readonly IProjectFamilyUsageRepository _usageRepo;
     private readonly IFamilyManagerDialogService _dialogService;
-    private readonly IFamilyManagerExternalEvent _externalEvent;
+    private readonly IFamilyManagerAwaitableEvent _awaitableEvent;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IRevitContext _revitContext;
     private readonly IDatabaseManager _databaseManager;
@@ -36,12 +42,41 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IDbAccessControlService _accessControl;
     private readonly IFamilySearchService _familySearchService;
     private readonly IFamilyPlacementService _familyPlacementService;
+    private readonly IFamilyPlacementDragService _placementDragService;
+    private readonly IRevitFileInfoReader _fileInfoReader;
+    private readonly IFamilyMetadataExtractionService _metadataService;
+    private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
+    private readonly ISystemFamilyRevitOperations _systemFamilyRevitOps;
+    private readonly ISystemFamilyIsolationProjectService _systemFamilyIsolationProject;
+    private readonly ISystemFamilyAttributeExtractor _systemFamilyAttributeExtractor;
+    private readonly ISystemFamilyImportOrchestrator _systemFamilyImportOrchestrator;
+    private readonly IActiveDocumentClassifier _activeDocumentClassifier;
+    private readonly ILoadableFamilyScanner _loadableFamilyScanner;
+    private readonly ILoadableFamilyImportOrchestrator _loadableFamilyImportOrchestrator;
+    private readonly IStaleDetector _staleDetector;
+    private readonly IStaleFamilyUpdater _staleUpdater;
+    private readonly IStaleCategoryAggregator _staleAggregator;
+    private readonly IFamilyFinder _familyFinder;
+    private readonly IFamilyVersionWriter _versionWriter;
+    private readonly IClock _clock;
+    private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
+    private readonly IDispatcher _dispatcher;
+    private readonly FamilyImportPreparationService _preparationService;
+    private readonly IContentHashDedupService _dedupService;
+    private readonly IUiFreezeRecoveryService _freezeRecovery;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
     private bool _lastSearchActive;
+    private bool _previousLoadWasSearch;
     private readonly HashSet<string> _savedExpandedCategoryIds = new();
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
+    private HashSet<string>? _loadedFamilyNamesCache;
+    private string? _loadedFamilyNamesCacheProjectPath;
+
+    // ── Stale detection session cache (Phase 24 / ADR-030) ─────────────
+    [ObservableProperty] private bool _isStaleCheckInProgress;
+    [ObservableProperty] private string? _staleCheckMessage;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSearchNotEmpty))]
@@ -53,10 +88,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private ObservableCollection<CatalogTreeNodeViewModel> _treeNodes = [];
     [ObservableProperty] private CatalogTreeNodeViewModel? _selectedTreeNode;
     [ObservableProperty] private bool _isLoading;
+    private string? _cachedProjectPath;
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
-    [ObservableProperty] private bool _canPlace;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(PlaceTypeCommand))]
@@ -70,16 +105,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private int _currentRevitVersion;
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ImportFilesCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportFolderCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportDataCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportFileToCategoryCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportFolderToCategoryCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ImportDataForCategoryCommand))]
     private bool _canImport;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenCategoryEditorCommand))]
-    [NotifyCanExecuteChangedFor(nameof(UpdateFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportActiveFileCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportSelectedElementsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditSystemFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
     [NotifyCanExecuteChangedFor(nameof(DropFamilyCommand))]
@@ -89,52 +123,70 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(DeleteDatabaseCommand))]
     private bool _canManageUsers;
 
-    public FamilyManagerMainViewModel(
-        IFamilyCatalogProvider catalogProvider,
-        IWritableFamilyCatalogProvider writableProvider,
-        IFamilyImportService importService,
-        IFamilyFileResolver fileResolver,
-        IFamilyLoadService loadService,
-        IProjectFamilyUsageRepository usageRepo,
-        IFamilyManagerDialogService dialogService,
-        IFamilyManagerExternalEvent externalEvent,
-        IFamilyManagerViewModelFactory viewModelFactory,
-        IRevitContext revitContext,
-        IDatabaseManager databaseManager,
-        ITransactionService transactionService,
-        ICategoryRepository categoryRepository,
-        IFamilyTypeRepository typeRepository,
-        IFamilyDataExtractionService extractionService,
-        IFamilyDataImportService dataImportService,
-        IDbAccessControlService accessControl,
-        IFamilySearchService familySearchService,
-        IFamilyPlacementService familyPlacementService)
+    public FamilyManagerMainViewModel(FamilyManagerServices services)
     {
-        _catalogProvider = catalogProvider;
-        _writableProvider = writableProvider;
-        _importService = importService;
-        _fileResolver = fileResolver;
-        _loadService = loadService;
-        _usageRepo = usageRepo;
-        _dialogService = dialogService;
-        _externalEvent = externalEvent;
-        _viewModelFactory = viewModelFactory;
-        _revitContext = revitContext;
-        _databaseManager = databaseManager;
-        _transactionService = transactionService;
-        _categoryRepository = categoryRepository;
-        _typeRepository = typeRepository;
-        _extractionService = extractionService;
-        _dataImportService = dataImportService;
-        _accessControl = accessControl;
-        _familySearchService = familySearchService;
-        _familyPlacementService = familyPlacementService;
+        Guard.ThrowIfNull(services);
+
+        _catalogProvider = services.CatalogProvider;
+        _writableProvider = services.WritableProvider;
+        _importService = services.ImportService;
+        _importPrecomputer = services.ImportPrecomputer;
+        _pathResolver = services.PathResolver;
+        _fileResolver = services.FileResolver;
+        _loadService = services.LoadService;
+        _dialogService = services.DialogService;
+        _awaitableEvent = services.AwaitableEvent;
+        _viewModelFactory = services.ViewModelFactory;
+        _revitContext = services.RevitContext;
+        _databaseManager = services.DatabaseManager;
+        _transactionService = services.TransactionService;
+        _categoryRepository = services.CategoryRepository;
+        _typeRepository = services.TypeRepository;
+        _extractionService = services.ExtractionService;
+        _dataImportService = services.DataImportService;
+        _accessControl = services.AccessControl;
+        _familySearchService = services.FamilySearchService;
+        _familyPlacementService = services.FamilyPlacementService;
+        _placementDragService = services.PlacementDragService;
+        _fileInfoReader = services.FileInfoReader;
+        _metadataService = services.MetadataService;
+        _systemFamilyPlacementService = services.SystemFamilyPlacementService;
+        _systemFamilyRevitOps = services.SystemFamilyRevitOps;
+        _systemFamilyIsolationProject = services.SystemFamilyIsolationProject;
+        _systemFamilyAttributeExtractor = services.SystemFamilyAttributeExtractor;
+        _systemFamilyImportOrchestrator = services.SystemFamilyImportOrchestrator;
+        _activeDocumentClassifier = services.ActiveDocumentClassifier;
+        _loadableFamilyScanner = services.LoadableFamilyScanner;
+        _loadableFamilyImportOrchestrator = services.LoadableFamilyImportOrchestrator;
+        _staleDetector = services.StaleDetector;
+        _staleUpdater = services.StaleUpdater;
+        _staleAggregator = services.StaleCategoryAggregator;
+        _familyFinder = services.FamilyFinder;
+        _versionWriter = services.VersionWriter;
+        _clock = services.Clock;
+        _sharedNestedRepository = services.SharedNestedRepository;
+
+        // v2.0.0 (ADR-036, M-019-003): inject IDispatcher instead of capturing
+        // Application.Current?.Dispatcher. The latter is null in net48 Revit
+        // addins (WPF Application is not auto-created), and the fallback to
+        // Dispatcher.CurrentDispatcher is unreliable from background threads.
+        // WpfDispatcher (DI-registered) is net48-safe and unit-testable.
+        _dispatcher = services.Dispatcher;
+        SmartConLogger.Debug($"FamilyManagerMainViewModel.ctor: _dispatcher captured");
+        _preparationService = services.PreparationService;
+        _dedupService = services.DedupService;
+        _freezeRecovery = services.FreezeRecovery;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
+        _placementDragService.PlacementCompleted += OnPlacementCompleted;
+        _placementDragService.PlacementFailed += OnPlacementFailed;
+        _placementDragService.PlacementSucceeded += OnPlacementSucceeded;
+        _placementDragService.PlacementStatusMessage += OnPlacementStatusMessage;
+        _placementDragService.SharedFamilyDecisionRequested += OnSharedFamilyDecisionRequested;
 
         DetectRevitVersion();
-        _ = InitializeAsync();
+        FireAndForget(InitializeAsync(), nameof(InitializeAsync));
     }
 
     private void DetectRevitVersion()
@@ -142,14 +194,20 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         try
         {
             var versionStr = _revitContext.GetRevitVersion();
+            SmartConLogger.Debug($"DetectRevitVersion: GetRevitVersion() returned '{versionStr}' (len={versionStr?.Length ?? 0})");
             if (int.TryParse(versionStr, out var v))
             {
                 CurrentRevitVersion = v;
+                SmartConLogger.Debug($"DetectRevitVersion: parsed successfully → CurrentRevitVersion={v}");
+            }
+            else
+            {
+                SmartConLogger.Warn($"DetectRevitVersion: int.TryParse('{versionStr}') returned false — CurrentRevitVersion stays 0. [Action: check Application.VersionNumber format, may need InvariantCulture parse]");
             }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"DetectRevitVersion failed: {ex.Message}");
+            SmartConLogger.Warn($"DetectRevitVersion failed: {ex.Message} [Action: перезапустите Revit, проверьте что версия Revit соответствует одной из поддерживаемых R19/R21/R24/R25]");
         }
     }
 
@@ -163,34 +221,87 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
+    private DateTime _sessionStart = DateTime.MinValue;
+
     private async Task InitializeAsync()
+    {
+        DumpLoadedAssembliesBeforeTruncate();
+        SmartConLogger.TruncateMainLog();
+        _sessionStart = DateTime.Now;
+
+        await _databaseManager.InitializeAsync().ConfigureAwait(true);
+        RefreshConnections();
+        if (!HasActiveDatabase)
+        {
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
+            return;
+        }
+        _ = RefreshTreeViaExternalEventAsync();
+    }
+
+    private static void DumpLoadedAssembliesBeforeTruncate()
     {
         try
         {
-            SmartConLogger.TruncateMainLog();
-            SmartConLogger.Info($"======================================================================");
-            SmartConLogger.Info($"FamilyManager SESSION START  Revit {CurrentRevitVersion}  [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
-            SmartConLogger.Info($"======================================================================");
-
-            RefreshConnections();
-            if (!HasActiveDatabase)
+            var appDir = Path.GetDirectoryName(typeof(FamilyManagerMainViewModel).Assembly.Location);
+            var asmLogPath = Path.Combine(appDir ?? ".", "assembly-load.log");
+            var sb = new StringBuilder();
+            sb.AppendLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] === PRE-TRUNCATE DUMP: all currently-loaded HelixToolkit/SharpDX/SharpGLTF/Assimp assemblies ===");
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
             {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
-                return;
+                var n = a.GetName().Name ?? "";
+                if (n.Contains("HelixToolkit") || n.Contains("SharpGLTF") ||
+                    n.Contains("SharpDX") || n.Contains("Assimp") ||
+                    n.Contains("SmartCon"))
+                    sb.AppendLine($"  {n} v{a.GetName().Version} from={a.Location}");
             }
-            await RefreshAccessAndLoadTreeAsync();
+            sb.AppendLine(new string('=', 80));
+            File.AppendAllText(asmLogPath, sb.ToString());
         }
-        catch (Exception ex)
+        catch { }
+    }
+
+    private static void FireAndForget(Task task, string operationName)
+    {
+        Guard.ThrowIfNull(task);
+        _ = task.ContinueWith(
+            t => SmartConLogger.Error($"FamilyManager '{operationName}' failed: {t.Exception?.GetBaseException()}"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Fire-and-forget helper for inline async lambdas. Schedules the factory on the
+    /// thread pool so the calling Revit UI thread is never blocked, and routes any
+    /// exception through the operation-scoped log without leaking as
+    /// <c>AppDomain.UnhandledException</c>. Prefer
+    /// <see cref="FireAndForget(Task, string)"/> when the task is already constructed.
+    /// </summary>
+    private static void FireAndForget(Func<Task> taskFactory, string operationName)
+    {
+        Guard.ThrowIfNull(taskFactory);
+        _ = Task.Run(async () =>
         {
-            SmartConLogger.Error($"FamilyManager initialization failed: {ex}");
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Initialization error: {0}",
-                ex.Message);
-        }
+            try
+            {
+                await taskFactory().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Error($"FireAndForget '{operationName}' failed: {ex.GetBaseException()}");
+            }
+        });
     }
 
     private async Task RefreshAccessAndLoadTreeAsync()
     {
+        DetectRevitVersion();
+        SmartConLogger.LogSessionStart($"FamilyManager (Revit {CurrentRevitVersion})");
+
         if (!HasActiveDatabase)
         {
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
@@ -201,7 +312,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             return;
         }
 
-        DetectRevitVersion();
         _accessControl.InvalidateCache();
 
         try
@@ -221,7 +331,33 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied";
             return;
         }
+
         await LoadTreeAsync();
+    }
+
+    /// <summary>
+    /// Returns the set of family names currently loaded in the Revit document.
+    /// The result is cached per project path and invalidated after family load/place operations.
+    /// </summary>
+    private HashSet<string> GetLoadedFamilyNamesCached()
+    {
+        var currentPath = _cachedProjectPath;
+        if (_loadedFamilyNamesCache is not null &&
+            _loadedFamilyNamesCacheProjectPath == currentPath)
+        {
+            return _loadedFamilyNamesCache;
+        }
+
+        var names = new HashSet<string>(_familySearchService.GetAllLoadedFamilyNames());
+        _loadedFamilyNamesCache = names;
+        _loadedFamilyNamesCacheProjectPath = currentPath;
+        return names;
+    }
+
+    private void InvalidateLoadedFamilyNamesCache()
+    {
+        _loadedFamilyNamesCache = null;
+        _loadedFamilyNamesCacheProjectPath = null;
     }
 
     private void UpdateAccessProperties()
@@ -234,6 +370,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     partial void OnSearchTextChanged(string value)
     {
         var isSearchNow = !string.IsNullOrWhiteSpace(value);
+        var savedCatCount = _savedExpandedCategoryIds.Count;
+        var savedFamCount = _savedExpandedFamilyIds.Count;
 
         if (isSearchNow && !_lastSearchActive)
         {
@@ -243,6 +381,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
 
         _lastSearchActive = isSearchNow;
+
+        // DIAG-DUMP (Issue: net48 tree-expand after search).
+        // Tracks the lifecycle of the search box so we can correlate the user
+        // typing a term with the eventual TreeViewItem.IsExpanded state.
+        // Without this, the search logic in OnSearchTextChanged → DebouncedSearchAsync
+        // → LoadTreeAsync is invisible in the log.
+        SmartConLogger.Info(
+            $"FMTree.SearchTextChanged: newValue='{value}' isSearch={isSearchNow} " +
+            $"prevSearchActive={!isSearchNow != _lastSearchActive} " +
+            $"savedCats={savedCatCount} savedFams={savedFamCount} " +
+            $"treeNodesBefore={TreeNodes.Count}");
 
         var newCts = new CancellationTokenSource();
         var oldCts = Interlocked.Exchange(ref _searchCts, newCts);
@@ -256,36 +405,28 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         try
         {
             await Task.Delay(300, ct);
+            // DIAG-DUMP: search debounce elapsed, now triggering LoadTreeAsync
+            SmartConLogger.Debug(
+                $"FMTree.DebouncedSearch: 300ms elapsed, calling LoadTreeAsync. " +
+                $"thread={Environment.CurrentManagedThreadId} syncCtx={SynchronizationContext.Current?.GetType().Name ?? "<none>"}");
             await LoadTreeAsync(ct);
         }
         catch (OperationCanceledException)
         {
+            SmartConLogger.Debug(
+                $"FMTree.DebouncedSearch: cancelled (newer keystroke took over)");
         }
     }
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
         CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
-        CanPlace = false;
         LoadToProjectCommand.NotifyCanExecuteChanged();
-        PlaceCommand.NotifyCanExecuteChanged();
+        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
 
         if (value is not null)
         {
-            var familyName = value.Name;
-            _externalEvent.Raise(() =>
-            {
-                try
-                {
-                    var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
-                    CanPlace = isLoaded;
-                    PlaceCommand.NotifyCanExecuteChanged();
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn($"Place check failed: {ex.Message}");
-                }
-            });
+            // Place command removed - type-centric workflow
         }
     }
 
@@ -307,6 +448,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Description = leaf.Description,
             };
             CanPlaceType = false;
+            LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         }
         else if (value is FamilyTypeNodeViewModel typeNode)
         {
@@ -326,23 +468,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
                 };
-                CanPlaceType = false;
+                CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
                 PlaceTypeCommand.NotifyCanExecuteChanged();
-
-                var familyName = parentLeaf.DisplayName;
-                _externalEvent.Raise(() =>
-                {
-                    try
-                    {
-                        var isLoaded = _familySearchService.IsFamilyLoaded(familyName);
-                        CanPlaceType = isLoaded;
-                        PlaceTypeCommand.NotifyCanExecuteChanged();
-                    }
-                    catch (Exception ex)
-                    {
-                        SmartConLogger.Warn($"PlaceType check failed: {ex.Message}");
-                    }
-                });
+                LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
             }
             else
             {
@@ -357,11 +485,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
 
         LoadToProjectCommand.NotifyCanExecuteChanged();
-        PlaceCommand.NotifyCanExecuteChanged();
+        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         PlaceTypeCommand.NotifyCanExecuteChanged();
+        StartPlacementDragCommand.NotifyCanExecuteChanged();
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
-        ImportFolderToCategoryCommand.NotifyCanExecuteChanged();
-        ImportDataForCategoryCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -394,7 +521,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         return count;
     }
 
-    private static void CollectExpandedIds(ObservableCollection<CatalogTreeNodeViewModel>? nodes, HashSet<string> catIds, HashSet<string>? familyIds)
+    internal static void CollectExpandedIds(ObservableCollection<CatalogTreeNodeViewModel>? nodes, HashSet<string> catIds, HashSet<string>? familyIds)
     {
         if (nodes is null) return;
         foreach (var node in nodes)
@@ -422,12 +549,23 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     {
         foreach (var node in nodes)
         {
-            if (node is FamilyLeafNodeViewModel leaf && batch.TryGetValue(leaf.CatalogItemId, out var types))
+            if (node is FamilyLeafNodeViewModel leaf)
             {
-                foreach (var t in types)
+                if (batch.TryGetValue(leaf.CatalogItemId, out var types))
                 {
-                    if (!string.IsNullOrWhiteSpace(t.Name))
-                        leaf.Children.Add(new FamilyTypeNodeViewModel(t.CatalogItemId, t.Name));
+                    foreach (var t in types)
+                    {
+                        leaf.Children.Add(new FamilyTypeNodeViewModel(
+                            t.CatalogItemId, t.Name, isVirtual: false,
+                            familySource: leaf.FamilySource, uniqueId: t.UniqueId));
+                    }
+                }
+
+                if (leaf.Children.Count == 0)
+                {
+                    leaf.Children.Add(new FamilyTypeNodeViewModel(
+                        leaf.CatalogItemId, leaf.DisplayName, isVirtual: true,
+                        familySource: leaf.FamilySource));
                 }
 
                 if (expandedFamilyIds.Contains(leaf.CatalogItemId))
@@ -462,24 +600,56 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     }
 
     /// <summary>
-    /// Fire-and-forget helper for post-operations inside ExternalEvent callbacks.
-    /// MUST be async void (not async Task) — ExternalEvent handler runs on Revit UI thread
-    /// and must not capture or await any Task. See revit-api-best-practice/async-threading-patterns.md
+    /// Triggers tree refresh via ExternalEvent so that Revit API (FilteredElementCollector)
+    /// runs in the correct thread context before LoadTreeAsync builds the UI.
     /// </summary>
-    private static async void FireAndForget(Func<Task> taskFactory)
+    private async Task RefreshTreeViaExternalEventAsync()
     {
         try
         {
-            await taskFactory();
+            await _awaitableEvent.RaiseAsync(_ =>
+            {
+                try
+                {
+                    _cachedProjectPath = _revitContext.GetDocument().PathName;
+                }
+                catch
+                {
+                    _cachedProjectPath = null;
+                }
+
+                try
+                {
+                    GetLoadedFamilyNamesCached();
+                }
+                catch { }
+            });
+
+            IsLoading = true;
+            try
+            {
+                // v2.0.0 (ADR-036): IDispatcher.InvokeAsync takes an Action, but
+                // RefreshTreeOnUiThreadAsync returns Task. Wrapping the async
+                // lambda directly would generate an async void state machine,
+                // which violates I-13 (exception swallowing) and breaks
+                // testability. Extracting the async work into a named Task-
+                // returning method and dispatching a fire-and-forget Action
+                // (via `_ =`) keeps the Action synchronous and the exception
+                // path observable through RefreshTreeOnUiThreadAsync itself.
+                _ = _dispatcher.InvokeAsync(() => { _ = RefreshTreeOnUiThreadAsync(); });
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"FireAndForget: {ex}");
+            SmartConLogger.Error($"RefreshTreeViaExternalEvent failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
         }
     }
 
-    [RelayCommand]
-    private async Task RefreshTreeAsync(CancellationToken ct)
+    private async Task RefreshTreeOnUiThreadAsync()
     {
         try
         {
@@ -498,11 +668,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"RefreshTreeAsync failed: {ex}");
+            SmartConLogger.Error($"RefreshTreeAsync failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
                 ex.Message);
         }
+    }
+
+    [RelayCommand]
+    private async Task RefreshTree()
+    {
+        await RefreshTreeViaExternalEventAsync();
     }
 
     [RelayCommand]
@@ -511,11 +687,91 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         SearchText = string.Empty;
     }
 
+    private void OnPlacementCompleted()
+    {
+        try
+        {
+            InvalidateLoadedFamilyNamesCache();
+
+            // v2.0.0 (ADR-036, M-019-003): IDispatcher.InvokeAsync returns Task.
+            // We don't await here because OnPlacementCompleted is sync and the
+            // caller is the placement event handler; UI refresh is opportunistic.
+            _ = _dispatcher.InvokeAsync(() => { _ = LoadTreeAsync(); });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"OnPlacementCompleted dispatcher invoke failed: {ex.Message} [Action: нажмите Refresh чтобы обновить дерево]");
+        }
+    }
+
+    private void OnPlacementFailed(string errorMessage)
+    {
+        if (!SetStatusOnUiThread($"{errorMessage} [Action: проверьте, что семейство загружено в проект и тип существует; попробуйте Refresh]"))
+        {
+            return;
+        }
+    }
+
+    private void OnPlacementSucceeded(string successMessage)
+    {
+        if (!SetStatusOnUiThread(successMessage))
+        {
+            return;
+        }
+        SmartConLogger.Info($"{successMessage}");
+    }
+
+    private void OnPlacementStatusMessage(string statusMessage)
+    {
+        if (!SetStatusOnUiThread(statusMessage))
+        {
+            return;
+        }
+        SmartConLogger.Info($"{statusMessage}");
+    }
+
+    /// <summary>
+    /// Defensive marshaling: these handlers are currently invoked on the Revit
+    /// UI thread by <c>FamilyPlacementDropHandler</c>, but if a future refactor
+    /// moves them to a background thread the unguarded <c>StatusMessage</c>
+    /// setter would raise <c>PropertyChanged</c> on the wrong thread and
+    /// freeze the WPF DockablePane (see <c>revit-api-best-practice</c> skill).
+    /// </summary>
+    private bool SetStatusOnUiThread(string message)
+    {
+        if (_dispatcher.CheckAccess())
+        {
+            StatusMessage = message;
+        }
+        else
+        {
+            _ = _dispatcher.InvokeAsync(() => StatusMessage = message);
+        }
+        return true;
+    }
+
+    private SharedFamiliesLoadChoice OnSharedFamilyDecisionRequested(SharedFamilyDecisionRequest request)
+    {
+        return _dialogService.ShowSharedFamiliesLoadModeDialog(request);
+    }
+
     public void Dispose()
     {
+        using var _scope = SmartConLogger.BeginScope("FMVM",
+            ("Method", "Dispose"));
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
+        _placementDragService.PlacementCompleted -= OnPlacementCompleted;
+        _placementDragService.PlacementFailed -= OnPlacementFailed;
+        _placementDragService.PlacementSucceeded -= OnPlacementSucceeded;
+        _placementDragService.PlacementStatusMessage -= OnPlacementStatusMessage;
+        _placementDragService.SharedFamilyDecisionRequested -= OnSharedFamilyDecisionRequested;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
+        if (_sessionStart != DateTime.MinValue)
+        {
+            SmartConLogger.LogSessionEnd($"FamilyManager (Revit {CurrentRevitVersion})", _sessionStart);
+        }
     }
 }
+

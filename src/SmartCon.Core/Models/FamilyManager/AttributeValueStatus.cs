@@ -6,5 +6,6 @@ public enum AttributeValueStatus
     MissingParameter = 1,
     EmptyValue = 2,
     UnsupportedStorageType = 3,
-    ReadError = 4
+    ReadError = 4,
+    NotInFamily = 5
 }

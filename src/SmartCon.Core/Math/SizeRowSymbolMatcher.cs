@@ -55,7 +55,7 @@ public static class SizeRowSymbolMatcher
                 }
                 else if (mismatchLogged < maxMismatchLogs && mismatchReason is not null)
                 {
-                    SmartConLogger.Debug($"    MapRows mismatch row[{rowIdx}]→'{symName}': {mismatchReason}");
+                    SmartConLogger.Debug($"MapRows: row {rowIdx} symbol {symName} mismatch: {mismatchReason}");
                     mismatchLogged++;
                 }
             }

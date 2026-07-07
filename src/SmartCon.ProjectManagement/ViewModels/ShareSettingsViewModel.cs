@@ -159,6 +159,8 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
 
     private void LoadFromFile()
     {
+        using var _scope = SmartConLogger.BeginScope("ShareSettings",
+            ("Method", "LoadFromFile"));
         if (_doc is null) return;
 
         CurrentFilePath = _doc.PathName ?? string.Empty;
@@ -167,7 +169,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             ? (_doc.Title ?? string.Empty)
             : Path.GetFileName(_doc.PathName);
 
-        SmartConLogger.Info($"[PM] ShareSettingsViewModel loading. File='{CurrentFileName}'");
+        SmartConLogger.Info($"ShareSettingsViewModel loading. File='{CurrentFileName}'");
 
         var settings = _repository.Load(_doc);
 
@@ -189,7 +191,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
 
         _pendingKeepViewNames = settings.KeepViewNames.ToHashSet();
 
-        SmartConLogger.Info($"[PM] Loaded settings: ShareFolder='{ShareFolderPath}', Blocks={Blocks.Count}, ExportMappings={ExportMappings.Count}, FieldLibrary={FieldLibrary.Count}");
+        SmartConLogger.Info($"Loaded settings: ShareFolder='{ShareFolderPath}', Blocks={Blocks.Count}, ExportMappings={ExportMappings.Count}, FieldLibrary={FieldLibrary.Count}");
 
         AutoParseFileName();
         RefreshPreview();
@@ -341,7 +343,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             ? Views.Where(v => v.IsSelected).Select(v => v.Name).ToHashSet()
             : _pendingKeepViewNames;
 
-        SmartConLogger.Info($"[PM] RefreshViews: savedNames={savedNames.Count}");
+        SmartConLogger.Info($"RefreshViews: savedNames={savedNames.Count}");
 
         Views.Clear();
         var viewInfos = _viewRepository.GetAllViews(_doc);
@@ -458,15 +460,15 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
 
         try
         {
-            SmartConLogger.Info("[PM] OpenParseRuleEditor: creating ViewModel");
+            SmartConLogger.Info("OpenParseRuleEditor: creating ViewModel");
             var vm = new ParseRuleViewModel(block.ParseRule, CurrentFileName, precedingRules);
 
             bool? dialogResult = null;
             vm.RequestClose += result => dialogResult = result;
 
-            SmartConLogger.Info("[PM] OpenParseRuleEditor: calling ShowDialog via presenter");
+            SmartConLogger.Info("OpenParseRuleEditor: calling ShowDialog via presenter");
             _dialogPresenter.ShowDialog(vm);
-            SmartConLogger.Info("[PM] OpenParseRuleEditor: ShowDialog returned");
+            SmartConLogger.Info("OpenParseRuleEditor: ShowDialog returned");
 
             if (dialogResult != true) return;
 
@@ -477,7 +479,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] OpenParseRuleEditor failed:\n{ex}");
+            SmartConLogger.Error($"OpenParseRuleEditor failed:\n{ex}");
             _dialogService.ShowError("Error", $"OpenParseRuleEditor error:\n\n{ex.Message}\n\n{ex.StackTrace}");
         }
     }
@@ -503,7 +505,7 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
     {
         try
         {
-            SmartConLogger.Info("[PM] OpenFieldLibrary: creating ViewModel");
+            SmartConLogger.Info("OpenFieldLibrary: creating ViewModel");
             var vm = new FieldLibraryViewModel(_dialogPresenter);
             foreach (var fd in FieldLibrary)
                 vm.Fields.Add(FieldDefinitionItem.FromModel(fd));
@@ -511,9 +513,9 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             bool? dialogResult = null;
             vm.RequestClose += result => dialogResult = result;
 
-            SmartConLogger.Info($"[PM] OpenFieldLibrary: {vm.Fields.Count} fields, calling ShowDialog via presenter");
+            SmartConLogger.Info($"OpenFieldLibrary: {vm.Fields.Count} fields, calling ShowDialog via presenter");
             _dialogPresenter.ShowDialog(vm);
-            SmartConLogger.Info("[PM] OpenFieldLibrary: ShowDialog returned");
+            SmartConLogger.Info("OpenFieldLibrary: ShowDialog returned");
 
             if (dialogResult != true) return;
 
@@ -527,11 +529,11 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             RefreshMappingValidation();
             RefreshPreview();
 
-            SmartConLogger.Info($"[PM] FieldLibrary updated: {FieldLibrary.Count} definitions");
+            SmartConLogger.Info($"FieldLibrary updated: {FieldLibrary.Count} definitions");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] OpenFieldLibrary failed:\n{ex}");
+            SmartConLogger.Error($"OpenFieldLibrary failed:\n{ex}");
             _dialogService.ShowError("Error", $"OpenFieldLibrary error:\n\n{ex.Message}\n\n{ex.StackTrace}");
         }
     }
@@ -551,11 +553,11 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             var json = File.ReadAllText(dialog.FileName);
             var settings = _repository.ImportFromJson(json);
             LoadFromSettings(settings);
-            SmartConLogger.Info($"[PM] Imported settings from {dialog.FileName}");
+            SmartConLogger.Info($"Imported settings from {dialog.FileName}");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] Import failed: {ex.Message}");
+            SmartConLogger.Error($"Import failed: {ex.Message}");
             _dialogService.ShowError("Error", $"Import failed: {ex.Message}");
         }
     }
@@ -576,11 +578,11 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
             var settings = BuildSettings();
             var json = _repository.ExportToJson(settings);
             File.WriteAllText(dialog.FileName, json);
-            SmartConLogger.Info($"[PM] Exported settings to {dialog.FileName}");
+            SmartConLogger.Info($"Exported settings to {dialog.FileName}");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] Export failed: {ex.Message}");
+            SmartConLogger.Error($"Export failed: {ex.Message}");
             _dialogService.ShowError("Error", $"Export failed: {ex.Message}");
         }
     }
@@ -592,13 +594,13 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         {
             var settings = BuildSettings();
             _repository.Save(_doc, settings);
-            SmartConLogger.Info($"[PM] Settings saved. ShareFolder='{settings.ShareFolderPath}', Blocks={settings.FileNameTemplate.Blocks.Count}, KeepViews={settings.KeepViewNames.Count}");
+            SmartConLogger.Info($"Settings saved. ShareFolder='{settings.ShareFolderPath}', Blocks={settings.FileNameTemplate.Blocks.Count}, KeepViews={settings.KeepViewNames.Count}");
             StatusMessage = LocalizationService.GetString("Btn_Saved");
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] Save failed: {ex.Message}");
+            SmartConLogger.Error($"Save failed: {ex.Message}");
             _dialogService.ShowError("Error", $"Save failed: {ex.Message}");
         }
     }
@@ -752,3 +754,4 @@ public sealed partial class ShareSettingsViewModel : ObservableObject, IObservab
         }
     }
 }
+

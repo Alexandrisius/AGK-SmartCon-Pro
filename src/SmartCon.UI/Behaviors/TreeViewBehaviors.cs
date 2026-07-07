@@ -118,6 +118,45 @@ public static class TreeViewBehaviors
 
     #endregion
 
+    #region AutoScrollToSelectedItem
+
+    public static readonly DependencyProperty AutoScrollToSelectedItemProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollToSelectedItem",
+            typeof(bool),
+            typeof(TreeViewBehaviors),
+            new PropertyMetadata(false, OnAutoScrollToSelectedItemChanged));
+
+    public static bool GetAutoScrollToSelectedItem(DependencyObject obj) => (bool)obj.GetValue(AutoScrollToSelectedItemProperty);
+
+    public static void SetAutoScrollToSelectedItem(DependencyObject obj, bool value) => obj.SetValue(AutoScrollToSelectedItemProperty, value);
+
+    private static void OnAutoScrollToSelectedItemChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not TreeView treeView) return;
+
+        treeView.SelectedItemChanged -= OnAutoScrollSelectedItemChanged;
+
+        if ((bool)e.NewValue)
+        {
+            treeView.SelectedItemChanged += OnAutoScrollSelectedItemChanged;
+        }
+    }
+
+    private static void OnAutoScrollSelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (sender is not TreeView treeView) return;
+        if (e.NewValue is null) return;
+
+        treeView.Dispatcher.BeginInvoke(() =>
+        {
+            var container = FindTreeViewItemContainer(treeView, e.NewValue);
+            container?.BringIntoView();
+        }, System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    #endregion
+
     #region Helpers
 
     private static T? FindAncestor<T>(DependencyObject current) where T : DependencyObject

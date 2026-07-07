@@ -6,7 +6,7 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFamilyCatalogProvider
+internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFamilyCatalogProvider
 {
     private readonly LocalCatalogDatabase _database;
 
@@ -25,7 +25,7 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         throw new NotSupportedException("Use IFamilyImportService for import operations.");
     }
 
-    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, string? manufacturer = null, CancellationToken ct = default)
+    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
@@ -57,12 +57,6 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             {
                 setClauses.Add("content_status = @status");
                 cmd.Parameters.Add(new SqliteParameter("@status", status.Value.ToString()));
-            }
-
-            if (manufacturer is not null)
-            {
-                setClauses.Add("manufacturer = @manufacturer");
-                cmd.Parameters.Add(new SqliteParameter("@manufacturer", manufacturer));
             }
 
             setClauses.Add("updated_at_utc = @updatedAtUtc");
@@ -151,19 +145,24 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             {
                 if (Directory.Exists(path))
                 {
-                    RemoveReadOnlyAttributes(path);
-                    Directory.Delete(path, recursive: true);
+                    await Task.Run(() =>
+                    {
+                        RemoveReadOnlyAttributes(path);
+                        Directory.Delete(path, recursive: true);
+                    }, ct);
                 }
                 return;
             }
             catch (IOException ex) when (i < maxRetries - 1)
             {
-                SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed to delete directory '{path}': {ex.Message}. Retrying...");
+                using var _scope = SmartConLogger.BeginScope("FM Delete", ("Path", path), ("Attempt", i + 1));
+                SmartConLogger.Warn($"failed to delete directory: {ex.Message}. Retrying... [Action: обычно файл заблокирован антивирусом или другим процессом; операция будет повторена до 5 раз]");
                 await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException ex) when (i < maxRetries - 1)
             {
-                SmartConLogger.Warn($"[FM Delete] Attempt {i + 1} failed (access denied) for '{path}': {ex.Message}. Retrying...");
+                using var _scope = SmartConLogger.BeginScope("FM Delete", ("Path", path), ("Attempt", i + 1));
+                SmartConLogger.Warn($"failed (access denied): {ex.Message}. Retrying... [Action: обычно файл заблокирован антивирусом или другим процессом; операция будет повторена до 5 раз]");
                 await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
             }
         }
@@ -177,8 +176,11 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         {
             if (Directory.Exists(path))
             {
-                RemoveReadOnlyAttributes(path);
-                Directory.Delete(path, recursive: true);
+                await Task.Run(() =>
+                {
+                    RemoveReadOnlyAttributes(path);
+                    Directory.Delete(path, recursive: true);
+                }, ct);
             }
         }
         catch (Exception ex)
@@ -259,7 +261,9 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                     tags,
                     old.PublishedBy,
                     old.CreatedAtUtc,
-                    old.UpdatedAtUtc);
+                    old.UpdatedAtUtc,
+                    old.FamilySource,
+                    old.RevitCategory);
             }
         }
 
@@ -293,7 +297,11 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             tags,
             item.PublishedBy,
             item.CreatedAtUtc,
-            item.UpdatedAtUtc);
+            item.UpdatedAtUtc,
+            item.FamilySource,
+            item.RevitCategory,
+            item.ContentHash,
+            item.HashFormatVersion);
     }
 
     public async Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default)
@@ -412,11 +420,17 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
 
     internal static FamilyCatalogItem ReadCatalogItem(SqliteDataReader reader)
     {
+        var id = reader.GetString(reader.GetOrdinal("id"));
+        var name = reader.GetString(reader.GetOrdinal("name"));
         var categoryPath = !reader.IsDBNull(reader.GetOrdinal("category_name"))
             ? reader.GetString(reader.GetOrdinal("category_name"))
             : null;
 
         var categoryId = TryGetString(reader, "category_id");
+        var familySource = TryGetString(reader, "family_source") ?? "loadable";
+        var revitCategory = TryGetString(reader, "revit_category");
+        var contentHash = TryGetString(reader, "content_hash");
+        int? hashFormatVersion = TryGetInt(reader, "hash_format_version");
 
         return new FamilyCatalogItem(
             Id: reader.GetString(reader.GetOrdinal("id")),
@@ -430,7 +444,9 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
             Manufacturer: reader.IsDBNull(reader.GetOrdinal("manufacturer"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("manufacturer")),
-            ContentStatus: (ContentStatus)Enum.Parse(typeof(ContentStatus), reader.GetString(reader.GetOrdinal("content_status"))),
+            ContentStatus: ContentStatusParser.Parse(reader.IsDBNull(reader.GetOrdinal("content_status"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("content_status"))),
             CurrentVersionLabel: reader.IsDBNull(reader.GetOrdinal("current_version_label"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("current_version_label")),
@@ -439,7 +455,11 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                 ? null
                 : reader.GetString(reader.GetOrdinal("published_by")),
             CreatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("created_at_utc"))),
-            UpdatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("updated_at_utc"))));
+            UpdatedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("updated_at_utc"))),
+            FamilySource: familySource,
+            RevitCategory: revitCategory,
+            ContentHash: contentHash,
+            HashFormatVersion: hashFormatVersion);
     }
 
     private static FamilyCatalogVersion ReadCatalogVersion(SqliteDataReader reader) => new(
@@ -447,7 +467,6 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         CatalogItemId: reader.GetString(reader.GetOrdinal("catalog_item_id")),
         FileId: reader.GetString(reader.GetOrdinal("file_id")),
         VersionLabel: reader.GetString(reader.GetOrdinal("version_label")),
-        Sha256: reader.GetString(reader.GetOrdinal("sha256")),
         RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
         TypesCount: reader.IsDBNull(reader.GetOrdinal("types_count"))
             ? null
@@ -455,16 +474,50 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
         ParametersCount: reader.IsDBNull(reader.GetOrdinal("parameters_count"))
             ? null
             : reader.GetInt32(reader.GetOrdinal("parameters_count")),
-        PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))));
+        PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))),
+        ContentHash: TryGetString(reader, "content_hash"),
+        HashFormatVersion: TryGetInt(reader, "hash_format_version"),
+        PublishedBy: TryGetString(reader, "published_by"));
 
     private static FamilyFileRecord ReadFileRecord(SqliteDataReader reader) => new(
         Id: reader.GetString(reader.GetOrdinal("id")),
         RelativePath: reader.GetString(reader.GetOrdinal("relative_path")),
         FileName: reader.GetString(reader.GetOrdinal("file_name")),
-        SizeBytes: reader.GetInt64(reader.GetOrdinal("size_bytes")),
-        Sha256: reader.GetString(reader.GetOrdinal("sha256")),
         RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
         ImportedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("imported_at_utc"))));
+
+    public async Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT * FROM catalog_items WHERE normalized_name = @name LIMIT 1";
+        cmd.Parameters.Add(new SqliteParameter("@name", normalizedName));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            return null;
+
+        return ReadCatalogItem(reader);
+    }
+
+    public async Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT * FROM catalog_items WHERE family_source = @source ORDER BY name";
+        cmd.Parameters.Add(new SqliteParameter("@source", familySource));
+
+        var items = new List<FamilyCatalogItem>();
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            items.Add(ReadCatalogItem(reader));
+        }
+
+        return items;
+    }
 
     private static string? TryGetString(SqliteDataReader reader, string columnName)
     {
@@ -474,6 +527,77 @@ internal sealed class LocalCatalogProvider : IFamilyCatalogProvider, IWritableFa
                 return reader.GetString(i);
         }
         return null;
+    }
+
+    private static int? TryGetInt(SqliteDataReader reader, string columnName)
+    {
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            if (reader.GetName(i) == columnName && !reader.IsDBNull(i))
+                return reader.GetInt32(i);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Cross-version content-hash search. Looks for a matching
+    /// <c>content_hash</c> across ALL versions (current and archived) of
+    /// ALL catalog items, filtered by <paramref name="familySource"/> to
+    /// enforce cross-source separation (system hashes never match
+    /// loadable hashes) and by <paramref name="hashFormatVersion"/> so
+    /// old-format hashes do not produce false duplicate matches against
+    /// new-format ones.
+    /// </summary>
+    /// <param name="hexHash">SHA-256 hex string.</param>
+    /// <param name="hashFormatVersion">Hash format version (must match
+    /// <c>hash_format_version</c> column).</param>
+    /// <param name="familySource"><c>"loadable"</c> or <c>"system"</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A <see cref="ContentHashMatch"/> if a match was found,
+    /// or <c>null</c> if no version has this hash.</returns>
+    public async Task<ContentHashMatch?> FindByContentHashAcrossVersionsAsync(
+        string hexHash,
+        int hashFormatVersion,
+        string familySource,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(hexHash))
+            return null;
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT cv.catalog_item_id AS itemId,
+                   cv.version_label AS versionLabel,
+                   ci.current_version_label AS currentLabel
+            FROM catalog_versions cv
+            JOIN catalog_items ci ON cv.catalog_item_id = ci.id
+            WHERE cv.content_hash = @hash
+              AND cv.hash_format_version = @fmt
+              AND ci.family_source = @source
+            ORDER BY cv.published_at_utc DESC
+            LIMIT 1
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@hash", hexHash));
+        cmd.Parameters.Add(new SqliteParameter("@fmt", hashFormatVersion));
+        cmd.Parameters.Add(new SqliteParameter("@source", familySource));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            return null;
+
+        var itemId = reader.GetString(reader.GetOrdinal("itemId"));
+        var versionLabel = reader.GetString(reader.GetOrdinal("versionLabel"));
+        var currentLabel = reader.IsDBNull(reader.GetOrdinal("currentLabel"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("currentLabel"));
+        var isCurrent = string.Equals(versionLabel, currentLabel, StringComparison.Ordinal);
+
+        return new ContentHashMatch(
+            CatalogItemId: itemId,
+            MatchedVersionLabel: versionLabel,
+            IsCurrentVersion: isCurrent);
     }
 }
 

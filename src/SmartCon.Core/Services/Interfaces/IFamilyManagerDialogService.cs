@@ -63,4 +63,23 @@ public interface IFamilyManagerDialogService
     bool? ShowAttributeLibrary(object viewModel);
 
     bool? ShowProfile(object viewModel);
+
+    /// <summary>Show batch import dialog with file list and action selection.</summary>
+    bool? ShowBatchImportDialog(object viewModel);
+
+    /// <summary>
+    /// Show dialog asking the user how to load a single shared nested family
+    /// that conflicts with an existing one in the project.
+    /// MUST be called from Revit main thread (blocks until user decides).
+    /// The dialog has no Cancel button and no Escape binding — the user must
+    /// make an explicit choice. Closing the dialog via the window X button
+    /// (or Alt+F4) returns <see cref="SharedFamiliesLoadChoice.Skip"/>.
+    /// </summary>
+    /// <param name="request">Information about the conflicting family.</param>
+    /// <returns>
+    /// User choice. If the user closes the dialog without selecting Apply,
+    /// returns <see cref="SharedFamiliesLoadChoice.Skip"/> — the callback
+    /// signals Revit to abort loading this shared nested family.
+    /// </returns>
+    SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request);
 }

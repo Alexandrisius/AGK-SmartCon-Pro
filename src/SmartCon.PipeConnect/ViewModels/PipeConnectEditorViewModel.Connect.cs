@@ -22,7 +22,8 @@ public sealed partial class PipeConnectEditorViewModel
     [RelayCommand(CanExecute = nameof(CanOperate))]
     private void Connect()
     {
-        SmartConLogger.Info("[Connect] START");
+        using var _scope = SmartConLogger.BeginScope("EditorConnect",
+            ("Method", "Connect"));
         IsBusy = true;
         StatusMessage = LocalizationService.GetString("Status_Validating");
 
@@ -68,14 +69,14 @@ public sealed partial class PipeConnectEditorViewModel
                 ctx, _activeDynamic, _currentFittingId, _primaryReducerId, _activeFittingRule,
                 topology);
 
-            SmartConLogger.Info("[Connect] All operations done, calling Assimilate");
+            SmartConLogger.Info("All operations done, calling Assimilate");
             _groupSession!.Assimilate();
             _groupSession = null;
             StatusMessage = LocalizationService.GetString("Status_Connected");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[Connect] Failed: {ex.Message}\n{ex.StackTrace}");
+            SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
@@ -110,7 +111,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             _groupSession?.RollBack();
         }
-        catch (Exception ex) { SmartConLogger.Warn($"[Cancel] RollBack error (ignored): {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"RollBack error (ignored): {ex.Message}"); }
         finally
         {
             _groupSession = null;
@@ -183,7 +184,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Info($"[GetFreeConnectorsSnapshot] Error (ignored): {ex.Message}");
+            SmartConLogger.Info($"Error (ignored): {ex.Message}");
             return [];
         }
     }
@@ -209,7 +210,7 @@ public sealed partial class PipeConnectEditorViewModel
             if (_primaryReducerId is not null)
             {
                 var overrides = GuessCtcForReducer(_primaryReducerId);
-                SmartConLogger.Info($"[Connect] Reducer inserted: id={_primaryReducerId.GetValue()}");
+                SmartConLogger.Info($"Reducer inserted: id={_primaryReducerId.GetValue()}");
 
                 var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
                 _fittingInsertSvc.AlignFittingToStatic(
@@ -220,7 +221,7 @@ public sealed partial class PipeConnectEditorViewModel
                 doc.Regenerate();
             }
             else
-                SmartConLogger.Warn("[Connect] Reducer not found in mapping — connecting directly");
+                SmartConLogger.Warn("Reducer not found in mapping — connecting directly");
         });
 
         if (_primaryReducerId is not null)
@@ -235,7 +236,7 @@ public sealed partial class PipeConnectEditorViewModel
         var fitConn2 = _activeFittingConn2;
         if (fitConn2 is null)
         {
-            SmartConLogger.Warn("[Connect] fittingConn2 is null — cannot insert reducer after fitting");
+            SmartConLogger.Warn("fittingConn2 is null — cannot insert reducer after fitting");
             return;
         }
 
@@ -253,7 +254,7 @@ public sealed partial class PipeConnectEditorViewModel
             if (_primaryReducerId is not null)
             {
                 var overrides = GuessCtcForReducer(_primaryReducerId);
-                SmartConLogger.Info($"[Connect] Reducer (fitting→dynamic) inserted: id={_primaryReducerId.GetValue()}");
+                SmartConLogger.Info($"Reducer (fitting→dynamic) inserted: id={_primaryReducerId.GetValue()}");
 
                 var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
                 _fittingInsertSvc.AlignFittingToStatic(
@@ -280,7 +281,7 @@ public sealed partial class PipeConnectEditorViewModel
                 doc.Regenerate();
             }
             else
-                SmartConLogger.Warn("[Connect] Reducer not found in mapping — connecting without reducer");
+                SmartConLogger.Warn("Reducer not found in mapping — connecting without reducer");
         });
 
         if (_primaryReducerId is not null)
@@ -291,3 +292,4 @@ public sealed partial class PipeConnectEditorViewModel
         }
     }
 }
+

@@ -13,4 +13,8 @@ public sealed record FamilyCatalogItem(
     IReadOnlyList<string> Tags,
     string? PublishedBy,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string FamilySource = "loadable",
+    string? RevitCategory = null,
+    string? ContentHash = null,
+    int? HashFormatVersion = null);

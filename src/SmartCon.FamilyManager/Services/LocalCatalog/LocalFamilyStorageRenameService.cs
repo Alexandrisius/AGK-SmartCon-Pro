@@ -18,8 +18,12 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
 
     public async Task RenameFamilyFilesAsync(string catalogItemId, string newName, CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("FMRename",
+            ("Method", "RenameFamilyFilesAsync"),
+            ("CatalogItemId", catalogItemId));
+
         var trimmedNewName = newName?.Trim() ?? string.Empty;
-        SmartConLogger.Info($"[FM Rename] Starting rename for item {catalogItemId} to '{trimmedNewName}'");
+        SmartConLogger.Info($"Starting rename for item {catalogItemId} to '{trimmedNewName}'");
 
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
@@ -37,11 +41,11 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
                 currentVersionLabel = result is DBNull or null ? null : (string)result;
             }
 
-            SmartConLogger.Info($"[FM Rename] current_version_label = '{currentVersionLabel}'");
+            SmartConLogger.Info($"current_version_label = '{currentVersionLabel}'");
 
         if (string.IsNullOrEmpty(currentVersionLabel) || string.IsNullOrWhiteSpace(trimmedNewName))
         {
-            SmartConLogger.Warn($"[FM Rename] current_version_label is empty or newName is whitespace — aborting");
+            SmartConLogger.Warn($"current_version_label is empty or newName is whitespace — aborting [Action: проверьте выбранную версию и новое имя — оба должны быть непустыми]");
             return;
         }
 
@@ -67,11 +71,11 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
                     var fileName = reader.GetString(2);
                     var absolutePath = Path.Combine(_pathResolver.GetDatabaseRoot(), relativePath);
                     filesToRename.Add((new FileRecord(id, relativePath, fileName), absolutePath));
-                    SmartConLogger.Info($"[FM Rename] Found file: id={id}, rel='{relativePath}', abs='{absolutePath}', name='{fileName}'");
+                    SmartConLogger.Info($"Found file: id={id}, rel='{relativePath}', abs='{absolutePath}', name='{fileName}'");
                 }
             }
 
-            SmartConLogger.Info($"[FM Rename] Found {filesToRename.Count} files to rename");
+            SmartConLogger.Info($"Found {filesToRename.Count} files to rename");
 
             // 3. Rename each file on disk and update DB
             foreach (var (record, oldAbsolutePath) in filesToRename)
@@ -83,20 +87,33 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
                 var newRelativePath = Path.Combine(oldRelativeDir, newFileName).Replace('/', Path.DirectorySeparatorChar);
                 var newAbsolutePath = Path.Combine(_pathResolver.GetDatabaseRoot(), newRelativePath);
 
-                SmartConLogger.Info($"[FM Rename] Processing: old='{oldAbsolutePath}' -> new='{newAbsolutePath}'");
+                SmartConLogger.Info($"Processing: old='{oldAbsolutePath}' -> new='{newAbsolutePath}'");
 
-                if (File.Exists(oldAbsolutePath) && !File.Exists(newAbsolutePath))
+                if (string.Equals(oldAbsolutePath, newAbsolutePath, StringComparison.OrdinalIgnoreCase))
                 {
-                    var newDir = Path.GetDirectoryName(newAbsolutePath);
-                    if (!string.IsNullOrEmpty(newDir) && !Directory.Exists(newDir))
-                        Directory.CreateDirectory(newDir);
+                    SmartConLogger.Info($"No-op: same path, skipping");
+                }
+                else if (File.Exists(oldAbsolutePath) && !File.Exists(newAbsolutePath))
+                {
+                    await Task.Run(() =>
+                    {
+                        var newDir = Path.GetDirectoryName(newAbsolutePath);
+                        if (!string.IsNullOrEmpty(newDir) && !Directory.Exists(newDir))
+                            Directory.CreateDirectory(newDir);
 
-                    File.Move(oldAbsolutePath, newAbsolutePath);
-                    SmartConLogger.Info($"[FM Rename] File moved successfully");
+                        File.Move(oldAbsolutePath, newAbsolutePath);
+                    }, ct);
+                    SmartConLogger.Info($"File moved successfully");
+
+                    // v2.0.0: Type Catalog (.txt) is no longer stored in managed
+                    // storage — baker (ADR-033) bakes types into the .rfa itself.
+                    // The .txt only ever existed next to the source .rfa on the
+                    // user's disk, never in managed storage, so there is
+                    // nothing to rename here.
                 }
                 else
                 {
-                    SmartConLogger.Warn($"[FM Rename] Skipped: oldExists={File.Exists(oldAbsolutePath)}, newExists={File.Exists(newAbsolutePath)}");
+                    SmartConLogger.Warn($"Skipped: oldExists={File.Exists(oldAbsolutePath)}, newExists={File.Exists(newAbsolutePath)} [Action: проверьте, что оба файла существуют на диске]");
                 }
 
                 using var updateCmd = connection.CreateCommand();
@@ -110,19 +127,20 @@ internal sealed class LocalFamilyStorageRenameService : IFamilyStorageRenameServ
                 updateCmd.Parameters.Add(new SqliteParameter("@newRelativePath", newRelativePath));
                 updateCmd.Parameters.Add(new SqliteParameter("@id", record.Id));
                 await updateCmd.ExecuteNonQueryAsync(ct);
-                SmartConLogger.Info($"[FM Rename] DB updated for file {record.Id}");
+                SmartConLogger.Info($"DB updated for file {record.Id}");
             }
 
             tx.Commit();
-            SmartConLogger.Info($"[FM Rename] Transaction committed successfully");
+            SmartConLogger.Info($"Transaction committed successfully");
         }
         catch (Exception ex)
         {
             tx.Rollback();
-            SmartConLogger.Error($"[FM Rename] FAILED: {ex.Message}\n{ex.StackTrace}");
+            SmartConLogger.Error($"FAILED: {ex.Message}\n{ex.StackTrace}");
             throw;
         }
     }
 
     private sealed record FileRecord(string Id, string RelativePath, string FileName);
 }
+

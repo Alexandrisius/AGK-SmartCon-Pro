@@ -60,9 +60,21 @@
 
 ## Жёсткий запрет
 
-FamilyManager не хранит каталог, `.rfa`, версии, metadata, теги, preview, search index, usage history или избранное в ExtensibleStorage.
+FamilyManager не хранит каталог, `.rfa`, metadata, теги, preview, search index, usage history или избранное в ExtensibleStorage.
 
 ExtensibleStorage остаётся паттерном существующих модулей smartCon, но не является data plane FamilyManager.
+
+### Исключение: `SmartCon_FamilyVersion_v1` (Phase 24)
+
+**Единственное исключение** из правила — маркер версии на `Family` элементе в проекте Revit, введённый в Phase 24 (см. [ADR-030](../adr/030-phase-24-stale-detection-v2.md)). Хранит **только** метаданные момента загрузки (CatalogItemId, VersionLabel, LoadedAtUtc, SourceRevitVersion), а не каталожные данные. Не пишется в `.rfa` файлы (over-engineered — см. ADR-030 §2).
+
+**Что остаётся запрещено:**
+- Каталог (`catalog_items`, `catalog_versions`, `family_files`, `family_assets`) — в SQLite
+- Метаданные (manufacturer, tags, description, preview) — в SQLite/managed storage
+- История загрузок, избранное — в SQLite
+- Любые новые ES Schema для FamilyManager (кроме `SmartCon_FamilyVersion_v1`)
+
+**Обоснование исключения:** см. [ADR-030 §Решение](../adr/030-phase-24-stale-detection-v2.md).
 
 ## Перед стартом реализации
 
@@ -73,7 +85,7 @@ ExtensibleStorage остаётся паттерном существующих �
 **Phase 12 (FamilyManager MVP) — COMPLETED (2026-04-28).**
 
 - ADR-014 принят: `docs/adr/014-familymanager-mvp-architecture.md`
-- Модели и интерфейсы добавлены в `docs/domain/models.md` и `docs/domain/interfaces.md`
+- Модели и интерфейсы добавлены в `docs/domain/models/family-manager.md` и `docs/domain/interfaces/family-manager.md`
 - `SmartCon.FamilyManager` добавлен в `docs/architecture/solution-structure.md` и `docs/architecture/dependency-rule.md`
 
 **Phase 13 (FamilyManager Published Storage) — COMPLETED (2026-05-01).**
@@ -83,3 +95,59 @@ ExtensibleStorage остаётся паттерном существующих �
 - Схема БД обновлена до v2: `database_meta`, `schema_info`, `catalog_items`, `catalog_versions`, `family_files`, `family_assets`, `catalog_tags`, `project_usage` (8 таблиц)
 - Asset management: изображения, видео, документы, FBX, lookup-таблицы
 - Category tree для навигации по каталогу
+
+**Phase 21 (FamilyManager Active Import Refactor) — COMPLETED (2026-06-05).**
+
+- ADR-024 принят: `docs/adr/024-active-family-import-preparer.md`
+- Устранена потеря Type Catalog (.txt) при импорте активного `.rfa`
+- Новые сервисы: `IFamilySidecarLocator` (pure I/O, 13 unit-тестов), `IActiveFamilyFilePreparer`, `IActiveDocumentClassifier`, `IActiveImportCleanupService`
+- `OriginalSourcePath` в `FamilyImportRequest`/`FamilyBatchImportItem`/`FamilyUpdateRequest`
+- VM `ImportActiveFileAsync` упрощён через классификатор активного документа
+- Удалён static `CleanupImportActiveTemp` — заменён `IActiveImportCleanupService`
+
+**Phase 22 (FamilyManager Placed Families v2 — OfClass(Family) + EditFamily for extraction) — COMPLETED (2026-06-07).**
+
+- ADR-027 принят: `docs/adr/027-placed-families-v2.md`
+- "Импорт активного файла" импортирует **и** системные, **и** loadable families из активного проекта
+- "Импорт системного семейства" переименован в **"Импорт выделенных элементов"**, принимает любые элементы (system + loadable)
+- Ключевая идея: **Analyze = только метаданные (мгновенно)**, **Stage = по подтверждению**, **Extract = через существующий `IFamilyDataExtractionService`**
+- Новые сервисы: `ILoadableFamilyScanner` (`OfClass(Family)`, O(F) — не O(N)), `ILoadableFamilyTypeResolver` (открывает `.rfa`, читает `FamilyManager.GetTypes()` с UniqueId), `ILoadableFamilyImportOrchestrator` (managed storage + type persist)
+- Picker filter `SystemFamilySelectionFilter` заменён на `AnyElementSelectionFilter` (`FamilyInstance` + system categories)
+- `ISystemFamilyRevitOperations.PickSystemTypes()` → `PickSelectedElements() → SelectedElementsAnalysis`
+- `ProcessProjectImportAsync` принимает `IReadOnlyList<FamilyBatchImportItem>` и диспетчеризирует по `FamilySource` (system → `ISystemFamilyImportOrchestrator`, loadable → `ILoadableFamilyImportOrchestrator`)
+- Атрибуты loadable извлекаются через `IFamilyDataExtractionService.Extract(managedRfaPath, [])` — **переиспользует** существующий сервис (без нового extractor'а для `.rfa`)
+- 4 новых unit-теста для `LoadableFamilyInfo`. Тесты для `SelectedElementsAnalysis` невозможны (record содержит `BuiltInCategory` value-type, требует `RevitAPI.dll` в test bin)
+- Всего: 1219/1219 тестов зелёные (1215 до + 4 новых)
+- 19 новых тестов: 12 sidecar + 1 preparer + 5 TypeCatalog + 1 прочий
+
+**Phase 24 (FamilyManager Stale Detection v2 — On-Demand) — ЗАВЕРШЕНА (2026-06-18).**
+
+- ADR-030 принят: `docs/adr/030-phase-24-stale-detection-v2.md` — override ADR-014 §FM-007 (запрет ExtensibleStorage)
+- Новая ES Schema `SmartCon_FamilyVersion_v1` на `Family` элементе в проекте (per-family маркер версии; **не** на `.rfa` файле — over-engineered)
+- VendorId workaround: `AGKSMARTCON` (9 chars) + `AccessLevel.Public/Public` — как в `FittingMappingSchema`
+- 5 простых полей: `SchemaVersion`, `CatalogItemId`, `VersionLabel`, `LoadedAtUtc`, `SourceRevitVersion`
+- Маркер живёт пока Family загружена в проект — мгновенный read через `Family.GetEntity`
+- 4 новых интерфейса в Core: `IFamilyVersionStore`, `IStaleDetector`, `IStaleFamilyUpdater`, `IStaleCategoryAggregator`
+- 4 новые модели в Core: `FamilyVersion`, `StaleCheckResult` (+ `StaleReason` enum), `StaleUpdateRequest`, `FamilyStaleSnapshot`
+- UI: ПКМ "Проверить" на категории (рекурсивно) и на семействе, ПКМ "Обновить" с подменю (с перезаписью/без/пакетное), roll-up `⚠` индикация на leaf + категориях
+- On-demand модель: единственный триггер — ПКМ "Проверить". НЕТ push events (Phase 23 отвергнут)
+- Refresh кнопка ↻ — **только каталог** (НЕ stale)
+- Кеш `FamilyStaleSnapshot` на сессию, инвалидируется при Load/Update/Edit/смена БД
+- Производительность: < 200 мс на 30 семейств (target Issue #69: < 500 мс)
+- SQLite schema **v12**: `DROP TABLE project_usage` + `DROP INDEX ix_project_usage_lookup` (clean slate)
+- Breaking change `2.0.0` — pre-release `2.0.0-beta.1` (ADR-021)
+- Доступно всем ролям (это операция в активном проекте, не каталог)
+- Детальный план: `docs/family-manager/02-plans/phase-24-stale-detection-v2.md`
+
+**Phase 25 (FamilyManager Type Catalog Simulation — Issue #66) — ЗАВЕРШЕНА (2026-06-21).**
+- ADR-032 принят: `docs/adr/032-type-catalog-simulation.md` — симуляция типов из `.txt` каталога через `Document.Regenerate()` для вычисления формул
+- Новый сервис: `ITypeCatalogValueApplier` (pure C#) + `StorageTypeCode` enum в Core — парсит значения из `.txt` в типизированные; Revit API не требуется в runtime, что позволяет unit-тесты в test bin
+- 19 unit-тестов для `TypeCatalogValueApplier` (Text / Int / Number / ElementId / InvalidFormat / Unsupported / null-safety / culture fallback)
+- `IFamilyDataExtractionService.ExtractFromManagedFile(path, names, ct)` — единая точка входа для всех 3 call site (`FamilyEdit.cs:532, :586`, `Import.cs:216`)
+- Encoding detection: UTF-8 strict → `UtfUnknown.CharsetDetector` (Mozilla Universal Charset Detector, confidence > 0.7) → fallback на system ANSI; критично для русских библиотек Autodesk (Windows-1251)
+- Per-type и per-parameter изоляция ошибок: битый типоразмер / параметр не валит остальные, ошибки логируются с `[Action: ...]`, **NO** диалог Revit
+- `tx.RollBack()` в `finally` гарантирует неизменность `.rfa` файла на диске
+- `__SCAT__` префикс для временных типов (исключает коллизии с дефолтным типом)
+- Логирование по skill `smartcon-logging`: `BeginScope("TypeCatalogSim", ...)` + START/END `Info` маркеры; все `Warn` заканчиваются `[Action: ...]` (L9)
+- Multi-version support: R19/R21/R24/R25 собираются 0 warnings / 0 errors
+- Все 1365 тестов зелёные (1346 baseline + 19 новых для `TypeCatalogValueApplier`)

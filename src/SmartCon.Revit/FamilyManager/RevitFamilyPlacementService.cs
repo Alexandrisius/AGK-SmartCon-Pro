@@ -16,37 +16,44 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
     private readonly IRevitUIContext _revitUIContext;
     private readonly ITransactionService _transactionService;
     private readonly IFamilyLoadService _loadService;
+    private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
 
     public RevitFamilyPlacementService(
         IRevitContext revitContext,
         IRevitUIContext revitUIContext,
         ITransactionService transactionService,
-        IFamilyLoadService loadService)
+        IFamilyLoadService loadService,
+        ISystemFamilyPlacementService systemFamilyPlacementService)
     {
         _revitContext = revitContext;
         _revitUIContext = revitUIContext;
         _transactionService = transactionService;
         _loadService = loadService;
+        _systemFamilyPlacementService = systemFamilyPlacementService;
     }
 
-    public void ActivateAndPlaceType(string familyName, string typeName)
+    public bool ActivateAndPlaceType(string familyName, string typeName)
     {
+        using var _scope = SmartConLogger.BeginScope("Placement",
+            ("Method", "ActivateAndPlaceType"),
+            ("FamilyName", familyName),
+            ("TypeName", typeName));
         var doc = _revitContext.GetDocument();
         var uiApp = GetUIApplication();
-        if (doc is null || uiApp is null) return;
+        if (doc is null || uiApp is null) return false;
 
         var family = FindFamily(doc, familyName);
         if (family is null)
         {
             SmartConLogger.Warn($"ActivateAndPlaceType: Family '{familyName}' not found");
-            return;
+            return false;
         }
 
         var symbol = FindSymbol(doc, family, typeName);
         if (symbol is null)
         {
             SmartConLogger.Warn($"ActivateAndPlaceType: Type '{typeName}' not found in family '{familyName}'");
-            return;
+            return false;
         }
 
         if (!symbol.IsActive)
@@ -60,6 +67,7 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
 
         uiApp.ActiveUIDocument?.PostRequestForElementTypePlacement(symbol);
         SmartConLogger.Info($"ActivateAndPlaceType: Requested placement of {familyName}:{typeName}");
+        return true;
     }
 
     public void LoadAndPlaceFamily(string filePath, string familyName, string? preferredTypeName = null)
@@ -68,7 +76,7 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
         var uiApp = GetUIApplication();
         if (doc is null || uiApp is null) return;
 
-        var resolved = new SmartCon.Core.Models.FamilyManager.FamilyResolvedFile(filePath, null, null);
+        var resolved = new SmartCon.Core.Models.FamilyManager.FamilyResolvedFile(filePath, null, null, null);
         var options = SmartCon.Core.Models.FamilyManager.FamilyLoadOptions.Default with { PreferredName = familyName };
         var result = _loadService.LoadFamilyAsync(resolved, options).GetAwaiter().GetResult();
 
@@ -93,6 +101,12 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
         }
 
         ActivateAndPlaceType(familyName, typeName);
+    }
+
+    public void LoadAndPlaceSystemType(string catalogItemId, string typeName)
+    {
+        var revitVersion = int.Parse(_revitContext.GetRevitVersion());
+        _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, revitVersion);
     }
 
     private static Autodesk.Revit.DB.Family? FindFamily(Document doc, string familyName)

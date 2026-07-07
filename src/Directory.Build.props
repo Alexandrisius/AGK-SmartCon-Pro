@@ -42,6 +42,13 @@
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
     <NoWarn>$(NoWarn);CA1001;CA1010;CA1305;CA1310;CA1707;CA1711;CA1716;CA1805;CA1822;CA1851;CA1852;CA1854;CA1859;CA1860;CA1861;CA1862;CA1866;CA1869</NoWarn>
 
+    <!-- Central Package Management: allow PackageVersion entries in Directory.Packages.props to
+         override transitive dependencies declared in nested package metadata (e.g. Microsoft.Data.Sqlite
+         8.0.27 declares SQLitePCLRaw.bundle_e_sqlite3 2.1.6 in its NuGet metadata, which otherwise
+         surfaces as a duplicate e_sqlite3.dll during net48 publish → NETSDK1152). See
+         https://learn.microsoft.com/en-us/nuget/consume-packages/central-package-management#transitive-pinning -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+
     <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
 
     <!-- Именованные Build Configurations (паттерн Nice3point) -->
@@ -58,6 +65,37 @@
     <RepositoryType>git</RepositoryType>
     <SmartConVersionFile>$(MSBuildThisFileDirectory)..\Version.txt</SmartConVersionFile>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <!-- ============================================================
+       DEBUG / TRACE symbols for custom Debug.* configurations
+       ============================================================
+       Microsoft.NET.Sdk auto-defines DEBUG + TRACE only for the base
+       "Debug" Configuration. Custom names like "Debug.R21" / "Debug.R25"
+       look like Debug builds by name, but unless we explicitly add the
+       symbols here the compiler falls back to Release semantics:
+
+         * DefineConstants has no DEBUG   ->   `#if DEBUG` branches go cold
+         * Optimize defaults to true      ->   dead-code elim + no PDB
+         * No `#if DEBUG` in SmartConLogger => _defaultMinLevel = Info
+                                            => all Debug(...) calls dropped
+
+       Symptom: log file is filled with [INF] but [DBG] lines are never
+       written even though we deploy bin/Debug.R21/ output. The fix is
+       to inject DEBUG/TRACE for every Configuration starting with "Debug".
+       Release.* intentionally stays without DEBUG so the compiler still
+       prunes the logger and other #[Conditional("DEBUG")] code. -->
+  <PropertyGroup Condition="$(Configuration.StartsWith('Debug'))">
+    <DefineConstants>$(DefineConstants);DEBUG;TRACE</DefineConstants>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(Configuration.StartsWith('Release'))">
+    <Optimize>true</Optimize>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
   </PropertyGroup>
 
   <!-- C# polyfill: позволяет record, init, required на net48 -->

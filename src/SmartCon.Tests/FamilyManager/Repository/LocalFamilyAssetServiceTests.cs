@@ -21,14 +21,18 @@ public sealed class LocalFamilyAssetServiceTests : IDisposable
             _fixture.GetPathResolver(),
             _fixture.GetMigrator());
 
-        var hasher = new Sha256FileHasher();
-        var metadataService = new FileNameOnlyMetadataExtractionService(hasher);
+        
+        var metadataService = new FileMetadataExtractionService();
         _importService = new LocalFamilyImportService(
             _fixture.GetDatabase(),
             _fixture.GetMigrator(),
             _fixture.GetProvider(),
             _fixture.GetPathResolver(),
-            metadataService);
+            metadataService,
+            _fixture.GetTypeRepository(),
+            _fixture.GetValueRepository(),
+            _fixture.GetRunRepository(),
+            _fixture.GetTypeCatalogBaker());
     }
 
     private async Task<string> SeedItemAsync(string fileName)

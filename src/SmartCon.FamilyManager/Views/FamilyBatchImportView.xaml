@@ -1,0 +1,203 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.FamilyBatchImportView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_BatchImport_Title}"
+        Width="1080" Height="520"
+        MinWidth="880" MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        FontFamily="{DynamicResource FontFamily}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:FamilyBatchImportActionConverter x:Key="ActionConverter"/>
+            <converters:FamilyBatchImportStatusConverter x:Key="StatusConverter"/>
+            <converters:TypeCountToDisplayConverter x:Key="TypeCountConverter"/>
+            <Style x:Key="CenterCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+            <Style x:Key="LeftCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="HorizontalAlignment" Value="Left"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Margin" Value="4,0"/>
+            </Style>
+            <!--
+                Enterprise multi-select pattern (Microsoft / Syncfusion
+                best practice): bind DataGridRow.IsSelected TwoWay to the
+                row VM's IsSelected property. The DataGrid uses its native
+                SelectionMode="Extended" for Ctrl/Shift/Click selection,
+                and the RestoreMultiSelectOnCellClick behavior below
+                preserves multi-select when the user clicks an inline
+                editor (ComboBox / Button) inside an already-selected cell.
+
+                Defined at the window level (not DataGrid.Resources) so
+                that SingletonResources — which expose CompactDataGridRow
+                and CompactDataGridColumnHeader — are already in scope
+                when this style is resolved.
+            -->
+            <Style x:Key="BatchImportRowStyle"
+                   TargetType="DataGridRow"
+                   BasedOn="{StaticResource CompactDataGridRow}">
+                <Setter Property="IsSelected"
+                        Value="{Binding IsSelected, Mode=TwoWay}"/>
+            </Style>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0"
+                  Text="{loc:Loc FM_BatchImport_Title}"
+                  FontSize="14"
+                  FontWeight="SemiBold"
+                  Margin="0,0,0,8"
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  VerticalAlignment="Center"/>
+
+        <!-- DataGrid -->
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource BorderAltBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Background="{DynamicResource SurfaceBrush}">
+            <DataGrid ItemsSource="{Binding Items}"
+                     AutoGenerateColumns="False"
+                     Style="{DynamicResource CompactDataGrid}"
+                     RowStyle="{StaticResource BatchImportRowStyle}"
+                     CellStyle="{DynamicResource CompactDataGridCell}"
+                     SelectionMode="Extended"
+                     SelectionUnit="FullRow"
+                     CanUserResizeColumns="True"
+                     CanUserSortColumns="False"
+                     EnableRowVirtualization="False"
+                     behaviors:DataGridBehaviors.DeselectOnEmptyClick="True"
+                     behaviors:DataGridBehaviors.RestoreMultiSelectOnCellClick="True">
+                <DataGrid.ColumnHeaderStyle>
+                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                        <Setter Property="Padding" Value="4,2"/>
+                    </Style>
+                </DataGrid.ColumnHeaderStyle>
+                <DataGrid.Columns>
+                    <DataGridTextColumn x:Name="ColFileName"
+                                        Binding="{Binding FileName}"
+                                        Width="*"
+                                        MinWidth="350"
+                                        ElementStyle="{StaticResource LeftCell}"/>
+                    <DataGridTextColumn x:Name="ColRevitVersion"
+                                        Binding="{Binding RevitMajorVersion}"
+                                        Width="Auto"
+                                        MinWidth="80"
+                                        IsReadOnly="True"
+                                        ElementStyle="{StaticResource CenterCell}"/>
+                    <DataGridTextColumn x:Name="ColTypeCount"
+                                        Binding="{Binding TypeCount, Converter={StaticResource TypeCountConverter}}"
+                                        Width="Auto"
+                                        MinWidth="50"
+                                        IsReadOnly="True"
+                                        ElementStyle="{StaticResource CenterCell}"/>
+                    <DataGridTextColumn x:Name="ColStatus"
+                                        Width="Auto"
+                                        MinWidth="100"
+                                        IsReadOnly="True"
+                                        ElementStyle="{StaticResource CenterCell}">
+                        <DataGridTextColumn.Binding>
+                            <MultiBinding Converter="{StaticResource StatusConverter}">
+                                <Binding Path="Status"/>
+                                <Binding Path="MatchedVersionLabel"/>
+                            </MultiBinding>
+                        </DataGridTextColumn.Binding>
+                    </DataGridTextColumn>
+                    <DataGridTemplateColumn x:Name="ColCategory"
+                                            Width="*"
+                                            MinWidth="120">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                              Text="{Binding TargetCategoryPath}"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              TextTrimming="CharacterEllipsis"
+                                              Margin="4,0"
+                                              Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                    <Button Grid.Column="1"
+                                            Content="..."
+                                            Command="{Binding PickCategoryCommand}"
+                                            Padding="6,0"
+                                            Margin="2,0,4,0"
+                                            Width="28" Height="20"
+                                            Style="{DynamicResource SecondaryButton}"
+                                            VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn x:Name="ColAction"
+                                            Width="Auto"
+                                            MinWidth="130">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding AvailableActions}"
+                                          SelectedItem="{Binding Action, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Stretch"
+                                          Height="24"
+                                          BorderThickness="0"
+                                          Padding="2,0"
+                                          Style="{DynamicResource CompactComboBox}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Converter={StaticResource ActionConverter}}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,8,0,0">
+            <Button Content="{loc:Loc FM_BatchImport_Load}"
+                    Command="{Binding ImportCommand}"
+                    IsDefault="True"
+                    Style="{DynamicResource PrimaryButton}"
+                    Width="80" Height="28"/>
+            <Button Content="{loc:Loc FM_BatchImport_Cancel}"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"
+                    Style="{DynamicResource SecondaryButton}"
+                    Margin="8,0,0,0"
+                    Width="80" Height="28"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal sealed class LocalCatalogDatabase
+public sealed class LocalCatalogDatabase
 {
     static LocalCatalogDatabase()
     {
@@ -21,6 +21,8 @@ internal sealed class LocalCatalogDatabase
         _databaseRoot = Path.Combine(appData, "SmartCon", "FamilyManager", "default");
         _dbPath = Path.Combine(_databaseRoot, "catalog.db");
         _connectionString = BuildConnectionString(_dbPath);
+        Directory.CreateDirectory(_databaseRoot);
+        EnsureJournalModeDeleteOnCreation();
     }
 
     public string ConnectionString => _connectionString;
@@ -28,6 +30,8 @@ internal sealed class LocalCatalogDatabase
     public string GetDatabaseRoot() => _databaseRoot;
 
     public SqliteConnection CreateConnection() => new(_connectionString);
+
+    public SqliteConnection CreateConnectionForPath(string dbFilePath) => new(BuildConnectionString(dbFilePath));
 
     public void SwitchToPath(string databaseRootPath)
     {
@@ -38,25 +42,61 @@ internal sealed class LocalCatalogDatabase
             _connectionString = BuildConnectionString(_dbPath);
         }
         Directory.CreateDirectory(databaseRootPath);
+        EnsureJournalModeDeleteOnCreation();
     }
 
-    public void Checkpoint()
+    private void EnsureJournalModeDeleteOnCreation()
     {
         try
         {
+            if (!File.Exists(_dbPath))
+                return;
             using var connection = CreateConnection();
             connection.Open();
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
-            cmd.ExecuteNonQuery();
+            EnsureJournalModeDelete(connection);
         }
         catch
         {
+            // ignored — will be retried on next connection open
         }
+    }
+
+    public void EnsureJournalModeDelete(SqliteConnection connection)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA journal_mode;";
+        var currentMode = cmd.ExecuteScalar() as string;
+        if (currentMode is not "delete")
+        {
+            using var setCmd = connection.CreateCommand();
+            setCmd.CommandText = "PRAGMA journal_mode=DELETE;";
+            setCmd.ExecuteNonQuery();
+        }
+
+        using var busyCmd = connection.CreateCommand();
+        busyCmd.CommandText = "PRAGMA busy_timeout=5000;";
+        busyCmd.ExecuteNonQuery();
+    }
+
+    public async Task EnsureJournalModeDeleteAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA journal_mode;";
+        var currentMode = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+        if (currentMode is not "delete")
+        {
+            using var setCmd = connection.CreateCommand();
+            setCmd.CommandText = "PRAGMA journal_mode=DELETE;";
+            await setCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        using var busyCmd = connection.CreateCommand();
+        busyCmd.CommandText = "PRAGMA busy_timeout=5000;";
+        await busyCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static string BuildConnectionString(string dbPath)
     {
-        return $"Data Source={dbPath};Pooling=false";
+        return $"Data Source={dbPath};Pooling=false;Foreign Keys=True";
     }
 }

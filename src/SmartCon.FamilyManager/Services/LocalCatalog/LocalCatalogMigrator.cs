@@ -1,9 +1,11 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal sealed class LocalCatalogMigrator
+public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
 {
     private readonly LocalCatalogDatabase _database;
 
@@ -51,6 +53,17 @@ internal sealed class LocalCatalogMigrator
         await MigrateV5Async(connection, ct);
         await MigrateV6Async(connection, ct);
         await MigrateV7Async(connection, ct);
+        await MigrateV9Async(connection, ct);
+        await MigrateV10Async(connection, ct);
+        await MigrateV11Async(connection, ct);
+        await MigrateV12Async(connection, ct);
+        await MigrateV13Async(connection, ct);
+        await MigrateV14Async(connection, ct);
+        await MigrateV15Async(connection, ct);
+        await MigrateV16Async(connection, ct);
+        await MigrateV17Async(connection, ct);
+        await MigrateV18Async(connection, ct);
+        await MigrateV19Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -308,6 +321,184 @@ internal sealed class LocalCatalogMigrator
         await versionCmd.ExecuteNonQueryAsync(ct);
     }
 
+    private static async Task MigrateV9Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 9) return;
+
+        if (!await ColumnExistsAsync(connection, "project_usage", "loaded_version_label", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV9AddLoadedVersionLabel;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '9' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV10Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 10) return;
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.MigrateV10AddFamilyTypesNameIndex;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '10' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV11Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 11) return;
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "family_source", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN family_source TEXT NOT NULL DEFAULT 'loadable'";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "revit_category", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN revit_category TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_types", "type_unique_id", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE family_types ADD COLUMN type_unique_id TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateV11Indexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '11' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV12Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 12) return;
+
+        // 1. Drop the project_usage lookup index (Phase 23 era).
+        using (var dropIdxCmd = connection.CreateCommand())
+        {
+            dropIdxCmd.CommandText = FamilyCatalogSql.MigrateV12DropProjectUsageIndex;
+            await dropIdxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // 2. Drop the project_usage table (SSOT is now ExtensibleStorage on .rfa, ADR-030).
+        using (var dropCmd = connection.CreateCommand())
+        {
+            dropCmd.CommandText = FamilyCatalogSql.MigrateV12DropProjectUsageTable;
+            await dropCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // 3. Bump schema version.
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '12' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV13Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 13) return;
+
+        if (!await TableExistsAsync(connection, "family_nested_shared_families", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateFamilyNestedSharedFamilies;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using (var idxCmd = connection.CreateCommand())
+        {
+            idxCmd.CommandText = FamilyCatalogSql.CreateNestedSharedFamiliesIndexes;
+            await idxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '13' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// v2.0.0 migration v14: drop sha256/size_bytes columns. SQLite 3.35+
+    /// supports ALTER TABLE DROP COLUMN. We drop each column inside a single
+    /// BEGIN IMMEDIATE transaction so partial state is rolled back on
+    /// failure. Indexes on dropped columns are auto-removed by SQLite.
+    /// </summary>
+    private static async Task MigrateV14Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 14) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            // Idempotent index drops first. Even if the columns are already
+            // gone (idempotent retry), the DROP INDEX IF EXISTS won't fail.
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.CommandText = FamilyCatalogSql.MigrateV14DropSha256Indexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Drop columns. SQLite allows DROP COLUMN only if the column
+            // exists and is not referenced by FK / PK. None of our columns
+            // are PK or FK targets, so this is safe.
+            if (await ColumnExistsAsync(connection, "family_files", "size_bytes", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_files DROP COLUMN size_bytes";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "family_files", "sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_files DROP COLUMN sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "catalog_versions", "sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_versions DROP COLUMN sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "family_data_import_runs", "source_sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_data_import_runs DROP COLUMN source_sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.CommandText = "UPDATE schema_info SET value = '14' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v14: dropped sha256/size_bytes columns");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task MigrateV8Async(SqliteConnection connection, CancellationToken ct)
     {
         var currentVersion = await GetSchemaVersionAsync(connection, ct);
@@ -323,6 +514,237 @@ internal sealed class LocalCatalogMigrator
         using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = "UPDATE schema_info SET value = '8' WHERE key = 'schema_version'";
         await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// v2.0.0 (ADR-036) migration v15: add FOREIGN KEY (type_id) → family_types(id)
+    /// ON DELETE CASCADE on extracted_attribute_values. Recreates the table to
+    /// add the constraint (SQLite limitation). Pre-existing orphan rows are
+    /// cleaned up inside the SQL constant.
+    /// </summary>
+    private static async Task MigrateV15Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 15) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV15AddAttributeValuesForeignKey;
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.CommandText = "UPDATE schema_info SET value = '15' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v15: added FK on extracted_attribute_values.type_id (ON DELETE CASCADE)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// v2.1.0 migration v16: add content_hash and hash_format_version
+    /// columns to catalog_items and catalog_versions for content-fingerprint
+    /// deduplication. Additive only — no breaking changes. Idempotent:
+    /// each ALTER TABLE is guarded by a column-existence check.
+    /// </summary>
+    private static async Task MigrateV16Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 16) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "catalog_items", "content_hash", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN content_hash TEXT";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (!await ColumnExistsAsync(connection, "catalog_items", "hash_format_version", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN hash_format_version INTEGER";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "content_hash", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN content_hash TEXT";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "hash_format_version", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN hash_format_version INTEGER";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var idxCmd = connection.CreateCommand();
+            idxCmd.CommandText = FamilyCatalogSql.CreateV16Indexes;
+            await idxCmd.ExecuteNonQueryAsync(ct);
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.CommandText = "UPDATE schema_info SET value = '16' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v16: added content_hash columns and indexes");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// v2.0.0 (ADR-041) migration v17: add FOREIGN KEY (version_id) REFERENCES
+    /// catalog_versions(id) ON DELETE CASCADE on family_types and
+    /// extracted_attribute_values. Also adds the composite index
+    /// (catalog_item_id, version_label) on catalog_versions for fast
+    /// GetVersionByLabelAsync / SetActiveVersionAsync lookups.
+    ///
+    /// Recreate-and-copy pattern (same as V15) because SQLite does not support
+    /// ALTER TABLE ADD CONSTRAINT. Each table is recreated inside a single
+    /// transaction with orphan-row cleanup before the copy.
+    ///
+    /// Order matters: family_types is recreated first because
+    /// extracted_attribute_values has FK (type_id) → family_types(id).
+    /// </summary>
+    private static async Task MigrateV17Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 17) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            // Step 1: family_types — recreate with FK (version_id) ON DELETE CASCADE
+            using (var ftCmd = connection.CreateCommand())
+            {
+                ftCmd.Transaction = tx;
+                ftCmd.CommandText = FamilyCatalogSql.MigrateV17RecreateFamilyTypesWithVersionFk;
+                await ftCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Step 2: extracted_attribute_values — recreate with FK (version_id) ON DELETE CASCADE
+            using (var eavCmd = connection.CreateCommand())
+            {
+                eavCmd.Transaction = tx;
+                eavCmd.CommandText = FamilyCatalogSql.MigrateV17RecreateExtractedAttributeValuesWithVersionFk;
+                await eavCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Step 3: composite index on catalog_versions for ByLabel lookups
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.Transaction = tx;
+                idxCmd.CommandText = FamilyCatalogSql.CreateV17Indexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '17' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v17: added FK on family_types.version_id and extracted_attribute_values.version_id (ON DELETE CASCADE)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// v2.1.0 (ADR-041 rev #2) migration v18: change the UNIQUE constraint
+    /// on family_types from (catalog_item_id, type_name) to
+    /// (catalog_item_id, version_id, type_name) so a type name can coexist
+    /// across multiple versions of the same catalog item. This is the
+    /// prerequisite for per-version type storage and version-scoped DELETE
+    /// in SyncTypesAsync: without it, INSERT for a new version with the
+    /// same type name as an existing version hits ON CONFLICT and silently
+    /// reassigns family_types.version_id to the new version, destroying the
+    /// previous version's type rows.
+    ///
+    /// Recreate-and-copy pattern (same as V15/V17). Idempotent: if the
+    /// table already has the new UNIQUE, the recreate is a no-op data copy.
+    /// </summary>
+    private static async Task MigrateV18Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 18) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = FamilyCatalogSql.MigrateV18RecreateFamilyTypesPerVersionUnique;
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '18' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v18: changed family_types UNIQUE to (catalog_item_id, version_id, type_name) for per-version type storage");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V19: adds <c>published_by TEXT</c> column to <c>catalog_versions</c>
+    /// to track which Revit user published each version. Simple ALTER TABLE
+    /// ADD COLUMN — no recreate needed. ADR-041 rev #5.
+    /// </summary>
+    private static async Task MigrateV19Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 19) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "published_by", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV19AddPublishedByColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '19' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v19: added published_by column to catalog_versions for per-version author tracking");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
@@ -393,6 +815,79 @@ internal sealed class LocalCatalogMigrator
             using var cmd = connection.CreateCommand();
             cmd.CommandText = FamilyCatalogSql.MigrateV7AddOwnerIdentity;
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "family_source", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN family_source TEXT NOT NULL DEFAULT 'loadable'";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "revit_category", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN revit_category TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_types", "type_unique_id", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE family_types ADD COLUMN type_unique_id TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "family_nested_shared_families", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateFamilyNestedSharedFamilies;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Indexes are idempotent (CREATE INDEX IF NOT EXISTS). Always attempt
+        // them so a partial migration (table created, indexes failed) is
+        // healed on next launch.
+        using (var idxCmd = connection.CreateCommand())
+        {
+            idxCmd.CommandText = FamilyCatalogSql.CreateNestedSharedFamiliesIndexes;
+            await idxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // v16 content_hash columns — ensure they exist even if migration
+        // sequence was interrupted.
+        if (!await ColumnExistsAsync(connection, "catalog_items", "content_hash", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN content_hash TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "hash_format_version", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN hash_format_version INTEGER";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_versions", "content_hash", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN content_hash TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_versions", "hash_format_version", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN hash_format_version INTEGER";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using (var v16IdxCmd = connection.CreateCommand())
+        {
+            v16IdxCmd.CommandText = FamilyCatalogSql.CreateV16Indexes;
+            await v16IdxCmd.ExecuteNonQueryAsync(ct);
         }
     }
 

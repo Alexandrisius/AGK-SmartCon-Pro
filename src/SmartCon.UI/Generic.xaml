@@ -145,7 +145,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="10,3"/>
-        <Setter Property="Height" Value="26"/>
+        <Setter Property="Height" Value="28"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Template">
@@ -211,6 +211,55 @@
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Background" Value="{DynamicResource DisabledBgBrush}"/>
                             <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         BUTTON: FlatIconButton (плоская квадратная с тонким hover-эффектом)
+         Размер задаётся через Width/Height в XAML. Содержимое всегда
+         центрировано — Grid 1×1 с явным центрированием Path внутри.
+         Используется для кнопок toolbar без текста (collapse all / expand all).
+         ══════════════════════════════════════════════════════════════════ -->
+    <Style x:Key="FlatIconButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Width="{TemplateBinding Width}" Height="{TemplateBinding Height}">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"/>
+                        <Grid HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Margin="0">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="False"/>
+                        </Grid>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#1A0078D4"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#330078D4"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#330078D4"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Background" Value="Transparent"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -594,6 +643,8 @@
          ══════════════════════════════════════════════════════════════════ -->
     <PathGeometry x:Key="ChevronRightGeometry" Figures="M 0,0 L 4,4 L 0,8"/>
     <PathGeometry x:Key="ChevronDownGeometry" Figures="M 0,0 L 4,4 L 8,0"/>
+    <PathGeometry x:Key="UnfoldMoreGeometry" Figures="M 12,5.83 L 15.17,9 L 16.59,7.59 L 12,3 L 7.41,7.59 L 8.83,9 Z M 12,18.17 L 8.83,15 L 7.41,16.41 L 12,21 L 16.59,16.41 L 15.17,15 Z"/>
+    <PathGeometry x:Key="UnfoldLessGeometry" Figures="M 7.41,18.59 L 8.83,20 L 12,16.83 L 15.17,20 L 16.59,18.59 L 12,14 Z M 16.59,5.41 L 15.17,4 L 12,7.17 L 8.83,4 L 7.41,5.41 L 12,10 Z"/>
     <PathGeometry x:Key="FolderIconGeometry" Figures="M 2,2 L 8,2 L 10,4 L 18,4 A 2,2 0 0,1 20,6 L 20,16 A 2,2 0 0,1 18,18 L 2,18 A 2,2 0 0,1 0,16 L 0,4 A 2,2 0 0,1 2,2 Z M 2,4 L 2,16 L 18,16 L 18,6 L 9.5,6 L 7.5,4 Z"/>
 
     <Style x:Key="ModernTreeViewItem" TargetType="TreeViewItem">
@@ -610,8 +661,12 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Header row -->
-                        <Border x:Name="ItemBorder"
+                        <!-- Header row. x:Name="HeaderRow" is the target for
+                             StickyCategoryHeaderBehavior: it applies a
+                             TranslateTransform to this Border to pin the
+                             category header to the top of the viewport during
+                             vertical scrolling (see ADR-032). -->
+                        <Border x:Name="HeaderRow"
                                 Background="Transparent"
                                 CornerRadius="4"
                                 Padding="{TemplateBinding Padding}"
@@ -702,28 +757,46 @@
 
                         <!-- Selection -->
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
+                            <Setter TargetName="HeaderRow" Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
                         </Trigger>
 
                         <!-- Hover on header only (not on children) -->
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
-                                <Condition SourceName="ItemBorder" Property="IsMouseOver" Value="True"/>
+                                <Condition SourceName="HeaderRow" Property="IsMouseOver" Value="True"/>
                                 <Condition Property="IsSelected" Value="False"/>
                             </MultiTrigger.Conditions>
-                            <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
+                            <Setter TargetName="HeaderRow" Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
                         </MultiTrigger>
 
                         <!-- Selected + hover on header -->
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
                                 <Condition Property="IsSelected" Value="True"/>
-                                <Condition SourceName="ItemBorder" Property="IsMouseOver" Value="True"/>
+                                <Condition SourceName="HeaderRow" Property="IsMouseOver" Value="True"/>
                             </MultiTrigger.Conditions>
-                            <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectedPressedSurfaceBrush}"/>
+                            <Setter TargetName="HeaderRow" Property="Background" Value="{DynamicResource SelectedPressedSurfaceBrush}"/>
                         </MultiTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         STICKY OVERLAY: CategoryHeader для overlay-слоя StickyCategoryHeaderBehavior.
+         Используется когда оригинальный TreeViewItem ушёл за верх viewport.
+         Panel.ZIndex="1000" гарантирует что overlay рисуется поверх TreeView.
+         ══════════════════════════════════════════════════════════════════ -->
+    <Style x:Key="StickyOverlayCategoryHeaderStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource BackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
+        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="Padding" Value="8,2"/>
+        <Setter Property="MinHeight" Value="22"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect BlurRadius="3" ShadowDepth="1" Opacity="0.35" Color="Black"/>
             </Setter.Value>
         </Setter>
     </Style>

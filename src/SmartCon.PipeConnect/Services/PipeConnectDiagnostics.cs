@@ -18,6 +18,9 @@ public static class PipeConnectDiagnostics
         IConnectorService connSvc,
         string label)
     {
+        using var _scope = SmartConLogger.BeginScope("Diag",
+            ("Method", "LogConnectorState"),
+            ("Label", label));
         try
         {
             var dynR = connSvc.RefreshConnector(doc, dynamicConnector.OwnerElementId, dynamicConnector.ConnectorIndex)
@@ -63,3 +66,5 @@ public static class PipeConnectDiagnostics
         }
     }
 }
+
+

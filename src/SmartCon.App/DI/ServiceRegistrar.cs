@@ -1,5 +1,7 @@
 using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
+using SmartCon.App.Events;
+using SmartCon.App.Services;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
@@ -13,23 +15,26 @@ using SmartCon.PipeConnect.Events;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
 using SmartCon.PipeConnect.Views;
+using SmartCon.ProjectManagement.Services;
+using SmartCon.ProjectManagement.ViewModels;
+using SmartCon.ProjectManagement.Views;
 using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
+using SmartCon.Revit.FamilyManager;
 using SmartCon.Revit.Fittings;
 using SmartCon.Revit.Network;
 using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
-using SmartCon.ProjectManagement.Services;
-using SmartCon.ProjectManagement.ViewModels;
-using SmartCon.ProjectManagement.Views;
-using SmartCon.Revit.FamilyManager;
 using SmartCon.Revit.Sharing;
 using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
 using SmartCon.Revit.Transform;
 using SmartCon.Revit.Updates;
-using SmartCon.App.Services;
+using StaleCategoryAggregator = SmartCon.FamilyManager.Services.Stale.StaleCategoryAggregator;
+using StaleDetector = SmartCon.FamilyManager.Services.Stale.StaleDetector;
+using StaleFamilyUpdater = SmartCon.FamilyManager.Services.Stale.StaleFamilyUpdater;
+using FamilyVersionWriter = SmartCon.FamilyManager.Services.Stale.FamilyVersionWriter;
 using ShareSettingsView = SmartCon.ProjectManagement.Views.ShareSettingsView;
 using ShareSettingsViewModel = SmartCon.ProjectManagement.ViewModels.ShareSettingsViewModel;
 
@@ -115,9 +120,9 @@ public static class ServiceRegistrar
         services.AddSingleton<ISettingsViewModelFactory, SettingsViewModelFactory>();
 
         // --- Dialog Presenter (C-3: VM→View mapping, decoupling from concrete Views) ---
-        services.AddSingleton(_ =>
+        services.AddSingleton(sp =>
         {
-            var presenter = new WpfDialogPresenter();
+            var presenter = new WpfDialogPresenter(sp.GetRequiredService<IRevitContext>());
             presenter.Register<MiniTypeSelectorViewModel>(vm => new MiniTypeSelectorView(vm));
             presenter.Register<FamilySelectorViewModel>(vm => new FamilySelectorView(vm));
             presenter.Register<AboutViewModel>(vm => new AboutView(vm));
@@ -133,6 +138,8 @@ public static class ServiceRegistrar
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
+            presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
+            presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -144,9 +151,15 @@ public static class ServiceRegistrar
         services.AddSingleton<IViewRepository, RevitViewRepository>();
         services.AddSingleton<IShareSettingsViewModelFactory, ShareSettingsViewModelFactory>();
 
+        services.AddSingleton<IUiFreezeRecoveryService, RevitUiFreezeRecoveryService>();
+
         // --- FamilyManager (Phase 13) ---
         services.AddSingleton<LocalCatalogDatabase>();
-        services.AddSingleton<LocalCatalogMigrator>();
+        services.AddSingleton<ILocalCatalogMigrator, LocalCatalogMigrator>();
+        services.AddSingleton<FamilyManagerServices>();
+        services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IIdGenerator, GuidIdGenerator>();
+        services.AddSingleton<IDispatcher, SmartCon.FamilyManager.UI.WpfDispatcher>();
         services.AddSingleton<StoragePathResolver>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
@@ -155,10 +168,16 @@ public static class ServiceRegistrar
         services.AddSingleton<ICategoryRepository>(sp => sp.GetRequiredService<LocalCategoryRepository>());
         services.AddSingleton<LocalFamilyTypeRepository>();
         services.AddSingleton<IFamilyTypeRepository>(sp => sp.GetRequiredService<LocalFamilyTypeRepository>());
-        services.AddSingleton<Sha256FileHasher>();
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
+        // v2.0.0: precomputer allocates the canonical
+        // (CatalogItemId, VersionLabel, ManagedPath) triple for a given
+        // display name without performing file I/O. Used by the batch
+        // import dialog's rename handler so the round-trip from the
+        // dialog back to ImportFileAsync always carries consistent
+        // values (the dialog pre-build and the dialog rename share the
+        // same single source of truth).
+        services.AddSingleton<IFamilyImportPrecomputer, LocalFamilyImportPrecomputer>();
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();
-        services.AddSingleton<IProjectFamilyUsageRepository, LocalProjectFamilyUsageRepository>();
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
         services.AddSingleton<LocalAttributeDefinitionRepository>();
@@ -169,19 +188,53 @@ public static class ServiceRegistrar
         services.AddSingleton<IAttributeValueRepository>(sp => sp.GetRequiredService<LocalAttributeValueRepository>());
         services.AddSingleton<LocalFamilyDataImportRunRepository>();
         services.AddSingleton<IFamilyDataImportRunRepository>(sp => sp.GetRequiredService<LocalFamilyDataImportRunRepository>());
-        services.AddSingleton<IFamilyMetadataPackageService, LocalFamilyMetadataPackageService>();
+        services.AddSingleton<IFamilyManagerMetadataMediator, FamilyManagerMetadataMediator>();
+        services.AddSingleton<ITypeCatalogValueApplier, TypeCatalogValueApplier>();
         services.AddSingleton<IFamilyDataExtractionService, RevitFamilyDataExtractionService>();
+        services.AddSingleton<IFamilyTypeCatalogBaker, RevitFamilyTypeCatalogBaker>();
         services.AddSingleton<FamilyDataImportService>();
         services.AddSingleton<IFamilyDataImportService>(sp => sp.GetRequiredService<FamilyDataImportService>());
         services.AddSingleton<IFamilyLoadService, RevitFamilyLoadService>();
         services.AddSingleton<IRevitFileInfoReader, RevitFileInfoReader>();
-        services.AddSingleton<IFamilyMetadataExtractionService, FileNameOnlyMetadataExtractionService>();
+        services.AddSingleton<LocalSharedNestedFamilyRepository>();
+        services.AddSingleton<ISharedNestedFamilyRepository>(sp => sp.GetRequiredService<LocalSharedNestedFamilyRepository>());
+        services.AddSingleton<IFamilyMetadataExtractionService, FileMetadataExtractionService>();
         services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
         services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
+        services.AddSingleton<IFamilyPlacementDragService, RevitFamilyPlacementDragService>();
+        services.AddSingleton<ILoadableFamilyScanner, LoadableFamilyScanner>();
+        services.AddSingleton<ILoadableFamilyTypeResolver, LoadableFamilyTypeResolver>();
+        services.AddSingleton<ILoadableFamilyImportOrchestrator, SmartCon.FamilyManager.Services.LoadableFamilyImportOrchestrator>();
+        services.AddSingleton<ISystemFamilyRevitOperations, SystemFamilyRevitOperations>();
+        services.AddSingleton<ISystemFamilyPlacementService, SystemFamilyPlacementService>();
+        services.AddSingleton<ISystemFamilyIsolationProjectService, SmartCon.FamilyManager.Services.SystemFamilyIsolationProjectAdapter>();
+        services.AddSingleton<ISystemFamilyAttributeExtractor, SmartCon.FamilyManager.Services.SystemFamilyAttributeExtractor>();
+        services.AddSingleton<ISystemFamilyImportOrchestrator, SmartCon.FamilyManager.Services.SystemFamilyImportOrchestrator>();
+        services.AddSingleton<ISystemFamilyAttributeExtractionService, SystemFamilyAttributeExtractionService>();
+        services.AddSingleton<IActiveDocumentClassifier, ActiveDocumentClassifier>();
         services.AddSingleton<IUserIdentityService, RevitUserIdentityService>();
         services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
+
+        // --- FamilyManager Content Hash Dedup (Phase 27 / Issue #88) ---
+        services.AddSingleton<IFamilySnapshotExtractor, SmartCon.Revit.FamilyManager.RevitFamilySnapshotExtractor>();
+        services.AddSingleton<IFamilyContentHasher, SmartCon.Core.Services.Implementation.FamilyContentHasher>();
+        services.AddSingleton<IContentHashDedupService, SmartCon.FamilyManager.Services.ContentHashDedupService>();
+        services.AddSingleton<SmartCon.FamilyManager.Services.FamilyImportPreparationService>();
+
+        // --- FamilyManager 3D Geometry Preview (ADR-042 / Issue #92) ---
+        services.AddSingleton<IFamilyGeometryExtractor, SmartCon.Revit.FamilyManager.RevitFamilyGeometryExtractor>();
+        services.AddSingleton<IGlbWriter, SmartCon.FamilyManager.Services.Geometry.FamilyGeometryGlbWriter>();
+        services.AddSingleton<IFamilyGeometryPipeline, SmartCon.FamilyManager.Services.Geometry.FamilyGeometryPipeline>();
+
+        // --- FamilyManager Stale Detection (Phase 24 / ADR-030) ---
+        services.AddSingleton<IFamilyVersionStore, RevitFamilyVersionStore>();
+        services.AddSingleton<IFamilyVersionWriter, FamilyVersionWriter>();
+        services.AddSingleton<IStaleDetector, StaleDetector>();
+        services.AddSingleton<IStaleFamilyUpdater, StaleFamilyUpdater>();
+        services.AddSingleton<IStaleCategoryAggregator, StaleCategoryAggregator>();
+        services.AddSingleton<IFamilyFinder, RevitFamilyFinder>();
 
         services.AddSingleton<FamilyManagerMainViewModel>();
         services.AddSingleton<FamilyManagerPaneControl>();
@@ -190,11 +243,17 @@ public static class ServiceRegistrar
         var windowFocusService = new RevitWindowFocusService(revitContext);
         services.AddSingleton<IWindowFocusService>(windowFocusService);
 
-        var fmHandler = new FamilyManagerExternalEvent(revitContext, windowFocusService);
+        // The awaitable queue is pure C# (testable in isolation).
+        // The IExternalEventHandler adapter lives in SmartCon.App so
+        // that SmartCon.FamilyManager does not need RevitAPIUI at
+        // type-init time (unit-test requirement).
+        var fmAwaitable = new FamilyManagerAwaitableEvent(revitContext, windowFocusService);
+        services.AddSingleton(fmAwaitable);
+        services.AddSingleton<IFamilyManagerAwaitableEvent>(fmAwaitable);
+
+        var fmHandler = new RevitFamilyManagerAwaitableEvent(fmAwaitable);
         var fmEvent = ExternalEvent.Create(fmHandler);
-        fmHandler.Initialize(fmEvent);
-        services.AddSingleton(fmHandler);
-        services.AddSingleton<IFamilyManagerExternalEvent>(fmHandler);
+        fmAwaitable.Initialize(() => fmEvent.Raise());
 
         services.AddSingleton<IFamilyStorageRenameService, LocalFamilyStorageRenameService>();
         services.AddSingleton<IFamilyManagerViewModelFactory, FamilyManagerViewModelFactory>();

@@ -46,7 +46,7 @@ public sealed class LocalDbUserRepositoryTests : IDisposable
     [Fact]
     public async Task GetOrCreateUserAsync_BannedUser_ThrowsDbAccessDeniedException()
     {
-        using var conn = new SqliteConnection(_fixture.ConnectionString);
+        using var conn = _fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO db_users (user_id, display_name, role, status, joined_at_utc, last_seen_at_utc) VALUES (@id, @name, 'Engineer', 'Banned', @now, @now)";
@@ -201,7 +201,7 @@ public sealed class LocalDbUserRepositoryTests : IDisposable
 
     private async Task InsertUserAsync(string userId, string displayName, string role = "Engineer", string status = "Active")
     {
-        using var conn = new SqliteConnection(_fixture.ConnectionString);
+        using var conn = _fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO db_users (user_id, display_name, role, status, joined_at_utc, last_seen_at_utc) VALUES (@id, @name, @role, @status, @now, @now)";
@@ -215,7 +215,7 @@ public sealed class LocalDbUserRepositoryTests : IDisposable
 
     private async Task EnsureMetaRowAsync()
     {
-        using var conn = new SqliteConnection(_fixture.ConnectionString);
+        using var conn = _fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var countCmd = conn.CreateCommand();
         countCmd.CommandText = "SELECT COUNT(*) FROM database_meta";
@@ -232,7 +232,7 @@ public sealed class LocalDbUserRepositoryTests : IDisposable
     private async Task SetOwnerIdentityAsync(string userId)
     {
         await EnsureMetaRowAsync();
-        using var conn = new SqliteConnection(_fixture.ConnectionString);
+        using var conn = _fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var metaCmd = conn.CreateCommand();
         metaCmd.CommandText = "UPDATE database_meta SET owner_identity = @id";

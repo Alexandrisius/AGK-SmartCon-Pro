@@ -153,7 +153,8 @@ public sealed partial class ProfileViewModel : ObservableObject, SmartCon.Core.S
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"ChangeRoleAsync failed: {ex}");
+            using var _scope = SmartConLogger.BeginScope("ChangeRoleAsync", ("UserId", userId));
+            SmartConLogger.Error($"failed: {ex}");
             _dialogService.ShowError("Error", ex.Message);
         }
         finally
@@ -183,7 +184,8 @@ public sealed partial class ProfileViewModel : ObservableObject, SmartCon.Core.S
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"ToggleBanAsync failed: {ex}");
+            using var _scope = SmartConLogger.BeginScope("ToggleBanAsync", ("UserId", userId));
+            SmartConLogger.Error($"failed: {ex}");
             _dialogService.ShowError("Error", ex.Message);
         }
         finally

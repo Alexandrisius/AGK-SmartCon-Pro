@@ -17,12 +17,17 @@ internal sealed class DatabaseManager : IDatabaseManager
 
     private readonly LocalCatalogDatabase _catalogDatabase;
     private readonly IUserIdentityService _identityService;
+    private readonly ILocalCatalogMigrator _migrator;
     private readonly string _registryPath;
 
-    public DatabaseManager(LocalCatalogDatabase catalogDatabase, IUserIdentityService identityService)
+    public DatabaseManager(
+        LocalCatalogDatabase catalogDatabase,
+        IUserIdentityService identityService,
+        ILocalCatalogMigrator migrator)
     {
         _catalogDatabase = catalogDatabase;
         _identityService = identityService;
+        _migrator = migrator;
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var fmDir = Path.Combine(appData, "SmartCon", "FamilyManager");
         Directory.CreateDirectory(fmDir);
@@ -35,8 +40,20 @@ internal sealed class DatabaseManager : IDatabaseManager
             if (active is not null)
             {
                 _catalogDatabase.SwitchToPath(active.Path);
-                var migrator = new LocalCatalogMigrator(_catalogDatabase);
-                migrator.MigrateAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+        }
+    }
+
+    public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        var registry = LoadRegistry();
+        if (registry.ActiveConnectionId is not null)
+        {
+            var active = registry.Connections.FirstOrDefault(c => c.Id == registry.ActiveConnectionId);
+            if (active is not null)
+            {
+                _catalogDatabase.SwitchToPath(active.Path);
+                await _migrator.MigrateAsync(ct);
             }
         }
     }
@@ -70,7 +87,7 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         var id = Guid.NewGuid().ToString("N");
         var dbRoot = Path.GetFullPath(Path.Combine(path, name.Trim()));
-        Directory.CreateDirectory(dbRoot);
+        await Task.Run(() => Directory.CreateDirectory(dbRoot), ct);
 
         var connection = new DatabaseConnection(id, name.Trim(), dbRoot, DateTimeOffset.UtcNow);
 
@@ -78,11 +95,10 @@ internal sealed class DatabaseManager : IDatabaseManager
         _catalogDatabase.SwitchToPath(dbRoot);
         try
         {
-            var migrator = new LocalCatalogMigrator(_catalogDatabase);
-            await migrator.MigrateAsync(ct);
+            await _migrator.MigrateAsync(ct);
 
             using var dbConn = _catalogDatabase.CreateConnection();
-            await dbConn.OpenAsync(ct);
+            await dbConn.OpenAsync(ct).ConfigureAwait(false);
 
             var identity = _identityService.GetCurrentUser();
             var now = DateTimeOffset.UtcNow.ToString("o");
@@ -99,7 +115,7 @@ internal sealed class DatabaseManager : IDatabaseManager
                 metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", name.Trim()));
                 metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@description", DBNull.Value));
                 metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
-                await metaCmd.ExecuteNonQueryAsync(ct);
+                await metaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerCmd = dbConn.CreateCommand();
                 ownerCmd.CommandText = """
@@ -109,12 +125,12 @@ internal sealed class DatabaseManager : IDatabaseManager
                 ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@userId", identity.UserId));
                 ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@displayName", identity.DisplayName));
                 ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@now", now));
-                await ownerCmd.ExecuteNonQueryAsync(ct);
+                await ownerCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerIdentityCmd = dbConn.CreateCommand();
                 ownerIdentityCmd.CommandText = "UPDATE database_meta SET owner_identity = @ownerIdentity";
                 ownerIdentityCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@ownerIdentity", identity.UserId));
-                await ownerIdentityCmd.ExecuteNonQueryAsync(ct);
+                await ownerIdentityCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 tx.Commit();
             }
@@ -130,7 +146,7 @@ internal sealed class DatabaseManager : IDatabaseManager
             throw;
         }
 
-        var registry = LoadRegistry();
+        var registry = await LoadRegistryAsync(ct);
         var connections = registry.Connections.ToList();
         connections.Add(connection);
         await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
@@ -145,19 +161,22 @@ internal sealed class DatabaseManager : IDatabaseManager
         var fullPath = Path.GetFullPath(path);
         var dbFile = Path.Combine(fullPath, "catalog.db");
         if (!File.Exists(dbFile))
-            throw new FileNotFoundException($"Database not found at: {fullPath}");
+            throw new FileNotFoundException(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbNotFoundAtPath) ?? string.Empty,
+                dbFile);
 
         EnsureDatabaseWritable(dbFile);
 
-        var existingRegistry = LoadRegistry();
+        var existingRegistry = await LoadRegistryAsync(ct);
         var existing = existingRegistry.Connections.FirstOrDefault(
             c => c.Path.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
-            SmartConLogger.Info($"[DatabaseManager] Database at '{fullPath}' already connected as '{existing.Name}', activating");
+            using var _scope = SmartConLogger.BeginScope("DatabaseManager", ("Path", fullPath), ("ExistingName", existing.Name));
+            SmartConLogger.Info($"Database at '{fullPath}' already connected as '{existing.Name}', activating");
             if (existingRegistry.ActiveConnectionId != existing.Id)
             {
-                SaveRegistry(new DatabaseConnectionRegistry(existing.Id, existingRegistry.Connections));
+                await SaveRegistryAsync(new DatabaseConnectionRegistry(existing.Id, existingRegistry.Connections), ct);
                 _catalogDatabase.SwitchToPath(fullPath);
                 ActiveDatabaseChanged?.Invoke(this, existing.Id);
             }
@@ -167,59 +186,65 @@ internal sealed class DatabaseManager : IDatabaseManager
         var id = Guid.NewGuid().ToString("N");
         var name = Path.GetFileName(fullPath);
 
-        using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbFile};Mode=ReadOnly;Pooling=false");
-        await conn.OpenAsync(ct);
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT name FROM database_meta LIMIT 1";
-        var dbName = await cmd.ExecuteScalarAsync(ct) as string;
-        if (dbName is not null)
-            name = dbName;
-
-        var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow);
-
-        var registry = LoadRegistry();
-        var connections = registry.Connections.ToList();
-        connections.Add(connection);
-        await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
-
+        var previousRoot = _catalogDatabase.GetDatabaseRoot();
         _catalogDatabase.SwitchToPath(fullPath);
+        try
+        {
+            using var conn = _catalogDatabase.CreateConnection();
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT name FROM database_meta LIMIT 1";
+            var dbName = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+            if (dbName is not null)
+                name = dbName;
 
-        var migrator = new LocalCatalogMigrator(_catalogDatabase);
-        await migrator.MigrateAsync(ct);
+            var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow);
 
-        ActiveDatabaseChanged?.Invoke(this, id);
-        return connection;
+            var registry = await LoadRegistryAsync(ct);
+            var connections = registry.Connections.ToList();
+            connections.Add(connection);
+            await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
+
+            await _migrator.MigrateAsync(ct);
+
+            ActiveDatabaseChanged?.Invoke(this, id);
+            return connection;
+        }
+        catch
+        {
+            _catalogDatabase.SwitchToPath(previousRoot);
+            throw;
+        }
     }
 
-    public Task<bool> SwitchDatabaseAsync(string connectionId, CancellationToken ct = default)
+    public async Task<bool> SwitchDatabaseAsync(string connectionId, CancellationToken ct = default)
     {
-        var registry = LoadRegistry();
+        var registry = await LoadRegistryAsync(ct);
         var conn = registry.Connections.FirstOrDefault(c => c.Id == connectionId);
         if (conn is null)
-            return Task.FromResult(false);
+            return false;
 
         if (registry.ActiveConnectionId == connectionId)
-            return Task.FromResult(true);
+            return true;
 
         var dbFile = Path.Combine(conn.Path, "catalog.db");
         EnsureDatabaseWritable(dbFile);
 
-        SaveRegistry(new DatabaseConnectionRegistry(connectionId, registry.Connections));
+        await SaveRegistryAsync(new DatabaseConnectionRegistry(connectionId, registry.Connections), ct);
         _catalogDatabase.SwitchToPath(conn.Path);
 
-        var migrator = new LocalCatalogMigrator(_catalogDatabase);
-        migrator.MigrateAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await _migrator.MigrateAsync(ct);
 
         ActiveDatabaseChanged?.Invoke(this, connectionId);
-        return Task.FromResult(true);
+        return true;
     }
 
-    public Task<bool> DisconnectDatabaseAsync(string connectionId, CancellationToken ct = default)
+    public async Task<bool> DisconnectDatabaseAsync(string connectionId, CancellationToken ct = default)
     {
-        var registry = LoadRegistry();
+        var registry = await LoadRegistryAsync(ct);
         var conn = registry.Connections.FirstOrDefault(c => c.Id == connectionId);
         if (conn is null)
-            return Task.FromResult(false);
+            return false;
 
         var connections = registry.Connections.Where(c => c.Id != connectionId).ToList();
 
@@ -228,20 +253,20 @@ internal sealed class DatabaseManager : IDatabaseManager
         {
             var other = connections.FirstOrDefault();
             if (other is null)
-                return Task.FromResult(false);
+                return false;
 
             newActiveId = other.Id;
             _catalogDatabase.SwitchToPath(other.Path);
         }
 
-        SaveRegistry(new DatabaseConnectionRegistry(newActiveId, connections));
+        await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
         ActiveDatabaseChanged?.Invoke(this, newActiveId ?? connectionId);
-        return Task.FromResult(true);
+        return true;
     }
 
     public async Task<bool> DeleteDatabaseAsync(string connectionId, CancellationToken ct = default)
     {
-        var registry = LoadRegistry();
+        var registry = await LoadRegistryAsync(ct);
         var conn = registry.Connections.FirstOrDefault(c => c.Id == connectionId);
         if (conn is null)
             return false;
@@ -261,7 +286,7 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         if (Directory.Exists(conn.Path))
         {
-            DeleteDirectoryWithRetry(conn.Path);
+            await DeleteDirectoryWithRetryAsync(conn.Path, ct);
         }
 
         await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
@@ -271,18 +296,18 @@ internal sealed class DatabaseManager : IDatabaseManager
             ActiveDatabaseChanged?.Invoke(this, newActiveId!);
         }
 
-        SmartConLogger.Info($"[DatabaseManager] Database at '{conn.Path}' deleted");
+        SmartConLogger.Info($"DatabaseManager.Delete: Database at '{conn.Path}' deleted");
         return true;
     }
 
-    private static void EnsureDatabaseWritable(string dbFile)
+    private void EnsureDatabaseWritable(string dbFile)
     {
         if (!File.Exists(dbFile))
             return;
 
         try
         {
-            using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbFile};Pooling=false");
+            using var connection = _catalogDatabase.CreateConnectionForPath(dbFile);
             connection.Open();
             using var tx = connection.BeginTransaction();
             using var cmd = connection.CreateCommand();
@@ -298,7 +323,7 @@ internal sealed class DatabaseManager : IDatabaseManager
         }
     }
 
-    private static void DeleteDirectoryWithRetry(string path, int maxRetries = 3)
+    private static async Task DeleteDirectoryWithRetryAsync(string path, CancellationToken ct, int maxRetries = 3)
     {
         for (var i = 0; i < maxRetries; i++)
         {
@@ -310,7 +335,7 @@ internal sealed class DatabaseManager : IDatabaseManager
             }
             catch (IOException) when (i < maxRetries - 1)
             {
-                Thread.Sleep(200 * (i + 1));
+                await Task.Delay(200 * (i + 1), ct);
             }
         }
     }
@@ -366,10 +391,14 @@ internal sealed class DatabaseManager : IDatabaseManager
         File.WriteAllText(_registryPath, json);
     }
 
+    private Task<DatabaseConnectionRegistry> LoadRegistryAsync(CancellationToken ct)
+    {
+        return Task.Run(() => LoadRegistry(), ct);
+    }
+
     private Task SaveRegistryAsync(DatabaseConnectionRegistry registry, CancellationToken ct)
     {
-        SaveRegistry(registry);
-        return Task.CompletedTask;
+        return Task.Run(() => SaveRegistry(registry), ct);
     }
 
     private sealed class RegistryDto

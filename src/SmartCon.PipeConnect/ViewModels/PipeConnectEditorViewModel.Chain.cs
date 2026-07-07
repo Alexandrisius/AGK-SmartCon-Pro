@@ -24,6 +24,8 @@ public sealed partial class PipeConnectEditorViewModel
     [RelayCommand(CanExecute = nameof(CanIncrementChain))]
     private void IncrementChainDepth()
     {
+        using var _scope = SmartConLogger.BeginScope("EditorChain",
+            ("Method", "IncrementChainDepth"));
         if (_chainGraph is null) return;
         int nextLevel = ChainDepth + 1;
         if (nextLevel >= _chainGraph.Levels.Count) return;
@@ -42,7 +44,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[Chain+] Error: {ex.Message}\n{ex.StackTrace}");
+            SmartConLogger.Error($"Error: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Chain"), ex.Message);
         }
         finally
@@ -61,6 +63,8 @@ public sealed partial class PipeConnectEditorViewModel
     [RelayCommand(CanExecute = nameof(CanDecrementChain))]
     private void DecrementChainDepth()
     {
+        using var _scope = SmartConLogger.BeginScope("EditorChain",
+            ("Method", "DecrementChainDepth"));
         if (_chainGraph is null || ChainDepth <= 0) return;
 
         IsBusy = true;
@@ -77,7 +81,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[Chain−] Error: {ex.Message}");
+            SmartConLogger.Error($"Error: {ex.Message}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Rollback"), ex.Message);
         }
         finally
@@ -112,7 +116,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[ConnectAll] Error: {ex.Message}");
+            SmartConLogger.Error($"Error: {ex.Message}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
@@ -144,3 +148,5 @@ public sealed partial class PipeConnectEditorViewModel
         ConnectAllChainCommand.NotifyCanExecuteChanged();
     }
 }
+
+

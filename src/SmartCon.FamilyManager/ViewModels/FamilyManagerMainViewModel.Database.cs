@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -29,8 +30,11 @@ public sealed partial class FamilyManagerMainViewModel
 
     private void OnActiveDatabaseChanged(object? sender, string connectionId)
     {
+        // D-10: stale cache is per-DB. Snapshot from the previous DB must not leak
+        // into the new tree (different catalog items, different versions).
+        _staleDetector.InvalidateCache();
         RefreshConnections();
-        _ = RefreshAccessAndLoadTreeAsync();
+        _ = RefreshTreeViaExternalEventAsync();
     }
 
     partial void OnSelectedConnectionChanged(DatabaseConnection? value)
@@ -126,6 +130,9 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateErrorTitle) ?? "Database creation error",
+                ex.Message);
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error creating database: {0}",
                 ex.Message);
@@ -162,22 +169,29 @@ public sealed partial class FamilyManagerMainViewModel
                 _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
             }
         }
+        catch (FileNotFoundException ex) when (!string.IsNullOrEmpty(ex.Message))
+        {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbConnectErrorTitle) ?? "Database connection error",
+                ex.Message);
+            StatusMessage = ex.Message;
+        }
         catch (InvalidOperationException ex)
         {
             _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting",
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbConnectErrorTitle) ?? "Database connection error",
                 ex.Message);
             StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting: {0}",
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbConnectError) ?? "Database connection error: {0}",
                 ex.Message);
         }
         catch (Exception ex)
         {
             _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting",
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbConnectErrorTitle) ?? "Database connection error",
                 ex.Message);
             StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error connecting: {0}",
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbConnectError) ?? "Database connection error: {0}",
                 ex.Message);
         }
         finally

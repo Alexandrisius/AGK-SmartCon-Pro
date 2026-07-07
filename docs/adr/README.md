@@ -33,3 +33,23 @@
 | [020](020-localization-architecture.md) | Binding-based локализация через LocExtension + TranslationSource | accepted | 2026-05-14 |
 | [021](021-prerelease-versioning.md) | Pre-release Versioning и Beta Release Strategy | accepted | 2026-05-17 |
 | [022](022-familymanager-rbac.md) | FamilyManager RBAC — Role-Based Access Control для локальных каталогов | accepted | 2026-05-16 |
+| [023](023-familymanager-type-centric-workflow.md) | FamilyManager Type-Centric Workflow — Type Catalog, virtual types, per-type loading | accepted | 2026-06-04 |
+| [024](024-active-family-import-preparer.md) | Active Family Import Preparer — Sidecar (.txt) preservation + new preparer/locator/classifier/cleanup services | accepted | 2026-06-05 |
+| [025](025-refactoring-migration-backlog.md) | Refactoring Migration Backlog | accepted | 2026-06-09 |
+| [026](026-logging-migration.md) | Logging Migration Plan (Phase 0 + Phase 1) | accepted | 2026-06-09 |
+| [027](027-placed-families-v2.md) | Placed Families v2 | accepted | 2026-06-12 |
+| [028](028-di-readiness.md) | DI Readiness | accepted | 2026-06-13 |
+| [029](029-shared-nested-load-dialog.md) | Shared nested families — user dialog for load mode (Issue #67) | accepted | 2026-06-17 |
+| [030](030-phase-24-stale-detection-v2.md) | Stale Detection v2 — On-Demand Family Version Marker via ExtensibleStorage on Family element in project (Issue #69) | accepted | 2026-06-18 |
+| [031](031-fireandforget-ui-marshalling.md) | FireAndForget — обязательный UI-marshalling (net48 freeze post-mortem) | accepted | 2026-06-19 |
+| [032](032-type-catalog-simulation.md) | Type Catalog Simulation — вычисление формул для типов из .txt через Document.Regenerate (Issue #66) | superseded by 033 | 2026-06-21 |
+| [033](033-bakein-type-catalog.md) | Bake-in Type Catalog в .rfa при импорте (Issue #74) | accepted | 2026-06-22 |
+| [034](034-shared-nested-persist-fallback.md) | Persist shared nested family names at import time (REVIT-198137 в Revit 2023/2024.2, Issue #77) | accepted | 2026-06-23 |
+| [035](035-remove-temp-logic-v2.md) | Удаление temp-логики в импорте семейств (Issue #73) | accepted | 2026-06-24 |
+| [036](036-active-family-type-sync.md) | Sync типов при импорте активного семейства — bug #1 (ghost types) + bug #2 (UI refresh) (Issue #85) | accepted | 2026-06-25 |
+| [037](037-tree-expand-collapse.md) | Tree Expand/Collapse — UX tree behavior | accepted | 2026-06-12 |
+| [038](038-sticky-category-headers.md) | Sticky Category Headers in catalog tree | accepted | 2026-06-13 |
+| [039](039-snapshot-driven-commit.md) | Snapshot-driven Commit — content-hash from family snapshot, not re-open | accepted | 2026-06-17 |
+| [040](040-overwritecurrent-semantics.md) | OverwriteCurrent — UPDATE catalog_versions in place + managed file rotation | accepted | 2026-06-29 |
+| [041](041-active-version-management.md) | Active Version Management — SetActive/DeleteVersion + per-version types/attributes | accepted | 2026-06-30 |
+| [042](042-familymanager-3d-preview.md) | FamilyManager 3D Geometry Preview — GLB extraction (SharpGLTF) + HelixToolkit.Wpf.SharpDX viewer (Issue #92) | accepted | 2026-07-01 |

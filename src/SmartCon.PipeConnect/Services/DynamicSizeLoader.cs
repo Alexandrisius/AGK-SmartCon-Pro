@@ -41,6 +41,11 @@ public sealed class DynamicSizeLoader(
         Document doc,
         ConnectorProxy dynamicConn)
     {
+        using var _scope = SmartConLogger.BeginScope("DynamicSizeLoader",
+            ("Method", "LoadInitialSizes"),
+            ("DynId", dynamicConn.OwnerElementId.GetValue()),
+            ("ConnIdx", dynamicConn.ConnectorIndex));
+
         SmartConLogger.DebugSection("DynamicSizeLoader.LoadInitialSizes");
 
         var sizes = new List<FamilySizeOption>();
@@ -135,7 +140,7 @@ public sealed class DynamicSizeLoader(
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[LoadInitialSizes] Error: {ex.Message}");
+            SmartConLogger.Warn($"LoadInitialSizes error: {ex.Message}");
             hasSizeOptions = false;
         }
 
@@ -225,7 +230,7 @@ public sealed class DynamicSizeLoader(
             SymbolName = autoSymbolName
         };
 
-        SmartConLogger.Debug($"[RefreshAutoSelectSize] Updated: {autoDisplayName}");
+        SmartConLogger.Debug($"RefreshAutoSelectSize updated: {autoDisplayName}");
         return newAutoOption;
     }
 

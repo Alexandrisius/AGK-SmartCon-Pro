@@ -96,11 +96,56 @@ public sealed partial class CategoryTreeEditorViewModel
                 _bindingChanges.Remove(key);
         }
 
+        // Find neighbor (next sibling, or previous sibling, or parent) BEFORE removing the node
+        // so the user can keep working with a valid selection (right-click context menu otherwise
+        // sees SelectedNode=null and skips the confirmation dialog).
+        var neighbor = FindNeighborNode(node);
+
         node.IsDeleted = true;
         _pendingCategoryDeletions.Add(node);
         RemoveNodeFromTree(node.CategoryId);
-        SelectedNode = null;
+        SelectedNode = neighbor;
         UpdateHasUnsavedChanges();
+    }
+
+    private CategoryNodeViewModel? FindNeighborNode(CategoryNodeViewModel node)
+    {
+        // Try root level
+        for (var i = 0; i < RootNodes.Count; i++)
+        {
+            if (RootNodes[i].CategoryId == node.CategoryId)
+            {
+                if (i + 1 < RootNodes.Count) return RootNodes[i + 1];
+                if (i > 0) return RootNodes[i - 1];
+                return null;
+            }
+        }
+
+        // Try child level
+        return FindNeighborInChildren(RootNodes, node);
+    }
+
+    private static CategoryNodeViewModel? FindNeighborInChildren(
+        IEnumerable<CategoryNodeViewModel> siblings,
+        CategoryNodeViewModel target)
+    {
+        foreach (var sibling in siblings)
+        {
+            for (var i = 0; i < sibling.Children.Count; i++)
+            {
+                if (sibling.Children[i] is CategoryNodeViewModel cat && cat.CategoryId == target.CategoryId)
+                {
+                    if (i + 1 < sibling.Children.Count) return sibling.Children[i + 1] as CategoryNodeViewModel;
+                    if (i > 0) return sibling.Children[i - 1] as CategoryNodeViewModel;
+                    return sibling;
+                }
+            }
+
+            var nested = FindNeighborInChildren(sibling.Children.OfType<CategoryNodeViewModel>(), target);
+            if (nested is not null) return nested;
+        }
+
+        return null;
     }
 
     private static List<string> GetCategoryAndDescendantIds(CategoryNodeViewModel node)

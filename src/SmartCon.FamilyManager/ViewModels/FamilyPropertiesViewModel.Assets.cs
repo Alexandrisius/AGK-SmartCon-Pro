@@ -24,7 +24,7 @@ public sealed partial class FamilyPropertiesViewModel
 
     private async Task LoadAssetsAsync(CancellationToken ct)
     {
-        var assets = await _assetService.GetAssetsAsync(_catalogItemId, ct: ct);
+        var assets = await _assetService.GetAssetsAsync(_catalogItemId, VersionLabel, ct);
 
         ImageAssets = new ObservableCollection<FamilyAsset>(assets.Where(a => a.AssetType == FamilyAssetType.Image));
         VideoAssets = new ObservableCollection<FamilyAsset>(assets.Where(a => a.AssetType == FamilyAssetType.Video));
@@ -33,6 +33,10 @@ public sealed partial class FamilyPropertiesViewModel
         SpreadsheetAssets = new ObservableCollection<FamilyAsset>(assets.Where(a => a.AssetType == FamilyAssetType.Spreadsheet));
         Model3DAssets = new ObservableCollection<FamilyAsset>(assets.Where(a => a.AssetType == FamilyAssetType.Model3D));
         OtherAssets = new ObservableCollection<FamilyAsset>(assets.Where(a => a.AssetType == FamilyAssetType.Other));
+
+        // ADR-042: populate per-type GLB asset names so the 3D viewer
+        // ComboBox can switch between types.
+        Populate3DTypeNames();
 
         var primary = assets.FirstOrDefault(a => a.AssetType == FamilyAssetType.Image && a.IsPrimary);
         if (primary is null)
@@ -49,6 +53,11 @@ public sealed partial class FamilyPropertiesViewModel
             AvatarImagePath = null;
             HasAvatar = false;
         }
+
+        // ADR-042: refresh the 3D preview tab whenever assets are reloaded —
+        // covers Initialize, "selection change in tree", MakeActive (version
+        // switch) and OverwriteCurrent. On net48 this is a silent no-op.
+        await Load3DPreviewForTypeAsync(Selected3DTypeName, ct).ConfigureAwait(true);
     }
 
     [RelayCommand(CanExecute = nameof(CanWrite))]
@@ -125,7 +134,7 @@ public sealed partial class FamilyPropertiesViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"OpenAsset failed: {ex.Message}");
+            SmartConLogger.Warn($"OpenAsset({asset?.FileName ?? "<null>"}): failed: {ex.Message} [Action: проверьте, что файл существует и не заблокирован другим процессом]");
         }
     }
 

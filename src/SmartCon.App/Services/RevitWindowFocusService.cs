@@ -67,7 +67,7 @@ public sealed class RevitWindowFocusService : IWindowFocusService
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[WindowFocus] Failed to restore focus: {ex.Message}");
+            SmartConLogger.Warn($"WindowFocus: Failed to restore focus: {ex.Message}");
         }
     }
 }

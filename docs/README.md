@@ -36,8 +36,9 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`domain/models.md`](domain/models.md) | Все доменные классы с полными сигнатурами | При работе с моделями данных |
-| [`domain/interfaces.md`](domain/interfaces.md) | Все интерфейсы-контракты с сигнатурами методов | При реализации или вызове сервисов |
+| [`domain/README.md`](domain/README.md) | Индекс доменной документации | При навигации по доменным моделям/интерфейсам |
+| [`domain/models/`](domain/models/README.md) | Доменные классы (модели), разбиты по модулям | При работе с моделями данных |
+| [`domain/interfaces/`](domain/interfaces/README.md) | Интерфейсы-контракты, разбиты по модулям | При реализации или вызове сервисов |
 | [`domain/glossary.md`](domain/glossary.md) | Единый словарь терминов проекта | При любых сомнениях в терминологии |
 
 ### PipeConnect (флагманский модуль)
@@ -72,6 +73,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | [`invariants.md`](invariants.md) | Жёсткие правила I-01..I-17. Нарушение = баг. | **ВСЕГДА** |
 | [`multi-version-guide.md`](multi-version-guide.md) | Стандарт multi-version: 10 правил, шаблоны, чеклист | При создании нового функционала |
 | [`adr/README.md`](adr/README.md) | Индекс Architecture Decision Records | При вопросах «почему так сделано?» |
+| [`known-workarounds.md`](known-workarounds.md) | Реестр workaround'ов (Issue, файл, платформа, статус) | При вопросах «что это за странный код?» |
 | [`references.md`](references.md) | Внешние ссылки на документацию Revit API | При работе с конкретными API |
 
 ---
@@ -82,8 +84,8 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 2. **Загрузи** [`invariants.md`](invariants.md) — жёсткие правила, обязательные всегда
 3. **Загрузи** [`architecture/dependency-rule.md`](architecture/dependency-rule.md) — чтобы понимать куда класть код
 4. **По задаче** загружай нужные документы из карты выше
-5. **Не создавай** новые доменные классы без обновления [`domain/models.md`](domain/models.md)
-6. **Не создавай** новые интерфейсы без обновления [`domain/interfaces.md`](domain/interfaces.md)
+5. **Не создавай** новые доменные классы без обновления [`domain/models/<module>.md`](domain/models/README.md)
+6. **Не создавай** новые интерфейсы без обновления [`domain/interfaces/<module>.md`](domain/interfaces/README.md)
 
 ---
 
@@ -97,8 +99,8 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | SmartCon.App | ✅ Полный | Ribbon, DI, ExternalEvents, Updater |
 | SmartCon.PipeConnect | ✅ Полный | PipeConnect: 5 partial VM, 12 сервисов, 6 окон |
 | SmartCon.ProjectManagement | ✅ Реализован | Share Project: ISO 19650, ADR-013 |
-| SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015 |
-| SmartCon.Tests | ✅ 1068 тестов, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
+| SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015, Stale Detection v2 (ADR-030), Type Catalog Bake-in (ADR-033) |
+| SmartCon.Tests | ✅ 1379+ тестов, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
 
 **Phase 11 (ProjectManagement) завершена (2026-04-25):** Share Project, Field Library, FileNameParser с валидацией, 12-категорийная очистка модели, 716 тестов.
 
@@ -117,3 +119,11 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 **Phase 19 (Pre-release Beta Support) завершена (2026-05-17):** ADR-021, SemVersion парсер, `IncludePrerelease` настройка, GitHub pre-release workflow, обновление `release.ps1`/`release.bat`, CI триггеры для beta-тегов.
 
 **Phase 20 (FamilyManager RBAC) завершена (2026-05-16):** ADR-022, Role-Based Access Control для локальных каталогов, DbUser/DbUserRole, Profile dialog, ownership transfer.
+
+**Phase 24 (FamilyManager Stale Detection v2) завершена (2026-06-18):** ADR-030, on-demand stale detection через `SmartCon_FamilyVersion_v1` ExtensibleStorage Schema на `Family` элементе в проекте (не на `.rfa` — over-engineered, см. ADR-030 §2), override ADR-014 §FM-007 (см. [ADR-030](adr/030-phase-24-stale-detection-v2.md) и [план реализации](family-manager/02-plans/phase-24-stale-detection-v2.md)). Schema v12: drop table `project_usage` (clean slate, breaking change 2.0.0). ПКМ "Проверить" на категории/семействе, пакетное обновление, roll-up индикация на категориях.
+
+**Phase 25 (FamilyManager Type Catalog Simulation — Issue #66) завершена (2026-06-21):** ADR-032, симуляция типов из `.txt` каталога через `Document.Regenerate()` для вычисления формул. Новый сервис `ITypeCatalogValueApplier` (pure C#), единая точка входа `IFamilyDataExtractionService.ExtractFromManagedFile(path, names, ct)`, per-type/per-parameter изоляция ошибок, `__SCAT__` префикс временных типов, encoding detection через UTF.Unknown, `tx.RollBack()` гарантирует неизменность `.rfa`. Поддержка R19/R21/R24/R25. **Superseded by ADR-033** (bake-in заменил simulation для managed `.rfa`).
+
+**Phase 26 (FamilyManager Type Catalog Bake-in — Issue #74) завершена (2026-06-22):** ADR-033 заменил simulation на **bake-in** — при импорте `.rfa` с `.txt` каталогом типы запекаются прямо в managed storage. `IFamilyTypeCatalogBaker.BakeAsync(sourceRfaPath, catalog, managedRfaPath)` открывает исходный `.rfa` один раз, создаёт все типы из `.txt`, восстанавливает формулы в топологическом порядке, делает `SaveAs` в managed storage. **BAKE-006..009 (commit `19e220e`)**: парсер сохраняет `##TYPE##UNITS` annotation через `TypeCatalogColumn` record, `RevitUnitsCompat.CatalogCellToInternalUnits(raw, annotation, param)` конвертирует mm/cm/in/ft/deg/rad → Revit internal units с валидацией `UnitUtils.IsValidUnit(targetSpec, sourceUnit)`. Pure normalization через `TypeCatalogUnitAlias.Normalize` в `SmartCon.Core` (15 unit-тестов). R21+ использует `FamilyParameter.GetUnitTypeId()` + `SpecTypeId`, R19-R20 — `DisplayUnitType`. Freeze workaround через `RevitBalloonNudge.Nudge` после каждого `Close` (REVIT-236376 / REVIT-237190). Build R19/R21/R25, 1379+ тестов pass.
+
+**Phase 28 (FamilyManager Active Version Management — ADR-041) завершена (2026-06-30):** Введена возможность переключать активную версию семейства на любую из истории (откат) и удалять неактивные версии. V17 миграция добавляет FK `version_id` ON DELETE CASCADE на `family_types` и `extracted_attribute_values`. Новая вкладка «Версии» в окне свойств с таблицей всех версий, кнопками «Сделать активной» (двухшаговый предпросмотр→подтверждение) и «Удалить». Batch-опция `MakeActive` в batch-диалоге для строк со статусом `Duplicate` (переключает активную, не сохраняя файл). Stale detection, OverwriteCurrent, LoadToProject, ES-маркеры автоматически начинают использовать новую активную версию через `catalog_items.current_version_label`. Build R19/R21/R24/R25, 1669 тестов pass. Активная версия не может быть удалена (инвариант FM-041-INV-01).

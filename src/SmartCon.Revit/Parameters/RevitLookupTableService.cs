@@ -24,6 +24,11 @@ public sealed class RevitLookupTableService : ILookupTableService
         int connectorIndex, double radiusInternalUnits,
         IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
+        using var _scope = SmartConLogger.BeginScope("LookupSvc",
+            ("Method", "ConnectorRadiusExistsInTable"),
+            ("ElementId", elementId.GetValue()),
+            ("ConnectorIndex", connectorIndex));
+
         SmartConLogger.DebugSection("ConnectorRadiusExistsInTable");
         SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, radiusInternal={radiusInternalUnits:F6} ft ({radiusInternalUnits * FeetToMm:F2} mm)");
 
@@ -50,6 +55,11 @@ public sealed class RevitLookupTableService : ILookupTableService
         int connectorIndex, double targetRadiusInternalUnits,
         IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
+        using var _scope = SmartConLogger.BeginScope("LookupSvc",
+            ("Method", "GetNearestAvailableRadius"),
+            ("ElementId", elementId.GetValue()),
+            ("ConnectorIndex", connectorIndex));
+
         SmartConLogger.DebugSection("GetNearestAvailableRadius");
         SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, targetInternal={targetRadiusInternalUnits:F6} ft");
 
@@ -92,6 +102,11 @@ public sealed class RevitLookupTableService : ILookupTableService
 
     public bool HasLookupTable(Document doc, ElementId elementId, int connectorIndex)
     {
+        using var _scope = SmartConLogger.BeginScope("LookupSvc",
+            ("Method", "HasLookupTable"),
+            ("ElementId", elementId.GetValue()),
+            ("ConnectorIndex", connectorIndex));
+
         SmartConLogger.DebugSection("HasLookupTable");
         SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}");
         bool has = BuildLookupContext(doc, elementId, connectorIndex) is not null;
@@ -217,7 +232,7 @@ public sealed class RevitLookupTableService : ILookupTableService
                 for (int i = 1; i < dnSets.Count; i++)
                     validDn.IntersectWith(dnSets[i]);
 
-                SmartConLogger.Debug($"  [Intersect] {perTableRows.Count} tables, DN: [{string.Join(" ∩ ", dnSets.Select(s => s.Count))}] → {validDn.Count}");
+                SmartConLogger.Debug($"  {perTableRows.Count} tables, DN: [{string.Join(" ∩ ", dnSets.Select(s => s.Count))}] → {validDn.Count}");
 
                 var bestTable = perTableRows
                     .OrderByDescending(t => t.Max(r => r.ConnectorRadiiFt.Count))
@@ -780,7 +795,7 @@ public sealed class RevitLookupTableService : ILookupTableService
                     isQueryParam = sl is not null && sl.Value.QueryParameters
                         .Any(q => string.Equals(q, rootName, StringComparison.OrdinalIgnoreCase));
                 }
-                catch (Exception ex) { SmartConLogger.Warn($"[LookupSvc] size_lookup formula parse failed: {ex.GetType().Name}: {ex.Message}"); }
+                catch (Exception ex) { SmartConLogger.Warn($"size_lookup formula parse failed: {ex.GetType().Name}: {ex.Message}"); }
 
                 tableStoresDiameters = isQueryParam || isDiameter;
                 SmartConLogger.Debug($"  tableStoresDiameters={tableStoresDiameters} (SolveFor=null, isQueryParam={isQueryParam}, isDiameter={isDiameter})");
@@ -913,7 +928,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         catch (Exception ex)
         {
             SmartConLogger.Debug($"    EXCEPTION ExportSizeTable: {ex.GetType().Name}: {ex.Message}");
-            SmartConLogger.Error($"[LookupSvc] ExportSizeTable failed: {ex}");
+            SmartConLogger.Error($"ExportSizeTable failed: {ex}");
             return null;
         }
         finally
@@ -937,3 +952,4 @@ public sealed class RevitLookupTableService : ILookupTableService
         return isRadius ? feet : feet / 2.0;
     }
 }
+

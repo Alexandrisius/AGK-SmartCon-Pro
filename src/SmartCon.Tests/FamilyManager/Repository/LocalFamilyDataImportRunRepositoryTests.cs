@@ -21,7 +21,7 @@ public sealed class LocalFamilyDataImportRunRepositoryTests : IDisposable
 
     private async Task SeedCatalogItemAsync(string id)
     {
-        using var connection = new SqliteConnection(_fixture.ConnectionString);
+        using var connection = _fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -45,7 +45,6 @@ public sealed class LocalFamilyDataImportRunRepositoryTests : IDisposable
         return new FamilyDataImportRun(
             Guid.NewGuid().ToString(),
             catalogItemId,
-            null,
             null,
             null,
             2025,

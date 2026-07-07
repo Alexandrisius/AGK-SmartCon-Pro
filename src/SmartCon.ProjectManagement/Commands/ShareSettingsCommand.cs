@@ -13,9 +13,11 @@ public sealed class ShareSettingsCommand : IExternalCommand
 {
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
+        using var _scope = SmartConLogger.BeginScope("ShareSettings",
+            ("Method", "Execute"));
         try
         {
-            SmartConLogger.Info("[PM] ShareSettingsCommand started.");
+            SmartConLogger.Info("ShareSettingsCommand started.");
 
             CommandHelper.InitializeContext(commandData.Application);
             var doc = CommandHelper.GetDocument();
@@ -26,14 +28,15 @@ public sealed class ShareSettingsCommand : IExternalCommand
             new WindowInteropHelper(view).Owner = commandData.Application.MainWindowHandle;
             view.ShowDialog();
 
-            SmartConLogger.Info("[PM] ShareSettingsCommand closed.");
+            SmartConLogger.Info("ShareSettingsCommand closed.");
             return Result.Succeeded;
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] ShareSettingsCommand exception: {ex}");
+            SmartConLogger.Error($"ShareSettingsCommand exception: {ex}");
             message = ex.Message;
             return Result.Failed;
         }
     }
 }
+

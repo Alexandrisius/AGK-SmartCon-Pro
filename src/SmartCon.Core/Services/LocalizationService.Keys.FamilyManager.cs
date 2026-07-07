@@ -10,10 +10,25 @@ public static partial class LocalizationService
         ru["FM_ImportFolder"] = "Импорт папки"; en["FM_ImportFolder"] = "Import Folder";
         ru["FM_LoadToProject"] = "Загрузить в проект"; en["FM_LoadToProject"] = "Load to Project";
         ru["FM_LoadAndPlace"] = "Загрузить и разместить"; en["FM_LoadAndPlace"] = "Load and Place";
-        ru["FM_Place"] = "Разместить"; en["FM_Place"] = "Place";
+        ru["FM_Loading"] = "Загрузка {0}..."; en["FM_Loading"] = "Loading {0}...";
         ru["FM_ExtractTypes"] = "Извлечь типоразмеры"; en["FM_ExtractTypes"] = "Extract Types";
         ru["FM_ImportData"] = "Импорт данных"; en["FM_ImportData"] = "Import Data";
         ru["FM_PlaceType"] = "Разместить тип"; en["FM_PlaceType"] = "Place Type";
+        ru["FM_Edit"] = "Редактировать"; en["FM_Edit"] = "Edit";
+        ru["FM_ImportActiveFile"] = "Импорт активного файла"; en["FM_ImportActiveFile"] = "Import Active File";
+        ru["FM_ActiveDocNotFamily"] = "Активный документ не является семейством"; en["FM_ActiveDocNotFamily"] = "Active document is not a family";
+        ru["FM_ImportSystemFamily"] = "Импорт системного семейства"; en["FM_ImportSystemFamily"] = "Import System Family";
+        ru["FM_ImportSelectedElements"] = "Импорт выделенных элементов"; en["FM_ImportSelectedElements"] = "Import Selected Elements";
+        ru["FM_SelectElementsPrompt"] = "Выберите элементы в Revit (системные или загружаемые семейства)..."; en["FM_SelectElementsPrompt"] = "Select elements in Revit (system or loadable families)...";
+        ru["FM_ImportActiveConfirmTitle"] = "Импорт активного файла"; en["FM_ImportActiveConfirmTitle"] = "Import Active File";
+        ru["FM_ImportActiveConfirmMessage"] = "Импортировать в каталог: {0} системных категорий ({1} типов) и {2} загружаемых семейств?"; en["FM_ImportActiveConfirmMessage"] = "Import to catalog: {0} system categories ({1} types) and {2} loadable families?";
+        ru["FM_ActiveDocNotProject"] = "Активный документ не является проектом. Откройте проект Revit."; en["FM_ActiveDocNotProject"] = "Active document is not a project. Open a Revit project.";
+        ru["FM_SystemFamilySelectPrompt"] = "Выберите элементы системного семейства в Revit..."; en["FM_SystemFamilySelectPrompt"] = "Select system family elements in Revit...";
+        ru["FM_SystemFamilyImported"] = "Импортировано системных типов: {0}"; en["FM_SystemFamilyImported"] = "System types imported: {0}";
+        ru["FM_SystemFamilyImportFailed"] = "Ошибка импорта системного семейства"; en["FM_SystemFamilyImportFailed"] = "System family import failed";
+        ru["FM_SystemFamilyPreparing"] = "Подготовлено {0} категорий, импорт..."; en["FM_SystemFamilyPreparing"] = "Prepared {0} categories, importing...";
+        ru["FM_EditSystemFamily"] = "Редактировать системное семейство"; en["FM_EditSystemFamily"] = "Edit System Family";
+        ru["FM_NoSystemFamiliesFound"] = "В проекте не найдено размещённых системных семейств"; en["FM_NoSystemFamiliesFound"] = "No placed system families found in the project";
         ru["FM_EditMetadata"] = "Редактировать"; en["FM_EditMetadata"] = "Edit";
         ru["FM_NoActiveDocument"] = "Нет активного документа"; en["FM_NoActiveDocument"] = "No active document";
         ru["FM_ImportProgress"] = "Импорт {0} из {1}..."; en["FM_ImportProgress"] = "Importing {0} of {1}...";
@@ -26,8 +41,10 @@ public static partial class LocalizationService
         ru["FM_Name"] = "Имя"; en["FM_Name"] = "Name";
         ru["FM_Description"] = "Описание"; en["FM_Description"] = "Description";
         ru["FM_Category"] = "Категория"; en["FM_Category"] = "Category";
-        ru["FM_Tags"] = "Теги (через запятую)"; en["FM_Tags"] = "Tags (comma-separated)";
+        ru["FM_Tags"] = "Теги"; en["FM_Tags"] = "Tags";
         ru["FM_Status"] = "Статус"; en["FM_Status"] = "Status";
+        ru["FM_Status_Active"] = "Актуальное"; en["FM_Status_Active"] = "Current";
+        ru["FM_Status_Deprecated"] = "Неактуальное"; en["FM_Status_Deprecated"] = "Deprecated";
         ru["FM_ImportSuccess"] = "Импортировано: {0}"; en["FM_ImportSuccess"] = "Imported: {0}";
         ru["FM_ImportError"] = "Ошибка импорта: {0}"; en["FM_ImportError"] = "Import error: {0}";
         ru["FM_ImportPrepareError"] = "Ошибка подготовки"; en["FM_ImportPrepareError"] = "Preparation error";
@@ -36,12 +53,11 @@ public static partial class LocalizationService
         ru["FM_ImportStatusSkipped"] = "Пропущено: {0}"; en["FM_ImportStatusSkipped"] = "Skipped: {0}";
         ru["FM_ImportStatusSkippedIdentical"] = " (идентично)"; en["FM_ImportStatusSkippedIdentical"] = " (identical)";
         ru["FM_ImportStatusErrors"] = "Ошибок: {0}"; en["FM_ImportStatusErrors"] = "Errors: {0}";
+        ru["FM_ImportCompleted"] = "Импорт {0}/{1} семейств завершён"; en["FM_ImportCompleted"] = "Import of {0}/{1} families completed";
         ru["FM_FamilyFileNotFound"] = "Файл семейства не найден"; en["FM_FamilyFileNotFound"] = "Family file not found";
         ru["FM_ImportDataResultFormat"] = "Импортировано: {0} типоразмеров, {1} значений найдено"; en["FM_ImportDataResultFormat"] = "Imported: {0} types, {1} values found";
         ru["FM_ImportDataError"] = "Ошибка импорта: {0}"; en["FM_ImportDataError"] = "Import error: {0}";
-        ru["FM_ImportFileToCategory"] = "Импорт файла"; en["FM_ImportFileToCategory"] = "Import file";
-        ru["FM_ImportFolderToCategory"] = "Импорт папки"; en["FM_ImportFolderToCategory"] = "Import folder";
-        ru["FM_ImportDataForCategory"] = "Импорт данных"; en["FM_ImportDataForCategory"] = "Import data";
+        ru["FM_ImportToCategory"] = "Импорт в категорию"; en["FM_ImportToCategory"] = "Import to category";
         ru["FM_ImportDataProgress"] = "Обработка {0} из {1}: {2}"; en["FM_ImportDataProgress"] = "Processing {0} of {1}: {2}";
         ru["FM_NoFamiliesInCategory"] = "В категории нет семейств"; en["FM_NoFamiliesInCategory"] = "No families in category";
         ru["FM_LoadSuccess"] = "Семейство \"{0}\" загружено в проект"; en["FM_LoadSuccess"] = "Family \"{0}\" loaded into project";
@@ -52,6 +68,10 @@ public static partial class LocalizationService
         ru["FM_DbSwitchError"] = "Ошибка переключения базы данных"; en["FM_DbSwitchError"] = "Error switching database";
         ru["FM_DbCreated"] = "База данных \"{0}\" создана"; en["FM_DbCreated"] = "Database \"{0}\" created";
         ru["FM_DbCreateError"] = "Ошибка создания БД: {0}"; en["FM_DbCreateError"] = "Error creating database: {0}";
+        ru["FM_DbCreateErrorTitle"] = "Ошибка создания базы данных"; en["FM_DbCreateErrorTitle"] = "Database creation error";
+        ru["FM_DbConnectError"] = "Ошибка подключения к БД: {0}"; en["FM_DbConnectError"] = "Database connection error: {0}";
+        ru["FM_DbConnectErrorTitle"] = "Ошибка подключения к базе данных"; en["FM_DbConnectErrorTitle"] = "Database connection error";
+        ru["FM_DbNotFoundAtPath"] = "В выбранной папке не найден файл catalog.db. Укажите корректную папку существующей БД SmartCon."; en["FM_DbNotFoundAtPath"] = "The selected folder does not contain catalog.db. Please select a valid SmartCon database folder.";
         ru["FM_DbDeleted"] = "База данных \"{0}\" удалена"; en["FM_DbDeleted"] = "Database \"{0}\" deleted";
         ru["FM_DbDeleteError"] = "Ошибка удаления БД: {0}"; en["FM_DbDeleteError"] = "Error deleting database: {0}";
         ru["FM_DbDeleteSingle"] = "Нельзя удалить единственную базу данных."; en["FM_DbDeleteSingle"] = "Cannot delete the only database.";
@@ -71,6 +91,20 @@ public static partial class LocalizationService
         ru["FM_Disconnect"] = "Отключить базу данных"; en["FM_Disconnect"] = "Disconnect database";
 
         ru["FM_Update"] = "Обновить"; en["FM_Update"] = "Update";
+        ru["FM_UpdateKeepParams"] = "Сохранить параметры"; en["FM_UpdateKeepParams"] = "Keep instance parameters";
+        ru["FM_UpdateOverwriteParams"] = "Перезаписать параметры"; en["FM_UpdateOverwriteParams"] = "Overwrite parameters";
+        ru["FM_UpdateBatchAllStale"] = "Пакетное обновление всех устаревших"; en["FM_UpdateBatchAllStale"] = "Batch update all stale";
+        ru["FM_Check"] = "Проверить"; en["FM_Check"] = "Check";
+        ru["FM_Stale"] = "Устарело"; en["FM_Stale"] = "Stale";
+        ru["FM_StaleTooltipNone"] = "Актуальная версия"; en["FM_StaleTooltipNone"] = "Up to date";
+        ru["FM_StaleTooltipNoES"] = "Нет маркера версии (загружено до 2.0)"; en["FM_StaleTooltipNoES"] = "No version marker (loaded before 2.0)";
+        ru["FM_StaleTooltipMismatch"] = "Версия в проекте отличается от каталога"; en["FM_StaleTooltipMismatch"] = "Project version differs from catalog";
+        ru["FM_StaleTooltipRevitVer"] = "Загружено в другой версии Revit"; en["FM_StaleTooltipRevitVer"] = "Loaded in a different Revit version";
+        ru["FM_StaleTooltipNotInCatalog"] = "Семейство не найдено в каталоге FM"; en["FM_StaleTooltipNotInCatalog"] = "Family not found in FM catalog";
+        ru["FM_StaleCheckInProgress"] = "Проверка…"; en["FM_StaleCheckInProgress"] = "Checking…";
+        ru["FM_StaleUpdateInProgress"] = "Обновление…"; en["FM_StaleUpdateInProgress"] = "Updating…";
+        ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
+        ru["FM_StaleCategoryTooltipMany"] = "{0} устаревших семейств"; en["FM_StaleCategoryTooltipMany"] = "{0} stale families";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
         ru["FM_UpdateIdenticalCurrent"] = "Этот файл уже является текущей версией семейства"; en["FM_UpdateIdenticalCurrent"] = "This file is already the current version of this family";
@@ -140,9 +174,27 @@ public static partial class LocalizationService
         ru["FM_Tab_Content"] = "Контент"; en["FM_Tab_Content"] = "Content";
         ru["FM_Tab_Attributes"] = "Атрибуты"; en["FM_Tab_Attributes"] = "Attributes";
         ru["FM_Tab_3DView"] = "3D Просмотр"; en["FM_Tab_3DView"] = "3D Preview";
-        ru["FM_Props_Manufacturer"] = "Производитель"; en["FM_Props_Manufacturer"] = "Manufacturer";
+        ru["FM_Tab_Versions"] = "Версии"; en["FM_Tab_Versions"] = "Versions";
+        ru["FM_Version_Column_Version"] = "Версия"; en["FM_Version_Column_Version"] = "Version";
+        ru["FM_Version_Column_Revit"] = "Revit"; en["FM_Version_Column_Revit"] = "Revit";
+        ru["FM_Version_Column_Date"] = "Дата"; en["FM_Version_Column_Date"] = "Date";
+        ru["FM_Version_Column_Author"] = "Автор"; en["FM_Version_Column_Author"] = "Author";
+        ru["FM_Version_Column_Types"] = "Типы"; en["FM_Version_Column_Types"] = "Types";
+        ru["FM_Version_Column_Active"] = "Статус"; en["FM_Version_Column_Active"] = "Status";
+        ru["FM_ActiveBadge"] = "Активная"; en["FM_ActiveBadge"] = "Active";
+        ru["FM_MakeActive"] = "Сделать активной"; en["FM_MakeActive"] = "Make Active";
+        ru["FM_MakeActive_Tooltip"] = "Сделать эту версию активной для всех операций каталога (загрузка в проект, stale detection)"; en["FM_MakeActive_Tooltip"] = "Make this version active for all catalog operations (Load to Project, Stale Detection)";
+        ru["FM_DeleteVersion"] = "Удалить"; en["FM_DeleteVersion"] = "Delete";
+        ru["FM_DeleteVersion_Tooltip"] = "Полностью удалить версию из каталога вместе с файлами и атрибутами"; en["FM_DeleteVersion_Tooltip"] = "Completely remove version from catalog with all its files and attributes";
+        ru["FM_Confirm_MakeActive_Title"] = "Смена активной версии"; en["FM_Confirm_MakeActive_Title"] = "Change Active Version";
+        ru["FM_Confirm_MakeActive_Body"] = "Сделать версию {0} активной вместо {1}? Все последующие операции (загрузка в проект, проверка устаревания, перезапись) будут идти через версию {0}."; en["FM_Confirm_MakeActive_Body"] = "Make version {0} active instead of {1}? All subsequent operations (Load to Project, stale check, overwrite) will go through version {0}.";
+        ru["FM_Confirm_DeleteVersion_Title"] = "Удаление версии"; en["FM_Confirm_DeleteVersion_Title"] = "Delete Version";
+        ru["FM_Confirm_DeleteVersion_Body"] = "Удалить версию {0} семейства «{1}»? Это действие необратимо. Версия будет полностью удалена из каталога вместе с файлами, типами и атрибутами."; en["FM_Confirm_DeleteVersion_Body"] = "Delete version {0} of family \"{1}\"? This action is irreversible. The version will be completely removed from the catalog along with files, types, and attributes.";
+        ru["FM_Error_CannotDeleteActive"] = "Нельзя удалить активную версию. Сначала переключитесь на другую версию."; en["FM_Error_CannotDeleteActive"] = "Cannot delete the active version. Switch to another version first.";
+        ru["FM_Warn_FilesNotDeleted_Title"] = "Файлы не удалены"; en["FM_Warn_FilesNotDeleted_Title"] = "Files not deleted";
+        ru["FM_Warn_FilesNotDeleted_Body"] = "Версия удалена из базы, но файлы на диске остались (вероятно, заблокированы Revit или другим процессом). Путь: {0}"; en["FM_Warn_FilesNotDeleted_Body"] = "Version was deleted from the database but some files remain on disk (likely locked by Revit or another process). Path: {0}";
+        ru["FM_BatchImport_MakeActive"] = "Сделать активной"; en["FM_BatchImport_MakeActive"] = "Make Active";
         ru["FM_Props_Version"] = "Версия"; en["FM_Props_Version"] = "Version";
-        ru["FM_Props_Size"] = "Размер"; en["FM_Props_Size"] = "Size";
         ru["FM_Props_Created"] = "Создано"; en["FM_Props_Created"] = "Created";
         ru["FM_Props_Updated"] = "Обновлено"; en["FM_Props_Updated"] = "Updated";
         ru["FM_Props_NoAvatar"] = "Нет изображения"; en["FM_Props_NoAvatar"] = "No image";
@@ -163,8 +215,16 @@ public static partial class LocalizationService
         ru["FM_Props_NoAttributesDesc"] = "Для извлечения атрибутов семейство будет временно загружено в Revit"; en["FM_Props_NoAttributesDesc"] = "To extract attributes, the family will be temporarily loaded into Revit";
         ru["FM_Props_PresetCategory"] = "Категория: {0}"; en["FM_Props_PresetCategory"] = "Category: {0}";
         ru["FM_Props_NoPresets"] = "Нет пресетов для этой категории"; en["FM_Props_NoPresets"] = "No presets for this category";
-        ru["FM_Props_3DComingSoon"] = "3D-просмотр модели (GLB) — в разработке"; en["FM_Props_3DComingSoon"] = "3D model preview (GLB) — coming soon";
-        ru["FM_Props_3DDesc"] = "Здесь будет интерактивный 3D-просмотр модели семейства. Вы сможете вращать, масштабировать и изучать геометрию перед загрузкой в проект."; en["FM_Props_3DDesc"] = "Interactive 3D preview of the family model will be available here. You will be able to rotate, zoom, and explore geometry before loading into the project.";
+        ru["FM_Props_3DComingSoon"] = "3D-просмотр модели"; en["FM_Props_3DComingSoon"] = "3D model preview";
+        ru["FM_Props_3DDesc"] = "Прокрутите колесо мыши для масштабирования. Перетаскивайте правой кнопкой для вращения. Перетаскивайте левой кнопкой для панорамирования."; en["FM_Props_3DDesc"] = "Scroll wheel to zoom. Right-drag to rotate. Left-drag to pan.";
+        ru["FM_3D_ResetView"] = "Сбросить вид"; en["FM_3D_ResetView"] = "Reset view";
+        ru["FM_3D_ZoomExtents"] = "Показать всё"; en["FM_3D_ZoomExtents"] = "Zoom extents";
+        ru["FM_3D_Wireframe"] = "Каркас"; en["FM_3D_Wireframe"] = "Wireframe";
+        ru["FM_3D_Loading"] = "Загрузка 3D модели..."; en["FM_3D_Loading"] = "Loading 3D model...";
+        ru["FM_3D_NoPreview"] = "3D-превью недоступно для этой версии"; en["FM_3D_NoPreview"] = "No 3D preview for this version";
+        ru["FM_3D_UnsupportedNet48"] = "3D-просмотр недоступен на Revit 2019-2024. Используйте Revit 2025+ для отображения интерактивного 3D-просмотра."; en["FM_3D_UnsupportedNet48"] = "3D preview is unavailable on Revit 2019-2024. Use Revit 2025+ for interactive 3D preview.";
+        ru["FM_3D_InitFailed"] = "Не удалось инициализировать 3D-просмотрщик. Проверьте, что DirectX 11 доступен на этой системе."; en["FM_3D_InitFailed"] = "Failed to initialize 3D viewer. Verify DirectX 11 is available on this system.";
+        ru["FM_3D_LoadFailed"] = "Не удалось загрузить 3D-превью. Проверьте лог smartcon.log для деталей."; en["FM_3D_LoadFailed"] = "Failed to load 3D preview. Check smartcon.log for details.";
         ru["FM_Props_FileInfo"] = "Информация о файле"; en["FM_Props_FileInfo"] = "File Information";
         ru["FM_Props_Title"] = "Свойства семейства"; en["FM_Props_Title"] = "Family Properties";
         ru["FM_Props_NoAssets"] = "Нет файлов"; en["FM_Props_NoAssets"] = "No files";
@@ -235,5 +295,89 @@ public static partial class LocalizationService
         ru["FM_ProfileDisabledTooltip"] = "Подключите базу данных для просмотра профиля"; en["FM_ProfileDisabledTooltip"] = "Connect a database to view profile";
         ru["FM_StatusNoDatabase"] = "База данных не подключена"; en["FM_StatusNoDatabase"] = "No database connected";
         ru["FM_FamilyDeleteInUse"] = "Не удалось удалить файлы семейства. Возможно, файл открыт в Revit или другом приложении. Закройте файл и попробуйте снова."; en["FM_FamilyDeleteInUse"] = "Failed to delete family files. The file may be open in Revit or another application. Close the file and try again.";
+        ru["FM_Tip_FindInCatalog"] = "Найти выделенное семейство в каталоге"; en["FM_Tip_FindInCatalog"] = "Find selected family in catalog";
+        ru["FM_FindInCatalog_NoSelection"] = "В модели не выделено ни одного элемента"; en["FM_FindInCatalog_NoSelection"] = "No element selected in the model";
+        ru["FM_FindInCatalog_NotFound"] = "Семейство '{0}' не найдено в каталоге"; en["FM_FindInCatalog_NotFound"] = "Family '{0}' not found in catalog";
+        ru["FM_FindInCatalog_Found"] = "Найдено семейство: {0}"; en["FM_FindInCatalog_Found"] = "Family found: {0}";
+
+        // Batch Import Dialog
+        ru["FM_BatchImport_Title"] = "Импорт семейств"; en["FM_BatchImport_Title"] = "Import Families";
+        ru["FM_BatchImport_FileName"] = "Имя файла"; en["FM_BatchImport_FileName"] = "File Name";
+        ru["FM_BatchImport_RevitVersion"] = "Версия Revit"; en["FM_BatchImport_RevitVersion"] = "Revit Version";
+        ru["FM_BatchImport_Status"] = "Статус"; en["FM_BatchImport_Status"] = "Status";
+        ru["FM_BatchImport_Action"] = "Действие"; en["FM_BatchImport_Action"] = "Action";
+        ru["FM_BatchImport_StatusNew"] = "Новое"; en["FM_BatchImport_StatusNew"] = "New";
+        ru["FM_BatchImport_StatusExisting"] = "Существующее"; en["FM_BatchImport_StatusExisting"] = "Existing";
+        ru["FM_BatchImport_StatusDuplicate"] = "Дубликат"; en["FM_BatchImport_StatusDuplicate"] = "Duplicate";
+        ru["FM_BatchImport_StatusError"] = "Ошибка"; en["FM_BatchImport_StatusError"] = "Error";
+        ru["FM_BatchImport_ActionIncrement"] = "Новая версия"; en["FM_BatchImport_ActionIncrement"] = "New Version";
+        ru["FM_BatchImport_ActionOverwrite"] = "Перезаписать текущую"; en["FM_BatchImport_ActionOverwrite"] = "Overwrite Current";
+        ru["FM_BatchImport_ActionSkip"] = "Пропустить"; en["FM_BatchImport_ActionSkip"] = "Skip";
+        ru["FM_BatchImport_Load"] = "Загрузить"; en["FM_BatchImport_Load"] = "Load";
+        ru["FM_BatchImport_Cancel"] = "Отмена"; en["FM_BatchImport_Cancel"] = "Cancel";
+        ru["FM_BatchImport_SelectAll"] = "Выбрать все"; en["FM_BatchImport_SelectAll"] = "Select All";
+        ru["FM_BatchImport_Stale"] = "Устарело"; en["FM_BatchImport_Stale"] = "Stale";
+        ru["FM_BatchImport_TypeCount"] = "Типов"; en["FM_BatchImport_TypeCount"] = "Types";
+
+        ru["FM_AttrStatus_Found"] = "Найдено"; en["FM_AttrStatus_Found"] = "Found";
+        ru["FM_AttrStatus_MissingParameter"] = "Параметр не найден"; en["FM_AttrStatus_MissingParameter"] = "Parameter not found";
+        ru["FM_AttrStatus_EmptyValue"] = "Пустое значение"; en["FM_AttrStatus_EmptyValue"] = "Empty value";
+        ru["FM_AttrStatus_UnsupportedType"] = "Неподдерживаемый тип"; en["FM_AttrStatus_UnsupportedType"] = "Unsupported type";
+        ru["FM_AttrStatus_ReadError"] = "Ошибка чтения"; en["FM_AttrStatus_ReadError"] = "Read error";
+        ru["FM_AttrStatus_NotInFamily"] = "Нет в семействе"; en["FM_AttrStatus_NotInFamily"] = "Not in family";
+
+        ru["FM_LoadShared_DialogTitle"] = "Общее вложенное семейство — режим загрузки";
+        en["FM_LoadShared_DialogTitle"] = "Shared nested family — loading mode";
+
+        ru["FM_LoadShared_Header"] = "Загрузка общего вложенного семейства";
+        en["FM_LoadShared_Header"] = "Loading shared nested family";
+
+        ru["FM_LoadShared_Message"] = "Семейство «{0}» уже загружено в проект, но в загружаемой версии оно изменено. Выберите режим загрузки:";
+        en["FM_LoadShared_Message"] = "Family \"{0}\" is already loaded in the project, but it has been modified in the loaded version. Choose a loading mode:";
+
+        ru["FM_LoadShared_UseProject"] = "Использовать версию из проекта";
+        en["FM_LoadShared_UseProject"] = "Use project version";
+
+        ru["FM_LoadShared_UseProjectHint"] = "Оставить без изменений. Существующие типы и параметры в проекте сохранятся.";
+        en["FM_LoadShared_UseProjectHint"] = "Leave unchanged. Existing types and parameters in the project will be preserved.";
+
+        ru["FM_LoadShared_OverwriteParams"] = "Заменить параметры";
+        en["FM_LoadShared_OverwriteParams"] = "Overwrite parameters";
+
+        ru["FM_LoadShared_OverwriteParamsHint"] = "Загрузить новую версию семейства, параметры существующих типов будут обновлены.";
+        en["FM_LoadShared_OverwriteParamsHint"] = "Load the new family version, parameter values of existing types will be overwritten.";
+
+        ru["FM_LoadShared_OverwriteAll"] = "Заменить всё";
+        en["FM_LoadShared_OverwriteAll"] = "Replace everything";
+
+        ru["FM_LoadShared_OverwriteAllHint"] = "Полная перезапись семейства и всех его типов на новую версию.";
+        en["FM_LoadShared_OverwriteAllHint"] = "Full overwrite of the family and all its types with the new version.";
+
+        ru["FM_LoadShared_InUseWarning"] = "⚠ В проекте размещены экземпляры этого семейства. Перезапись может повлиять на них.";
+        en["FM_LoadShared_InUseWarning"] = "⚠ Instances of this family are placed in the project. Overwrite may affect them.";
+
+        ru["FM_LoadShared_Apply"] = "Применить";
+        en["FM_LoadShared_Apply"] = "Apply";
+
+        ru["FM_LoadShared_Skip"] = "Пропущено: {0}";
+        en["FM_LoadShared_Skip"] = "Skipped: {0}";
+
+        ru["FM_LoadShared_BatchProgress"] = "Общее вложенное {0} из {1}";
+        en["FM_LoadShared_BatchProgress"] = "Shared nested {0} of {1}";
+
+        ru["FM_LoadShared_SourceFromCatalog"] = "имя из каталога SmartCon";
+        en["FM_LoadShared_SourceFromCatalog"] = "name from SmartCon catalog";
+
+        ru["FM_LoadShared_SourcePlaceholder"] = "имя недоступно — переимпортируйте семейство в Family Manager";
+        en["FM_LoadShared_SourcePlaceholder"] = "name unavailable — re-import the family in Family Manager";
+
+        ru["FM_ToggleSubtreeTooltip"] = "Развернуть/свернуть вложенные категории";
+        en["FM_ToggleSubtreeTooltip"] = "Toggle subtree";
+        ru["FM_ExpandAllTooltip"] = "Развернуть всё дерево";
+        en["FM_ExpandAllTooltip"] = "Expand all";
+        ru["FM_CollapseAllTooltip"] = "Свернуть всё дерево";
+        en["FM_CollapseAllTooltip"] = "Collapse all";
+        ru["FM_TotalFamiliesTooltip"] = "Загружено семейств: {0}";
+        en["FM_TotalFamiliesTooltip"] = "Total families loaded: {0}";
     }
 }

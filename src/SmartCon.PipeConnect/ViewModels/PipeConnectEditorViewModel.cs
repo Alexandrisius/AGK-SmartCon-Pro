@@ -160,6 +160,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
     private void RefreshAutoSelectSize()
     {
+        using var _scope = SmartConLogger.BeginScope("Editor",
+            ("Method", "RefreshAutoSelectSize"));
         var newAuto = _sizeLoader.RefreshAutoSelect(
             _doc, _ctx.DynamicConnector, _activeDynamic!, AvailableDynamicSizes);
 
@@ -176,7 +178,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
     public void Init()
     {
-        SmartConLogger.Info("[Init] START");
+        using var _ = SmartConLogger.Measure(nameof(Init));
         _groupSession = _txService.BeginGroupSession(LocalizationService.GetString("Tx_PipeConnect"));
         IsSessionActive = true;
         _activeChainPlan = _ctx.ChainPlan;
@@ -192,7 +194,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
             if (_activeChainPlan is { Topology: ChainTopology.ReducerFitting })
             {
-                SmartConLogger.Info("[Init] ReducerFitting topology — inserting reducer first, then fitting");
+                SmartConLogger.Info("ReducerFitting topology — inserting reducer first, then fitting");
                 InitReducerFittingChain();
             }
             else
@@ -201,11 +203,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
             }
 
             RefreshAutoSelectSize();
-            SmartConLogger.Info("[Init] DONE");
+            SmartConLogger.Info("DONE");
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[Init] Failed: {ex.Message}\n{ex.StackTrace}");
+            SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Init"), ex.Message);
             _groupSession.RollBack();
             _groupSession = null;
@@ -216,6 +218,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
     private void InitLegacyFlow()
     {
+        using var _scope = SmartConLogger.BeginScope("Editor",
+            ("Method", "InitLegacyFlow"));
         var defaultFitting = SelectedFitting;
         if (defaultFitting is not null && !defaultFitting.IsDirectConnect)
         {
@@ -251,7 +255,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 needsReducer = Math.Abs(dynRadius - staticRadius) > radiusEps;
 
                 if (needsReducer)
-                    SmartConLogger.Info($"[Init] Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, " +
+                    SmartConLogger.Info($"Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, " +
                         $"static={staticRadius * FeetToMm:F1}mm → reducer needed");
             }
             else
@@ -276,12 +280,14 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
     private void InitReducerFittingChain()
     {
+        using var _scope = SmartConLogger.BeginScope("Editor",
+            ("Method", "InitReducerFittingChain"));
         // TODO [ChainV2]: Обобщить для N звеньев. Сейчас работает для 2 звеньев: reducer + fitting.
         var plan = _activeChainPlan!;
 
         if (plan.Links.Count < 2)
         {
-            SmartConLogger.Warn("[Init] ReducerFitting plan has < 2 links — falling back to legacy flow");
+            SmartConLogger.Warn("ReducerFitting plan has < 2 links — falling back to legacy flow");
             InitLegacyFlow();
             return;
         }
@@ -292,7 +298,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         if (reducerLink.Type != FittingChainNodeType.Reducer ||
             fittingLink.Type != FittingChainNodeType.Fitting)
         {
-            SmartConLogger.Warn("[Init] ReducerFitting plan has unexpected link types — falling back to legacy flow");
+            SmartConLogger.Warn("ReducerFitting plan has unexpected link types — falling back to legacy flow");
             InitLegacyFlow();
             return;
         }
@@ -311,7 +317,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
             if (insertedReducerId is null) return;
 
-            SmartConLogger.Info($"[Init] ReducerFitting: inserted reducer id={insertedReducerId.GetValue()}");
+            SmartConLogger.Info($"ReducerFitting: inserted reducer id={insertedReducerId.GetValue()}");
             doc.Regenerate();
 
             var overrides = GuessCtcForReducer(insertedReducerId);
@@ -327,7 +333,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         if (insertedReducerId is null)
         {
-            SmartConLogger.Warn("[Init] ReducerFitting: reducer insertion failed — falling back");
+            SmartConLogger.Warn("ReducerFitting: reducer insertion failed — falling back");
             InitLegacyFlow();
             return;
         }
@@ -353,7 +359,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
             if (insertedFittingId is null) return;
 
-            SmartConLogger.Info($"[Init] ReducerFitting: inserted fitting id={insertedFittingId.GetValue()}");
+            SmartConLogger.Info($"ReducerFitting: inserted fitting id={insertedFittingId.GetValue()}");
             doc.Regenerate();
 
             var ctcOverrides = GuessCtcForFitting(insertedFittingId, fittingLink.Rule);
@@ -391,7 +397,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         _needsPrimaryReducer = true;
         IsReducerVisible = true;
-        SmartConLogger.Info($"[Init] ReducerFitting: DONE reducer={_primaryReducerId?.GetValue()}, fitting={_currentFittingId?.GetValue()}");
+        SmartConLogger.Info($"ReducerFitting: DONE reducer={_primaryReducerId?.GetValue()}, fitting={_currentFittingId?.GetValue()}");
     }
 
     [RelayCommand(CanExecute = nameof(CanOperate))]
@@ -402,6 +408,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
     private void ExecuteRotate(int angleDeg)
     {
+        using var _scope = SmartConLogger.BeginScope("Editor",
+            ("Method", "ExecuteRotate"),
+            ("Angle", angleDeg));
         IsBusy = true;
         try
         {
@@ -413,7 +422,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[Rotate] Failed: {ex.Message}");
+            SmartConLogger.Error($"Failed: {ex.Message}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Rotate"), ex.Message);
         }
         finally
@@ -425,11 +434,13 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     [RelayCommand(CanExecute = nameof(CanChangeDynamicSize))]
     private void ChangeDynamicSize()
     {
+        using var _scope = SmartConLogger.BeginScope("Editor",
+            ("Method", "ChangeDynamicSize"));
         if (SelectedDynamicSize is null || SelectedDynamicSize.IsAutoSelect) return;
 
         IsBusy = true;
         StatusMessage = string.Format(LocalizationService.GetString("Status_ChangingSizeTo"), SelectedDynamicSize.DisplayName);
-        SmartConLogger.Info($"[ChangeDynamicSize] Attempting size change to {SelectedDynamicSize.DisplayName} " +
+        SmartConLogger.Info($"Attempting size change to {SelectedDynamicSize.DisplayName} " +
             $"(radius={SelectedDynamicSize.Radius * FeetToMm:F2} mm, source={SelectedDynamicSize.Source}, " +
             $"allRadii={SelectedDynamicSize.AllConnectorRadii.Count} коннекторов)");
 
@@ -450,14 +461,14 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 var currentFitting = SelectedFitting;
                 if (currentFitting is not null && !currentFitting.IsDirectConnect)
                 {
-                    SmartConLogger.Info($"[ChangeDynamicSize] Auto-update fitting: {currentFitting.DisplayName}");
+                    SmartConLogger.Info($"Auto-update fitting: {currentFitting.DisplayName}");
                     InsertFittingSilent(currentFitting, adjustDynamicToFit: false);
                 }
             }
 
             if (_primaryReducerId is not null)
             {
-                SmartConLogger.Info($"[ChangeDynamicSize] Auto-update reducer (id={_primaryReducerId})");
+                SmartConLogger.Info($"Auto-update reducer (id={_primaryReducerId})");
                 var reducerUpstream = (_currentFittingId is not null && _activeFittingConn2 is not null)
                     ? _activeFittingConn2
                     : _ctx.StaticConnector;
@@ -491,13 +502,13 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 else
                 {
                     IsReducerVisible = true;
-                    SmartConLogger.Warn("[ChangeDynamicSize] Reducer needed but no reducer families found");
+                    SmartConLogger.Warn("Reducer needed but no reducer families found");
                 }
             }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[ChangeDynamicSize] Error: {ex.Message}");
+            SmartConLogger.Error($"Error: {ex.Message}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_ChangeSize"), ex.Message);
         }
         finally
@@ -517,6 +528,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
     private void EnsureReducersForFittingPair(ConnectorProxy fitConn2, ConnectorProxy dynamicConn)
     {
+        using var _scope = SmartConLogger.BeginScope("Editor",
+            ("Method", "EnsureReducersForFittingPair"));
         if (AvailableReducers.Count > 0) return;
 
         var fitCtc = fitConn2.ConnectionTypeCode.IsDefined
@@ -539,13 +552,14 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
             if (match)
             {
-                SmartConLogger.Info($"[EnsureReducers] Found reducer rule: From={rule.FromType.Value} To={rule.ToType.Value} ({rule.ReducerFamilies.Count} families)");
+                SmartConLogger.Info($"Found reducer rule: From={rule.FromType.Value} To={rule.ToType.Value} ({rule.ReducerFamilies.Count} families)");
                 foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
                     AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
                 return;
             }
         }
 
-        SmartConLogger.Info($"[EnsureReducers] No reducer rule found for pair CTC {fitCtc.Value} ↔ {dynCtc.Value}");
+        SmartConLogger.Info($"No reducer rule found for pair CTC {fitCtc.Value} ↔ {dynCtc.Value}");
     }
 }
+

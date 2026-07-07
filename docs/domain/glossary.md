@@ -32,3 +32,5 @@
 | **PurgeOptions** | Настраиваемый список из 12 категорий очистки модели (RvtLinks, CadImports, Images, PointClouds, Groups, Assemblies, Spaces, Rebar, FabricReinforcement, Unused и др.). |
 | **FileNameTemplate** | Шаблон разбора имени файла из блоков с разделителем, маппингом статусов и валидацией допустимых значений. |
 | **ExportNameOverride** | Ручное переопределение имени файла при ошибке валидации. Позволяет инженеру скорректировать имя перед шарингом. |
+| **Type Catalog** | Текстовый файл `.txt` рядом с семейством Revit `.rfa`, определяющий типоразмеры семейства. Header содержит `##TYPE##UNITS` annotation (`Width##length##millimeters`). Каждая строка — один типоразмер. В SmartCon: импортируется через bake-in (ADR-033) — типы запекаются в `.rfa` при импорте, `.txt` больше не хранится в managed storage (ADR-023-002 supersedes). |
+| **BAKE-006..009** | Секции ADR-033 описывающие unit conversion в Type Catalog: парсинг `##TYPE##UNITS`, конвертация через `UnitUtils.ConvertToInternalUnits`, multi-version support (R21+ UnitTypeId vs R19-R20 DisplayUnitType), backward compatibility (no annotation = raw value). |

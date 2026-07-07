@@ -154,6 +154,10 @@ public partial class SomeView : Window
 - Все биндинги — через `{Binding}` в XAML
 - Открытие окон — через `IDialogService`, не `new Window().ShowDialog()`
 
+**Исключение:** `BindCloseRequest(viewModel)` в конструкторах диалоговых окон (`DialogWindowBase`) — допустимый паттерн для поддержки закрытия окна из ViewModel через `IObservableRequestClose`.
+
+**Исключение:** Программная установка заголовков `DataGridColumn.Header` через `x:Name` в code-behind (см. I-12).
+
 ---
 
 ## I-11: ElementIdCompat — единственный RevitAPI-зависимый класс в Core
@@ -244,29 +248,34 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 - Прямое изменение файлов **запрещено** — изменения = новая версия (ADR-016)
 - `Sha256FileHasher` верифицирует целостность файла при чтении
 - `IFamilyFileResolver` — единственная точка входа для доступа к файлам
+- **Исключение:** `OverwriteCurrent` — явное действие пользователя через batch dialog (комбо-бокс "Перезаписать текущую версию"). При OverwriteCurrent managed-файл текущей версии перезаписывается по тому же пути, а запись в `catalog_versions` UPDATE (а не INSERT новой строки). См. [ADR-040](adr/040-overwritecurrent-semantics.md) и [ADR-016](adr/016-familymanager-readonly-files.md) §"Exception: OverwriteCurrent"
 
 ---
 
 ## I-17: Инструменты поиска — строгое разделение
 
-**Exa — единственный инструмент для поиска в интернете.** REF — только для NuGet/.NET docs.
+**Exa — единственный инструмент для веб-поиска.** Context7 — только для официальной документации библиотек и фреймворков с примерами кода.
 
-**Запрещено:**
-- Использовать REF (`ref_search_documentation`) для поиска в интернете, форумов, блогов, StackOverflow
-- Использовать REF для примеров кода, если нет конкретной библиотеки/NuGet-пакета
-- Использовать REF для Revit API — только MCP `revit-api-docs`
+**Exa используй для:**
+- Примеров кода с Revit API, форумов Autodesk, Jeremy Tammik, StackOverflow, GitHub
+- Поиска best practices, известных проблем, крашей, edge cases
+- Любых веб-источников (блоги, open source плагины, форумы, Autodesk Community)
+- Общих алгоритмов и паттернов программирования
 
-**Разрешено (REF):**
-- Версии NuGet-пакетов: `"CommunityToolkit.Mvvm NuGet latest version C#"`
-- Документация Microsoft Learn: .NET API, WPF, DI
-- Чтение конкретных страниц по URL с `#section`
+**Context7 используй ТОЛЬКО для:**
+- Официальной документации библиотек и фреймворков (.NET, CommunityToolkit.Mvvm, Moq, Microsoft.Data.Sqlite, и т.д.)
+- Получения актуальных сигнатур, API reference, примеров кода из официальных источников
+- Проверки version-specific поведения библиотек
+- Чтения документации конкретной библиотеки, когда известно её имя
 
-**Разрешено (Exa):**
-- Всё остальное: форумы Autodesk, StackOverflow, GitHub, блоги, примеры кода
-- Общие алгоритмы и паттерны программирования
-- Примеры использования библиотек из StackOverflow/GitHub
+**ЗАПРЕЩЕНО:**
+- Использовать Context7 как универсальный поисковик для всего подряд
+- Использовать Context7 для Revit API — для Revit API используй Exa и MCP `revit-api-docs`
+- Использовать Context7 для форумов, блогов, StackOverflow, GitHub (кроме официальных документов библиотек)
+- Использовать Exa для чтения официальной документации по библиотеке, если тот же ответ можно получить из Context7 (Context7 точнее и короче)
 
 **Pipeline:**
-1. Нужен пример кода → `get_code_context_exa` (если доступен) → `exa_web_search_exa`
-2. Нужна версия пакета → `ref_search_documentation`
+1. Нужен пример кода / best practice / форум / edge case → `exa_web_search_exa`
+2. Нужна официальная документация библиотеки с примерами → `context7_resolve-library-id` → `context7_query-docs`
 3. Нужна сигнатура Revit API → MCP `revit-api-docs`
+4. Нужна версия NuGet-пакета → Exa (`exa_web_search_exa`)

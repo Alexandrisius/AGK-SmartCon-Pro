@@ -34,6 +34,7 @@
    - `docs/invariants.md` — выучить жёсткие правила I-01..I-17
    - `docs/architecture/dependency-rule.md` — понять куда класть код
    - `docs/architecture/solution-structure.md` — понять структуру проектов
+   - `docs/known-workarounds.md` — проверить, не существует ли уже workaround для этой проблемы
 
 2. **Провести глубокое исследование через Exa**:
    - **НИКОГДА не предполагай** — Revit API нишевый, нейросети на нём плохо обучены
@@ -109,7 +110,7 @@
 - Написание нового кода и сложная логика
 - Архитектурные решения и интеграция изменений
 - Исправление багов (любой сложности)
-- Использование поиска (Exa, MCP Revit API docs) для сбора контекста
+- Использование поиска (Exa, Context7, MCP Revit API docs) для сбора контекста
 - Приём и валидация результатов субагентов
 - Изменения в конфигурационных файлах
 
@@ -121,7 +122,7 @@
 
 **Область применения субагентов:**
 - Исследование кодовой базы (поиск файлов, чтение, анализ структуры)
-- Изучение документации и внешних источников (Exa, MCP Revit API docs)
+- Изучение документации и внешних источников (Exa, Context7, MCP Revit API docs)
 - Поиск паттернов и анализ зависимостей между модулями
 - Монотонный рефакторинг с чётко заданным scope (переименование, замена паттернов)
 - Параллельный поиск в нескольких направлениях
@@ -201,6 +202,109 @@
 до ручной проверки. Revit-плагин нельзя полноценно протестировать автотестами —
 только ручной запуск в Revit подтверждает работоспособность.
 
+## База знаний решённых багов (GitHub Issues)
+
+GitHub Issues — это **официальная база знаний** проекта для решённых багов,
+регрессий и неочевидных behavioural фиксов. Каждый реальный баг, найденный
+и исправленный в ходе работы, должен быть задокументирован в Issue, чтобы
+через неделю/месяц можно было найти: что сломалось, почему, как чинили.
+
+### Когда создавать Issue
+
+**Создавай Issue для каждого реального бага**, который:
+- воспроизводится в Revit (не только в коде/тестах),
+- требует изменения логики или UX,
+- имеет неочевидный root cause,
+- может повториться или о котором захочется вспомнить позже.
+
+**Не нужен отдельный Issue** для:
+- тривиальных опечаток/форматирования,
+- чисто внутреннего рефакторинга без изменения поведения,
+- задач, которые уже отслеживаются в другом Issue/PR.
+
+### Workflow: баг → Issue → фикс → закрытие
+
+1. **Опиши баг по шаблону** `.github/ISSUE_TEMPLATE/bug_report.yml`.
+   - Если Issue создаётся уже после фикса — восстанови контекст: версию,
+     шаги воспроизведения, фактическое и ожидаемое поведение, логи.
+   - Укажи лейблы `bug` и модуль (`FamilyManager`, `PipeConnect`, и т.д.).
+
+2. **Реши баг** обычным порядком: исследование → уточнение → код → тесты →
+   ручная проверка пользователем.
+
+3. **После подтверждения пользователя** добавь в Issue комментарий-резюме
+   (`Resolution`) и закрой Issue:
+   ```markdown
+   ## Resolution
+
+   ### Fix
+   Что изменилось и где (файл, строки).
+
+   ### Why
+   Почему так сделано, какие альтернативы отвергнуты.
+
+   ### Verification
+   - Build R25: ✅ 0 warnings / 0 errors
+   - Build R24: ✅ 0 warnings / 0 errors
+   - Tests: ✅ 1434/1434 passed
+   - Manual Revit test: ✅ ...
+
+   ### Scope / Notes
+   Почему не нужен ADR, на что обратить внимание в будущем.
+   ```
+
+4. **В коммите укажи `Closes #N`** или `Refs #N`.
+   ```bash
+   git commit -m "fix(FamilyManager): keep category DisplayName when importing active project with loadable families
+
+   Project-name fallback for single system category now applies only when
+   no loadable families are present. Prevents system families from being
+   named after the .rvt file in mixed projects.
+
+   Closes #75"
+   ```
+
+### Использование Issues как источник ссылок
+
+Номер Issue — это **официальная ссылка**, которую можно использовать:
+- в коммит-сообщениях (`Closes #75`, `Refs #75`),
+- в комментариях к коду («See #75 for why we check loadableFamilies.Count»),
+- в ADR и документах, когда фикс является частью обоснования решения.
+
+**Поиск по базе знаний:**
+- `is:issue singleCategory loadable family`
+- `is:issue "Import Active File"`
+- `is:issue label:bug label:FamilyManager`
+
+### Workaround'ы и их документирование
+
+**Единый реестр:** `docs/known-workarounds.md` — таблица всех активных и удалённых
+workaround'ов с указанием Issue, файла, платформы и описания. **Загружай ВСЕГДА**
+перед началом работы над багом — возможно workaround уже существует.
+
+**Где искать известные workaround'ы агенту:**
+1. `docs/known-workarounds.md` — единый реестр (Issue, файл, платформа, статус)
+2. Кодовые комментарии вида `// See #95 for root cause and workaround rationale`
+3. ADR (для архитектурных workaround'ов) — `docs/adr/README.md`
+4. GitHub Issues с лейблом `bug` — полный root cause + Resolution
+
+**Когда создавать Issue для workaround'а:**
+- Каждый workaround, который «лечит» симптом (не root cause), должен быть
+  задокументирован в отдельном Issue с комментарием-резюме `Resolution`.
+- В Resolution укажи: что делает workaround, почему выбран этот подход,
+  какие альтернативы отвергнуты, verification, scope.
+- В коде добавь комментарий-ссылку: `// See #N for root cause and workaround rationale`
+- Обнови `docs/known-workarounds.md` — добавь строку в таблицу активных workaround'ов.
+- Если workaround удалён — перенеси его в секцию «Устаревшие workaround'ы»
+  с указанием коммита удаления.
+
+**Когда НЕ нужен ADR для workaround'а:**
+- Temporary workaround (живёт пока баг upstream не фиксят) — **GitHub Issue достаточно**
+- Архитектурное решение «как обойти системное ограничение навсегда» — **нужен ADR**
+- Правило: если откат занимает <2 недель → Issue. Если >2 недель → ADR.
+- Best practice (Spotify, Microsoft): temporary workarounds → **SKIP ADR**.
+  Use GitHub Issue + Resolution comment + code comment + `known-workarounds.md`.
+
 ## Точка входа в документацию
 
 **Единый источник правды (SSOT)** находится в папке `docs/`. Начинай с:
@@ -208,6 +312,7 @@
 1. **`docs/README.md`** — индекс всех документов, карта навигации
 2. **`docs/invariants.md`** — жёсткие правила (I-01..I-17). **Загружай ВСЕГДА.**
 3. **`docs/architecture/dependency-rule.md`** — куда класть код. **Загружай ВСЕГДА.**
+4. **`docs/known-workarounds.md`** — реестр workaround'ов. **Загружай перед фиксами багов.**
 
 Остальные документы — по контексту задачи (см. карту в `docs/README.md`).
 
@@ -220,9 +325,25 @@
 - Транзакции → только через `ITransactionService`. Запрещено `new Transaction(doc)` (I-03)
 - Не хранить `Element`/`Connector` между транзакциями. Только `ElementId` (I-05)
 - `SmartCon.Core` НЕ вызывает Revit API — compile-time only. Запрет `using System.Windows` (I-09)
-- Новые доменные классы → обнови `docs/domain/models.md`
-- Новые интерфейсы → обнови `docs/domain/interfaces.md`
+- Новые доменные классы → обнови `docs/domain/models/<module>.md` (см. `docs/domain/models/README.md`)
+- Новые интерфейсы → обнови `docs/domain/interfaces/<module>.md` (см. `docs/domain/interfaces/README.md`)
 - Архитектурные решения → создай ADR в `docs/adr/`
+- **Логирование** → **НИКОГДА** не пиши `$"[Cat] message"` — используй
+  `using var _scope = SmartConLogger.BeginScope("Cat", ("Method", nameof(M)));`
+  Подробно — skill `smartcon-logging` (SKILL.md → `references/logging-cookbook.md`)
+  и `docs/adr/026-logging-migration.md`. Три правила без исключений:
+  1. **`FilePath` / `FileName` в scope = `Path.GetFileName()`, не full path** (L8).
+  2. **`Warn(...)` всегда заканчивается `[Action: ...]`** — оператору нужен следующий шаг (L9).
+  3. **Не оборачивай `BeginScope` методы, которые живут > 1 сек с тяжёлой inner работой** — это даёт 2 МБ логов за один прогон (C15). Пусть inner work откроет свой scope.
+
+## Обязательные навыки (загружай перед задачей)
+
+| Навык | Когда загружать |
+|---|---|
+| `smartcon-build-guide` | **ВСЕГДА** перед сборкой / деплоем / релизом |
+| `revit-api-best-practice` | Работа с Revit API, ExternalEvent, Threading, MVVM+Revit |
+| `revit-wpf-compat` | WPF-диалоги, Dispatcher, `Application.Current`, net48/net8 совместимость |
+| `smartcon-logging` | **ВСЕГДА** при работе с логами (чтение, добавление вызовов, миграция prefix→scope, аудит `smartcon.log`) |
 
 ## Частые ловушки (gotchas)
 
@@ -231,17 +352,29 @@
 - **При переходе net8 ↔ net48** — ВСЕГДА делай restore с конфигурацией
 - **НЕ создавать PR** без явного запроса пользователя
 - **NEVER commit** если не попросили — только `git add/commit/push` по запросу
+- **`.GetAwaiter().GetResult()` на UI thread** → DEADLOCK. Используй `AsyncBridge.RunSync(() => async())` из `SmartCon.Core.Threading` (обёртка над `Task.Run + GetResult`). См. skill `revit-api-best-practice` + skill `smartcon-logging` §"Threading".
+- **`async void`** — exception swallowing, используй `async Task` + try/catch. Для event handlers: `Func<T, Task>` (caller обязан await).
+- **Stopwatch в production** — не используй `System.Diagnostics.Stopwatch` напрямую; используй `using var ms = SmartConLogger.Measure("Op")` + `ms.GetElapsedMilliseconds()`.
+- **Логирование**:
+  - `Op=X Op=X` дубль — не добавляй `("Op", X)` если operation уже `X` (D1 fix в `LogScope.FormatPrefix`)
+  - `BeginScope` + `Measure` в одном методе → двойной `OpId=`. Выбери одно
+  - `using var _` (discard) + `() => _ = …` lambda → CS0136 collision. Используй `_scope`
+  - Hot loops (>100 iter) с `Debug($"...")` → используй `HotLoopCounter` (см. skill `smartcon-logging` §"Counter pattern")
+  - **`FilePath` в scope = `Path.GetFileName()`, не full path** — full path в scope + повтор в message = 100+ chars spam в каждой строке. Убери path из message (L8).
+  - **`Warn` без `[Action: ...]`** — оператор читает лог и не знает что делать. Каждый Warn должен заканчиваться конкретным actionable предложением (L9). Примеры: см. skill `smartcon-logging` → `references/recent-patterns.md` §"L9".
+  - **`BeginScope` вокруг долгого метода (>1 сек с тяжёлой inner работой)** — 7803 строк лога из-за одного scope в PipeConnect Editor. Убирай внешний scope, оставь только inner (C15).
+- **Format specifiers `{x:F0}`, `{date:format}` в interpolated strings ЗАПРЕЩЕНЫ** в файлах, транзитивно ссылающихся на HelixToolkit/SharpDX (FamilyManager, App/Diagnostics) на net48 — CS1739. Используй `.ToString("F0", CultureInfo.InvariantCulture)`. См. #97.
 
 ## Инструменты поиска
 
 ### Иерархия (от простого к сложному)
 
 ```
-1. MCP Revit API docs — быстрая проверка сигнатуры, свойств, методов
+1. MCP Revit API docs — быстрая проверка сигнатуры, свойств, методов Revit API
    ↓ (если нужен контекст, примеры, best practices)
-2. Exa — поиск примеров кода, форумов, Jeremy Tammik, GitHub
-   ↓ (если нужны .NET/WPF/DI паттерны)
-3. REF — документация .NET/NuGet
+2. Exa — поиск примеров кода, форумов, Jeremy Tammik, GitHub, StackOverflow
+   ↓ (если нужна официальная документация библиотеки с примерами)
+3. Context7 — актуальная документация библиотек и фреймворков (.NET, NuGet, и т.д.)
 ```
 
 ### MCP Revit API docs (быстрый справочник)
@@ -268,6 +401,32 @@
 **Exa даёт контекст** (примеры кода, best practices, известные проблемы).  
 **НЕ заменяй Exa MCP-ом** — для написания кода нужны оба инструмента.
 
+### Context7 (официальная документация библиотек)
+
+**Когда использовать:**
+- Официальная документация библиотеки или фреймворка
+- Актуальные примеры кода из документации
+- Сигнатуры, API reference, version-specific поведение
+- Проверка использования конкретного метода/класса в официальных docs
+
+**Когда НЕ использовать:**
+- Revit API (используй Exa и MCP Revit API docs)
+- Поиск по форумам, блогам, GitHub, StackOverflow
+- Общие вопросы программирования
+- «Что-то где-то видел» — это всегда Exa
+
+**Доступные tools:**
+- `context7_resolve-library-id` — найти Context7-compatible library ID по имени
+- `context7_query-docs` — запросить документацию по library ID
+
+**Workflow:**
+```
+1. resolve-library-id "CommunityToolkit.Mvvm" → /websites/learn_microsoft_en-us_dotnet_communitytoolkit_mvvm
+2. query-docs /websites/learn_microsoft_en-us_dotnet_communitytoolkit_mvvm "ObservableProperty example" → примеры кода
+```
+
+**Важно:** Context7 — это **не Google**. Перед query-docs всегда делается `resolve-library-id`. Не пытайся искать через Context7 «всё подряд».
+
 ### Exa (глубокий поиск)
 
 **Когда использовать:**
@@ -278,16 +437,18 @@
 - Autodesk Community forums
 - Известные проблемы и краши
 - Best practices и паттерны
+- Версии NuGet-пакетов
 
 | Нужно | Инструмент |
 |---|---|
 | Сигнатура + Remarks Revit API | MCP Revit API docs |
-| Примеры кода, форумы, best practices | Exa |
-| Версия NuGet-пакета | REF |
-| .NET/WPF/DI паттерны | REF → Exa |
+| Примеры кода, форумы, best practices, edge cases | Exa |
+| Официальная документация библиотеки с примерами | Context7 |
+| .NET/WPF/DI паттерны из официальных docs | Context7 → Exa |
+| Версия NuGet-пакета | Exa |
 | Любой веб-поиск | Exa |
 
-**REF — НЕ поисковик. Для любого веб-поиска используй Exa.**
+**Context7 — НЕ поисковик. Для любого веб-поиска используй Exa.**
 
 ## Сборка и CI/CD
 

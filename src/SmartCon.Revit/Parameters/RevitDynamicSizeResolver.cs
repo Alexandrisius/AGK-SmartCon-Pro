@@ -35,6 +35,11 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         int connectorIndex,
         IReadOnlyList<LookupColumnConstraint>? constraints = null)
     {
+        using var _scope = SmartConLogger.BeginScope("DynSizeResolver",
+            ("Method", "GetAvailableSizes"),
+            ("ElementId", elementId.GetValue()),
+            ("ConnectorIndex", connectorIndex));
+
         SmartConLogger.DebugSection("RevitDynamicSizeResolver.GetAvailableSizes");
         SmartConLogger.Debug($"  elementId={elementId.GetValue()}, connIdx={connectorIndex}, constraints={constraints?.Count ?? 0}");
 
@@ -239,7 +244,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                     isQueryParam = sl is not null && sl.Value.QueryParameters
                         .Any(q => string.Equals(q, rootName, StringComparison.OrdinalIgnoreCase));
                 }
-                catch (Exception ex) { SmartConLogger.Warn($"[DynSizeResolver] size_lookup formula parse failed: {ex.GetType().Name}: {ex.Message}"); }
+                catch (Exception ex) { SmartConLogger.Warn($"size_lookup formula parse failed: {ex.GetType().Name}: {ex.Message}"); }
 
                 tableStoresDiameters = isQueryParam || isDiameter;
                 SmartConLogger.Debug($"  tableStoresDiameters={tableStoresDiameters} (SolveFor=null, isQueryParam={isQueryParam}, isDiameter={isDiameter})");
@@ -308,7 +313,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         var allValues = constrainedValues.Count > 0 ? constrainedValues : unconstrainedValues;
         if (constrainedValues.Count > 0 && unconstrainedValues.Count > 0)
-            SmartConLogger.Debug($"  [MultiCol] Multi-column priority: {constrainedValues.Count} constrained, {unconstrainedValues.Count} unconstrained → using constrained");
+            SmartConLogger.Debug($"  Multi-column priority: {constrainedValues.Count} constrained, {unconstrainedValues.Count} unconstrained → using constrained");
 
         var result = new List<SizeOption>();
         foreach (var radius in allValues)
@@ -344,7 +349,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         }
 
         if (constraints is { Count: > 0 })
-            SmartConLogger.Info($"[MultiCol] Dropdown filtering: {rawValues.Count} raw values, {result.Count} radii extracted");
+            SmartConLogger.Info($"Dropdown filtering: {rawValues.Count} raw values, {result.Count} radii extracted");
 
         return result;
     }
@@ -494,7 +499,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                 if (mappingFailed && lookupRows.Count > 0)
                 {
                     SmartConLogger.Warn(
-                        $"[GetAvailableFamilySizes] Non-size type params detected ([{string.Join(", ", nonSizeTypeParams)}]) " +
+                        $"Non-size type params detected ([{string.Join(", ", nonSizeTypeParams)}]) " +
                         $"but no CSV rows matched any FamilySymbol. Falling back to FamilySymbol enumeration " +
                         $"to prevent invalid DN × Symbol combinations. " +
                         $"Check family parameter units and types.");
@@ -830,7 +835,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         if (orphans.Count > 0)
         {
             SmartConLogger.Warn(
-                $"[MapRowsToSymbols] Orphan symbols (no matching CSV row, excluded from dropdown): " +
+                $"Orphan symbols (no matching CSV row, excluded from dropdown): " +
                 $"[{string.Join(", ", orphans)}]");
         }
 
@@ -941,3 +946,4 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             .ToList();
     }
 }
+

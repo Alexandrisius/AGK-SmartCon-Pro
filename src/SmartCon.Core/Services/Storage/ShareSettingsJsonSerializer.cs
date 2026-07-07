@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SmartCon.Core.Common;
 using SmartCon.Core.Models;
 
 namespace SmartCon.Core.Services.Storage;
@@ -18,11 +19,7 @@ public static class ShareSettingsJsonSerializer
 
     public static string Serialize(ShareProjectSettings settings)
     {
-#if NETFRAMEWORK
-        if (settings is null) throw new ArgumentNullException(nameof(settings));
-#else
-        ArgumentNullException.ThrowIfNull(settings);
-#endif
+        Guard.ThrowIfNull(settings);
         return JsonSerializer.Serialize(settings, Options);
     }
 
@@ -51,11 +48,7 @@ public static class ShareSettingsJsonSerializer
 
     public static ShareProjectSettings? TryReadFromFile(string path)
     {
-#if NETFRAMEWORK
-        if (path is null) throw new ArgumentNullException(nameof(path));
-#else
-        ArgumentNullException.ThrowIfNull(path);
-#endif
+        Guard.ThrowIfNull(path);
         if (!File.Exists(path)) return null;
 
         try
@@ -70,13 +63,8 @@ public static class ShareSettingsJsonSerializer
 
     public static void WriteToFile(string path, ShareProjectSettings settings)
     {
-#if NETFRAMEWORK
-        if (path is null) throw new ArgumentNullException(nameof(path));
-        if (settings is null) throw new ArgumentNullException(nameof(settings));
-#else
-        ArgumentNullException.ThrowIfNull(path);
-        ArgumentNullException.ThrowIfNull(settings);
-#endif
+        Guard.ThrowIfNull(path);
+        Guard.ThrowIfNull(settings);
 
         var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))

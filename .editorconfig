@@ -182,7 +182,29 @@ dotnet_diagnostic.CA1861.severity = suggestion
 # CA2208: Instantiate argument exceptions correctly
 dotnet_diagnostic.CA2208.severity = warning
 
-# CA1305: Specify IFormatProvider — not relevant for internal logging/diagnostics
+# CA1305: Specify IFormatProvider
+# ─────────────────────────────────────────────────────────────────────────────
+# Category: Globalization. Microsoft docs:
+#   https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1305
+#
+# Why we suppress (NOT a bug we hide — see docs/architecture/logging.md
+# §"Analyzer severity policy" and docs/adr/026-logging-migration.md
+# Phase 0 rationale):
+#   • Use case: Revit user-triggered UI actions (button click → format preview).
+#     Hot-path: NO. Volume: <100 format calls per click, all user-facing
+#     strings, all from CurrentCulture (which is the correct culture for UI).
+#   • The only real CA1305 hit is ExportNameDialogViewModel.cs:114,134,144,149
+#     (sb.AppendLine($"...") — file-name previews, no culture-sensitive numbers).
+#   • Microsoft dotnet/runtime itself keeps CA1305 at default severity in their
+#     eng/CodeAnalysis.src.globalconfig (i.e. NOT warning by default).
+#   • EnforceCodeStyleInBuild does NOT escalate `suggestion` to warning, so
+#     this setting keeps the build green and only shows up in IDE.
+#
+# DO NOT raise this to `warning` without:
+#   1. Fixing all 4 sites in ExportNameDialogViewModel.cs to pass
+#      sb.AppendLine(CultureInfo.CurrentCulture, $"...") or
+#      sb.AppendLine(CultureInfo.InvariantCulture, $"...") explicitly.
+#   2. Documenting the new severity in docs/adr/026-logging-migration.md.
 dotnet_diagnostic.CA1305.severity = suggestion
 
 # CA1716: Identifiers should not match keywords — parameter 'to' is domain-specific
@@ -192,6 +214,38 @@ dotnet_diagnostic.CA1716.severity = suggestion
 dotnet_diagnostic.CA1852.severity = suggestion
 
 # CA1863: Use CompositeFormat for complex formatting
+# ─────────────────────────────────────────────────────────────────────────────
+# Category: Performance. Microsoft docs:
+#   https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1863
+#
+# Why we suppress (see docs/architecture/logging.md
+# §"Analyzer severity policy" and docs/adr/026-logging-migration.md
+# Phase 0 rationale):
+#   • Microsoft official statement: "It's safe to suppress diagnostics from this
+#     rule if performance isn't a concern." Source: link above.
+#   • Real impact: 15-30% reduction ONLY for high-frequency formatting loops
+#     (1000+ calls/sec in logging frameworks, batch processing, telemetry).
+#   • Our use case: Revit user-triggered commands. Volume <100 format
+#     operations per click. Performance impact: 0% observable.
+#   • Microsoft dotnet/runtime (the .NET team) itself keeps CA1863 at
+#     `suggestion` in eng/CodeAnalysis.src.globalconfig.
+#   • EnforceCodeStyleInBuild does NOT escalate `suggestion` to warning.
+#
+# Total known pre-existing CA1863 sites on commit 9c50226 (verified by
+# flipping severity to `warning` and counting errors): ~30+ in PipeConnect
+# (AboutViewModel, FittingCardItem, PipeConnectEditorViewModel.*, ChainOperationHandler,
+# PipeConnectSessionBuilder) + others in ProjectManagement/Revit. None in
+# hot paths. None affect user-perceived performance.
+#
+# DO NOT raise this to `warning` without:
+#   1. Refactoring all sites to use CompositeFormat.Parse("…") cached in
+#      private static readonly fields, then calling
+#      string.Format(CultureInfo.InvariantCulture, _format, args) or
+#      sb.AppendFormat(CultureInfo.InvariantCulture, _format, args).
+#      Estimated effort: 4-6 hours across ~30+ call sites.
+#   2. OR: Profiling real production usage with BenchmarkDotNet to prove
+#      formatting is on a hot path (>1000 calls/sec).
+#   3. Documenting the new severity in docs/adr/026-logging-migration.md.
 dotnet_diagnostic.CA1863.severity = suggestion
 
 # CA1869: Cache and reuse JsonSerializerOptions

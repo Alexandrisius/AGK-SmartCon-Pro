@@ -23,4 +23,11 @@ public interface IFormulaSolver
     /// Parse size_lookup(...) — extract table name and parameter order.
     /// </summary>
     (string TableName, IReadOnlyList<string> ParameterOrder) ParseSizeLookup(string formula);
+
+    /// <summary>
+    /// Extracts all parameter identifiers referenced by a Revit formula,
+    /// including names in square brackets (e.g. [Parameter Name]).
+    /// Returns an empty list if the formula cannot be parsed.
+    /// </summary>
+    IReadOnlyList<string> ExtractVariables(string formula);
 }

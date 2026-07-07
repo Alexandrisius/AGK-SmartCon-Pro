@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Common;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Helpers;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Models.Metadata;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
@@ -17,12 +20,12 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
     private readonly ICategoryAttributeBindingService _bindingService;
-    private readonly IFamilyMetadataPackageService _packageService;
+    private readonly IFamilyManagerMetadataMediator _metadataMediator;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private List<AttributeListItemViewModel> _allAttributeItems = [];
     private readonly Dictionary<string, bool> _bindingChanges = new();
     private readonly List<CategoryNodeViewModel> _pendingCategoryDeletions = [];
-    private FamilyMetadataPackage? _pendingImportPackage;
+    private List<MetadataExportBinding>? _pendingBindingImports;
 
     [ObservableProperty] private ObservableCollection<CategoryNodeViewModel> _rootNodes = [];
     [ObservableProperty] private CategoryNodeViewModel? _selectedNode;
@@ -44,14 +47,14 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         IFamilyManagerDialogService dialogService,
         IAttributeDefinitionRepository attributeDefRepository,
         ICategoryAttributeBindingService bindingService,
-        IFamilyMetadataPackageService packageService,
+        IFamilyManagerMetadataMediator metadataMediator,
         IFamilyManagerViewModelFactory viewModelFactory)
     {
         _categoryRepository = categoryRepository;
         _dialogService = dialogService;
         _attributeDefRepository = attributeDefRepository;
         _bindingService = bindingService;
-        _packageService = packageService;
+        _metadataMediator = metadataMediator;
         _viewModelFactory = viewModelFactory;
     }
 
@@ -66,9 +69,14 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         if (value is not null)
         {
             SelectedCategoryPath = BuildCategoryPath(value);
-            SmartConLogger.Freeze("CategoryTreeEditor: FireAndForgetAsync.LoadAttributesForCategoryAsync");
-            SmartConLogger.FreezeThreadPool("CategoryTreeEditor.Before.FireAndForgetAsync");
-            _ = FireAndForgetAsync(() => LoadAttributesForCategoryAsync(value));
+            // OnSelectedNodeChanged fires on the UI thread (PropertyChanged setter),
+            // so Dispatcher.CurrentDispatcher returns the UI thread dispatcher.
+            var dispatcher = System.Windows.Application.Current?.Dispatcher
+                ?? Dispatcher.CurrentDispatcher;
+            if (!dispatcher.HasShutdownStarted)
+            {
+                _ = dispatcher.InvokeAsync(() => LoadAttributesForCategoryAsync(value));
+            }
         }
         else
         {
@@ -85,6 +93,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
 
     private async Task LoadTreeAsync(CancellationToken ct = default)
     {
+        using var _scope = SmartConLogger.BeginScope("CategoryTree",
+            ("Method", "LoadTreeAsync"));
         IReadOnlyList<CategoryNode> nodes = [];
         try
         {
@@ -92,7 +102,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"CategoryTreeEditor GetAllAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"CategoryTreeEditor GetAllAsync failed: {ex.Message} [Action: закройте и откройте editor; проверьте БД каталога]");
         }
 
         IReadOnlyDictionary<string, int> familyCounts = new Dictionary<string, int>();
@@ -102,7 +112,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"CategoryTreeEditor GetAllFamilyCountsAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"CategoryTreeEditor GetAllFamilyCountsAsync failed: {ex.Message} [Action: проверьте БД каталога; counts могут быть неполными до Refresh]");
         }
 
         var tree = new CategoryTree(nodes);
@@ -218,7 +228,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"LoadAttributesForCategoryAsync failed: {ex.Message}");
+            SmartConLogger.Warn($"LoadAttributesForCategoryAsync failed: {ex.Message} [Action: закройте и откройте editor; проверьте БД каталога]");
         }
     }
 
@@ -242,6 +252,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         var allNodes = FlattenNodes(RootNodes);
         HasUnsavedChanges = _pendingCategoryDeletions.Count > 0
                          || _bindingChanges.Count > 0
+                         || _pendingBindingImports is { Count: > 0 }
                          || allNodes.Any(n => n.IsNew || n.IsDirty);
     }
 
@@ -270,6 +281,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     private async Task OpenAttributeLibraryAsync()
     {
         var libraryVm = _viewModelFactory.CreateAttributeLibraryViewModel();
+        libraryVm.RequestClose += _ => libraryVm.Detach();
         await libraryVm.InitializeAsync();
         _dialogService.ShowAttributeLibrary(libraryVm);
 
@@ -282,6 +294,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     {
         try
         {
+            SmartConLogger.Info($"OkAsync started. HasUnsavedChanges={HasUnsavedChanges}");
+
             foreach (var node in _pendingCategoryDeletions.Where(n => !n.IsNew))
             {
                 await _categoryRepository.DeleteAsync(node.CategoryId);
@@ -290,6 +304,20 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
 
             var allNodes = FlattenNodes(RootNodes);
 
+            var existingByPath = new Dictionary<string, CategoryNode>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var allCategories = await _categoryRepository.GetAllAsync();
+                foreach (var c in allCategories)
+                {
+                    existingByPath[c.FullPath] = c;
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"CategoryTreeEditor OkAsync GetAllAsync failed: {ex.Message} [Action: закройте editor и проверьте БД каталога, изменения могли не сохраниться]");
+            }
+
             var tempToRealId = new Dictionary<string, string>();
 
             foreach (var node in allNodes.Where(n => n.IsNew))
@@ -297,6 +325,15 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                 var realParentId = node.ParentId is not null && tempToRealId.TryGetValue(node.ParentId, out var mappedParent)
                     ? mappedParent
                     : node.ParentId;
+
+                if (existingByPath.TryGetValue(node.FullPath, out var existing))
+                {
+                    node.CategoryId = existing.Id;
+                    node.ParentId = existing.ParentId;
+                    node.IsNew = false;
+                    node.IsDirty = false;
+                    continue;
+                }
 
                 var created = await _categoryRepository.AddAsync(node.DisplayName, realParentId, node.SortOrder);
                 tempToRealId[node.CategoryId] = created.Id;
@@ -361,34 +398,78 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                 }
             }
 
-            if (_pendingImportPackage is not null)
+            if (_pendingBindingImports is { Count: > 0 })
             {
-                var packageWithoutCategories = new FamilyMetadataPackage
-                {
-                    Format = _pendingImportPackage.Format,
-                    Version = _pendingImportPackage.Version,
-                    ExportedAtUtc = _pendingImportPackage.ExportedAtUtc,
-                    Sections = new FamilyMetadataPackageSections
-                    {
-                        Categories = false,
-                        Attributes = _pendingImportPackage.Sections.Attributes,
-                        Bindings = _pendingImportPackage.Sections.Bindings
-                    },
-                    Categories = [],
-                    Attributes = _pendingImportPackage.Attributes,
-                    Bindings = _pendingImportPackage.Bindings
-                };
-                await _packageService.ImportAsync(packageWithoutCategories);
-                _pendingImportPackage = null;
+                await ApplyPendingBindingImportsAsync(_pendingBindingImports);
+                _pendingBindingImports = null;
             }
 
             HasUnsavedChanges = false;
+            _metadataMediator.RaiseMetadataChanged();
             Saved?.Invoke();
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"OkAsync failed: {ex}");
             StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
+        }
+    }
+
+    private async Task ApplyPendingBindingImportsAsync(List<MetadataExportBinding> bindings)
+    {
+        var bindingsImported = 0;
+        var bindingsSkipped = 0;
+        var warnings = new List<string>();
+
+        var allCategories = await _categoryRepository.GetAllAsync();
+        var pathToCategory = allCategories
+            .ToDictionary(c => c.FullPath, c => c, StringComparer.OrdinalIgnoreCase);
+
+        var allAttributes = await _attributeDefRepository.GetAllAsync();
+        var nameToAttr = allAttributes
+            .ToDictionary(a => a.Name, a => a, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var binding in bindings)
+        {
+            if (!pathToCategory.TryGetValue(binding.CategoryPath, out var category))
+            {
+                warnings.Add($"Binding skipped: category '{binding.CategoryPath}' not found.");
+                bindingsSkipped++;
+                continue;
+            }
+
+            if (!nameToAttr.TryGetValue(binding.AttributeName, out var attribute))
+            {
+                warnings.Add($"Binding skipped: attribute '{binding.AttributeName}' not found.");
+                bindingsSkipped++;
+                continue;
+            }
+
+            var existingBindings = await _bindingService.GetDirectBindingsAsync(category.Id);
+            if (existingBindings.Any(b => b.AttributeId == attribute.Id))
+            {
+                bindingsSkipped++;
+                continue;
+            }
+
+            await _bindingService.CreateBindingAsync(category.Id, attribute.Id, binding.SortOrder);
+            bindingsImported++;
+        }
+
+        if (bindingsImported > 0 || bindingsSkipped > 0 || warnings.Count > 0)
+        {
+            var parts = new List<string>();
+            if (bindingsImported > 0) parts.Add($"bindings: {bindingsImported}");
+            if (bindingsSkipped > 0) parts.Add($"bindings skipped: {bindingsSkipped}");
+            if (warnings.Count > 0)
+            {
+                var preview = warnings.Count <= 3
+                    ? string.Join("; ", warnings)
+                    : $"{warnings.Count} warnings";
+                parts.Add(preview);
+            }
+            StatusMessage = $"Imported {string.Join(", ", parts)}";
         }
     }
 
@@ -448,15 +529,23 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         RequestClose?.Invoke(false);
     }
 
-    private static async Task FireAndForgetAsync(Func<Task> taskFactory)
+    private static void FireAndForget(Func<Task> taskFactory, string operationName)
     {
-        try
+        Guard.ThrowIfNull(taskFactory);
+        _ = Task.Run(async () =>
         {
-            await taskFactory();
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"FireAndForget: {ex.Message}");
-        }
+            try
+            {
+                await taskFactory().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn($"FireAndForget '{operationName}': {ex.GetBaseException().Message} [Action: операция выполнена в фоне, проверьте результат через Refresh]");
+            }
+        });
     }
 }
+

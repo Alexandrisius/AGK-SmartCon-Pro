@@ -50,20 +50,21 @@ public sealed class NetworkMover : INetworkMover
         // 1. Запрос к таблице маппинга — только ReducerFamilies из подходящего правила
         var rules = _fittingMapper.GetMappings(parentCtc, childCtc);
 
+        using var _scope = SmartConLogger.BeginScope("NetworkMover", ("Method", "InsertReducer"));
         FittingMapping? reducerFamily = null;
         foreach (var rule in rules)
         {
             if (rule.ReducerFamilies.Count > 0)
             {
                 reducerFamily = rule.ReducerFamilies[0];
-                SmartConLogger.Info($"[NetworkMover] InsertReducer: rule {parentCtc.Value}↔{childCtc.Value} → {reducerFamily.FamilyName}/{reducerFamily.SymbolName}");
+                SmartConLogger.Info($"rule {parentCtc.Value}↔{childCtc.Value} → {reducerFamily.FamilyName}/{reducerFamily.SymbolName}");
                 break;
             }
         }
 
         if (reducerFamily is null)
         {
-            SmartConLogger.Warn($"[NetworkMover] Reducer not found in rule {parentCtc.Value}↔{childCtc.Value}");
+            SmartConLogger.Warn($"Reducer not found in rule {parentCtc.Value}↔{childCtc.Value}");
             return null;
         }
 
@@ -73,7 +74,7 @@ public sealed class NetworkMover : INetworkMover
 
         if (reducerId is null)
         {
-            SmartConLogger.Warn($"[NetworkMover] InsertFitting returned null for '{reducerFamily.FamilyName}'");
+            SmartConLogger.Warn($"InsertFitting returned null for '{reducerFamily.FamilyName}'");
             return null;
         }
 
@@ -86,7 +87,7 @@ public sealed class NetworkMover : INetworkMover
 
         doc.Regenerate();
 
-        SmartConLogger.Info($"[NetworkMover] Reducer inserted: id={reducerId!.GetValue()}");
+        SmartConLogger.Info($"Reducer inserted: id={reducerId!.GetValue()}");
         return reducerId;
     }
 }

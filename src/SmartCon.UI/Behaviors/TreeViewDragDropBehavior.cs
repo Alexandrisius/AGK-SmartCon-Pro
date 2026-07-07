@@ -42,6 +42,13 @@ public static class TreeViewDragDropBehavior
             typeof(TreeViewDragDropBehavior),
             new PropertyMetadata(false));
 
+    public static readonly DependencyProperty PlacementDragCommandProperty =
+        DependencyProperty.RegisterAttached(
+            "PlacementDragCommand",
+            typeof(ICommand),
+            typeof(TreeViewDragDropBehavior),
+            new PropertyMetadata(null, OnCommandPropertyChanged));
+
     private static readonly DependencyProperty DragDropStateProperty =
         DependencyProperty.RegisterAttached(
             "DragDropState",
@@ -76,6 +83,12 @@ public static class TreeViewDragDropBehavior
 
     public static void SetResolveParentDropTarget(DependencyObject obj, bool value)
         => obj.SetValue(ResolveParentDropTargetProperty, value);
+
+    public static ICommand? GetPlacementDragCommand(DependencyObject obj)
+        => (ICommand?)obj.GetValue(PlacementDragCommandProperty);
+
+    public static void SetPlacementDragCommand(DependencyObject obj, ICommand? value)
+        => obj.SetValue(PlacementDragCommandProperty, value);
 
     private static DragDropState? GetDragDropState(DependencyObject obj)
         => (DragDropState?)obj.GetValue(DragDropStateProperty);
@@ -112,8 +125,9 @@ public static class TreeViewDragDropBehavior
 
         var hasStart = GetStartDragCommand(treeView) is not null;
         var hasDrop = GetDropCommand(treeView) is not null;
+        var hasPlacement = GetPlacementDragCommand(treeView) is not null;
 
-        if (hasStart || hasDrop)
+        if (hasStart || hasDrop || hasPlacement)
             Attach(treeView);
         else
             Detach(treeView);
@@ -173,11 +187,37 @@ public static class TreeViewDragDropBehavior
             Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
 
-        var command = GetStartDragCommand(treeView);
-        var draggedItem = treeView.SelectedItem;
-
-        if (command?.CanExecute(draggedItem) != true) return;
+        // Determine the dragged item by hit-testing the TreeViewItem under the cursor,
+        // not by treeView.SelectedItem. Two reasons:
+        //   1. The search pipeline rebuilds TreeNodes on every keystroke (debounced 300ms),
+        //      so SelectedItem may point at a VM that is no longer in the new collection —
+        //      FindParentOf() then fails and CanExecute returns false → drag never starts.
+        //   2. Highlighted Runs inside SearchHighlightConverter's TextBlock have a non-null
+        //      Background and absorb hit-test results; SelectedItem may stay null even after
+        //      a click because the click never reaches the TreeViewItem's chrome.
+        // Falling back to SelectedItem keeps existing behaviour for non-search flows.
+        var draggedItem = GetDraggedItemUnderCursor(treeView) ?? treeView.SelectedItem;
+        if (draggedItem is null) return;
         if (IsMouseOverScrollbar(treeView, e.GetPosition(treeView))) return;
+
+        var placementCommand = GetPlacementDragCommand(treeView);
+        if (placementCommand?.CanExecute(draggedItem) == true)
+        {
+            state.IsDragging = true;
+            try
+            {
+                placementCommand.Execute(draggedItem);
+            }
+            finally
+            {
+                state.IsDragging = false;
+                Cleanup(state);
+            }
+            return;
+        }
+
+        var command = GetStartDragCommand(treeView);
+        if (command?.CanExecute(draggedItem) != true) return;
 
         state.IsDragging = true;
 
@@ -193,6 +233,25 @@ public static class TreeViewDragDropBehavior
             state.IsDragging = false;
             Cleanup(state);
         }
+    }
+
+    /// <summary>
+    /// Hit-tests the TreeView at the current cursor position and walks up the visual
+    /// tree until the enclosing <see cref="TreeViewItem"/> is found. Returns its
+    /// DataContext (the VM the user is actually dragging from). Returns null when
+    /// the cursor is over a non-item area (scrollbar, padding, chrome) so the caller
+    /// can fall back to <c>treeView.SelectedItem</c>.
+    /// </summary>
+    private static object? GetDraggedItemUnderCursor(TreeView treeView)
+    {
+        var pt = Mouse.GetPosition(treeView);
+        var hit = VisualTreeHelper.HitTest(treeView, pt);
+        var current = hit?.VisualHit as DependencyObject;
+        while (current is not null && current is not TreeViewItem)
+        {
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return (current as TreeViewItem)?.DataContext;
     }
 
     private static void OnPreviewDragOver(object sender, DragEventArgs e)

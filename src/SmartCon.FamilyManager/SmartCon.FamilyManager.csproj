@@ -6,6 +6,9 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- CA1510: ArgumentNullException.ThrowIfNull unavailable on net48 (requires .NET 6+).
+         Classic 'throw new ArgumentNullException(nameof(x))' is the multi-TFM compatible form. -->
+    <NoWarn>$(NoWarn);CA1510</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,6 +29,27 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+    <PackageReference Include="System.Text.Encoding.CodePages" />
+    <PackageReference Include="UTF.Unknown" />
+  </ItemGroup>
+
+  <!-- ADR-042: 3D geometry preview — HelixToolkit.Wpf.SharpDX для ОБЕИХ TFM (net8 + net48).
+       Root cause (Task 4): HelixToolkit.Wpf.SharpDX transitively pulls SharpDX → System.Runtime 4.3.0
+       ref assembly. PolySharp's source-generated DefaultInterpolatedStringHandler loses overload
+       resolution to that ref assembly for format-specifier interpolations like $"...{x:F0}...".
+       Workaround: format specifiers must be `.ToString("F0")` not `{x:F0}` inline (see
+       SmartConLogger call sites — StickyCategoryHeaderBehavior.cs, FamilyManagerAwaitableEvent.cs,
+       FamilyGeometryPipeline.cs). With this workaround, HelixToolkit works on net48 too.
+
+       SharpGLTF.Core (netstandard2.0) is used for GLB writing on BOTH TFM. Replaces
+       SharpGLTF.Toolkit (which required System.Text.Json 9.x → broke net48).
+       Writer uses low-level Schema2 API: ModelRoot.CreateModel → UseBufferView →
+       CreateAccessor → SetVertexData/SetIndexData → CreateMesh → CreatePrimitive →
+       SetVertexAccessor/SetIndexAccessor → SaveGLB. -->
+  <ItemGroup>
+    <PackageReference Include="HelixToolkit.Wpf.SharpDX" />
+    <PackageReference Include="HelixToolkit.SharpDX.Assimp" />
+    <PackageReference Include="SharpGLTF.Core" />
   </ItemGroup>
 
   <ItemGroup>

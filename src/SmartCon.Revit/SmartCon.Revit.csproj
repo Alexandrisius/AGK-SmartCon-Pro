@@ -5,7 +5,7 @@
     <AssemblyName>SmartCon.Revit</AssemblyName>
   </PropertyGroup>
 
-  <!-- RevitAPI + RevitAPIUI: ExcludeAssets=runtime — DLL не копируется в output -->
+  <!-- RevitAPI + RevitAPIUI: ExcludeAssets=runtime - DLL не копируются в output -->
   <ItemGroup>
     <PackageReference Include="Nice3point.Revit.Api.RevitAPI">
       <ExcludeAssets>runtime</ExcludeAssets>
@@ -15,7 +15,93 @@
     </PackageReference>
   </ItemGroup>
 
-  <!-- System.Text.Json: встроен в .NET 8 BCL. Для net48 — NuGet. -->
+  <!-- AdWindows.dll — internal Autodesk library used by the freeze workaround
+       (ShowBalloonTip to nudge the WPF render thread after family upgrade
+       dialog, see REVIT-236376 / REVIT-237190). Lives next to RevitAPI in
+       the Revit install folder.
+
+       v2.0.0 fix: the previous version hard-coded a single HintPath per
+       TFM (Revit 2023 for net48, Revit 2025 for net8.0-windows). On
+       machines without that exact Revit version (e.g. only Revit 2025
+       installed when building Debug.R24) MSBuild emits MSB3245 and the
+       compiler emits CS0234 because the reference is registered but the
+       DLL is missing.
+
+       Enterprise fix: each <Reference> is wrapped in a <Choose>/<When>
+       with an `Exists()` probe on the HintPath. If the DLL is missing,
+       the reference is skipped entirely AND the NO_ADWINDOWS define
+       constant is added to DefineConstants. The runtime code in
+       RevitBalloonNudge.cs is wrapped in `#if !NO_ADWINDOWS` and becomes
+       a no-op (already guarded by try/catch + [Action:] Warn) on machines
+       without AdWindows. The freeze workaround simply does not fire —
+       the rest of the SmartCon code path is unaffected because
+       RevitBalloonNudge.Nudge is best-effort. -->
+  <Choose>
+    <When Condition="'$(TargetFramework)' == 'net48' AND Exists('C:\Program Files\Autodesk\Revit 2023\AdWindows.dll')">
+      <ItemGroup>
+        <Reference Include="AdWindows">
+          <HintPath>C:\Program Files\Autodesk\Revit 2023\AdWindows.dll</HintPath>
+          <Private>false</Private>
+          <SpecificVersion>False</SpecificVersion>
+        </Reference>
+      </ItemGroup>
+    </When>
+    <When Condition="'$(TargetFramework)' == 'net48' AND Exists('C:\Program Files\Autodesk\Revit 2024\AdWindows.dll')">
+      <ItemGroup>
+        <Reference Include="AdWindows">
+          <HintPath>C:\Program Files\Autodesk\Revit 2024\AdWindows.dll</HintPath>
+          <Private>false</Private>
+          <SpecificVersion>False</SpecificVersion>
+        </Reference>
+      </ItemGroup>
+    </When>
+    <When Condition="'$(TargetFramework)' == 'net48' AND Exists('C:\Program Files\Autodesk\Revit 2021\AdWindows.dll')">
+      <ItemGroup>
+        <Reference Include="AdWindows">
+          <HintPath>C:\Program Files\Autodesk\Revit 2021\AdWindows.dll</HintPath>
+          <Private>false</Private>
+          <SpecificVersion>False</SpecificVersion>
+        </Reference>
+      </ItemGroup>
+    </When>
+    <When Condition="'$(TargetFramework)' == 'net48' AND Exists('C:\Program Files\Autodesk\Revit 2019\AdWindows.dll')">
+      <ItemGroup>
+        <Reference Include="AdWindows">
+          <HintPath>C:\Program Files\Autodesk\Revit 2019\AdWindows.dll</HintPath>
+          <Private>false</Private>
+          <SpecificVersion>False</SpecificVersion>
+        </Reference>
+      </ItemGroup>
+    </When>
+    <When Condition="'$(TargetFramework)' == 'net8.0-windows' AND Exists('C:\Program Files\Autodesk\Revit 2025\AdWindows.dll')">
+      <ItemGroup>
+        <Reference Include="AdWindows">
+          <HintPath>C:\Program Files\Autodesk\Revit 2025\AdWindows.dll</HintPath>
+          <Private>false</Private>
+          <SpecificVersion>False</SpecificVersion>
+        </Reference>
+      </ItemGroup>
+    </When>
+    <When Condition="'$(TargetFramework)' == 'net8.0-windows' AND Exists('C:\Program Files\Autodesk\Revit 2026\AdWindows.dll')">
+      <ItemGroup>
+        <Reference Include="AdWindows">
+          <HintPath>C:\Program Files\Autodesk\Revit 2026\AdWindows.dll</HintPath>
+          <Private>false</Private>
+          <SpecificVersion>False</SpecificVersion>
+        </Reference>
+      </ItemGroup>
+    </When>
+  </Choose>
+
+  <!-- If no AdWindows.dll was found for the current TFM, define NO_ADWINDOWS
+       so RevitBalloonNudge.cs compiles to a no-op instead of failing with
+       CS0234 (Autodesk.Windows / Autodesk.Internal types missing). -->
+  <PropertyGroup>
+    <DefineConstants Condition="'$(TargetFramework)' == 'net48' AND !Exists('C:\Program Files\Autodesk\Revit 2023\AdWindows.dll') AND !Exists('C:\Program Files\Autodesk\Revit 2024\AdWindows.dll') AND !Exists('C:\Program Files\Autodesk\Revit 2021\AdWindows.dll') AND !Exists('C:\Program Files\Autodesk\Revit 2019\AdWindows.dll')">$(DefineConstants);NO_ADWINDOWS</DefineConstants>
+    <DefineConstants Condition="'$(TargetFramework)' == 'net8.0-windows' AND !Exists('C:\Program Files\Autodesk\Revit 2025\AdWindows.dll') AND !Exists('C:\Program Files\Autodesk\Revit 2026\AdWindows.dll')">$(DefineConstants);NO_ADWINDOWS</DefineConstants>
+  </PropertyGroup>
+
+  <!-- System.Text.Json: уже есть в .NET 8 BCL. Для net48 - NuGet. -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="System.Text.Json" />
   </ItemGroup>
@@ -26,6 +112,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="UTF.Unknown" />
   </ItemGroup>
 
 </Project>

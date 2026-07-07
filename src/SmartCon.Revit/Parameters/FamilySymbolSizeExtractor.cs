@@ -21,6 +21,14 @@ public sealed class FamilySymbolSizeExtractor
 
     public SortedSet<double> GetSymbolRadii(Document doc, ElementId instanceId, int connectorIndex)
     {
+        using var _scope = SmartConLogger.BeginScope("SizeExtractor",
+            ("Method", "GetSymbolRadii"),
+#if REVIT2024_OR_GREATER
+            ("InstanceId", instanceId.Value),
+#else
+            ("InstanceId", instanceId.IntegerValue),
+#endif
+            ("ConnectorIndex", connectorIndex));
         SmartConLogger.DebugSection("FamilySymbolSizeExtractor.GetSymbolRadii");
 
         var instance = doc.GetElement(instanceId) as FamilyInstance;

@@ -23,11 +23,13 @@ public sealed class ShareProjectCommand : IExternalCommand
 
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        using var _ = SmartConLogger.BeginScope("ShareProject",
+            ("Method", "Execute"));
+        using var measure = SmartConLogger.Measure("ShareProject.Execute");
 
         try
         {
-            SmartConLogger.Info("[PM] ShareProjectCommand started.");
+            SmartConLogger.Info("ShareProjectCommand started.");
 
             var uiapp = commandData.Application;
             CommandHelper.InitializeContext(uiapp);
@@ -42,11 +44,11 @@ public sealed class ShareProjectCommand : IExternalCommand
             var settingsRepo = ServiceHost.GetService<IShareProjectSettingsRepository>();
             var settings = settingsRepo.Load(originalDoc);
 
-            SmartConLogger.Info($"[PM] Settings loaded. ShareFolder='{settings.ShareFolderPath}', Blocks={settings.FileNameTemplate.Blocks.Count}, ExportMappings={settings.FileNameTemplate.ExportMappings.Count}");
+            SmartConLogger.Info($"Settings loaded. ShareFolder='{settings.ShareFolderPath}', Blocks={settings.FileNameTemplate.Blocks.Count}, ExportMappings={settings.FileNameTemplate.ExportMappings.Count}");
 
             if (string.IsNullOrWhiteSpace(settings.ShareFolderPath) || settings.FileNameTemplate.Blocks.Count == 0)
             {
-                SmartConLogger.Warn("[PM] Settings incomplete — showing configure dialog.");
+                SmartConLogger.Warn("Settings incomplete — showing configure dialog.");
                 Autodesk.Revit.UI.TaskDialog.Show("Share Project",
                     LocalizationService.GetString("PM_Result_NoSettings"));
                 return Result.Failed;
@@ -64,12 +66,12 @@ public sealed class ShareProjectCommand : IExternalCommand
             {
                 var combinedSummary = exportValidation.Summary;
 
-                SmartConLogger.Warn($"[PM] Export validation failed for '{currentFileName}': {combinedSummary}");
+                SmartConLogger.Warn($"Export validation failed for '{currentFileName}': {combinedSummary}");
 
                 var existingOverride = settingsRepo.LoadExportNameOverride(originalDoc);
                 if (existingOverride is not null)
                 {
-                    SmartConLogger.Info("[PM] Using saved ExportNameOverride.");
+                    SmartConLogger.Info("Using saved ExportNameOverride.");
                     var values = existingOverride.FieldValues;
                     var orderedBlocks = settings.FileNameTemplate.Blocks.OrderBy(b => b.Index).ToList();
                     var sb = new StringBuilder();
@@ -111,7 +113,7 @@ public sealed class ShareProjectCommand : IExternalCommand
 
                     if (dialogView.CustomDialogResult != true)
                     {
-                        SmartConLogger.Info("[PM] User cancelled ExportNameDialog.");
+                        SmartConLogger.Info("User cancelled ExportNameDialog.");
                         return Result.Cancelled;
                     }
 
@@ -123,12 +125,12 @@ public sealed class ShareProjectCommand : IExternalCommand
                     if (!string.IsNullOrEmpty(ext) && !System.IO.Path.HasExtension(sharedFileName))
                         sharedFileName += ext;
 
-                    SmartConLogger.Info($"[PM] ExportNameOverride saved. Custom name: {sharedFileName}");
+                    SmartConLogger.Info($"ExportNameOverride saved. Custom name: {sharedFileName}");
                 }
             }
             else
             {
-                SmartConLogger.Info($"[PM] Validation passed for '{currentFileName}'.");
+                SmartConLogger.Info($"Validation passed for '{currentFileName}'.");
                 sharedFileName = parser.TransformForExport(currentFileName, settings.FileNameTemplate, settings.FieldLibrary) ?? string.Empty;
                 var extension = System.IO.Path.GetExtension(originalDoc.PathName);
                 if (!string.IsNullOrEmpty(extension) && !System.IO.Path.HasExtension(sharedFileName))
@@ -167,7 +169,7 @@ public sealed class ShareProjectCommand : IExternalCommand
             EventHandler<DialogBoxShowingEventArgs>? dialogHandler = null;
             dialogHandler = (sender, args) =>
             {
-                SmartConLogger.Info($"[PM] DialogBoxShowing: Id='{args.DialogId}'");
+                SmartConLogger.Info($"DialogBoxShowing: Id='{args.DialogId}'");
 
                 if (args is TaskDialogShowingEventArgs taskArgs)
                 {
@@ -187,15 +189,15 @@ public sealed class ShareProjectCommand : IExternalCommand
 
                     if (isMissingLinks)
                     {
-                        SmartConLogger.Info("[PM] Suppressing missing links dialog → Ignore (1002)");
+                        SmartConLogger.Info("Suppressing missing links dialog → Ignore (1002)");
                         taskArgs.OverrideResult(1002);
                         return;
                     }
                 }
 
-                SmartConLogger.Info("[PM] Suppressing unknown dialog → Cancel");
+                SmartConLogger.Info("Suppressing unknown dialog → Cancel");
                 try { args.OverrideResult((int)Autodesk.Revit.UI.TaskDialogResult.Cancel); }
-                catch (Exception ex) { SmartConLogger.Warn($"[PM] OverrideResult failed: {ex.Message}"); }
+                catch (Exception ex) { SmartConLogger.Warn($"OverrideResult failed: {ex.Message}"); }
             };
             uiapp.DialogBoxShowing += dialogHandler;
 
@@ -217,7 +219,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                         }
                         catch (Exception syncEx)
                         {
-                            SmartConLogger.Warn($"[PM] Sync failed: {syncEx.Message}");
+                            SmartConLogger.Warn($"Sync failed: {syncEx.Message}");
 
                             using var td = new Autodesk.Revit.UI.TaskDialog("Share Project");
                             td.MainInstruction = $"Synchronization failed:\n{syncEx.Message}";
@@ -257,7 +259,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                     var uiDoc = uiapp.OpenAndActivateDocument(centralPath, openOpts, false);
                     detachedDoc = uiDoc.Document;
 
-                    SmartConLogger.Info("[PM] Detached from central successfully.");
+                    SmartConLogger.Info("Detached from central successfully.");
                 }
                 else
                 {
@@ -278,14 +280,14 @@ public sealed class ShareProjectCommand : IExternalCommand
                     var uiDoc = uiapp.OpenAndActivateDocument(sourcePath);
                     detachedDoc = uiDoc.Document;
 
-                    SmartConLogger.Info("[PM] Opened non-workshared file for processing.");
+                    SmartConLogger.Info("Opened non-workshared file for processing.");
                 }
 
                 ReportProgress(LocalizationService.GetString("PM_Step_Purge"), 40);
 
                 var purgeService = ServiceHost.GetService<IModelPurgeService>();
                 var deletedCount = purgeService.Purge(detachedDoc, settings.PurgeOptions, settings.KeepViewNames);
-                SmartConLogger.Info($"[PM] Purge completed. Deleted {deletedCount} elements.");
+                SmartConLogger.Info($"Purge completed. Deleted {deletedCount} elements.");
 
                 ReportProgress(LocalizationService.GetString("PM_Step_Save"), 65);
 
@@ -298,7 +300,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                 }
 
                 detachedDoc.SaveAs(modelPathOut, saveOpts);
-                SmartConLogger.Info($"[PM] Saved to: {sharedFilePath}");
+                SmartConLogger.Info($"Saved to: {sharedFilePath}");
 
                 ReportProgress(LocalizationService.GetString("PM_Step_Finish"), 80);
 
@@ -317,7 +319,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                     uiapp.OpenAndActivateDocument(originalPathName);
                 }
 
-                SmartConLogger.Info("[PM] Reopened original local file.");
+                SmartConLogger.Info("Reopened original local file.");
 
                 detachedDoc.Close(false);
                 detachedDoc = null;
@@ -355,11 +357,11 @@ public sealed class ShareProjectCommand : IExternalCommand
                     {
                         var reopenedDoc = uiapp.ActiveUIDocument.Document;
                         SyncWithoutRelinquishing(reopenedDoc);
-                        SmartConLogger.Info("[PM] Post-reopen sync completed.");
+                        SmartConLogger.Info("Post-reopen sync completed.");
                     }
                     catch (Exception postSyncEx)
                     {
-                        SmartConLogger.Warn($"[PM] Post-reopen sync failed: {postSyncEx.Message}");
+                        SmartConLogger.Warn($"Post-reopen sync failed: {postSyncEx.Message}");
                     }
                 }
 
@@ -369,21 +371,21 @@ public sealed class ShareProjectCommand : IExternalCommand
                 uiapp.Application.FailuresProcessing -= failureHandler;
                 uiapp.DialogBoxShowing -= dialogHandler;
 
-                sw.Stop();
+                var elapsedSec = measure.GetElapsedMilliseconds() / 1000.0;
 
                 var successMsg =
                     $"Project shared successfully.\n\n" +
                     $"Path: {sharedFilePath}\n" +
                     $"Elements deleted: {deletedCount}\n" +
-                    $"Time: {sw.Elapsed.TotalSeconds:F1}s";
+                    $"Time: {elapsedSec:F1}s";
 
-                SmartConLogger.Info($"[PM] Share succeeded: {sharedFilePath} ({sw.Elapsed.TotalSeconds:F1}s, {deletedCount} deleted)");
+                SmartConLogger.Info($"Share succeeded: {sharedFilePath} ({elapsedSec:F1}s, {deletedCount} deleted)");
                 Autodesk.Revit.UI.TaskDialog.Show("Share Project", successMsg);
                 return Result.Succeeded;
             }
             catch (Exception ex)
             {
-                SmartConLogger.Error($"[PM] Share algorithm failed: {ex.Message}");
+                SmartConLogger.Error($"Share algorithm failed: {ex.Message}");
 
                 try
                 {
@@ -422,7 +424,7 @@ public sealed class ShareProjectCommand : IExternalCommand
                 }
                 catch (Exception reopenEx)
                 {
-                    SmartConLogger.Error($"[PM] Failed to reopen original file: {reopenEx.Message}");
+                    SmartConLogger.Error($"Failed to reopen original file: {reopenEx.Message}");
                 }
 
                 ReportProgress("Failed", 0);
@@ -437,7 +439,7 @@ public sealed class ShareProjectCommand : IExternalCommand
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"[PM] ShareProjectCommand exception: {ex}");
+            SmartConLogger.Error($"ShareProjectCommand exception: {ex}");
             message = ex.Message;
             return Result.Failed;
         }
@@ -502,3 +504,4 @@ public sealed class ShareProjectCommand : IExternalCommand
             .FirstOrDefault(w => new System.Windows.Interop.WindowInteropHelper(w).Handle == handle);
     }
 }
+

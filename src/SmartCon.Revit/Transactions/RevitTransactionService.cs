@@ -18,9 +18,12 @@ public sealed class RevitTransactionService : ITransactionService
 
     public bool RunInTransaction(string name, Action<Document> action)
     {
-        var doc = _revitContext.GetDocument();
+        return RunInTransaction(_revitContext.GetDocument(), name, action);
+    }
 
-        using var transaction = new Transaction(doc, name);
+    public bool RunInTransaction(Document document, string name, Action<Document> action)
+    {
+        using var transaction = new Transaction(document, name);
 
         var options = transaction.GetFailureHandlingOptions();
         options.SetFailuresPreprocessor(new SmartConFailurePreprocessor());
@@ -29,7 +32,7 @@ public sealed class RevitTransactionService : ITransactionService
         try
         {
             transaction.Start();
-            action(doc);
+            action(document);
             transaction.Commit();
             return true;
         }
