@@ -5,7 +5,7 @@
 - **Issue:** [#92](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/92)
 - **Branch:** `feature/familymanager-3d-preview`
 - **Supersedes:** —
-- **Related:** ADR-015 (Published Storage), ADR-016 (ReadOnly managed files), ADR-040 (OverwriteCurrent), ADR-041 (per-version model + SetActiveVersion), #99, #102, #105, #107, #108
+- **Related:** ADR-015 (Published Storage), ADR-016 (ReadOnly managed files), ADR-040 (OverwriteCurrent), ADR-041 (per-version model + SetActiveVersion)
 
 ## Context
 
@@ -26,13 +26,13 @@ GLB — бинарный контейнер glTF 2.0 стандарта Khronos 
 
 Локализация уже упоминает GLB в `FM_Props_3DComingSoon`, OpenFile-диалог уже включает `*.glb` — формат соответствует UI-ожиданиям.
 
-### GLB writer: SharpGLTF.Core 1.0.3
+### GLB writer: SharpGLTF.Toolkit 1.0.4
 
 - Лицензия: MIT
-- TFM: `netstandard2.0` → работает на both `net48` (Revit 2019-2024) и `net8.0-windows` (Revit 2025+)
-- API: low-level Schema2 API — `ModelRoot.CreateModel` → `UseBufferView` → `CreateAccessor` → `SetVertexData`/`SetIndexData` → `CreateMesh` → `CreatePrimitive` → `SetVertexAccessor`/`SetIndexAccessor` → `SaveGLB`
-- **Почему не SharpGLTF.Toolkit:** Toolkit (даже v1.0.4) транзитивно требует `System.Text.Json >= 9.0.4`, а обновление JSON до 9.x/10.x ломает net48 (`CS1739 AppendFormatted` — меняется сигнатура `DefaultInterpolatedStringHandler`). `SharpGLTF.Core 1.0.3` зависит от `System.Text.Json 8.0.5`, совместимого с замороженным `8.0.6` во всём проекте (see `Directory.Packages.props`).
+- TFMs: `netstandard2.0` + `net6.0` + `net8.0` → работает на both `net48` (Revit 2019-2024) и `net8.0-windows` (Revit 2025+)
+- API: `MeshBuilder<VertexPositionNormal, VertexEmpty, VertexEmpty>` + `UsePrimitive(material).AddTriangle(v1, v2, v3)` → индексы дедуплицируются автоматически через внутренний dictionary; финиш через `var model = sceneBuilder.ToGltf2(); model.SaveGLB(path);`
 - Используется реально open-source Revit-экспортёрами: `RevitGltfExporter`, `weiyu666/RevitExportObjAndGltf`, `NovaShang/BimDown`
+- **Важно:** v1.0.6 (Dec 2025) требует System.Text.Json >= 10.0.1 — обновление до 10.x ломает net48 (CS1739 AppendFormatted — меняется сигнатура `DefaultInterpolatedStringHandler`). Поэтому v1.0.4 (May 2025), зависящая от System.Text.Json 8.x, совместимой с замороженным 8.0.6 во всём проекте.
 
 ### GLB reader (для viewer): HelixToolkit.SharpDX.Assimp.Importer
 
@@ -55,20 +55,6 @@ GLB — бинарный контейнер glTF 2.0 стандарта Khronos 
 - `GroupModel3D` (with `ItemsSource` dependency property) как child of Viewport3DX — pattern из helix-toolkit issue #1590: прямой `Viewport3DX.ItemsSource` не существует
 - Привязка: `Items3D` (ObservableElement3DCollection в VM) содержит lights + Scene3DRoot (SceneNodeGroupModel3D), который через `Scene3DRoot.AddNode(sceneRoot)` принимает loaded GLB
 
-### Viewer lifecycle (Issue #107 follow-up)
-
-`Viewport3DX` находится внутри `TabItem`. WPF `TabControl` не делает layout неактивных вкладок → `ActualWidth=0` → DirectX render host не стартует, если инициализировать на `Window.Loaded`. Поэтому:
-- `Initialize3DInfrastructure()` вызывается из `Viewport3DX.Loaded` (срабатывает при первом открытии вкладки «3D Просмотр»), а не из `Window.Loaded`.
-- `Scene3DRoot` добавляется в `Viewport3DX.Items` только когда `ActualWidth > 0`.
-- `Dispose3DResources()` вызывается из `Window.Closed`.
-- See `FamilyPropertiesView.xaml.cs:OnViewport3DXLoaded`.
-
-### Camera behaviour (Issue #107)
-
-- Первичная загрузка семейства / смена активной версии → `FitCameraToScene()` по bounding box модели.
-- Смена типоразмера в ComboBox → камера сохраняется (`_savedCameraPosition` / `_savedCameraLookDirection` / `_savedCameraUpDirection`), `_isFirst3DLoad` не сбрасывается.
-- Кнопка «Показать всё» → `ResetCamera3DCommand` вызывает `FitCameraToScene()`, а не нативную `hx:ViewportCommands.ZoomExtents` (последняя игнорировала custom `FarPlaneDistance` и приближала слишком близко).
-
 ### Multi-version: условный XAML через `mc:AlternateContent`
 
 HelixToolkit types НЕ существуют на net48 (PackageReference с Condition в csproj только для net8.0-windows). Для корректной мульти-TFM компиляции XAML использован `mc:Ignorable="hx"` + `mc:AlternateContent`:
@@ -77,62 +63,15 @@ HelixToolkit types НЕ существуют на net48 (PackageReference с Con
 
 Это стандартный WPF markup-compatibility pattern от Microsoft для multi-targeting XAML — описан в `MSDN: Markup Compatibility (mc:) Language Features`.
 
-### Извлечение геометрии: `element.get_Geometry(Options)` + `Solid.Faces` → `Face.Triangulate(1.0)`
+### Извлечение геометрии: `element.get_Geometry(Options)` + `Solid.Faces` → `Face.Triangulate()`
 
-Прямой путь extraction для каждого family type (не `CustomExporter`):
-- `RevitFamilySnapshotExtractor` открывает family document, переключает `FamilyManager.CurrentType` по очереди на каждый тип и вызывает `ExtractMeshesFromFamilyDoc` внутри `Transaction` + `RollBack()` (так же, как `RevitFamilyDataExtractionService`).
-- `FilteredElementCollector(familyDoc).OfClass(typeof(GenericForm))` — обходит все form-элементы family document.
-- `FilteredElementCollector(familyDoc).OfClass(typeof(FamilyInstance))` — обходит nested family instances (дверные ручки, арматура коллекторов и т.д.).
-- `form.get_Geometry(new Options { ComputeReferences = false, DetailLevel = ViewDetailLevel.Fine, IncludeNonVisibleObjects = true })` → возвращает `GeometryElement`.
-- `IncludeNonVisibleObjects = true` нужен для восстановления conditionally-visible solids (commit `5283765`), но вместе с тем обходит detail-level фильтрацию Revit — поэтому перед `get_Geometry` добавлена ручная фильтрация видимости (Issue #102, #105).
-
-#### Visibility pre-filter (Issues #102, #105)
-
-Перед вызовом `get_Geometry` каждый элемент проверяется:
-1. `GenericForm.Visible == false` → skip.
-2. `IS_VISIBLE_PARAM` (`BuiltInParameter.IS_VISIBLE_PARAM`) == `0` → skip (type-driven visibility off).
-3. `IsShownAtDetailLevel(element, ViewDetailLevel.Fine)`:
-   - `GenericForm` → `form.GetVisibility().IsShownInFine`.
-   - `FamilyInstance` / прочие → `GEOM_VISIBILITY_PARAM` bitfield:
-     - `Coarse = 1 << 13` (8192)
-     - `Medium = 1 << 14` (16384)
-     - `Fine = 1 << 15` (32768)
-     - значение `0` означает detail component family → unconditional visibility (fail-open: считаем visible).
-   - Если API бросает исключение — fail-open, элемент не выбрасывается.
-
-#### Triangulation (Issue #99)
-
-- Не `SolidUtils.TessellateSolidOrShell(LevelOfDetail = 1.0)` — для мелких цилиндров (16 мм отвод) Revit даёт ~412 треугольников, видны полигоны.
-- Вместо этого каждая `Face` триангулируется отдельно через `Face.Triangulate(1.0)` → даёт плотную равномерную сетку (для того же отвода ~1747 треугольников) независимо от размера solid.
-
-#### Per-face material extraction (Issue #108)
-
-- `MeshData` имеет один `DiffuseColor` на весь mesh.
-- Поэтому faces группируются по `Face.MaterialElementId`: каждая группа становится отдельным `MeshData` со своим цветом.
-- Vertex dedup выполняется внутри одной `Face` (fresh dictionary на вызов), что сохраняет острые рёбра между faces, но даёт сглаживание внутри face.
-- Нормали накапливаются per-triangle и нормализуются per material group (`AccumulateTriangleNormal` + `NormalizeVertexNormals`).
-
-#### Nested families
-
-- Для `GeometryInstance` вызывается `GetInstanceGeometry()` (НЕ `GetSymbolGeometry()`) — применяет instance transform и ставит nested geometry на правильное место в parent family.
-- `GetSymbolGeometry()` возвращала бы geometry в локальных координатах symbol → nested families наложились бы на origin parent.
-- Рекурсия через `CollectMeshWithMaterials` обходит `Solid`, `GeometryInstance` и `Mesh` (direct mesh, imported SAT/Rhino-style geometry).
-
-#### Material color resolution (Issue #108)
-
-`GetColorForMaterialId` разрешает `Face.MaterialElementId` в `DiffuseColor` по цепочке fallback:
-1. `doc.GetElement(materialId) as Material` → `Material.Color`.
-2. `element.Category.Material` (By Category).
-3. Для `FamilyInstance`: `inst.Symbol.Family.Category.Material`.
-4. `doc.OwnerFamily.Category.Material`.
-5. `FallbackColor` (neutral gray 0.65).
-
-`Material.Color` может быть invalid для материалов из Rhino/SAT — тогда fallback на следующий уровень.
-
-#### Voids, ComputeReferences
-
-- `GenericForm.IsSolid == false` (void forms) — skip: solid forms уже содержат применённые вырезания.
-- `ComputeReferences = false` — экономит performance, stable references не нужны.
+Прямой путь extraction для одиночного family symbol (не `CustomExporter`):
+- `FilteredElementCollector(familyDoc).OfClass(typeof(GenericForm))` — обходит все form-элементы family document (как в существующем `RevitFamilySnapshotExtractor.ExtractGeometry:324-394`)
+- `form.get_Geometry(new Options { ComputeReferences = false, DetailLevel = ViewDetailLevel.Fine })` → возвращает `GeometryElement`
+- Итерация `GeometryElement`: `Solid` → `Solid.Faces` → `Face.Triangulate()` → `Mesh.Vertices`, `Mesh.TriangleIndexToCornersMap`, `Mesh.NormalVectors`
+- Для `GeometryInstance`: использовать `GetSymbolGeometry()` (local coords), не `GetInstanceGeometry()` (world coords) — подтверждено Jeremy Tammik Building Coder (a/0278_abg01_geometry_options + a/1355_directshape_face) и Aurora fix в `NovaShang/BimDown` (commit `3d82a68`)
+- Рекурсивный обход shared nested families через `FamilyInstance.GetSubComponentIds()` для случаев, когда контейнер-семья не имеет собственного solid (AUTODESK forum совет)
+- `ComputeReferences = false` — экономит performance, нам не нужны StableRepresentation для dimensioning
 
 ### Storage: reuse `family_assets` через `FamilyAssetType.Model3D` (0 миграций)
 
@@ -178,21 +117,20 @@ Extract требует `OpenDocumentFile` (Revit API). Все вызовы — �
 
 ```
 SmartCon.Core (pure C#, no Revit, no WPF — I-09)
-  ├── Models/FamilyManager/MeshData.cs               ← record: float[] Positions, float[] Normals, int[] Indices, Color4 DiffuseColor, string NodeName
+  ├── Models/FamilyManager/MeshData.cs               ← record: float[] Positions, float[] Normals, int[] Indices, Color4f DiffuseColor
   ├── Models/FamilyManager/FamilyGeometryPreview.cs  ← record: Guid CatalogItemId, string VersionLabel, IReadOnlyList<MeshData> Meshes, string FamilyName
-  ├── Models/FamilyManager/FamilyGeometryPerType.cs  ← record: string TypeName, IReadOnlyList<MeshData> Meshes
   ├── Services/Interfaces/IFamilyGeometryExtractor.cs
   └── Services/Interfaces/IGlbWriter.cs
 
 SmartCon.Revit (Revit API impl)
-  └── FamilyManager/RevitFamilyGeometryExtractor.cs  ← pattern из RevitFamilyDataExtractionService.cs + Issue #99/#102/#105/#108 fixes
+  └── FamilyManager/RevitFamilyGeometryExtractor.cs  ← pattern из RevitFamilyDataExtractionService.cs
 
 SmartCon.FamilyManager (UI + storage + GLB writer)
-  ├── Services/Geometry/IFamilyGeometryPipeline.cs   ← interface
-  ├── Services/Geometry/FamilyGeometryGlbWriter.cs   ← SharpGLTF.Core Schema2 low-level API
+  ├── Services/Geometry/IFamilyGeometryPipeline.cs   ← interface (extends IGlbWriter + extractor coordination)
+  ├── Services/Geometry/FamilyGeometryGlbWriter.cs   ← SharpGLTF.MeshBuilder
   ├── Services/Geometry/FamilyGeometryPipeline.cs    ← extract → write → register asset (auto-extracted-preview prefix)
   ├── Services/Geometry/GlbSceneLoader.cs            ← HelixToolkit.SharpDX.Assimp.Importer.Load → SceneNode
-  ├── ViewModels/FamilyPropertiesViewModel.Preview3D.cs  ← EffectsManager, Camera3D, Scene3DRoot (SceneNodeGroupModel3D), type ComboBox, camera preserve/reset
+  ├── ViewModels/FamilyPropertiesViewModel.Preview3D.cs  ← EffectsManager, Camera3D, Scene3DRoot (SceneNodeGroupModel3D), Items3D (ObservableElement3DCollection), commands
   └── Views/FamilyPropertiesView.xaml (mc:AlternateContent: Choice=hx:Viewport3DX, Fallback=net48 placeholder)
 ```
 
@@ -231,28 +169,17 @@ SmartConLogger.Warn($"Geometry extraction failed: {ex.Message} [Action: check fa
 | Viewport3DX re-host ломает render (helix-toolkit issue #1120) | singleton dockable panel (I-15) — только hide/show; fallback `EnableSwapChainRendering=true` |
 | SharpDX native dlls в multi-version build | NuGet разруливает native deps по RID; проверить на R19/R21/R24/R25 |
 | Geometry extraction ~200мс-1сек на файл | Вызывается ПОСЛЕ `tx.Commit()` → импорт не замедляется БД-транзакцией; failures не прерывают; для batch-импорта >5 файлов — последовательные вызовы (I-01 запрещает параллельные Revit API) |
-| Per-face triangulation увеличивает размер GLB | Issue #99: ~×2-8 больше треугольников для мелких цилиндров; типичный GLB вырастает с ~50KB до ~100-300KB, что приемлемо для preview |
-| Shared nested families без собственного solid | Рекурсия через `GetInstanceGeometry()` в `CollectMeshWithMaterials` |
+| Shared nested families без собственного solid | Рекурсия через `GetSubComponentIds` |
 | Empty geometry (некоторые семьи) | Pipeline возвращает `null` → `if (preview.Meshes.Count == 0) return;` + Warn `[Action: ...]`, не создавать asset |
 
 ## Out-of-scope (фон для будущих фаз)
 
-- PBR materials с metallic/roughness textures — base color (`Material.Color`) и per-face material extraction реализованы (Issue #108); metallic/roughness maps — Phase 2
+- PBR materials с metallic/roughness textures — per-face material extraction реализован (Issue #108: группировка faces по `Face.MaterialElementId`, один `MeshData` на материал), но PBR textures/metalness/roughness — Phase 2
 - Appearance Asset Color (`generic_diffuse`) — Phase 2. `Material.Color` покрывает большинство семей; для материалов imported from Rhino/SAT с invalid `Material.Color` нужен `AppearanceAssetElement.GetRenderingAsset()` → `AssetPropertyDoubleArray4d`
 - Animation & skinning
 - RPC/Plant rendering
 - Draco/Meshopt GLB compression
 - BLOB-embedding GLB в SQLite (для offline export) — filesystem storage (existing `family_assets.relative_path`) — это best-practice для binary >100KB
-
-## История ключевых баг-фиксов после принятия ADR
-
-| Issue | Что изменилось | Где в коде |
-|---|---|---|
-| #99 | `SolidUtils.TessellateSolidOrShell` заменён на per-face `Face.Triangulate(1.0)` для равномерной плотности сетки на мелких деталях | `RevitFamilyGeometryExtractor.AddSolidWithMaterials` |
-| #102 | Добавлена pre-filter видимости по `GenericForm.GetVisibility()` / `GEOM_VISIBILITY_PARAM`, чтобы coarse-only symbolic graphics не попадали в Fine preview | `RevitFamilyGeometryExtractor.IsShownAtDetailLevel` |
-| #105 | Добавлена проверка `IS_VISIBLE_PARAM == 0` перед `get_Geometry` — учитывает type-driven visibility nested family instances | `RevitFamilyGeometryExtractor.GetIsVisibleParam` |
-| #107 | Камера больше не сбрасывается при смене типоразмера; кнопка «Показать всё» использует `FitCameraToScene` вместо нативного ZoomExtents | `FamilyPropertiesViewModel.Preview3D.cs` |
-| #108 | Один `MeshData` на element заменён на группировку по `Face.MaterialElementId`; nested instances теперь получают реальные материалы через `GetInstanceGeometry()` + fallback chain | `RevitFamilyGeometryExtractor.ExtractMeshesFromElement`, `CollectMeshWithMaterials`, `GetColorForMaterialId` |
 
 ## Verification
 
