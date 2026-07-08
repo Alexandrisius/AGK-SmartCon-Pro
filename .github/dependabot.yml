@@ -24,6 +24,11 @@ updates:
         versions: [">= 9.0.0"]
       - dependency-name: "SQLitePCLRaw.bundle_e_sqlite3"
         versions: [">= 3.0.0"]
+      # v9+ targets .NET 9/10 — incompatible with net8.0 (Revit 2025) and net48 (Revit 2024).
+      # Static constructor in LocalFamilyImportService.TypeCatalog.cs throws TypeInitializationException.
+      # See #114. Keep on 8.x until SmartCon drops net8.0/net48 support.
+      - dependency-name: "System.Text.Encoding.CodePages"
+        versions: [">= 9.0.0"]
 
   - package-ecosystem: github-actions
     directory: /
