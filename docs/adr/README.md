@@ -53,3 +53,4 @@
 | [040](040-overwritecurrent-semantics.md) | OverwriteCurrent — UPDATE catalog_versions in place + managed file rotation | accepted | 2026-06-29 |
 | [041](041-active-version-management.md) | Active Version Management — SetActive/DeleteVersion + per-version types/attributes | accepted | 2026-06-30 |
 | [042](042-familymanager-3d-preview.md) | FamilyManager 3D Geometry Preview — GLB extraction (SharpGLTF) + HelixToolkit.Wpf.SharpDX viewer (Issue #92) | accepted | 2026-07-01 |
+| [043](043-pipeconnect-modal-justification.md) | PipeConnectEditor модальность — единственно возможное решение для live real-element preview + single-undo cancel (Exa-исследование ограничений Revit API) | accepted | 2026-07-08 |
