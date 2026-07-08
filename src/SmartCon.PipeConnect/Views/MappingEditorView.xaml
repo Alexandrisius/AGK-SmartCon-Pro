@@ -9,7 +9,6 @@
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="True"
-        Topmost="True"
         Background="{DynamicResource BackgroundBrush}">
 
     <Window.Resources>

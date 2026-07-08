@@ -2,8 +2,8 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
-using SmartCon.PipeConnect.Views;
 
 namespace SmartCon.PipeConnect.Commands;
 
@@ -14,11 +14,13 @@ public sealed class AboutCommand : IExternalCommand
     {
         try
         {
-            var factory = ServiceHost.GetService<IAboutViewModelFactory>();
+            CommandHelper.InitializeContext(commandData.Application);
 
+            var factory = ServiceHost.GetService<IAboutViewModelFactory>();
             var vm = factory.Create();
-            var view = new AboutView(vm);
-            view.ShowDialog();
+
+            var presenter = ServiceHost.GetService<IDialogPresenter>();
+            presenter.ShowDialog(vm);
 
             return Result.Succeeded;
         }
