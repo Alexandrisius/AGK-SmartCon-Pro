@@ -112,30 +112,19 @@
                             Style="{DynamicResource SecondaryButton}" Padding="0"/>
                 </Grid>
 
-                <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{loc:Loc FM_Status}" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" Margin="0,0,8,0"/>
-                    <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableStatuses}"
-                              DisplayMemberPath="DisplayName"
-                              SelectedItem="{Binding SelectedStatus}"
-                              IsEnabled="{Binding CanWriteProperty}"
-                              Style="{DynamicResource CompactComboBox}"/>
-                </Grid>
+                <TextBlock Text="{loc:Loc FM_Status}" Margin="0,0,0,4"
+                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
+                <ComboBox ItemsSource="{Binding AvailableStatuses}"
+                          DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding SelectedStatus}"
+                          IsEnabled="{Binding CanWriteProperty}"
+                          Style="{DynamicResource CompactComboBox}" Margin="0,0,0,8"/>
 
-                <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{loc:Loc FM_Tags}" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" Margin="0,0,8,0"/>
-                    <Border Grid.Column="1" BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
-                            CornerRadius="4" Padding="4,3"
-                            Background="{DynamicResource SurfaceBrush}">
+                <TextBlock Text="{loc:Loc FM_Tags}" Margin="0,0,0,4"
+                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
+                <Border BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                        CornerRadius="4" Padding="4,3"
+                        Background="{DynamicResource SurfaceBrush}" Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal">
                             <ItemsControl ItemsSource="{Binding Tags}">
                                 <ItemsControl.ItemsPanel>
@@ -198,7 +187,6 @@
                             </Popup>
                         </StackPanel>
                     </Border>
-                </Grid>
 
                 <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11">
                     <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
