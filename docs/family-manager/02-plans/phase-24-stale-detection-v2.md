@@ -1331,15 +1331,15 @@ powershell -ExecutionPolicy Bypass -File tools/validate-docs.ps1
 
 - [ADR-030](../../adr/030-phase-24-stale-detection-v2.md) — основное решение Phase 24
 - [Issue #69](https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/69) — оригинальная постановка задачи
-- [ADR-014](014-familymanager-mvp-architecture.md) — содержит override запрет §FM-007
-- [ADR-015](015-familymanager-published-storage.md) — managed storage
-- [ADR-018](018-familymanager-refactoring.md) — DI patterns, IClock
-- [ADR-022](022-familymanager-rbac.md) — RBAC
-- [ADR-025](025-refactoring-migration-backlog.md) — IClock миграция
-- [ADR-026](026-logging-migration.md) — BeginScope, OpId
-- [ADR-027](027-placed-families-v2.md) — `OfClass(FamilyInstance)` pattern
-- [ADR-028](028-di-readiness.md) — DI patterns
-- [ADR-029](029-shared-nested-load-dialog.md) — UI dialog precedent
+- [ADR-014](../../adr/014-familymanager-mvp-architecture.md) — содержит override запрет §FM-007
+- [ADR-015](../../adr/015-familymanager-published-storage.md) — managed storage
+- [ADR-018](../../adr/018-familymanager-refactoring.md) — DI patterns, IClock
+- [ADR-022](../../adr/022-familymanager-rbac.md) — RBAC
+- [ADR-025](../../adr/025-refactoring-migration-backlog.md) — IClock миграция
+- [ADR-026](../../adr/026-logging-migration.md) — BeginScope, OpId
+- [ADR-027](../../adr/027-placed-families-v2.md) — `OfClass(FamilyInstance)` pattern
+- [ADR-028](../../adr/028-di-readiness.md) — DI patterns
+- [ADR-029](../../adr/029-shared-nested-load-dialog.md) — UI dialog precedent
 - [docs/invariants.md](../../invariants.md) — I-01..I-17
 - [.agents/skills/revit-api-best-practice](../../../.agents/skills/revit-api-best-practice/SKILL.md) — async/ExternalEvent
 - [.agents/skills/smartcon-logging](../../../.agents/skills/smartcon-logging/SKILL.md) — BeginScope, L8/L9

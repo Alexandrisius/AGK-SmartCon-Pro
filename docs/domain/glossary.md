@@ -4,8 +4,8 @@
 
 | Термин | Определение |
 |---|---|
-| **StaticConnector** | Первый выбранный коннектор. Неподвижен. Точка назначения для Dynamic. |
-| **DynamicConnector** | Второй выбранный коннектор. Его владелец (и опционально вся цепочка) перемещается к Static. |
+| **StaticConnector** | Неподвижный коннектор — **второй** клик. К нему присоединяют Dynamic. |
+| **DynamicConnector** | Движущийся коннектор — **первый** клик. Его владелец (и опционально цепочка) перемещается к Static. |
 | **FreeConnector** | Коннектор, у которого `connector.AllRefs.IsEmpty == true` — не подключён ни к чему. |
 | **ConnectionTypeCode** | Числовой код типа соединения, хранимый в `Connector.Description`. Определяет материал/способ соединения (напр. 1 = сварка, 2 = резьба, 3 = раструб). Настраивается пользователем через окно маппинга. |
 | **Internal Units** | Десятичные футы (decimal feet). Все числовые значения внутри Core — в этих единицах. Конвертация в мм/м — только на UI-слое. |
@@ -34,3 +34,11 @@
 | **ExportNameOverride** | Ручное переопределение имени файла при ошибке валидации. Позволяет инженеру скорректировать имя перед шарингом. |
 | **Type Catalog** | Текстовый файл `.txt` рядом с семейством Revit `.rfa`, определяющий типоразмеры семейства. Header содержит `##TYPE##UNITS` annotation (`Width##length##millimeters`). Каждая строка — один типоразмер. В SmartCon: импортируется через bake-in (ADR-033) — типы запекаются в `.rfa` при импорте, `.txt` больше не хранится в managed storage (ADR-023-002 supersedes). |
 | **BAKE-006..009** | Секции ADR-033 описывающие unit conversion в Type Catalog: парсинг `##TYPE##UNITS`, конвертация через `UnitUtils.ConvertToInternalUnits`, multi-version support (R21+ UnitTypeId vs R19-R20 DisplayUnitType), backward compatibility (no annotation = raw value). |
+| **Vec3** | 3D-вектор (`readonly record struct`) в `SmartCon.Core/Math/`. Заменяет `XYZ` для чистой математики в Core (ADR-009). Конвертация `Vec3` ↔ `XYZ` на границе Revit-слоя. |
+| **RBAC** | Role-Based Access Control для локальных каталогов FamilyManager. Роли: Owner, BimMaster, Engineer, Ban (ADR-022). |
+| **DbUser** | SQLite-запись пользователя в каталоге (`db_users` table). Идентификация по `UserName@MachineName`. |
+| **UserIdentity** | Identity пользователя в FamilyManager: `UserName@MachineName` (ADR-022). |
+| **DbAccessDeniedException** | Исключение при нарушении RBAC-прав доступа к каталогу. |
+| **SemVersion** | Семантическая версия проекта SmartCon (SemVer 2.0). Используется для pre-release/beta-релизов (ADR-021). |
+| **PendingUpdate** | Staged-обновление плагина, ожидающее применения при закрытии Revit (`update-pending.json`). |
+| **UpdateInfo** | Информация о доступном обновлении (версия, URL, changelog). |

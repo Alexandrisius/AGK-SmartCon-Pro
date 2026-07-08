@@ -11,17 +11,10 @@
 3. Все кнопки биндингся к `ICommand` (RelayCommand из SmartCon.UI)
 4. Открытие окон — через `IDialogService`, не `new Window().ShowDialog()`
 
-### Паттерн взаимодействия WPF <-> Revit
+### Взаимодействие WPF <-> Revit
 
-```
-WPF UI Thread                     Revit Main Thread
------------------                 -----------------
-ViewModel.ButtonClick()
-  --> _externalEvent.Raise()  ------->  PipeConnectExternalEvent.Execute(app)
-                                          --> _transactionService.RunInTransaction(...)
-  <-- PropertyChanged  <--------------  Уведомление через dispatcher
-ViewModel обновляет UI
-```
+- Modal окна (PipeConnectEditor): Revit API вызывается напрямую из ViewModel в рамках command context (см. ADR-043).
+- Modeless окна (MappingEditor): вызовы Revit API только через `IExternalEventHandler.Raise()` (см. ADR-006 / ADR-008, используется FamilyManager и ProjectManagement).
 
 ---
 

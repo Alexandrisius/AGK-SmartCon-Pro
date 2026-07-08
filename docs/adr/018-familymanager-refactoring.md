@@ -74,7 +74,8 @@ Task<IReadOnlyDictionary<string, int>> GetBindingCountsAsync(
 
 ### 4. async void FireAndForget — предотвращение deadlock
 
-**Проблема:** `async Task FireAndForgetAsync` + `_ =` внутри `ExternalEvent.Raise()` создавал Task, который захватывал `SynchronizationContext.Current` (Revit UI thread). Continuation постился обратно в UI thread, но UI thread был занят → deadlock.
+> **⚠️ Superseded by Phase 4c (2026-06-07) and ADR-031.**  
+> Паттерн `async void` внутри `ExternalEvent.Raise()` отменён. Реальный код использует `static void FireAndForget` + `Task.ContinueWith(... OnlyOnFaulted ... RunContinuationsAsynchronously)` (см. Phase 4c ниже).
 
 **Решение:** Использовать `async void` для true fire-and-forget внутри ExternalEvent:
 

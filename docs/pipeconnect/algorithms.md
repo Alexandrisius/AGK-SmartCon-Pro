@@ -204,30 +204,38 @@ BuildGraph(doc, startElementId, stopAtElements = null):
 
 ---
 
-## 5. Алгоритм Дейкстры для цепочки фитингов (PathfinderService)
+## 5. Алгоритм подбора цепочки фитингов (FittingMapper / IFittingChainResolver)
 
-**Файл:** `SmartCon.Core/Services/Implementation/PathfinderService.cs`
-**Фаза:** 9A (продвинутый функционал)
+**Файлы:** `SmartCon.Core/Services/Implementation/FittingMapper.cs`, `SmartCon.Core/Services/Interfaces/IFittingChainResolver.cs`  
+**ADR:** [ADR-010](../adr/010-fitting-chain-resolver.md)
 
 Граф строится из `FittingMappingRule`:
 - **Узел** = `ConnectionTypeCode`
-- **Ребро** = правило маппинга (FromType -> ToType)
+- **Ребро** = правило маппинга (`FromType -> ToType`)
 - **Вес** = Priority правила
 
 ```
-FindShortestFittingPath(from: ConnectionTypeCode, to: ConnectionTypeCode):
-    Стандартный Дейкстра на графе типов
-    Возвращает: List<FittingMappingRule> — минимальная цепочка переходников
+rules = IFittingMapper.GetMappings(static.TypeCode, dynamic.TypeCode)
+
+Если rules пуст:
+   --> path = IFittingChainResolver.FindShortestPath(static.TypeCode, dynamic.TypeCode)
+   --> Если путь найден: rules = цепочка правил
+   --> Если нет: предупреждение, ProposedFittings = []
 ```
 
-**Кейс:** TYPE-1 -> TYPE-3 прямого правила нет, но есть TYPE-1->TYPE-2 (Priority=1) и TYPE-2->TYPE-3 (Priority=2). Результат: цепочка из 2 фитингов, суммарный вес = 3.
+**Кейс:** TYPE-1 → TYPE-3 прямого правила нет, но есть TYPE-1→TYPE-2 (Priority=1) и TYPE-2→TYPE-3 (Priority=2). Результат: цепочка из 2 фитингов, суммарный вес = 3.
+
+Для каждого правила в цепочке:
+- `IsDirectConnect` + `FittingFamilies` пуст → прямое соединение
+- `IsDirectConnect` + `FittingFamilies` не пуст → фильтрация по размерам, автовыбор по Priority
+- `!IsDirectConnect` → обязателен фитинг-переходник, фильтрация + автовыбор
 
 ---
 
 ## 6. FormulaSolver: архитектура парсера
 
-**Файл:** `SmartCon.Core/Services/Implementation/FormulaSolver.cs`
-**Фаза:** 6
+**Файл:** `SmartCon.Core/Math/FormulaEngine/Solver/FormulaSolver.cs`  
+**ADR:** [ADR-005](../adr/005-formula-solver-ast.md)
 
 ### Pipeline
 

@@ -235,14 +235,11 @@ Chain+/Chain−), scope на ключевых методах. Roslyn analyzers
 
 ## Связанные документы
 
+> **Примечание (2026-07-08):** отчёты Phase 0/1/2 (`docs/logging/*.md`), `docs/testing/coverage-baseline-2026-06.md` и `docs/roadmap/logging-final-plan.md` удалены в рамках рефакторинга документации. Содержимое актуальных правил логирования сосредоточено в `docs/architecture/logging.md`.
+
 - [ADR-025 §M-019-005](025-refactoring-migration-backlog.md) — оригинальный план миграции (выполнен Phase 0a/0b + Phase 1)
 - [docs/architecture/logging.md](../architecture/logging.md) — обновлённая документация
-- [docs/logging/migration-inventory.md](../logging/migration-inventory.md) — таблица call-sites до/после
-- [docs/logging/final-validation-report.md](../logging/final-validation-report.md) — Phase 1+2 final metrics
-- [docs/logging/hot-loop-counter-audit.md](../logging/hot-loop-counter-audit.md) — Phase C3 audit
-- [docs/testing/coverage-baseline-2026-06.md](../testing/coverage-baseline-2026-06.md) — Phase C9 baseline
 - [docs/adr/028-di-readiness.md](028-di-readiness.md) — Phase C8 DI audit
-- [docs/roadmap/logging-final-plan.md](../roadmap/logging-final-plan.md) — финальный план
 - [Stephen Cleary — Implicit Async Context](https://blog.stephencleary.com/2013/04/implicit-async-context-asynclocal.html) — обоснование AsyncLocal vs ThreadStatic
 - [Microsoft — High-performance logging](https://learn.microsoft.com/en-us/dotnet/core/extensions/logging/high-performance-logging) — best practice для hot-path логирования
 - [Andrew Lock — Source-generated logging](https://andrewlock.net/exploring-dotnet-6-part-8-improving-logging-performance-with-source-generators/) — обоснование отказа от [LoggerMessage]

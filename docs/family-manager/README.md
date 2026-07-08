@@ -1,62 +1,33 @@
-# FamilyManager Unified Documentation Pack
+# FamilyManager
 
-## Назначение
+> **Status:** Active | Модуль управления библиотекой семейств Revit (dockable panel + SQLite catalog).
+>
+> SSOT: `src/SmartCon.FamilyManager/` (интерфейсы и модели — в `src/SmartCon.Core/`).
 
-Этот пакет объединяет стратегические и MVP-документы FamilyManager в единую систему для разработки модуля BIM content management внутри smartCon.
+## Структура модуля
 
-Пакет рассчитан на поэтапную разработку: сначала стратегия и стек, затем продуктовая рамка MVP, доменная модель, схема данных, provider contract, архитектурные принципы, риски и финальный технический MVP plan.
-
-## Порядок чтения
-
-1. `00-strategy/00-familymanager-concept-roadmap.md`
-2. `00-strategy/01-familymanager-technical-stack.md`
-3. `01-mvp/00-index.pplx.md`
-4. `01-mvp/01-mvp-prd.pplx.md`
-5. `01-mvp/02-mvp-scope-matrix.pplx.md`
-6. `01-mvp/03-personas-jtbd.pplx.md`
-7. `01-mvp/04-domain-model.pplx.md`
-8. `01-mvp/05-metadata-schema.pplx.md`
-9. `01-mvp/06-user-flows.pplx.md`
-10. `01-mvp/07-ux-ia.pplx.md`
-11. `01-mvp/08-architecture-principles.pplx.md`
-12. `01-mvp/09-provider-contract.pplx.md`
-13. `01-mvp/10-security-data-ownership.pplx.md`
-14. `01-mvp/11-nfr-qa-strategy.pplx.md`
-15. `01-mvp/12-risk-register-adr-backlog.pplx.md`
-16. `01-mvp/13-technical-mvp-plan.pplx.md`
-
-## Источники истины
-
-| Тема | Канонический документ |
-| --- | --- |
-| Стратегия продукта и фазирование | `00-familymanager-concept-roadmap.md` |
-| Библиотеки, runtime constraints, зависимости | `01-familymanager-technical-stack.md` |
-| MVP scope и acceptance | `01-mvp-prd.pplx.md` |
-| Границы MVP / post-MVP / enterprise | `02-mvp-scope-matrix.pplx.md` |
-| Термины и доменные сущности | `04-domain-model.pplx.md` |
-| SQLite/schema/file-cache split | `05-metadata-schema.pplx.md` |
-| UX и dockable panel IA | `07-ux-ia.pplx.md` |
-| Архитектурные инварианты smartCon | `08-architecture-principles.pplx.md` |
-| Provider abstraction | `09-provider-contract.pplx.md` |
-| Security/data ownership | `10-security-data-ownership.pplx.md` |
-| Test/NFR strategy | `11-nfr-qa-strategy.pplx.md` |
-| ADR backlog и риски | `12-risk-register-adr-backlog.pplx.md` |
-| Последовательность реализации MVP | `13-technical-mvp-plan.pplx.md` |
+```
+docs/family-manager/
+├── README.md                       # этот файл
+├── 00-strategy/
+│   └── 00-familymanager-concept-roadmap.md   # продуктовая стратегия
+│   └── 01-familymanager-technical-stack.md     # технический стек
+└── 02-plans/
+    └── phase-24-stale-detection-v2.md          # детальный план Phase 24
+```
 
 ## Зафиксированные решения
 
 - Основной target: Revit 2025+ / `net8.0-windows`.
 - Legacy target: Revit 2019–2024 / `net48`.
-- Новый модуль: `SmartCon.FamilyManager`.
+- Модуль: `SmartCon.FamilyManager`.
 - `SmartCon.FamilyManager` зависит только от `SmartCon.Core` и `SmartCon.UI`.
-- Revit API вызывается только через `SmartCon.Revit`.
-- MVP storage: SQLite + file cache.
-- Канонический локальный root: `%APPDATA%\SmartCon\FamilyManager\`.
-- База MVP: `%APPDATA%\SmartCon\FamilyManager\databases\{id}\catalog.db` (multi-DB pattern).
-- Канонические таблицы (schema v2, ADR-015): `database_meta`, `schema_info`, `catalog_items`, `catalog_versions`, `family_files`, `family_assets`, `catalog_tags`, `project_usage` (8 таблиц).
+- Revit API вызывается только через `SmartCon.Revit` (интерфейсы Core, реализации Revit).
+- Хранилище: SQLite + managed `.rfa` storage.
+- Локальный root: `%APPDATA%\SmartCon\FamilyManager\`.
+- База: `%APPDATA%\SmartCon\FamilyManager\databases\{id}\catalog.db` (multi-DB pattern).
 - MVP provider: `LocalCatalogProvider`.
 - Future providers: `RemoteCatalogProvider`, `CorporateCatalogProvider`, `PublicReadOnlyProvider`, `CompositeCatalogProvider`.
-- Project usage в MVP хранится в локальной SQLite БД, в corporate phase — в серверной БД.
 
 ## Жёсткий запрет
 
@@ -66,7 +37,7 @@ ExtensibleStorage остаётся паттерном существующих �
 
 ### Исключение: `SmartCon_FamilyVersion_v1` (Phase 24)
 
-**Единственное исключение** из правила — маркер версии на `Family` элементе в проекте Revit, введённый в Phase 24 (см. [ADR-030](../adr/030-phase-24-stale-detection-v2.md)). Хранит **только** метаданные момента загрузки (CatalogItemId, VersionLabel, LoadedAtUtc, SourceRevitVersion), а не каталожные данные. Не пишется в `.rfa` файлы (over-engineered — см. ADR-030 §2).
+**Единственное исключение** — маркер версии на `Family` элементе в проекте Revit, введённый в Phase 24 (см. [ADR-030](../adr/030-phase-24-stale-detection-v2.md)). Хранит **только** метаданные момента загрузки (`CatalogItemId`, `VersionLabel`, `LoadedAtUtc`, `SourceRevitVersion`). Не пишется в `.rfa`.
 
 **Что остаётся запрещено:**
 - Каталог (`catalog_items`, `catalog_versions`, `family_files`, `family_assets`) — в SQLite
@@ -74,80 +45,60 @@ ExtensibleStorage остаётся паттерном существующих �
 - История загрузок, избранное — в SQLite
 - Любые новые ES Schema для FamilyManager (кроме `SmartCon_FamilyVersion_v1`)
 
-**Обоснование исключения:** см. [ADR-030 §Решение](../adr/030-phase-24-stale-detection-v2.md).
+## Статус по фазам
 
-## Перед стартом реализации
+| Phase | Название | ADR | Завершена | Примечание |
+|---|---|---|---|---|
+| 12 | FamilyManager MVP | [ADR-014](../adr/014-familymanager-mvp-architecture.md) | 2026-04-28 | Superseded by ADR-015 |
+| 13 | Published Storage | [ADR-015](../adr/015-familymanager-published-storage.md), [ADR-016](../adr/016-familymanager-readonly-files.md) | 2026-05-01 | schema v2 |
+| 14 | Attribute Extraction | [ADR-017](../adr/017-familymanager-attribute-extraction.md) | 2026-05-06 | schema v6 |
+| 18 | Refactoring | [ADR-018](../adr/018-familymanager-refactoring.md) | 2026-05-07 | DI, async safety, perf |
+| 20 | RBAC | [ADR-022](../adr/022-familymanager-rbac.md) | 2026-05-16 | schema v7 |
+| 21 | Active Import Refactor | [ADR-024](../adr/024-active-family-import-preparer.md) | 2026-06-05 | sidecar preservation |
+| 22 | Placed Families v2 | [ADR-027](../adr/027-placed-families-v2.md) | 2026-06-07 | system + loadable families |
+| 24 | Stale Detection v2 | [ADR-030](../adr/030-phase-24-stale-detection-v2.md) | 2026-06-18 | schema v12, breaking 2.0.0 |
+| 25 | Type Catalog Simulation | [ADR-032](../adr/032-type-catalog-simulation.md) | 2026-06-21 | **Superseded by ADR-033** |
+| 26 | Type Catalog Bake-in | [ADR-033](../adr/033-bakein-type-catalog.md) | 2026-06-22 | replaces simulation |
+| 27 | v2.0.0 Cleanup | [ADR-034](../adr/034-shared-nested-persist-fallback.md), [ADR-035](../adr/035-remove-temp-logic-v2.md), [ADR-036](../adr/036-active-family-type-sync.md), [ADR-037](../adr/037-tree-expand-collapse.md), [ADR-038](../adr/038-sticky-category-headers.md), [ADR-039](../adr/039-snapshot-driven-commit.md) | 2026-06-29 | schema v14 |
+| 28 | Active Version Management | [ADR-040](../adr/040-overwritecurrent-semantics.md), [ADR-041](../adr/041-active-version-management.md) | 2026-06-30 | schema v17-v19 |
+| 29 | 3D Preview | [ADR-042](../adr/042-familymanager-3d-preview.md) | 2026-07-01 | SharpGLTF + HelixToolkit |
 
-Перед написанием кода нужно утвердить ADR-FM-001, ADR-FM-003, ADR-FM-004, ADR-FM-006 и ADR-FM-007. Затем технический план MVP следует детализировать фазами из `13-technical-mvp-plan.pplx.md`.
+## Миграции SQLite V1..V19
 
-## Статус
+| V | Изменение | Связанный ADR |
+|---|---|---|
+| 1 | Initial schema: 8 таблиц (`database_meta`, `schema_info`, `catalog_items`, `catalog_versions`, `family_files`, `family_assets`, `catalog_tags`, `project_usage`) | ADR-014 |
+| 2 | Published Storage: multi-DB, version → Revit-version | ADR-015 |
+| 3 | `category_id` column в `catalog_items` | ADR-015 |
+| 4 | `family_types` table + indexes | ADR-017 |
+| 5 | `is_primary` column в `family_types` | ADR-017 |
+| 6 | `version_id` columns в `family_types` | ADR-017 |
+| 7 | RBAC: `db_users` table, `owner_identity` в `database_meta` | ADR-022 |
+| 8 | Recreate `extracted_attribute_values` (NOT NULL constraint) | ADR-017 |
+| 9 | `loaded_version_label` в `project_usage` | ADR-024 |
+| 10 | Index на `family_types(type_name)` | ADR-023 |
+| 11 | System families: `family_source`, `revit_category`, `type_unique_id` | ADR-027 |
+| 12 | DROP `project_usage` table + index | ADR-030 |
+| 13 | `family_nested_shared_families` table | ADR-034 |
+| 14 | DROP `sha256`/`size_bytes` columns | ADR-035 |
+| 15 | FK (`type_id`) ON DELETE CASCADE на `extracted_attribute_values` | ADR-036 |
+| 16 | `content_hash` / `hash_format_version` columns | ADR-039 |
+| 17 | FK (`version_id`) ON DELETE CASCADE на `family_types` и `extracted_attribute_values` | ADR-041 |
+| 18 | UNIQUE (`catalog_item_id`, `version_id`, `type_name`) для per-version types | ADR-041 |
+| 19 | `published_by` column в `catalog_versions` | ADR-041 |
 
-**Phase 12 (FamilyManager MVP) — COMPLETED (2026-04-28).**
+## Ключевые интерфейсы и модели
 
-- ADR-014 принят: `docs/adr/014-familymanager-mvp-architecture.md`
-- Модели и интерфейсы добавлены в `docs/domain/models/family-manager.md` и `docs/domain/interfaces/family-manager.md`
-- `SmartCon.FamilyManager` добавлен в `docs/architecture/solution-structure.md` и `docs/architecture/dependency-rule.md`
+- Доменные модели: `docs/domain/models/family-manager.md`
+- Интерфейсы: `docs/domain/interfaces/family-manager.md`
+- Глоссарий: `docs/domain/glossary.md`
 
-**Phase 13 (FamilyManager Published Storage) — COMPLETED (2026-05-01).**
+## Связанные документы
 
-- ADR-015 принят: `docs/adr/015-familymanager-published-storage.md` — Published Storage, configurable DB location, managed storage, version → Revit-version model, auxiliary assets, schema v2 (8 таблиц)
-- ADR-016 принят: `docs/adr/016-familymanager-readonly-files.md` — ReadOnly-флаг для managed-файлов
-- Схема БД обновлена до v2: `database_meta`, `schema_info`, `catalog_items`, `catalog_versions`, `family_files`, `family_assets`, `catalog_tags`, `project_usage` (8 таблиц)
-- Asset management: изображения, видео, документы, FBX, lookup-таблицы
-- Category tree для навигации по каталогу
-
-**Phase 21 (FamilyManager Active Import Refactor) — COMPLETED (2026-06-05).**
-
-- ADR-024 принят: `docs/adr/024-active-family-import-preparer.md`
-- Устранена потеря Type Catalog (.txt) при импорте активного `.rfa`
-- Новые сервисы: `IFamilySidecarLocator` (pure I/O, 13 unit-тестов), `IActiveFamilyFilePreparer`, `IActiveDocumentClassifier`, `IActiveImportCleanupService`
-- `OriginalSourcePath` в `FamilyImportRequest`/`FamilyBatchImportItem`/`FamilyUpdateRequest`
-- VM `ImportActiveFileAsync` упрощён через классификатор активного документа
-- Удалён static `CleanupImportActiveTemp` — заменён `IActiveImportCleanupService`
-
-**Phase 22 (FamilyManager Placed Families v2 — OfClass(Family) + EditFamily for extraction) — COMPLETED (2026-06-07).**
-
-- ADR-027 принят: `docs/adr/027-placed-families-v2.md`
-- "Импорт активного файла" импортирует **и** системные, **и** loadable families из активного проекта
-- "Импорт системного семейства" переименован в **"Импорт выделенных элементов"**, принимает любые элементы (system + loadable)
-- Ключевая идея: **Analyze = только метаданные (мгновенно)**, **Stage = по подтверждению**, **Extract = через существующий `IFamilyDataExtractionService`**
-- Новые сервисы: `ILoadableFamilyScanner` (`OfClass(Family)`, O(F) — не O(N)), `ILoadableFamilyTypeResolver` (открывает `.rfa`, читает `FamilyManager.GetTypes()` с UniqueId), `ILoadableFamilyImportOrchestrator` (managed storage + type persist)
-- Picker filter `SystemFamilySelectionFilter` заменён на `AnyElementSelectionFilter` (`FamilyInstance` + system categories)
-- `ISystemFamilyRevitOperations.PickSystemTypes()` → `PickSelectedElements() → SelectedElementsAnalysis`
-- `ProcessProjectImportAsync` принимает `IReadOnlyList<FamilyBatchImportItem>` и диспетчеризирует по `FamilySource` (system → `ISystemFamilyImportOrchestrator`, loadable → `ILoadableFamilyImportOrchestrator`)
-- Атрибуты loadable извлекаются через `IFamilyDataExtractionService.Extract(managedRfaPath, [])` — **переиспользует** существующий сервис (без нового extractor'а для `.rfa`)
-- 4 новых unit-теста для `LoadableFamilyInfo`. Тесты для `SelectedElementsAnalysis` невозможны (record содержит `BuiltInCategory` value-type, требует `RevitAPI.dll` в test bin)
-- Всего: 1219/1219 тестов зелёные (1215 до + 4 новых)
-- 19 новых тестов: 12 sidecar + 1 preparer + 5 TypeCatalog + 1 прочий
-
-**Phase 24 (FamilyManager Stale Detection v2 — On-Demand) — ЗАВЕРШЕНА (2026-06-18).**
-
-- ADR-030 принят: `docs/adr/030-phase-24-stale-detection-v2.md` — override ADR-014 §FM-007 (запрет ExtensibleStorage)
-- Новая ES Schema `SmartCon_FamilyVersion_v1` на `Family` элементе в проекте (per-family маркер версии; **не** на `.rfa` файле — over-engineered)
-- VendorId workaround: `AGKSMARTCON` (9 chars) + `AccessLevel.Public/Public` — как в `FittingMappingSchema`
-- 5 простых полей: `SchemaVersion`, `CatalogItemId`, `VersionLabel`, `LoadedAtUtc`, `SourceRevitVersion`
-- Маркер живёт пока Family загружена в проект — мгновенный read через `Family.GetEntity`
-- 4 новых интерфейса в Core: `IFamilyVersionStore`, `IStaleDetector`, `IStaleFamilyUpdater`, `IStaleCategoryAggregator`
-- 4 новые модели в Core: `FamilyVersion`, `StaleCheckResult` (+ `StaleReason` enum), `StaleUpdateRequest`, `FamilyStaleSnapshot`
-- UI: ПКМ "Проверить" на категории (рекурсивно) и на семействе, ПКМ "Обновить" с подменю (с перезаписью/без/пакетное), roll-up `⚠` индикация на leaf + категориях
-- On-demand модель: единственный триггер — ПКМ "Проверить". НЕТ push events (Phase 23 отвергнут)
-- Refresh кнопка ↻ — **только каталог** (НЕ stale)
-- Кеш `FamilyStaleSnapshot` на сессию, инвалидируется при Load/Update/Edit/смена БД
-- Производительность: < 200 мс на 30 семейств (target Issue #69: < 500 мс)
-- SQLite schema **v12**: `DROP TABLE project_usage` + `DROP INDEX ix_project_usage_lookup` (clean slate)
-- Breaking change `2.0.0` — pre-release `2.0.0-beta.1` (ADR-021)
-- Доступно всем ролям (это операция в активном проекте, не каталог)
-- Детальный план: `docs/family-manager/02-plans/phase-24-stale-detection-v2.md`
-
-**Phase 25 (FamilyManager Type Catalog Simulation — Issue #66) — ЗАВЕРШЕНА (2026-06-21).**
-- ADR-032 принят: `docs/adr/032-type-catalog-simulation.md` — симуляция типов из `.txt` каталога через `Document.Regenerate()` для вычисления формул
-- Новый сервис: `ITypeCatalogValueApplier` (pure C#) + `StorageTypeCode` enum в Core — парсит значения из `.txt` в типизированные; Revit API не требуется в runtime, что позволяет unit-тесты в test bin
-- 19 unit-тестов для `TypeCatalogValueApplier` (Text / Int / Number / ElementId / InvalidFormat / Unsupported / null-safety / culture fallback)
-- `IFamilyDataExtractionService.ExtractFromManagedFile(path, names, ct)` — единая точка входа для всех 3 call site (`FamilyEdit.cs:532, :586`, `Import.cs:216`)
-- Encoding detection: UTF-8 strict → `UtfUnknown.CharsetDetector` (Mozilla Universal Charset Detector, confidence > 0.7) → fallback на system ANSI; критично для русских библиотек Autodesk (Windows-1251)
-- Per-type и per-parameter изоляция ошибок: битый типоразмер / параметр не валит остальные, ошибки логируются с `[Action: ...]`, **NO** диалог Revit
-- `tx.RollBack()` в `finally` гарантирует неизменность `.rfa` файла на диске
-- `__SCAT__` префикс для временных типов (исключает коллизии с дефолтным типом)
-- Логирование по skill `smartcon-logging`: `BeginScope("TypeCatalogSim", ...)` + START/END `Info` маркеры; все `Warn` заканчиваются `[Action: ...]` (L9)
-- Multi-version support: R19/R21/R24/R25 собираются 0 warnings / 0 errors
-- Все 1365 тестов зелёные (1346 baseline + 19 новых для `TypeCatalogValueApplier`)
+- [ADR-014](../adr/014-familymanager-mvp-architecture.md) — MVP Architecture (superseded by ADR-015)
+- [ADR-015](../adr/015-familymanager-published-storage.md) — Published Storage
+- [ADR-030](../adr/030-phase-24-stale-detection-v2.md) — Stale Detection v2 + ES exception
+- [ADR-033](../adr/033-bakein-type-catalog.md) — Type Catalog Bake-in
+- [ADR-041](../adr/041-active-version-management.md) — Active Version Management
+- [docs/domain/models/family-manager.md](../domain/models/family-manager.md)
+- [docs/domain/interfaces/family-manager.md](../domain/interfaces/family-manager.md)

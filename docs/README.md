@@ -1,7 +1,7 @@
 # SmartCon — SSOT (Single Source of Truth)
 
 > **Версия:** см. `Version.txt` | **Платформа:** Revit 2019-2026 / .NET Framework 4.8 + .NET 8 / C# 12 / WPF
-> **Последнее обновление:** 2026-05-20
+> **Последнее обновление:** 2026-07-08
 > **Pre-release:** Поддержка beta-версий через SemVer + GitHub pre-release (ADR-021)
 
 Этот файл — **единая точка входа** в документацию проекта SmartCon.
@@ -30,6 +30,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 |---|---|---|
 | [`architecture/solution-structure.md`](architecture/solution-structure.md) | Проекты, папки, файлы каждого слоя | Всегда при создании/перемещении файлов |
 | [`architecture/dependency-rule.md`](architecture/dependency-rule.md) | Правило зависимостей между слоями | Всегда |
+| [`architecture/dependency-injection.md`](architecture/dependency-injection.md) | DI-контейнер, ServiceRegistrar, Constructor Injection | При добавлении сервиса/ViewModel |
 | [`architecture/tech-stack.md`](architecture/tech-stack.md) | Стек технологий, версии, NuGet-пакеты | При настройке проекта или добавлении зависимостей |
 
 ### Домен
@@ -45,10 +46,10 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`pipeconnect/state-machine.md`](pipeconnect/state-machine.md) | Диаграмма состояний, переходы, правила | При работе с логикой PipeConnect |
+| [`pipeconnect/README.md`](pipeconnect/README.md) | Индекс модуля, обязательные ADR, инварианты | При любой работе с PipeConnect |
+| [`pipeconnect/state-machine.md`](pipeconnect/state-machine.md) | Диаграмма состояний, переходы, кейсы, матрица решений | При работе с логикой PipeConnect |
 | [`pipeconnect/algorithms.md`](pipeconnect/algorithms.md) | Алгоритмы: выравнивание, параметры, фитинги, цепочки | При реализации алгоритмов |
 | [`pipeconnect/ui-spec.md`](pipeconnect/ui-spec.md) | Спецификация UI: окна, layout, MVVM-паттерны | При работе с UI |
-| [`pipeconnect/business-cases.md`](pipeconnect/business-cases.md) | Бизнес-кейсы: логика при разных сценариях коннекта, reducer, размеры | При реализации логики соединения |
 
 ### ProjectManagement (модуль шаринга проектов)
 
@@ -63,8 +64,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`family-manager/README.md`](family-manager/README.md) | Индекс модуля, архитектура, таблицы БД | При любой работе с FamilyManager |
-| [`family-manager/00-strategy/02-familymanager-systemfamilies-case.md`](family-manager/00-strategy/02-familymanager-systemfamilies-case.md) | Концепция System Families: проект как семейство | При планировании архитектуры модулей |
+| [`family-manager/README.md`](family-manager/README.md) | Индекс модуля, архитектура, таблицы БД, миграции, фазы | При любой работе с FamilyManager |
 
 ### Правила и решения
 
@@ -100,7 +100,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | SmartCon.PipeConnect | ✅ Полный | PipeConnect: 5 partial VM, 12 сервисов, 6 окон |
 | SmartCon.ProjectManagement | ✅ Реализован | Share Project: ISO 19650, ADR-013 |
 | SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015, Stale Detection v2 (ADR-030), Type Catalog Bake-in (ADR-033) |
-| SmartCon.Tests | ✅ 1379+ тестов, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
+| SmartCon.Tests | ✅ 1669 тестов, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
 
 **Phase 11 (ProjectManagement) завершена (2026-04-25):** Share Project, Field Library, FileNameParser с валидацией, 12-категорийная очистка модели, 716 тестов.
 
@@ -126,4 +126,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 **Phase 26 (FamilyManager Type Catalog Bake-in — Issue #74) завершена (2026-06-22):** ADR-033 заменил simulation на **bake-in** — при импорте `.rfa` с `.txt` каталогом типы запекаются прямо в managed storage. `IFamilyTypeCatalogBaker.BakeAsync(sourceRfaPath, catalog, managedRfaPath)` открывает исходный `.rfa` один раз, создаёт все типы из `.txt`, восстанавливает формулы в топологическом порядке, делает `SaveAs` в managed storage. **BAKE-006..009 (commit `19e220e`)**: парсер сохраняет `##TYPE##UNITS` annotation через `TypeCatalogColumn` record, `RevitUnitsCompat.CatalogCellToInternalUnits(raw, annotation, param)` конвертирует mm/cm/in/ft/deg/rad → Revit internal units с валидацией `UnitUtils.IsValidUnit(targetSpec, sourceUnit)`. Pure normalization через `TypeCatalogUnitAlias.Normalize` в `SmartCon.Core` (15 unit-тестов). R21+ использует `FamilyParameter.GetUnitTypeId()` + `SpecTypeId`, R19-R20 — `DisplayUnitType`. Freeze workaround через `RevitBalloonNudge.Nudge` после каждого `Close` (REVIT-236376 / REVIT-237190). Build R19/R21/R25, 1379+ тестов pass.
 
-**Phase 28 (FamilyManager Active Version Management — ADR-041) завершена (2026-06-30):** Введена возможность переключать активную версию семейства на любую из истории (откат) и удалять неактивные версии. V17 миграция добавляет FK `version_id` ON DELETE CASCADE на `family_types` и `extracted_attribute_values`. Новая вкладка «Версии» в окне свойств с таблицей всех версий, кнопками «Сделать активной» (двухшаговый предпросмотр→подтверждение) и «Удалить». Batch-опция `MakeActive` в batch-диалоге для строк со статусом `Duplicate` (переключает активную, не сохраняя файл). Stale detection, OverwriteCurrent, LoadToProject, ES-маркеры автоматически начинают использовать новую активную версию через `catalog_items.current_version_label`. Build R19/R21/R24/R25, 1669 тестов pass. Активная версия не может быть удалена (инвариант FM-041-INV-01).
+**Phase 27 (FamilyManager v2.0.0 Cleanup) завершена (2026-06-29):** ADR-034, 035, 036, 037, 038, 039. Shared nested persist fallback, удаление temp-логики, Sync типов, Tree expand/collapse, sticky category headers, snapshot-driven commit. Schema v14: drop SHA-256/size columns. Build R19/R21/R24/R25, 1669 тестов pass.
+
+**Phase 29 (FamilyManager 3D Preview) завершена (2026-07-01):** ADR-042, GLB extraction через SharpGLTF, HelixToolkit.Wpf.SharpDX viewer, `mc:AlternateContent` для net48/net8 совместимости. Build R19/R21/R24/R25.
+
