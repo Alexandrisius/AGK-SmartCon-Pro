@@ -264,8 +264,9 @@
                         <!-- Sidebar: category list -->
                         <Border Grid.Column="0"
                                 BorderBrush="{DynamicResource BorderAltBrush}"
-                                BorderThickness="0,0,1,0"
-                                Background="Transparent">
+                                BorderThickness="1"
+                                Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="4">
                             <ListBox ItemsSource="{Binding CategoryItems}"
                                      SelectedValue="{Binding SelectedContentCategory, Mode=TwoWay}"
                                      SelectedValuePath="Category"
@@ -299,15 +300,20 @@
                         </Border>
 
                         <!-- Content: asset list with scroll -->
-                        <Grid Grid.Column="1" Margin="8,0,0,0">
-                            <!-- Asset list -->
-                            <ListBox ItemsSource="{Binding FilteredAssets}"
-                                     ItemContainerStyle="{DynamicResource CompactListBoxItem}"
-                                     Style="{DynamicResource NoFocusListBox}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                     VirtualizingPanel.IsVirtualizing="True"
-                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                        <Border Grid.Column="1" Margin="8,0,0,0"
+                                BorderBrush="{DynamicResource BorderAltBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="4">
+                            <Grid>
+                                <!-- Asset list -->
+                                <ListBox ItemsSource="{Binding FilteredAssets}"
+                                         ItemContainerStyle="{DynamicResource CompactListBoxItem}"
+                                         Style="{DynamicResource NoFocusListBox}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Grid Margin="0,2">
@@ -404,90 +410,174 @@
                                            Margin="0,4,0,0"/>
                             </StackPanel>
                         </Grid>
-                    </Grid>
+                    </Border>
                 </Grid>
-            </TabItem>
+            </Grid>
+        </TabItem>
 
             <TabItem Style="{DynamicResource FlatTabItem}">
                 <TabItem.Header>
                     <TextBlock Text="{loc:Loc FM_Tab_Attributes}"/>
                 </TabItem.Header>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
-                    <StackPanel>
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-                        <TextBlock Text="{loc:Loc FM_Props_NoCategoryAttr}"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                                   HorizontalAlignment="Center" Margin="0,24"
-                                   TextWrapping="Wrap" TextAlignment="Center"
-                                   Visibility="{Binding HasNoCategory, Converter={StaticResource BoolToVisibility}}"/>
+                    <!-- Toolbar: type selector. -->
+                    <Grid Visibility="{Binding HasAttributeData, Converter={StaticResource BoolToVisibility}}"
+                          Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{loc:Loc FM_Props_TypeSize}" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableTypes}"
+                                  SelectedItem="{Binding SelectedType}"
+                                  DisplayMemberPath="TypeName"
+                                  Style="{DynamicResource CompactComboBox}"/>
+                    </Grid>
 
-                        <TextBlock Text="{loc:Loc FM_Props_NoBindingsAttr}"
-                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                                   HorizontalAlignment="Center" Margin="0,24"
-                                   TextWrapping="Wrap" TextAlignment="Center"
-                                   Visibility="{Binding HasNoBindings, Converter={StaticResource BoolToVisibility}}"/>
+                    <!-- Empty states: no category / no bindings / not imported. -->
+                    <TextBlock Grid.Row="1" Text="{loc:Loc FM_Props_NoCategoryAttr}"
+                               Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                               HorizontalAlignment="Center" Margin="0,24"
+                               TextWrapping="Wrap" TextAlignment="Center"
+                               Visibility="{Binding HasNoCategory, Converter={StaticResource BoolToVisibility}}"/>
 
-                        <StackPanel Visibility="{Binding HasNotImported, Converter={StaticResource BoolToVisibility}}"
-                                    HorizontalAlignment="Center" Margin="0,24">
-                            <TextBlock Text="{loc:Loc FM_Props_NotImported}"
-                                       FontWeight="SemiBold" HorizontalAlignment="Center"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-                            <TextBlock Text="{loc:Loc FM_Props_NotImportedDesc}"
-                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
-                                       HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
-                                       Margin="0,4,0,0" MaxWidth="400"/>
-                        </StackPanel>
+                    <TextBlock Grid.Row="1" Text="{loc:Loc FM_Props_NoBindingsAttr}"
+                               Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                               HorizontalAlignment="Center" Margin="0,24"
+                               TextWrapping="Wrap" TextAlignment="Center"
+                               Visibility="{Binding HasNoBindings, Converter={StaticResource BoolToVisibility}}"/>
 
-                        <StackPanel Visibility="{Binding HasAttributeData, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel Grid.Row="1" Visibility="{Binding HasNotImported, Converter={StaticResource BoolToVisibility}}"
+                                HorizontalAlignment="Center" Margin="0,24">
+                        <TextBlock Text="{loc:Loc FM_Props_NotImported}"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        <TextBlock Text="{loc:Loc FM_Props_NotImportedDesc}"
+                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                                   HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
+                                   Margin="0,4,0,0" MaxWidth="400"/>
+                    </StackPanel>
 
-                            <Grid Margin="0,0,0,8"
-                                  Visibility="{Binding HasTypes, Converter={StaticResource BoolToVisibility}}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{loc:Loc FM_Props_TypeSize}" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,8,0"/>
-                                <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableTypes}"
-                                          SelectedItem="{Binding SelectedType}"
-                                          DisplayMemberPath="TypeName"
-                                          Style="{DynamicResource CompactComboBox}"/>
-                            </Grid>
+                    <!-- Dual-pane: groups sidebar + attribute list. -->
+                    <Grid Grid.Row="1" Visibility="{Binding HasAttributeData, Converter={StaticResource BoolToVisibility}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
 
-                            <ItemsControl ItemsSource="{Binding AttributeRows}">
-                                <ItemsControl.ItemTemplate>
+                        <!-- Sidebar: groups. -->
+                        <Border BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                                CornerRadius="4" Background="{DynamicResource SurfaceBrush}">
+                            <ListBox ItemsSource="{Binding AttributeGroups}"
+                                     SelectedValue="{Binding SelectedAttributeGroup, Mode=TwoWay}"
+                                     SelectedValuePath="GroupName"
+                                     Style="{DynamicResource NoFocusListBox}"
+                                     ItemContainerStyle="{DynamicResource CompactListBoxItem}">
+                                <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,2">
+                                        <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="200"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding AttributeName}"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}" FontWeight="Medium"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Value, TargetNullValue='—'}"
-                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                            <TextBlock Grid.Column="2" FontSize="11" Margin="8,0,0,0">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="{Binding Status}"/>
-                                                        <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding DisplayName}"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Count}"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       FontSize="11" Margin="8,0,0,0"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+
+                        <!-- Content: filtered attributes. -->
+                        <Grid Grid.Column="1" Margin="8,0,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                                    CornerRadius="4" Background="{DynamicResource SurfaceBrush}">
+                                <ListBox ItemsSource="{Binding FilteredAttributes}"
+                                         Style="{DynamicResource NoFocusListBox}"
+                                         ItemContainerStyle="{DynamicResource CompactListBoxItem}"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="{Binding AttributeName}"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       FontWeight="Medium" FontSize="11"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding AttributeName}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,0"/>
+
+                                            <TextBox Grid.Column="1"
+                                                      Text="{Binding Value, TargetNullValue='—'}"
+                                                      IsReadOnly="True"
+                                                      TextWrapping="Wrap"
+                                                      MaxHeight="52"
+                                                      VerticalScrollBarVisibility="Auto"
+                                                      Padding="4,2"
+                                                      Background="{DynamicResource HoverAltSurfaceBrush}"
+                                                      Style="{DynamicResource CompactTextBox}"
+                                                      ToolTip="{Binding Value}"
+                                                      VerticalAlignment="Center"/>
+
+                                            <Border Grid.Column="2" Padding="6,2" CornerRadius="3"
+                                                    Margin="8,0,0,0" VerticalAlignment="Center">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource SuccessBrush}"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsFound}" Value="False">
-                                                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                                                <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding Status}"
+                                                           Foreground="White" FontSize="10"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding StatusDetail}"
+                                                           VerticalAlignment="Center"/>
+                                            </Border>
                                         </Grid>
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
 
-                        </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
+                            <TextBlock Grid.Row="0" Text="{loc:Loc FM_Props_NoAttributes}"
+                                       Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Margin="0,24"
+                                       Visibility="{Binding HasFilteredAttributes, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"/>
+                        </Grid>
+                    </Grid>
+                </Grid>
             </TabItem>
 
             <TabItem Style="{DynamicResource FlatTabItem}">

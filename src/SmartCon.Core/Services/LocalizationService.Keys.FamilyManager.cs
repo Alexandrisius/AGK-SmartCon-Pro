@@ -238,6 +238,8 @@ public static partial class LocalizationService
         ru["FM_Props_TypeSize"] = "Типоразмер"; en["FM_Props_TypeSize"] = "Type";
         ru["FM_Props_XlsNote"] = "XLS — рабочий файл, CSV — для Revit Lookup Table"; en["FM_Props_XlsNote"] = "XLS — working file, CSV — for Revit Lookup Table";
         ru["FM_Props_CategoryAll"] = "Все"; en["FM_Props_CategoryAll"] = "All";
+        ru["FM_Props_AttributesAll"] = "Все"; en["FM_Props_AttributesAll"] = "All";
+        ru["FM_Props_AttributesNoGroup"] = "Без группы"; en["FM_Props_AttributesNoGroup"] = "No group";
         ru["FM_Props_Tables"] = "Таблицы"; en["FM_Props_Tables"] = "Tables";
         ru["FM_Props_AttachToVersion"] = "Привязать к версии"; en["FM_Props_AttachToVersion"] = "Attach to version";
         ru["FM_Props_AttachToVersionHint"] = "Файл будет виден только для этой версии"; en["FM_Props_AttachToVersionHint"] = "File will be visible only for this version";

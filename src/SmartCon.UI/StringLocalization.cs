@@ -457,6 +457,8 @@ public static class StringLocalization
         public const string FM_PE_RemoveParameter = "FM_PE_RemoveParameter";
         public const string FM_Props_XlsNote = "FM_Props_XlsNote";
         public const string FM_Props_CategoryAll = "FM_Props_CategoryAll";
+        public const string FM_Props_AttributesAll = "FM_Props_AttributesAll";
+        public const string FM_Props_AttributesNoGroup = "FM_Props_AttributesNoGroup";
         public const string FM_Props_Tables = "FM_Props_Tables";
         public const string FM_Props_AttachToVersion = "FM_Props_AttachToVersion";
         public const string FM_Props_AttachToVersionHint = "FM_Props_AttachToVersionHint";
