@@ -181,6 +181,9 @@ public interface IFamilyAssetService
     Task<IReadOnlyList<FamilyAsset>> GetAssetsAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default);
     Task<bool> DeleteAssetAsync(string assetId, CancellationToken ct = default);
     Task<string?> ResolveAssetPathAsync(string assetId, CancellationToken ct = default);
+    Task SetPrimaryAssetAsync(string assetId, CancellationToken ct = default);
+    Task<FamilyAsset?> GetPrimaryImageAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default);
+    Task SetAssetVersionBindingAsync(string assetId, string? newVersionLabel, CancellationToken ct = default);
 }
 ```
 

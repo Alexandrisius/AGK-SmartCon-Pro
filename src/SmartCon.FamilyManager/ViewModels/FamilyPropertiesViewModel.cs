@@ -45,6 +45,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         // A new version/family was selected: the next 3D preview load should
         // fit the camera to the new scene rather than keep the old camera.
         _isFirst3DLoad = true;
+        OnVersionLabelChangedForAssets(value);
     }
     [ObservableProperty] private string? _createdAtText;
     [ObservableProperty] private string? _updatedAtText;
@@ -86,8 +87,10 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         ChangeAvatarCommand.NotifyCanExecuteChanged();
         RemoveAvatarCommand.NotifyCanExecuteChanged();
         AddAssetCommand.NotifyCanExecuteChanged();
+        AddFileUnifiedCommand.NotifyCanExecuteChanged();
         DeleteAssetCommand.NotifyCanExecuteChanged();
         SetAsPrimaryCommand.NotifyCanExecuteChanged();
+        ToggleAssetVersionBindingCommand.NotifyCanExecuteChanged();
         MakeActiveCommand.NotifyCanExecuteChanged();
         DeleteVersionCommand.NotifyCanExecuteChanged();
     }

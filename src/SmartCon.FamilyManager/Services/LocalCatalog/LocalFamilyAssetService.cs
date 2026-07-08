@@ -213,18 +213,104 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         }
     }
 
-    public async Task<FamilyAsset?> GetPrimaryImageAsync(string catalogItemId, CancellationToken ct = default)
+    public async Task<FamilyAsset?> GetPrimaryImageAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default)
     {
         await EnsureMigratedAsync(ct);
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT * FROM family_assets WHERE catalog_item_id = @itemId AND asset_type = 'Image' AND is_primary = 1 LIMIT 1";
-        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        if (versionLabel is not null)
+        {
+            cmd.CommandText = "SELECT * FROM family_assets WHERE catalog_item_id = @itemId AND asset_type = 'Image' AND is_primary = 1 AND (version_label = @versionLabel OR version_label IS NULL) LIMIT 1";
+            cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
+        }
+        else
+        {
+            cmd.CommandText = "SELECT * FROM family_assets WHERE catalog_item_id = @itemId AND asset_type = 'Image' AND is_primary = 1 LIMIT 1";
+            cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        }
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (await reader.ReadAsync(ct))
             return ReadAsset(reader);
         return null;
+    }
+
+    public async Task SetAssetVersionBindingAsync(string assetId, string? newVersionLabel, CancellationToken ct = default)
+    {
+        await EnsureMigratedAsync(ct);
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+
+        string? catalogItemId;
+        string? assetTypeStr;
+        string? oldRelativePath;
+        string? oldVersionLabel;
+        string? fileName;
+        using (var readCmd = connection.CreateCommand())
+        {
+            readCmd.CommandText = "SELECT catalog_item_id, asset_type, relative_path, version_label, file_name FROM family_assets WHERE id = @id";
+            readCmd.Parameters.Add(new SqliteParameter("@id", assetId));
+            using var reader = await readCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            if (!await reader.ReadAsync(ct))
+                return;
+            catalogItemId = reader.GetString(0);
+            assetTypeStr = reader.GetString(1);
+            oldRelativePath = reader.GetString(2);
+            oldVersionLabel = reader.IsDBNull(3) ? null : reader.GetString(3);
+            fileName = reader.GetString(4);
+        }
+
+        if (string.Equals(oldVersionLabel, newVersionLabel, StringComparison.Ordinal))
+            return;
+
+        var assetType = (FamilyAssetType)Enum.Parse(typeof(FamilyAssetType), assetTypeStr!);
+        var assetFolder = StoragePathResolver.GetAssetTypeFolder(assetType);
+
+        var oldEffective = oldVersionLabel ?? "shared";
+        var newEffective = newVersionLabel ?? "shared";
+
+        _pathResolver.EnsureAssetDirectory(catalogItemId!, newEffective, assetFolder);
+        var newDir = _pathResolver.GetAssetTypeDirectory(catalogItemId!, newEffective, assetFolder);
+        var newDestPath = Path.Combine(newDir, fileName!);
+
+        var counter = 1;
+        while (File.Exists(newDestPath) && !string.Equals(newDestPath, Path.Combine(_database.GetDatabaseRoot(), oldRelativePath!), StringComparison.OrdinalIgnoreCase))
+        {
+            var nameWithoutExt = SafeFileName.GetBaseName(fileName!);
+            var ext = Path.GetExtension(fileName);
+            newDestPath = Path.Combine(newDir, nameWithoutExt + "_" + counter + ext);
+            counter++;
+        }
+
+        var oldAbsolutePath = Path.Combine(_database.GetDatabaseRoot(), oldRelativePath!);
+
+        await Task.Run(() =>
+        {
+            if (File.Exists(oldAbsolutePath))
+            {
+                File.Move(oldAbsolutePath, newDestPath);
+                var oldDir = _pathResolver.GetAssetTypeDirectory(catalogItemId!, oldEffective, assetFolder);
+                try
+                {
+                    if (Directory.Exists(oldDir) && !Directory.EnumerateFileSystemEntries(oldDir).Any())
+                        Directory.Delete(oldDir);
+                }
+                catch { }
+            }
+        }, ct);
+
+        var newRelativePath = _pathResolver.GetRelativePath(newDestPath);
+
+        using (var updateCmd = connection.CreateCommand())
+        {
+            updateCmd.CommandText = "UPDATE family_assets SET version_label = @versionLabel, relative_path = @relativePath WHERE id = @id";
+            updateCmd.Parameters.Add(new SqliteParameter("@versionLabel", (object?)newVersionLabel ?? DBNull.Value));
+            updateCmd.Parameters.Add(new SqliteParameter("@relativePath", newRelativePath));
+            updateCmd.Parameters.Add(new SqliteParameter("@id", assetId));
+            await updateCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
     }
 
     private static FamilyAsset ReadAsset(SqliteDataReader reader) => new(

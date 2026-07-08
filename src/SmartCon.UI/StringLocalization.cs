@@ -456,6 +456,15 @@ public static class StringLocalization
         public const string FM_PE_AddParameter = "FM_PE_AddParameter";
         public const string FM_PE_RemoveParameter = "FM_PE_RemoveParameter";
         public const string FM_Props_XlsNote = "FM_Props_XlsNote";
+        public const string FM_Props_CategoryAll = "FM_Props_CategoryAll";
+        public const string FM_Props_Tables = "FM_Props_Tables";
+        public const string FM_Props_AttachToVersion = "FM_Props_AttachToVersion";
+        public const string FM_Props_AttachToVersionHint = "FM_Props_AttachToVersionHint";
+        public const string FM_Props_EmptyStateTitle = "FM_Props_EmptyStateTitle";
+        public const string FM_Props_EmptyStateHint = "FM_Props_EmptyStateHint";
+        public const string FM_Props_AddFileUnified = "FM_Props_AddFileUnified";
+        public const string FM_Props_ConfirmDeleteAssetTitle = "FM_Props_ConfirmDeleteAssetTitle";
+        public const string FM_Props_ConfirmDeleteAssetBody = "FM_Props_ConfirmDeleteAssetBody";
         public const string FM_FamilyNotFoundAfterLoad = "FM_FamilyNotFoundAfterLoad";
         public const string FM_FamilyNotLoaded = "FM_FamilyNotLoaded";
         public const string FM_CannotDisconnectOnlyDatabase = "FM_CannotDisconnectOnlyDatabase";

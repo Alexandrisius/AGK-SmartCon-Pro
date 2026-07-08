@@ -237,6 +237,15 @@ public static partial class LocalizationService
         ru["FM_Props_Completeness"] = "Полнота"; en["FM_Props_Completeness"] = "Completeness";
         ru["FM_Props_TypeSize"] = "Типоразмер"; en["FM_Props_TypeSize"] = "Type";
         ru["FM_Props_XlsNote"] = "XLS — рабочий файл, CSV — для Revit Lookup Table"; en["FM_Props_XlsNote"] = "XLS — working file, CSV — for Revit Lookup Table";
+        ru["FM_Props_CategoryAll"] = "Все"; en["FM_Props_CategoryAll"] = "All";
+        ru["FM_Props_Tables"] = "Таблицы"; en["FM_Props_Tables"] = "Tables";
+        ru["FM_Props_AttachToVersion"] = "Привязать к версии"; en["FM_Props_AttachToVersion"] = "Attach to version";
+        ru["FM_Props_AttachToVersionHint"] = "Файл будет виден только для этой версии"; en["FM_Props_AttachToVersionHint"] = "File will be visible only for this version";
+        ru["FM_Props_EmptyStateTitle"] = "Нет файлов"; en["FM_Props_EmptyStateTitle"] = "No files";
+        ru["FM_Props_EmptyStateHint"] = "Нажмите «+ Добавить файл», чтобы загрузить"; en["FM_Props_EmptyStateHint"] = "Click \"+ Add file\" to upload";
+        ru["FM_Props_AddFileUnified"] = "+ Добавить файл"; en["FM_Props_AddFileUnified"] = "+ Add file";
+        ru["FM_Props_ConfirmDeleteAssetTitle"] = "Удаление файла"; en["FM_Props_ConfirmDeleteAssetTitle"] = "Delete file";
+        ru["FM_Props_ConfirmDeleteAssetBody"] = "Удалить файл «{0}»? Это действие необратимо."; en["FM_Props_ConfirmDeleteAssetBody"] = "Delete file \"{0}\"? This action is irreversible.";
 
         ru["FM_PE_Title"] = "Редактор пресета атрибутов"; en["FM_PE_Title"] = "Attribute Preset Editor";
         ru["FM_PE_ParameterName"] = "Имя параметра"; en["FM_PE_ParameterName"] = "Parameter Name";

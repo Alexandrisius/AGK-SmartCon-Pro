@@ -109,6 +109,22 @@ public enum FamilyAssetType
 
 ---
 
+## FamilyAssetTypeExtensions
+
+Методы расширения для `FamilyAssetType`: автоопределение типа файла по расширению и общий фильтр для диалога выбора файлов.
+
+**Файл:** `FamilyAssetTypeExtensions.cs`
+
+```csharp
+public static class FamilyAssetTypeExtensions
+{
+    public static FamilyAssetType DetectFromExtension(string filePath);
+    public static string AllAssetFilters();
+}
+```
+
+---
+
 ## FamilyCatalogItem
 
 Логическая запись каталога семейств — основная сущность, к которой привязаны версии и файлы.

@@ -24,5 +24,13 @@ public interface IFamilyAssetService
     Task SetPrimaryAssetAsync(string assetId, CancellationToken ct = default);
 
     /// <summary>Get the primary image asset for a catalog item, if one is set.</summary>
-    Task<FamilyAsset?> GetPrimaryImageAsync(string catalogItemId, CancellationToken ct = default);
+    Task<FamilyAsset?> GetPrimaryImageAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Move an asset between shared (versionLabel = null) and per-version storage.
+    /// Physically relocates the file and updates the DB record.
+    /// </summary>
+    /// <param name="assetId">Asset to move.</param>
+    /// <param name="newVersionLabel">Target version label, or null to make it shared across all versions.</param>
+    Task SetAssetVersionBindingAsync(string assetId, string? newVersionLabel, CancellationToken ct = default);
 }

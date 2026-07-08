@@ -251,257 +251,173 @@
                 <TabItem.Header>
                     <TextBlock Text="{loc:Loc FM_Tab_Content}"/>
                 </TabItem.Header>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
-                    <StackPanel>
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-                        <Expander Header="{loc:Loc FM_Props_Images}" IsExpanded="True" Margin="0,0,0,8"
-                                 Style="{DynamicResource ModernExpander}">
-                            <StackPanel Margin="0,8,0,0">
-                                <Button Content="{loc:Loc FM_Props_Add}"
-                                        Command="{Binding AddAssetCommand}"
-                                        CommandParameter="Image"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        FontSize="11" Padding="8,2" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                                <ItemsControl ItemsSource="{Binding ImageAssets}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center"
+                    <!-- Toolbar: unified add button -->
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Button Content="{loc:Loc FM_Props_AddFileUnified}"
+                                Command="{Binding AddFileUnifiedCommand}"
+                                Style="{DynamicResource SecondaryButton}"
+                                FontSize="12" Padding="12,4"
+                                HorizontalAlignment="Left"/>
+                    </Grid>
+
+                    <!-- Dual-pane: sidebar + content -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Sidebar: category list -->
+                        <Border Grid.Column="0"
+                                BorderBrush="{DynamicResource BorderAltBrush}"
+                                BorderThickness="0,0,1,0"
+                                Background="Transparent">
+                            <ListBox ItemsSource="{Binding CategoryItems}"
+                                     SelectedValue="{Binding SelectedContentCategory, Mode=TwoWay}"
+                                     SelectedValuePath="Category"
+                                     ItemContainerStyle="{DynamicResource CompactListBoxItem}"
+                                     Style="{DynamicResource NoFocusListBox}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding DisplayName}"
+                                                       FontSize="12"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Count}"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="6,0,0,0"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+
+                        <!-- Content: asset list with scroll -->
+                        <Grid Grid.Column="1" Margin="8,0,0,0">
+                            <!-- Asset list -->
+                            <ListBox ItemsSource="{Binding FilteredAssets}"
+                                     ItemContainerStyle="{DynamicResource CompactListBoxItem}"
+                                     Style="{DynamicResource NoFocusListBox}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="28"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <!-- Thumbnail for images -->
+                                            <Image Grid.Column="0" Width="32" Height="32"
+                                                   Source="{Binding ResolvedPath, Converter={StaticResource PathToBitmapImageConverter}, ConverterParameter=64}"
+                                                   Stretch="UniformToFill"
+                                                   Visibility="{Binding HasThumbnail, Converter={StaticResource BoolToVisibility}}"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <!-- File name + size -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding FileName}"
+                                                           FontSize="12"
                                                            Foreground="{DynamicResource TextPrimaryBrush}"
                                                            TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="{loc:Loc FM_Props_SetPrimary}"
-                                                        Command="{Binding DataContext.SetAsPrimaryCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                                <Button Grid.Column="2" Content="{loc:Loc FM_Props_Open}"
-                                                        Command="{Binding DataContext.OpenAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                                <Button Grid.Column="3" Content="{loc:Loc FM_Props_Delete}"
-                                                        Command="{Binding DataContext.DeleteAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                                <TextBlock Text="{Binding SizeText}"
+                                                           FontSize="10"
+                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                           Margin="0,1,0,0"/>
+                                            </StackPanel>
+                                            <!-- Star: primary indicator + set-as-primary action -->
+                                            <Button Grid.Column="2"
+                                                    Content="★"
+                                                    FontSize="16"
+                                                    Command="{Binding DataContext.SetAsPrimaryCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip="{loc:Loc FM_Props_SetPrimary}"
+                                                    Visibility="{Binding IsImage, Converter={StaticResource BoolToVisibility}}"
+                                                    VerticalAlignment="Center" HorizontalAlignment="Center"
+                                                    Cursor="Hand" Padding="2" Margin="0,0,4,0">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsPrimary}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                                                                <Setter Property="IsEnabled" Value="False"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                            <!-- Per-file version binding toggle + label -->
+                                            <StackPanel Grid.Column="3" Orientation="Horizontal"
+                                                        VerticalAlignment="Center"
+                                                        Visibility="{Binding CanToggleVersionBinding, Converter={StaticResource BoolToVisibility}}"
+                                                        Margin="4,0">
+                                                <ToggleButton IsChecked="{Binding IsVersionBound, Mode=OneWay}"
+                                                              Command="{Binding DataContext.ToggleAssetVersionBindingCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                              CommandParameter="{Binding}"
+                                                              Style="{DynamicResource CompactToggleSwitch}"
+                                                              ToolTip="{loc:Loc FM_Props_AttachToVersionHint}"
+                                                              VerticalAlignment="Center"/>
+                                                <TextBlock Text="{loc:Loc FM_Props_AttachToVersion}"
+                                                           FontSize="9"
+                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="4,0,0,0"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="4"
+                                                    Content="{loc:Loc FM_Props_Open}"
+                                                    Command="{Binding DataContext.OpenAssetCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
+                                            <Button Grid.Column="5"
+                                                    Content="{loc:Loc FM_Props_Delete}"
+                                                    Command="{Binding DataContext.DeleteAssetCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <!-- Empty state overlay -->
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                        Visibility="{Binding HasFilteredAssets, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}">
+                                <TextBlock Text="{loc:Loc FM_Props_EmptyStateTitle}"
+                                           FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc FM_Props_EmptyStateHint}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,4,0,0"/>
                             </StackPanel>
-                        </Expander>
-
-                        <Expander Header="{loc:Loc FM_Props_Videos}" IsExpanded="True" Margin="0,0,0,8"
-                                 Style="{DynamicResource ModernExpander}">
-                            <StackPanel Margin="0,8,0,0">
-                                <Button Content="{loc:Loc FM_Props_Add}"
-                                        Command="{Binding AddAssetCommand}" CommandParameter="Video"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        FontSize="11" Padding="8,2" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                                <ItemsControl ItemsSource="{Binding VideoAssets}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="{loc:Loc FM_Props_Open}"
-                                                        Command="{Binding DataContext.OpenAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                                <Button Grid.Column="2" Content="{loc:Loc FM_Props_Delete}"
-                                                        Command="{Binding DataContext.DeleteAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                            </StackPanel>
-                        </Expander>
-
-                        <Expander Header="{loc:Loc FM_Props_Documents}" IsExpanded="True" Margin="0,0,0,8"
-                                 Style="{DynamicResource ModernExpander}">
-                            <StackPanel Margin="0,8,0,0">
-                                <Button Content="{loc:Loc FM_Props_Add}"
-                                        Command="{Binding AddAssetCommand}" CommandParameter="Document"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        FontSize="11" Padding="8,2" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                                <ItemsControl ItemsSource="{Binding DocumentAssets}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="{loc:Loc FM_Props_Open}"
-                                                        Command="{Binding DataContext.OpenAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                                <Button Grid.Column="2" Content="{loc:Loc FM_Props_Delete}"
-                                                        Command="{Binding DataContext.DeleteAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                            </StackPanel>
-                        </Expander>
-
-                        <Expander Header="{loc:Loc FM_Props_LookupTables}" IsExpanded="True" Margin="0,0,0,8"
-                                 Style="{DynamicResource ModernExpander}">
-                            <StackPanel Margin="0,8,0,0">
-                                <Button Content="{loc:Loc FM_Props_Add}"
-                                        Command="{Binding AddAssetCommand}" CommandParameter="LookupTable"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        FontSize="11" Padding="8,2" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                                <ItemsControl ItemsSource="{Binding LookupAssets}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="{loc:Loc FM_Props_Open}"
-                                                        Command="{Binding DataContext.OpenAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                                <Button Grid.Column="2" Content="{loc:Loc FM_Props_Delete}"
-                                                        Command="{Binding DataContext.DeleteAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                            </StackPanel>
-                        </Expander>
-
-                        <Expander Header="{loc:Loc FM_Props_Spreadsheets}" IsExpanded="True" Margin="0,0,0,8"
-                                 Style="{DynamicResource ModernExpander}">
-                            <StackPanel Margin="0,8,0,0">
-                                <TextBlock Text="{loc:Loc FM_Props_XlsNote}"
-                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="10" Margin="0,0,0,8"/>
-                                <Button Content="{loc:Loc FM_Props_Add}"
-                                        Command="{Binding AddAssetCommand}" CommandParameter="Spreadsheet"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        FontSize="11" Padding="8,2" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                                <ItemsControl ItemsSource="{Binding SpreadsheetAssets}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="{loc:Loc FM_Props_Open}"
-                                                        Command="{Binding DataContext.OpenAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                                <Button Grid.Column="2" Content="{loc:Loc FM_Props_Delete}"
-                                                        Command="{Binding DataContext.DeleteAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                            </StackPanel>
-                        </Expander>
-
-                        <Expander Header="{loc:Loc FM_Props_Models3D}" IsExpanded="True" Margin="0,0,0,8"
-                                 Style="{DynamicResource ModernExpander}">
-                            <StackPanel Margin="0,8,0,0">
-                                <Button Content="{loc:Loc FM_Props_Add}"
-                                        Command="{Binding AddAssetCommand}" CommandParameter="Model3D"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        FontSize="11" Padding="8,2" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                                <ItemsControl ItemsSource="{Binding Model3DAssets}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="{loc:Loc FM_Props_Open}"
-                                                        Command="{Binding DataContext.OpenAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                                <Button Grid.Column="2" Content="{loc:Loc FM_Props_Delete}"
-                                                        Command="{Binding DataContext.DeleteAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                            </StackPanel>
-                        </Expander>
-
-                        <Expander Header="{loc:Loc FM_Props_Other}" IsExpanded="True" Margin="0,0,0,8"
-                                 Style="{DynamicResource ModernExpander}">
-                            <StackPanel Margin="0,8,0,0">
-                                <Button Content="{loc:Loc FM_Props_Add}"
-                                        Command="{Binding AddAssetCommand}" CommandParameter="Other"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        FontSize="11" Padding="8,2" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                                <ItemsControl ItemsSource="{Binding OtherAssets}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="{loc:Loc FM_Props_Open}"
-                                                        Command="{Binding DataContext.OpenAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                                <Button Grid.Column="2" Content="{loc:Loc FM_Props_Delete}"
-                                                        Command="{Binding DataContext.DeleteAssetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource GhostButton}" FontSize="10" Padding="4,1" Margin="4,0"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                            </StackPanel>
-                        </Expander>
-
-                    </StackPanel>
-                </ScrollViewer>
+                        </Grid>
+                    </Grid>
+                </Grid>
             </TabItem>
 
             <TabItem Style="{DynamicResource FlatTabItem}">

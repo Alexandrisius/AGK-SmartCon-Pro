@@ -17,12 +17,20 @@ public sealed class PathToBitmapImageConverter : IValueConverter
         if (!File.Exists(path))
             return null;
 
+        var decodePixelWidth = 0;
+        if (parameter is int px && px > 0)
+            decodePixelWidth = px;
+        else if (parameter is string s && int.TryParse(s, out var parsed) && parsed > 0)
+            decodePixelWidth = parsed;
+
         try
         {
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
             bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+            if (decodePixelWidth > 0)
+                bitmap.DecodePixelWidth = decodePixelWidth;
             bitmap.UriSource = new Uri(path, UriKind.Absolute);
             bitmap.EndInit();
             bitmap.Freeze();
