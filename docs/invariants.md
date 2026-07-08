@@ -21,6 +21,24 @@ _externalEvent.Raise();
 _transactionService.RunInTransaction("name", doc => { /* Revit API здесь */ });
 ```
 
+### I-01a: Исключение для modal command context (PipeConnectEditor)
+
+`PipeConnectEditorViewModel` вызывает Revit API **напрямую** из `[RelayCommand]`-методов
+(через `_groupSession.RunInTransaction(...)`, `_connSvc.*`, `_transformSvc.*`) без
+`ExternalEvent`. Это **допустимо** потому что:
+
+1. `view.ShowDialog()` блокирует `IExternalCommand.Execute` — command context не возвращается
+2. При `ShowDialog` WPF UI thread == Revit main thread (один поток) — гонок нет
+3. Revit idle loop НЕ качает пока modal открыт — нет конфликтов с регенерацией
+4. `TransactionGroup` живёт в command context до закрытия окна
+
+**Это исключение действует ТОЛЬКО для modal окон внутри `IExternalCommand.Execute`.**
+Любой переход на modeless обязан обернуть ВСЕ Revit API вызовы в `ExternalEvent.Raise()`.
+Прямые вызовы из modeless UI = гонки и `InvalidOperationException`
+(«Starting a transaction from an external application running outside of API context is not allowed»).
+
+Полное обоснование почему modeless невозможен для PipeConnect — см. [ADR-043](adr/043-pipeconnect-modal-justification.md).
+
 ---
 
 ## I-02: Внутренние единицы

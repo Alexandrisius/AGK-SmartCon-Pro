@@ -11,7 +11,6 @@ using SmartCon.FamilyManager.Services;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.FamilyManager.Views;
-using SmartCon.PipeConnect.Events;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
 using SmartCon.PipeConnect.Views;
@@ -19,7 +18,6 @@ using SmartCon.ProjectManagement.Services;
 using SmartCon.ProjectManagement.ViewModels;
 using SmartCon.ProjectManagement.Views;
 using SmartCon.Revit.Context;
-using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
 using SmartCon.Revit.FamilyManager;
 using SmartCon.Revit.Fittings;
@@ -97,18 +95,6 @@ public static class ServiceRegistrar
         services.AddSingleton<ChainOperationHandler>();
         services.AddSingleton<PipeConnectRotationHandler>();
         services.AddSingleton<DynamicSizeLoader>();
-
-        // --- External Events (ADR-008: generic) ---
-        var genericHandler = new ActionExternalEventHandler(revitContext);
-        var genericEvent = ExternalEvent.Create(genericHandler);
-        services.AddSingleton(genericHandler);
-        services.AddSingleton(genericEvent);
-
-        // --- External Events (Phase 8: PipeConnect modeless editor) ---
-        var pipeConnectHandler = new PipeConnectExternalEvent(revitContext);
-        var pipeConnectEvent = ExternalEvent.Create(pipeConnectHandler);
-        pipeConnectHandler.Initialize(pipeConnectEvent);
-        services.AddSingleton(pipeConnectHandler);
 
         // --- Update Service ---
         services.AddSingleton<IUpdateSettingsRepository, JsonUpdateSettingsRepository>();

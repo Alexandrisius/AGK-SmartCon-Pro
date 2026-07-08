@@ -6,9 +6,9 @@
 
 ## Общие правила UI
 
-1. Все немодальные окна взаимодействуют с Revit **только** через `IExternalEventHandler` (инвариант I-01)
+1. Все **modeless** окна взаимодействуют с Revit **только** через `IExternalEventHandler` (инвариант I-01). **Modal** окна (PipeConnectEditor) могут вызывать Revit API напрямую из ViewModel — см. ADR-043 (исключение из I-01 для modal command context).
 2. MVVM строго: .xaml.cs содержит только `DataContext = viewModel` (инвариант I-10)
-3. Все кнопки биндятся к `ICommand` (RelayCommand из SmartCon.UI)
+3. Все кнопки биндингся к `ICommand` (RelayCommand из SmartCon.UI)
 4. Открытие окон — через `IDialogService`, не `new Window().ShowDialog()`
 
 ### Паттерн взаимодействия WPF <-> Revit
@@ -29,7 +29,7 @@ ViewModel обновляет UI
 
 **Файл View:** `SmartCon.PipeConnect/Views/PipeConnectEditorView.xaml`
 **Файл VM:** `SmartCon.PipeConnect/ViewModels/PipeConnectEditorViewModel.cs`
-**Тип:** Немодальное (modeless) окно
+**Тип:** Модальное (modal) окно — **обязательно** для live real-element preview + single-undo cancel (см. [ADR-043](../adr/043-pipeconnect-modal-justification.md)). Modeless невозможен из-за ограничения Revit API: `TransactionGroup` откатывается при возврате из `IExternalCommand.Execute` / `IExternalEventHandler.Execute`.
 
 ### Layout
 

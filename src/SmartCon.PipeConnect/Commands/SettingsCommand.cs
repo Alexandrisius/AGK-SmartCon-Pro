@@ -1,10 +1,9 @@
-using System.Windows.Interop;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Services;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
-using SmartCon.PipeConnect.Views;
 
 namespace SmartCon.PipeConnect.Commands;
 
@@ -19,11 +18,10 @@ public sealed class SettingsCommand : IExternalCommand
             var doc = CommandHelper.GetDocument();
 
             var factory = ServiceHost.GetService<ISettingsViewModelFactory>();
-
             var vm = factory.Create(doc);
-            var view = new MappingEditorView(vm);
-            new WindowInteropHelper(view).Owner = commandData.Application.MainWindowHandle;
-            view.ShowDialog();
+
+            var presenter = ServiceHost.GetService<IDialogPresenter>();
+            presenter.ShowDialog(vm);
 
             return Result.Succeeded;
         }

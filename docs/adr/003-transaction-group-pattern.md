@@ -1,7 +1,8 @@
 # ADR-003: TransactionGroup + Assimilate для PipeConnect
 
-**Статус:** accepted
+**Статус:** accepted (уточнён ADR-043)
 **Дата:** 2026-03-25
+**Уточнение:** 2026-07-08 — добавлена ссылка на ADR-043 (почему modal обязателен для этого паттерна).
 
 ## Контекст
 
@@ -15,6 +16,18 @@
 2. Каждое действие — отдельная Transaction внутри группы
 3. «Соединить» -> `TransactionGroup.Assimilate()` — все Transaction сливаются в одну Undo-запись
 4. «Отмена» -> `TransactionGroup.RollBack()` — полный откат всех изменений
+
+### Почему окно ОБЯЗАНО быть модальным
+
+`TransactionGroup` живёт на поле `_groupSession` ViewModel всё время пока
+окно открыто. Это работает **только** потому что `view.ShowDialog()` блокирует
+`IExternalCommand.Execute` — command context не возвращается, Revit не
+авто-откатывает группу. При modeless (`view.Show()`) + `return Result.Succeeded`
+Revit принудительно откатил бы открытую группу (см. ADR-043, Ограничение 1).
+При modeless + ExternalEvent Revit откатывает группу при возврате из каждого
+`IExternalEventHandler.Execute` (ADR-043, Ограничение 2).
+
+**Полное обоснование в [ADR-043](043-pipeconnect-modal-justification.md).**
 
 ### Преимущества паттерна
 
@@ -30,11 +43,12 @@
 - Одна запись Undo
 
 **Минусы:**
-- TransactionGroup держит модель «заблокированной» пока открыто окно
+- TransactionGroup держит модель «заблокированной» пока открыто окно — **и окно обязано быть модальным** (ADR-043). Пользователь не может навигировать по виду во время настройки.
 - Нужно аккуратно обрабатывать крайние случаи (закрытие окна, crash)
 
 ## Альтернативы
 
 1. **Одна большая Transaction:** нет возможности интерактивного превью.
-2. **Отдельные Transaction + ручной Undo:** сложно и ненадёжно.
-3. **Ghost/Overlay preview:** не требует транзакций, но сложная реализация визуализации без DirectContext3D.
+2. **Отдельные Transaction + ручной Undo:** сложно и ненадёжно (`PostableCommand.Undo` откатывает только последнюю, `performMultipleUndoRedoOperations` хрупко — см. ADR-043).
+3. **Ghost/Overlay preview (DirectContext3D):** не требует транзакций, но сложная реализация визуализации. Меняет UX. Отдельная итерация.
+4. **Modeless + ExternalEvent + долгоживущий TransactionGroup:** НЕВОЗМОЖНО — Revit откатывает группу при возврате из Execute (ADR-043).
