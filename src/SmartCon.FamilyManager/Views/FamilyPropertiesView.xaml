@@ -680,16 +680,53 @@
                                                 ElementStyle="{StaticResource CenteredTextCell}"
                                                 Width="100" MinWidth="80"/>
                             <!-- ADR-041 rev #5: Types column shows TypesCountDisplay
-                                 (real count from TypeNames) instead of TypesCount
-                                 (which can be NULL in catalog_versions even when
-                                 family_types rows exist). Tooltip on the cell
-                                 carries the full type-name list as a comma-separated
-                                 string — compact and strict, no row details. -->
-                            <DataGridTextColumn x:Name="ColVersionTypes"
-                                                Binding="{Binding TypesCountDisplay}"
-                                                ElementStyle="{StaticResource CenteredTextCell}"
-                                                Width="70" MinWidth="50"
-                                                ToolTipService.ToolTip="{Binding TypeNamesTooltip}"/>
+                                 (real count from TypeNames). Custom tooltip with
+                                 vertical bulleted list + scroll for 40-50 types.
+                                 DataGridTemplateColumn is used (not DataGridTextColumn)
+                                 because the tooltip needs structured content
+                                 (ItemsControl in ScrollViewer), not a plain string.
+                                 ToolTip has no fixed Width — expands to fit the
+                                 longest type name (TextWrapping=NoWrap); MaxHeight
+                                 + ScrollViewer prevent vertical overflow. -->
+                            <DataGridTemplateColumn x:Name="ColVersionTypes"
+                                                    Width="70" MinWidth="50">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding TypesCountDisplay}"
+                                                   TextAlignment="Center"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.ToolTip>
+                                                <ToolTip MaxHeight="340" Padding="6,4"
+                                                         Background="{DynamicResource SurfaceBrush}"
+                                                         BorderBrush="{DynamicResource BorderAltBrush}"
+                                                         BorderThickness="1">
+                                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                                  HorizontalScrollBarVisibility="Hidden">
+                                                        <ItemsControl ItemsSource="{Binding TypeNames}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                                        <TextBlock Text="•"
+                                                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                                   FontSize="13"
+                                                                                   Margin="0,0,6,0"
+                                                                                   VerticalAlignment="Top"/>
+                                                                        <TextBlock Text="{Binding}"
+                                                                                   TextWrapping="NoWrap"
+                                                                                   FontSize="12"
+                                                                                   VerticalAlignment="Center"/>
+                                                                    </StackPanel>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+                                                </ToolTip>
+                                            </TextBlock.ToolTip>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <!-- Active badge: success-green pill instead of
                                  accent-blue (less visually aggressive compared
                                  to the active selection highlight). -->
