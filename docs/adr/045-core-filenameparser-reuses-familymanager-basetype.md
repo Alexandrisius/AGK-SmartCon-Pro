@@ -32,6 +32,7 @@ FamilyManager BaseType.**
 - UI редактора правил (`ProjectBaseRulesEditorView`) создаётся **отдельно** в
   `SmartCon.FamilyManager`, не переиспользуется `ParseRuleView` из
   `SmartCon.ProjectManagement`.
+- **Источник истины для `ProjectBaseBinding` — `catalog.db.database_meta.project_binding_json`**, а не `registry.json`. `registry.json` продолжает дублировать binding для runtime-удобства, но при `DisconnectDatabaseAsync` + `ConnectDatabaseAsync` реестр теряется, поэтому binding должен жить в самой базе данных. См. update A1 ниже.
 
 ## Consequences
 
@@ -69,10 +70,24 @@ FamilyManager BaseType.**
 - `ProjectBaseActivator` перебирает проектные базы в порядке реестра, при первом
   match переключает активную базу через `IDatabaseManager.SwitchDatabaseAsync`.
   Если не нашлось подходящей — fallback на первую общую базу.
-- `ProjectBaseBinding` хранится только в `registry.json`.
-  `catalog.db.database_meta.base_type` — только convenience-кеш для RBAC.
+- `ProjectBaseBinding` хранится в `catalog.db.database_meta.project_binding_json` как
+  источник истины. `registry.json` дублирует binding для runtime-удобства, но при
+  `DisconnectDatabaseAsync` + `ConnectDatabaseAsync` реестр пересоздаётся из БД.
+  `catalog.db.database_meta.base_type` — convenience-кеш для RBAC и других
+  потребителей, которые читают каталог без доступа к реестру.
 - Создан `ProjectBaseRulesEditorView` в `SmartCon.FamilyManager` с собственным
   ViewModel, работающим через `IFileNameParser` из Core.
+- Migration v21 добавляет колонку `project_binding_json` в `database_meta`.
+
+## Update A1 — source of truth moved from registry to catalog.db (2026-07-09)
+
+Первоначальная версия ADR считала источником истины `registry.json`, а
+`database_meta.base_type` — только кешем. Ручное тестирование показало, что при
+отвязке проектной базы (`DisconnectDatabaseAsync`) запись из реестра удаляется,
+и при последующем подключении как существующей (`ConnectDatabaseAsync`) база
+теряла `Kind = Project` и `ProjectBinding`. Для исправления источник истины
+перенесён в `catalog.db.database_meta.project_binding_json`, а реестр оставлен
+runtime-кешем.
 
 ## Verification
 

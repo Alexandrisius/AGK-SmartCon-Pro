@@ -27,7 +27,11 @@ public sealed class ProjectBaseBindingEvaluatorTests
                 }
             }).ToList()
         };
-        return new ProjectBaseBinding(template, new List<FieldDefinition>());
+        var library = blocks
+            .Where(b => !string.IsNullOrEmpty(b.field))
+            .Select(b => new FieldDefinition { Name = b.field })
+            .ToList<FieldDefinition>();
+        return new ProjectBaseBinding(template, library);
     }
 
     [Fact]
@@ -85,6 +89,23 @@ public sealed class ProjectBaseBindingEvaluatorTests
         var result = _evaluator.Evaluate(binding, "PRJ-S9.rvt");
         Assert.Equal(ProjectBaseMatchKind.Mismatch, result.Kind);
         Assert.NotNull(result.Reason);
+    }
+
+    [Fact]
+    public void Evaluate_EmptyFieldInTemplate_ReturnsMismatch()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks =
+            [
+                new() { Index = 0, Field = string.Empty, ParseRule = new ParseRule { Mode = ParseMode.DelimiterSegment, Delimiter = "-", SegmentIndex = 1 } }
+            ]
+        };
+        var binding = new ProjectBaseBinding(template, new List<FieldDefinition>());
+        var result = _evaluator.Evaluate(binding, "PRJ-S1.rvt");
+        Assert.Equal(ProjectBaseMatchKind.Mismatch, result.Kind);
+        Assert.NotNull(result.Reason);
+        Assert.NotEmpty(result.Reason);
     }
 
     [Fact]

@@ -77,6 +77,7 @@ public static partial class LocalizationService
         ru["FM_DbDeleteSingle"] = "Нельзя удалить единственную базу данных."; en["FM_DbDeleteSingle"] = "Cannot delete the only database.";
         ru["FM_DbDeleteTitle"] = "Удаление базы данных"; en["FM_DbDeleteTitle"] = "Delete Database";
         ru["FM_DbDeletePrompt"] = "Введите \"{0}\" для подтверждения удаления:"; en["FM_DbDeletePrompt"] = "Enter \"{0}\" to confirm deletion:";
+        ru["FM_DbDeleteFilesLocked"] = "БД \"{0}\" удалена из списка, но файлы не удалены, так как используются в проекте. Закройте Revit, чтобы удалить остатки."; en["FM_DbDeleteFilesLocked"] = "Database \"{0}\" removed from the list, but files could not be deleted because they are in use by the project. Close Revit to remove remaining files.";
         ru["FM_DbNewTitle"] = "Новая база данных"; en["FM_DbNewTitle"] = "New Database";
         ru["FM_DbNewPrompt"] = "Введите название новой базы данных:"; en["FM_DbNewPrompt"] = "Enter new database name:";
         ru["FM_DbNewDefault"] = "Новый каталог"; en["FM_DbNewDefault"] = "New Catalog";
@@ -410,6 +411,8 @@ public static partial class LocalizationService
         en["FM_PBase_DatabaseTools"] = "Database tools";
         ru["FM_PBase_Title"] = "Привязка базы проекта к имени файла";
         en["FM_PBase_Title"] = "Project Base Binding Rules";
+        ru["FM_PBase_ProjectNameLabel"] = "Проект:";
+        en["FM_PBase_ProjectNameLabel"] = "Project:";
         ru["FM_PBase_UseCurrentFile"] = "Подставить текущий";
         en["FM_PBase_UseCurrentFile"] = "Use current file";
         ru["FM_PBase_PreviewFileName"] = "Превью / тестовое имя файла";
@@ -552,10 +555,10 @@ public static partial class LocalizationService
         en["FM_PBase_MoveUp"] = "Up";
         ru["FM_PBase_MoveDown"] = "Вниз";
         en["FM_PBase_MoveDown"] = "Down";
-        ru["FM_PBase_ValidField"] = "OK";
-        en["FM_PBase_ValidField"] = "OK";
-        ru["FM_PBase_InvalidField"] = "Ошибка";
-        en["FM_PBase_InvalidField"] = "Invalid";
+        ru["FM_PBase_ValidField"] = "✓";
+        en["FM_PBase_ValidField"] = "✓";
+        ru["FM_PBase_InvalidField"] = "✗";
+        en["FM_PBase_InvalidField"] = "✗";
         ru["FM_PBase_ParseRule_Delimiter"] = "Разд.";
         en["FM_PBase_ParseRule_Delimiter"] = "Delim.";
         ru["FM_PBase_ParseRule_FixedOffset"] = "Фикс. со смещением";

@@ -124,6 +124,39 @@ public sealed class DatabaseManagerTests
     }
 
     [Fact]
+    public async Task ConnectDatabaseAsync_AfterDisconnect_RestoresProjectBaseKind()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+
+        var template = new FileNameTemplate
+        {
+            Blocks =
+            [
+                new FileBlockDefinition { Index = 0, Field = "project", ParseRule = new ParseRule { Mode = ParseMode.DelimiterSegment, Delimiter = "-", SegmentIndex = 1 } }
+            ]
+        };
+        var fieldLibrary = new List<FieldDefinition> { new() { Name = "project" } };
+        var binding = new ProjectBaseBinding(template, fieldLibrary);
+
+        var projectDb = await fixture.Manager.CreateProjectDatabaseAsync("ProjectDB", dbPath, binding);
+        Assert.Equal(BaseType.Project, projectDb.Kind);
+
+        var otherDb = await fixture.Manager.CreateDatabaseAsync("OtherDB", dbPath);
+
+        await fixture.Manager.DisconnectDatabaseAsync(projectDb.Id);
+
+        var reconnected = await fixture.Manager.ConnectDatabaseAsync(projectDb.Path);
+
+        Assert.Equal(BaseType.Project, reconnected.Kind);
+        Assert.NotNull(reconnected.ProjectBinding);
+        Assert.Single(reconnected.ProjectBinding.Template.Blocks);
+        Assert.Equal("project", reconnected.ProjectBinding.Template.Blocks[0].Field);
+        Assert.Single(reconnected.ProjectBinding.FieldLibrary);
+        Assert.Equal("project", reconnected.ProjectBinding.FieldLibrary[0].Name);
+    }
+
+    [Fact]
     public async Task SwitchDatabaseAsync_ChangesActiveDatabase()
     {
         using var fixture = new TempDbManagerFixture();
@@ -191,6 +224,34 @@ public sealed class DatabaseManagerTests
 
         Assert.True(deleted);
         Assert.False(Directory.Exists(conn1.Path));
+        var connections = fixture.Manager.ListConnections();
+        Assert.Single(connections);
+        Assert.Equal(conn2.Id, connections[0].Id);
+        Assert.Equal(conn2.Id, fixture.Manager.GetActiveConnection()!.Id);
+    }
+
+    [Fact]
+    public async Task DeleteDatabaseAsync_WhenFilesLocked_RemovesFromRegistryAndThrowsInformativeException()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+
+        var conn1 = await fixture.Manager.CreateDatabaseAsync("DB1", dbPath);
+        var conn2 = await fixture.Manager.CreateDatabaseAsync("DB2", dbPath);
+
+        var lockedFile = Path.Combine(conn1.Path, "locked.rfa");
+        await File.WriteAllTextAsync(lockedFile, "locked");
+        var stream = new FileStream(lockedFile, FileMode.Open, FileAccess.Read, FileShare.None);
+        try
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Manager.DeleteDatabaseAsync(conn1.Id));
+            Assert.Contains("удалена из списка, но файлы не удалены", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            stream.Dispose();
+        }
+
         var connections = fixture.Manager.ListConnections();
         Assert.Single(connections);
         Assert.Equal(conn2.Id, connections[0].Id);

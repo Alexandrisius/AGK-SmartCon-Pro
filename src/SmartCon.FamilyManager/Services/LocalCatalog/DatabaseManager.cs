@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -18,6 +19,37 @@ internal sealed class DatabaseManager : IDatabaseManager
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() }
     };
+
+    private sealed class ProjectBaseBindingDto
+    {
+        public Core.Models.FileNameTemplate Template { get; set; } = new();
+        public List<Core.Models.FieldDefinition> FieldLibrary { get; set; } = [];
+    }
+
+    private static string SerializeBinding(ProjectBaseBinding binding)
+    {
+        var dto = new ProjectBaseBindingDto
+        {
+            Template = binding.Template,
+            FieldLibrary = binding.FieldLibrary.ToList()
+        };
+        return JsonSerializer.Serialize(dto, JsonOptions);
+    }
+
+    private static ProjectBaseBinding? DeserializeBinding(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var dto = JsonSerializer.Deserialize<ProjectBaseBindingDto>(json!, JsonOptions);
+            if (dto?.Template is null) return null;
+            return new ProjectBaseBinding(dto.Template, dto.FieldLibrary ?? []);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private readonly LocalCatalogDatabase _catalogDatabase;
     private readonly IUserIdentityService _identityService;
@@ -124,10 +156,10 @@ internal sealed class DatabaseManager : IDatabaseManager
                     INSERT INTO database_meta (id, name, description, created_at_utc, schema_version)
                     VALUES (@id, @name, @description, @createdAtUtc, 2)
                     """;
-                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", id));
-                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", name.Trim()));
-                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@description", DBNull.Value));
-                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+                metaCmd.Parameters.Add(new SqliteParameter("@id", id));
+                metaCmd.Parameters.Add(new SqliteParameter("@name", name.Trim()));
+                metaCmd.Parameters.Add(new SqliteParameter("@description", DBNull.Value));
+                metaCmd.Parameters.Add(new SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
                 await metaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerCmd = dbConn.CreateCommand();
@@ -135,14 +167,14 @@ internal sealed class DatabaseManager : IDatabaseManager
                     INSERT INTO db_users (user_id, display_name, role, status, joined_at_utc, last_seen_at_utc)
                     VALUES (@userId, @displayName, 'Owner', 'Active', @now, @now)
                     """;
-                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@userId", identity.UserId));
-                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@displayName", identity.DisplayName));
-                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@now", now));
+                ownerCmd.Parameters.Add(new SqliteParameter("@userId", identity.UserId));
+                ownerCmd.Parameters.Add(new SqliteParameter("@displayName", identity.DisplayName));
+                ownerCmd.Parameters.Add(new SqliteParameter("@now", now));
                 await ownerCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerIdentityCmd = dbConn.CreateCommand();
                 ownerIdentityCmd.CommandText = "UPDATE database_meta SET owner_identity = @ownerIdentity";
-                ownerIdentityCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@ownerIdentity", identity.UserId));
+                ownerIdentityCmd.Parameters.Add(new SqliteParameter("@ownerIdentity", identity.UserId));
                 await ownerIdentityCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 tx.Commit();
@@ -181,7 +213,7 @@ internal sealed class DatabaseManager : IDatabaseManager
         var generalConnection = await CreateDatabaseAsync(name, path, ct);
         var projectConnection = generalConnection with { Kind = BaseType.Project, ProjectBinding = binding };
 
-        await UpdateCachedBaseTypeAsync(BaseType.Project, ct);
+        await UpdateCachedBaseTypeAsync(BaseType.Project, binding, ct);
 
         var registry = await LoadRegistryAsync(ct);
         var updatedConnections = registry.Connections
@@ -207,25 +239,24 @@ internal sealed class DatabaseManager : IDatabaseManager
             ?? throw new InvalidOperationException(
                 $"Cannot configure project binding on unknown connection '{connectionId}'.");
 
-        var wasGeneral = conn.Kind == BaseType.General;
         var updated = conn with { Kind = BaseType.Project, ProjectBinding = binding };
         var updatedConnections = registry.Connections
             .Select(c => c.Id == connectionId ? updated : c)
             .ToList();
         await SaveRegistryAsync(new DatabaseConnectionRegistry(registry.ActiveConnectionId, updatedConnections), ct);
 
-        await UpdateTargetCachedBaseTypeAsync(conn.Path, BaseType.Project, ct);
+        await UpdateTargetCachedBaseTypeAsync(conn.Path, BaseType.Project, binding, ct);
 
         return updated;
     }
 
-    private async Task UpdateTargetCachedBaseTypeAsync(string targetPath, BaseType kind, CancellationToken ct)
+    private async Task UpdateTargetCachedBaseTypeAsync(string targetPath, BaseType kind, ProjectBaseBinding? binding, CancellationToken ct)
     {
         var activePath = _catalogDatabase.GetDatabaseRoot();
         try
         {
             _catalogDatabase.SwitchToPath(targetPath);
-            await UpdateCachedBaseTypeAsync(kind, ct);
+            await UpdateCachedBaseTypeAsync(kind, binding, ct);
         }
         finally
         {
@@ -240,20 +271,25 @@ internal sealed class DatabaseManager : IDatabaseManager
     /// <see cref="ConfigureProjectBaseAsync"/> right after switching to the
     /// database they are about to project-scope.
     /// </summary>
-    private async Task UpdateCachedBaseTypeAsync(BaseType kind, CancellationToken ct)
+    private async Task UpdateCachedBaseTypeAsync(BaseType kind, ProjectBaseBinding? binding, CancellationToken ct)
     {
+        using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+            ("Method", nameof(UpdateCachedBaseTypeAsync)),
+            ("BaseType", (int)kind));
+
         var cachedValue = (int)kind;
+        var bindingJson = kind == BaseType.Project && binding is not null
+            ? SerializeBinding(binding)
+            : null;
         using var dbConn = _catalogDatabase.CreateConnection();
         await dbConn.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = dbConn.CreateCommand();
-        cmd.CommandText = "UPDATE database_meta SET base_type = @baseType";
-        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@baseType", cachedValue));
+        cmd.CommandText = "UPDATE database_meta SET base_type = @baseType, project_binding_json = @bindingJson";
+        cmd.Parameters.Add(new SqliteParameter("@baseType", cachedValue));
+        cmd.Parameters.Add(new SqliteParameter("@bindingJson", bindingJson is null ? DBNull.Value : bindingJson));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-        using var _scope = SmartConLogger.BeginScope("DatabaseManager",
-            ("Method", nameof(UpdateCachedBaseTypeAsync)),
-            ("BaseType", cachedValue));
-        SmartConLogger.Info($"database_meta.base_type cached value set to {cachedValue} ({kind})");
+        SmartConLogger.Info($"database_meta.base_type set to {cachedValue} ({kind}) with binding persisted");
     }
 
     public async Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default)
@@ -293,20 +329,41 @@ internal sealed class DatabaseManager : IDatabaseManager
         {
             using var conn = _catalogDatabase.CreateConnection();
             await conn.OpenAsync(ct).ConfigureAwait(false);
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT name FROM database_meta LIMIT 1";
-            var dbName = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+            using var nameCmd = conn.CreateCommand();
+            nameCmd.CommandText = "SELECT name FROM database_meta LIMIT 1";
+            var dbName = await nameCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
             if (dbName is not null)
                 name = dbName;
 
-            var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow);
+            await _migrator.MigrateAsync(ct);
+
+            using var metaCmd = conn.CreateCommand();
+            metaCmd.CommandText = "SELECT base_type, project_binding_json FROM database_meta LIMIT 1";
+            using var reader = await metaCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            BaseType kind = BaseType.General;
+            ProjectBaseBinding? binding = null;
+            if (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var baseTypeValue = reader.GetValue(0);
+                if (baseTypeValue is not null && baseTypeValue != DBNull.Value)
+                {
+                    var intValue = Convert.ToInt32(baseTypeValue);
+                    if (Enum.IsDefined(typeof(BaseType), intValue))
+                        kind = (BaseType)intValue;
+                }
+
+                if (!reader.IsDBNull(1))
+                {
+                    binding = DeserializeBinding(reader.GetString(1));
+                }
+            }
+
+            var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow, null, null, kind, binding);
 
             var registry = await LoadRegistryAsync(ct);
             var connections = registry.Connections.ToList();
             connections.Add(connection);
             await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
-
-            await _migrator.MigrateAsync(ct);
 
             ActiveDatabaseChanged?.Invoke(this, id);
             return connection;
@@ -387,7 +444,31 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         if (Directory.Exists(conn.Path))
         {
-            await DeleteDirectoryWithRetryAsync(conn.Path, ct);
+            try
+            {
+                await DeleteDirectoryWithRetryAsync(conn.Path, ct);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                    ("Method", nameof(DeleteDatabaseAsync)),
+                    ("DatabaseName", conn.Name),
+                    ("Path", conn.Path),
+                    ("Exception", ex.GetType().Name));
+                SmartConLogger.Warn($"Could not delete database files for '{conn.Name}' because they are in use. " +
+                    $"[Action: close Revit and remove remaining folder manually: {conn.Path}]");
+
+                await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
+
+                if (newActiveId != registry.ActiveConnectionId)
+                {
+                    ActiveDatabaseChanged?.Invoke(this, newActiveId!);
+                }
+
+                var message = LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteFilesLocked)
+                    ?? "Database \"{0}\" removed from the list, but files could not be deleted because they are in use. Close Revit to remove remaining files.";
+                throw new InvalidOperationException(string.Format(message, conn.Name), ex);
+            }
         }
 
         await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
@@ -437,6 +518,10 @@ internal sealed class DatabaseManager : IDatabaseManager
             catch (IOException) when (i < maxRetries - 1)
             {
                 await Task.Delay(200 * (i + 1), ct);
+            }
+            catch (UnauthorizedAccessException) when (i < maxRetries - 1)
+            {
+                await Task.Delay(300 * (i + 1), ct);
             }
         }
     }

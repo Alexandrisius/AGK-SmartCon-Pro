@@ -156,6 +156,76 @@ public sealed class ProjectBaseRulesEditorViewModelTests
 
         Assert.False(result);
     }
+
+    [Fact]
+    public void OpenFieldLibrary_RenamesField_UpdatesBlockReferences()
+    {
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate
+            {
+                Blocks =
+                [
+                    new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }
+                ]
+            },
+            [new FieldDefinition { Name = "project", DisplayName = "Project", ValidationMode = ValidationMode.None }]);
+
+        var dialogService = new Mock<IFamilyManagerDialogService>();
+        dialogService
+            .Setup(d => d.ShowFieldLibrary(It.IsAny<object>()))
+            .Returns((object vm) =>
+            {
+                if (vm is FieldLibraryViewModel fieldLibraryVm)
+                {
+                    fieldLibraryVm.Fields[0].Name = "renamed_project";
+                    fieldLibraryVm.OkCommand.Execute(null);
+                }
+
+                return true;
+            });
+
+        var vm = CreateVm(binding, dialogService: dialogService.Object);
+
+        vm.OpenFieldLibraryCommand.Execute(null);
+
+        Assert.Equal("renamed_project", vm.FieldLibrary[0].Name);
+        Assert.Equal("renamed_project", vm.Blocks[0].Field);
+    }
+
+    [Fact]
+    public void OpenFieldLibrary_DeletesField_ClearsBlockField()
+    {
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate
+            {
+                Blocks =
+                [
+                    new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }
+                ]
+            },
+            [new FieldDefinition { Name = "project", DisplayName = "Project", ValidationMode = ValidationMode.None }]);
+
+        var dialogService = new Mock<IFamilyManagerDialogService>();
+        dialogService
+            .Setup(d => d.ShowFieldLibrary(It.IsAny<object>()))
+            .Returns((object vm) =>
+            {
+                if (vm is FieldLibraryViewModel fieldLibraryVm)
+                {
+                    fieldLibraryVm.Fields.RemoveAt(0);
+                    fieldLibraryVm.OkCommand.Execute(null);
+                }
+
+                return true;
+            });
+
+        var vm = CreateVm(binding, dialogService: dialogService.Object);
+
+        vm.OpenFieldLibraryCommand.Execute(null);
+
+        Assert.Empty(vm.FieldLibrary);
+        Assert.Equal(string.Empty, vm.Blocks[0].Field);
+    }
 }
 
 public sealed class FileNameBlockItemTests : IDisposable

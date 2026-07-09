@@ -45,5 +45,5 @@ public interface IProjectBaseBindingEvaluator
     /// <paramref name="binding"/> is null — the caller is then expected to
     /// fall back to <see cref="BaseType.General"/> bases.
     /// </summary>
-    ProjectBaseMatch Evaluate(ProjectBaseBinding? binding, string filePath);
+    ProjectBaseMatch Evaluate(ProjectBaseBinding? binding, string? filePath);
 }

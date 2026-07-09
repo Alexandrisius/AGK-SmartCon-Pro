@@ -242,6 +242,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _sessionStart = DateTime.Now;
 
         await _databaseManager.InitializeAsync().ConfigureAwait(true);
+        RecomputeActiveBaseMatch();
         RefreshConnections();
         if (!HasActiveDatabase)
         {
@@ -432,14 +433,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
-        CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject && _activeBaseCompatibleWithCurrentDoc;
-        LoadToProjectCommand.NotifyCanExecuteChanged();
-        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
-
-        if (value is not null)
-        {
-            // Place command removed - type-centric workflow
-        }
+        RefreshCanLoadToProject();
     }
 
     partial void OnSelectedTreeNodeChanged(CatalogTreeNodeViewModel? value)
@@ -459,8 +453,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Tags = leaf.Tags,
                 Description = leaf.Description,
             };
-            CanPlaceType = false;
-            LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         }
         else if (value is FamilyTypeNodeViewModel typeNode)
         {
@@ -480,27 +472,54 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
                 };
-                CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject && _activeBaseCompatibleWithCurrentDoc;
-                PlaceTypeCommand.NotifyCanExecuteChanged();
-                LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
             }
             else
             {
                 SelectedItem = null;
-                CanPlaceType = false;
             }
         }
         else
         {
             SelectedItem = null;
+        }
+
+        RefreshCanPlaceType();
+        StartPlacementDragCommand.NotifyCanExecuteChanged();
+        ImportFileToCategoryCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RefreshCanLoadToProject()
+    {
+        CanLoadToProject = SelectedItem is not null
+            && SelectedItem.ContentStatus == ContentStatus.Active
+            && _accessControl.CanLoadToProject
+            && _activeBaseCompatibleWithCurrentDoc;
+        LoadToProjectCommand.NotifyCanExecuteChanged();
+        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RefreshCanPlaceType()
+    {
+        if (SelectedTreeNode is FamilyTypeNodeViewModel typeNode)
+        {
+            var parent = FindParentOf(TreeNodes, typeNode);
+            if (parent is FamilyLeafNodeViewModel parentLeaf)
+            {
+                CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active
+                    && _accessControl.CanLoadToProject
+                    && _activeBaseCompatibleWithCurrentDoc;
+            }
+            else
+            {
+                CanPlaceType = false;
+            }
+        }
+        else
+        {
             CanPlaceType = false;
         }
 
-        LoadToProjectCommand.NotifyCanExecuteChanged();
-        LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         PlaceTypeCommand.NotifyCanExecuteChanged();
-        StartPlacementDragCommand.NotifyCanExecuteChanged();
-        ImportFileToCategoryCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]

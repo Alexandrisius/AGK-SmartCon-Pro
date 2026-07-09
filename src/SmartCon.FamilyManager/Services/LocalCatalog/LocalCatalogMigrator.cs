@@ -65,6 +65,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV18Async(connection, ct);
         await MigrateV19Async(connection, ct);
         await MigrateV20Async(connection, ct);
+        await MigrateV21Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -781,6 +782,43 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
 
             tx.Commit();
             SmartConLogger.Info("Migration v20: added base_type column to database_meta (General=0 default) — project-base binding cache for #119");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V21 (#119): adds <c>project_binding_json</c> column to <c>database_meta</c>.
+    /// Project base binding is persisted inside the catalog database so that
+    /// disconnecting and later reconnecting a project database restores its
+    /// <see cref="BaseType.Project"/> kind and binding rules.
+    /// </summary>
+    private static async Task MigrateV21Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 21) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "database_meta", "project_binding_json", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV21AddProjectBindingColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '21' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v21: added project_binding_json column to database_meta — binding survives disconnect/reconnect");
         }
         catch
         {

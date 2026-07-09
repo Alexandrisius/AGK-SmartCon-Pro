@@ -647,6 +647,10 @@
     <PathGeometry x:Key="UnfoldMoreGeometry" Figures="M 12,5.83 L 15.17,9 L 16.59,7.59 L 12,3 L 7.41,7.59 L 8.83,9 Z M 12,18.17 L 8.83,15 L 7.41,16.41 L 12,21 L 16.59,16.41 L 15.17,15 Z"/>
     <PathGeometry x:Key="UnfoldLessGeometry" Figures="M 7.41,18.59 L 8.83,20 L 12,16.83 L 15.17,20 L 16.59,18.59 L 12,14 Z M 16.59,5.41 L 15.17,4 L 12,7.17 L 8.83,4 L 7.41,5.41 L 12,10 Z"/>
     <PathGeometry x:Key="FolderIconGeometry" Figures="M 2,2 L 8,2 L 10,4 L 18,4 A 2,2 0 0,1 20,6 L 20,16 A 2,2 0 0,1 18,18 L 2,18 A 2,2 0 0,1 0,16 L 0,4 A 2,2 0 0,1 2,2 Z M 2,4 L 2,16 L 18,16 L 18,6 L 9.5,6 L 7.5,4 Z"/>
+    <PathGeometry x:Key="LockIconGeometry" Figures="M 12,17 A 2,2 0 0,0 14,15 V 11 H 10 V 15 A 2,2 0 0,0 12,17 M 18,8 V 6 A 6,6 0 0,0 6,6 V 8 H 4 V 20 H 20 V 8 H 18 M 16,8 H 8 V 6 A 4,4 0 0,1 16,6 V 8 Z"/>
+    <PathGeometry x:Key="GearIconGeometry" Figures="M 12,7 A 5,5 0 0,1 17,12 A 5,5 0 0,1 12,17 A 5,5 0 0,1 7,12 A 5,5 0 0,1 12,7 M 12,9 A 3,3 0 0,0 9,12 A 3,3 0 0,0 12,15 A 3,3 0 0,0 15,12 A 3,3 0 0,0 12,9 M 12.5,2.5 V 5.5 H 11.5 V 2.5 H 12.5 M 12.5,18.5 V 21.5 H 11.5 V 18.5 H 12.5 M 21.5,11.5 V 12.5 H 18.5 V 11.5 H 21.5 M 5.5,11.5 V 12.5 H 2.5 V 11.5 H 5.5 M 18.75,5.75 L 16.75,7.75 L 16.05,7.05 L 18.05,5.05 L 18.75,5.75 M 7.95,16.95 L 5.95,18.95 L 5.25,18.25 L 7.25,16.25 L 7.95,16.95 M 18.05,18.95 L 16.05,16.95 L 16.75,16.25 L 18.75,18.25 L 18.05,18.95 M 7.05,7.05 L 5.05,5.05 L 5.75,4.25 L 7.75,6.25 L 7.05,7.05 Z"/>
+    <PathGeometry x:Key="DatabaseCylinderGeometry" Figures="M 2,5 A 10,4 0 0,1 22,5 A 10,4 0 0,1 2,5 M 2,5 L 2,19 A 10,4 0 0,0 22,19 L 22,5 Z"/>
+    <PathGeometry x:Key="DatabaseDividerGeometry" Figures="M 2,10 A 10,4 0 0,1 22,10 M 2,15 A 10,4 0 0,1 22,15"/>
 
     <Style x:Key="ModernTreeViewItem" TargetType="TreeViewItem">
         <Setter Property="Background" Value="Transparent"/>

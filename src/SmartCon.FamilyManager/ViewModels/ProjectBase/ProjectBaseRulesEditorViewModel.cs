@@ -20,6 +20,8 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
     [ObservableProperty]
     private string _currentFilePath = string.Empty;
 
+    public string CurrentProjectName => Path.GetFileNameWithoutExtension(CurrentFilePath);
+
     [ObservableProperty]
     private string _previewCurrent = string.Empty;
 
@@ -89,7 +91,11 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
 
     private void OnFieldPropertyChanged(object? sender, PropertyChangedEventArgs e) => RefreshPreviewAndValidation();
 
-    partial void OnCurrentFilePathChanged(string value) => RefreshPreviewAndValidation();
+    partial void OnCurrentFilePathChanged(string value)
+    {
+        OnPropertyChanged(nameof(CurrentProjectName));
+        RefreshPreviewAndValidation();
+    }
 
     [RelayCommand]
     private void AddBlock()
@@ -161,9 +167,16 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
         {
             var vm = new ParseRuleViewModel(SelectedBlock.ParseRule, CurrentFilePath, precedingRules);
             bool? dialogResult = null;
-            vm.RequestClose += result => dialogResult = result;
-
-            _dialogService.ShowParseRuleEditor(vm);
+            Action<bool?>? closeHandler = result => dialogResult = result;
+            vm.RequestClose += closeHandler;
+            try
+            {
+                _dialogService.ShowParseRuleEditor(vm);
+            }
+            finally
+            {
+                vm.RequestClose -= closeHandler;
+            }
 
             if (dialogResult != true) return;
 
@@ -188,25 +201,86 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
     {
         try
         {
+            var oldFieldNames = FieldLibrary.Select(f => f.Name).ToList();
+            var oldFieldNameSet = new HashSet<string>(oldFieldNames, StringComparer.OrdinalIgnoreCase);
+
             var vm = new FieldLibraryViewModel(_dialogService);
             foreach (var field in FieldLibrary)
-                vm.Fields.Add(field);
+                vm.Fields.Add(FieldDefinitionItem.FromModel(field.ToModel()));
 
             bool? dialogResult = null;
-            vm.RequestClose += result => dialogResult = result;
-
-            _dialogService.ShowFieldLibrary(vm);
+            Action<bool?>? closeHandler = result => dialogResult = result;
+            vm.RequestClose += closeHandler;
+            try
+            {
+                _dialogService.ShowFieldLibrary(vm);
+            }
+            finally
+            {
+                vm.RequestClose -= closeHandler;
+            }
 
             if (dialogResult != true) return;
 
-            foreach (var field in FieldLibrary)
-                field.PropertyChanged -= OnFieldPropertyChanged;
-            FieldLibrary.Clear();
+            var newFields = vm.Fields.ToList();
+            var newFieldNames = newFields.Select(f => f.Name).ToList();
+            var newFieldNameSet = new HashSet<string>(newFieldNames, StringComparer.OrdinalIgnoreCase);
 
-            foreach (var field in vm.Fields)
+            var renameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var minCount = Math.Min(oldFieldNames.Count, newFieldNames.Count);
+            for (var i = 0; i < minCount; i++)
             {
+                var oldName = oldFieldNames[i];
+                var newName = newFieldNames[i];
+                if (string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Detect a genuine rename: the old name disappeared, the new name appeared,
+                // and it occupies the same slot. This avoids false renames when a field is
+                // deleted and a different one is inserted at the same index.
+                if (!oldFieldNameSet.Contains(newName) && !newFieldNameSet.Contains(oldName))
+                    renameMap[oldName] = newName;
+            }
+
+            while (FieldLibrary.Count > newFields.Count)
+            {
+                FieldLibrary[^1].PropertyChanged -= OnFieldPropertyChanged;
+                FieldLibrary.RemoveAt(FieldLibrary.Count - 1);
+            }
+
+            for (var i = 0; i < FieldLibrary.Count; i++)
+            {
+                var source = newFields[i];
+                var target = FieldLibrary[i];
+                target.Name = source.Name;
+                target.DisplayName = source.DisplayName;
+                target.Description = source.Description;
+                target.ValidationMode = source.ValidationMode;
+                target.AllowedValues = source.AllowedValues;
+                target.MinLength = source.MinLength;
+                target.MaxLength = source.MaxLength;
+            }
+
+            for (var i = FieldLibrary.Count; i < newFields.Count; i++)
+            {
+                var field = newFields[i];
                 field.PropertyChanged += OnFieldPropertyChanged;
                 FieldLibrary.Add(field);
+            }
+
+            foreach (var block in Blocks)
+            {
+                if (string.IsNullOrEmpty(block.Field))
+                    continue;
+
+                if (renameMap.TryGetValue(block.Field, out var renamed))
+                {
+                    block.Field = renamed;
+                    continue;
+                }
+
+                if (!FieldLibrary.Any(f => string.Equals(f.Name, block.Field, StringComparison.OrdinalIgnoreCase)))
+                    block.Field = string.Empty;
             }
 
             RefreshPreviewAndValidation();
@@ -225,7 +299,7 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
 
     private void RefreshPreviewAndValidation()
     {
-        if (string.IsNullOrEmpty(CurrentFilePath))
+        if (string.IsNullOrWhiteSpace(CurrentFilePath))
         {
             PreviewCurrent = string.Empty;
             PreviewParsed = string.Empty;
@@ -248,7 +322,9 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
         var parsed = _parser.ParseBlocks(CurrentFilePath, template);
         foreach (var block in Blocks)
         {
-            block.CurrentFieldValue = parsed.TryGetValue(block.Field, out var value) ? value : string.Empty;
+            block.CurrentFieldValue = string.IsNullOrEmpty(block.Field)
+                ? string.Empty
+                : parsed.TryGetValue(block.Field, out var value) ? value : string.Empty;
         }
 
         var validation = _parser.ValidateDetailed(CurrentFilePath, template, FieldLibrary.Select(f => f.ToModel()).ToList());
@@ -297,7 +373,7 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
             Blocks = Blocks.Select(b => new FileBlockDefinition
             {
                 Index = b.Index,
-                Field = b.Field,
+                Field = b.Field ?? string.Empty,
                 ParseRule = b.ParseRule
             }).ToList()
         };

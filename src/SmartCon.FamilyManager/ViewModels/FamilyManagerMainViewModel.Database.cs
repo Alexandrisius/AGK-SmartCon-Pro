@@ -33,16 +33,38 @@ public sealed partial class FamilyManagerMainViewModel
     private DatabaseListItem BuildListItem(DatabaseConnection connection, DatabaseConnection? active)
     {
         if (connection.Kind != BaseType.Project || string.IsNullOrEmpty(_currentActiveDocumentPath))
+        {
+            using var _scope = SmartConLogger.BeginScope("FMVM",
+                ("Method", nameof(BuildListItem)),
+                ("BaseName", connection.Name),
+                ("Kind", connection.Kind),
+                ("HasActiveDocPath", !string.IsNullOrEmpty(_currentActiveDocumentPath)));
+            SmartConLogger.Debug($"BuildListItem: '{connection.Name}' is not a project base or no active document path -> NotApplicable");
             return new DatabaseListItem(connection, ProjectBaseMatchKind.NotApplicable);
+        }
 
         var filePath = _currentActiveDocumentPath!;
         if (connection.ConnectionEquals(active))
         {
             var kind = _activeBaseMatch?.Kind ?? ProjectBaseMatchKind.NotApplicable;
+            using var _scope = SmartConLogger.BeginScope("FMVM",
+                ("Method", nameof(BuildListItem)),
+                ("BaseName", connection.Name),
+                ("IsActive", true),
+                ("MatchKind", kind),
+                ("Reason", _activeBaseMatch?.Reason ?? string.Empty));
+            SmartConLogger.Debug($"BuildListItem: active project base '{connection.Name}' -> {kind}");
             return new DatabaseListItem(connection, kind, _activeBaseMatch?.Reason);
         }
 
         var evaluation = _projectBaseEvaluator.Evaluate(connection.ProjectBinding, filePath);
+        using var _scope2 = SmartConLogger.BeginScope("FMVM",
+            ("Method", nameof(BuildListItem)),
+            ("BaseName", connection.Name),
+            ("IsActive", false),
+            ("MatchKind", evaluation.Kind),
+            ("Reason", evaluation.Reason ?? string.Empty));
+        SmartConLogger.Debug($"BuildListItem: project base '{connection.Name}' evaluated -> {evaluation.Kind}");
         return new DatabaseListItem(connection, evaluation.Kind, evaluation.Reason);
     }
 
@@ -51,9 +73,9 @@ public sealed partial class FamilyManagerMainViewModel
         // D-10: stale cache is per-DB. Snapshot from the previous DB must not leak
         // into the new tree (different catalog items, different versions).
         _staleDetector.InvalidateCache();
+        RecomputeActiveBaseMatch();
         RefreshConnections();
         _ = RefreshTreeViaExternalEventAsync();
-        RecomputeActiveBaseMatch();
         InvalidateLoadAndPlaceCommands();
     }
 
@@ -79,8 +101,12 @@ public sealed partial class FamilyManagerMainViewModel
                 var success = await _databaseManager.SwitchDatabaseAsync(connectionId);
                 if (success)
                 {
+                    RecomputeActiveBaseMatch();
                     RefreshConnections();
                     await RefreshAccessAndLoadTreeAsync();
+                    RefreshCanLoadToProject();
+                    RefreshCanPlaceType();
+                    InvalidateLoadAndPlaceCommands();
                     var conn = Connections.FirstOrDefault(c => c.Connection.Id == connectionId);
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Switched to: {0}",
@@ -138,6 +164,7 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var conn = await _databaseManager.CreateDatabaseAsync(name!.Trim(), path!);
+                RecomputeActiveBaseMatch();
                 RefreshConnections();
                 await RefreshAccessAndLoadTreeAsync();
                 SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == conn.Id);
@@ -199,6 +226,7 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var conn = await _databaseManager.CreateProjectDatabaseAsync(name!.Trim(), path!, binding);
+                RecomputeActiveBaseMatch();
                 RefreshConnections();
                 await RefreshAccessAndLoadTreeAsync();
                 SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == conn.Id);
@@ -242,8 +270,8 @@ public sealed partial class FamilyManagerMainViewModel
         try
         {
             await _databaseManager.ConfigureProjectBaseAsync(selected.Connection.Id, binding);
-            RefreshConnections();
             RecomputeActiveBaseMatch();
+            RefreshConnections();
             InvalidateLoadAndPlaceCommands();
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Project binding for \"{0}\" updated",
@@ -280,6 +308,7 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var conn = await _databaseManager.ConnectDatabaseAsync(path!);
+                RecomputeActiveBaseMatch();
                 RefreshConnections();
                 await RefreshAccessAndLoadTreeAsync();
                 SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == conn.Id);

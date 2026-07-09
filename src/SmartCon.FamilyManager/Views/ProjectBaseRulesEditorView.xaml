@@ -15,7 +15,7 @@
 
     <Window.Resources>
         <ui:SingletonResources>
-            <Style x:Key="CenterCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Style x:Key="CenterCell" TargetType="TextBlock">
                 <Setter Property="HorizontalAlignment" Value="Center"/>
                 <Setter Property="VerticalAlignment" Value="Center"/>
             </Style>
@@ -33,65 +33,17 @@
 
         <TextBlock Grid.Row="0" Text="{loc:Loc FM_PBase_Title}"
                    FontWeight="SemiBold" FontSize="15"
-                   Margin="0,0,0,12"
+                   Margin="0,0,0,8"
                    Foreground="{DynamicResource TextPrimaryBrush}">
         </TextBlock>
 
-        <Grid Grid.Row="1" Margin="0,0,0,12">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc FM_PBase_PreviewFileName}"
-                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,8,4">
-            </TextBlock>
-            <TextBox Grid.Row="0" Grid.Column="1"
-                     Text="{Binding CurrentFilePath, UpdateSourceTrigger=PropertyChanged}"
-                     VerticalContentAlignment="Center" Padding="6,4"
-                     Style="{DynamicResource CompactTextBox}" Margin="0,0,0,4"/>
-
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc FM_PBase_FileName}"
-                       Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,4,8,0">
-            </TextBlock>
-            <TextBlock Grid.Row="1" Grid.Column="1"
-                       Text="{Binding PreviewCurrent}" Margin="0,4,0,0"
-                       TextTrimming="CharacterEllipsis"
-                       Foreground="{DynamicResource TextPrimaryBrush}">
-            </TextBlock>
-
-            <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Loc FM_PBase_ParseResult}"
-                       Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,4,8,0">
-            </TextBlock>
-            <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
-                       Text="{Binding PreviewParsed}" Margin="0,4,0,0"
-                       FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"
-                       TextWrapping="Wrap">
-            </TextBlock>
-
-            <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2"
-                       Text="{Binding ValidationMessage}" Margin="0,4,0,0"
-                       TextWrapping="Wrap">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}">
-                        </Setter>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding HasValidationError}" Value="True">
-                                <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}">
-                                </Setter>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
-        </Grid>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="{loc:Loc FM_PBase_ProjectNameLabel}" VerticalAlignment="Center"
+                      Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,6,0"/>
+            <TextBlock Text="{Binding CurrentProjectName}" VerticalAlignment="Center"
+                      FontWeight="SemiBold"
+                      Foreground="{DynamicResource TextPrimaryBrush}"/>
+        </StackPanel>
 
         <Grid Grid.Row="2" Margin="0,0,0,8">
             <Grid.RowDefinitions>
@@ -113,10 +65,10 @@
                     </Style>
                 </DataGrid.ColumnHeaderStyle>
                 <DataGrid.Columns>
-                    <DataGridTextColumn x:Name="ColIndex" Binding="{Binding Index}" Width="40" IsReadOnly="True"
+                    <DataGridTextColumn x:Name="ColIndex" Header="{loc:Loc FM_PBase_ColIndex}" Binding="{Binding Index}" Width="40" IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}">
                     </DataGridTextColumn>
-                    <DataGridTemplateColumn x:Name="ColField" Width="110">
+                    <DataGridTemplateColumn x:Name="ColField" Header="{loc:Loc FM_PBase_ColField}" Width="110">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <ComboBox ItemsSource="{Binding DataContext.FieldLibrary, RelativeSource={RelativeSource AncestorType=DataGrid}}"
@@ -127,7 +79,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn x:Name="ColParseRule" Width="Auto">
+                    <DataGridTemplateColumn x:Name="ColParseRule" Header="{loc:Loc FM_PBase_ColParseRule}" Width="Auto">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Button Content="{Binding ParseRuleDisplay}"
@@ -139,27 +91,22 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn x:Name="ColValue" Binding="{Binding CurrentFieldValue}" Width="*" IsReadOnly="True"
+                    <DataGridTextColumn x:Name="ColValue" Header="{loc:Loc FM_PBase_ColValue}" Binding="{Binding CurrentFieldValue}" Width="*" IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}">
                     </DataGridTextColumn>
-                    <DataGridTemplateColumn x:Name="ColStatus" Width="Auto">
+                    <DataGridTemplateColumn x:Name="ColStatus" Header="{loc:Loc FM_PBase_ColStatus}" Width="Auto">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
-                                            <Setter Property="Text" Value="{loc:Loc FM_PBase_ValidField}">
-                                            </Setter>
-                                            <Setter Property="Foreground" Value="Green">
-                                            </Setter>
+                                            <Setter Property="Text" Value="{loc:Loc FM_PBase_ValidField}"/>
+                                            <Setter Property="Foreground" Value="Green"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsValid}" Value="False">
-                                                    <Setter Property="Text" Value="{loc:Loc FM_PBase_InvalidField}">
-                                                    </Setter>
-                                                    <Setter Property="Foreground" Value="Red">
-                                                    </Setter>
-                                                    <Setter Property="ToolTip" Value="{Binding ValidationError}">
-                                                    </Setter>
+                                                    <Setter Property="Text" Value="{loc:Loc FM_PBase_InvalidField}"/>
+                                                    <Setter Property="Foreground" Value="Red"/>
+                                                    <Setter Property="ToolTip" Value="{Binding ValidationError}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>

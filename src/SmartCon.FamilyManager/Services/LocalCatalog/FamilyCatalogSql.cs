@@ -788,4 +788,10 @@ internal static class FamilyCatalogSql
     public const string MigrateV20AddBaseTypeColumn = """
         ALTER TABLE database_meta ADD COLUMN base_type INTEGER NOT NULL DEFAULT 0
         """;
+
+    /// V21 (#119 reconnect): adds project_binding_json TEXT to database_meta so that
+    /// project base configuration survives DisconnectDatabaseAsync + ConnectDatabaseAsync.
+    public const string MigrateV21AddProjectBindingColumn = """
+        ALTER TABLE database_meta ADD COLUMN project_binding_json TEXT
+        """;
 }

@@ -161,7 +161,7 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     private bool CanUpdateCategoryOverwrite(CategoryNodeViewModel? category) =>
-        category != null && category.HasStale && !IsStaleCheckInProgress;
+        category != null && category.HasStale && !IsStaleCheckInProgress && _activeBaseCompatibleWithCurrentDoc;
 
     [RelayCommand(CanExecute = nameof(CanUpdateCategoryKeep))]
     private Task UpdateCategoryKeepParamsAsync(CategoryNodeViewModel? category)
@@ -171,7 +171,7 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     private bool CanUpdateCategoryKeep(CategoryNodeViewModel? category) =>
-        category != null && category.HasStale && !IsStaleCheckInProgress;
+        category != null && category.HasStale && !IsStaleCheckInProgress && _activeBaseCompatibleWithCurrentDoc;
 
     private async Task UpdateCategoryStaleAsync(CategoryNodeViewModel category, bool overwriteParameterValues)
     {

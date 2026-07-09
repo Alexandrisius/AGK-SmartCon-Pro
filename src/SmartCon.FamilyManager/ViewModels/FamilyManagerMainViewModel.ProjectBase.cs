@@ -11,26 +11,26 @@ public sealed partial class FamilyManagerMainViewModel
 {
     private void OnActiveDocumentChanged(object? sender, ActiveDocumentChangedEventArgs e)
     {
-        using var _scope = SmartConLogger.BeginScope("FMVM",
-            ("Method", nameof(OnActiveDocumentChanged)),
-            ("FilePath", Path.GetFileName(e.FilePath)));
-
         _currentActiveDocumentPath = e.FilePath;
         _ = ActivateBaseForCurrentDocumentAsync(e.FilePath);
     }
 
     private async Task ActivateBaseForCurrentDocumentAsync(string filePath)
     {
+        using var _scope = SmartConLogger.BeginScope("FMVM",
+            ("Method", nameof(ActivateBaseForCurrentDocumentAsync)),
+            ("FilePath", Path.GetFileName(filePath) ?? "(none)"));
         try
         {
             await _projectBaseActivator.ActivateForDocumentAsync(filePath);
         }
         catch (System.Exception ex)
         {
-            SmartConLogger.Warn($"Project base activation failed for '{Path.GetFileName(filePath)}': {ex.GetType().Name}: {ex.Message}. [Action: check registry.json integrity or re-open the project]");
+            SmartConLogger.Warn($"Project base activation failed for '{Path.GetFileName(filePath) ?? "(none)"}': {ex.GetType().Name}: {ex.Message}. [Action: check registry.json integrity or re-open the project]");
         }
 
         RecomputeActiveBaseMatch();
+        RefreshConnections();
         InvalidateLoadAndPlaceCommands();
     }
 
@@ -47,59 +47,67 @@ public sealed partial class FamilyManagerMainViewModel
     {
         var active = _databaseManager.GetActiveConnection();
         var filePathNullable = _currentActiveDocumentPath;
+        string? statusMessage;
+
+        using var _scope = SmartConLogger.BeginScope("FMVM",
+            ("Method", nameof(RecomputeActiveBaseMatch)),
+            ("ActiveBaseName", active?.Name ?? "(none)"),
+            ("ActiveBaseKind", active?.Kind.ToString() ?? "(none)"),
+            ("FilePath", Path.GetFileName(filePathNullable ?? string.Empty)));
 
         if (active is null)
         {
             _activeBaseMatch = null;
             _activeBaseCompatibleWithCurrentDoc = true;
-            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusNoDatabase) ?? "No database connected";
-            return;
+            statusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusNoDatabase) ?? "No database connected";
+            SmartConLogger.Debug("RecomputeActiveBaseMatch: no active database");
         }
-
-        if (string.IsNullOrEmpty(filePathNullable))
+        else if (string.IsNullOrEmpty(filePathNullable))
         {
             _activeBaseMatch = null;
             _activeBaseCompatibleWithCurrentDoc = true; // permissive default for legacy behaviour (no active binding context)
-            StatusMessage = string.Format(
+            statusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusGeneral) ?? "General base: {0}",
                 active.Name);
-            return;
+            SmartConLogger.Debug($"RecomputeActiveBaseMatch: no active document path for base '{active.Name}'");
         }
-
-        var filePath = filePathNullable!;
-
-        if (active.Kind == BaseType.General)
+        else if (active.Kind == BaseType.General)
         {
             _activeBaseMatch = new ProjectBaseMatch(ProjectBaseMatchKind.NotApplicable);
             _activeBaseCompatibleWithCurrentDoc = true;
-            StatusMessage = string.Format(
+            statusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusGeneral) ?? "General base: {0}",
                 active.Name);
-            return;
+            SmartConLogger.Debug($"RecomputeActiveBaseMatch: base '{active.Name}' is general");
         }
-
-        var match = _projectBaseEvaluator.Evaluate(active.ProjectBinding, filePath);
-        _activeBaseMatch = match;
-        _activeBaseCompatibleWithCurrentDoc = match.Kind == ProjectBaseMatchKind.Match;
-
-        if (_activeBaseCompatibleWithCurrentDoc)
+        else
         {
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusProjectMatch) ?? "Project base: {0} → {1}",
-                active.Name,
-                string.Join(", ", match.ParsedValues?.Select(v => $"{v.Key}={v.Value}") ?? []));
-            return;
+            var filePath = filePathNullable!;
+            var match = _projectBaseEvaluator.Evaluate(active.ProjectBinding, filePath);
+            _activeBaseMatch = match;
+            _activeBaseCompatibleWithCurrentDoc = match.Kind == ProjectBaseMatchKind.Match;
+
+            if (_activeBaseCompatibleWithCurrentDoc)
+            {
+                statusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusProjectMatch) ?? "Project base: {0} → {1}",
+                    active.Name,
+                    string.Join(", ", match.ParsedValues?.Select(v => $"{v.Key}={v.Value}") ?? []));
+                SmartConLogger.Info($"RecomputeActiveBaseMatch: active project base '{active.Name}' matches current document");
+            }
+            else
+            {
+                statusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusProjectMismatch) ?? "Base does not match project. Loading blocked.";
+                SmartConLogger.Warn(
+                    $"Active project base '{active.Name}' does not match the current document " +
+                    $"(reason: {match.Reason ?? "unknown"}). Loading and placement are disabled until the user picks a matching base. [Action: select a project base that matches the current file name or reconfigure the binding rules]");
+            }
         }
 
-        StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusProjectMismatch) ?? "Base does not match project. Loading blocked.";
-
-        using var _scope = SmartConLogger.BeginScope("FMVM",
-            ("Method", nameof(RecomputeActiveBaseMatch)),
-            ("BaseName", active.Name),
-            ("FilePath", Path.GetFileName(filePath)));
-        SmartConLogger.Info(
-            $"Active project base '{active.Name}' does not match the current document " +
-            $"(reason: {match.Reason ?? "unknown"}). Loading and placement are disabled until the user picks a matching base.");
+        StatusMessage = statusMessage ?? string.Empty;
+        RefreshCanLoadToProject();
+        RefreshCanPlaceType();
+        NotifyCheckCommands();
     }
 
     /// <summary>

@@ -9,7 +9,8 @@ namespace SmartCon.Tests.FamilyManager.Repository;
 /// <summary>
 /// Tests for the V17 migration (ADR-041): adds FOREIGN KEY
 /// (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
-/// on family_types and extracted_attribute_values.
+/// on family_types and extracted_attribute_values. A fresh catalog database
+/// ends up at schema version 21.
 /// </summary>
 public sealed class LocalCatalogV17MigrationTests : IDisposable
 {
@@ -23,14 +24,14 @@ public sealed class LocalCatalogV17MigrationTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     [Fact]
-    public async Task Migrate_FreshDb_SetsSchemaVersion20()
+    public async Task Migrate_FreshDb_SetsSchemaVersion21()
     {
         using var conn = _fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key = 'schema_version'";
         var result = await cmd.ExecuteScalarAsync();
-        Assert.Equal("20", result?.ToString());
+        Assert.Equal("21", result?.ToString());
     }
 
     [Fact]

@@ -303,6 +303,7 @@ public static class StringLocalization
         public const string FM_DbDeleteSingle = "FM_DbDeleteSingle";
         public const string FM_DbDeleteTitle = "FM_DbDeleteTitle";
         public const string FM_DbDeletePrompt = "FM_DbDeletePrompt";
+        public const string FM_DbDeleteFilesLocked = "FM_DbDeleteFilesLocked";
         public const string FM_DbNewTitle = "FM_DbNewTitle";
         public const string FM_DbNewPrompt = "FM_DbNewPrompt";
         public const string FM_DbNewDefault = "FM_DbNewDefault";
@@ -315,6 +316,7 @@ public static class StringLocalization
         public const string FM_PBase_DeleteDatabase = "FM_PBase_DeleteDatabase";
         public const string FM_PBase_DatabaseTools = "FM_PBase_DatabaseTools";
         public const string FM_PBase_Title = "FM_PBase_Title";
+        public const string FM_PBase_ProjectNameLabel = "FM_PBase_ProjectNameLabel";
         public const string FM_PBase_UseCurrentFile = "FM_PBase_UseCurrentFile";
         public const string FM_PBase_PreviewFileName = "FM_PBase_PreviewFileName";
         public const string FM_PBase_FileName = "FM_PBase_FileName";
