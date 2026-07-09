@@ -82,4 +82,27 @@ public sealed record FamilyManagerServices(
     /// leave it in a zombie state on net48 (REVIT-236376 / REVIT-237190).
     /// </summary>
     IUiFreezeRecoveryService FreezeRecovery,
-    FamilyImportPreparationService PreparationService);
+    FamilyImportPreparationService PreparationService,
+    /// <summary>
+    /// Phase 30 / Issue #119: cross-module notifier for "active Revit document
+    /// changed". The VM subscribes in its ctor and un-subscribes in Dispose so
+    /// it can drive project-base auto-activation when the user switches
+    /// between open project files.
+    /// </summary>
+    IActiveDocumentChangeNotifier ActiveDocumentNotifier,
+    /// <summary>
+    /// Phase 30 / Issue #119: pure-C# service that, given the currently
+    /// active Revit file path, picks and switches to the matching project base
+    /// (or falls back to the first general base). Used by the VM in response
+    /// to <see cref="IActiveDocumentChangeNotifier.ActiveDocumentChanged"/>.
+    /// </summary>
+    IProjectBaseActivator ProjectBaseActivator,
+    /// <summary>
+    /// Phase 30 / Issue #119: pure-C# evaluator used by the VM to compute the
+    /// "active base matches current document" flag for gate commands. The VM
+    /// uses it independently from <see cref="ProjectBaseActivator"/> (which
+    /// drives the actual database switch) so that the CanLoad/CanPlace flags
+    /// can be re-evaluated even when no switch happens (e.g. the current doc
+    /// matches the existing active base).
+    /// </summary>
+    IProjectBaseBindingEvaluator ProjectBaseEvaluator);

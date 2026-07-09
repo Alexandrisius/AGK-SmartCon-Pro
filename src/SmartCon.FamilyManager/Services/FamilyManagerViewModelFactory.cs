@@ -1,6 +1,7 @@
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.ViewModels;
+using SmartCon.FamilyManager.ViewModels.ProjectBase;
 
 namespace SmartCon.FamilyManager.Services;
 
@@ -22,6 +23,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IUserIdentityService _identityService;
     private readonly IFamilyStorageRenameService _renameService;
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
+    private readonly IRevitContext _revitContext;
+    private readonly IFileNameParser _fileNameParser;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -39,7 +42,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IDbAccessControlService accessControl,
         IUserIdentityService identityService,
         IFamilyStorageRenameService renameService,
-        IFamilyManagerMetadataMediator metadataMediator)
+        IFamilyManagerMetadataMediator metadataMediator,
+        IRevitContext revitContext,
+        IFileNameParser fileNameParser)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -57,6 +62,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _identityService = identityService;
         _renameService = renameService;
         _metadataMediator = metadataMediator;
+        _revitContext = revitContext;
+        _fileNameParser = fileNameParser;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -95,5 +102,14 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public ProfileViewModel CreateProfileViewModel()
     {
         return new ProfileViewModel(_userRepo, _accessControl, _identityService, _dialogService);
+    }
+
+    public ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "")
+    {
+        return new ProjectBaseRulesEditorViewModel(
+            existingBinding ?? ProjectBaseBinding.Empty,
+            currentDocumentPath,
+            _fileNameParser,
+            _dialogService);
     }
 }

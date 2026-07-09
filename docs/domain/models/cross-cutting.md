@@ -15,6 +15,25 @@ module: cross-cutting
 
 ---
 
+## EnumOption
+
+Универсальная обёртка для enum-значений с human-readable Display/Description. Используется в WPF VM для ComboBox/RadioButton (например, `ParseMode`, `ValidationMode`).
+
+**Файл:** `SmartCon.Core/Models/EnumOption.cs`
+
+```csharp
+public sealed class EnumOption<T>
+{
+    public T Value { get; init; } = default!;
+    public string Display { get; init; } = "";
+    public string Description { get; init; } = "";
+
+    public override string ToString() => Display;
+}
+```
+
+---
+
 ## Guard
 
 Polyfill для `ArgumentNullException.ThrowIfNull` (нет в net48). Удовлетворяет CA1510.

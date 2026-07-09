@@ -1,5 +1,6 @@
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.FamilyManager.ViewModels;
+using SmartCon.FamilyManager.ViewModels.ProjectBase;
 
 namespace SmartCon.FamilyManager.Services;
 
@@ -19,4 +20,5 @@ public interface IFamilyManagerViewModelFactory
     AttributeLibraryViewModel CreateAttributeLibraryViewModel();
     CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
     ProfileViewModel CreateProfileViewModel();
+    ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "");
 }

@@ -1,6 +1,8 @@
 using System.IO;
 using System.Reflection;
+using Microsoft.Data.Sqlite;
 using Moq;
+using SmartCon.Core.Models;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.LocalCatalog;
@@ -27,7 +29,12 @@ public sealed class DatabaseManagerTests
             identityMock.Setup(s => s.GetCurrentUser())
                 .Returns(new UserIdentity("test-user", "Test User", "TEST-PC", "test-user"));
 
-            Manager = new DatabaseManager(Database, identityMock.Object, new LocalCatalogMigrator(Database));
+            var registryMigratorMock = new Mock<IRegistryMigrator>();
+            registryMigratorMock.Setup(m => m.MigrateAsync(It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+            registryMigratorMock.SetupGet(m => m.LatestSchemaVersion).Returns(1);
+
+            Manager = new DatabaseManager(Database, identityMock.Object, new LocalCatalogMigrator(Database), registryMigratorMock.Object);
 
             var field = typeof(DatabaseManager).GetField(
                 "_registryPath",
@@ -208,6 +215,99 @@ public sealed class DatabaseManagerTests
         var path = fixture.Manager.GetActiveDatabasePath();
 
         Assert.Null(path);
+    }
+
+    [Fact]
+    public async Task CreateProjectDatabaseAsync_CreatesProjectBase()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate
+            {
+                Blocks =
+                [
+                    new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }
+                ]
+            },
+            [new FieldDefinition { Name = "project", ValidationMode = ValidationMode.None }]);
+
+        var conn = await fixture.Manager.CreateProjectDatabaseAsync("ProjectDB", dbPath, binding);
+
+        Assert.NotNull(conn);
+        Assert.Equal(BaseType.Project, conn.Kind);
+        Assert.NotNull(conn.ProjectBinding);
+        Assert.Single(conn.ProjectBinding.Template.Blocks);
+
+        var active = fixture.Manager.GetActiveConnection();
+        Assert.NotNull(active);
+        Assert.Equal(conn.Id, active.Id);
+        Assert.Equal(BaseType.Project, active.Kind);
+    }
+
+    [Fact]
+    public async Task CreateProjectDatabaseAsync_SetsCachedBaseTypeToProject()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate { Blocks = [new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }] },
+            []);
+
+        var conn = await fixture.Manager.CreateProjectDatabaseAsync("ProjectDB", dbPath, binding);
+
+        using var dbConn = fixture.Database.CreateConnection();
+        await dbConn.OpenAsync();
+        using var cmd = dbConn.CreateCommand();
+        cmd.CommandText = "SELECT base_type FROM database_meta LIMIT 1";
+        var baseType = (long?)(await cmd.ExecuteScalarAsync());
+        Assert.Equal(1L, baseType);
+    }
+
+    [Fact]
+    public async Task ConfigureProjectBaseAsync_UpdatesExistingGeneralToProject()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var conn = await fixture.Manager.CreateDatabaseAsync("GeneralDB", dbPath);
+        Assert.Equal(BaseType.General, conn.Kind);
+
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate { Blocks = [new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }] },
+            []);
+
+        var updated = await fixture.Manager.ConfigureProjectBaseAsync(conn.Id, binding);
+
+        Assert.Equal(BaseType.Project, updated.Kind);
+        Assert.NotNull(updated.ProjectBinding);
+        var listed = fixture.Manager.ListConnections().First(c => c.Id == conn.Id);
+        Assert.Equal(BaseType.Project, listed.Kind);
+    }
+
+    [Fact]
+    public async Task ConfigureProjectBaseAsync_UpdatesCachedBaseTypeOnNonActiveDatabase()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var conn1 = await fixture.Manager.CreateDatabaseAsync("ActiveDB", dbPath);
+        var conn2 = await fixture.Manager.CreateDatabaseAsync("TargetDB", dbPath);
+
+        await fixture.Manager.SwitchDatabaseAsync(conn1.Id);
+        Assert.Equal(conn1.Id, fixture.Manager.GetActiveConnection()!.Id);
+
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate { Blocks = [new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }] },
+            []);
+
+        await fixture.Manager.ConfigureProjectBaseAsync(conn2.Id, binding);
+
+        fixture.Database.SwitchToPath(conn2.Path);
+        using var dbConn = fixture.Database.CreateConnection();
+        await dbConn.OpenAsync();
+        using var cmd = dbConn.CreateCommand();
+        cmd.CommandText = "SELECT base_type FROM database_meta LIMIT 1";
+        var baseType = (long?)(await cmd.ExecuteScalarAsync());
+        Assert.Equal(1L, baseType);
     }
 
     [Fact]

@@ -10,6 +10,7 @@ using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
+using SmartCon.FamilyManager.Selectors;
 using SmartCon.FamilyManager.Services;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.FamilyManager.Services.Stale;
@@ -64,6 +65,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly FamilyImportPreparationService _preparationService;
     private readonly IContentHashDedupService _dedupService;
     private readonly IUiFreezeRecoveryService _freezeRecovery;
+    private readonly IActiveDocumentChangeNotifier _activeDocumentNotifier;
+    private readonly IProjectBaseActivator _projectBaseActivator;
+    private readonly IProjectBaseBindingEvaluator _projectBaseEvaluator;
+
+    private string? _currentActiveDocumentPath;
+    private bool _activeBaseCompatibleWithCurrentDoc = true;
+    private ProjectBaseMatch? _activeBaseMatch;
     private CancellationTokenSource? _searchCts;
     private bool _suppressConnectionChanged;
     private CategoryNodeViewModel? _noCategoryNode;
@@ -97,8 +105,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(PlaceTypeCommand))]
     private bool _canPlaceType;
 
-    [ObservableProperty] private ObservableCollection<DatabaseConnection> _connections = new();
-    [ObservableProperty] private DatabaseConnection? _selectedConnection;
+    [ObservableProperty] private ObservableCollection<DatabaseListItem> _connections = new();
+    [ObservableProperty] private DatabaseListItem? _selectedConnection;
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenProfileCommand))]
     private bool _hasActiveDatabase;
@@ -176,8 +184,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _preparationService = services.PreparationService;
         _dedupService = services.DedupService;
         _freezeRecovery = services.FreezeRecovery;
+        _activeDocumentNotifier = services.ActiveDocumentNotifier;
+        _projectBaseActivator = services.ProjectBaseActivator;
+        _projectBaseEvaluator = services.ProjectBaseEvaluator;
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
+        _activeDocumentNotifier.ActiveDocumentChanged += OnActiveDocumentChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
         _placementDragService.PlacementCompleted += OnPlacementCompleted;
         _placementDragService.PlacementFailed += OnPlacementFailed;
@@ -202,12 +214,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             }
             else
             {
-                SmartConLogger.Warn($"DetectRevitVersion: int.TryParse('{versionStr}') returned false — CurrentRevitVersion stays 0. [Action: check Application.VersionNumber format, may need InvariantCulture parse]");
+                SmartConLogger.Warn($"DetectRevitVersion: int.TryParse('{versionStr}') returned false — CurrentRevitVersion stays 0. [Action: check Application.VersionNumber format, consider InvariantCulture parse]");
             }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"DetectRevitVersion failed: {ex.Message} [Action: перезапустите Revit, проверьте что версия Revit соответствует одной из поддерживаемых R19/R21/R24/R25]");
+            SmartConLogger.Warn($"DetectRevitVersion failed: {ex.Message} [Action: restart Revit and verify the version matches one of supported R19/R21/R24/R25]");
         }
     }
 
@@ -420,7 +432,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     partial void OnSelectedItemChanged(FamilyCatalogItemRow? value)
     {
-        CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
+        CanLoadToProject = value is not null && value.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject && _activeBaseCompatibleWithCurrentDoc;
         LoadToProjectCommand.NotifyCanExecuteChanged();
         LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
 
@@ -468,7 +480,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
                 };
-                CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
+                CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject && _activeBaseCompatibleWithCurrentDoc;
                 PlaceTypeCommand.NotifyCanExecuteChanged();
                 LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
             }
@@ -645,7 +657,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"RefreshTreeViaExternalEvent failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
+            SmartConLogger.Error($"RefreshTreeViaExternalEvent failed: {ex.Message} [Action: click Refresh to retry, check smartcon.log]");
         }
     }
 
@@ -668,7 +680,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"RefreshTreeAsync failed: {ex.Message} [Action: нажмите Refresh чтобы повторить, проверьте логи smartcon.log]");
+            SmartConLogger.Error($"RefreshTreeAsync failed: {ex.Message} [Action: click Refresh to retry, check smartcon.log]");
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ErrorFormat) ?? "Error: {0}",
                 ex.Message);
@@ -700,13 +712,14 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"OnPlacementCompleted dispatcher invoke failed: {ex.Message} [Action: нажмите Refresh чтобы обновить дерево]");
+            SmartConLogger.Warn($"OnPlacementCompleted dispatcher invoke failed: {ex.Message} [Action: click Refresh to update the tree]");
         }
     }
 
     private void OnPlacementFailed(string errorMessage)
     {
-        if (!SetStatusOnUiThread($"{errorMessage} [Action: проверьте, что семейство загружено в проект и тип существует; попробуйте Refresh]"))
+        SmartConLogger.Warn($"{errorMessage} [Action: verify the family is loaded and the type exists, then click Refresh]");
+        if (!SetStatusOnUiThread(errorMessage))
         {
             return;
         }
@@ -760,6 +773,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         using var _scope = SmartConLogger.BeginScope("FMVM",
             ("Method", "Dispose"));
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+        _activeDocumentNotifier.ActiveDocumentChanged -= OnActiveDocumentChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
         _placementDragService.PlacementCompleted -= OnPlacementCompleted;
         _placementDragService.PlacementFailed -= OnPlacementFailed;

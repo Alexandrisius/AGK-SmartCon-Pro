@@ -5,6 +5,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Selectors;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -16,16 +17,33 @@ public sealed partial class FamilyManagerMainViewModel
         _suppressConnectionChanged = true;
         try
         {
-            var list = _databaseManager.ListConnections();
-            Connections = new ObservableCollection<DatabaseConnection>(list);
+            var connections = _databaseManager.ListConnections();
             var active = _databaseManager.GetActiveConnection();
-            SelectedConnection = Connections.FirstOrDefault(c => c.Id == active?.Id);
+            var items = connections.Select(c => BuildListItem(c, active)).ToList();
+            Connections = new ObservableCollection<DatabaseListItem>(items);
+            SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == active?.Id);
             HasActiveDatabase = active is not null;
         }
         finally
         {
             _suppressConnectionChanged = false;
         }
+    }
+
+    private DatabaseListItem BuildListItem(DatabaseConnection connection, DatabaseConnection? active)
+    {
+        if (connection.Kind != BaseType.Project || string.IsNullOrEmpty(_currentActiveDocumentPath))
+            return new DatabaseListItem(connection, ProjectBaseMatchKind.NotApplicable);
+
+        var filePath = _currentActiveDocumentPath!;
+        if (connection.ConnectionEquals(active))
+        {
+            var kind = _activeBaseMatch?.Kind ?? ProjectBaseMatchKind.NotApplicable;
+            return new DatabaseListItem(connection, kind, _activeBaseMatch?.Reason);
+        }
+
+        var evaluation = _projectBaseEvaluator.Evaluate(connection.ProjectBinding, filePath);
+        return new DatabaseListItem(connection, evaluation.Kind, evaluation.Reason);
     }
 
     private void OnActiveDatabaseChanged(object? sender, string connectionId)
@@ -35,15 +53,19 @@ public sealed partial class FamilyManagerMainViewModel
         _staleDetector.InvalidateCache();
         RefreshConnections();
         _ = RefreshTreeViaExternalEventAsync();
+        RecomputeActiveBaseMatch();
+        InvalidateLoadAndPlaceCommands();
     }
 
-    partial void OnSelectedConnectionChanged(DatabaseConnection? value)
+    partial void OnSelectedConnectionChanged(DatabaseListItem? value)
     {
+        ConfigureProjectBaseCommand.NotifyCanExecuteChanged();
+        DeleteDatabaseCommand.NotifyCanExecuteChanged();
         if (value is null) return;
         if (_suppressConnectionChanged) return;
         var active = _databaseManager.GetActiveConnection();
-        if (active?.Id == value.Id) return;
-        _ = SwitchDatabaseAsync(value.Id);
+        if (active?.Id == value.Connection.Id) return;
+        _ = SwitchDatabaseAsync(value.Connection.Id);
     }
 
     private async Task SwitchDatabaseAsync(string connectionId)
@@ -59,7 +81,7 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     RefreshConnections();
                     await RefreshAccessAndLoadTreeAsync();
-                    var conn = Connections.FirstOrDefault(c => c.Id == connectionId);
+                    var conn = Connections.FirstOrDefault(c => c.Connection.Id == connectionId);
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Switched to: {0}",
                         conn?.Name ?? connectionId);
@@ -96,7 +118,7 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     [RelayCommand]
-    private async Task CreateDatabaseAsync()
+    private async Task CreateGeneralDatabaseAsync()
     {
         var path = _dialogService.ShowFolderBrowserDialog(
             LanguageManager.GetString(StringLocalization.Keys.FM_DbSelectPath) ?? "Select parent folder for database");
@@ -118,7 +140,7 @@ public sealed partial class FamilyManagerMainViewModel
                 var conn = await _databaseManager.CreateDatabaseAsync(name!.Trim(), path!);
                 RefreshConnections();
                 await RefreshAccessAndLoadTreeAsync();
-                SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
+                SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == conn.Id);
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created at {1}",
                     conn.Name, conn.Path);
@@ -144,6 +166,107 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     [RelayCommand]
+    private async Task CreateProjectDatabaseAsync()
+    {
+        var path = _dialogService.ShowFolderBrowserDialog(
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbSelectPath) ?? "Select parent folder for database");
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        var name = _dialogService.ShowInputDialog(
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewTitle) ?? "New Project Database",
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPrompt) ?? "Enter database name:",
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewDefault) ?? "New Project Catalog");
+
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var editorVm = _viewModelFactory.CreateProjectBaseRulesEditorViewModel(null, _currentActiveDocumentPath ?? string.Empty);
+        var ok = _dialogService.ShowProjectBaseRulesEditor(editorVm);
+        if (ok != true) return;
+
+        var binding = editorVm.BuildBinding();
+        if (binding is null)
+        {
+            _dialogService.ShowWarning(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbNewTitle) ?? "New Project Database",
+                LanguageManager.GetString(StringLocalization.Keys.FM_PBase_BindingNotConfigured) ?? "Project binding is not configured. Cannot create project base.");
+            return;
+        }
+
+        IsLoading = true;
+        try
+        {
+            _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+            try
+            {
+                var conn = await _databaseManager.CreateProjectDatabaseAsync(name!.Trim(), path!, binding);
+                RefreshConnections();
+                await RefreshAccessAndLoadTreeAsync();
+                SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == conn.Id);
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Project database \"{0}\" created at {1}",
+                    conn.Name, conn.Path);
+            }
+            finally
+            {
+                _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
+            }
+        }
+        catch (Exception ex)
+        {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateErrorTitle) ?? "Database creation error",
+                ex.Message);
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error creating database: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanConfigureProjectBase))]
+    private async Task ConfigureProjectBaseAsync()
+    {
+        var selected = SelectedConnection;
+        if (selected is null || selected.Kind != BaseType.Project) return;
+
+        var editorVm = _viewModelFactory.CreateProjectBaseRulesEditorViewModel(selected.Connection.ProjectBinding, _currentActiveDocumentPath ?? string.Empty);
+        var ok = _dialogService.ShowProjectBaseRulesEditor(editorVm);
+        if (ok != true) return;
+        var binding = editorVm.BuildBinding();
+        if (binding is null) return;
+
+        IsLoading = true;
+        try
+        {
+            await _databaseManager.ConfigureProjectBaseAsync(selected.Connection.Id, binding);
+            RefreshConnections();
+            RecomputeActiveBaseMatch();
+            InvalidateLoadAndPlaceCommands();
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Project binding for \"{0}\" updated",
+                selected.Name);
+        }
+        catch (Exception ex)
+        {
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateErrorTitle) ?? "Project base error",
+                ex.Message);
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error: {0}",
+                ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private bool CanConfigureProjectBase() => SelectedConnection is not null && SelectedConnection.Kind == BaseType.Project;
+
+    [RelayCommand]
     private async Task ConnectDatabaseAsync()
     {
         var path = _dialogService.ShowFolderBrowserDialog(
@@ -159,7 +282,7 @@ public sealed partial class FamilyManagerMainViewModel
                 var conn = await _databaseManager.ConnectDatabaseAsync(path!);
                 RefreshConnections();
                 await RefreshAccessAndLoadTreeAsync();
-                SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
+                SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == conn.Id);
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Connected to: {0}",
                     conn.Name);
@@ -217,7 +340,7 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
-            var success = await _databaseManager.DisconnectDatabaseAsync(SelectedConnection.Id);
+            var success = await _databaseManager.DisconnectDatabaseAsync(SelectedConnection.Connection.Id);
             if (success)
             {
                 StatusMessage = string.Format(
@@ -243,7 +366,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (SelectedConnection is null) return;
 
-        var isActive = _databaseManager.GetActiveConnection()?.Id == SelectedConnection.Id;
+        var isActive = _databaseManager.GetActiveConnection()?.Id == SelectedConnection.Connection.Id;
         var connections = _databaseManager.ListConnections();
         if (isActive && connections.Count <= 1)
         {
@@ -265,7 +388,7 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
-            var success = await _databaseManager.DeleteDatabaseAsync(SelectedConnection.Id);
+            var success = await _databaseManager.DeleteDatabaseAsync(SelectedConnection.Connection.Id);
             if (success)
             {
                 StatusMessage = string.Format(

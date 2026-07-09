@@ -124,6 +124,14 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
 
     public bool? ShowCategoryTreeEditor(object viewModel) => _presenter.ShowDialog(viewModel);
 
+    public bool? ShowProjectBaseRulesEditor(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public bool? ShowParseRuleEditor(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public bool? ShowFieldLibrary(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public bool? ShowAllowedValues(object viewModel) => _presenter.ShowDialog(viewModel);
+
     public string? ShowCategoryPicker(object viewModel)
     {
         var result = _presenter.ShowDialog(viewModel);

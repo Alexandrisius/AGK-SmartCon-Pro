@@ -492,10 +492,13 @@ public interface IFamilyDataImportService
 ```csharp
 public interface IDatabaseManager
 {
+    Task InitializeAsync(CancellationToken ct = default);
     IReadOnlyList<DatabaseConnection> ListConnections();
     DatabaseConnection? GetActiveConnection();
     string? GetActiveDatabasePath();
     Task<DatabaseConnection> CreateDatabaseAsync(string name, string path, CancellationToken ct = default);
+    Task<DatabaseConnection> CreateProjectDatabaseAsync(string name, string path, ProjectBaseBinding binding, CancellationToken ct = default);
+    Task<DatabaseConnection> ConfigureProjectBaseAsync(string connectionId, ProjectBaseBinding binding, CancellationToken ct = default);
     Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default);
     Task<bool> SwitchDatabaseAsync(string connectionId, CancellationToken ct = default);
     Task<bool> DisconnectDatabaseAsync(string connectionId, CancellationToken ct = default);
@@ -503,6 +506,87 @@ public interface IDatabaseManager
     event EventHandler<string>? ActiveDatabaseChanged;
 }
 ```
+
+---
+
+## IRegistryMigrator
+
+Мигратор `registry.json` FamilyManager между версиями схемы. Каждая версия —
+небольшое аддитивное обновление (заполнение новых полей значениями по умолчанию
++ атомарная перезапись файла). Запускается один раз при старте плагина сразу
+после инициализации `IDatabaseManager`, до того как UI начнёт читать реестр
+(см. #119, decision A12).
+
+**Файл:** `IRegistryMigrator.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/RegistryMigrator.cs`
+
+```csharp
+public interface IRegistryMigrator
+{
+    Task MigrateAsync(CancellationToken ct = default);
+    int LatestSchemaVersion { get; }
+}
+```
+
+---
+
+## IProjectBaseBindingEvaluator
+
+Чистый C#-evaluator привязки проектной базы к имени файла Revit. Делегирует парсинг
+в `IFileNameParser` из Core.
+
+**Файл:** `IProjectBaseBindingEvaluator.cs`  
+**Реализация:** `SmartCon.Core/Services/Implementation/ProjectBaseBindingEvaluator.cs`
+
+```csharp
+public interface IProjectBaseBindingEvaluator
+{
+    ProjectBaseMatch Evaluate(ProjectBaseBinding? binding, string filePath);
+}
+```
+
+Возвращает `NotApplicable` если `binding` равен `null`; `Match` при успешном парсинге
+и прохождении валидации полей; `Mismatch` с пояснением при ошибке. См. ADR-045.
+
+---
+
+## IProjectBaseActivator
+
+Сервис автоматической активации базы при смене активного документа Revit. Pure C#,
+не обращается к Revit API напрямую — переключение выполняет `IDatabaseManager.SwitchDatabaseAsync`.
+
+**Файл:** `IProjectBaseActivator.cs`  
+**Реализация:** `SmartCon.Core/Services/Implementation/ProjectBaseActivator.cs`
+
+```csharp
+public interface IProjectBaseActivator
+{
+    Task<string?> ActivateForDocumentAsync(string currentFilePath, CancellationToken ct = default);
+}
+```
+
+Алгоритм: перебрать проектные базы, активировать первую подходящую; иначе fallback
+на первую общую базу. Если общих баз нет — возвращает `null`.
+
+---
+
+## IActiveDocumentChangeNotifier
+
+Абстракция над Revit-событием `ViewActivated`. Core-контракт, реализация в
+`SmartCon.Revit/Events/ActiveDocumentChangeNotifier.cs`.
+
+**Файл:** `IActiveDocumentChangeNotifier.cs`
+
+```csharp
+public interface IActiveDocumentChangeNotifier : IDisposable
+{
+    event EventHandler<ActiveDocumentChangedEventArgs>? ActiveDocumentChanged;
+}
+```
+
+Подписчики (`FamilyManagerMainViewModel`) получают путь активного документа и
+запускают `IProjectBaseActivator.ActivateForDocumentAsync`. Фильтрация unsaved/detached/family
+документов выполняется в реализации, чтобы Core оставался чистым от Revit API.
 
 ---
 
@@ -531,11 +615,11 @@ public interface IFamilyManagerDialogService
     string? ShowFolderBrowserDialog(string title, string? initialDirectory = null);
     void ShowWarning(string title, string message);
     void ShowError(string title, string message);
-    bool? ShowMetadataEdit(object viewModel);
     string? ShowInputDialog(string title, string prompt, string defaultText = "");
     bool ShowConfirmation(string title, string message);
     DialogResult ShowYesNoCancel(string title, string message);
     bool? ShowCategoryTreeEditor(object viewModel);
+    bool? ShowProjectBaseRulesEditor(object viewModel);
     string? ShowCategoryPicker(object viewModel);
     string? ShowOpenJsonDialog(string title, string? initialDirectory = null);
     string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
@@ -543,6 +627,8 @@ public interface IFamilyManagerDialogService
     string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null);
     bool? ShowPresetEditor(object viewModel);
     bool? ShowAttributeLibrary(object viewModel);
+    bool? ShowProfile(object viewModel);
+    bool? ShowBatchImportDialog(object viewModel);
     SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request);
 }
 ```

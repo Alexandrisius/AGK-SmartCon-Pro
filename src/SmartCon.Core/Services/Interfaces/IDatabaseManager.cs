@@ -24,6 +24,34 @@ public interface IDatabaseManager
     /// <summary>Create a new database at the specified path.</summary>
     Task<DatabaseConnection> CreateDatabaseAsync(string name, string path, CancellationToken ct = default);
 
+    /// <summary>
+    /// Create a new project-scoped database (see #119). Like
+    /// <see cref="CreateDatabaseAsync"/> but also stores the supplied
+    /// <paramref name="binding"/> in <c>registry.json</c> (connection
+    /// <c>Kind = Project</c>, <c>ProjectBinding = binding</c>) and updates
+    /// <c>catalog.db.database_meta.base_type = 1</c> to mark this database
+    /// as project-scoped in the convenience cache.
+    /// </summary>
+    Task<DatabaseConnection> CreateProjectDatabaseAsync(
+        string name,
+        string path,
+        ProjectBaseBinding binding,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Attach or overwrite the project binding of an existing connection
+    /// (see #119). The connection's <c>Kind</c> is set to <c>Project</c> and
+    /// its <c>ProjectBinding</c> replaced with <paramref name="binding"/> in
+    /// <c>registry.json</c>. If the connection was previously General, the
+    /// cached <c>catalog.db.database_meta.base_type</c> is bumped from 0 to 1.
+    /// Idempotent: calling this twice on the same connection only changes
+    /// the binding.
+    /// </summary>
+    Task<DatabaseConnection> ConfigureProjectBaseAsync(
+        string connectionId,
+        ProjectBaseBinding binding,
+        CancellationToken ct = default);
+
     /// <summary>Register an existing database at the specified path.</summary>
     Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default);
 

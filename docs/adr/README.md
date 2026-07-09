@@ -55,3 +55,4 @@
 | [042](042-familymanager-3d-preview.md) | FamilyManager 3D Geometry Preview — GLB extraction (SharpGLTF) + HelixToolkit.Wpf.SharpDX viewer (Issue #92) | accepted | 2026-07-01 |
 | [043](043-pipeconnect-modal-justification.md) | PipeConnectEditor модальность — единственно возможное решение для live real-element preview + single-undo cancel (Exa-исследование ограничений Revit API) | accepted | 2026-07-08 |
 | [044](044-familymanager-content-tab-redesign.md) | FamilyManager Content Tab Redesign — Dual-Pane Layout, attach-to-version toggle, unified add, auto-GLB filter, confirm delete | accepted | 2026-07-08 |
+| [045](045-core-filenameparser-reuses-familymanager-basetype.md) | Core FileNameParser reused by FamilyManager BaseType — project-base binding without FamilyManager → ProjectManagement dependency | accepted | 2026-07-09 |
