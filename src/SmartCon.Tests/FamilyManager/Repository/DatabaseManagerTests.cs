@@ -259,6 +259,31 @@ public sealed class DatabaseManagerTests
     }
 
     [Fact]
+    public async Task DeleteDatabaseAsync_WithReadOnlyFiles_DeletesDirectory()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+
+        var conn1 = await fixture.Manager.CreateDatabaseAsync("DB1", dbPath);
+        var conn2 = await fixture.Manager.CreateDatabaseAsync("DB2", dbPath);
+
+        var filesDir = Path.Combine(conn1.Path, "files");
+        Directory.CreateDirectory(filesDir);
+        var rfaFile = Path.Combine(filesDir, "family.rfa");
+        await File.WriteAllTextAsync(rfaFile, "rfa");
+        File.SetAttributes(rfaFile, File.GetAttributes(rfaFile) | FileAttributes.ReadOnly);
+
+        var deleted = await fixture.Manager.DeleteDatabaseAsync(conn1.Id);
+
+        Assert.True(deleted);
+        Assert.False(Directory.Exists(conn1.Path));
+        var connections = fixture.Manager.ListConnections();
+        Assert.Single(connections);
+        Assert.Equal(conn2.Id, connections[0].Id);
+        Assert.Equal(conn2.Id, fixture.Manager.GetActiveConnection()!.Id);
+    }
+
+    [Fact]
     public void GetActiveConnection_NoConnections_ReturnsNull()
     {
         using var fixture = new TempDbManagerFixture();

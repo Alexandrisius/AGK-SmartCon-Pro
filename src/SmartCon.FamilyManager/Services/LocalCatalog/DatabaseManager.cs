@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -58,6 +59,7 @@ internal sealed class DatabaseManager : IDatabaseManager
     private readonly string _registryPath;
     private readonly string _bakPath;
     private readonly string _tempPath;
+    private readonly string _trashPath;
 
     public DatabaseManager(
         LocalCatalogDatabase catalogDatabase,
@@ -75,6 +77,7 @@ internal sealed class DatabaseManager : IDatabaseManager
         _registryPath = Path.Combine(fmDir, "registry.json");
         _bakPath = _registryPath + ".bak";
         _tempPath = _registryPath + ".tmp";
+        _trashPath = Path.Combine(fmDir, ".trash");
 
         var registry = LoadRegistry();
         if (registry.ActiveConnectionId is not null)
@@ -90,6 +93,8 @@ internal sealed class DatabaseManager : IDatabaseManager
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         await _registryMigrator.MigrateAsync(ct);
+
+        await CleanupTrashAsync(ct);
 
         var registry = LoadRegistry();
         if (registry.ActiveConnectionId is not null)
@@ -444,16 +449,28 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         if (Directory.Exists(conn.Path))
         {
+            // Release any idle SQLite handles before touching the filesystem.
+            SqliteConnection.ClearAllPools();
+
             try
             {
-                await DeleteDirectoryWithRetryAsync(conn.Path, ct);
+                var deleted = await SafeDeleteDirectoryAsync(conn.Path, _trashPath, ct);
+                if (!deleted)
+                {
+                    using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                        ("Method", nameof(DeleteDatabaseAsync)),
+                        ("DatabaseName", conn.Name),
+                        ("FileName", Path.GetFileName(conn.Path)));
+                    SmartConLogger.Warn($"Database files for '{conn.Name}' moved to trash because they were locked. " +
+                        $"[Action: remaining files will be removed on the next Revit launch]");
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 using var _scope = SmartConLogger.BeginScope("DatabaseManager",
                     ("Method", nameof(DeleteDatabaseAsync)),
                     ("DatabaseName", conn.Name),
-                    ("Path", conn.Path),
+                    ("FileName", Path.GetFileName(conn.Path)),
                     ("Exception", ex.GetType().Name));
                 SmartConLogger.Warn($"Could not delete database files for '{conn.Name}' because they are in use. " +
                     $"[Action: close Revit and remove remaining folder manually: {conn.Path}]");
@@ -505,23 +522,102 @@ internal sealed class DatabaseManager : IDatabaseManager
         }
     }
 
-    private static async Task DeleteDirectoryWithRetryAsync(string path, CancellationToken ct, int maxRetries = 3)
+    private static async Task<bool> SafeDeleteDirectoryAsync(string path, string trashPath, CancellationToken ct, int maxRetries = 5)
     {
+        if (!Directory.Exists(path))
+            return true;
+
+        ClearDirectoryAttributes(path);
+
         for (var i = 0; i < maxRetries; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (i < maxRetries - 1)
+                {
+                    await Task.Delay(200 * (i + 1), ct);
+                    ClearDirectoryAttributes(path);
+                }
+            }
+        }
+
+        // Fallback: move the locked folder to the trash area so it can be retried later.
+        Directory.CreateDirectory(trashPath);
+        var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
+        var guidSuffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var trashName = $"{Path.GetFileName(path)}_{timestamp}_{guidSuffix}";
+        var trashItemPath = Path.Combine(trashPath, trashName);
+
+        Directory.Move(path, trashItemPath);
+        return false;
+    }
+
+    private static void ClearDirectoryAttributes(string path)
+    {
+        if (!Directory.Exists(path))
+            return;
+
+        try
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+        catch
+        {
+            // ignored
+        }
+
+        foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
         {
             try
             {
-                if (Directory.Exists(path))
-                    Directory.Delete(path, recursive: true);
-                return;
+                File.SetAttributes(file, FileAttributes.Normal);
             }
-            catch (IOException) when (i < maxRetries - 1)
+            catch
             {
-                await Task.Delay(200 * (i + 1), ct);
+                // ignored
             }
-            catch (UnauthorizedAccessException) when (i < maxRetries - 1)
+        }
+
+        foreach (var dir in Directory.GetDirectories(path, "*", SearchOption.AllDirectories))
+        {
+            try
             {
-                await Task.Delay(300 * (i + 1), ct);
+                File.SetAttributes(dir, FileAttributes.Normal);
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+    }
+
+    private async Task CleanupTrashAsync(CancellationToken ct)
+    {
+        if (!Directory.Exists(_trashPath))
+            return;
+
+        var dirs = await Task.Run(() => Directory.GetDirectories(_trashPath), ct);
+        foreach (var dir in dirs)
+        {
+            try
+            {
+                ClearDirectoryAttributes(dir);
+                await Task.Run(() => Directory.Delete(dir, recursive: true), ct);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                    ("Method", nameof(CleanupTrashAsync)),
+                    ("FileName", Path.GetFileName(dir)));
+                SmartConLogger.Warn($"Could not clean up trashed folder '{dir}'. It will be retried on the next launch. " +
+                    $"[Action: close Revit if the folder is still locked]");
             }
         }
     }
