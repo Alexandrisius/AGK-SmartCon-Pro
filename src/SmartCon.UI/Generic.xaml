@@ -1,6 +1,10 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <!-- ADR-046: This dictionary is loaded via XamlReader.Load from an embedded resource.
+         It must contain only self-contained WPF resources (PathGeometry, DrawingImage, etc.).
+         Do NOT add PackIconMaterial or any other external icon control here. -->
+
     <!-- ══════════════════════════════════════════════════════════════════
          ЦВЕТА
          ══════════════════════════════════════════════════════════════════ -->
