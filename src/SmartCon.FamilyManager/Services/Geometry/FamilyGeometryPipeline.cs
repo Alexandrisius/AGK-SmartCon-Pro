@@ -65,6 +65,11 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             ("VersionId", versionId),
             ("FilePath", Path.GetFileName(managedRfaPath ?? "")));
 
+        SmartConLogger.Info(
+            $"Geometry pipeline start: family='{familyName}', v='{versionLabel}', " +
+            $"hasPreextractedGeometry={geometryPerType is not null && geometryPerType.Count > 0}, " +
+            $"managedRfaPath='{Path.GetFileName(managedRfaPath ?? "")}'");
+
         // 1. Obtain geometry: either pre-extracted from Prepare (H1)
         //    or extract now from managed .rfa (H2/H3).
         IReadOnlyList<FamilyGeometryPerType>? geometry = geometryPerType;
@@ -79,6 +84,9 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                 return;
             }
 
+            SmartConLogger.Info(
+                $"Geometry pipeline extracting from managed .rfa: '{Path.GetFileName(managedRfaPath)}'");
+
             // H2/H3 path: extract geometry from managed .rfa (one OpenDocumentFile).
             geometry = await _awaitableEvent.RaiseAsync(
                 (app) => _extractor.ExtractAsync(managedRfaPath!, familyName, ct).GetAwaiter().GetResult(),
@@ -86,10 +94,19 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
 
             if (geometry is null || geometry.Count == 0)
             {
-                SmartConLogger.Info(
-                    $"Geometry pipeline skipped: no preview extracted for '{familyName}' v{versionLabel}");
+                SmartConLogger.Warn(
+                    $"Geometry pipeline skipped: no preview extracted for '{familyName}' v{versionLabel} " +
+                    "[Action: verify family has visible 3D solids; 3D preview will be unavailable for this version]");
                 return;
             }
+
+            SmartConLogger.Info(
+                $"Geometry pipeline extracted {geometry.Count} type(s) from '{Path.GetFileName(managedRfaPath)}'");
+        }
+        else
+        {
+            SmartConLogger.Info(
+                $"Geometry pipeline using pre-extracted geometry: {geometry.Count} type(s)");
         }
 
         // 2. Delete any previous auto-extracted Preview assets for this
@@ -99,6 +116,8 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
         await DeletePreviousAutoExtractedAssetAsync(catalogItemId, versionLabel, ct).ConfigureAwait(false);
 
         // 3. Write N GLBs (one per type) and register each as a Model3D asset.
+        var writtenCount = 0;
+        var skippedEmptyCount = 0;
         foreach (var gpt in geometry)
         {
             ct.ThrowIfCancellationRequested();
@@ -107,6 +126,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             {
                 SmartConLogger.Info(
                     $"Skipping type '{gpt.TypeName}' — empty geometry");
+                skippedEmptyCount++;
                 continue;
             }
 
@@ -137,6 +157,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
 
                 var asset = await _assetService.AddAssetAsync(
                     catalogItemId, versionLabel, FamilyAssetType.Model3D, tempPath, description, ct).ConfigureAwait(false);
+                writtenCount++;
 
                 SmartConLogger.Info(
                     $"Geometry pipeline OK: type='{gpt.TypeName}', GLB asset={asset.Id}, file='{asset.FileName}', " +
@@ -154,6 +175,10 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                 }
             }
         }
+
+        SmartConLogger.Info(
+            $"Geometry pipeline finished: family='{familyName}', v='{versionLabel}', " +
+            $"written={writtenCount}, skippedEmpty={skippedEmptyCount}, totalTypes={geometry.Count}");
     }
 
     /// <summary>

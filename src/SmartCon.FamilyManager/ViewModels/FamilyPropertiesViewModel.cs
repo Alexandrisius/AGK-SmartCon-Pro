@@ -27,6 +27,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IAttributeDefinitionRepository _attributeDefRepository;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IFamilyStorageRenameService _renameService;
+    private readonly IFamilyGeometryPipeline _geometryPipeline;
+    private readonly IFamilyFileResolver _fileResolver;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -220,7 +222,9 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IFamilyTypeRepository typeRepository,
         IAttributeDefinitionRepository attributeDefRepository,
         IFamilyManagerViewModelFactory viewModelFactory,
-        IFamilyStorageRenameService renameService)
+        IFamilyStorageRenameService renameService,
+        IFamilyGeometryPipeline geometryPipeline,
+        IFamilyFileResolver fileResolver)
     {
         SmartConLogger.Info($"FamilyPropertiesViewModel ctor: start for itemId={catalogItemId} name='{name}'");
         _catalogItemId = catalogItemId;
@@ -237,6 +241,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _attributeDefRepository = attributeDefRepository;
         _viewModelFactory = viewModelFactory;
         _renameService = renameService;
+        _geometryPipeline = geometryPipeline;
+        _fileResolver = fileResolver;
 
         Name = name;
         Description = description;

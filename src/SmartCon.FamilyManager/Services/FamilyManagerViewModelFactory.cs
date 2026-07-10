@@ -25,6 +25,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
     private readonly IRevitContext _revitContext;
     private readonly IFileNameParser _fileNameParser;
+    private readonly IFamilyGeometryPipeline _geometryPipeline;
+    private readonly IFamilyFileResolver _fileResolver;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -44,7 +46,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyStorageRenameService renameService,
         IFamilyManagerMetadataMediator metadataMediator,
         IRevitContext revitContext,
-        IFileNameParser fileNameParser)
+        IFileNameParser fileNameParser,
+        IFamilyGeometryPipeline geometryPipeline,
+        IFamilyFileResolver fileResolver)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -64,6 +68,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _metadataMediator = metadataMediator;
         _revitContext = revitContext;
         _fileNameParser = fileNameParser;
+        _geometryPipeline = geometryPipeline;
+        _fileResolver = fileResolver;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -78,7 +84,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             categoryId, categoryPath, tags, contentStatus,
             versionLabel, createdAtText, updatedAtText,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
-            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService)
+            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
+            _geometryPipeline, _fileResolver)
         { IsReadOnly = isReadOnly };
     }
 

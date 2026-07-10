@@ -204,6 +204,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         SmartConLogger.Info(
             $"ExtractGeometryPerType: extracted {result.Count}/{typeCount} types with geometry for '{familyName}'");
 
+        if (result.Count == 0)
+        {
+            SmartConLogger.Warn(
+                $"ExtractGeometryPerType: no geometry for any type in '{familyName}' (typeCount={typeCount}) " +
+                "[Action: verify family has visible 3D solids; 3D preview will be unavailable]");
+        }
+
         return result;
     }
 
