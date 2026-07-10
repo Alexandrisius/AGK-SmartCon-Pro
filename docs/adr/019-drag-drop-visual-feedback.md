@@ -56,6 +56,16 @@ else if (state.IsOverValidDropTarget)
 - `TreeViewDragInfo` / `TreeViewDropInfo` — реализации в `SmartCon.UI.Behaviors`
 - `DataObject` с custom format `"SmartCon.TreeViewDrag"` — изоляция от системного DnD
 
+### 5. Pressure-based auto-scroll
+
+Прокрутка TreeView во время DnD реализована через `DispatcherTimer` внутри `TreeViewDragDropBehavior`:
+
+- Авто-скролл запускается, когда курсор находится в `AutoScrollEdgeTolerance` пикселей от верхнего/нижнего края viewport.
+- Скорость линейно зависит от "давления" (pressure): чем ближе к краю, тем выше `factor`, вплоть до `AutoScrollMaxSpeed`.
+- Дельта вычисляется в `DragDropAutoScrollCalculator` (pure C#, покрыт unit-тестами), что отделяет математику от WPF-логики.
+- `AutoScrollTopInset` позволяет учесть sticky overlay (например, FamilyManager sticky category headers), не пересекаясь с FamilyManager-логикой.
+- Auto-scroll останавливается через `PreviewDragLeave` и в `Cleanup` после `Drop`/`DoDragDrop`, чтобы `DispatcherTimer` не утечал.
+
 ## Последствия
 
 ### Положительные
@@ -89,6 +99,7 @@ else if (state.IsOverValidDropTarget)
 
 - `SmartCon.UI/DragDrop/DragAdorner.cs` — следует за курсором
 - `SmartCon.UI/DragDrop/DropTargetAdorner.cs` — подсветка target
-- `SmartCon.UI/Behaviors/TreeViewDragDropBehavior.cs` — attached behavior для TreeView
+- `SmartCon.UI/DragDrop/DragDropAutoScrollCalculator.cs` — pressure-based delta
+- `SmartCon.UI/Behaviors/TreeViewDragDropBehavior.cs` — attached behavior для TreeView + timer-based auto-scroll
 - `SmartCon.Core/Services/Interfaces/IDragInfo.cs` — контракт payload
 - `SmartCon.Core/Services/Interfaces/IDropInfo.cs` — контракт target
