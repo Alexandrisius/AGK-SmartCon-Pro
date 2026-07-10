@@ -66,14 +66,18 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
     private void OnSelfPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(IsExpanded))
+        {
             RecomputeIsAnyDescendantCollapsed();
+        }
     }
 
     private void RecomputeIsAnyDescendantCollapsed()
     {
         var current = ComputeIsAnyDescendantCollapsed();
         if (IsAnyDescendantCollapsed != current)
+        {
             IsAnyDescendantCollapsed = current;
+        }
     }
 
     private bool ComputeIsAnyDescendantCollapsed()

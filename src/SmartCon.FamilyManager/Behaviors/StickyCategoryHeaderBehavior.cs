@@ -3,7 +3,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using System.Globalization;
+using SmartCon.Core.Logging;
 using SmartCon.FamilyManager.ViewModels;
+using System.Linq;
 using TreeView = System.Windows.Controls.TreeView;
 using TreeViewItem = System.Windows.Controls.TreeViewItem;
 using ScrollViewer = System.Windows.Controls.ScrollViewer;
@@ -13,7 +16,6 @@ using Orientation = System.Windows.Controls.Orientation;
 using Point = System.Windows.Point;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
-using SmartCon.Core.Logging;
 
 namespace SmartCon.FamilyManager.Behaviors;
 
@@ -86,6 +88,11 @@ public static class StickyCategoryHeaderBehavior
     {
         if (d is not TreeView tree) return;
 
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(OnEnabledChanged)),
+            ("Enabled", e.NewValue));
+        SmartConLogger.Debug("TreeView enabled changed");
+
         if ((bool)e.NewValue)
             Attach(tree);
         else
@@ -96,6 +103,11 @@ public static class StickyCategoryHeaderBehavior
     {
         if (d is not TreeView tree) return;
         if (!_states.TryGetValue(tree, out var state)) return;
+
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(OnOverlayChanged)),
+            ("HasOldValue", e.OldValue is not null),
+            ("HasNewValue", e.NewValue is not null));
 
         // Если панель сменилась — очищаем старую и пересчитываем.
         if (e.OldValue is Panel oldPanel)
@@ -109,8 +121,12 @@ public static class StickyCategoryHeaderBehavior
 
     private static void UpdateOverlayBorder(StickyState state)
     {
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(UpdateOverlayBorder)));
+
         var overlay = GetOverlay(state.Tree);
         var newBorder = overlay is not null ? VisualTreeHelper.GetParent(overlay) as Border : null;
+        SmartConLogger.Debug($"overlay={overlay is not null}, newBorder={newBorder is not null}");
 
         if (ReferenceEquals(state.OverlayBorder, newBorder)) return;
 
@@ -129,19 +145,34 @@ public static class StickyCategoryHeaderBehavior
         var state = _states.Values.FirstOrDefault(s => ReferenceEquals(s.OverlayBorder, border));
         if (state?.ScrollViewer is null) return;
 
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(OnOverlayPreviewMouseWheel)),
+            ("Delta", e.Delta));
+
         // Перенаправляем wheel в ScrollViewer TreeView, иначе скролл не работает
         // когда курсор над sticky-областью (overlay перехватывает hit-test).
         const double pixelsPerWheelDelta = 48.0 / 120.0;
-        state.ScrollViewer.ScrollToVerticalOffset(state.ScrollViewer.VerticalOffset - e.Delta * pixelsPerWheelDelta);
+        var currentOffset = state.ScrollViewer.VerticalOffset;
+        var targetOffset = currentOffset - e.Delta * pixelsPerWheelDelta;
+        state.ScrollViewer.ScrollToVerticalOffset(targetOffset);
+        SmartConLogger.Debug($"Wheel forwarded: currentOffset={currentOffset.ToString("F0", CultureInfo.InvariantCulture)} targetOffset={targetOffset.ToString("F0", CultureInfo.InvariantCulture)}");
         e.Handled = true;
     }
 
     private static void Attach(TreeView tree)
     {
-        if (_states.ContainsKey(tree)) return;
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(Attach)));
+
+        if (_states.ContainsKey(tree))
+        {
+            SmartConLogger.Debug("TreeView already attached");
+            return;
+        }
 
         var state = new StickyState(tree);
         _states[tree] = state;
+        SmartConLogger.Debug($"TreeView attached, IsLoaded={tree.IsLoaded}");
 
         if (tree.IsLoaded)
             HookEvents(state);
@@ -153,7 +184,14 @@ public static class StickyCategoryHeaderBehavior
 
     private static void Detach(TreeView tree)
     {
-        if (!_states.TryGetValue(tree, out var state)) return;
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(Detach)));
+
+        if (!_states.TryGetValue(tree, out var state))
+        {
+            SmartConLogger.Debug("TreeView was not attached");
+            return;
+        }
 
         UnhookEvents(state);
         tree.Unloaded -= OnTreeViewUnloaded;
@@ -163,12 +201,16 @@ public static class StickyCategoryHeaderBehavior
 
         ClearOverlay(state);
         _states.Remove(tree);
+        SmartConLogger.Debug("TreeView detached");
     }
 
     private static void OnTreeViewLoaded(object sender, RoutedEventArgs e)
     {
         if (sender is not TreeView tree) return;
         if (!_states.TryGetValue(tree, out var state)) return;
+
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(OnTreeViewLoaded)));
 
         HookEvents(state);
         tree.Loaded -= OnTreeViewLoaded;
@@ -177,12 +219,20 @@ public static class StickyCategoryHeaderBehavior
     private static void OnTreeViewUnloaded(object sender, RoutedEventArgs e)
     {
         if (sender is not TreeView tree) return;
+
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(OnTreeViewUnloaded)));
+
         Detach(tree);
     }
 
     private static void HookEvents(StickyState state)
     {
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(HookEvents)));
+
         var scrollViewer = FindVisualChild<ScrollViewer>(state.Tree);
+        SmartConLogger.Debug($"FindVisualChild<ScrollViewer>={scrollViewer is not null}");
         if (scrollViewer is null) return;
 
         state.ScrollViewer = scrollViewer;
@@ -197,6 +247,9 @@ public static class StickyCategoryHeaderBehavior
 
     private static void UnhookEvents(StickyState state)
     {
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(UnhookEvents)));
+
         if (state.ScrollViewer is not null)
             state.ScrollViewer.ScrollChanged -= OnScrollChanged;
 
@@ -210,6 +263,7 @@ public static class StickyCategoryHeaderBehavior
     {
         var state = FindStateByScrollViewer(sender);
         if (state is null) return;
+
         RecalculateSticky(state);
     }
 
@@ -285,8 +339,19 @@ public static class StickyCategoryHeaderBehavior
         var allCategoryVMs = new List<CategoryNodeViewModel>();
         CollectCategoryVMs(state.Tree.Items, allCategoryVMs);
 
+        var viewportHeight = state.ScrollViewer.ViewportHeight;
+        var scrollOffset = state.ScrollViewer.VerticalOffset;
+
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(RecalculateSticky)),
+            ("ViewportHeight", viewportHeight),
+            ("ScrollOffset", scrollOffset),
+            ("CategoryCount", allCategoryVMs.Count),
+            ("MaterializedTviCount", categoryItems.Count));
+
         if (allCategoryVMs.Count == 0)
         {
+            SmartConLogger.Debug("No categories in tree, clearing overlay");
             ClearOverlay(state);
             return;
         }
@@ -298,6 +363,8 @@ public static class StickyCategoryHeaderBehavior
             if (tvi.DataContext is CategoryNodeViewModel cat)
                 vmToTvi[cat] = tvi;
         }
+
+        SmartConLogger.Debug($"vmToTvi mapping: {vmToTvi.Count}/{allCategoryVMs.Count} categories materialised");
 
         // Построить tops, heights, parentIndices по индексам allCategoryVMs.
         var topsList = new List<double>(allCategoryVMs.Count);
@@ -339,14 +406,14 @@ public static class StickyCategoryHeaderBehavior
             }
         }
 
-        var viewportHeight = state.ScrollViewer.ViewportHeight;
-        var scrollOffset = state.ScrollViewer.VerticalOffset;
-
         // Строим КАСКАД sticky-заголовков: каждый следующий "прилипает" к низу
         // уже показанных заголовков. Это гарантирует что категория закрепляется
         // именно когда она скрывается за уже закреплёнными строками, а не только
         // когда достигает верхней границы viewport.
         var stackIndices = StickyCascadingStackBuilder.BuildCascadingStack(topsList, heightsList, parentIndicesList, viewportHeight);
+
+        SmartConLogger.Debug($"BuildCascadingStack output: stackSize={stackIndices.Count} " +
+            $"stack=[{FormatStackNames(stackIndices, allCategoryVMs)}]");
 
         if (stackIndices.Count == 0)
         {
@@ -356,6 +423,7 @@ public static class StickyCategoryHeaderBehavior
         }
 
         overlay.Children.Clear();
+        SmartConLogger.Debug("Overlay cleared");
 
         var overlayStyle = state.Tree.TryFindResource("StickyOverlayCategoryHeaderStyle") as Style;
         var folderGeometry = state.Tree.TryFindResource("FolderIconGeometry") as Geometry;
@@ -374,7 +442,21 @@ public static class StickyCategoryHeaderBehavior
             overlay.Children.Add(item);
         }
 
+        var overlayHeight = state.OverlayBorder?.ActualHeight ?? 0;
+        SmartConLogger.Debug($"Overlay rebuilt: children={overlay.Children.Count} overlayHeight={overlayHeight.ToString("F0", CultureInfo.InvariantCulture)}");
+
         LogDetailedStateIfSampled(state, allCategoryVMs, topsList, heightsList, parentIndicesList, categoryItems.Count, scrollOffset, viewportHeight, stackIndices, heightsList);
+    }
+
+    private static string FormatStackNames(IReadOnlyList<int> indices, IReadOnlyList<CategoryNodeViewModel> vms)
+    {
+        var sb = new System.Text.StringBuilder(indices.Count * 24);
+        for (int i = 0; i < indices.Count; i++)
+        {
+            if (i > 0) sb.Append(" > ");
+            sb.Append('\'').Append(vms[indices[i]].DisplayName).Append('\'');
+        }
+        return sb.ToString();
     }
 
     /// <summary>
@@ -402,9 +484,9 @@ public static class StickyCategoryHeaderBehavior
         foreach (var idx in stackIndices)
             occupiedTop += heightsForOccupied[idx] > 0 ? heightsForOccupied[idx] : 0;
 
-        var summary = $"[Sticky] scroll={scrollOffset.ToString("F0")} viewport={viewportHeight.ToString("F0")} " +
+        var summary = $"summary: scroll={scrollOffset.ToString("F0", CultureInfo.InvariantCulture)} viewport={viewportHeight.ToString("F0", CultureInfo.InvariantCulture)} " +
                       $"vmCount={allCategoryVMs.Count} tviCount={tviCount} " +
-                      $"stackSize={stackIndices.Count} occupiedTop={occupiedTop.ToString("F0")}";
+                      $"stackSize={stackIndices.Count} occupiedTop={occupiedTop.ToString("F0", CultureInfo.InvariantCulture)}";
         SmartConLogger.Debug(summary);
 
         var tviChanged = tviCount != state.LastLoggedTviCount;
@@ -412,19 +494,19 @@ public static class StickyCategoryHeaderBehavior
         if (!tviChanged && !dumpSample) return;
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"[Sticky] DIAG: scroll={scrollOffset.ToString("F0")}, viewport={viewportHeight.ToString("F0")}, " +
-                      $"vmCount={allCategoryVMs.Count}, tviCount={tviCount}, stackSize={stackIndices.Count}, occupiedTop={occupiedTop.ToString("F0")}");
-        sb.AppendLine("[Sticky] VM tree (idx | depth | name | top | height | parentIdx):");
+        sb.AppendLine($"diag: scroll={scrollOffset.ToString("F0", CultureInfo.InvariantCulture)}, viewport={viewportHeight.ToString("F0", CultureInfo.InvariantCulture)}, " +
+                      $"vmCount={allCategoryVMs.Count}, tviCount={tviCount}, stackSize={stackIndices.Count}, occupiedTop={occupiedTop.ToString("F0", CultureInfo.InvariantCulture)}");
+        sb.AppendLine("VM tree (idx | depth | name | top | height | parentIdx):");
         for (int i = 0; i < allCategoryVMs.Count; i++)
         {
             var vm = allCategoryVMs[i];
             var depth = ComputeDepth(allCategoryVMs, parentIndicesList, i);
-            var topStr = double.IsPositiveInfinity(topsList[i]) ? "+Inf" : topsList[i].ToString("F0");
-            sb.AppendLine($"  [{i}] d={depth} '{vm.DisplayName}' top={topStr} h={heightsList[i].ToString("F0")} parent={parentIndicesList[i]}");
+            var topStr = double.IsPositiveInfinity(topsList[i]) ? "+Inf" : topsList[i].ToString("F0", CultureInfo.InvariantCulture);
+            sb.AppendLine($"  [{i}] d={depth} '{vm.DisplayName}' top={topStr} h={heightsList[i].ToString("F0", CultureInfo.InvariantCulture)} parent={parentIndicesList[i]}");
         }
         if (stackIndices.Count > 0)
         {
-            sb.AppendLine("[Sticky] Stack (root → current):");
+            sb.AppendLine("Stack (root → current):");
             for (int i = 0; i < stackIndices.Count; i++)
             {
                 sb.AppendLine($"  stack[{i}] = '{allCategoryVMs[stackIndices[i]].DisplayName}'");
@@ -468,9 +550,13 @@ public static class StickyCategoryHeaderBehavior
     {
         if (state.ScrollViewer is null) return;
 
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(ScrollCategoryBelowStickyBar)));
+
         var scp = FindVisualChild<ScrollContentPresenter>(state.ScrollViewer);
         if (scp is null)
         {
+            SmartConLogger.Debug("No SCP found, falling back to BringIntoView");
             originalTvi.BringIntoView();
             return;
         }
@@ -478,6 +564,7 @@ public static class StickyCategoryHeaderBehavior
         var header = FindHeaderRow(originalTvi);
         if (header is null)
         {
+            SmartConLogger.Debug("No header row found, falling back to BringIntoView");
             originalTvi.BringIntoView();
             return;
         }
@@ -490,6 +577,10 @@ public static class StickyCategoryHeaderBehavior
         targetOffset = Math.Max(0, targetOffset);
         targetOffset = Math.Min(targetOffset, state.ScrollViewer.ScrollableHeight);
 
+        SmartConLogger.Debug($"Scrolling: topInScp={topInScp.ToString("F0", CultureInfo.InvariantCulture)} " +
+            $"occupiedTop={occupiedTop.ToString("F0", CultureInfo.InvariantCulture)} " +
+            $"targetOffset={targetOffset.ToString("F0", CultureInfo.InvariantCulture)} " +
+            $"scrollableHeight={state.ScrollViewer.ScrollableHeight.ToString("F0", CultureInfo.InvariantCulture)}");
         state.ScrollViewer.ScrollToVerticalOffset(targetOffset);
     }
 
@@ -610,8 +701,16 @@ public static class StickyCategoryHeaderBehavior
     /// </summary>
     private static FrameworkElement? FindHeaderRow(TreeViewItem tvi)
     {
-        if (tvi.Template is null) return null;
-        return tvi.Template.FindName("HeaderRow", tvi) as FrameworkElement;
+        if (tvi.Template is null)
+        {
+            SmartConLogger.Debug("FindHeaderRow: TreeViewItem template is null");
+            return null;
+        }
+
+        var header = tvi.Template.FindName("HeaderRow", tvi) as FrameworkElement;
+        if (header is null)
+            SmartConLogger.Debug("FindHeaderRow: HeaderRow not found in template");
+        return header;
     }
 
     private static double GetTopInScp(FrameworkElement element, ScrollContentPresenter scp)
@@ -622,16 +721,22 @@ public static class StickyCategoryHeaderBehavior
             var point = transform.Transform(new Point(0, 0));
             return point.Y;
         }
-        catch
+        catch (Exception ex)
         {
+            SmartConLogger.Warn($"TransformToAncestor failed: {ex.GetType().Name}: {ex.Message} [Action: report scroll state in the sticky-line issue]");
             return double.PositiveInfinity;
         }
     }
 
     private static void ClearOverlay(StickyState state)
     {
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(ClearOverlay)));
+
         var overlay = GetOverlay(state.Tree);
+        var previousCount = overlay?.Children.Count ?? 0;
         overlay?.Children.Clear();
+        SmartConLogger.Debug($"Overlay cleared: previousChildren={previousCount}");
     }
 
     // ─── Per-TreeView state ─────────────────────────────────────────────────
