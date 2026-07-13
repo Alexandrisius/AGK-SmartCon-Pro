@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace SmartCon.UI.Behaviors;
@@ -157,6 +158,61 @@ public static class TreeViewBehaviors
 
     #endregion
 
+    #region SuppressHorizontalScrollOnBringIntoView
+
+    public static readonly DependencyProperty SuppressHorizontalScrollOnBringIntoViewProperty =
+        DependencyProperty.RegisterAttached(
+            "SuppressHorizontalScrollOnBringIntoView",
+            typeof(bool),
+            typeof(TreeViewBehaviors),
+            new PropertyMetadata(false, OnSuppressHorizontalScrollOnBringIntoViewChanged));
+
+    public static bool GetSuppressHorizontalScrollOnBringIntoView(DependencyObject obj) =>
+        (bool)obj.GetValue(SuppressHorizontalScrollOnBringIntoViewProperty);
+
+    public static void SetSuppressHorizontalScrollOnBringIntoView(DependencyObject obj, bool value) =>
+        obj.SetValue(SuppressHorizontalScrollOnBringIntoViewProperty, value);
+
+    private static void OnSuppressHorizontalScrollOnBringIntoViewChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not TreeViewItem item) return;
+
+        item.RequestBringIntoView -= OnTreeViewItemRequestBringIntoView;
+
+        if ((bool)e.NewValue)
+        {
+            item.RequestBringIntoView += OnTreeViewItemRequestBringIntoView;
+        }
+    }
+
+    private static void OnTreeViewItemRequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+    {
+        if (sender is not TreeViewItem item) return;
+        if (PresentationSource.FromDependencyObject(item) is null) return;
+
+        var treeView = FindAncestor<TreeView>(item);
+        if (treeView is null) return;
+
+        var scrollViewer = FindTreeViewScrollViewer(treeView);
+        if (scrollViewer is null) return;
+
+        var topLeft = item.TransformToAncestor(treeView).Transform(new Point(0, 0));
+        var itemTop = topLeft.Y;
+
+        if (itemTop < 0
+            || itemTop + item.ActualHeight > scrollViewer.ViewportHeight
+            || item.ActualHeight > scrollViewer.ViewportHeight)
+        {
+            // Item is not fully visible vertically; let default scrolling behavior handle it.
+            return;
+        }
+
+        // Item is already fully visible vertically; prevent horizontal scrolling.
+        e.Handled = true;
+    }
+
+    #endregion
+
     #region Helpers
 
     private static T? FindAncestor<T>(DependencyObject current) where T : DependencyObject
@@ -168,6 +224,13 @@ public static class TreeViewBehaviors
         }
 
         return null;
+    }
+
+    private static ScrollViewer? FindTreeViewScrollViewer(TreeView treeView)
+    {
+        if (treeView.Template is null) return null;
+
+        return treeView.Template.FindName("_tv_scrollviewer_", treeView) as ScrollViewer;
     }
 
     private static TreeViewItem? FindTreeViewItemContainer(ItemsControl parent, object item)

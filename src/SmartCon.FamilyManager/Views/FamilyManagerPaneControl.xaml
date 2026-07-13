@@ -793,6 +793,7 @@
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                     <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
                     <Setter Property="AllowDrop" Value="True"/>
+                    <Setter Property="behaviors:TreeViewBehaviors.SuppressHorizontalScrollOnBringIntoView" Value="True"/>
                     <Style.Triggers>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>
