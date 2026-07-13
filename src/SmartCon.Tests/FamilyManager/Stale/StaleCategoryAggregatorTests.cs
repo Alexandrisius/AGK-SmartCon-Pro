@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Moq;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.Stale;
@@ -136,7 +137,7 @@ public class StaleCategoryAggregatorTests
         var root = new CategoryNodeViewModel(rootNode);
         var sub = new CategoryNodeViewModel(subNode);
         var leafRow = new FamilyCatalogItemRow { Id = "c1", Name = "Family-c1" };
-        var leaf = new FamilyLeafNodeViewModel(leafRow);
+        var leaf = new FamilyLeafNodeViewModel(leafRow, new Mock<IFamilyAssetService>().Object);
         sub.Children.Add(leaf);
         root.Children.Add(sub);
 
@@ -162,7 +163,7 @@ public class StaleCategoryAggregatorTests
         var a = new CategoryNodeViewModel(new CategoryNode("a", "A", "root", 0, "Root/A", now));
         var b = new CategoryNodeViewModel(new CategoryNode("b", "B", "a", 0, "Root/A/B", now));
         var c = new CategoryNodeViewModel(new CategoryNode("c", "C", "b", 0, "Root/A/B/C", now));
-        var leaf = new FamilyLeafNodeViewModel(new FamilyCatalogItemRow { Id = "deep1", Name = "Family-deep1" });
+        var leaf = new FamilyLeafNodeViewModel(new FamilyCatalogItemRow { Id = "deep1", Name = "Family-deep1" }, new Mock<IFamilyAssetService>().Object);
         c.Children.Add(leaf);
         b.Children.Add(c);
         a.Children.Add(b);
@@ -184,7 +185,7 @@ public class StaleCategoryAggregatorTests
         // "Без категории" leaf attaches to a synthetic "__no_category__" parent.
         var now = DateTimeOffset.UtcNow;
         var noCat = new CategoryNodeViewModel(new CategoryNode("__no_category__", "Без категории", null, 0, "Без категории", now));
-        var leaf = new FamilyLeafNodeViewModel(new FamilyCatalogItemRow { Id = "u1", Name = "Family-u1" });
+        var leaf = new FamilyLeafNodeViewModel(new FamilyCatalogItemRow { Id = "u1", Name = "Family-u1" }, new Mock<IFamilyAssetService>().Object);
         noCat.Children.Add(leaf);
 
         var adapterRoots = CategoryTreeAdapter.AdaptRoots(new[] { noCat });

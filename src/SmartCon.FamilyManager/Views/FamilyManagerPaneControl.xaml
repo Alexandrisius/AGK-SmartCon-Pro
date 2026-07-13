@@ -9,6 +9,7 @@
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:selectors="clr-namespace:SmartCon.FamilyManager.Selectors"
+        xmlns:views="clr-namespace:SmartCon.FamilyManager.Views"
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
          Background="{DynamicResource BackgroundBrush}">
@@ -900,6 +901,15 @@
                                              ItemsSource="{Binding Children}">
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
+                            <StackPanel.ToolTip>
+                                <ToolTip Content="{Binding TooltipViewModel}">
+                                    <ToolTip.ContentTemplate>
+                                        <DataTemplate>
+                                            <views:FamilyTooltipView />
+                                        </DataTemplate>
+                                    </ToolTip.ContentTemplate>
+                                </ToolTip>
+                            </StackPanel.ToolTip>
                             <ContentControl VerticalAlignment="Center"
                                             Foreground="{DynamicResource TextPrimaryBrush}">
                                 <ContentControl.Content>

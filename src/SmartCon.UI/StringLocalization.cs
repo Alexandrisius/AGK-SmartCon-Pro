@@ -510,6 +510,9 @@ public static class StringLocalization
         public const string FM_Props_Created = "FM_Props_Created";
         public const string FM_Props_Updated = "FM_Props_Updated";
         public const string FM_Props_NoAvatar = "FM_Props_NoAvatar";
+        public const string FM_Tooltip_NoImage = "FM_Tooltip_NoImage";
+        public const string FM_Tooltip_NoDescription = "FM_Tooltip_NoDescription";
+        public const string FM_Tooltip_Loading = "FM_Tooltip_Loading";
         public const string FM_Props_ChangeImage = "FM_Props_ChangeImage";
         public const string FM_Props_RemoveImage = "FM_Props_RemoveImage";
         public const string FM_Props_Images = "FM_Props_Images";

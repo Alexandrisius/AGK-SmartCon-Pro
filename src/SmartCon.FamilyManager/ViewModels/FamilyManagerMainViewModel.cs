@@ -45,6 +45,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyPlacementService _familyPlacementService;
     private readonly IFamilyPlacementDragService _placementDragService;
     private readonly IRevitFileInfoReader _fileInfoReader;
+    private readonly IFamilyAssetService _assetService;
     private readonly IFamilyMetadataExtractionService _metadataService;
     private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
     private readonly ISystemFamilyRevitOperations _systemFamilyRevitOps;
@@ -157,6 +158,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _familyPlacementService = services.FamilyPlacementService;
         _placementDragService = services.PlacementDragService;
         _fileInfoReader = services.FileInfoReader;
+        _assetService = services.AssetService;
         _metadataService = services.MetadataService;
         _systemFamilyPlacementService = services.SystemFamilyPlacementService;
         _systemFamilyRevitOps = services.SystemFamilyRevitOps;

@@ -199,6 +199,9 @@ public static partial class LocalizationService
         ru["FM_Props_Created"] = "Создано"; en["FM_Props_Created"] = "Created";
         ru["FM_Props_Updated"] = "Обновлено"; en["FM_Props_Updated"] = "Updated";
         ru["FM_Props_NoAvatar"] = "Нет изображения"; en["FM_Props_NoAvatar"] = "No image";
+        ru["FM_Tooltip_NoImage"] = "Нет изображения"; en["FM_Tooltip_NoImage"] = "No image";
+        ru["FM_Tooltip_NoDescription"] = "Нет описания"; en["FM_Tooltip_NoDescription"] = "No description";
+        ru["FM_Tooltip_Loading"] = "Загрузка..."; en["FM_Tooltip_Loading"] = "Loading...";
         ru["FM_Props_ChangeImage"] = "Сменить"; en["FM_Props_ChangeImage"] = "Change";
         ru["FM_Props_RemoveImage"] = "Удалить"; en["FM_Props_RemoveImage"] = "Remove";
         ru["FM_Props_Images"] = "Изображения"; en["FM_Props_Images"] = "Images";

@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
@@ -18,13 +19,15 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     public IReadOnlyList<string> Tags { get; }
     public string? Description { get; }
     public string FamilySource { get; }
+    public FamilyTooltipViewModel TooltipViewModel { get; }
+
     [ObservableProperty]
     private bool _isStale;
 
     [ObservableProperty]
     private StaleReason _staleReason;
 
-    public FamilyLeafNodeViewModel(FamilyCatalogItemRow row, bool isStale = false, StaleReason staleReason = StaleReason.None)
+    public FamilyLeafNodeViewModel(FamilyCatalogItemRow row, IFamilyAssetService assetService, bool isStale = false, StaleReason staleReason = StaleReason.None)
     {
         CatalogItemId = row.Id;
         CategoryId = row.CategoryId;
@@ -37,6 +40,7 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         Tags = row.Tags;
         Description = row.Description;
         FamilySource = row.FamilySource;
+        TooltipViewModel = new FamilyTooltipViewModel(row.Id, row.Description, assetService);
         _isStale = isStale;
         _staleReason = staleReason;
     }

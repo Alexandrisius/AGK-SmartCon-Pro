@@ -43,6 +43,7 @@ public sealed record FamilyManagerServices(
     IFamilyPlacementService FamilyPlacementService,
     IFamilyPlacementDragService PlacementDragService,
     IRevitFileInfoReader FileInfoReader,
+    IFamilyAssetService AssetService,
     IFamilyMetadataExtractionService MetadataService,
     ISystemFamilyPlacementService SystemFamilyPlacementService,
     ISystemFamilyRevitOperations SystemFamilyRevitOps,

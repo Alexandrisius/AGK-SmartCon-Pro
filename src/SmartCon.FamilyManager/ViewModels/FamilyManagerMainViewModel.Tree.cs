@@ -136,7 +136,7 @@ public sealed partial class FamilyManagerMainViewModel
                     Tags = item.Tags,
                     Description = item.Description,
                     FamilySource = item.FamilySource,
-                }, isStale: isStale, staleReason: staleReason));
+                }, _assetService, isStale: isStale, staleReason: staleReason));
             }
             _noCategoryNode.FamilyCount = uncategorized.Count;
             // Mirror the logic from BuildCategoryNode so the _noCategoryNode
@@ -274,7 +274,7 @@ public sealed partial class FamilyManagerMainViewModel
                     Tags = item.Tags,
                     Description = item.Description,
                     FamilySource = item.FamilySource,
-                }, isStale: isStale, staleReason: staleReason));
+                }, _assetService, isStale: isStale, staleReason: staleReason));
             }
         }
 

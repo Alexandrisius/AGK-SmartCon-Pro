@@ -1,0 +1,83 @@
+<UserControl x:Class="SmartCon.FamilyManager.Views.FamilyTooltipView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+             xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+             xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+             mc:Ignorable="d"
+             d:DesignWidth="336" d:DesignHeight="320">
+
+    <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <i:Interaction.Triggers>
+        <i:EventTrigger EventName="Loaded">
+            <i:InvokeCommandAction Command="{Binding LoadCommand}" />
+        </i:EventTrigger>
+    </i:Interaction.Triggers>
+
+    <Border Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderAltBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="8"
+            MaxWidth="256">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Width="240" Height="180"
+                    CornerRadius="6"
+                    Background="{DynamicResource HoverAltSurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderAltBrush}"
+                    BorderThickness="1"
+                    HorizontalAlignment="Left">
+                <Grid>
+                    <Image Source="{Binding AvatarImage}"
+                           Width="240" Height="180"
+                           Stretch="UniformToFill"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVis}}"/>
+
+                    <TextBlock Text="{loc:Loc FM_Tooltip_Loading}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="12"
+                               Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
+
+                    <TextBlock Text="{loc:Loc FM_Tooltip_NoImage}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="12"
+                               Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="1" Margin="0,8,0,0">
+                <TextBlock Text="{loc:Loc FM_Description}"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Margin="0,0,0,4"/>
+                <TextBlock Text="{Binding Description}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           TextWrapping="Wrap"
+                           MaxWidth="320"
+                           Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Text="{loc:Loc FM_Tooltip_NoDescription}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontStyle="Italic"
+                           Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>
