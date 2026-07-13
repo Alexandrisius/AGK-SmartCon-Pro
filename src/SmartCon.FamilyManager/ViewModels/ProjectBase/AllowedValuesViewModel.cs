@@ -7,6 +7,12 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.ViewModels.ProjectBase;
 
+public sealed partial class ValueItem : ObservableObject
+{
+    [ObservableProperty]
+    private string _value = string.Empty;
+}
+
 public sealed partial class AllowedValuesViewModel : ObservableObject, IObservableRequestClose
 {
     [ObservableProperty]
@@ -19,12 +25,12 @@ public sealed partial class AllowedValuesViewModel : ObservableObject, IObservab
     private int? _maxLength;
 
     [ObservableProperty]
-    private string _newValue = string.Empty;
+    private ValueItem? _selectedValue;
 
     [ObservableProperty]
-    private int _selectedIndex = -1;
+    private ValueItem? _focusItem;
 
-    public ObservableCollection<string> Values { get; } = [];
+    public ObservableCollection<ValueItem> Values { get; } = [];
 
     public List<EnumOption<ValidationMode>> ValidationModeOptions { get; }
 
@@ -44,7 +50,7 @@ public sealed partial class AllowedValuesViewModel : ObservableObject, IObservab
         }
     }
 
-    public bool ShowValuesList => ValidationMode == ValidationMode.AllowedValues;
+    public bool ShowValuesList => ValidationMode is ValidationMode.AllowedValues or ValidationMode.Contains;
     public bool ShowLengthFields => ValidationMode == ValidationMode.CharCount;
 
     public event Action<bool?>? RequestClose;
@@ -59,13 +65,14 @@ public sealed partial class AllowedValuesViewModel : ObservableObject, IObservab
         [
             new() { Value = ValidationMode.None, Display = LocalizationService.GetString("FM_PBase_ValMode_None") ?? "Any", Description = LocalizationService.GetString("FM_PBase_ValMode_None_Desc") ?? "No validation" },
             new() { Value = ValidationMode.AllowedValues, Display = LocalizationService.GetString("FM_PBase_ValMode_List") ?? "List", Description = LocalizationService.GetString("FM_PBase_ValMode_List_Desc") ?? "Value must be in the list" },
+            new() { Value = ValidationMode.Contains, Display = LocalizationService.GetString("FM_PBase_ValMode_Contains") ?? "Contains", Description = LocalizationService.GetString("FM_PBase_ValMode_Contains_Desc") ?? "Value must contain at least one substring" },
             new() { Value = ValidationMode.CharCount, Display = LocalizationService.GetString("FM_PBase_ValMode_Length") ?? "Length", Description = LocalizationService.GetString("FM_PBase_ValMode_Length_Desc") ?? "Length must be within range" }
         ];
 
         _selectedValidationModeOption = ValidationModeOptions.First(o => o.Value == _validationMode);
 
         foreach (var v in fieldItem.AllowedValues)
-            Values.Add(v);
+            Values.Add(new ValueItem { Value = v });
     }
 
     partial void OnValidationModeChanged(ValidationMode value)
@@ -81,22 +88,53 @@ public sealed partial class AllowedValuesViewModel : ObservableObject, IObservab
         target.ValidationMode = ValidationMode;
         target.MinLength = MinLength;
         target.MaxLength = MaxLength;
-        target.AllowedValues = Values.ToList();
+        target.AllowedValues = Values.Select(v => v.Value.Trim()).ToList();
     }
 
     [RelayCommand]
     private void AddValue()
     {
-        if (string.IsNullOrWhiteSpace(NewValue)) return;
-        Values.Add(NewValue.Trim());
-        NewValue = string.Empty;
+        var item = new ValueItem();
+        FocusItem = null;
+        Values.Add(item);
+        SelectedValue = item;
+        FocusItem = item;
     }
 
     [RelayCommand]
     private void RemoveValue()
     {
-        if (SelectedIndex >= 0 && SelectedIndex < Values.Count)
-            Values.RemoveAt(SelectedIndex);
+        if (SelectedValue is null)
+            return;
+
+        Values.Remove(SelectedValue);
+        SelectedValue = null;
+    }
+
+    [RelayCommand]
+    private void MoveUp()
+    {
+        if (SelectedValue is null)
+            return;
+
+        var index = Values.IndexOf(SelectedValue);
+        if (index <= 0)
+            return;
+
+        Values.Move(index, index - 1);
+    }
+
+    [RelayCommand]
+    private void MoveDown()
+    {
+        if (SelectedValue is null)
+            return;
+
+        var index = Values.IndexOf(SelectedValue);
+        if (index < 0 || index >= Values.Count - 1)
+            return;
+
+        Values.Move(index, index + 1);
     }
 
     [RelayCommand]

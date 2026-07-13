@@ -15,7 +15,7 @@ public static partial class LocalizationService
         ru["PM_Title_Settings"] = "Настройки экспорта"; en["PM_Title_Settings"] = "Export Settings";
         ru["PM_Title_Progress"] = "Экспорт проекта"; en["PM_Title_Progress"] = "Exporting Project";
         ru["PM_Title_FieldLibrary"] = "Библиотека полей"; en["PM_Title_FieldLibrary"] = "Field Library";
-        ru["PM_Title_AllowedValues"] = "Допустимые значения"; en["PM_Title_AllowedValues"] = "Allowed Values";
+        ru["PM_Title_AllowedValues"] = "Редактор валидации поля"; en["PM_Title_AllowedValues"] = "Field Validation Editor";
         ru["PM_Title_ParseRule"] = "Правило парсинга"; en["PM_Title_ParseRule"] = "Parse Rule";
         ru["PM_Result_Success"] = "Проект успешно перемещён в зону Shared."; en["PM_Result_Success"] = "Project exported successfully.";
         ru["PM_Result_Failed"] = "Ошибка экспорта: {0}"; en["PM_Result_Failed"] = "Export failed: {0}";
@@ -75,6 +75,8 @@ public static partial class LocalizationService
         ru["PM_ValMode_None_Desc"] = "Без ограничений: поле принимает любое значение"; en["PM_ValMode_None_Desc"] = "No restrictions: field accepts any value";
         ru["PM_ValMode_List"] = "Только из списка"; en["PM_ValMode_List"] = "From list only";
         ru["PM_ValMode_List_Desc"] = "Значение должно совпадать с одним из допустимых значений"; en["PM_ValMode_List_Desc"] = "Value must match one of the allowed values";
+        ru["PM_ValMode_Contains"] = "Содержит"; en["PM_ValMode_Contains"] = "Contains";
+        ru["PM_ValMode_Contains_Desc"] = "Значение должно содержать хотя бы одну из указанных подстрок"; en["PM_ValMode_Contains_Desc"] = "Value must contain at least one of the specified substrings";
         ru["PM_ValMode_Length"] = "По длине"; en["PM_ValMode_Length"] = "By length";
         ru["PM_ValMode_Length_Desc"] = "Ограничение только на минимальную и максимальную длину текста"; en["PM_ValMode_Length_Desc"] = "Only minimum and maximum text length constraints";
 

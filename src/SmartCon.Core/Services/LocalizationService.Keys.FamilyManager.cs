@@ -503,12 +503,16 @@ public static partial class LocalizationService
         en["FM_PBase_ValMode_None"] = "Any";
         ru["FM_PBase_ValMode_List"] = "Список";
         en["FM_PBase_ValMode_List"] = "List";
+        ru["FM_PBase_ValMode_Contains"] = "Содержит";
+        en["FM_PBase_ValMode_Contains"] = "Contains";
         ru["FM_PBase_ValMode_Length"] = "Длина";
         en["FM_PBase_ValMode_Length"] = "Length";
         ru["FM_PBase_ValMode_None_Desc"] = "Без валидации";
         en["FM_PBase_ValMode_None_Desc"] = "No validation";
         ru["FM_PBase_ValMode_List_Desc"] = "Значение должно быть из списка";
         en["FM_PBase_ValMode_List_Desc"] = "Value must be in the list";
+        ru["FM_PBase_ValMode_Contains_Desc"] = "Значение должно содержать хотя бы одну из подстрок";
+        en["FM_PBase_ValMode_Contains_Desc"] = "Value must contain at least one of the substrings";
         ru["FM_PBase_ValMode_Length_Desc"] = "Длина должна быть в диапазоне";
         en["FM_PBase_ValMode_Length_Desc"] = "Length must be within range";
         ru["FM_PBase_MinLength"] = "Мин";
@@ -523,8 +527,8 @@ public static partial class LocalizationService
         en["FM_PBase_Title_ParseRule"] = "Parse rule";
         ru["FM_PBase_Title_FieldLibrary"] = "Библиотека полей";
         en["FM_PBase_Title_FieldLibrary"] = "Field library";
-        ru["FM_PBase_Title_AllowedValues"] = "Допустимые значения";
-        en["FM_PBase_Title_AllowedValues"] = "Allowed values";
+        ru["FM_PBase_Title_AllowedValues"] = "Редактор валидации поля";
+        en["FM_PBase_Title_AllowedValues"] = "Field validation editor";
         ru["FM_PBase_DuplicateField"] = "Дублировать";
         en["FM_PBase_DuplicateField"] = "Duplicate";
         ru["FM_PBase_ValidationOk"] = "Совпадение: {0}";

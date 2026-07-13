@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Implementation;
 using Xunit;
@@ -260,6 +261,82 @@ public sealed class FileNameParserTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Blocks, b => b.Field == "status" && !b.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_AllowedValues_TrimmedMatch_ReturnsTrue()
+    {
+        var template = CreateTemplate((0, "status", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "status", ValidationMode = ValidationMode.AllowedValues, AllowedValues = ["  S1  "] }
+        };
+
+        var result = _parser.ValidateDetailed("S1", template, library);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_ContainsValue_ReturnsTrue()
+    {
+        var template = CreateTemplate((0, "discipline", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "discipline", ValidationMode = ValidationMode.Contains, AllowedValues = ["AR", "ME"] }
+        };
+
+        var result = _parser.ValidateDetailed("AR-MEP", template, library);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_ContainsValue_CaseInsensitive_ReturnsTrue()
+    {
+        var template = CreateTemplate((0, "discipline", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "discipline", ValidationMode = ValidationMode.Contains, AllowedValues = ["ar"] }
+        };
+
+        var result = _parser.ValidateDetailed("AR-MEP", template, library);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_ContainsValue_TrimmedSubstrings_ReturnsTrue()
+    {
+        var template = CreateTemplate((0, "discipline", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "discipline", ValidationMode = ValidationMode.Contains, AllowedValues = ["  AR  "] }
+        };
+
+        var result = _parser.ValidateDetailed("AR-MEP", template, library);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_ContainsValue_NotFound_ReturnsFalse()
+    {
+        var template = CreateTemplate((0, "discipline", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "discipline", ValidationMode = ValidationMode.Contains, AllowedValues = ["ST"] }
+        };
+
+        var result = _parser.ValidateDetailed("AR-MEP", template, library);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Blocks, b => b.Field == "discipline" && !b.IsValid);
     }
 
     [Fact]

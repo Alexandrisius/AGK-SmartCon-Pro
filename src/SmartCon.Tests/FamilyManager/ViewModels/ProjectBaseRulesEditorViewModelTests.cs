@@ -461,19 +461,97 @@ public sealed class FieldLibraryViewModelTests
 public sealed class AllowedValuesViewModelTests
 {
     [Fact]
-    public void ApplyTo_UpdatesAllowedValuesAndValidationMode()
+    public void ApplyTo_UpdatesAllowedValuesAndValidationModeAndTrimsValues()
     {
         var field = new FieldDefinitionItem { Name = "project", ValidationMode = ValidationMode.None };
         var vm = new AllowedValuesViewModel(field);
 
         vm.ValidationMode = ValidationMode.AllowedValues;
-        vm.NewValue = "ABC";
         vm.AddValueCommand.Execute(null);
+        vm.Values[0].Value = "  ABC  ";
 
         vm.ApplyTo(field);
 
         Assert.Equal(ValidationMode.AllowedValues, field.ValidationMode);
         Assert.Contains("ABC", field.AllowedValues);
+    }
+
+    [Fact]
+    public void Constructor_LoadsValuesFromFieldItem()
+    {
+        var field = new FieldDefinitionItem
+        {
+            Name = "status",
+            ValidationMode = ValidationMode.Contains,
+            AllowedValues = ["AR", "ME"]
+        };
+
+        var vm = new AllowedValuesViewModel(field);
+
+        Assert.Equal(2, vm.Values.Count);
+        Assert.Equal("AR", vm.Values[0].Value);
+        Assert.Equal("ME", vm.Values[1].Value);
+        Assert.Equal(ValidationMode.Contains, vm.ValidationMode);
+    }
+
+    [Fact]
+    public void AddValueCommand_AddsEditableItemAndSetsFocusItem()
+    {
+        var field = new FieldDefinitionItem { Name = "project", ValidationMode = ValidationMode.None };
+        var vm = new AllowedValuesViewModel(field);
+
+        vm.AddValueCommand.Execute(null);
+
+        Assert.Single(vm.Values);
+        Assert.NotNull(vm.SelectedValue);
+        Assert.Equal(vm.Values[0], vm.SelectedValue);
+        Assert.Equal(vm.Values[0], vm.FocusItem);
+    }
+
+    [Fact]
+    public void RemoveValueCommand_RemovesSelectedValue()
+    {
+        var field = new FieldDefinitionItem
+        {
+            Name = "status",
+            ValidationMode = ValidationMode.AllowedValues,
+            AllowedValues = ["S0", "S1"]
+        };
+        var vm = new AllowedValuesViewModel(field);
+
+        vm.SelectedValue = vm.Values[1];
+        vm.RemoveValueCommand.Execute(null);
+
+        Assert.Single(vm.Values);
+        Assert.Equal("S0", vm.Values[0].Value);
+    }
+
+    [Fact]
+    public void ShowValuesList_TrueForContains()
+    {
+        var field = new FieldDefinitionItem { Name = "status", ValidationMode = ValidationMode.Contains };
+        var vm = new AllowedValuesViewModel(field);
+
+        Assert.True(vm.ShowValuesList);
+        Assert.False(vm.ShowLengthFields);
+    }
+
+    [Fact]
+    public void MoveUpCommand_MovesSelectedValueUp()
+    {
+        var field = new FieldDefinitionItem
+        {
+            Name = "status",
+            ValidationMode = ValidationMode.AllowedValues,
+            AllowedValues = ["A", "B", "C"]
+        };
+        var vm = new AllowedValuesViewModel(field);
+
+        vm.SelectedValue = vm.Values[1];
+        vm.MoveUpCommand.Execute(null);
+
+        Assert.Equal("B", vm.Values[0].Value);
+        Assert.Equal("A", vm.Values[1].Value);
     }
 
     [Fact]

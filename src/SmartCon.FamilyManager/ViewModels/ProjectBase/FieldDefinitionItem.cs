@@ -31,6 +31,7 @@ public sealed partial class FieldDefinitionItem : ObservableObject
     {
         ValidationMode.None => LocalizationService.GetString("FM_PBase_ValMode_None") ?? "Any",
         ValidationMode.AllowedValues => LocalizationService.GetString("FM_PBase_ValMode_List") ?? "List",
+        ValidationMode.Contains => LocalizationService.GetString("FM_PBase_ValMode_Contains") ?? "Contains",
         ValidationMode.CharCount => LocalizationService.GetString("FM_PBase_ValMode_Length") ?? "Length",
         _ => ValidationMode.ToString()
     };

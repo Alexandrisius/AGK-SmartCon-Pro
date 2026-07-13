@@ -4,6 +4,7 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{loc:Loc FM_PBase_Title_AllowedValues}"
         Width="420" Height="480" MinWidth="380" MinHeight="420"
@@ -45,18 +46,39 @@
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6"
                      Visibility="{Binding ShowValuesList, Converter={StaticResource BoolToVis}}">
-            <TextBox Text="{Binding NewValue, UpdateSourceTrigger=PropertyChanged}" Width="200"
-                     Style="{DynamicResource CompactTextBox}" Margin="0,0,4,0"/>
-            <Button Content="{loc:Loc FM_PBase_AddValue}" Command="{Binding AddValueCommand}"
-                    Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
-            <Button Content="{loc:Loc FM_PBase_RemoveValue}" Command="{Binding RemoveValueCommand}"
-                    Style="{DynamicResource SecondaryButton}">
+            <Button Content="{loc:Loc Btn_Add}" Command="{Binding AddValueCommand}"
+                    Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0" Width="80"/>
+            <Button Content="{loc:Loc Btn_Delete}" Command="{Binding RemoveValueCommand}"
+                    Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0" Width="80"/>
+            <Button Command="{Binding MoveUpCommand}" ToolTip="{loc:Loc Btn_Up}"
+                    Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0" MinWidth="50" Padding="6,2">
+                <TextBlock Text="▲" FontSize="12" TextAlignment="Center"/>
+            </Button>
+            <Button Command="{Binding MoveDownCommand}" ToolTip="{loc:Loc Btn_Down}"
+                    Style="{DynamicResource SecondaryButton}" MinWidth="50" Padding="6,2">
+                <TextBlock Text="▼" FontSize="12" TextAlignment="Center"/>
             </Button>
         </StackPanel>
 
-        <ListBox Grid.Row="2" ItemsSource="{Binding Values}" SelectedIndex="{Binding SelectedIndex}"
-                 Style="{DynamicResource CompactListBox}" Margin="0,0,0,4"
-                 Visibility="{Binding ShowValuesList, Converter={StaticResource BoolToVis}}"/>
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Values}" SelectedItem="{Binding SelectedValue}"
+                 CanUserAddRows="False" CanUserDeleteRows="False" AutoGenerateColumns="False"
+                 SelectionMode="Single" SelectionUnit="FullRow"
+                 Style="{DynamicResource CompactDataGrid}"
+                 RowStyle="{DynamicResource CompactDataGridRow}"
+                 Margin="0,0,0,4"
+                 Visibility="{Binding ShowValuesList, Converter={StaticResource BoolToVis}}"
+                 behaviors:DataGridEditNewRowBehavior.FocusItem="{Binding FocusItem}">
+            <DataGrid.CellStyle>
+                <Style TargetType="DataGridCell" BasedOn="{StaticResource CompactDataGridCell}">
+                    <Setter Property="Padding" Value="10,4,4,4"/>
+                </Style>
+            </DataGrid.CellStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="{loc:Loc FM_PBase_ColValue}"
+                                     Binding="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                     Width="*" />
+            </DataGrid.Columns>
+        </DataGrid>
 
         <Grid Grid.Row="3" Margin="0,0,0,8"
               Visibility="{Binding ShowLengthFields, Converter={StaticResource BoolToVis}}">
