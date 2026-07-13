@@ -45,6 +45,23 @@ public interface IFamilyManagerDialogService
     /// <summary>Show category tree editor dialog.</summary>
     bool? ShowCategoryTreeEditor(object viewModel);
 
+    /// <summary>
+    /// Show the project-base rules editor dialog (see #119). Returns
+    /// <c>true</c> if the user clicked OK and the binding is valid,
+    /// <c>false</c> if the user cancelled or closed the dialog, or
+    /// <c>null</c> if the dialog presenter returned an unexpected value.
+    /// </summary>
+    bool? ShowProjectBaseRulesEditor(object viewModel);
+
+    /// <summary>Show the parse-rule editor sub-dialog.</summary>
+    bool? ShowParseRuleEditor(object viewModel);
+
+    /// <summary>Show the field-library editor sub-dialog.</summary>
+    bool? ShowFieldLibrary(object viewModel);
+
+    /// <summary>Show the allowed-values editor sub-dialog.</summary>
+    bool? ShowAllowedValues(object viewModel);
+
     /// <summary>Show category picker dialog and return selected category ID, or null if cancelled.</summary>
     string? ShowCategoryPicker(object viewModel);
 

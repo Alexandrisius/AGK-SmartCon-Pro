@@ -37,7 +37,95 @@ public sealed record DatabaseConnection(
     string Id,
     string Name,
     string Path,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    DbUserRole? CurrentUserRole = null,
+    string? OwnerIdentity = null,
+    BaseType Kind = BaseType.General,
+    ProjectBaseBinding? ProjectBinding = null);
+```
+
+Подключение может быть общим (`Kind = General`) или проектным (`Kind = Project`).
+Проектное подключение хранит `ProjectBinding` — шаблон имени файла + библиотеку полей,
+по которым определяется, подходит ли активный Revit-документ для этой базы.
+См. `BaseType`, `ProjectBaseBinding` и ADR-045.
+
+---
+
+## BaseType
+
+Тип базы FamilyManager: общая или привязанная к проекту.
+
+**Файл:** `BaseType.cs`
+
+```csharp
+public enum BaseType
+{
+    General = 0,
+    Project = 1
+}
+```
+
+`General` — база доступна для любого проекта. `Project` — база активируется
+автоматически, только если имя файла текущего Revit-документа подходит под шаблон
+`ProjectBinding`. См. ADR-045.
+
+---
+
+## ProjectBaseBinding
+
+Шаблон привязки проектной базы к имени файла Revit. Состоит из блочного парсера
+`FileNameTemplate` и библиотеки полей `FieldDefinition` для валидации распарсенных
+значений. Живёт в Core, используется FamilyManager без зависимости от ProjectManagement.
+
+**Файл:** `ProjectBaseBinding.cs`
+
+```csharp
+public sealed record ProjectBaseBinding(
+    FileNameTemplate Template,
+    IReadOnlyList<FieldDefinition> FieldLibrary)
+{
+    public static ProjectBaseBinding Empty => new(FileNameTemplate.Empty, []);
+}
+```
+
+---
+
+## ProjectBaseBindingEvaluator
+
+Реализация `IProjectBaseBindingEvaluator` в Core. Делегирует парсинг имени файла
+в общий `IFileNameParser` (тот же экземпляр, что использует ProjectManagement
+для ShareProject), чтобы семантика block-parsing и валидации полей была
+единообразной между модулями без зависимости FamilyManager → ProjectManagement.
+
+**Файл:** `Services/Implementation/ProjectBaseBindingEvaluator.cs`
+**Интерфейс:** [`IProjectBaseBindingEvaluator`](../interfaces/family-manager.md#iprojectbasebindingevaluator)
+
+```csharp
+public sealed class ProjectBaseBindingEvaluator : IProjectBaseBindingEvaluator
+{
+    public ProjectBaseBindingEvaluator(IFileNameParser parser);
+    public ProjectBaseMatch Evaluate(ProjectBaseBinding? binding, string filePath);
+}
+```
+
+---
+
+## ProjectBaseActivator
+
+Реализация `IProjectBaseActivator` в Core. Выбирает наиболее специфичную базу
+для активного Revit-документа: сначала ищет подходящую проектную базу,
+иначе fallback на первую общую базу. Если ни одной базы нет — активная база
+не меняется (UI покажет mismatch-замок на текущей проектной базе).
+
+**Файл:** `Services/Implementation/ProjectBaseActivator.cs`
+**Интерфейс:** [`IProjectBaseActivator`](../interfaces/family-manager.md#iprojectbaseactivator)
+
+```csharp
+public sealed class ProjectBaseActivator : IProjectBaseActivator
+{
+    public ProjectBaseActivator(IDatabaseManager dbManager, IProjectBaseBindingEvaluator evaluator);
+    public Task<string?> ActivateForDocumentAsync(string currentFilePath, CancellationToken ct = default);
+}
 ```
 
 ---
@@ -51,8 +139,12 @@ public sealed record DatabaseConnection(
 ```csharp
 public sealed record DatabaseConnectionRegistry(
     string? ActiveConnectionId,
-    IReadOnlyList<DatabaseConnection> Connections);
+    IReadOnlyList<DatabaseConnection> Connections,
+    int SchemaVersion = 0);
 ```
+
+`SchemaVersion` = `0` для legacy-реестров, записанных до issue #119; `1` после миграции
+`IRegistryMigrator`, когда появились поля `kind` и `projectBinding` у подключений.
 
 ---
 

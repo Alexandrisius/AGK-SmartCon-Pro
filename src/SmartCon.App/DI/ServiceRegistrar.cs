@@ -18,6 +18,7 @@ using SmartCon.ProjectManagement.Services;
 using SmartCon.ProjectManagement.ViewModels;
 using SmartCon.ProjectManagement.Views;
 using SmartCon.Revit.Context;
+using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
 using SmartCon.Revit.FamilyManager;
 using SmartCon.Revit.Fittings;
@@ -35,6 +36,20 @@ using StaleFamilyUpdater = SmartCon.FamilyManager.Services.Stale.StaleFamilyUpda
 using FamilyVersionWriter = SmartCon.FamilyManager.Services.Stale.FamilyVersionWriter;
 using ShareSettingsView = SmartCon.ProjectManagement.Views.ShareSettingsView;
 using ShareSettingsViewModel = SmartCon.ProjectManagement.ViewModels.ShareSettingsViewModel;
+using FmParseRuleView = SmartCon.FamilyManager.Views.ParseRuleView;
+using FmParseRuleViewModel = SmartCon.FamilyManager.ViewModels.ProjectBase.ParseRuleViewModel;
+using FmFieldLibraryView = SmartCon.FamilyManager.Views.FieldLibraryView;
+using FmFieldLibraryViewModel = SmartCon.FamilyManager.ViewModels.ProjectBase.FieldLibraryViewModel;
+using FmAllowedValuesView = SmartCon.FamilyManager.Views.AllowedValuesView;
+using FmAllowedValuesViewModel = SmartCon.FamilyManager.ViewModels.ProjectBase.AllowedValuesViewModel;
+using FmProjectBaseRulesEditorView = SmartCon.FamilyManager.Views.ProjectBaseRulesEditorView;
+using FmProjectBaseRulesEditorViewModel = SmartCon.FamilyManager.ViewModels.ProjectBase.ProjectBaseRulesEditorViewModel;
+using PmParseRuleView = SmartCon.ProjectManagement.Views.ParseRuleView;
+using PmParseRuleViewModel = SmartCon.ProjectManagement.ViewModels.ParseRuleViewModel;
+using PmFieldLibraryView = SmartCon.ProjectManagement.Views.FieldLibraryView;
+using PmFieldLibraryViewModel = SmartCon.ProjectManagement.ViewModels.FieldLibraryViewModel;
+using PmAllowedValuesView = SmartCon.ProjectManagement.Views.AllowedValuesView;
+using PmAllowedValuesViewModel = SmartCon.ProjectManagement.ViewModels.AllowedValuesViewModel;
 
 namespace SmartCon.App.DI;
 
@@ -116,16 +131,19 @@ public static class ServiceRegistrar
             presenter.Register<PipeConnectEditorViewModel>(vm => new PipeConnectEditorView(vm));
             presenter.Register<ShareSettingsViewModel>(vm => new ShareSettingsView(vm));
             presenter.Register<ExportNameDialogViewModel>(vm => new ExportNameDialog(vm));
-            presenter.Register<ParseRuleViewModel>(vm => new ParseRuleView(vm));
-            presenter.Register<FieldLibraryViewModel>(vm => new FieldLibraryView(vm));
-            presenter.Register<AllowedValuesViewModel>(vm => new AllowedValuesView(vm));
+            presenter.Register<PmParseRuleViewModel>(vm => new PmParseRuleView(vm));
+            presenter.Register<PmFieldLibraryViewModel>(vm => new PmFieldLibraryView(vm));
+            presenter.Register<PmAllowedValuesViewModel>(vm => new PmAllowedValuesView(vm));
             presenter.Register<CategoryTreeEditorViewModel>(vm => new CategoryTreeEditorView(vm));
             presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
-            presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
+            presenter.Register<FmProjectBaseRulesEditorViewModel>(vm => new FmProjectBaseRulesEditorView(vm));
+            presenter.Register<FmParseRuleViewModel>(vm => new FmParseRuleView(vm));
+            presenter.Register<FmFieldLibraryViewModel>(vm => new FmFieldLibraryView(vm));
+            presenter.Register<FmAllowedValuesViewModel>(vm => new FmAllowedValuesView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -244,5 +262,18 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyStorageRenameService, LocalFamilyStorageRenameService>();
         services.AddSingleton<IFamilyManagerViewModelFactory, FamilyManagerViewModelFactory>();
         services.AddSingleton<IDatabaseManager, DatabaseManager>();
+
+        // --- Project-base activation (Phase 30 / Issue #119) ---
+        services.AddSingleton<IRegistryMigrator, RegistryMigrator>();
+        services.AddSingleton<IProjectBaseBindingEvaluator, ProjectBaseBindingEvaluator>();
+        services.AddSingleton<IProjectBaseActivator, ProjectBaseActivator>();
+        // The notifier subscribes to UIControlledApplication.ViewActivated up
+        // front (decision A2 of #119 — recommended by Jeremy Tammik since it
+        // fires on both DocumentOpened and cross-document tab switches). It
+        // also implements IDisposable, which the DI container invokes from
+        // ServiceLocator.Dispose during OnShutdown to unsubscribe.
+        var activeDocNotifier = new ActiveDocumentChangeNotifier();
+        services.AddSingleton<IActiveDocumentChangeNotifier>(activeDocNotifier);
+        activeDocNotifier.Register(app);
     }
 }

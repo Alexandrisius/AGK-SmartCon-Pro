@@ -68,7 +68,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("19", version);
+        Assert.Equal("21", version);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("19", version);
+        Assert.Equal("21", version);
 
         using var tableCmd = verify.CreateCommand();
         tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_nested_shared_families'";
@@ -127,6 +127,110 @@ public sealed class LocalCatalogMigratorTests
         using var idxCmd = verify.CreateCommand();
         idxCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='index' AND name='ix_nested_shared_version'";
         Assert.NotNull(await idxCmd.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task Migrate_V20_AddsBaseTypeColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(database_meta)";
+        var columns = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(1));
+
+        Assert.Contains("base_type", columns);
+    }
+
+    [Fact]
+    public async Task Migrate_V21_AddsProjectBindingJsonColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(database_meta)";
+        var columns = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(1));
+
+        Assert.Contains("project_binding_json", columns);
+    }
+
+    [Fact]
+    public async Task Migrate_V21_FromV20_AddsProjectBindingJsonColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            using var rewind = connection.CreateCommand();
+            rewind.CommandText = "UPDATE schema_info SET value = '20' WHERE key='schema_version'";
+            await rewind.ExecuteNonQueryAsync();
+        }
+
+        await fixture.GetMigrator().MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using var versionCmd = verify.CreateCommand();
+        versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+        var version = (string?)await versionCmd.ExecuteScalarAsync();
+        Assert.Equal("21", version);
+
+        using var cmd = verify.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(database_meta)";
+        var columns = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(1));
+        Assert.Contains("project_binding_json", columns);
+    }
+
+    [Fact]
+    public async Task Migrate_V20_FromV19_AddsBaseTypeColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            using var rewind = connection.CreateCommand();
+            rewind.CommandText = "UPDATE schema_info SET value = '19' WHERE key='schema_version'";
+            await rewind.ExecuteNonQueryAsync();
+        }
+
+        await fixture.GetMigrator().MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using var versionCmd = verify.CreateCommand();
+        versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+        var version = (string?)await versionCmd.ExecuteScalarAsync();
+        Assert.Equal("21", version);
+
+        using var cmd = verify.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(database_meta)";
+        var columns = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(1));
+        Assert.Contains("base_type", columns);
     }
 
     [Fact]
@@ -181,7 +285,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("19", version);
+        Assert.Equal("21", version);
     }
 
     [Fact]
@@ -450,7 +554,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("19", version);
+        Assert.Equal("21", version);
 
         foreach (var (table, column) in new[]
         {

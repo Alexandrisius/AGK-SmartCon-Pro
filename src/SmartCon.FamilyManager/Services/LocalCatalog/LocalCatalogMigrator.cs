@@ -64,6 +64,8 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await MigrateV17Async(connection, ct);
         await MigrateV18Async(connection, ct);
         await MigrateV19Async(connection, ct);
+        await MigrateV20Async(connection, ct);
+        await MigrateV21Async(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -747,6 +749,84 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// V20 (ADR-045 / #119): adds <c>base_type INTEGER NOT NULL DEFAULT 0</c>
+    /// column to <c>database_meta</c>. <c>0</c> = General (default for
+    /// existing databases that predate #119), <c>1</c> = Project. The base
+    /// type itself lives in <c>registry.json</c> as the source of truth
+    /// (decision A1); this column is a convenience cache for RBAC and other
+    /// consumers that read the catalog without touching the registry. Simple
+    /// ALTER TABLE ADD COLUMN — no recreate needed. Existing rows get 0
+    /// (General) on account of the DEFAULT clause.
+    /// </summary>
+    private static async Task MigrateV20Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 20) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "database_meta", "base_type", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV20AddBaseTypeColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '20' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v20: added base_type column to database_meta (General=0 default) — project-base binding cache for #119");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V21 (#119): adds <c>project_binding_json</c> column to <c>database_meta</c>.
+    /// Project base binding is persisted inside the catalog database so that
+    /// disconnecting and later reconnecting a project database restores its
+    /// <see cref="BaseType.Project"/> kind and binding rules.
+    /// </summary>
+    private static async Task MigrateV21Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 21) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "database_meta", "project_binding_json", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV21AddProjectBindingColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '21' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v21: added project_binding_json column to database_meta — binding survives disconnect/reconnect");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -814,6 +894,13 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = FamilyCatalogSql.MigrateV7AddOwnerIdentity;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "database_meta", "base_type", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV20AddBaseTypeColumn;
             await cmd.ExecuteNonQueryAsync(ct);
         }
 

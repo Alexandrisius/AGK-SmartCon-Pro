@@ -1202,5 +1202,41 @@ public sealed class FileNameParserTests
         Assert.Equal("AC_D", remaining);
     }
 
+    [Fact]
+    public void ParseBlocks_NullOrEmptyField_SkipsBlockWithoutThrowing()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks =
+            [
+                new() { Index = 0, Field = "valid", ParseRule = new ParseRule { Mode = ParseMode.Remainder } },
+                new() { Index = 1, Field = null!, ParseRule = new ParseRule { Mode = ParseMode.Remainder } },
+                new() { Index = 2, Field = string.Empty, ParseRule = new ParseRule { Mode = ParseMode.Remainder } }
+            ]
+        };
+        var parser = new FileNameParser();
+        var result = parser.ParseBlocks("anything.rvt", template);
+        Assert.Single(result);
+        Assert.Contains("valid", result.Keys);
+    }
+
+    [Fact]
+    public void ValidateDetailed_EmptyField_MarksBlockInvalid()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks =
+            [
+                new() { Index = 0, Field = string.Empty, ParseRule = DelimSeg("-", 1) }
+            ]
+        };
+
+        var result = _parser.ValidateDetailed("A-B.rvt", template, []);
+
+        Assert.False(result.IsValid);
+        Assert.Single(result.Blocks);
+        Assert.False(result.Blocks[0].IsValid);
+    }
+
     #endregion
 }

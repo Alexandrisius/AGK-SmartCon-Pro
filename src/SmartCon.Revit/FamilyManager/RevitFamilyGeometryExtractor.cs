@@ -395,6 +395,15 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             $"Geometry extraction summary: {totalProcessed} meshes produced, " +
             $"{totalEmpty} empty, {totalSkipped} failed");
 
+        if (result.Count == 0)
+        {
+            SmartConLogger.Warn(
+                $"No meshes extracted from '{familyDoc.Title}': " +
+                $"solidForms={solidForms.Count}, nestedInstances={nestedInstances.Count}, " +
+                $"totalProcessed={totalProcessed}, totalEmpty={totalEmpty}, totalSkipped={totalSkipped} " +
+                "[Action: verify family has visible 3D solids at Fine detail level]");
+        }
+
         return result;
     }
 

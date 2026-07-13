@@ -49,6 +49,41 @@ public static class TreeViewDragDropBehavior
             typeof(TreeViewDragDropBehavior),
             new PropertyMetadata(null, OnCommandPropertyChanged));
 
+    public static readonly DependencyProperty AutoScrollEnabledProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollEnabled",
+            typeof(bool),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(true));
+
+    public static readonly DependencyProperty AutoScrollEdgeToleranceProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollEdgeTolerance",
+            typeof(double),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(40.0));
+
+    public static readonly DependencyProperty AutoScrollMaxSpeedProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollMaxSpeed",
+            typeof(double),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(300.0));
+
+    public static readonly DependencyProperty AutoScrollIntervalProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollInterval",
+            typeof(double),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(16.0));
+
+    public static readonly DependencyProperty AutoScrollTopInsetProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollTopInset",
+            typeof(double),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(0.0));
+
     private static readonly DependencyProperty DragDropStateProperty =
         DependencyProperty.RegisterAttached(
             "DragDropState",
@@ -90,6 +125,36 @@ public static class TreeViewDragDropBehavior
     public static void SetPlacementDragCommand(DependencyObject obj, ICommand? value)
         => obj.SetValue(PlacementDragCommandProperty, value);
 
+    public static bool GetAutoScrollEnabled(DependencyObject obj)
+        => (bool)obj.GetValue(AutoScrollEnabledProperty);
+
+    public static void SetAutoScrollEnabled(DependencyObject obj, bool value)
+        => obj.SetValue(AutoScrollEnabledProperty, value);
+
+    public static double GetAutoScrollEdgeTolerance(DependencyObject obj)
+        => (double)obj.GetValue(AutoScrollEdgeToleranceProperty);
+
+    public static void SetAutoScrollEdgeTolerance(DependencyObject obj, double value)
+        => obj.SetValue(AutoScrollEdgeToleranceProperty, value);
+
+    public static double GetAutoScrollMaxSpeed(DependencyObject obj)
+        => (double)obj.GetValue(AutoScrollMaxSpeedProperty);
+
+    public static void SetAutoScrollMaxSpeed(DependencyObject obj, double value)
+        => obj.SetValue(AutoScrollMaxSpeedProperty, value);
+
+    public static double GetAutoScrollInterval(DependencyObject obj)
+        => (double)obj.GetValue(AutoScrollIntervalProperty);
+
+    public static void SetAutoScrollInterval(DependencyObject obj, double value)
+        => obj.SetValue(AutoScrollIntervalProperty, value);
+
+    public static double GetAutoScrollTopInset(DependencyObject obj)
+        => (double)obj.GetValue(AutoScrollTopInsetProperty);
+
+    public static void SetAutoScrollTopInset(DependencyObject obj, double value)
+        => obj.SetValue(AutoScrollTopInsetProperty, value);
+
     private static DragDropState? GetDragDropState(DependencyObject obj)
         => (DragDropState?)obj.GetValue(DragDropStateProperty);
 
@@ -105,8 +170,12 @@ public static class TreeViewDragDropBehavior
     private sealed class DragDropState
     {
         public Point DragStartPoint;
+        public Point LastDragOverPosition;
         public bool IsDragging;
         public DispatcherTimer? ExpandTimer;
+        public DispatcherTimer? AutoScrollTimer;
+        public EventHandler? AutoScrollTickHandler;
+        public DateTimeOffset LastAutoScrollTick;
         public TreeViewItem? HoverItem;
         public DragAdorner? DragAdorner;
         public DropTargetAdorner? DropAdorner;
@@ -140,6 +209,7 @@ public static class TreeViewDragDropBehavior
         treeView.PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
         treeView.PreviewMouseMove += OnPreviewMouseMove;
         treeView.PreviewDragOver += OnPreviewDragOver;
+        treeView.PreviewDragLeave += OnPreviewDragLeave;
         treeView.Drop += OnDrop;
         treeView.GiveFeedback += OnGiveFeedback;
 
@@ -151,6 +221,7 @@ public static class TreeViewDragDropBehavior
         treeView.PreviewMouseLeftButtonDown -= OnPreviewMouseLeftButtonDown;
         treeView.PreviewMouseMove -= OnPreviewMouseMove;
         treeView.PreviewDragOver -= OnPreviewDragOver;
+        treeView.PreviewDragLeave -= OnPreviewDragLeave;
         treeView.Drop -= OnDrop;
         treeView.GiveFeedback -= OnGiveFeedback;
 
@@ -260,12 +331,16 @@ public static class TreeViewDragDropBehavior
         if (GetDragDropState(treeView) is not { } state) return;
         if (!e.Data.GetDataPresent(DragFormat)) return;
 
+        state.LastDragOverTime = DateTimeOffset.UtcNow;
+        state.LastDragOverPosition = e.GetPosition(treeView);
+
+        // Auto-scroll is independent of whether the item under the cursor is a valid drop target.
+        UpdateAutoScroll(treeView, state);
+
         var draggedItem = e.Data.GetData(DragFormat);
         var command = GetDropCommand(treeView);
         var targetItem = GetTargetTreeViewItem(e.OriginalSource as DependencyObject);
         var dropInfo = new TreeViewDropInfo(draggedItem, targetItem?.DataContext);
-
-        state.LastDragOverTime = DateTimeOffset.UtcNow;
 
         var resolvedItem = targetItem;
         var resolvedDropInfo = dropInfo;
@@ -301,8 +376,6 @@ public static class TreeViewDragDropBehavior
                 if (resolvedItem != null)
                     AddDropAdorner(state, resolvedItem);
             }
-
-            AutoScroll(treeView, e);
 
             if (resolvedItem is not null && !resolvedItem.IsExpanded)
             {
@@ -373,6 +446,14 @@ public static class TreeViewDragDropBehavior
         Cleanup(state);
     }
 
+    private static void OnPreviewDragLeave(object sender, DragEventArgs e)
+    {
+        var treeView = (TreeView)sender;
+        if (GetDragDropState(treeView) is not { } state) return;
+
+        StopAutoScrollTimer(state);
+    }
+
     private static void OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
     {
         var treeView = (TreeView)sender;
@@ -424,6 +505,7 @@ public static class TreeViewDragDropBehavior
     private static void Cleanup(DragDropState state)
     {
         CancelExpandTimer(state);
+        StopAutoScrollTimer(state);
         RemoveDropAdorner(state);
         state.LastValidTarget = null;
         state.IsOverValidDropTarget = false;
@@ -543,23 +625,96 @@ public static class TreeViewDragDropBehavior
         return null;
     }
 
-    private static void AutoScroll(TreeView treeView, DragEventArgs e)
+    private static void UpdateAutoScroll(TreeView treeView, DragDropState state)
     {
+        if (!GetAutoScrollEnabled(treeView))
+        {
+            StopAutoScrollTimer(state);
+            return;
+        }
+
         var scrollViewer = GetScrollViewer(treeView);
-        if (scrollViewer is null) return;
-
-        const double tolerance = 30.0;
-        const double offset = 15.0;
-        var position = e.GetPosition(treeView);
-
-        if (position.Y < tolerance)
+        if (scrollViewer is null)
         {
-            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - offset);
+            StopAutoScrollTimer(state);
+            return;
         }
-        else if (position.Y > treeView.ActualHeight - tolerance)
+
+        var position = state.LastDragOverPosition;
+        var viewportHeight = treeView.ActualHeight;
+        var topInset = GetAutoScrollTopInset(treeView);
+        var tolerance = GetAutoScrollEdgeTolerance(treeView);
+
+        if (!DragDropAutoScrollCalculator.IsInVerticalScrollZone(position.Y, viewportHeight, topInset, tolerance))
         {
-            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + offset);
+            StopAutoScrollTimer(state);
+            return;
         }
+
+        if (state.AutoScrollTimer is not null)
+            return;
+
+        var interval = GetAutoScrollInterval(treeView);
+        var timer = new DispatcherTimer(DispatcherPriority.Background, treeView.Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(interval)
+        };
+
+        EventHandler tickHandler = (_, _) => OnAutoScrollTick(treeView, state);
+        timer.Tick += tickHandler;
+
+        state.AutoScrollTimer = timer;
+        state.AutoScrollTickHandler = tickHandler;
+        state.LastAutoScrollTick = DateTimeOffset.UtcNow;
+        timer.Start();
+    }
+
+    private static void OnAutoScrollTick(TreeView treeView, DragDropState state)
+    {
+        if (!state.IsDragging)
+        {
+            StopAutoScrollTimer(state);
+            return;
+        }
+
+        var scrollViewer = GetScrollViewer(treeView);
+        if (scrollViewer is null)
+        {
+            StopAutoScrollTimer(state);
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var elapsed = (now - state.LastAutoScrollTick).TotalSeconds;
+        state.LastAutoScrollTick = now;
+
+        var delta = DragDropAutoScrollCalculator.ComputeVerticalDelta(
+            state.LastDragOverPosition.Y,
+            treeView.ActualHeight,
+            GetAutoScrollTopInset(treeView),
+            GetAutoScrollEdgeTolerance(treeView),
+            GetAutoScrollMaxSpeed(treeView),
+            elapsed);
+
+        if (Math.Abs(delta) > double.Epsilon)
+        {
+            var newOffset = scrollViewer.VerticalOffset + delta;
+            newOffset = Math.Max(0, newOffset);
+            newOffset = Math.Min(newOffset, scrollViewer.ScrollableHeight);
+            scrollViewer.ScrollToVerticalOffset(newOffset);
+        }
+    }
+
+    private static void StopAutoScrollTimer(DragDropState state)
+    {
+        if (state.AutoScrollTimer is null) return;
+
+        if (state.AutoScrollTickHandler is not null)
+            state.AutoScrollTimer.Tick -= state.AutoScrollTickHandler;
+
+        state.AutoScrollTimer.Stop();
+        state.AutoScrollTimer = null;
+        state.AutoScrollTickHandler = null;
     }
 
     #endregion

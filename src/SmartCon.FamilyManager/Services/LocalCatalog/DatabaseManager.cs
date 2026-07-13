@@ -1,5 +1,8 @@
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -9,29 +12,72 @@ namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
 internal sealed class DatabaseManager : IDatabaseManager
 {
+    private const int LatestRegistrySchemaVersion = 1;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() }
     };
+
+    private sealed class ProjectBaseBindingDto
+    {
+        public Core.Models.FileNameTemplate Template { get; set; } = new();
+        public List<Core.Models.FieldDefinition> FieldLibrary { get; set; } = [];
+    }
+
+    private static string SerializeBinding(ProjectBaseBinding binding)
+    {
+        var dto = new ProjectBaseBindingDto
+        {
+            Template = binding.Template,
+            FieldLibrary = binding.FieldLibrary.ToList()
+        };
+        return JsonSerializer.Serialize(dto, JsonOptions);
+    }
+
+    private static ProjectBaseBinding? DeserializeBinding(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var dto = JsonSerializer.Deserialize<ProjectBaseBindingDto>(json!, JsonOptions);
+            if (dto?.Template is null) return null;
+            return new ProjectBaseBinding(dto.Template, dto.FieldLibrary ?? []);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private readonly LocalCatalogDatabase _catalogDatabase;
     private readonly IUserIdentityService _identityService;
     private readonly ILocalCatalogMigrator _migrator;
+    private readonly IRegistryMigrator _registryMigrator;
     private readonly string _registryPath;
+    private readonly string _bakPath;
+    private readonly string _tempPath;
+    private readonly string _trashPath;
 
     public DatabaseManager(
         LocalCatalogDatabase catalogDatabase,
         IUserIdentityService identityService,
-        ILocalCatalogMigrator migrator)
+        ILocalCatalogMigrator migrator,
+        IRegistryMigrator registryMigrator)
     {
         _catalogDatabase = catalogDatabase;
         _identityService = identityService;
         _migrator = migrator;
+        _registryMigrator = registryMigrator;
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var fmDir = Path.Combine(appData, "SmartCon", "FamilyManager");
         Directory.CreateDirectory(fmDir);
         _registryPath = Path.Combine(fmDir, "registry.json");
+        _bakPath = _registryPath + ".bak";
+        _tempPath = _registryPath + ".tmp";
+        _trashPath = Path.Combine(fmDir, ".trash");
 
         var registry = LoadRegistry();
         if (registry.ActiveConnectionId is not null)
@@ -46,6 +92,10 @@ internal sealed class DatabaseManager : IDatabaseManager
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
+        await _registryMigrator.MigrateAsync(ct);
+
+        await CleanupTrashAsync(ct);
+
         var registry = LoadRegistry();
         if (registry.ActiveConnectionId is not null)
         {
@@ -111,10 +161,10 @@ internal sealed class DatabaseManager : IDatabaseManager
                     INSERT INTO database_meta (id, name, description, created_at_utc, schema_version)
                     VALUES (@id, @name, @description, @createdAtUtc, 2)
                     """;
-                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", id));
-                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", name.Trim()));
-                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@description", DBNull.Value));
-                metaCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+                metaCmd.Parameters.Add(new SqliteParameter("@id", id));
+                metaCmd.Parameters.Add(new SqliteParameter("@name", name.Trim()));
+                metaCmd.Parameters.Add(new SqliteParameter("@description", DBNull.Value));
+                metaCmd.Parameters.Add(new SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
                 await metaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerCmd = dbConn.CreateCommand();
@@ -122,14 +172,14 @@ internal sealed class DatabaseManager : IDatabaseManager
                     INSERT INTO db_users (user_id, display_name, role, status, joined_at_utc, last_seen_at_utc)
                     VALUES (@userId, @displayName, 'Owner', 'Active', @now, @now)
                     """;
-                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@userId", identity.UserId));
-                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@displayName", identity.DisplayName));
-                ownerCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@now", now));
+                ownerCmd.Parameters.Add(new SqliteParameter("@userId", identity.UserId));
+                ownerCmd.Parameters.Add(new SqliteParameter("@displayName", identity.DisplayName));
+                ownerCmd.Parameters.Add(new SqliteParameter("@now", now));
                 await ownerCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerIdentityCmd = dbConn.CreateCommand();
                 ownerIdentityCmd.CommandText = "UPDATE database_meta SET owner_identity = @ownerIdentity";
-                ownerIdentityCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@ownerIdentity", identity.UserId));
+                ownerIdentityCmd.Parameters.Add(new SqliteParameter("@ownerIdentity", identity.UserId));
                 await ownerIdentityCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 tx.Commit();
@@ -156,6 +206,97 @@ internal sealed class DatabaseManager : IDatabaseManager
         return connection;
     }
 
+    public async Task<DatabaseConnection> CreateProjectDatabaseAsync(
+        string name,
+        string path,
+        ProjectBaseBinding binding,
+        CancellationToken ct = default)
+    {
+        if (binding is null)
+            throw new ArgumentNullException(nameof(binding));
+
+        var generalConnection = await CreateDatabaseAsync(name, path, ct);
+        var projectConnection = generalConnection with { Kind = BaseType.Project, ProjectBinding = binding };
+
+        await UpdateCachedBaseTypeAsync(BaseType.Project, binding, ct);
+
+        var registry = await LoadRegistryAsync(ct);
+        var updatedConnections = registry.Connections
+            .Select(c => c.Id == generalConnection.Id ? projectConnection : c)
+            .ToList();
+        await SaveRegistryAsync(new DatabaseConnectionRegistry(generalConnection.Id, updatedConnections), ct);
+
+        return projectConnection;
+    }
+
+    public async Task<DatabaseConnection> ConfigureProjectBaseAsync(
+        string connectionId,
+        ProjectBaseBinding binding,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(connectionId))
+            throw new ArgumentException("connectionId cannot be empty.", nameof(connectionId));
+        if (binding is null)
+            throw new ArgumentNullException(nameof(binding));
+
+        var registry = await LoadRegistryAsync(ct);
+        var conn = registry.Connections.FirstOrDefault(c => c.Id == connectionId)
+            ?? throw new InvalidOperationException(
+                $"Cannot configure project binding on unknown connection '{connectionId}'.");
+
+        var updated = conn with { Kind = BaseType.Project, ProjectBinding = binding };
+        var updatedConnections = registry.Connections
+            .Select(c => c.Id == connectionId ? updated : c)
+            .ToList();
+        await SaveRegistryAsync(new DatabaseConnectionRegistry(registry.ActiveConnectionId, updatedConnections), ct);
+
+        await UpdateTargetCachedBaseTypeAsync(conn.Path, BaseType.Project, binding, ct);
+
+        return updated;
+    }
+
+    private async Task UpdateTargetCachedBaseTypeAsync(string targetPath, BaseType kind, ProjectBaseBinding? binding, CancellationToken ct)
+    {
+        var activePath = _catalogDatabase.GetDatabaseRoot();
+        try
+        {
+            _catalogDatabase.SwitchToPath(targetPath);
+            await UpdateCachedBaseTypeAsync(kind, binding, ct);
+        }
+        finally
+        {
+            _catalogDatabase.SwitchToPath(activePath);
+        }
+    }
+
+    /// <summary>
+    /// Flip the cached <c>catalog.db.database_meta.base_type</c> column on
+    /// the *currently switched-to* database to <paramref name="kind"/>. Used
+    /// by <see cref="CreateProjectDatabaseAsync"/> and
+    /// <see cref="ConfigureProjectBaseAsync"/> right after switching to the
+    /// database they are about to project-scope.
+    /// </summary>
+    private async Task UpdateCachedBaseTypeAsync(BaseType kind, ProjectBaseBinding? binding, CancellationToken ct)
+    {
+        using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+            ("Method", nameof(UpdateCachedBaseTypeAsync)),
+            ("BaseType", (int)kind));
+
+        var cachedValue = (int)kind;
+        var bindingJson = kind == BaseType.Project && binding is not null
+            ? SerializeBinding(binding)
+            : null;
+        using var dbConn = _catalogDatabase.CreateConnection();
+        await dbConn.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = dbConn.CreateCommand();
+        cmd.CommandText = "UPDATE database_meta SET base_type = @baseType, project_binding_json = @bindingJson";
+        cmd.Parameters.Add(new SqliteParameter("@baseType", cachedValue));
+        cmd.Parameters.Add(new SqliteParameter("@bindingJson", bindingJson is null ? DBNull.Value : bindingJson));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+        SmartConLogger.Info($"database_meta.base_type set to {cachedValue} ({kind}) with binding persisted");
+    }
+
     public async Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default)
     {
         var fullPath = Path.GetFullPath(path);
@@ -172,8 +313,9 @@ internal sealed class DatabaseManager : IDatabaseManager
             c => c.Path.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
-            using var _scope = SmartConLogger.BeginScope("DatabaseManager", ("Path", fullPath), ("ExistingName", existing.Name));
-            SmartConLogger.Info($"Database at '{fullPath}' already connected as '{existing.Name}', activating");
+            using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                ("FileName", Path.GetFileName(fullPath)), ("ExistingName", existing.Name));
+            SmartConLogger.Info($"Database '{Path.GetFileName(fullPath)}' already connected as '{existing.Name}', activating");
             if (existingRegistry.ActiveConnectionId != existing.Id)
             {
                 await SaveRegistryAsync(new DatabaseConnectionRegistry(existing.Id, existingRegistry.Connections), ct);
@@ -192,20 +334,41 @@ internal sealed class DatabaseManager : IDatabaseManager
         {
             using var conn = _catalogDatabase.CreateConnection();
             await conn.OpenAsync(ct).ConfigureAwait(false);
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT name FROM database_meta LIMIT 1";
-            var dbName = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+            using var nameCmd = conn.CreateCommand();
+            nameCmd.CommandText = "SELECT name FROM database_meta LIMIT 1";
+            var dbName = await nameCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
             if (dbName is not null)
                 name = dbName;
 
-            var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow);
+            await _migrator.MigrateAsync(ct);
+
+            using var metaCmd = conn.CreateCommand();
+            metaCmd.CommandText = "SELECT base_type, project_binding_json FROM database_meta LIMIT 1";
+            using var reader = await metaCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            BaseType kind = BaseType.General;
+            ProjectBaseBinding? binding = null;
+            if (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var baseTypeValue = reader.GetValue(0);
+                if (baseTypeValue is not null && baseTypeValue != DBNull.Value)
+                {
+                    var intValue = Convert.ToInt32(baseTypeValue);
+                    if (Enum.IsDefined(typeof(BaseType), intValue))
+                        kind = (BaseType)intValue;
+                }
+
+                if (!reader.IsDBNull(1))
+                {
+                    binding = DeserializeBinding(reader.GetString(1));
+                }
+            }
+
+            var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow, null, null, kind, binding);
 
             var registry = await LoadRegistryAsync(ct);
             var connections = registry.Connections.ToList();
             connections.Add(connection);
             await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
-
-            await _migrator.MigrateAsync(ct);
 
             ActiveDatabaseChanged?.Invoke(this, id);
             return connection;
@@ -286,7 +449,43 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         if (Directory.Exists(conn.Path))
         {
-            await DeleteDirectoryWithRetryAsync(conn.Path, ct);
+            // Release any idle SQLite handles before touching the filesystem.
+            SqliteConnection.ClearAllPools();
+
+            try
+            {
+                var deleted = await SafeDeleteDirectoryAsync(conn.Path, _trashPath, ct);
+                if (!deleted)
+                {
+                    using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                        ("Method", nameof(DeleteDatabaseAsync)),
+                        ("DatabaseName", conn.Name),
+                        ("FileName", Path.GetFileName(conn.Path)));
+                    SmartConLogger.Warn($"Database files for '{conn.Name}' moved to trash because they were locked. " +
+                        $"[Action: remaining files will be removed on the next Revit launch]");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                    ("Method", nameof(DeleteDatabaseAsync)),
+                    ("DatabaseName", conn.Name),
+                    ("FileName", Path.GetFileName(conn.Path)),
+                    ("Exception", ex.GetType().Name));
+                SmartConLogger.Warn($"Could not delete database files for '{conn.Name}' because they are in use. " +
+                    $"[Action: close Revit and remove remaining folder manually: {conn.Path}]");
+
+                await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
+
+                if (newActiveId != registry.ActiveConnectionId)
+                {
+                    ActiveDatabaseChanged?.Invoke(this, newActiveId!);
+                }
+
+                var message = LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteFilesLocked)
+                    ?? "Database \"{0}\" removed from the list, but files could not be deleted because they are in use. Close Revit to remove remaining files.";
+                throw new InvalidOperationException(string.Format(message, conn.Name), ex);
+            }
         }
 
         await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
@@ -296,7 +495,7 @@ internal sealed class DatabaseManager : IDatabaseManager
             ActiveDatabaseChanged?.Invoke(this, newActiveId!);
         }
 
-        SmartConLogger.Info($"DatabaseManager.Delete: Database at '{conn.Path}' deleted");
+        SmartConLogger.Info($"DatabaseManager.Delete: Database '{conn.Name}' deleted");
         return true;
     }
 
@@ -323,19 +522,102 @@ internal sealed class DatabaseManager : IDatabaseManager
         }
     }
 
-    private static async Task DeleteDirectoryWithRetryAsync(string path, CancellationToken ct, int maxRetries = 3)
+    private static async Task<bool> SafeDeleteDirectoryAsync(string path, string trashPath, CancellationToken ct, int maxRetries = 5)
     {
+        if (!Directory.Exists(path))
+            return true;
+
+        ClearDirectoryAttributes(path);
+
         for (var i = 0; i < maxRetries; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (i < maxRetries - 1)
+                {
+                    await Task.Delay(200 * (i + 1), ct);
+                    ClearDirectoryAttributes(path);
+                }
+            }
+        }
+
+        // Fallback: move the locked folder to the trash area so it can be retried later.
+        Directory.CreateDirectory(trashPath);
+        var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
+        var guidSuffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var trashName = $"{Path.GetFileName(path)}_{timestamp}_{guidSuffix}";
+        var trashItemPath = Path.Combine(trashPath, trashName);
+
+        Directory.Move(path, trashItemPath);
+        return false;
+    }
+
+    private static void ClearDirectoryAttributes(string path)
+    {
+        if (!Directory.Exists(path))
+            return;
+
+        try
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+        catch
+        {
+            // ignored
+        }
+
+        foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
         {
             try
             {
-                if (Directory.Exists(path))
-                    Directory.Delete(path, recursive: true);
-                return;
+                File.SetAttributes(file, FileAttributes.Normal);
             }
-            catch (IOException) when (i < maxRetries - 1)
+            catch
             {
-                await Task.Delay(200 * (i + 1), ct);
+                // ignored
+            }
+        }
+
+        foreach (var dir in Directory.GetDirectories(path, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                File.SetAttributes(dir, FileAttributes.Normal);
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+    }
+
+    private async Task CleanupTrashAsync(CancellationToken ct)
+    {
+        if (!Directory.Exists(_trashPath))
+            return;
+
+        var dirs = await Task.Run(() => Directory.GetDirectories(_trashPath), ct);
+        foreach (var dir in dirs)
+        {
+            try
+            {
+                ClearDirectoryAttributes(dir);
+                await Task.Run(() => Directory.Delete(dir, recursive: true), ct);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                    ("Method", nameof(CleanupTrashAsync)),
+                    ("FileName", Path.GetFileName(dir)));
+                SmartConLogger.Warn($"Could not clean up trashed folder '{dir}'. It will be retried on the next launch. " +
+                    $"[Action: close Revit if the folder is still locked]");
             }
         }
     }
@@ -344,28 +626,56 @@ internal sealed class DatabaseManager : IDatabaseManager
     {
         if (!File.Exists(_registryPath))
         {
-            var registry = new DatabaseConnectionRegistry(null, []);
+            var registry = new DatabaseConnectionRegistry(null, [], SchemaVersion: LatestRegistrySchemaVersion);
             SaveRegistry(registry);
             return registry;
         }
 
+        var dto = TryReadRegistryDto(_registryPath);
+        if (dto is null && File.Exists(_bakPath))
+        {
+            using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                ("Method", nameof(LoadRegistry)));
+            SmartConLogger.Warn(
+                $"registry.json parse failed — falling back to registry.json.bak. " +
+                "[Action: user might want to inspect the corrupt registry.json — the previous good copy is now active]");
+            dto = TryReadRegistryDto(_bakPath);
+        }
+        if (dto is null)
+            return new DatabaseConnectionRegistry(null, [], SchemaVersion: LatestRegistrySchemaVersion);
+
+        var connections = dto.Connections
+            .Select(MapDtoToConnection)
+            .ToList();
+
+        return new DatabaseConnectionRegistry(dto.ActiveConnectionId, connections, dto.SchemaVersion);
+    }
+
+    private RegistryDto? TryReadRegistryDto(string path)
+    {
         try
         {
-            var json = File.ReadAllText(_registryPath);
+            var json = File.ReadAllText(path);
             var dto = JsonSerializer.Deserialize<RegistryDto>(json, JsonOptions);
-            if (dto is null)
-                return new DatabaseConnectionRegistry(null, []);
-
-            var connections = dto.Connections
-                .Select(c => new DatabaseConnection(c.Id, c.Name, c.Path, c.CreatedAtUtc))
-                .ToList();
-
-            return new DatabaseConnectionRegistry(dto.ActiveConnectionId, connections);
+            return dto;
         }
         catch
         {
-            return new DatabaseConnectionRegistry(null, []);
+            return null;
         }
+    }
+
+    private static DatabaseConnection MapDtoToConnection(ConnectionDto c)
+    {
+        return new DatabaseConnection(
+            c.Id,
+            c.Name,
+            c.Path,
+            c.CreatedAtUtc,
+            CurrentUserRole: c.CurrentUserRole,
+            OwnerIdentity: c.OwnerIdentity,
+            Kind: c.Kind,
+            ProjectBinding: c.ProjectBinding);
     }
 
     private void SaveRegistry(DatabaseConnectionRegistry registry)
@@ -375,6 +685,7 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         var dto = new RegistryDto
         {
+            SchemaVersion = LatestRegistrySchemaVersion,
             ActiveConnectionId = registry.ActiveConnectionId,
             Connections = registry.Connections
                 .Select(c => new ConnectionDto
@@ -382,13 +693,54 @@ internal sealed class DatabaseManager : IDatabaseManager
                     Id = c.Id,
                     Name = c.Name,
                     Path = c.Path,
-                    CreatedAtUtc = c.CreatedAtUtc
+                    CreatedAtUtc = c.CreatedAtUtc,
+                    CurrentUserRole = c.CurrentUserRole,
+                    OwnerIdentity = c.OwnerIdentity,
+                    Kind = c.Kind,
+                    ProjectBinding = c.ProjectBinding
                 })
                 .ToList()
         };
 
         var json = JsonSerializer.Serialize(dto, JsonOptions);
-        File.WriteAllText(_registryPath, json);
+        WriteRegistryAtomic(json);
+    }
+
+    /// <summary>
+    /// Atomic write: write to <c>registry.json.tmp</c> (same directory = same
+    /// volume — required by <c>File.Replace</c>), then swap with the live file
+    /// and back the previous contents up to <c>registry.json.bak</c>. If
+    /// <c>File.Replace</c> fails (typically antivirus locking), fall back to
+    /// delete + Move. See #119 decision A12.
+    /// </summary>
+    private void WriteRegistryAtomic(string json)
+    {
+        File.WriteAllText(_tempPath, json);
+
+        if (!File.Exists(_registryPath))
+        {
+            File.Move(_tempPath, _registryPath);
+            return;
+        }
+
+        if (File.Exists(_bakPath))
+            File.Delete(_bakPath);
+
+        try
+        {
+            File.Replace(_tempPath, _registryPath, _bakPath, ignoreMetadataErrors: true);
+        }
+        catch (IOException)
+        {
+            using var _scope = SmartConLogger.BeginScope("DatabaseManager",
+                ("Method", nameof(WriteRegistryAtomic)));
+            SmartConLogger.Warn(
+                "File.Replace of registry.json failed — falling back to delete+move. " +
+                "[Action: investigate antivirus or extension locks, but the registry was still saved]");
+            if (File.Exists(_registryPath))
+                File.Delete(_registryPath);
+            File.Move(_tempPath, _registryPath);
+        }
     }
 
     private Task<DatabaseConnectionRegistry> LoadRegistryAsync(CancellationToken ct)
@@ -403,6 +755,12 @@ internal sealed class DatabaseManager : IDatabaseManager
 
     private sealed class RegistryDto
     {
+        /// <summary>
+        /// Schema version of this file. <c>0</c> (or missing key) marks a
+        /// pre-#119 legacy file; the on-disk file is upgraded by
+        /// <c>IRegistryMigrator</c> on the first launch after an upgrade.
+        /// </summary>
+        public int SchemaVersion { get; set; }
         public string? ActiveConnectionId { get; set; }
         public List<ConnectionDto> Connections { get; set; } = new();
     }
@@ -413,5 +771,11 @@ internal sealed class DatabaseManager : IDatabaseManager
         public string Name { get; set; } = string.Empty;
         public string Path { get; set; } = string.Empty;
         public DateTimeOffset CreatedAtUtc { get; set; }
+        public DbUserRole? CurrentUserRole { get; set; }
+        public string? OwnerIdentity { get; set; }
+        /// <summary>General or Project base, see #119. Defaults to <see cref="BaseType.General"/> for legacy entries.</summary>
+        public BaseType Kind { get; set; } = BaseType.General;
+        /// <summary>Project-binding template + field library. NULL for <see cref="BaseType.General"/> connections.</summary>
+        public ProjectBaseBinding? ProjectBinding { get; set; }
     }
 }

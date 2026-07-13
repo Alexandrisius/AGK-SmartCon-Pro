@@ -1,4 +1,4 @@
-namespace SmartCon.ProjectManagement.ViewModels;
+namespace SmartCon.Core.Models;
 
 public sealed class EnumOption<T>
 {

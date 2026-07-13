@@ -9,6 +9,7 @@
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:selectors="clr-namespace:SmartCon.FamilyManager.Selectors"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
          Background="{DynamicResource BackgroundBrush}">
 
@@ -191,6 +192,82 @@
                 </Setter>
             </Style>
 
+            <Style x:Key="SecondaryToggleButton" TargetType="ToggleButton">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Height" Value="28"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource DisabledBgBrush}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <DataTemplate x:Key="DbGeneralTemplate" DataType="{x:Type selectors:DatabaseListItem}">
+                <StackPanel Orientation="Horizontal">
+                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
+                        <iconPacks:PackIconMaterial Kind="Database"
+                                                       Width="24" Height="24"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                    </Viewbox>
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </DataTemplate>
+
+            <DataTemplate x:Key="DbProjectMatchTemplate" DataType="{x:Type selectors:DatabaseListItem}">
+                <StackPanel Orientation="Horizontal">
+                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
+                        <Path Data="{StaticResource FolderIconGeometry}"
+                              Fill="{DynamicResource TextMutedBrush}"/>
+                    </Viewbox>
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </DataTemplate>
+
+            <DataTemplate x:Key="DbProjectMismatchTemplate" DataType="{x:Type selectors:DatabaseListItem}">
+                <StackPanel Orientation="Horizontal" ToolTip="{Binding MismatchReason}">
+                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
+                        <iconPacks:PackIconMaterial Kind="Lock"
+                                                       Width="24" Height="24"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                    </Viewbox>
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </StackPanel>
+            </DataTemplate>
+
+            <selectors:DatabaseListItemIconSelector x:Key="DbItemTemplateSelector"
+                GeneralTemplate="{StaticResource DbGeneralTemplate}"
+                ProjectMatchTemplate="{StaticResource DbProjectMatchTemplate}"
+                ProjectMismatchTemplate="{StaticResource DbProjectMismatchTemplate}"/>
+
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -337,70 +414,182 @@
             </Button>
         </Grid>
 
-        <!-- Row 1: Database controls (Create | ComboBox | Connect | Disconnect) -->
+        <!-- Row 1: Database controls (Create split | ComboBox | Tools) -->
         <Grid Grid.Row="1" Margin="0,0,0,4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0"
-                    Command="{Binding CreateDatabaseCommand}"
-                    Margin="0,0,2,0"
-                    Width="28"
-                    Style="{DynamicResource SecondaryButton}"
-                    Padding="0"
-                    ToolTip="{loc:Loc FM_Tip_CreateDb}">
+            <!-- Create database popup -->
+            <ToggleButton Grid.Column="0"
+                          x:Name="CreateDbToggle"
+                          IsChecked="{Binding IsOpen, ElementName=CreateDbPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          Width="28"
+                          Margin="0,0,2,0"
+                          Style="{DynamicResource SecondaryToggleButton}"
+                          ToolTip="{loc:Loc FM_PBase_CreateDatabase}">
                 <Viewbox Width="8" Height="8" Stretch="Uniform">
                     <Path Data="M 0,4 L 8,4 M 4,0 L 4,8"
                           Stroke="{DynamicResource TextPrimaryBrush}"
                           StrokeThickness="1.5"/>
                 </Viewbox>
-            </Button>
+            </ToggleButton>
 
+            <Popup x:Name="CreateDbPopup"
+                   StaysOpen="False"
+                   PlacementTarget="{Binding ElementName=CreateDbToggle}"
+                   Placement="Bottom"
+                   AllowsTransparency="True">
+                <Border Background="White"
+                        BorderBrush="{DynamicResource BorderAltBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="4">
+                    <StackPanel>
+                        <Button Content="{loc:Loc FM_PBase_CreateGeneralDatabase}"
+                                Command="{Binding CreateGeneralDatabaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=CreateDbPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                        <Button Content="{loc:Loc FM_PBase_CreateProjectDatabase}"
+                                Command="{Binding CreateProjectDatabaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=CreateDbPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Popup>
+
+            <!-- Active database -->
             <ComboBox Grid.Column="1"
                       ItemsSource="{Binding Connections}"
                       SelectedItem="{Binding SelectedConnection}"
-                      DisplayMemberPath="Name"
+                      ItemTemplateSelector="{StaticResource DbItemTemplateSelector}"
                       VerticalContentAlignment="Center"
                       Margin="0,0,2,0"
                       MinWidth="80"
                       Height="28"
                       Style="{DynamicResource CompactComboBox}"/>
 
-            <Button Grid.Column="2"
-                    Command="{Binding ConnectDatabaseCommand}"
-                    Margin="0,0,2,0"
-                    Width="28"
-                    Style="{DynamicResource SecondaryButton}"
-                    Padding="0"
-                    ToolTip="{loc:Loc FM_Tip_ConnectDb}">
-                <Viewbox Width="10" Height="10" Stretch="Uniform">
-                    <Path Data="M 1,5 L 4,8 L 9,2"
-                          Stroke="{DynamicResource TextPrimaryBrush}"
-                          StrokeThickness="1.5"
-                          StrokeStartLineCap="Round"
-                          StrokeEndLineCap="Round"/>
+            <!-- Database tools popup -->
+            <ToggleButton Grid.Column="2"
+                          x:Name="DbToolsToggle"
+                          IsChecked="{Binding IsOpen, ElementName=DbToolsPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          Width="28"
+                          Margin="0,0,0,0"
+                          Style="{DynamicResource SecondaryToggleButton}"
+                          ToolTip="{loc:Loc FM_PBase_DatabaseTools}">
+                <Viewbox Width="14" Height="14" Stretch="Uniform">
+                    <Grid Width="24" Height="24">
+                        <iconPacks:PackIconMaterial Kind="Database"
+                                                       Width="22" Height="22"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border Width="16" Height="16"
+                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                 Margin="0,0,-1,-1"
+                                 Background="{DynamicResource SurfaceBrush}"
+                                 CornerRadius="8">
+                            <iconPacks:PackIconMaterial Kind="Cog"
+                                                           Width="14" Height="14"
+                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
                 </Viewbox>
-            </Button>
+            </ToggleButton>
 
-            <Button Grid.Column="3"
-                    Command="{Binding DisconnectDatabaseCommand}"
-                    Margin="0,0,0,0"
-                    Width="28"
-                    Style="{DynamicResource SecondaryButton}"
-                    Padding="0"
-                    ToolTip="{loc:Loc FM_Disconnect}">
-                <Viewbox Width="10" Height="10" Stretch="Uniform">
-                    <Path Data="M 1,1 L 9,9 M 9,1 L 1,9"
-                          Stroke="{DynamicResource TextMutedBrush}"
-                          StrokeThickness="1.5"
-                          StrokeStartLineCap="Round"
-                          StrokeEndLineCap="Round"/>
-                </Viewbox>
-            </Button>
+            <Popup x:Name="DbToolsPopup"
+                   StaysOpen="False"
+                   PlacementTarget="{Binding ElementName=DbToolsToggle}"
+                   Placement="Bottom"
+                   HorizontalOffset="0"
+                   AllowsTransparency="True">
+                <Border Background="White"
+                        BorderBrush="{DynamicResource BorderAltBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="4">
+                    <StackPanel>
+                        <Button Content="{loc:Loc FM_PBase_ConnectDatabase}"
+                                Command="{Binding ConnectDatabaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                        <Button Content="{loc:Loc FM_PBase_DisconnectDatabase}"
+                                Command="{Binding DisconnectDatabaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                        <Button Content="{loc:Loc FM_PBase_ConfigureProjectBase}"
+                                Command="{Binding ConfigureProjectBaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                        <Button Content="{loc:Loc FM_PBase_DeleteDatabase}"
+                                Command="{Binding DeleteDatabaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Popup>
         </Grid>
 
         <!-- Row 2: Refresh + Search -->
@@ -471,12 +660,13 @@
                       ItemsSource="{Binding TreeNodes}"
                       behaviors:TreeViewBehaviors.RightClickSelect="True"
                       behaviors:TreeViewBehaviors.DeselectOnEmptyClick="True"
-                      behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
-                      behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
-                      behaviors:TreeViewDragDropBehavior.PlacementDragCommand="{Binding StartPlacementDragCommand}"
-                      behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
-                      behaviors:TreeViewBehaviors.AutoScrollToSelectedItem="True"
-                      behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
+                       behaviors:TreeViewDragDropBehavior.StartDragCommand="{Binding StartDragCommand}"
+                       behaviors:TreeViewDragDropBehavior.DropCommand="{Binding DropFamilyCommand}"
+                       behaviors:TreeViewDragDropBehavior.PlacementDragCommand="{Binding StartPlacementDragCommand}"
+                       behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
+                       behaviors:TreeViewDragDropBehavior.AutoScrollTopInset="{Binding ElementName=StickyOverlay, Path=ActualHeight}"
+                       behaviors:TreeViewBehaviors.AutoScrollToSelectedItem="True"
+                       behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
                       fmbehaviors:StickyCategoryHeaderBehavior.Enabled="True"
                       fmbehaviors:StickyCategoryHeaderBehavior.Overlay="{Binding ElementName=StickyStack}"
                       Background="Transparent"
@@ -510,20 +700,20 @@
                             </Style>
                         </MenuItem.Style>
                         <MenuItem Header="{loc:Loc FM_UpdateKeepParams}"
-                                  Command="{Binding UpdateCategoryKeepParamsCommand}"
                                   CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  Command="{Binding UpdateCategoryKeepParamsCommand}"
                                   behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
                                   Style="{StaticResource ModernMenuItem}" />
                         <MenuItem Header="{loc:Loc FM_UpdateOverwriteParams}"
-                                  Command="{Binding UpdateCategoryOverwriteParamsCommand}"
                                   CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  Command="{Binding UpdateCategoryOverwriteParamsCommand}"
                                   behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
                                   Style="{StaticResource ModernMenuItem}" />
                     </MenuItem>
 
                     <MenuItem Header="{loc:Loc FM_Check}"
-                              Command="{Binding CheckCategoryCommand}"
                               CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                              Command="{Binding CheckCategoryCommand}"
                               behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
                               Style="{StaticResource ModernMenuItem}" />
                 </ContextMenu>
@@ -603,6 +793,7 @@
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                     <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
                     <Setter Property="AllowDrop" Value="True"/>
+                    <Setter Property="behaviors:TreeViewBehaviors.SuppressHorizontalScrollOnBringIntoView" Value="True"/>
                     <Style.Triggers>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>

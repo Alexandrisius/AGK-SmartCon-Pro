@@ -95,7 +95,9 @@ public sealed class FileNameParser : IFileNameParser
 
             if (string.IsNullOrEmpty(block.Field))
             {
-                blockResults.Add(new BlockValidation(block.Index, block.Field, value, false, "Block field is not selected."));
+                var emptyFieldError = "Block field is not selected.";
+                errors.Add(emptyFieldError);
+                blockResults.Add(new BlockValidation(block.Index, block.Field, value, false, emptyFieldError));
                 continue;
             }
 
@@ -137,6 +139,11 @@ public sealed class FileNameParser : IFileNameParser
 
         foreach (var block in template.Blocks.OrderBy(b => b.Index))
         {
+            if (string.IsNullOrEmpty(block.Field))
+            {
+                continue;
+            }
+
             var (value, newRemaining) = ApplyParseRule(remaining, block.ParseRule);
             result[block.Field] = value;
             remaining = newRemaining;

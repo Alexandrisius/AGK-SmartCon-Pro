@@ -1,6 +1,7 @@
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.ViewModels;
+using SmartCon.FamilyManager.ViewModels.ProjectBase;
 
 namespace SmartCon.FamilyManager.Services;
 
@@ -22,6 +23,10 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IUserIdentityService _identityService;
     private readonly IFamilyStorageRenameService _renameService;
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
+    private readonly IRevitContext _revitContext;
+    private readonly IFileNameParser _fileNameParser;
+    private readonly IFamilyGeometryPipeline _geometryPipeline;
+    private readonly IFamilyFileResolver _fileResolver;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -39,7 +44,11 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IDbAccessControlService accessControl,
         IUserIdentityService identityService,
         IFamilyStorageRenameService renameService,
-        IFamilyManagerMetadataMediator metadataMediator)
+        IFamilyManagerMetadataMediator metadataMediator,
+        IRevitContext revitContext,
+        IFileNameParser fileNameParser,
+        IFamilyGeometryPipeline geometryPipeline,
+        IFamilyFileResolver fileResolver)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -57,6 +66,10 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _identityService = identityService;
         _renameService = renameService;
         _metadataMediator = metadataMediator;
+        _revitContext = revitContext;
+        _fileNameParser = fileNameParser;
+        _geometryPipeline = geometryPipeline;
+        _fileResolver = fileResolver;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -71,7 +84,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             categoryId, categoryPath, tags, contentStatus,
             versionLabel, createdAtText, updatedAtText,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
-            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService)
+            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
+            _geometryPipeline, _fileResolver)
         { IsReadOnly = isReadOnly };
     }
 
@@ -95,5 +109,14 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public ProfileViewModel CreateProfileViewModel()
     {
         return new ProfileViewModel(_userRepo, _accessControl, _identityService, _dialogService);
+    }
+
+    public ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "")
+    {
+        return new ProjectBaseRulesEditorViewModel(
+            existingBinding ?? ProjectBaseBinding.Empty,
+            currentDocumentPath,
+            _fileNameParser,
+            _dialogService);
     }
 }

@@ -37,7 +37,7 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return false;
 
-        return leaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject;
+        return leaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject && _activeBaseCompatibleWithCurrentDoc;
     }
 
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]
@@ -327,11 +327,15 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, targetRevit);
-                StatusMessage = $"Системный тип \"{typeName}\" — click to place";
+                StatusMessage = string.Format(
+                    LocalizationService.GetString("FM_PlaceSystemType") ?? "System type \"{0}\" — click to place",
+                    typeName);
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Load error: {ex.Message}";
+                StatusMessage = string.Format(
+                    LocalizationService.GetString("FM_LoadError") ?? "Load error: {0}",
+                    ex.Message);
             }
         });
     }

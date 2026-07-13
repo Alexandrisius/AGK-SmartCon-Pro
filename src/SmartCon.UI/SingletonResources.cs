@@ -14,6 +14,10 @@ public sealed class SingletonResources : ResourceDictionary
         {
             var assembly = typeof(SingletonResources).Assembly;
 
+            // ADR-046: Generic.xaml is loaded as an embedded resource and must not contain
+            // external icon controls (e.g. PackIconMaterial) because XamlReader.Load cannot
+            // resolve their pack://application styles without a WPF Application context in Revit.
+
             // Try embedded resource first (works on both net48 and net8.0)
             using var stream = assembly.GetManifestResourceStream("SmartCon.UI.Generic.xaml");
             if (stream is not null)

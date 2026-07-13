@@ -776,4 +776,22 @@ internal static class FamilyCatalogSql
     public const string MigrateV19AddPublishedByColumn = """
         ALTER TABLE catalog_versions ADD COLUMN published_by TEXT
         """;
+
+    /// <summary>
+    /// V20 (ADR-045 / #119): adds <c>base_type INTEGER NOT NULL DEFAULT 0</c>
+    /// column to <c>database_meta</c>. The base-type itself lives in
+    /// <c>registry.json</c> as the single source of truth (decision A1); this
+    /// column is a convenience cache for RBAC / migration tooling. <c>0</c>
+    /// = <see cref="SmartCon.Core.Models.FamilyManager.BaseType.General"/>,
+    /// <c>1</c> = <see cref="SmartCon.Core.Models.FamilyManager.BaseType.Project"/>.
+    /// </summary>
+    public const string MigrateV20AddBaseTypeColumn = """
+        ALTER TABLE database_meta ADD COLUMN base_type INTEGER NOT NULL DEFAULT 0
+        """;
+
+    /// V21 (#119 reconnect): adds project_binding_json TEXT to database_meta so that
+    /// project base configuration survives DisconnectDatabaseAsync + ConnectDatabaseAsync.
+    public const string MigrateV21AddProjectBindingColumn = """
+        ALTER TABLE database_meta ADD COLUMN project_binding_json TEXT
+        """;
 }

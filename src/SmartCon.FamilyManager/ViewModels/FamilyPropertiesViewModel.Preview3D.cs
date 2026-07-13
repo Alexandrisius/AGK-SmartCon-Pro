@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -46,6 +47,7 @@ public sealed partial class FamilyPropertiesViewModel
     private const string AutoExtractedPreviewPrefix = "auto-extracted-preview:";
 
     private bool _isFirst3DLoad = true;
+    private bool _isLazy3DExtractionRunning;
     private Media3D.Point3D _savedCameraPosition;
     private Media3D.Vector3D _savedCameraLookDirection;
     private Media3D.Vector3D _savedCameraUpDirection;
@@ -181,6 +183,10 @@ public sealed partial class FamilyPropertiesViewModel
 
         OnPropertyChanged(nameof(HasMultiple3DTypes));
 
+        SmartConLogger.Info(
+            $"Populate3DTypeNames: found {Available3DTypeNames.Count} type(s) from auto-extracted GLB assets " +
+            $"(VersionLabel='{VersionLabel ?? "<null>"}', Model3DAssets.Count={Model3DAssets.Count})");
+
         if (Available3DTypeNames.Count > 0 && _selected3DTypeName is null)
         {
             _selected3DTypeName = Available3DTypeNames[0];
@@ -249,7 +255,17 @@ public sealed partial class FamilyPropertiesViewModel
                 Has3DPreview = false;
                 Preview3DStatusMessage = LanguageManager.GetString(
                     StringLocalization.Keys.FM_3D_NoPreview) ?? "No 3D preview for this version";
-                SmartConLogger.Info($"No auto-extracted GLB asset found for type='{typeName}' — preview will show placeholder");
+                var availableDescriptions = string.Join("; ", Model3DAssets
+                    .Where(a => !string.IsNullOrEmpty(a.Description))
+                    .Select(a => $"'{a.Description}' (v={a.VersionLabel ?? "<null>"})"));
+                SmartConLogger.Warn(
+                    $"No auto-extracted GLB asset found for type='{typeName}', VersionLabel='{VersionLabel ?? "<null>"}', " +
+                    $"Model3DAssets.Count={Model3DAssets.Count}, matching descriptions=[{availableDescriptions}] " +
+                    "[Action: re-import the family, or check that the version has visible 3D solids]");
+
+                // Lazy fallback: try to extract geometry now if the import-time
+                // pipeline missed it (race, failure, or pre-ADR-042 catalog).
+                _ = TryExtract3DPreviewOnDemandAsync(typeName, ct);
                 return;
             }
 
@@ -330,6 +346,82 @@ public sealed partial class FamilyPropertiesViewModel
         finally
         {
             IsLoading3D = false;
+        }
+    }
+
+    /// <summary>
+    /// Lazy fallback: when no auto-extracted GLB asset exists for the current
+    /// version, resolve the managed .rfa path and run the geometry pipeline
+    /// on demand. This covers cases where the import-time hook failed or the
+    /// catalog predates ADR-042. The pipeline is fire-and-forget from the UI
+    /// perspective; when it completes, the preview is reloaded.
+    /// </summary>
+    private async Task TryExtract3DPreviewOnDemandAsync(string? typeName, CancellationToken ct)
+    {
+        if (_isLazy3DExtractionRunning)
+        {
+            SmartConLogger.Info("TryExtract3DPreviewOnDemandAsync: already running, skipping");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(VersionLabel))
+        {
+            SmartConLogger.Info(
+                "TryExtract3DPreviewOnDemandAsync: VersionLabel is null/empty, cannot resolve managed .rfa");
+            return;
+        }
+
+        _isLazy3DExtractionRunning = true;
+        try
+        {
+            using var _scope = SmartConLogger.BeginScope("FMProperties3D",
+                ("Method", nameof(TryExtract3DPreviewOnDemandAsync)),
+                ("VersionLabel", VersionLabel!));
+
+            SmartConLogger.Info(
+                $"TryExtract3DPreviewOnDemandAsync: resolving managed .rfa for " +
+                $"catalogItemId='{_catalogItemId}', versionLabel='{VersionLabel}'");
+
+            var resolved = await _fileResolver.ResolveVersionAsync(_catalogItemId, VersionLabel!, ct).ConfigureAwait(true);
+            if (string.IsNullOrEmpty(resolved.AbsolutePath) || !File.Exists(resolved.AbsolutePath))
+            {
+                SmartConLogger.Warn(
+                    $"TryExtract3DPreviewOnDemandAsync: managed .rfa not found for version '{VersionLabel}' " +
+                    "[Action: verify the version file exists in managed storage]");
+                return;
+            }
+
+            SmartConLogger.Info(
+                $"TryExtract3DPreviewOnDemandAsync: running geometry pipeline for '{Path.GetFileName(resolved.AbsolutePath)}'");
+
+            await _geometryPipeline.RunAsync(
+                null,
+                resolved.AbsolutePath,
+                _catalogItemId,
+                resolved.VersionId ?? Guid.NewGuid().ToString("N"),
+                VersionLabel!,
+                Name,
+                ct).ConfigureAwait(true);
+
+            SmartConLogger.Info(
+                "TryExtract3DPreviewOnDemandAsync: pipeline completed, reloading assets and preview");
+
+            await LoadAssetsAsync(ct).ConfigureAwait(true);
+            await Load3DPreviewForTypeAsync(typeName, ct).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"TryExtract3DPreviewOnDemandAsync failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: 3D preview will remain unavailable; check smartcon.log for details]");
+        }
+        finally
+        {
+            _isLazy3DExtractionRunning = false;
         }
     }
 
