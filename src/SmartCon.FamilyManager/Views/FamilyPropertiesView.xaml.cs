@@ -65,17 +65,26 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
     /// </summary>
     private void OnViewport3DXLoaded(object sender, RoutedEventArgs e)
     {
-        SmartConLogger.Info($"FamilyPropertiesView.OnViewport3DXLoaded: enter (ActualWidth={Properties3DViewport.ActualWidth})");
+        SmartConLogger.Info($"FamilyPropertiesView.OnViewport3DXLoaded: enter (ActualWidth={Properties3DViewport.ActualWidth}, ActualHeight={Properties3DViewport.ActualHeight})");
         try
         {
             if (DataContext is FamilyPropertiesViewModel vm)
             {
-                vm.Initialize3DInfrastructure();
+                SmartConLogger.Info(
+                    $"OnViewport3DXLoaded: vm.Selected3DTypeName={vm.Selected3DTypeName ?? "<null>"}, " +
+                    $"EffectsManager3DIsNull={vm.EffectsManager3D is null}");
 
-                // Only add Scene3DRoot when viewport has non-zero size
-                // (render host D3D only starts when ActualWidth > 0)
+                // Only initialize DirectX infrastructure when viewport has
+                // non-zero size. WPF TabControl lazy-renders non-active tabs,
+                // so the viewport's Loaded event fires first with ActualWidth=0
+                // and then again when the 3D tab is selected. Initializing
+                // EffectsManager for a zero-size surface creates a DirectX
+                // device that is not yet attached to a render target and makes
+                // Load3DPreviewForTypeAsync think the viewer is ready.
                 if (Properties3DViewport.ActualWidth > 0 && Properties3DViewport.ActualHeight > 0)
                 {
+                    vm.Initialize3DInfrastructure();
+
                     if (!Properties3DViewport.Items.Contains(vm.Scene3DRoot))
                     {
                         Properties3DViewport.Items.Add(vm.Scene3DRoot);

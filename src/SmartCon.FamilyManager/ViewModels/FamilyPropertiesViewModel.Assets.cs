@@ -53,7 +53,7 @@ public sealed partial class FamilyPropertiesViewModel
         }
     }
 
-    private async Task LoadAssetsAsync(CancellationToken ct)
+    internal async Task LoadAssetsAsync(CancellationToken ct)
     {
         using var _scope = SmartConLogger.BeginScope("FMProperties",
             ("Method", "LoadAssetsAsync"),
@@ -88,8 +88,6 @@ public sealed partial class FamilyPropertiesViewModel
 
         await PreResolveAssetPathsAsync(assets, ct);
         RebuildContentTabData();
-
-        await Load3DPreviewForTypeAsync(Selected3DTypeName, ct).ConfigureAwait(true);
     }
 
     private async Task PreResolveAssetPathsAsync(IReadOnlyList<FamilyAsset> assets, CancellationToken ct)
@@ -338,6 +336,8 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task SetAsPrimary(ContentAssetRow? row)
     {
         if (row is null || row.Asset.AssetType != FamilyAssetType.Image) return;
+
+        SmartConLogger.Info($"SetAsPrimary: assetId={row.Asset.Id}, name='{row.Asset.FileName}', triggering LoadAssetsAsync");
 
         await WithBusyStateAsync(async () =>
         {

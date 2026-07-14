@@ -87,17 +87,13 @@ public sealed partial class FamilyPropertiesViewModel
 
     private string? _selected3DTypeName;
     /// <summary>Currently selected type name from <see cref="Available3DTypeNames"/>.
-    /// When changed, the GLB for this type is loaded into the viewport.</summary>
+    /// The setter only changes the backing field and raises PropertyChanged;
+    /// preview loading is triggered explicitly by <see cref="ChangeSelected3DTypeCommand"/>
+    /// or by the 3D viewport Loaded handler.</summary>
     public string? Selected3DTypeName
     {
         get => _selected3DTypeName;
-        set
-        {
-            if (SetProperty(ref _selected3DTypeName, value))
-            {
-                _ = Load3DPreviewForTypeAsync(value, System.Threading.CancellationToken.None);
-            }
-        }
+        set => SetProperty(ref _selected3DTypeName, value);
     }
 
     /// <summary>True when <see cref="Available3DTypeNames"/> has more than
@@ -156,11 +152,12 @@ public sealed partial class FamilyPropertiesViewModel
 
     /// <summary>
     /// Populates <see cref="Available3DTypeNames"/> from auto-extracted GLB
-    /// assets and selects the first type. Called from <see cref="LoadAssetsAsync"/>
-    /// after assets are loaded.
+    /// assets and preserves the current selection when possible. Called from
+    /// <see cref="LoadAssetsAsync"/> after assets are loaded.
     /// </summary>
     public void Populate3DTypeNames()
     {
+        var previousSelection = _selected3DTypeName;
         Available3DTypeNames.Clear();
 
         foreach (var asset in Model3DAssets)
@@ -183,15 +180,47 @@ public sealed partial class FamilyPropertiesViewModel
 
         OnPropertyChanged(nameof(HasMultiple3DTypes));
 
-        SmartConLogger.Info(
-            $"Populate3DTypeNames: found {Available3DTypeNames.Count} type(s) from auto-extracted GLB assets " +
-            $"(VersionLabel='{VersionLabel ?? "<null>"}', Model3DAssets.Count={Model3DAssets.Count})");
-
-        if (Available3DTypeNames.Count > 0 && _selected3DTypeName is null)
+        if (Available3DTypeNames.Count > 0)
         {
-            _selected3DTypeName = Available3DTypeNames[0];
+            _selected3DTypeName = previousSelection is not null && Available3DTypeNames.Contains(previousSelection)
+                ? previousSelection
+                : Available3DTypeNames[0];
             OnPropertyChanged(nameof(Selected3DTypeName));
         }
+        else if (_selected3DTypeName is not null)
+        {
+            _selected3DTypeName = null;
+            OnPropertyChanged(nameof(Selected3DTypeName));
+        }
+
+        SmartConLogger.Info(
+            $"Populate3DTypeNames: found {Available3DTypeNames.Count} type(s) " +
+            $"from auto-extracted GLB assets (VersionLabel='{VersionLabel ?? "<null>"}', " +
+            $"Model3DAssets.Count={Model3DAssets.Count}), " +
+            $"selected3DTypeName='{_selected3DTypeName ?? "<null>"}'");
+    }
+
+    [RelayCommand]
+    private async Task ChangeSelected3DType(string? typeName)
+    {
+        // ComboBox fires SelectionChanged while its ItemsSource is being
+        // refreshed (clear + repopulate). These null events are expected and
+        // harmless; do not log them to avoid noise.
+        if (typeName is null) return;
+
+        using var _scope = SmartConLogger.BeginScope("FMProperties3D",
+            ("Method", nameof(ChangeSelected3DType)),
+            ("TypeName", typeName));
+
+        if (Selected3DTypeName == typeName)
+        {
+            SmartConLogger.Info("ChangeSelected3DType: ignored same typeName");
+            return;
+        }
+
+        Selected3DTypeName = typeName;
+        SmartConLogger.Info("ChangeSelected3DType: selection changed, loading preview");
+        await Load3DPreviewForTypeAsync(Selected3DTypeName, System.Threading.CancellationToken.None).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -199,14 +228,20 @@ public sealed partial class FamilyPropertiesViewModel
     /// load it via <see cref="GlbSceneLoader"/>, and add it to
     /// <see cref="Scene3DRoot"/>. Clears any previously-loaded scene first.
     /// </summary>
-    /// <param name="typeName">Type name from <see cref="Available3DTypeNames"/>,
-    /// or <c>null</c> to load the default (no-type) GLB.</param>
+    /// <param name="typeName">Type name from <see cref="Available3DTypeNames"/>.
+    /// Must not be null/empty; callers should supply a valid type or defer.</param>
     /// <param name="ct">Cancellation token.</param>
     public async Task Load3DPreviewForTypeAsync(string? typeName, CancellationToken ct)
     {
         using var _scope = SmartConLogger.BeginScope("FMProperties3D",
             ("Method", nameof(Load3DPreviewForTypeAsync)),
             ("TypeName", typeName ?? "<null>"));
+
+        SmartConLogger.Info(
+            $"Load3DPreviewForTypeAsync: typeName={typeName ?? "<null>"}, " +
+            $"EffectsManager3DIsNull={EffectsManager3D is null}, " +
+            $"Model3DAssets.Count={Model3DAssets.Count}, " +
+            $"Selected3DTypeName={Selected3DTypeName ?? "<null>"}");
 
         // Critical: HelixToolkit requires scene.Root.Attach(effectsManager)
         // BEFORE AddNode — otherwise mesh nodes never get GPU vertex buffers
@@ -218,6 +253,21 @@ public sealed partial class FamilyPropertiesViewModel
             SmartConLogger.Info(
                 "Load3DPreviewForTypeAsync: EffectsManager3D is null — deferring load " +
                 "until Initialize3DInfrastructure is called from View.Loaded");
+            return;
+        }
+
+        // Guard against accidental null/empty typeName (e.g. ComboBox SelectedItem
+        // reset during ItemsSource refresh). Without this guard the null suffix
+        // would not match any existing GLB and would trigger an expensive on-demand
+        // .rfa extraction.
+        if (string.IsNullOrEmpty(typeName))
+        {
+            Has3DPreview = false;
+            Preview3DStatusMessage = LanguageManager.GetString(
+                StringLocalization.Keys.FM_3D_NoPreview) ?? "No 3D preview for this version";
+            SmartConLogger.Info(
+                "Load3DPreviewForTypeAsync: typeName is null/empty and no explicit type " +
+                "was requested; skipping preview load to avoid on-demand .rfa extraction");
             return;
         }
 
@@ -358,9 +408,20 @@ public sealed partial class FamilyPropertiesViewModel
     /// </summary>
     private async Task TryExtract3DPreviewOnDemandAsync(string? typeName, CancellationToken ct)
     {
+        SmartConLogger.Info(
+            $"TryExtract3DPreviewOnDemandAsync: ENTER typeName={typeName ?? "<null>"}, " +
+            $"VersionLabel={VersionLabel ?? "<null>"}, _isLazy3DExtractionRunning={_isLazy3DExtractionRunning}");
+
         if (_isLazy3DExtractionRunning)
         {
             SmartConLogger.Info("TryExtract3DPreviewOnDemandAsync: already running, skipping");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(typeName))
+        {
+            SmartConLogger.Info(
+                "TryExtract3DPreviewOnDemandAsync: typeName is null/empty, cannot extract geometry for unnamed type");
             return;
         }
 
