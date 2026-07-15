@@ -262,12 +262,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             var appDir = Path.GetDirectoryName(typeof(FamilyManagerMainViewModel).Assembly.Location);
             var asmLogPath = Path.Combine(appDir ?? ".", "assembly-load.log");
             var sb = new StringBuilder();
-            sb.AppendLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] === PRE-TRUNCATE DUMP: all currently-loaded HelixToolkit/SharpDX/SharpGLTF/Assimp assemblies ===");
+            sb.AppendLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] === PRE-TRUNCATE DUMP: all currently-loaded HelixToolkit/SharpDX/Assimp assemblies ===");
             foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
             {
                 var n = a.GetName().Name ?? "";
-                if (n.Contains("HelixToolkit") || n.Contains("SharpGLTF") ||
-                    n.Contains("SharpDX") || n.Contains("Assimp") ||
+                if (n.Contains("HelixToolkit") || n.Contains("SharpDX") || n.Contains("Assimp") ||
                     n.Contains("SmartCon"))
                     sb.AppendLine($"  {n} v{a.GetName().Version} from={a.Location}");
             }

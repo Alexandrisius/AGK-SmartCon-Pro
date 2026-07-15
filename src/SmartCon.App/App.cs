@@ -328,11 +328,11 @@ public sealed class App : IExternalApplication
     }
 
     /// <summary>
-    /// Logs every HelixToolkit/SharpDX/SharpGLTF/Assimp assembly load with a
-    /// minimal stack trace so we can identify WHO and WHEN loads these heavy
-    /// assemblies. HelixToolkit is suspected of hooking the WPF render thread
-    /// on first load (see helix-toolkit issue #1690 D3DImage.Lock() deadlock),
-    /// which can cause subsequent modal dialogs to render white on net48.
+    /// Logs every HelixToolkit/SharpDX/Assimp assembly load with a minimal
+    /// stack trace so we can identify WHO and WHEN loads these heavy assemblies.
+    /// HelixToolkit is suspected of hooking the WPF render thread on first load
+    /// (see helix-toolkit issue #1690 D3DImage.Lock() deadlock), which can cause
+    /// subsequent modal dialogs to render white on net48.
     /// Writes to a SEPARATE file (assembly-load.log) so TruncateMainLog
     /// cannot eat the log lines.
     /// </summary>
@@ -342,7 +342,6 @@ public sealed class App : IExternalApplication
         {
             var name = args.LoadedAssembly.GetName().Name ?? "";
             if (!name.Contains("HelixToolkit")
-                && !name.Contains("SharpGLTF")
                 && !name.Contains("SharpDX")
                 && !name.Contains("Assimp"))
                 return;

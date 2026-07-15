@@ -34,23 +34,13 @@
     <PackageReference Include="UTF.Unknown" />
   </ItemGroup>
 
-  <!-- ADR-042: 3D geometry preview — HelixToolkit.Wpf.SharpDX для ОБЕИХ TFM (net8 + net48).
-       Root cause (Task 4): HelixToolkit.Wpf.SharpDX transitively pulls SharpDX → System.Runtime 4.3.0
-       ref assembly. PolySharp's source-generated DefaultInterpolatedStringHandler loses overload
-       resolution to that ref assembly for format-specifier interpolations like $"...{x:F0}...".
-       Workaround: format specifiers must be `.ToString("F0")` not `{x:F0}` inline (see
-       SmartConLogger call sites — StickyCategoryHeaderBehavior.cs, FamilyManagerAwaitableEvent.cs,
-       FamilyGeometryPipeline.cs). With this workaround, HelixToolkit works on net48 too.
-
-       SharpGLTF.Core (netstandard2.0) is used for GLB writing on BOTH TFM. Replaces
-       SharpGLTF.Toolkit (which required System.Text.Json 9.x → broke net48).
-       Writer uses low-level Schema2 API: ModelRoot.CreateModel → UseBufferView →
-       CreateAccessor → SetVertexData/SetIndexData → CreateMesh → CreatePrimitive →
-       SetVertexAccessor/SetIndexAccessor → SaveGLB. -->
+  <!-- ADR-042 / Issue #129: 3D geometry preview — HelixToolkit.Wpf.SharpDX для ОБЕИХ TFM (net8 + net48).
+       GLB writer теперь custom zero-dependency (manual JSON + binary GLB container), поэтому
+       SharpGLTF.Core больше не используется. CS1739 workaround для format specifiers остаётся
+       в силе для любых файлов, транзитивно ссылающихся на HelixToolkit/SharpDX. -->
   <ItemGroup>
     <PackageReference Include="HelixToolkit.Wpf.SharpDX" />
     <PackageReference Include="HelixToolkit.SharpDX.Assimp" />
-    <PackageReference Include="SharpGLTF.Core" />
   </ItemGroup>
 
   <ItemGroup>

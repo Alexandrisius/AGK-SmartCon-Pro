@@ -92,7 +92,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
     /// Logs which SmartCon.FamilyManager assemblies are loaded — helps diagnose
     /// white-dialog hangs where InitializeComponent fails silently because a
     /// ResourceDictionary reference cannot resolve on net48 (missing HelixToolkit,
-    /// SharpGLTF, etc.). Safe to call from any thread.
+    /// SharpDX, etc.). Safe to call from any thread.
     /// </summary>
     private static void LogAssemblyLoadState(string context)
     {
@@ -102,7 +102,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
                 .Where(a =>
                 {
                     var n = a.GetName().Name ?? "";
-                    return n.Contains("HelixToolkit") || n.Contains("SharpGLTF") || n.Contains("SharpDX") || n.Contains("SmartCon.FamilyManager");
+                    return n.Contains("HelixToolkit") || n.Contains("SharpDX") || n.Contains("SmartCon.FamilyManager");
                 })
                 .Select(a => a.GetName().Name + " " + a.GetName().Version)
                 .ToList();

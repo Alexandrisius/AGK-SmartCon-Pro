@@ -21,12 +21,10 @@
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
 
-    <!-- JSON — заморожен на 8.0.6 (используется во всём проекте через System.Text.Json).
-         ВНИМАНИЕ: SharpGLTF.Toolkit 1.0.4 (и выше) требует System.Text.Json >= 9.0.4 — но
-         обновление JSON до 9.x/10.x ломает net48 (CS1739 AppendFormatted —
-         DefaultInterpolatedStringHandler changes). Поэтому SharpGLTF Toolkit скомпонован
-         только для net8.0-windows (Revit 2025+) через Condition в SmartCon.FamilyManager.csproj.
-         В net48 (Revit 2019-2024) 3D preview недоступен — pipeline silent no-op. -->
+    <!-- JSON — заморожен на 8.0.6 (используется в других модулях проекта через System.Text.Json).
+         Обновление System.Text.Json до 9.x/10.x ломает net48 (CS1739 AppendFormatted —
+         DefaultInterpolatedStringHandler changes). GLB writer теперь zero-dependency и не
+         использует System.Text.Json. -->
     <PackageVersion Include="System.Text.Json" Version="8.0.6" />
 
     <!-- Frozen polyfill versions (ADR-042): HelixToolkit.Wpf.SharpDX 3.1.2 transitively
@@ -63,23 +61,6 @@
     <!-- Universal charset detector (Mozilla algorithm) для автоопределения кодировок Type Catalog -->
     <PackageVersion Include="UTF.Unknown" Version="2.6.0" />
 
-    <!--
-      SharpGLTF.Core — low-level GLB writer/reader (ADR-042). netstandard2.0 → работает на net48 + net8.
-
-      SharpGLTF.Toolkit (SceneBuilder/MeshBuilder/MaterialBuilder fluent API) заменён на
-      SharpGLTF.Core (Schema2 low-level API: ModelRoot.CreateModel → CreateBuffer →
-      CreateAccessor → SetVertexData/SetIndexData → CreateMesh → CreatePrimitive →
-      SetVertexAccessor/SetIndexAccessor → SaveGLB).
-
-      Причина замены: SharpGLTF.Toolkit 1.0.4 транзитивно тянет System.Text.Json >= 9.0.4,
-      который ломает net48 (CS1739 AppendFormatted — DefaultInterpolatedStringHandler changes).
-      SharpGLTF.Core 1.0.3 — последняя версия, зависящая от System.Text.Json 8.0.5
-      (совместима с нашим замороженным 8.0.6 → работает на обоих TFM).
-
-      v1.0.4 bump'нул System.Text.Json до 9.0.4 → ломает net48. v1.0.3 — единственная
-      stable версия Core без System.Text.Json 9.x зависимости. Все Schema2 API
-      (ModelRoot, CreateMesh, CreateAccessor, SetVertexData, etc.) идентичны v1.0.4. -->
-    <PackageVersion Include="SharpGLTF.Core" Version="1.0.3" />
 
     <!-- HelixToolkit.Wpf.SharpDX — DirectX 11 WPF 3D viewer (ADR-042). net48 + net8.0-windows7.0.
          HelixToolkit.Toolkit.Wpf.SharpDX транситивно тянет HelixToolkit.Maths, HelixToolkit.SharpDX,

@@ -9,7 +9,7 @@ namespace SmartCon.FamilyManager.Services.Geometry;
 /// <summary>
 /// Default implementation of <see cref="IFamilyGeometryPipeline"/>. Combines
 /// <see cref="IFamilyGeometryExtractor"/> (Revit-side), <see cref="IGlbWriter"/>
-/// (SharpGLTF, pure C#), and <see cref="IFamilyAssetService"/> (managed-storage
+/// (custom zero-dependency GLB writer, pure C#), and <see cref="IFamilyAssetService"/> (managed-storage
 /// asset registration) into a single best-effort pipeline.
 /// </summary>
 /// <remarks>
