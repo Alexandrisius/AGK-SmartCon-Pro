@@ -10,8 +10,8 @@ namespace SmartCon.Tests.FamilyManager.Geometry;
 
 /// <summary>
 /// Round-trip integration tests for <see cref="GlbSceneLoader"/>.
-/// Writes a GLB file using <see cref="FamilyGeometryGlbWriter"/> (SharpGLTF),
-/// then loads it back through <see cref="GlbSceneLoader"/> (HelixToolkit.Assimp)
+/// Writes a GLB file using <see cref="FamilyGeometryGlbWriter"/> (custom zero-dependency
+/// GLB writer), then loads it back through <see cref="GlbSceneLoader"/> (HelixToolkit.Assimp)
 /// and verifies that the resulting HelixToolkit scene graph contains the
 /// expected meshes.
 /// </summary>

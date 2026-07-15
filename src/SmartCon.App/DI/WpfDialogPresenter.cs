@@ -58,7 +58,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         LogAssemblyLoadState(vmType.Name);
 
         Window window;
-        var factorySw = Stopwatch.StartNew();
+        using var _factoryMs = SmartConLogger.Measure("DlgPresenter.Factory");
         try
         {
             SmartConLogger.Freeze($"Creating view for '{vmType.Name}' (factory call)");
@@ -70,21 +70,16 @@ public sealed class WpfDialogPresenter : IDialogPresenter
                 $"View factory for '{vmType.Name}' THREW: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             throw;
         }
-        finally
-        {
-            factorySw.Stop();
-        }
-        SmartConLogger.Freeze($"View created for '{vmType.Name}' in {factorySw.ElapsedMilliseconds}ms (type={window.GetType().Name})");
+        SmartConLogger.Freeze($"View created for '{vmType.Name}' (type={window.GetType().Name})");
 
-        var showDialogSw = Stopwatch.StartNew();
+        using var _showMs = SmartConLogger.Measure("DlgPresenter.ShowDialog");
         try
         {
             return ShowDialogInternal(window, _revitContext);
         }
         finally
         {
-            showDialogSw.Stop();
-            SmartConLogger.Freeze($"ShowDialog returned in {showDialogSw.ElapsedMilliseconds}ms for '{vmType.Name}'");
+            SmartConLogger.Freeze($"ShowDialog returned for '{vmType.Name}'");
         }
     }
 
@@ -92,7 +87,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
     /// Logs which SmartCon.FamilyManager assemblies are loaded — helps diagnose
     /// white-dialog hangs where InitializeComponent fails silently because a
     /// ResourceDictionary reference cannot resolve on net48 (missing HelixToolkit,
-    /// SharpGLTF, etc.). Safe to call from any thread.
+    /// SharpDX, etc.). Safe to call from any thread.
     /// </summary>
     private static void LogAssemblyLoadState(string context)
     {
@@ -102,7 +97,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
                 .Where(a =>
                 {
                     var n = a.GetName().Name ?? "";
-                    return n.Contains("HelixToolkit") || n.Contains("SharpGLTF") || n.Contains("SharpDX") || n.Contains("SmartCon.FamilyManager");
+                    return n.Contains("HelixToolkit") || n.Contains("SharpDX") || n.Contains("SmartCon.FamilyManager");
                 })
                 .Select(a => a.GetName().Name + " " + a.GetName().Version)
                 .ToList();
