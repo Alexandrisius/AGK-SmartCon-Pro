@@ -27,13 +27,13 @@ internal static class GltfBinaryWriter
             writer.Write(GltfVersion);
             writer.Write((uint)totalLength);
 
-            writer.Write((uint)jsonBytes.Length);
+            writer.Write((uint)(jsonBytes.Length + jsonPadding));
             writer.Write(JsonChunkType);
             writer.Write(jsonBytes);
             for (int i = 0; i < jsonPadding; i++)
                 writer.Write((byte)0x20);
 
-            writer.Write((uint)buffer.Length);
+            writer.Write((uint)(buffer.Length + binPadding));
             writer.Write(BinChunkType);
             writer.Write(buffer);
             for (int i = 0; i < binPadding; i++)

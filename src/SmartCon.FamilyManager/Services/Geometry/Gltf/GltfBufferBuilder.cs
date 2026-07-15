@@ -59,6 +59,7 @@ internal static class GltfBufferBuilder
                 $"idxAcc={indexAccessor}, mat={materialIndex}, verts={mesh.VertexCount}, tris={mesh.TriangleCount}");
 
             meshIndex++;
+            bufferOffset = Align(bufferOffset, 4);
         }
 
         nodes[0] = new GltfNode(preview.FamilyName, null, rootChildren, GetRootTransformMatrix());
@@ -214,9 +215,16 @@ internal static class GltfBufferBuilder
             }
 
             WriteIndices(mesh, buffer, ref offset);
+            offset = Align(offset, 4);
         }
 
         return buffer;
+    }
+
+    private static int Align(int value, int alignment)
+    {
+        int remainder = value % alignment;
+        return remainder == 0 ? value : value + (alignment - remainder);
     }
 
     private static void WriteIndices(MeshData mesh, byte[] buffer, ref int offset)

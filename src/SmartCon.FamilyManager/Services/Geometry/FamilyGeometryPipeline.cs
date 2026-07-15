@@ -88,9 +88,13 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                 $"Geometry pipeline extracting from managed .rfa: '{Path.GetFileName(managedRfaPath)}'");
 
             // H2/H3 path: extract geometry from managed .rfa (one OpenDocumentFile).
-            geometry = await _awaitableEvent.RaiseAsync(
-                (app) => _extractor.ExtractAsync(managedRfaPath!, familyName, ct).GetAwaiter().GetResult(),
+            // Use RaiseAsyncTask rather than RaiseAsync<T> + GetAwaiter().GetResult()
+            // so a future truly-async extractor cannot deadlock on the Revit UI thread.
+            IReadOnlyList<FamilyGeometryPerType>? extracted = null;
+            await _awaitableEvent.RaiseAsyncTask(
+                async _ => extracted = await _extractor.ExtractAsync(managedRfaPath!, familyName, ct).ConfigureAwait(false),
                 ct).ConfigureAwait(false);
+            geometry = extracted;
 
             if (geometry is null || geometry.Count == 0)
             {

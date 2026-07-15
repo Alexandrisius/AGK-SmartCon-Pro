@@ -58,7 +58,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         LogAssemblyLoadState(vmType.Name);
 
         Window window;
-        var factorySw = Stopwatch.StartNew();
+        using var _factoryMs = SmartConLogger.Measure("DlgPresenter.Factory");
         try
         {
             SmartConLogger.Freeze($"Creating view for '{vmType.Name}' (factory call)");
@@ -70,21 +70,16 @@ public sealed class WpfDialogPresenter : IDialogPresenter
                 $"View factory for '{vmType.Name}' THREW: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             throw;
         }
-        finally
-        {
-            factorySw.Stop();
-        }
-        SmartConLogger.Freeze($"View created for '{vmType.Name}' in {factorySw.ElapsedMilliseconds}ms (type={window.GetType().Name})");
+        SmartConLogger.Freeze($"View created for '{vmType.Name}' (type={window.GetType().Name})");
 
-        var showDialogSw = Stopwatch.StartNew();
+        using var _showMs = SmartConLogger.Measure("DlgPresenter.ShowDialog");
         try
         {
             return ShowDialogInternal(window, _revitContext);
         }
         finally
         {
-            showDialogSw.Stop();
-            SmartConLogger.Freeze($"ShowDialog returned in {showDialogSw.ElapsedMilliseconds}ms for '{vmType.Name}'");
+            SmartConLogger.Freeze($"ShowDialog returned for '{vmType.Name}'");
         }
     }
 

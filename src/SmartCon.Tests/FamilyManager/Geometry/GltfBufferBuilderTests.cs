@@ -130,6 +130,44 @@ public sealed class GltfBufferBuilderTests
     }
 
     [Fact]
+    public void Build_MultipleMeshes_PositionBufferViewAlignedAfterOddShortIndices()
+    {
+        var preview = new FamilyGeometryPreview(
+            CatalogItemId: "item",
+            VersionLabel: "v1",
+            FamilyName: "Align",
+            Meshes: new[]
+            {
+                new MeshData(
+                    Positions: new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 },
+                    Normals: null,
+                    Indices: new int[] { 0, 1, 2 },
+                    DiffuseColor: Vector4.One,
+                    NodeName: "Tri1"),
+                new MeshData(
+                    Positions: new float[] { 5, 0, 0, 6, 0, 0, 5, 1, 0 },
+                    Normals: null,
+                    Indices: new int[] { 0, 1, 2 },
+                    DiffuseColor: Vector4.One,
+                    NodeName: "Tri2")
+            });
+
+        var (model, buffer) = GltfBufferBuilder.Build(preview);
+
+        Assert.Equal(2, model.Meshes.Count);
+        foreach (var bv in model.BufferViews)
+        {
+            Assert.Equal(0, bv.ByteOffset % 4);
+        }
+
+        // Mesh1: positions 9 floats = 36 bytes + ushort indices 6 bytes,
+        // aligned to 4 => 44. Buffer view order: pos1, idx1, pos2, idx2.
+        Assert.Equal(44, model.BufferViews[2].ByteOffset);
+        Assert.Equal(buffer.Length, model.Buffers[0].ByteLength);
+        Assert.Equal(0, buffer.Length % 4);
+    }
+
+    [Fact]
     public void Build_RootNode_HasChildrenAndMatrix()
     {
         var preview = new FamilyGeometryPreview(
