@@ -89,10 +89,30 @@ FamilyManager BaseType.**
 перенесён в `catalog.db.database_meta.project_binding_json`, а реестр оставлен
 runtime-кешем.
 
+## Update A2 — auto-activation on first Save / SaveAs (2026-07-15)
+
+Ручное тестирование выявило, что при создании нового проекта и его первом
+сохранении проектная база не активируется, потому что `ViewActivated` не
+срабатывает, когда активный вид не менялся (Issue #128). Для исправления
+`ActiveDocumentChangeNotifier` дополнительно подписан на
+`ControlledApplication.DocumentSaved` / `DocumentSavedAs` и поднимает
+`ActiveDocumentPathChanged`, когда активный документ получает или меняет путь.
+
+Логика фильтрации:
+- Событие сохранения должно завершиться успешно (`Status == Succeeded`).
+- Семейства (.rfa) и пустые `PathName` игнорируются.
+- Реагируем только на документ, который является текущим активным
+  (чтобы не переключать базу при «Save All» фоновых документов).
+- Если путь совпадает с уже известным, событие не поднимается
+  (не реагируем на обычный `Ctrl+S`).
+
+`FamilyManagerMainViewModel` слушает `ActiveDocumentPathChanged` и вызывает
+`IProjectBaseActivator.ActivateForDocumentAsync` с новым путём.
+
 ## Verification
 
 - Сборка R19/R21/R24/R25 — 0 warnings / 0 errors.
 - Тесты: `ProjectBaseBindingEvaluatorTests`, `ProjectBaseActivatorTests`, все
   существующие `FileNameParserTests` проходят.
 - Manual Revit test: создание/редактирование проектной базы + автоактивация при
-  смене документа.
+  смене документа; первое сохранение нового проекта и SaveAs с переименованием.

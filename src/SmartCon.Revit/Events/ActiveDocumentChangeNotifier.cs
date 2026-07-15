@@ -11,10 +11,10 @@ namespace SmartCon.Revit.Events;
 /// Revit-adapter implementing <see cref="IActiveDocumentChangeNotifier"/>.
 /// Subscribes to <c>UIControlledApplication.ViewActivated</c> (decision A2 of
 /// #119 — recommended by Jeremy Tammik since it fires on both DocumentOpened
-/// and cross-document tab switches) and forwards the active file path to
-/// subscribers after filtering out unsaved / detached / family documents
-/// (decision A4: <c>Document.PathName == ""</c> covers unsaved AND detached,
-/// per the official API docs).
+/// and cross-document tab switches) and to <c>ControlledApplication.DocumentSaved</c>
+/// / <c>DocumentSavedAs</c> (Issue #128). Forwards the active file path to
+/// subscribers after filtering out unsaved / detached / family documents and
+/// failed / cancelled / non-active save operations.
 /// </summary>
 /// <remarks>
 /// The notifier is registered in <c>ServiceRegistrar</c> as a singleton. Its
@@ -33,11 +33,14 @@ namespace SmartCon.Revit.Events;
 public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier, IDisposable
 {
     private UIControlledApplication? _application;
+    private Document? _lastActiveDocument;
+    private string? _lastNotifiedPath;
 
     public event EventHandler<ActiveDocumentChangedEventArgs>? ActiveDocumentChanged;
+    public event EventHandler<ActiveDocumentPathChangedEventArgs>? ActiveDocumentPathChanged;
 
     /// <summary>
-    /// Subscribe to <c>ViewActivated</c>. Must be called exactly once from
+    /// Subscribe to application events. Must be called exactly once from
     /// <c>App.OnStartup</c> while the <see cref="UIControlledApplication"/>
     /// reference is available.
     /// </summary>
@@ -45,10 +48,12 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
     {
         _application = application;
         application.ViewActivated += OnViewActivated;
+        application.ControlledApplication.DocumentSaved += OnDocumentSaved;
+        application.ControlledApplication.DocumentSavedAs += OnDocumentSavedAs;
     }
 
     /// <summary>
-    /// Unsubscribe from <c>ViewActivated</c>. Idempotent — calling
+    /// Unsubscribe from all application events. Idempotent — calling
     /// <see cref="Dispose"/> more than once is safe.
     /// </summary>
     public void Dispose()
@@ -56,6 +61,8 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
         if (_application is not null)
         {
             _application.ViewActivated -= OnViewActivated;
+            _application.ControlledApplication.DocumentSaved -= OnDocumentSaved;
+            _application.ControlledApplication.DocumentSavedAs -= OnDocumentSavedAs;
             _application = null;
         }
     }
@@ -78,6 +85,9 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
             return;
         }
 
+        _lastActiveDocument = currentDoc;
+        SmartConLogger.Debug($"Last active document updated (PathName='{GetFileNameOrEmpty(currentDoc.PathName)}')");
+
         if (currentDoc.IsFamilyDocument)
         {
             SmartConLogger.Debug("Active document is a family (.rfa) — ignoring, no project-base auto-activation");
@@ -97,7 +107,66 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
             return;
         }
 
-        SmartConLogger.Info($"Active document changed to '{System.IO.Path.GetFileName(currentDoc.PathName)}'");
+        var fileName = System.IO.Path.GetFileName(currentDoc.PathName);
+        SmartConLogger.Info($"Active document changed to '{fileName}'");
+        _lastNotifiedPath = currentDoc.PathName;
         ActiveDocumentChanged?.Invoke(this, new ActiveDocumentChangedEventArgs(currentDoc.PathName));
+        ActiveDocumentPathChanged?.Invoke(this, new ActiveDocumentPathChangedEventArgs(currentDoc.PathName, ActiveDocumentPathChangeReason.Activated));
+    }
+
+    private void OnDocumentSaved(object? sender, DocumentSavedEventArgs e)
+    {
+        HandleDocumentPathChanged(e.Document, e.Status, ActiveDocumentPathChangeReason.Saved, nameof(OnDocumentSaved));
+    }
+
+    private void OnDocumentSavedAs(object? sender, DocumentSavedAsEventArgs e)
+    {
+        HandleDocumentPathChanged(e.Document, e.Status, ActiveDocumentPathChangeReason.SavedAs, nameof(OnDocumentSavedAs));
+    }
+
+    private void HandleDocumentPathChanged(Document doc, RevitAPIEventStatus status, ActiveDocumentPathChangeReason reason, string methodName)
+    {
+        using var _scope = SmartConLogger.BeginScope("FMActiveDoc",
+            ("Method", methodName));
+
+        if (status != RevitAPIEventStatus.Succeeded)
+        {
+            SmartConLogger.Debug($"Save event status={status} — ignoring");
+            return;
+        }
+
+        if (doc.IsFamilyDocument)
+        {
+            SmartConLogger.Debug("Saved document is a family (.rfa) — ignoring");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(doc.PathName))
+        {
+            SmartConLogger.Debug("Saved document has empty PathName — ignoring");
+            return;
+        }
+
+        if (_lastActiveDocument is null || !_lastActiveDocument.IsValidObject || !_lastActiveDocument.Equals(doc))
+        {
+            SmartConLogger.Debug($"Saved document '{GetFileNameOrEmpty(doc.PathName)}' is not the current active document — ignoring");
+            return;
+        }
+
+        if (_lastNotifiedPath == doc.PathName)
+        {
+            SmartConLogger.Debug($"Saved document path '{System.IO.Path.GetFileName(doc.PathName)}' already notified — ignoring duplicate");
+            return;
+        }
+
+        var fileName = System.IO.Path.GetFileName(doc.PathName);
+        SmartConLogger.Info($"Active document path changed to '{fileName}' via {reason}");
+        _lastNotifiedPath = doc.PathName;
+        ActiveDocumentPathChanged?.Invoke(this, new ActiveDocumentPathChangedEventArgs(doc.PathName, reason));
+    }
+
+    private static string GetFileNameOrEmpty(string? path)
+    {
+        return string.IsNullOrEmpty(path) ? "(empty)" : System.IO.Path.GetFileName(path);
     }
 }

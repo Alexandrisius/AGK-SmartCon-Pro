@@ -572,8 +572,8 @@ public interface IProjectBaseActivator
 
 ## IActiveDocumentChangeNotifier
 
-Абстракция над Revit-событием `ViewActivated`. Core-контракт, реализация в
-`SmartCon.Revit/Events/ActiveDocumentChangeNotifier.cs`.
+Абстрация над Revit-событиями `ViewActivated`, `DocumentSaved` и `DocumentSavedAs`.
+Core-контракт, реализация в `SmartCon.Revit/Events/ActiveDocumentChangeNotifier.cs`.
 
 **Файл:** `IActiveDocumentChangeNotifier.cs`
 
@@ -581,12 +581,27 @@ public interface IProjectBaseActivator
 public interface IActiveDocumentChangeNotifier : IDisposable
 {
     event EventHandler<ActiveDocumentChangedEventArgs>? ActiveDocumentChanged;
+    event EventHandler<ActiveDocumentPathChangedEventArgs>? ActiveDocumentPathChanged;
 }
+
+public enum ActiveDocumentPathChangeReason
+{
+    Activated,
+    Saved,
+    SavedAs
+}
+
+public sealed record ActiveDocumentChangedEventArgs(string FilePath);
+public sealed record ActiveDocumentPathChangedEventArgs(string FilePath, ActiveDocumentPathChangeReason Reason);
 ```
+
+- `ActiveDocumentChanged` — сработал `ViewActivated` для несемейного, сохранённого документа (путь гарантированно не пустой).
+- `ActiveDocumentPathChanged` — у активного документа изменился путь, пока он остаётся активным: первое сохранение нового проекта (`SavedAs`) или переименование через `SaveAs` (`SavedAs`), а также редкий случай сохранения без смены пути (`Saved`).
 
 Подписчики (`FamilyManagerMainViewModel`) получают путь активного документа и
 запускают `IProjectBaseActivator.ActivateForDocumentAsync`. Фильтрация unsaved/detached/family
-документов выполняется в реализации, чтобы Core оставался чистым от Revit API.
+документов, неактивных документов и отменённых/неудавшихся сохранений выполняется в реализации,
+чтобы Core оставался чистым от Revit API. См. Issue #128.
 
 ---
 

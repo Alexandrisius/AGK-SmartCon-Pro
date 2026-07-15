@@ -15,6 +15,13 @@ public sealed partial class FamilyManagerMainViewModel
         _ = ActivateBaseForCurrentDocumentAsync(e.FilePath);
     }
 
+    private void OnActiveDocumentPathChanged(object? sender, ActiveDocumentPathChangedEventArgs e)
+    {
+        SmartConLogger.Info($"Active document path changed via {e.Reason} to '{Path.GetFileName(e.FilePath)}' — re-evaluating project base");
+        _currentActiveDocumentPath = e.FilePath;
+        _ = ActivateBaseForCurrentDocumentAsync(e.FilePath);
+    }
+
     private async Task ActivateBaseForCurrentDocumentAsync(string filePath)
     {
         using var _scope = SmartConLogger.BeginScope("FMVM",

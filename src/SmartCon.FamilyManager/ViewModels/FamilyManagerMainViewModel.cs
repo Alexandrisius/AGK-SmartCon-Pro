@@ -192,6 +192,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         _activeDocumentNotifier.ActiveDocumentChanged += OnActiveDocumentChanged;
+        _activeDocumentNotifier.ActiveDocumentPathChanged += OnActiveDocumentPathChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
         _placementDragService.PlacementCompleted += OnPlacementCompleted;
         _placementDragService.PlacementFailed += OnPlacementFailed;
@@ -795,6 +796,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             ("Method", "Dispose"));
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
         _activeDocumentNotifier.ActiveDocumentChanged -= OnActiveDocumentChanged;
+        _activeDocumentNotifier.ActiveDocumentPathChanged -= OnActiveDocumentPathChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
         _placementDragService.PlacementCompleted -= OnPlacementCompleted;
         _placementDragService.PlacementFailed -= OnPlacementFailed;
