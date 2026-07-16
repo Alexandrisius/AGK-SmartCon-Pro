@@ -13,7 +13,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 /// <summary>
 /// ViewModel for the batch import dialog.
 /// </summary>
-public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObservableRequestClose, IDisposable
+public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, IDisposable
 {
     public event Action<bool?>? RequestClose;
 
@@ -46,6 +46,9 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// </summary>
     private readonly IFamilyImportPrecomputer? _importPrecomputer;
     private readonly IContentHashDedupService? _dedupService;
+    private readonly IFamilyBatchImportExecutor? _executor;
+    private readonly string? _categoryId;
+    private readonly string? _publishedByUser;
     private bool _disposed;
     private bool _batchApplying;
 
@@ -69,13 +72,19 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         string? defaultCategoryName = null,
         IFamilyCatalogProvider? catalogProvider = null,
         IFamilyImportPrecomputer? importPrecomputer = null,
-        IContentHashDedupService? dedupService = null)
+        IContentHashDedupService? dedupService = null,
+        IFamilyBatchImportExecutor? executor = null,
+        string? publishedByUser = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
         _catalogProvider = catalogProvider;
         _importPrecomputer = importPrecomputer;
         _dedupService = dedupService;
+        _executor = executor;
+        _categoryId = defaultCategoryId;
+        _publishedByUser = publishedByUser;
+        InitializeExecutionState();
 
         foreach (var item in items)
         {
@@ -414,6 +423,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         _nameChangeCts?.Cancel();
         _nameChangeCts?.Dispose();
         _nameChangeCts = null;
+        DisposeExecution();
 
         foreach (var row in Items)
         {
@@ -430,18 +440,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     {
         CanImport = Items.Any(r => r.CanImport);
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
-    }
-
-    [RelayCommand(CanExecute = nameof(CanImport))]
-    private void Import()
-    {
-        RequestClose?.Invoke(true);
-    }
-
-    [RelayCommand]
-    private void Cancel()
-    {
-        RequestClose?.Invoke(false);
     }
 
     /// <summary>

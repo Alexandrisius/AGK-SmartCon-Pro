@@ -228,6 +228,7 @@ public sealed class ProjectBaseRulesEditorViewModelTests
     }
 }
 
+[Collection("Localization")]
 public sealed class FileNameBlockItemTests : IDisposable
 {
     private readonly Language _originalLanguage;
@@ -302,6 +303,7 @@ public sealed class FileNameBlockItemTests : IDisposable
     }
 }
 
+[Collection("Localization")]
 public sealed class FieldDefinitionItemTests : IDisposable
 {
     private readonly Language _originalLanguage;

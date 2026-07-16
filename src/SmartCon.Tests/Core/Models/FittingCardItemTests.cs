@@ -8,6 +8,7 @@ namespace SmartCon.Tests.Core.Models;
 /// <summary>
 /// Тесты FittingCardItem: отображение, редьюсеры, прямое соединение.
 /// </summary>
+[Collection("Localization")]
 public sealed class FittingCardItemTests
 {
     [Fact]

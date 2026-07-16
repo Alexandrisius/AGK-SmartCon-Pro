@@ -8,6 +8,7 @@ using SmartCon.Core.Services;
 using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
+using SmartCon.FamilyManager.Services.Import;
 using SmartCon.UI;
 using SmartCon.UI.Behaviors;
 
@@ -778,444 +779,70 @@ public sealed partial class FamilyManagerMainViewModel
         // command is a SEPARATE entry point (ImportFileToCategoryAsync) that
         // resolves defaultCategoryId from SelectedTreeNode — see
         // FamilyManagerMainViewModel.Import.cs:ImportFileToCategoryAsync.
-        var defaultCategoryId = (string?)null;
-        var defaultCategoryName = (string?)null;
+        if (_batchDialogOpen)
+        {
+            SmartConLogger.Warn(
+                "Batch import dialog is already open — ignoring re-entry " +
+                "[Action: дождитесь завершения текущего импорта или закройте его диалог]");
+            return;
+        }
+        _batchDialogOpen = true;
+
+        try
+        {
+        var staging = new ProjectFamilyStagingService(
+            _awaitableEvent,
+            _preparationService,
+            _revitContext,
+            _systemFamilyIsolationProject,
+            _importService,
+            _databaseManager);
+        var executor = new ProjectFamilyBatchImportExecutor(
+            staging,
+            _systemFamilyImportOrchestrator,
+            _systemFamilyAttributeExtractor,
+            _loadableFamilyImportOrchestrator,
+            _dataImportService,
+            _sharedNestedRepository,
+            _versionWriter,
+            _staleDetector,
+            CurrentRevitVersion);
 
         using var vm = new FamilyBatchImportViewModel(
             batchItems,
             _dialogService,
             _viewModelFactory,
-            defaultCategoryId,
-            defaultCategoryName,
+            defaultCategoryId: null,
+            defaultCategoryName: null,
             _catalogProvider,
             importPrecomputer: _importPrecomputer,
-            dedupService: _dedupService);
-        if (_dialogService.ShowBatchImportDialog(vm) != true)
+            dedupService: _dedupService,
+            executor: executor,
+            publishedByUser: _revitContext.GetUsername());
+
+        _dialogService.ShowModelessBatchImportDialog(vm);
+        await vm.DialogCompletion;
+
+        if (!vm.ImportStarted)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
             return;
         }
 
-        var selectedItems = vm.GetResultItems();
-        var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
-        if (toImport.Count == 0)
-        {
-            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
-            return;
-        }
-
-        // ADR-041 rev #5: stamp every item with the publishing user's name
-        // before dispatching. The orchestrator (system or loadable) propagates
-        // this into catalog_versions.published_by via InsertVersionAsync.
-        // _revitContext.GetUsername() returns a cached string field (NOT a
-        // Revit API call — see RevitContext.cs:66-72), so this is safe from
-        // the WPF async thread.
-        var username = _revitContext.GetUsername();
-        foreach (var item in toImport)
-            item.PublishedByUser = username;
-
-        var systemItems = toImport.Where(i => i.FamilySource == "system").ToList();
-        var loadableItems = toImport.Where(i => i.FamilySource == "loadable").ToList();
-
-        try
-        {
-
-        StatusMessage = string.Format(
-            LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyPreparing) ?? "Импорт {0} семейств...",
-            toImport.Count);
-
-        var systemTotalTypes = 0;
-        if (systemItems.Count > 0)
-        {
-            // v2.0.0: stage the .rvt files for the user-confirmed system
-            // items only (previously this was done BEFORE the dialog, leaving
-            // orphan .rvt on cancel). After staging, the items now have a
-            // real managed FilePath, so the orchestrator's ImportBatchAsync
-            // can proceed normally.
-            await StageSystemFamiliesFromMetadataAsync(systemItems);
-
-            var sysResult = await _systemFamilyImportOrchestrator.ImportBatchItemsAsync(systemItems);
-            systemTotalTypes = systemItems.Sum(i => i.TypeCount ?? 0);
-            SmartConLogger.Info(
-                $"System: imported={sysResult.Success}, types={systemTotalTypes}, tasks={sysResult.ExtractionTasks.Count}");
-
-            if (sysResult.ExtractionTasks.Count > 0)
-            {
-                await _systemFamilyAttributeExtractor.ExtractAndSaveAsync(sysResult.ExtractionTasks);
-            }
-        }
-
-        var loadableTotalTypes = 0;
-        IReadOnlyList<LoadableFamilyAttributeTask> loadableAttributeTasks = [];
-        if (loadableItems.Count > 0)
-        {
-            // v2.0.0: stage the .rfa files for the user-confirmed loadable
-            // items only (previously done before the dialog, leaving
-            // orphan .rfa in _stage/ on cancel). Now we land them
-            // directly in managed storage.
-            await StageLoadableFamiliesFromMetadataAsync(loadableItems);
-
-            var loadResult = await _loadableFamilyImportOrchestrator.ImportAndPersistTypesAsync(
-                loadableItems, CurrentRevitVersion, defaultCategoryId);
-            loadableTotalTypes = loadableItems.Sum(i => i.TypeCount ?? 0);
-            loadableAttributeTasks = loadResult.AttributeTasks;
-            SmartConLogger.Info(
-                $"Loadable: imported={loadResult.ImportedCount}, skipped={loadResult.SkippedCount}, attrTasks={loadableAttributeTasks.Count}");
-
-            // Issue #84 (Phase 24): re-sync FamilyVersion marker for every
-            // loadable family that successfully made it into the catalog. The
-            // "Импорт активного файла" / "Импорт выделенных" flows copy
-            // in-project family bytes into managed storage and bump the
-            // catalog version (v1 / vN+1), but do not touch the Family
-            // element in the active project. Without re-writing the marker
-            // the next "Проверить" immediately flags every freshly-imported
-            // loadable as stale (NoEntityStorage), even though the in-project
-            // family IS the authoritative vN+1 source for the new catalog
-            // row. System families (FamilySource == "system") are skipped by
-            // design — ADR-030 §Out of Scope: there is no in-project Family
-            // element to write a marker onto (OST_PipeCurves etc. are
-            // MEPCurve / Wall in Revit, not Family).
-            await WriteVersionMarkersForImportedLoadablesAsync(
-                loadableItems, loadableAttributeTasks, CancellationToken.None).ConfigureAwait(true);
-            _staleDetector.InvalidateCache();
-        }
-
-        if (loadableAttributeTasks.Count > 0)
-        {
-            await ExtractAttributesForLoadableTasks(loadableAttributeTasks);
-        }
-
-        if (systemItems.Count > 0 || loadableItems.Count > 0)
+        if (vm.ImportSuccessCount > 0)
         {
             await LoadTreeAsync();
         }
 
-        var totalTypes = systemTotalTypes + loadableTotalTypes;
-        StatusMessage = totalTypes > 0
-            ? string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImported) ?? "Импортировано: {0}",
-                totalTypes)
-            : "Импорт завершён";
+        StatusMessage = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_SummaryFormat)
+                ?? "Импортировано: {0}, пропущено: {1}, ошибок: {2}",
+            vm.ImportSuccessCount, vm.ImportSkippedCount, vm.ImportErrorCount);
         }
         finally
         {
-            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+            _batchDialogOpen = false;
         }
-    }
-
-    /// <summary>
-    /// Issue #84 / Phase 24 (ADR-030): thin wrapper that delegates to
-    /// <see cref="LoadableMarkerLogic.WriteMarkersForImportedLoadablesAsync"/>.
-    /// Called from <see cref="ProcessProjectImportAsync"/> after a successful
-    /// loadable import so that the next "Проверить" does not flag every
-    /// freshly-imported loadable as stale (see ADR-030 + issue body for
-    /// the full rationale). Pure logic lives in Core so it is unit-testable
-    /// without spinning up the Revit API.
-    /// </summary>
-    private Task WriteVersionMarkersForImportedLoadablesAsync(
-        List<FamilyBatchImportItem> loadableItems,
-        IReadOnlyList<LoadableFamilyAttributeTask> attributeTasks,
-        CancellationToken ct)
-    {
-        return LoadableMarkerLogic.WriteMarkersForImportedLoadablesAsync(
-            loadableItems,
-            attributeTasks,
-            _versionWriter,
-            CurrentRevitVersion,
-            ct);
-    }
-
-    /// <summary>
-    /// v2.0.0: post-dialog staging for system-family batch items. For each
-    /// item with a <see cref="FamilyImportSource.SystemSource"/> payload,
-    /// allocates a managed .rvt path, runs
-    /// <c>CreateCleanProjectWithTypesAndInstances</c>, and rewrites the
-    /// item's <c>FilePath</c> + <c>SourceTypes</c> in place. After this
-    /// method returns, the items look exactly like the legacy "pre-staged"
-    /// items, so the orchestrator's existing import path works unchanged.
-    /// </summary>
-    private async Task StageSystemFamiliesFromMetadataAsync(List<FamilyBatchImportItem> items)
-    {
-        if (items.Count == 0) return;
-
-        using var _scope = SmartConLogger.BeginScope("FMImport",
-            ("Method", "StageSystemFamiliesFromMetadataAsync"));
-
-        await _awaitableEvent.RaiseAsync(_ =>
-        {
-            var activeDoc = _revitContext.GetDocument();
-            if (activeDoc is null)
-            {
-                SmartConLogger.Warn("Active document is null — cannot stage system families [Action: откройте .rvt проект в Revit, затем повторите команду]");
-                return;
-            }
-
-            // v2.0.0 regression: do NOT mutate `items` from inside a
-            // `foreach`. List<T>'s indexer setter invalidates the
-            // foreach enumerator and throws "Collection was modified;
-            // enumeration operation may not execute" on the next
-            // MoveNext(). Use an index-based for-loop and capture
-            // rewrites in a side dictionary, then apply them after
-            // the loop in a single pass.
-            var rewrites = new Dictionary<int, FamilyBatchImportItem>(items.Count);
-
-            for (var i = 0; i < items.Count; i++)
-            {
-                var item = items[i];
-                if (item.Source is not FamilyImportSource.SystemSource source)
-                {
-                    SmartConLogger.Debug(
-                        $"Skipping item '{item.FileName}': Source is not SystemSource (got {item.Source?.GetType().Name ?? "null"})");
-                    continue;
-                }
-                if (item.FilePath.StartsWith("system://", StringComparison.OrdinalIgnoreCase) == false)
-                {
-                    SmartConLogger.Debug(
-                        $"Skipping item '{item.FileName}': FilePath '{item.FilePath}' does not start with 'system://' (already staged?)");
-                    continue;
-                }
-
-                // v2.0.0: prefer the canonical managed path that the VM
-                // pre-computed up front (BuildSystemFamilyBatchRowVirtualAsync).
-                // For an existing item, this is files/<existingItem.Id>/<vN+1>;
-                // for a new item, files/<fresh GUID>/v1. Falling back to the
-                // legacy allocator when no precomputed path is present keeps
-                // unit tests and direct callers working.
-                //
-                // ADR-040: for OverwriteCurrent, the precomputed path points
-                // to vN+1 (precomputer does not know about Action). We must
-                // overwrite the CURRENT version's file (v1) instead, so the
-                // managed .rvt at the current version's path is replaced and
-                // OverwriteCurrentAsync can UPDATE catalog_versions in place
-                // without creating an orphan vN+1 file.
-                string managedRvtPath;
-                if (item.Action == FamilyBatchImportAction.OverwriteCurrent
-                    && !string.IsNullOrEmpty(item.ExistingCatalogItemId)
-                    && !string.IsNullOrEmpty(item.ExistingVersionLabel))
-                {
-                    managedRvtPath = _importService.ComputeManagedFilePath(
-                        item.ExistingCatalogItemId!,
-                        item.ExistingVersionLabel!,
-                        SafeFileName.SanitizeFileName(source.DisplayName),
-                        ".rvt") ?? string.Empty;
-                    if (string.IsNullOrEmpty(managedRvtPath))
-                    {
-                        SmartConLogger.Warn(
-                            $"OverwriteCurrent staging for '{source.DisplayName}': ComputeManagedFilePath returned null " +
-                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}') " +
-                            $"[Action: check active catalog DB is selected and pathResolver is configured]");
-                    }
-                    else
-                    {
-                        // I-16 / ADR-016: managed files are ReadOnly. Remove
-                        // the attribute before CreateCleanProject overwrites
-                        // the file; restore it after.
-                        if (File.Exists(managedRvtPath))
-                        {
-                            File.SetAttributes(managedRvtPath, File.GetAttributes(managedRvtPath) & ~FileAttributes.ReadOnly);
-                        }
-                        SmartConLogger.Info(
-                            $"Staging system family '{source.DisplayName}' for OverwriteCurrent: reusing current version path " +
-                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}', " +
-                            $"target='{managedRvtPath}') — no orphan vN+1 file will be created");
-                    }
-                }
-                else
-                {
-                    managedRvtPath = !string.IsNullOrEmpty(item.PrecomputedManagedPath)
-                        ? item.PrecomputedManagedPath!
-                        : (ComputeSystemFamilyManagedPath(source.DisplayName) ?? string.Empty);
-                }
-                if (string.IsNullOrEmpty(managedRvtPath))
-                {
-                    SmartConLogger.Warn($"Cannot compute managed path for '{source.DisplayName}' — skipping [Action: check active catalog DB is selected]");
-                    continue;
-                }
-
-                SmartConLogger.Info(
-                    $"Staging system family '{source.DisplayName}': " +
-                    $"item.PrecomputedCatalogItemId='{item.PrecomputedCatalogItemId ?? "<null>"}', " +
-                    $"item.PrecomputedManagedPath='{item.PrecomputedManagedPath ?? "<null>"}', " +
-                    $"using={(item.Action == FamilyBatchImportAction.OverwriteCurrent && !string.IsNullOrEmpty(item.ExistingCatalogItemId) ? "overwrite-current" : (item.PrecomputedManagedPath is not null ? "precomputed" : "fallback"))}, " +
-                    $"target='{managedRvtPath}'");
-
-                CreateCleanProjectResult createResult;
-                try
-                {
-                    var categoryEnum = (BuiltInCategory)source.CategoryId;
-                    createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
-                        activeDoc, source.TypeUniqueIds, categoryEnum, source.DisplayName, managedRvtPath!);
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Error(
-                        $"CreateCleanProjectWithTypesAndInstances threw for '{source.DisplayName}': {ex.GetType().Name}: {ex.Message} [Action: verify category has at least one placeable type in the active project]");
-                    continue;
-                }
-
-                if (!createResult.Success || string.IsNullOrEmpty(createResult.FilePath))
-                {
-                    SmartConLogger.Warn(
-                        $"CreateCleanProjectWithTypesAndInstances returned Success=false for '{source.DisplayName}' [Action: see prior log lines from SystemRevitOps for the underlying cause]");
-                    continue;
-                }
-
-                // ADR-040 / I-16: restore ReadOnly on the overwritten
-                // managed file so it stays immutable outside FamilyManager.
-                if (item.Action == FamilyBatchImportAction.OverwriteCurrent
-                    && !string.IsNullOrEmpty(item.ExistingCatalogItemId)
-                    && File.Exists(managedRvtPath!))
-                {
-                    File.SetAttributes(managedRvtPath!, File.GetAttributes(managedRvtPath!) | FileAttributes.ReadOnly);
-                }
-
-                rewrites[i] = item with
-                {
-                    FilePath = createResult.FilePath!,
-                    SourceTypes = source.TypeNames
-                        .Zip(source.TypeUniqueIds, (name, uid) => new FamilySourceTypeInfo(
-                            uid, name, source.DisplayName, source.CategoryId))
-                        .ToList()
-                };
-                SmartConLogger.Info(
-                    $"Staged system family '{source.DisplayName}' -> '{createResult.FilePath}'");
-            }
-
-            // Apply rewrites after the for-loop, in a single pass.
-            // The for-loop above does not enumerate `items` so this
-            // assignment is safe.
-            foreach (var kvp in rewrites)
-            {
-                items[kvp.Key] = kvp.Value;
-            }
-        }, CancellationToken.None);
-    }
-
-    /// <summary>
-    /// v2.0.0: post-dialog staging for loadable-family batch items. For
-    /// each item with a <see cref="FamilyImportSource.LoadableSource"/>
-    /// payload, allocates a managed .rfa path, calls
-    /// <c>EditFamily</c> + <c>SaveAs</c> via
-    /// <see cref="StageLoadableFamilyFromProject"/>, and rewrites the
-    /// item's <c>FilePath</c> in place. After this method returns, the
-    /// items look like the legacy "pre-staged" items and the
-    /// orchestrator proceeds normally.
-    /// </summary>
-    private async Task StageLoadableFamiliesFromMetadataAsync(List<FamilyBatchImportItem> items)
-    {
-        if (items.Count == 0) return;
-
-        using var _scope = SmartConLogger.BeginScope("FMImport",
-            ("Method", "StageLoadableFamiliesFromMetadataAsync"));
-
-        await _awaitableEvent.RaiseAsync(_ =>
-        {
-            var activeDoc = _revitContext.GetDocument();
-            if (activeDoc is null)
-            {
-                SmartConLogger.Warn("Active document is null — cannot stage loadable families [Action: откройте .rvt проект в Revit, затем повторите команду]");
-                return;
-            }
-
-            // v2.0.0 regression: see StageSystemFamiliesFromMetadataAsync
-            // for the full rationale. Mutating items[] from inside a
-            // foreach invalidates List<T>'s enumerator. We stage each
-            // item into a side dictionary and apply rewrites in a
-            // single pass after the staging loop.
-            var rewrites = new Dictionary<int, FamilyBatchImportItem>(items.Count);
-
-            for (var i = 0; i < items.Count; i++)
-            {
-                var item = items[i];
-                if (item.Source is not FamilyImportSource.LoadableSource source)
-                {
-                    SmartConLogger.Debug(
-                        $"Skipping item '{item.FileName}': Source is not LoadableSource (got {item.Source?.GetType().Name ?? "null"})");
-                    continue;
-                }
-                if (item.FilePath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase) == false)
-                {
-                    SmartConLogger.Debug(
-                        $"Skipping item '{item.FileName}': FilePath '{item.FilePath}' does not start with 'loadable://' (already staged?)");
-                    continue;
-                }
-
-                // v2.0.0: prefer the precomputed canonical managed path.
-                //
-                // ADR-040: for OverwriteCurrent, the precomputed path points
-                // to vN+1 (precomputer does not know about Action). We must
-                // overwrite the CURRENT version's file (v1) instead, so
-                // OverwriteCurrentAsync can UPDATE catalog_versions in place
-                // without creating an orphan vN+1 file. StageLoadableFamilyFromProject
-                // already handles ReadOnly removal/restoration internally.
-                string managedRfaPath;
-                if (item.Action == FamilyBatchImportAction.OverwriteCurrent
-                    && !string.IsNullOrEmpty(item.ExistingCatalogItemId)
-                    && !string.IsNullOrEmpty(item.ExistingVersionLabel))
-                {
-                    managedRfaPath = _importService.ComputeManagedFilePath(
-                        item.ExistingCatalogItemId!,
-                        item.ExistingVersionLabel!,
-                        SafeFileName.SanitizeFileName(source.FamilyName),
-                        ".rfa") ?? string.Empty;
-                    if (string.IsNullOrEmpty(managedRfaPath))
-                    {
-                        SmartConLogger.Warn(
-                            $"OverwriteCurrent staging for '{source.FamilyName}': ComputeManagedFilePath returned null " +
-                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}') " +
-                            $"[Action: check active catalog DB is selected and pathResolver is configured]");
-                    }
-                    else
-                    {
-                        SmartConLogger.Info(
-                            $"Staging loadable family '{source.FamilyName}' for OverwriteCurrent: reusing current version path " +
-                            $"(ExistingCatalogItemId='{item.ExistingCatalogItemId}', ExistingVersionLabel='{item.ExistingVersionLabel}', " +
-                            $"target='{managedRfaPath}') — no orphan vN+1 file will be created");
-                    }
-                }
-                else
-                {
-                    managedRfaPath = !string.IsNullOrEmpty(item.PrecomputedManagedPath)
-                        ? item.PrecomputedManagedPath!
-                        : (ComputeLoadableFamilyManagedPath(source.FamilyName) ?? string.Empty);
-                }
-                if (string.IsNullOrEmpty(managedRfaPath))
-                {
-                    SmartConLogger.Warn($"Cannot compute managed path for '{source.FamilyName}' — skipping [Action: проверьте, что активная БД каталога выбрана и доступна для записи]");
-                    continue;
-                }
-
-                var info = new LoadableFamilyInfo(
-                    source.FamilyName, source.FamilyUniqueId, source.CategoryName, item.TypeCount ?? 0);
-                string? rfaPath;
-                try
-                {
-                    rfaPath = StageLoadableFamilyFromProject(info, managedRfaPath!, item.FilePath);
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Error(
-                        $"StageLoadableFamilyFromProject threw for '{source.FamilyName}': {ex.GetType().Name}: {ex.Message} [Action: verify the family is still loaded in the active project]");
-                    continue;
-                }
-                if (string.IsNullOrEmpty(rfaPath) || !File.Exists(rfaPath))
-                {
-                    SmartConLogger.Warn(
-                        $"StageLoadableFamilyFromProject returned empty/missing file for '{source.FamilyName}' [Action: see prior log lines from the staging helper for the underlying cause]");
-                    continue;
-                }
-
-                rewrites[i] = item with { FilePath = rfaPath! };
-                SmartConLogger.Info(
-                    $"Staged loadable family '{source.FamilyName}' -> '{rfaPath}'");
-            }
-
-            // Apply rewrites after the for-loop, in a single pass.
-            foreach (var kvp in rewrites)
-            {
-                items[kvp.Key] = kvp.Value;
-            }
-        }, CancellationToken.None);
     }
 
     private async Task ExtractAttributesForLoadableTasks(IReadOnlyList<LoadableFamilyAttributeTask> tasks)
@@ -1223,55 +850,11 @@ public sealed partial class FamilyManagerMainViewModel
         using var _scope = SmartConLogger.BeginScope("FMLoadable",
             ("Method", "ExtractAttributesForLoadableTasks"),
             ("Count", tasks.Count));
+        var helper = new LoadableAttributeExtractionHelper(
+            _dataImportService, _sharedNestedRepository, CurrentRevitVersion);
         foreach (var task in tasks)
         {
-            try
-            {
-                // Phase 27: use the in-memory snapshot from Prepare to produce
-                // FamilyExtractionResult WITHOUT re-opening the managed .rfa
-                // via ExtractFromManagedFile. The snapshot already contains
-                // every type, parameter value, and shared-nested family name
-                // that the old re-open path would extract. This eliminates the
-                // 42× ExtractFromManagedFile.OpenDocumentFile calls (100-330ms
-                // each) seen in the post-import flow. Pure C# — no ExternalEvent
-                // needed (no Revit API).
-                if (task.Snapshot is null)
-                {
-                    SmartConLogger.Warn(
-                        $"Snapshot is null for '{task.CatalogItemId}' — cannot extract attributes without re-open. " +
-                        "[Action: check Prepare logs — snapshot extraction may have failed; re-import the family to fix]");
-                    continue;
-                }
-
-                var extraction = SnapshotExtractionMapper.ToExtractionResult(
-                    task.Snapshot, CurrentRevitVersion);
-
-                if (extraction.Success)
-                {
-                    await _dataImportService.SaveExtractionResultAsync(
-                        task.CatalogItemId, extraction, task.VersionId, task.FileId, CancellationToken.None);
-                    SmartConLogger.Info(
-                        $"Extracted {extraction.Types.Count} type(s) from snapshot for '{Path.GetFileName(task.ManagedRfaPath)}' " +
-                        $"(CatalogItemId={task.CatalogItemId}) [no re-open]");
-
-                    await SaveSharedNestedNamesAsync(
-                        task.CatalogItemId,
-                        task.VersionId,
-                        extraction.SharedNestedFamilyNamesSafe,
-                        CancellationToken.None);
-                }
-                else
-                {
-                    SmartConLogger.Warn(
-                        $"Snapshot extraction reported failure for '{task.CatalogItemId}': {extraction.ErrorMessage} " +
-                        "[Action: check snapshot mapper logs for details]");
-                }
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn(
-                    $"Extraction failed for '{task.CatalogItemId}': {ex.Message} [Action: проверьте, что .rfa не повреждён и Revit может открыть его вручную]");
-            }
+            await helper.ExtractAsync(task, CancellationToken.None);
         }
     }
 

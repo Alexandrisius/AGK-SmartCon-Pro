@@ -83,6 +83,37 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         }
     }
 
+    public void ShowModeless(object viewModel)
+    {
+#pragma warning disable CA1510
+        if (viewModel is null)
+            throw new ArgumentNullException(nameof(viewModel));
+#pragma warning restore CA1510
+
+        var vmType = viewModel.GetType();
+        using var _scope = SmartConLogger.BeginScope("DlgPresenter",
+            ("Method", nameof(ShowModeless)),
+            ("ViewModel", vmType.Name));
+
+        if (!_mappings.TryGetValue(vmType, out var factory))
+        {
+            SmartConLogger.Warn(
+                $"No view registered for ViewModel type '{vmType.Name}' " +
+                "[Action: check ServiceRegistrar view registrations in SmartCon.App/DI/ServiceRegistrar.cs]");
+            throw new InvalidOperationException($"No view registered for ViewModel type '{vmType.Name}'");
+        }
+
+        var window = factory(viewModel);
+        var helper = new WindowInteropHelper(window);
+        helper.Owner = GetOwnerHandle(_revitContext);
+
+#if NET48
+        var recovery = BatchDialogRenderRecovery.Attach(window);
+        window.Closed += (_, _) => recovery.Dispose();
+#endif
+        window.Show();
+    }
+
     /// <summary>
     /// Logs which SmartCon.FamilyManager assemblies are loaded — helps diagnose
     /// white-dialog hangs where InitializeComponent fails silently because a

@@ -19,7 +19,7 @@ namespace SmartCon.FamilyManager.Services;
 /// Open documents are held in a dictionary so Phase 3 (Commit)
 /// can SaveAs from the same document without re-opening.
 /// </summary>
-public sealed class FamilyImportPreparationService
+public sealed class FamilyImportPreparationService : IFamilyImportPreparationService
 {
     private readonly IFamilyManagerAwaitableEvent _awaitableEvent;
     private readonly IFamilySnapshotExtractor _snapshotExtractor;

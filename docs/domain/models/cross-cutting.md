@@ -411,3 +411,23 @@ Pure C# реализация `ITypeCatalogValueApplier`. Парсит сырое
 - Прочее → `UnsupportedStorageType`
 
 **Тестирование:** 19 unit-тестов в `src/SmartCon.Tests/Core/Services/TypeCatalogValueApplierTests.cs` покрывают все ветки + null-safety + culture fallback + негативные кейсы (InvalidFormat для разных StorageType).
+
+---
+
+## PauseGate (Issue #127)
+
+Cooperative pause-гейт для batch-импорта (аналог Stephen Cleary PauseToken). VM вызывает `Pause()` (кнопка «Остановить») / `Resume()` («Продолжить» или «Закрыть»); executor между элементами ждёт `WaitWhilePausedAsync()`. Потокобезопасен (volatile + Interlocked), continuations — `RunContinuationsAsynchronously`.
+
+**Файл:** `SmartCon.Core/Threading/PauseGate.cs`
+
+```csharp
+public sealed class PauseGate
+{
+    public bool IsPaused { get; }
+    public void Pause();
+    public void Resume();
+    public Task WaitWhilePausedAsync();
+}
+```
+
+**Покрытие:** 7 unit-тестов в `src/SmartCon.Tests/Core/Threading/PauseGateTests.cs`.

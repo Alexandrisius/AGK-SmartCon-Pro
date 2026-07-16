@@ -7,6 +7,8 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:fmModels="clr-namespace:SmartCon.Core.Models.FamilyManager;assembly=SmartCon.Core"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         Title="{loc:Loc FM_BatchImport_Title}"
         Width="1080" Height="520"
         MinWidth="880" MinHeight="420"
@@ -21,6 +23,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:SingletonResources/>
             </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <converters:FamilyBatchImportActionConverter x:Key="ActionConverter"/>
             <converters:FamilyBatchImportStatusConverter x:Key="StatusConverter"/>
             <converters:TypeCountToDisplayConverter x:Key="TypeCountConverter"/>
@@ -83,6 +86,7 @@
                      Style="{DynamicResource CompactDataGrid}"
                      RowStyle="{StaticResource BatchImportRowStyle}"
                      CellStyle="{DynamicResource CompactDataGridCell}"
+                     IsEnabled="{Binding IsGridEnabled}"
                      SelectionMode="Extended"
                      SelectionUnit="FullRow"
                      CanUserResizeColumns="True"
@@ -98,6 +102,65 @@
                     </Style>
                 </DataGrid.ColumnHeaderStyle>
                 <DataGrid.Columns>
+                    <DataGridTemplateColumn Width="36" MinWidth="36">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid ToolTip="{Binding ImportErrorMessage}">
+                                    <iconPacks:PackIconMaterial Kind="Check"
+                                                                Foreground="#4CAF50"
+                                                                Width="16" Height="16"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center">
+                                        <iconPacks:PackIconMaterial.Style>
+                                            <Style TargetType="iconPacks:PackIconMaterial">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ImportRowState}"
+                                                                 Value="{x:Static fmModels:FamilyBatchImportRowState.Success}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </iconPacks:PackIconMaterial.Style>
+                                    </iconPacks:PackIconMaterial>
+                                    <iconPacks:PackIconMaterial Kind="Close"
+                                                                Foreground="#F44336"
+                                                                Width="16" Height="16"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center">
+                                        <iconPacks:PackIconMaterial.Style>
+                                            <Style TargetType="iconPacks:PackIconMaterial">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ImportRowState}"
+                                                                 Value="{x:Static fmModels:FamilyBatchImportRowState.Error}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </iconPacks:PackIconMaterial.Style>
+                                    </iconPacks:PackIconMaterial>
+                                    <iconPacks:PackIconMaterial Kind="TimerSand"
+                                                                Foreground="#2196F3"
+                                                                Width="16" Height="16"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center">
+                                        <iconPacks:PackIconMaterial.Style>
+                                            <Style TargetType="iconPacks:PackIconMaterial">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ImportRowState}"
+                                                                 Value="{x:Static fmModels:FamilyBatchImportRowState.Running}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </iconPacks:PackIconMaterial.Style>
+                                    </iconPacks:PackIconMaterial>
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn x:Name="ColFileName"
                                         Binding="{Binding FileName}"
                                         Width="*"
@@ -182,22 +245,50 @@
             </DataGrid>
         </Border>
 
-        <!-- Buttons -->
-        <StackPanel Grid.Row="2"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,8,0,0">
-            <Button Content="{loc:Loc FM_BatchImport_Load}"
-                    Command="{Binding ImportCommand}"
-                    IsDefault="True"
-                    Style="{DynamicResource PrimaryButton}"
-                    Width="80" Height="28"/>
-            <Button Content="{loc:Loc FM_BatchImport_Cancel}"
-                    Command="{Binding CancelCommand}"
-                    IsCancel="True"
-                    Style="{DynamicResource SecondaryButton}"
-                    Margin="8,0,0,0"
-                    Width="80" Height="28"/>
-        </StackPanel>
+        <!-- Bottom: progress / summary + buttons -->
+        <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0"
+                        Visibility="{Binding IsImporting, Converter={StaticResource BoolToVis}}">
+                <ProgressBar Value="{Binding ProgressValue}"
+                             Maximum="{Binding ProgressMaximum}"
+                             Minimum="0"
+                             Height="6"/>
+                <TextBlock Text="{Binding StatusText}"
+                           Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="0"
+                       Text="{Binding SummaryMessage}"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       Visibility="{Binding IsSummary, Converter={StaticResource BoolToVis}}"/>
+
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,8,0,0">
+                <Button Content="{Binding PrimaryButtonText}"
+                        Command="{Binding ImportCommand}"
+                        IsDefault="True"
+                        Style="{DynamicResource PrimaryButton}"
+                        MinWidth="100" Height="28"
+                        Padding="10,0"/>
+                <Button Content="{Binding SecondaryButtonText}"
+                        Command="{Binding CancelCommand}"
+                        IsCancel="True"
+                        Visibility="{Binding IsSecondaryVisible, Converter={StaticResource BoolToVis}}"
+                        Style="{DynamicResource SecondaryButton}"
+                        Margin="8,0,0,0"
+                        MinWidth="100" Height="28"
+                        Padding="10,0"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </controls:DialogWindowBase>

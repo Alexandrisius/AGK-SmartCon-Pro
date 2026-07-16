@@ -85,6 +85,14 @@ public interface IFamilyManagerDialogService
     bool? ShowBatchImportDialog(object viewModel);
 
     /// <summary>
+    /// Show the batch import dialog as a modeless window (Issue #127): the
+    /// dialog stays open during the import and drives progress/cancellation
+    /// through its view model. Returns immediately; the caller awaits the
+    /// view model's completion task.
+    /// </summary>
+    void ShowModelessBatchImportDialog(object viewModel);
+
+    /// <summary>
     /// Show the avatar crop dialog (issue #131, ADR-047). The viewModel must be a
     /// CropAvatarViewModel; returns true when the user applied the crop — read
     /// ResultPath from the viewModel in that case.

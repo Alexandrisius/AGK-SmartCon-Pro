@@ -171,6 +171,12 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public bool CanImport => Action != FamilyBatchImportAction.Skip;
 
     [ObservableProperty]
+    private FamilyBatchImportRowState _importRowState = FamilyBatchImportRowState.Pending;
+
+    [ObservableProperty]
+    private string? _importErrorMessage;
+
+    [ObservableProperty]
     private IReadOnlyList<FamilyBatchImportAction> _availableActions;
 
     public FamilyBatchImportRow(FamilyBatchImportItem item)

@@ -187,6 +187,9 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public bool? ShowBatchImportDialog(object viewModel) => _presenter.ShowDialog(viewModel);
 
     /// <inheritdoc/>
+    public void ShowModelessBatchImportDialog(object viewModel) => _presenter.ShowModeless(viewModel);
+
+    /// <inheritdoc/>
     public bool? ShowAvatarCropper(object viewModel) => _presenter.ShowDialog(viewModel);
 
     public SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request)

@@ -1150,3 +1150,77 @@ public interface IFamilyGeometryPipeline
 **Контракт:**
 - Safe to invoke from any thread — internally marshals Revit API calls to the UI thread via `IFamilyManagerAwaitableEvent`.
 - Implementations MUST swallow all exceptions and log a Warn with an `[Action: ...]` suggestion (skill smartcon-logging L9) — geometry preview is a nice-to-have and MUST NOT break the import transaction that already committed before the hook was reached.
+
+---
+
+## IFamilyBatchImportExecutor (Issue #127)
+
+Точка входа выполнения batch-импорта после подтверждения диалога. Реализации: `FileFamilyBatchImportExecutor` (UC-1, импорт .rfa) и `ProjectFamilyBatchImportExecutor` (UC-3/UC-4, импорт из проекта). Поэлементный цикл stage → import → extract с отчётами через `IProgress<FamilyBatchImportProgress>` и cooperative-паузой через `PauseGate`. Отмена — между элементами (текущий дорабатывает); `WasStopped` в результате.
+
+**Файл:** `IFamilyBatchImportExecutor.cs`
+**Реализации:** `SmartCon.FamilyManager/Services/Import/FileFamilyBatchImportExecutor.cs`, `ProjectFamilyBatchImportExecutor.cs`
+
+```csharp
+public interface IFamilyBatchImportExecutor
+{
+    Task<FamilyBatchImportExecutionResult> ExecuteAsync(
+        IReadOnlyList<FamilyBatchImportItem> items,
+        string? categoryId,
+        IProgress<FamilyBatchImportProgress>? progress,
+        PauseGate? pauseGate,
+        CancellationToken ct);
+}
+```
+
+---
+
+## IFileFamilyStagingService (Issue #127)
+
+Staging UC-1: `SaveAs` held-open документа (открытого в Phase 1 Prepare) в precomputed managed path. Весь Revit API — только внутри `IFamilyManagerAwaitableEvent.RaiseAsync`. Ошибка staging не фатальна — возвращается исходный item (fallback на copy/bake внутри импорта).
+
+**Файл:** `IFileFamilyStagingService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Import/FileFamilyStagingService.cs`
+
+```csharp
+public interface IFileFamilyStagingService
+{
+    Task<FamilyBatchImportItem> StageAsync(FamilyBatchImportItem item, CancellationToken ct);
+    Task CloseAllPreparedDocumentsAsync(CancellationToken ct);
+}
+```
+
+---
+
+## IProjectFamilyStagingService (Issue #127)
+
+Staging UC-3/UC-4: system — создание mini-.rvt через `CreateCleanProjectWithTypesAndInstances`; loadable — `EditFamily` + `SaveAs` в managed storage (или `SaveAs` из held-open документа Prepare-фазы). `null` из Stage* — staging не удался, элемент помечается Error, цикл продолжается.
+
+**Файл:** `IProjectFamilyStagingService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Import/ProjectFamilyStagingService.cs`
+
+```csharp
+public interface IProjectFamilyStagingService
+{
+    Task<FamilyBatchImportItem?> StageSystemAsync(FamilyBatchImportItem item, CancellationToken ct);
+    Task<FamilyBatchImportItem?> StageLoadableAsync(FamilyBatchImportItem item, CancellationToken ct);
+    Task CloseAllPreparedDocumentsAsync(CancellationToken ct);
+}
+```
+
+---
+
+## IFamilyImportPreparationService (Issue #127)
+
+Тестовый шов (seam) над `FamilyImportPreparationService` (sealed) — только методы, нужные staging-сервисам: доступ к held-open документам и их закрытие. `Document` — opaque parameter (I-09), вызовы методов документа — только внутри `RaiseAsync` в реализациях staging.
+
+**Файл:** `IFamilyImportPreparationService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/FamilyImportPreparationService.cs`
+
+```csharp
+public interface IFamilyImportPreparationService
+{
+    Task CloseAllPreparedDocumentsAsync(CancellationToken ct = default);
+    Document? GetOpenedDocument(string sourcePath);
+    void CloseAndRelease(string sourcePath);
+}
+```

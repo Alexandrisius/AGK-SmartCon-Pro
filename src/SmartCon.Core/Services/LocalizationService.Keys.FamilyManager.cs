@@ -344,6 +344,17 @@ public static partial class LocalizationService
         ru["FM_BatchImport_SelectAll"] = "Выбрать все"; en["FM_BatchImport_SelectAll"] = "Select All";
         ru["FM_BatchImport_Stale"] = "Устарело"; en["FM_BatchImport_Stale"] = "Stale";
         ru["FM_BatchImport_TypeCount"] = "Типов"; en["FM_BatchImport_TypeCount"] = "Types";
+        ru["FM_BatchImport_Stop"] = "Остановить"; en["FM_BatchImport_Stop"] = "Stop";
+        ru["FM_BatchImport_Resume"] = "Продолжить"; en["FM_BatchImport_Resume"] = "Resume";
+        ru["FM_BatchImport_Close"] = "Закрыть"; en["FM_BatchImport_Close"] = "Close";
+        ru["FM_BatchImport_OK"] = "OK"; en["FM_BatchImport_OK"] = "OK";
+        ru["FM_BatchImport_Stopping"] = "Останавливаю..."; en["FM_BatchImport_Stopping"] = "Stopping...";
+        ru["FM_BatchImport_Paused"] = "Остановлено: обработано {0} из {1}"; en["FM_BatchImport_Paused"] = "Stopped: processed {0} of {1}";
+        ru["FM_BatchImport_ProgressStaging"] = "Подготовка {0} из {1} — {2}"; en["FM_BatchImport_ProgressStaging"] = "Staging {0} of {1} — {2}";
+        ru["FM_BatchImport_ProgressImporting"] = "Импорт {0} из {1} — {2}"; en["FM_BatchImport_ProgressImporting"] = "Importing {0} of {1} — {2}";
+        ru["FM_BatchImport_ProgressExtracting"] = "Обработка {0} из {1} — {2}"; en["FM_BatchImport_ProgressExtracting"] = "Processing {0} of {1} — {2}";
+        ru["FM_BatchImport_Finalizing"] = "Завершение..."; en["FM_BatchImport_Finalizing"] = "Finalizing...";
+        ru["FM_BatchImport_SummaryFormat"] = "Импортировано: {0}, пропущено: {1}, ошибок: {2}"; en["FM_BatchImport_SummaryFormat"] = "Imported: {0}, skipped: {1}, errors: {2}";
 
         ru["FM_AttrStatus_Found"] = "Найдено"; en["FM_AttrStatus_Found"] = "Found";
         ru["FM_AttrStatus_MissingParameter"] = "Параметр не найден"; en["FM_AttrStatus_MissingParameter"] = "Parameter not found";

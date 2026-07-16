@@ -2232,3 +2232,78 @@ public sealed record FamilyGeometryPerType(
 - `FamilyName` — family display name (without `.rfa` extension).
 - `Meshes` — all non-empty `MeshData` entries extracted for this type. May be empty (the pipeline skips writing a GLB for empty types).
 
+
+---
+
+## FamilyBatchImportRowState (Issue #127)
+
+Состояние строки batch-диалога во время импорта. Ставится executor'ом через `FamilyBatchImportProgress.ItemState` и маппится в иконку колонки статуса (Check/Close/TimerSand).
+
+**Файл:** `FamilyBatchImportRowState.cs`
+
+```csharp
+public enum FamilyBatchImportRowState
+{
+    Pending,
+    Running,
+    Success,
+    Skipped,
+    Error
+}
+```
+
+---
+
+## FamilyBatchImportPhase (Issue #127)
+
+Фаза обработки текущего элемента batch-импорта. Управляет текстом статуса в диалоге («Подготовка/Импорт/Обработка X из Y»).
+
+**Файл:** `FamilyBatchImportPhase.cs`
+
+```csharp
+public enum FamilyBatchImportPhase
+{
+    Staging,
+    Importing,
+    Extracting,
+    Finalizing,
+    Paused
+}
+```
+
+---
+
+## FamilyBatchImportProgress (Issue #127)
+
+Отчёт прогресса batch-импорта от `IFamilyBatchImportExecutor` к диалогу. `ItemState == null` — элемент начал обработку (строка → Running); иначе — элемент завершён с этим состоянием. `CurrentIndex` — индекс строки в `FamilyBatchImportViewModel.Items`.
+
+**Файл:** `FamilyBatchImportProgress.cs`
+
+```csharp
+public sealed record FamilyBatchImportProgress(
+    int CurrentIndex,
+    int Total,
+    string CurrentItemName,
+    FamilyBatchImportPhase Phase,
+    FamilyBatchImportRowState? ItemState,
+    string? ItemError,
+    int SuccessCount,
+    int SkippedCount,
+    int ErrorCount);
+```
+
+---
+
+## FamilyBatchImportExecutionResult (Issue #127)
+
+Итог выполнения batch-импорта. `WasStopped == true` — пользователь остановил импорт (Остановить → Закрыть); уже импортированные элементы остаются в каталоге.
+
+**Файл:** `FamilyBatchImportExecutionResult.cs`
+
+```csharp
+public sealed record FamilyBatchImportExecutionResult(
+    int SuccessCount,
+    int SkippedCount,
+    int ErrorCount,
+    bool WasStopped);
+```

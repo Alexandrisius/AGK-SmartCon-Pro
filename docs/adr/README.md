@@ -58,3 +58,4 @@
 | [045](045-core-filenameparser-reuses-familymanager-basetype.md) | Core FileNameParser reused by FamilyManager BaseType — project-base binding without FamilyManager → ProjectManagement dependency | accepted | 2026-07-09 |
 | [046](046-hybrid-wpf-icon-sourcing.md) | Hybrid WPF Icon Sourcing — PackIconMaterial in module BAML, PathGeometry in SmartCon.UI | accepted | 2026-07-10 |
 | [047](047-avatar-crop-derived-file.md) | Avatar Crop — производный avatar.png 560×420, инвалидация при смене primary, единая миниатюра для аватарки и tooltip (Issue #131) | accepted | 2026-07-16 |
+| [048](048-batch-import-modeless-progress.md) | Batch Import - modeless диалог с живым прогрессом, паузой Остановить/Продолжить/Закрыть, поэлементный pipeline (Issue #127) | accepted | 2026-07-16 |

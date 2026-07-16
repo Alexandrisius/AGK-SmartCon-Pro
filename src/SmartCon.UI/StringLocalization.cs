@@ -279,6 +279,17 @@ public static class StringLocalization
         public const string FM_BatchImport_Stale = "FM_BatchImport_Stale";
         public const string FM_BatchImport_Cancel = "FM_BatchImport_Cancel";
         public const string FM_BatchImport_TypeCount = "FM_BatchImport_TypeCount";
+        public const string FM_BatchImport_Stop = "FM_BatchImport_Stop";
+        public const string FM_BatchImport_Resume = "FM_BatchImport_Resume";
+        public const string FM_BatchImport_Close = "FM_BatchImport_Close";
+        public const string FM_BatchImport_OK = "FM_BatchImport_OK";
+        public const string FM_BatchImport_Stopping = "FM_BatchImport_Stopping";
+        public const string FM_BatchImport_Paused = "FM_BatchImport_Paused";
+        public const string FM_BatchImport_ProgressStaging = "FM_BatchImport_ProgressStaging";
+        public const string FM_BatchImport_ProgressImporting = "FM_BatchImport_ProgressImporting";
+        public const string FM_BatchImport_ProgressExtracting = "FM_BatchImport_ProgressExtracting";
+        public const string FM_BatchImport_Finalizing = "FM_BatchImport_Finalizing";
+        public const string FM_BatchImport_SummaryFormat = "FM_BatchImport_SummaryFormat";
         public const string FM_AttrStatus_Found = "FM_AttrStatus_Found";
         public const string FM_AttrStatus_MissingParameter = "FM_AttrStatus_MissingParameter";
         public const string FM_AttrStatus_EmptyValue = "FM_AttrStatus_EmptyValue";
