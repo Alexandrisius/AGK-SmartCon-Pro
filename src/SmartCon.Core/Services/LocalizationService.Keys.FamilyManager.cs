@@ -253,6 +253,17 @@ public static partial class LocalizationService
         ru["FM_Props_ConfirmDeleteAssetTitle"] = "Удаление файла"; en["FM_Props_ConfirmDeleteAssetTitle"] = "Delete file";
         ru["FM_Props_ConfirmDeleteAssetBody"] = "Удалить файл «{0}»? Это действие необратимо."; en["FM_Props_ConfirmDeleteAssetBody"] = "Delete file \"{0}\"? This action is irreversible.";
 
+        // #131: avatar crop dialog
+        ru["FM_Crop_Title"] = "Кадрирование аватарки"; en["FM_Crop_Title"] = "Crop Avatar";
+        ru["FM_Crop_Apply"] = "Применить"; en["FM_Crop_Apply"] = "Apply";
+        ru["FM_Crop_Cancel"] = "Отмена"; en["FM_Crop_Cancel"] = "Cancel";
+        ru["FM_Crop_Reset"] = "Сбросить"; en["FM_Crop_Reset"] = "Reset";
+        ru["FM_Crop_Zoom"] = "Масштаб"; en["FM_Crop_Zoom"] = "Zoom";
+        ru["FM_Crop_OpenError"] = "Не удалось открыть изображение. Проверьте, что файл не повреждён и доступен для чтения."; en["FM_Crop_OpenError"] = "Failed to open the image. Verify the file is not corrupted and is readable.";
+        ru["FM_Crop_RenderError"] = "Не удалось кадрировать изображение. Проверьте, что файл не повреждён."; en["FM_Crop_RenderError"] = "Failed to crop the image. Verify the file is not corrupted.";
+        ru["FM_Crop_Preview"] = "Результат"; en["FM_Crop_Preview"] = "Preview";
+        ru["FM_Crop_CoverHint"] = "Так будет выглядеть аватарка. Если область не 4:3, по краям останутся пустые поля."; en["FM_Crop_CoverHint"] = "This is what the avatar will look like. If the area is not 4:3, empty margins will remain on the sides.";
+
         ru["FM_PE_Title"] = "Редактор пресета атрибутов"; en["FM_PE_Title"] = "Attribute Preset Editor";
         ru["FM_PE_ParameterName"] = "Имя параметра"; en["FM_PE_ParameterName"] = "Parameter Name";
         ru["FM_PE_DisplayName"] = "Отображаемое имя"; en["FM_PE_DisplayName"] = "Display Name";

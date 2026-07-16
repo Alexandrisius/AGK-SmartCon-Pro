@@ -24,7 +24,7 @@
             BorderThickness="1"
             CornerRadius="8"
             Padding="8"
-            MaxWidth="256">
+            MaxWidth="312">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -32,7 +32,7 @@
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0"
-                    Width="240" Height="180"
+                    Width="280" Height="210"
                     CornerRadius="6"
                     Background="{DynamicResource HoverAltSurfaceBrush}"
                     BorderBrush="{DynamicResource BorderAltBrush}"
@@ -40,7 +40,7 @@
                     HorizontalAlignment="Left">
                 <Grid>
                     <Image Source="{Binding AvatarImage}"
-                           Width="240" Height="180"
+                           Width="280" Height="210"
                            Stretch="UniformToFill"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"

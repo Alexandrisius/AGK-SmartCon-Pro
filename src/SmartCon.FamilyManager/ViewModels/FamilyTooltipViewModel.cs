@@ -1,9 +1,9 @@
-using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -44,23 +44,18 @@ public sealed partial class FamilyTooltipViewModel : ObservableObject
                 ("Method", nameof(LoadAsync)),
                 ("CatalogItemId", _catalogItemId));
 
-            var primary = await _assetService.GetPrimaryImageAsync(_catalogItemId, null, ct).ConfigureAwait(true);
-            if (primary is null)
-            {
-                SmartConLogger.Debug("FamilyTooltipViewModel: no primary image found");
-                _loaded = true;
-                return;
-            }
-
-            var path = await _assetService.ResolveAssetPathAsync(primary.Id, ct).ConfigureAwait(true);
+            // ADR-047 / #131: unified resolution chain — derived avatar.png, else primary image.
+            var path = await _assetService.GetAvatarImagePathAsync(_catalogItemId, null, ct).ConfigureAwait(true);
             if (path is null || string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             {
-                SmartConLogger.Warn($"FamilyTooltipViewModel: resolved path missing for asset '{primary.Id}' [Action: проверьте целостность managed storage и family_assets]");
+                SmartConLogger.Debug("FamilyTooltipViewModel: no avatar image found");
+                AvatarImage = null;
+                HasAvatar = false;
                 _loaded = true;
                 return;
             }
 
-            AvatarImage = LoadBitmap(path);
+            AvatarImage = AvatarImageLoader.Load(path, 560);
             HasAvatar = AvatarImage is not null;
             _loaded = true;
         }
@@ -77,24 +72,14 @@ public sealed partial class FamilyTooltipViewModel : ObservableObject
         }
     }
 
-    private static System.Windows.Media.Imaging.BitmapImage? LoadBitmap(string path)
+    /// <summary>
+    /// Drops the loaded-state cache and reloads the avatar (ADR-047 rev 2: called when
+    /// the avatar was re-cropped or removed while this tree node is still alive —
+    /// otherwise the tooltip would show the stale image until the next tree reload).
+    /// </summary>
+    public void Invalidate()
     {
-        try
-        {
-            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-            bitmap.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreImageCache;
-            bitmap.DecodePixelWidth = 240;
-            bitmap.UriSource = new Uri(path, UriKind.Absolute);
-            bitmap.EndInit();
-            bitmap.Freeze();
-            return bitmap;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"FamilyTooltipViewModel: failed to decode image '{Path.GetFileName(path)}': {ex.Message} [Action: проверьте формат файла]");
-            return null;
-        }
+        _loaded = false;
+        _ = LoadAsync(CancellationToken.None);
     }
 }

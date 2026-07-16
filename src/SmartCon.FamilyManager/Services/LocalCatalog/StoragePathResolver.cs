@@ -62,6 +62,19 @@ public sealed class StoragePathResolver
         return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), fileName);
     }
 
+    /// <summary>File name of the derived avatar thumbnail (ADR-047 / issue #131).</summary>
+    public const string AvatarFileName = "avatar.png";
+
+    /// <summary>
+    /// Path of the derived avatar thumbnail for a catalog item:
+    /// {db-root}/files/{family-id}/avatar.png. Version-independent — the avatar
+    /// represents the whole family, not a single version (ADR-047).
+    /// </summary>
+    public string GetAvatarPath(string catalogItemId)
+    {
+        return Path.Combine(GetFamilyDirectory(catalogItemId), AvatarFileName);
+    }
+
     public string GetAssetsDirectory(string catalogItemId, string versionLabel)
     {
         return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), "assets");

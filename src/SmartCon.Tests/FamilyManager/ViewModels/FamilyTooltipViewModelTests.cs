@@ -49,12 +49,12 @@ public class FamilyTooltipViewModelTests
     }
 
     [Fact]
-    public async Task LoadAsync_NoPrimaryImage_SetsHasAvatarFalse()
+    public async Task LoadAsync_NoAvatarImage_SetsHasAvatarFalse()
     {
         var assetService = new Mock<IFamilyAssetService>();
         assetService
-            .Setup(x => x.GetPrimaryImageAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((FamilyAsset?)null);
+            .Setup(x => x.GetAvatarImagePathAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
 
         var vm = new FamilyTooltipViewModel(CatalogItemId, "desc", assetService.Object);
         await vm.LoadCommand.ExecuteAsync(null);
@@ -64,33 +64,11 @@ public class FamilyTooltipViewModelTests
     }
 
     [Fact]
-    public async Task LoadAsync_ResolvePathNull_SetsHasAvatarFalse()
-    {
-        var asset = new FamilyAsset("asset-1", CatalogItemId, null, FamilyAssetType.Image, "img.png", "files/img.png", 1024, null, DateTimeOffset.UtcNow, true);
-        var assetService = new Mock<IFamilyAssetService>();
-        assetService
-            .Setup(x => x.GetPrimaryImageAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(asset);
-        assetService
-            .Setup(x => x.ResolveAssetPathAsync(asset.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string?)null);
-
-        var vm = new FamilyTooltipViewModel(CatalogItemId, "desc", assetService.Object);
-        await vm.LoadCommand.ExecuteAsync(null);
-
-        Assert.False(vm.HasAvatar);
-    }
-
-    [Fact]
     public async Task LoadAsync_ResolvePathMissingFile_SetsHasAvatarFalse()
     {
-        var asset = new FamilyAsset("asset-1", CatalogItemId, null, FamilyAssetType.Image, "img.png", "files/img.png", 1024, null, DateTimeOffset.UtcNow, true);
         var assetService = new Mock<IFamilyAssetService>();
         assetService
-            .Setup(x => x.GetPrimaryImageAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(asset);
-        assetService
-            .Setup(x => x.ResolveAssetPathAsync(asset.Id, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetAvatarImagePathAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("C:\\nonexistent\\img.png");
 
         var vm = new FamilyTooltipViewModel(CatalogItemId, "desc", assetService.Object);
@@ -102,21 +80,16 @@ public class FamilyTooltipViewModelTests
     [Fact]
     public async Task LoadAsync_SecondCallIsNoop_DoesNotQueryAssetServiceAgain()
     {
-        var asset = new FamilyAsset("asset-1", CatalogItemId, null, FamilyAssetType.Image, "img.png", "files/img.png", 1024, null, DateTimeOffset.UtcNow, true);
         var assetService = new Mock<IFamilyAssetService>();
         assetService
-            .Setup(x => x.GetPrimaryImageAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(asset);
-        assetService
-            .Setup(x => x.ResolveAssetPathAsync(asset.Id, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetAvatarImagePathAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("C:\\nonexistent\\img.png");
 
         var vm = new FamilyTooltipViewModel(CatalogItemId, "desc", assetService.Object);
         await vm.LoadCommand.ExecuteAsync(null);
         await vm.LoadCommand.ExecuteAsync(null);
 
-        assetService.Verify(x => x.GetPrimaryImageAsync(CatalogItemId, null, It.IsAny<CancellationToken>()), Times.Once);
-        assetService.Verify(x => x.ResolveAssetPathAsync(asset.Id, It.IsAny<CancellationToken>()), Times.Once);
+        assetService.Verify(x => x.GetAvatarImagePathAsync(CatalogItemId, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -125,13 +98,9 @@ public class FamilyTooltipViewModelTests
         var path = CreateTemporaryPng();
         try
         {
-            var asset = new FamilyAsset("asset-1", CatalogItemId, null, FamilyAssetType.Image, Path.GetFileName(path), "files/img.png", 1024, null, DateTimeOffset.UtcNow, true);
             var assetService = new Mock<IFamilyAssetService>();
             assetService
-                .Setup(x => x.GetPrimaryImageAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(asset);
-            assetService
-                .Setup(x => x.ResolveAssetPathAsync(asset.Id, It.IsAny<CancellationToken>()))
+                .Setup(x => x.GetAvatarImagePathAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(path);
 
             var vm = new FamilyTooltipViewModel(CatalogItemId, "desc", assetService.Object);
@@ -144,6 +113,25 @@ public class FamilyTooltipViewModelTests
         {
             try { File.Delete(path); } catch { }
         }
+    }
+
+    [Fact]
+    public async Task Invalidate_ReloadsAvatarFromAssetService()
+    {
+        var assetService = new Mock<IFamilyAssetService>();
+        assetService
+            .Setup(x => x.GetAvatarImagePathAsync(CatalogItemId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+
+        var vm = new FamilyTooltipViewModel(CatalogItemId, "desc", assetService.Object);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.Invalidate();
+        await Task.Delay(100); // fire-and-forget reload inside Invalidate
+
+        assetService.Verify(
+            x => x.GetAvatarImagePathAsync(CatalogItemId, null, It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
     }
 
     private static string CreateTemporaryPng()

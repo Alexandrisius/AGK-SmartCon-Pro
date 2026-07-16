@@ -27,6 +27,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFileNameParser _fileNameParser;
     private readonly IFamilyGeometryPipeline _geometryPipeline;
     private readonly IFamilyFileResolver _fileResolver;
+    private readonly IAvatarCropService _avatarCropService;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -48,7 +49,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IRevitContext revitContext,
         IFileNameParser fileNameParser,
         IFamilyGeometryPipeline geometryPipeline,
-        IFamilyFileResolver fileResolver)
+        IFamilyFileResolver fileResolver,
+        IAvatarCropService avatarCropService)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -70,6 +72,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _fileNameParser = fileNameParser;
         _geometryPipeline = geometryPipeline;
         _fileResolver = fileResolver;
+        _avatarCropService = avatarCropService;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -85,7 +88,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             versionLabel, createdAtText, updatedAtText,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
-            _geometryPipeline, _fileResolver)
+            _geometryPipeline, _fileResolver, _avatarCropService)
         { IsReadOnly = isReadOnly };
     }
 

@@ -305,6 +305,66 @@ public sealed record FamilyAsset(
 
 ---
 
+## ImageCropRect
+
+Прямоугольник кадрирования в пикселях исходного изображения. Производится диалогом
+кадрирования аватарки (issue #131) и потребляется `IAvatarCropService` для рендера
+производного `avatar.png`. См. ADR-047.
+
+**Файл:** `ImageCropRect.cs`
+
+```csharp
+public sealed record ImageCropRect(double X, double Y, double Width, double Height);
+```
+
+---
+
+## AvatarThumbnail
+
+Константы единой миниатюры аватара (ADR-047): 560×420 PNG (4:3, 2× supersample
+для превью 280×210). Один файл `avatar.png` используется и аватаркой в свойствах,
+и превью в tooltip.
+
+**Файл:** `AvatarThumbnail.cs`
+
+```csharp
+public static class AvatarThumbnail
+{
+    public const int Width = 560;
+    public const int Height = 420;
+}
+```
+
+---
+
+## CropViewportMath
+
+Чистая статическая математика вьюпорта диалога кадрирования (issue #131, ADR-047):
+fit-scale изображения во вьюпорт, `MinZoom` (изображение всегда покрывает рамку),
+клампы пана/рамки, зум вокруг точки, resize рамки произвольных пропорций за углы
+(rev 2), маппинг рамки в `ImageCropRect` (пиксели исходника).
+Не зависит от WPF — unit-тестируется в `CropViewportMathTests`.
+
+**Файл:** `CropViewportMath.cs`
+
+```csharp
+public enum CropCorner { TopLeft, TopRight, BottomLeft, BottomRight }
+
+public static class CropViewportMath
+{
+    public static double FitScale(double viewWidth, double viewHeight, double imageWidth, double imageHeight);
+    public static double MinZoom(double frameWidth, double frameHeight, double imageWidth, double imageHeight, double fitScale);
+    public static (double Left, double Top) GetImageTopLeft(...);
+    public static (double X, double Y) ClampOffset(...);
+    public static (double X, double Y) ClampFrame(...);
+    public static (double Zoom, double OffsetX, double OffsetY) ZoomAroundPoint(...);
+    public static (double X, double Y, double Width, double Height) ResizeFrame(CropCorner corner, ...);
+    public static ImageCropRect ToSourceRect(...);
+}
+```
+
+---
+
 ## AttributeScope
 
 Область применения атрибута (тип/экземпляр).

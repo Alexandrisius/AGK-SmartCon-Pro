@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -70,21 +72,12 @@ public sealed partial class FamilyPropertiesViewModel
 
         Populate3DTypeNames();
 
-        var primary = assets.FirstOrDefault(a => a.AssetType == FamilyAssetType.Image && a.IsPrimary);
-        if (primary is null)
-            primary = ImageAssets.FirstOrDefault();
-
-        if (primary is not null)
-        {
-            var path = await _assetService.ResolveAssetPathAsync(primary.Id, ct);
-            AvatarImagePath = path;
-            HasAvatar = path is not null;
-        }
-        else
-        {
-            AvatarImagePath = null;
-            HasAvatar = false;
-        }
+        // ADR-047 / #131: single resolution chain — derived avatar.png, else primary image.
+        // Decode on every load: avatar.png is rewritten in place on re-crop, so a
+        // path-string binding would not notice the change (ADR-047 rev 2 bugfix).
+        var avatarPath = await _assetService.GetAvatarImagePathAsync(_catalogItemId, VersionLabel, ct);
+        AvatarImage = avatarPath is not null ? AvatarImageLoader.Load(avatarPath, 560) : null;
+        HasAvatar = AvatarImage is not null;
 
         await PreResolveAssetPathsAsync(assets, ct);
         RebuildContentTabData();
@@ -210,10 +203,16 @@ public sealed partial class FamilyPropertiesViewModel
             FamilyAssetType.Image);
         if (path is null) return;
 
+        // #131: let the user pick the crop area before the image becomes the avatar.
+        // Cancelling the dialog aborts the whole operation — no asset is added.
+        var crop = ShowCropDialog(path);
+        if (crop is null) return;
+
         await WithBusyStateAsync(async () =>
         {
             var asset = await _assetService.AddAssetAsync(_catalogItemId, null, FamilyAssetType.Image, path, null);
             await _assetService.SetPrimaryAssetAsync(asset.Id);
+            await SaveAvatarFromCropAsync(crop, CancellationToken.None);
             await LoadAssetsAsync(CancellationToken.None);
         });
     }
@@ -221,14 +220,14 @@ public sealed partial class FamilyPropertiesViewModel
     [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task RemoveAvatar()
     {
-        if (!HasAvatar || ImageAssets.Count == 0) return;
+        if (!HasAvatar) return;
 
-        var primary = ImageAssets.FirstOrDefault(a => a.IsPrimary) ?? ImageAssets.FirstOrDefault();
-        if (primary is null) return;
-
+        // ADR-047: removes the derived avatar + primary flag; the source image
+        // assets themselves are kept (they can be deleted individually from the list).
         await WithBusyStateAsync(async () =>
         {
-            await _assetService.DeleteAssetAsync(primary.Id);
+            await _assetService.ClearAvatarAsync(_catalogItemId, CancellationToken.None);
+            AvatarChanged?.Invoke();
             await LoadAssetsAsync(CancellationToken.None);
         });
     }
@@ -247,9 +246,20 @@ public sealed partial class FamilyPropertiesViewModel
 
         var assetType = FamilyAssetTypeExtensions.DetectFromExtension(path);
 
+        // #131: the very first user image becomes the de-facto avatar — offer to crop it.
+        // Auto-extracted GLB previews don't count (hidden technical assets).
+        var crop = assetType == FamilyAssetType.Image && !ImageAssets.Any(a => !IsAutoExtractedPreview(a))
+            ? ShowCropDialog(path)
+            : null;
+
         await WithBusyStateAsync(async () =>
         {
-            await _assetService.AddAssetAsync(_catalogItemId, null, assetType, path, null);
+            var asset = await _assetService.AddAssetAsync(_catalogItemId, null, assetType, path, null);
+            if (crop is not null)
+            {
+                await _assetService.SetPrimaryAssetAsync(asset.Id);
+                await SaveAvatarFromCropAsync(crop, CancellationToken.None);
+            }
             await LoadAssetsAsync(CancellationToken.None);
         });
 
@@ -282,9 +292,20 @@ public sealed partial class FamilyPropertiesViewModel
             assetType);
         if (path is null) return;
 
+        // #131: the very first user image becomes the de-facto avatar — offer to crop it.
+        // Auto-extracted GLB previews don't count (hidden technical assets).
+        var crop = assetType == FamilyAssetType.Image && !ImageAssets.Any(a => !IsAutoExtractedPreview(a))
+            ? ShowCropDialog(path)
+            : null;
+
         await WithBusyStateAsync(async () =>
         {
-            await _assetService.AddAssetAsync(_catalogItemId, null, assetType, path, null);
+            var asset = await _assetService.AddAssetAsync(_catalogItemId, null, assetType, path, null);
+            if (crop is not null)
+            {
+                await _assetService.SetPrimaryAssetAsync(asset.Id);
+                await SaveAvatarFromCropAsync(crop, CancellationToken.None);
+            }
             await LoadAssetsAsync(CancellationToken.None);
         });
     }
@@ -337,13 +358,79 @@ public sealed partial class FamilyPropertiesViewModel
     {
         if (row is null || row.Asset.AssetType != FamilyAssetType.Image) return;
 
-        SmartConLogger.Info($"SetAsPrimary: assetId={row.Asset.Id}, name='{row.Asset.FileName}', triggering LoadAssetsAsync");
+        // #131: pick the crop area for the new avatar before marking primary.
+        var path = await _assetService.ResolveAssetPathAsync(row.Asset.Id);
+        if (path is null)
+        {
+            SmartConLogger.Warn($"SetAsPrimary: resolved path missing for asset '{row.Asset.Id}' [Action: проверьте целостность managed storage и family_assets]");
+            return;
+        }
+
+        var crop = ShowCropDialog(path);
+        if (crop is null) return;
+
+        SmartConLogger.Info($"SetAsPrimary: assetId={row.Asset.Id}, name='{row.Asset.FileName}', applying cropped avatar");
 
         await WithBusyStateAsync(async () =>
         {
             await _assetService.SetPrimaryAssetAsync(row.Asset.Id);
+            await SaveAvatarFromCropAsync(crop, CancellationToken.None);
             await LoadAssetsAsync(CancellationToken.None);
         });
+    }
+
+    /// <summary>
+    /// Saves the rendered crop (temp PNG from the crop dialog) as the family avatar
+    /// and removes the temp file afterwards.
+    /// </summary>
+    private async Task SaveAvatarFromCropAsync(string cropTempPath, CancellationToken ct)
+    {
+        try
+        {
+            await _assetService.SaveAvatarAsync(_catalogItemId, cropTempPath, ct);
+            AvatarChanged?.Invoke();
+        }
+        finally
+        {
+            try { if (File.Exists(cropTempPath)) File.Delete(cropTempPath); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Opens the avatar crop dialog (issue #131) for the given image file.
+    /// Returns the path of the rendered 560×420 PNG (temp file) when the user
+    /// applied the crop; null when cancelled or when the image cannot be opened/rendered.
+    /// </summary>
+    private string? ShowCropDialog(string imagePath)
+    {
+        int pixelWidth;
+        int pixelHeight;
+        try
+        {
+            (pixelWidth, pixelHeight) = _avatarCropService.GetImageDimensions(imagePath);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"ShowCropDialog: failed to read image '{Path.GetFileName(imagePath)}': {ex.Message} [Action: проверьте, что файл изображения не повреждён и доступен для чтения]");
+            var openTitle = LanguageManager.GetString(StringLocalization.Keys.FM_Crop_Title) ?? "Crop avatar";
+            var openMessage = LanguageManager.GetString(StringLocalization.Keys.FM_Crop_OpenError) ?? "Failed to open the image.";
+            _dialogService.ShowError(openTitle, openMessage);
+            return null;
+        }
+
+        var vm = new CropAvatarViewModel(imagePath, pixelWidth, pixelHeight, _avatarCropService);
+        var result = _dialogService.ShowAvatarCropper(vm);
+        if (result == true && vm.ResultPath is not null)
+            return vm.ResultPath;
+
+        if (vm.ApplyError is not null)
+        {
+            var renderTitle = LanguageManager.GetString(StringLocalization.Keys.FM_Crop_Title) ?? "Crop avatar";
+            var renderMessage = LanguageManager.GetString(StringLocalization.Keys.FM_Crop_RenderError) ?? "Failed to crop the image.";
+            _dialogService.ShowError(renderTitle, renderMessage);
+        }
+
+        return null;
     }
 
     /// <summary>

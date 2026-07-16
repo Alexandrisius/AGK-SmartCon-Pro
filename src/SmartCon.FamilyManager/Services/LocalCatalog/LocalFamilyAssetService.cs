@@ -211,6 +211,66 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
             tx.Rollback();
             throw;
         }
+
+        // ADR-047 / #131: the derived avatar.png is rendered from the previous
+        // primary image — it is stale now and must not survive the primary switch.
+        DeleteAvatarFile(catalogItemId);
+    }
+
+    public async Task SaveAvatarAsync(string catalogItemId, string sourcePngPath, CancellationToken ct = default)
+    {
+        await EnsureMigratedAsync(ct);
+        if (!File.Exists(sourcePngPath))
+            throw new FileNotFoundException($"Source avatar file not found: {sourcePngPath}");
+
+        var avatarPath = _pathResolver.GetAvatarPath(catalogItemId);
+        await Task.Run(() =>
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(avatarPath)!);
+            File.Copy(sourcePngPath, avatarPath, overwrite: true);
+        }, ct);
+    }
+
+    public async Task<string?> GetAvatarImagePathAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default)
+    {
+        await EnsureMigratedAsync(ct);
+
+        var avatarPath = _pathResolver.GetAvatarPath(catalogItemId);
+        if (File.Exists(avatarPath))
+            return avatarPath;
+
+        var primary = await GetPrimaryImageAsync(catalogItemId, versionLabel, ct);
+        if (primary is null)
+            return null;
+
+        return await ResolveAssetPathAsync(primary.Id, ct);
+    }
+
+    public async Task ClearAvatarAsync(string catalogItemId, CancellationToken ct = default)
+    {
+        await EnsureMigratedAsync(ct);
+
+        DeleteAvatarFile(catalogItemId);
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE family_assets SET is_primary = 0 WHERE catalog_item_id = @itemId AND asset_type = 'Image'";
+        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private void DeleteAvatarFile(string catalogItemId)
+    {
+        try
+        {
+            var avatarPath = _pathResolver.GetAvatarPath(catalogItemId);
+            if (File.Exists(avatarPath))
+                File.Delete(avatarPath);
+        }
+        catch
+        {
+        }
     }
 
     public async Task<FamilyAsset?> GetPrimaryImageAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default)

@@ -62,6 +62,7 @@ ExtensibleStorage остаётся паттерном существующих �
 | 27 | v2.0.0 Cleanup | [ADR-034](../adr/034-shared-nested-persist-fallback.md), [ADR-035](../adr/035-remove-temp-logic-v2.md), [ADR-036](../adr/036-active-family-type-sync.md), [ADR-037](../adr/037-tree-expand-collapse.md), [ADR-038](../adr/038-sticky-category-headers.md), [ADR-039](../adr/039-snapshot-driven-commit.md) | 2026-06-29 | schema v14 |
 | 28 | Active Version Management | [ADR-040](../adr/040-overwritecurrent-semantics.md), [ADR-041](../adr/041-active-version-management.md) | 2026-06-30 | schema v17-v19 |
 | 29 | 3D Preview | [ADR-042](../adr/042-familymanager-3d-preview.md) | 2026-07-01 | SharpGLTF + HelixToolkit |
+| 30 | Avatar Crop | [ADR-047](../adr/047-avatar-crop-derived-file.md) | 2026-07-16 | Issue #131: диалог кадрирования, производный `avatar.png` 560×420, единое превью 280×210 для свойств и tooltip, инвалидация при смене primary |
 
 ## Миграции SQLite V1..V19
 

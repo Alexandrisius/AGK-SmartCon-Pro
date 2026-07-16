@@ -130,3 +130,5 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 **Phase 29 (FamilyManager 3D Preview) завершена (2026-07-01):** ADR-042, GLB extraction через SharpGLTF, HelixToolkit.Wpf.SharpDX viewer, `mc:AlternateContent` для net48/net8 совместимости. Build R19/R21/R24/R25.
 
+**Phase 30 (FamilyManager Avatar Crop — Issue #131) завершена (2026-07-16):** ADR-047. Универсальный диалог кадрирования аватарки (рамка 4:3 + zoom/pan + затемнение) из ★/«Сменить»/первичной загрузки изображения. Производный `avatar.png` 560×420 на семейство с инвалидацией при смене primary; единое превью 280×210 в свойствах и tooltip через `GetAvatarImagePathAsync` (avatar.png → primary image). Pure math `CropViewportMath` в Core, WPF-free `CropAvatarViewModel`, `WpfAvatarCropService` с капом декода 4096px. Build R19/R21/R24/R25, 1900 тестов pass.
+

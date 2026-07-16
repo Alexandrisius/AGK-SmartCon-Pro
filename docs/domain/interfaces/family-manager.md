@@ -170,6 +170,9 @@ public interface IFamilyStorageRenameService
 ## IFamilyAssetService
 
 Управление вспомогательными ассетами (изображения, документы, lookup tables) семейств.
+С ADR-047 (issue #131) также управляет производным файлом аватара `avatar.png` (560×420):
+`SetPrimaryAssetAsync` инвалидирует его при смене primary, `GetAvatarImagePathAsync` —
+единая цепочка разрешения (`avatar.png` → primary image) для аватарки и tooltip.
 
 **Файл:** `IFamilyAssetService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyAssetService.cs`
@@ -184,6 +187,27 @@ public interface IFamilyAssetService
     Task SetPrimaryAssetAsync(string assetId, CancellationToken ct = default);
     Task<FamilyAsset?> GetPrimaryImageAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default);
     Task SetAssetVersionBindingAsync(string assetId, string? newVersionLabel, CancellationToken ct = default);
+    Task SaveAvatarAsync(string catalogItemId, string sourcePngPath, CancellationToken ct = default);
+    Task<string?> GetAvatarImagePathAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default);
+    Task ClearAvatarAsync(string catalogItemId, CancellationToken ct = default);
+}
+```
+
+---
+
+## IAvatarCropService
+
+Рендер единой миниатюры аватара (560×420 PNG, ADR-047) из исходного изображения любого
+разрешения. Декод ограничен 4096px по ширине — защита памяти для очень больших файлов.
+
+**Файл:** `IAvatarCropService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/WpfAvatarCropService.cs` (WPF imaging)
+
+```csharp
+public interface IAvatarCropService
+{
+    (int PixelWidth, int PixelHeight) GetImageDimensions(string path);
+    void CropToPng(string sourcePath, ImageCropRect sourceRect, string outputPath);
 }
 ```
 

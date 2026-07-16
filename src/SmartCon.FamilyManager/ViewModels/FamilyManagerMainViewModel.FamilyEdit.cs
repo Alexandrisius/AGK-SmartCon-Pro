@@ -59,6 +59,12 @@ public sealed partial class FamilyManagerMainViewModel
                 updatedAt,
                 isReadOnly: !CanEdit);
             SmartConLogger.Info("OpenProperties: VM created, calling InitializeCommand...");
+
+            // ADR-047 rev 2 / #131: refresh the tree node's tooltip the moment the
+            // avatar is re-cropped/removed inside the dialog — don't wait for the
+            // post-OK LoadTreeAsync (which also doesn't run on Cancel).
+            if (SelectedTreeNode is FamilyLeafNodeViewModel leaf)
+                vm.AvatarChanged += () => leaf.TooltipViewModel.Invalidate();
         }
         catch (Exception ex)
         {

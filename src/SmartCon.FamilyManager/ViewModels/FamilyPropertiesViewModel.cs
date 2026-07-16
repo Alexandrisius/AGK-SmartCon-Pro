@@ -29,6 +29,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IFamilyStorageRenameService _renameService;
     private readonly IFamilyGeometryPipeline _geometryPipeline;
     private readonly IFamilyFileResolver _fileResolver;
+    private readonly IAvatarCropService _avatarCropService;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -54,7 +55,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
     [ObservableProperty] private int _selectedTabIndex;
     [ObservableProperty] private bool _isBusy;
-    [ObservableProperty] private string? _avatarImagePath;
+    [ObservableProperty] private System.Windows.Media.Imaging.BitmapImage? _avatarImage;
     [ObservableProperty] private bool _hasAvatar;
     [ObservableProperty] private ObservableCollection<FamilyAsset> _imageAssets = [];
     [ObservableProperty] private ObservableCollection<FamilyAsset> _videoAssets = [];
@@ -108,6 +109,13 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private IReadOnlyList<EffectiveCategoryAttribute> _effectiveAttributes = [];
     private IReadOnlyList<ExtractedAttributeValue> _allValues = [];
     private List<AttributeRow> _allAttributeRows = [];
+
+    /// <summary>
+    /// Raised after the family avatar was re-cropped or removed (ADR-047 rev 2) so
+    /// long-lived consumers (the catalog tree tooltip) can invalidate their cache
+    /// immediately instead of waiting for the next tree reload.
+    /// </summary>
+    public event Action? AvatarChanged;
 
     // Original values for dirty tracking (primary tab only)
     private readonly string _originalName;
@@ -224,7 +232,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IFamilyManagerViewModelFactory viewModelFactory,
         IFamilyStorageRenameService renameService,
         IFamilyGeometryPipeline geometryPipeline,
-        IFamilyFileResolver fileResolver)
+        IFamilyFileResolver fileResolver,
+        IAvatarCropService avatarCropService)
     {
         SmartConLogger.Info($"FamilyPropertiesViewModel ctor: start for itemId={catalogItemId} name='{name}'");
         _catalogItemId = catalogItemId;
@@ -243,6 +252,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _renameService = renameService;
         _geometryPipeline = geometryPipeline;
         _fileResolver = fileResolver;
+        _avatarCropService = avatarCropService;
 
         Name = name;
         Description = description;

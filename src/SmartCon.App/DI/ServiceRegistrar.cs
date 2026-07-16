@@ -137,6 +137,7 @@ public static class ServiceRegistrar
             presenter.Register<CategoryTreeEditorViewModel>(vm => new CategoryTreeEditorView(vm));
             presenter.Register<CategoryPickerViewModel>(vm => new CategoryPickerView(vm));
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
+            presenter.Register<CropAvatarViewModel>(vm => new CropAvatarView(vm));
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
@@ -183,6 +184,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyImportPrecomputer, LocalFamilyImportPrecomputer>();
         services.AddSingleton<IFamilyFileResolver, LocalFamilyFileResolver>();
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
+        services.AddSingleton<IAvatarCropService, WpfAvatarCropService>();
         services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
         services.AddSingleton<LocalAttributeDefinitionRepository>();
         services.AddSingleton<IAttributeDefinitionRepository>(sp => sp.GetRequiredService<LocalAttributeDefinitionRepository>());

@@ -47,7 +47,8 @@ public sealed class FamilyPropertiesViewModelTests
             viewModelFactory: new Mock<IFamilyManagerViewModelFactory>().Object,
             renameService: new Mock<IFamilyStorageRenameService>().Object,
             geometryPipeline: geometryPipeline.Object,
-            fileResolver: fileResolver.Object);
+            fileResolver: fileResolver.Object,
+            avatarCropService: new Mock<IAvatarCropService>().Object);
 
         return (vm, assetService, geometryPipeline);
     }

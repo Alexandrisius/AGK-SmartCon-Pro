@@ -85,6 +85,13 @@ public interface IFamilyManagerDialogService
     bool? ShowBatchImportDialog(object viewModel);
 
     /// <summary>
+    /// Show the avatar crop dialog (issue #131, ADR-047). The viewModel must be a
+    /// CropAvatarViewModel; returns true when the user applied the crop — read
+    /// ResultPath from the viewModel in that case.
+    /// </summary>
+    bool? ShowAvatarCropper(object viewModel);
+
+    /// <summary>
     /// Show dialog asking the user how to load a single shared nested family
     /// that conflicts with an existing one in the project.
     /// MUST be called from Revit main thread (blocks until user decides).

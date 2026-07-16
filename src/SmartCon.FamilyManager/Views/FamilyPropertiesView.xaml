@@ -70,7 +70,7 @@
                             <Binding Path="HasAvatar" Converter="{StaticResource BoolToVisibility}" ConverterParameter="Invert"/>
                         </TextBlock.Visibility>
                     </TextBlock>
-                    <Image Source="{Binding AvatarImagePath, Converter={StaticResource PathToBitmapImageConverter}}"
+                    <Image Source="{Binding AvatarImage}"
                            Stretch="UniformToFill" StretchDirection="Both"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibility}}"/>

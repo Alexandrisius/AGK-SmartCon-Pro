@@ -11,4 +11,12 @@ public static class Guard
             throw new ArgumentNullException(paramName);
         }
     }
+
+    public static void ThrowIfNegativeOrZero(int value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
+    {
+        if (value <= 0)
+        {
+            throw new ArgumentOutOfRangeException(paramName);
+        }
+    }
 }
