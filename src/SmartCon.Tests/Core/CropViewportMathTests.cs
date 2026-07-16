@@ -72,9 +72,19 @@ public sealed class CropViewportMathTests
     {
         var scale = Fit; // zoom = 1, offsets 0 → image covers the viewport exactly.
         var (x, y) = CropViewportMath.ClampFrame(
-            -50, 500, FrameW, FrameH, ViewW, ViewH, ImgW, ImgH, scale, 0, 0);
+            -50, 500, FrameW, FrameH, ViewW, ViewH, ImgW, ImgH, scale, 0, 0, 0);
         Assert.Equal(0, x, 6);
         Assert.Equal(ViewH - FrameH, y, 6);
+    }
+
+    [Fact]
+    public void ClampFrame_WithViewportInset_KeepsGutter()
+    {
+        var scale = Fit;
+        var (x, y) = CropViewportMath.ClampFrame(
+            -50, 500, FrameW, FrameH, ViewW, ViewH, ImgW, ImgH, scale, 0, 0, 10);
+        Assert.Equal(10, x, 6);
+        Assert.Equal(ViewH - 10 - FrameH, y, 6);
     }
 
     [Fact]
@@ -162,7 +172,7 @@ public sealed class CropViewportMathTests
         var (x, y, w, h) = CropViewportMath.ResizeFrame(
             CropCorner.BottomRight, -100, -50,
             100, 75, FrameW, FrameH, 60, 60,
-            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0);
+            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0, 0);
 
         Assert.Equal(100, x, 6);
         Assert.Equal(75, y, 6);
@@ -176,7 +186,7 @@ public sealed class CropViewportMathTests
         var (x, y, w, h) = CropViewportMath.ResizeFrame(
             CropCorner.TopLeft, 50, 25,
             100, 75, FrameW, FrameH, 60, 60,
-            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0);
+            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0, 0);
 
         Assert.Equal(150, x, 6);
         Assert.Equal(100, y, 6);
@@ -190,7 +200,7 @@ public sealed class CropViewportMathTests
         var (_, _, w, h) = CropViewportMath.ResizeFrame(
             CropCorner.BottomRight, -10000, -10000,
             100, 75, FrameW, FrameH, 60, 60,
-            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0);
+            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0, 0);
 
         Assert.Equal(60, w, 6);
         Assert.Equal(60, h, 6);
@@ -202,7 +212,7 @@ public sealed class CropViewportMathTests
         var (x, y, w, h) = CropViewportMath.ResizeFrame(
             CropCorner.BottomRight, 10000, 10000,
             100, 75, FrameW, FrameH, 60, 60,
-            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0);
+            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0, 0);
 
         // Image == viewport here: bounds are (0,0)-(600,450).
         Assert.Equal(100, x, 6);
@@ -217,11 +227,39 @@ public sealed class CropViewportMathTests
         var (x, y, w, h) = CropViewportMath.ResizeFrame(
             CropCorner.TopLeft, -10000, -10000,
             100, 75, FrameW, FrameH, 60, 60,
-            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0);
+            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0, 0);
 
         Assert.Equal(0, x, 6);
         Assert.Equal(0, y, 6);
         Assert.Equal(500, w, 6);
         Assert.Equal(375, h, 6);
+    }
+
+    // --- Viewport inset gutter (issue #131 rev 4: handles stay grabbable) ---
+
+    [Fact]
+    public void ResizeFrame_WithViewportInset_KeepsGutter()
+    {
+        var (x, y, w, h) = CropViewportMath.ResizeFrame(
+            CropCorner.BottomRight, 10000, 10000,
+            100, 75, FrameW, FrameH, 60, 60,
+            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0, 10);
+
+        Assert.Equal(100, x, 6);
+        Assert.Equal(75, y, 6);
+        Assert.Equal(ViewW - 10 - 100, w, 6); // right bound = 590
+        Assert.Equal(ViewH - 10 - 75, h, 6);  // bottom bound = 440
+    }
+
+    [Fact]
+    public void ResizeFrame_TopLeft_WithViewportInset_KeepsGutter()
+    {
+        var (x, y, _, _) = CropViewportMath.ResizeFrame(
+            CropCorner.TopLeft, -10000, -10000,
+            100, 75, FrameW, FrameH, 60, 60,
+            ViewW, ViewH, ImgW, ImgH, Fit, 0, 0, 10);
+
+        Assert.Equal(10, x, 6);
+        Assert.Equal(10, y, 6);
     }
 }

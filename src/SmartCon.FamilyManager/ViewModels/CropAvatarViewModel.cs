@@ -37,6 +37,13 @@ public sealed partial class CropAvatarViewModel : ObservableObject, IObservableR
     /// <summary>Minimum crop frame size in WPF units (free aspect resize clamp).</summary>
     public const double MinFrameSize = 60;
 
+    /// <summary>
+    /// Gutter between the crop frame and the viewport edges (issue #131 rev 4):
+    /// keeps the protruding corner handles (7px) fully visible at maximum frame
+    /// expansion instead of sliding under the viewport's ClipToBounds.
+    /// </summary>
+    public const double FrameViewportInset = 10;
+
     private const double MaxZoomFactor = 8.0;
 
     private readonly IAvatarCropService _cropService;
@@ -58,12 +65,26 @@ public sealed partial class CropAvatarViewModel : ObservableObject, IObservableR
     [ObservableProperty] private double _imageLeft;
     [ObservableProperty] private double _imageTop;
 
-    /// <summary>Normalized (0..1) crop selection in source-image space — drives the live
-    /// output preview (ImageBrush Viewbox), which applies the same cover crop as the renderer.</summary>
-    [ObservableProperty] private double _previewX;
-    [ObservableProperty] private double _previewY;
-    [ObservableProperty] private double _previewWidth = 1;
-    [ObservableProperty] private double _previewHeight = 1;
+    /// <summary>Preview box width in WPF units (matches CropAvatarView preview panel).</summary>
+    public const double PreviewBoxWidth = 140;
+
+    /// <summary>Preview box height in WPF units (matches CropAvatarView preview panel).</summary>
+    public const double PreviewBoxHeight = 105;
+
+    /// <summary>Live-preview selection rect in NATIVE source pixels (rev 6) — consumed
+    /// by PreviewCropImageBehavior to produce a CroppedBitmap identical to the
+    /// renderer's output.</summary>
+    [ObservableProperty] private double _previewRectX;
+    [ObservableProperty] private double _previewRectY;
+    [ObservableProperty] private double _previewRectWidth;
+    [ObservableProperty] private double _previewRectHeight;
+
+    /// <summary>Live-preview display geometry (rev 6): where the cropped selection image
+    /// sits inside the 140×105 preview box — contain-fitted and centered.</summary>
+    [ObservableProperty] private double _previewViewLeft;
+    [ObservableProperty] private double _previewViewTop;
+    [ObservableProperty] private double _previewViewWidth;
+    [ObservableProperty] private double _previewViewHeight;
 
     /// <summary>Path of the rendered 560×420 PNG in the temp folder. Set on Apply.</summary>
     [ObservableProperty] private string? _resultPath;
@@ -134,7 +155,7 @@ public sealed partial class CropAvatarViewModel : ObservableObject, IObservableR
         (FrameX, FrameY) = CropViewportMath.ClampFrame(
             FrameX + dx, FrameY + dy, FrameWidth, FrameHeight,
             ViewportWidth, ViewportHeight, SourcePixelWidth, SourcePixelHeight,
-            scale, OffsetX, OffsetY);
+            scale, OffsetX, OffsetY, FrameViewportInset);
         RecalculateLayout();
     }
 
@@ -150,7 +171,7 @@ public sealed partial class CropAvatarViewModel : ObservableObject, IObservableR
             corner, dx, dy, FrameX, FrameY, FrameWidth, FrameHeight,
             MinFrameSize, MinFrameSize,
             ViewportWidth, ViewportHeight, SourcePixelWidth, SourcePixelHeight,
-            scale, OffsetX, OffsetY);
+            scale, OffsetX, OffsetY, FrameViewportInset);
 
         MinZoom = CropViewportMath.MinZoom(FrameWidth, FrameHeight, SourcePixelWidth, SourcePixelHeight, _fitScale);
         MaxZoom = Math.Max(MinZoom, MaxZoomFactor);
@@ -251,10 +272,22 @@ public sealed partial class CropAvatarViewModel : ObservableObject, IObservableR
             FrameX, FrameY, FrameWidth, FrameHeight,
             SourcePixelWidth, SourcePixelHeight, scale,
             OffsetX, OffsetY, ViewportWidth, ViewportHeight);
-        PreviewX = rect.X / SourcePixelWidth;
-        PreviewY = rect.Y / SourcePixelHeight;
-        PreviewWidth = rect.Width / SourcePixelWidth;
-        PreviewHeight = rect.Height / SourcePixelHeight;
+
+        // Live preview (rev 6): selection rect in source pixels (PreviewRect*, cropped
+        // by PreviewCropImageBehavior at the source level) + display geometry of the
+        // cropped result in the preview box (PreviewView*, contain-fitted, centered) —
+        // pixel-identical to the renderer's crop+contain output.
+        var previewFit = System.Math.Min(
+            PreviewBoxWidth / rect.Width,
+            PreviewBoxHeight / rect.Height);
+        PreviewRectX = rect.X;
+        PreviewRectY = rect.Y;
+        PreviewRectWidth = rect.Width;
+        PreviewRectHeight = rect.Height;
+        PreviewViewWidth = rect.Width * previewFit;
+        PreviewViewHeight = rect.Height * previewFit;
+        PreviewViewLeft = (PreviewBoxWidth - PreviewViewWidth) / 2;
+        PreviewViewTop = (PreviewBoxHeight - PreviewViewHeight) / 2;
 
         OnPropertyChanged(nameof(ZoomText));
     }

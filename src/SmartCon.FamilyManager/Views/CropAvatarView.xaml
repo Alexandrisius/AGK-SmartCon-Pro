@@ -224,19 +224,28 @@
                     BorderThickness="1"
                     ClipToBounds="True"
                     Background="{DynamicResource HoverAltSurfaceBrush}">
-                <Rectangle>
-                    <Rectangle.Fill>
-                        <!-- Contain (Uniform): exactly what the renderer produces —
-                             whole selection visible, empty margins show the card background -->
-                        <ImageBrush ImageSource="{Binding ImagePath, Converter={StaticResource PathToBitmapImageConverter}, ConverterParameter=2048}"
-                                    Stretch="Uniform"/>
-                    </Rectangle.Fill>
-                    <i:Interaction.Behaviors>
-                        <behaviors:ImageBrushViewboxBehavior
-                            X="{Binding PreviewX}" Y="{Binding PreviewY}"
-                            Width="{Binding PreviewWidth}" Height="{Binding PreviewHeight}"/>
-                    </i:Interaction.Behaviors>
-                </Rectangle>
+                <!-- Live preview (rev 6): the Image's Source is a CroppedBitmap of
+                     exactly the selection (PreviewCropImageBehavior) — pixel-identical
+                     to the renderer's crop+contain output, no bleed possible -->
+                <Canvas Width="140" Height="105">
+                    <Image Width="{Binding PreviewViewWidth}"
+                           Height="{Binding PreviewViewHeight}"
+                           Canvas.Left="{Binding PreviewViewLeft}"
+                           Canvas.Top="{Binding PreviewViewTop}"
+                           Stretch="Fill"
+                           RenderOptions.BitmapScalingMode="HighQuality">
+                        <i:Interaction.Behaviors>
+                            <behaviors:PreviewCropImageBehavior
+                                ImagePath="{Binding ImagePath}"
+                                NativeWidth="{Binding SourcePixelWidth}"
+                                NativeHeight="{Binding SourcePixelHeight}"
+                                RectX="{Binding PreviewRectX}"
+                                RectY="{Binding PreviewRectY}"
+                                RectWidth="{Binding PreviewRectWidth}"
+                                RectHeight="{Binding PreviewRectHeight}"/>
+                        </i:Interaction.Behaviors>
+                    </Image>
+                </Canvas>
             </Border>
             <TextBlock Text="{loc:Loc FM_Crop_CoverHint}"
                        FontSize="10"

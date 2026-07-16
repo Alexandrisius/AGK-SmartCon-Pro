@@ -332,6 +332,11 @@ public sealed partial class FamilyPropertiesViewModel
             await _assetService.DeleteAssetAsync(asset.Id);
             await LoadAssetsAsync(CancellationToken.None);
         });
+
+        // ADR-047 rev 5: deleting the primary image also deleted the derived avatar —
+        // notify long-lived consumers (tree tooltip) to drop their cache.
+        if (asset.AssetType == FamilyAssetType.Image && asset.IsPrimary)
+            AvatarChanged?.Invoke();
     }
 
     [RelayCommand]

@@ -127,8 +127,9 @@ public class FamilyTooltipViewModelTests
         await vm.LoadCommand.ExecuteAsync(null);
 
         vm.Invalidate();
-        await Task.Delay(100); // fire-and-forget reload inside Invalidate
 
+        // Moq ReturnsAsync completes synchronously, so the reload inside
+        // Invalidate has already finished — no delay needed.
         assetService.Verify(
             x => x.GetAvatarImagePathAsync(CatalogItemId, null, It.IsAny<CancellationToken>()),
             Times.Exactly(2));

@@ -66,21 +66,24 @@ public static class CropViewportMath
     }
 
     /// <summary>
-    /// Clamp the frame position so it stays inside both the viewport and the displayed image.
+    /// Clamp the frame position so it stays inside the displayed image and inside the
+    /// viewport inset gutter (<paramref name="viewportInset"/>). The gutter (Gutenberg
+    /// PR #77547 pattern) keeps the protruding corner handles fully visible — they
+    /// would otherwise slide under the viewport's ClipToBounds at maximum expansion.
     /// </summary>
     public static (double X, double Y) ClampFrame(
         double frameX, double frameY, double frameWidth, double frameHeight,
         double viewWidth, double viewHeight, double imageWidth, double imageHeight,
-        double scale, double offsetX, double offsetY)
+        double scale, double offsetX, double offsetY, double viewportInset)
     {
         var (left, top) = GetImageTopLeft(viewWidth, viewHeight, imageWidth, imageHeight, scale, offsetX, offsetY);
         var displayWidth = imageWidth * scale;
         var displayHeight = imageHeight * scale;
 
-        var minX = System.Math.Max(left, 0);
-        var maxX = System.Math.Min(left + displayWidth - frameWidth, viewWidth - frameWidth);
-        var minY = System.Math.Max(top, 0);
-        var maxY = System.Math.Min(top + displayHeight - frameHeight, viewHeight - frameHeight);
+        var minX = System.Math.Max(left, viewportInset);
+        var maxX = System.Math.Min(left + displayWidth - frameWidth, viewWidth - viewportInset - frameWidth);
+        var minY = System.Math.Max(top, viewportInset);
+        var maxY = System.Math.Min(top + displayHeight - frameHeight, viewHeight - viewportInset - frameHeight);
 
         return (Clamp(frameX, minX, maxX), Clamp(frameY, minY, maxY));
     }
@@ -128,7 +131,7 @@ public static class CropViewportMath
         double frameX, double frameY, double frameWidth, double frameHeight,
         double minWidth, double minHeight,
         double viewWidth, double viewHeight, double imageWidth, double imageHeight,
-        double scale, double offsetX, double offsetY)
+        double scale, double offsetX, double offsetY, double viewportInset)
     {
         var (imgLeft, imgTop) = GetImageTopLeft(viewWidth, viewHeight, imageWidth, imageHeight, scale, offsetX, offsetY);
         var imgRight = imgLeft + imageWidth * scale;
@@ -159,10 +162,11 @@ public static class CropViewportMath
                 break;
         }
 
-        var boundLeft = System.Math.Max(imgLeft, 0);
-        var boundTop = System.Math.Max(imgTop, 0);
-        var boundRight = System.Math.Min(imgRight, viewWidth);
-        var boundBottom = System.Math.Min(imgBottom, viewHeight);
+        // Gutter-inset bounds: same rationale as ClampFrame (handles stay grabbable).
+        var boundLeft = System.Math.Max(imgLeft, viewportInset);
+        var boundTop = System.Math.Max(imgTop, viewportInset);
+        var boundRight = System.Math.Min(imgRight, viewWidth - viewportInset);
+        var boundBottom = System.Math.Min(imgBottom, viewHeight - viewportInset);
 
         if (corner is CropCorner.TopLeft or CropCorner.BottomLeft)
             left = Clamp(left, boundLeft, right - minWidth);

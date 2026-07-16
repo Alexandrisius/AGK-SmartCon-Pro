@@ -117,11 +117,20 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
         await connection.OpenAsync(ct).ConfigureAwait(false);
 
         string? relativePath;
+        string? catalogItemId;
+        string? assetTypeStr;
+        long isPrimary;
         using (var selectCmd = connection.CreateCommand())
         {
-            selectCmd.CommandText = "SELECT relative_path FROM family_assets WHERE id = @id";
+            selectCmd.CommandText = "SELECT relative_path, catalog_item_id, asset_type, is_primary FROM family_assets WHERE id = @id";
             selectCmd.Parameters.Add(new SqliteParameter("@id", assetId));
-            relativePath = await selectCmd.ExecuteScalarAsync(ct) as string;
+            using var reader = await selectCmd.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct))
+                return false;
+            relativePath = reader.IsDBNull(0) ? null : reader.GetString(0);
+            catalogItemId = reader.IsDBNull(1) ? null : reader.GetString(1);
+            assetTypeStr = reader.IsDBNull(2) ? null : reader.GetString(2);
+            isPrimary = reader.IsDBNull(3) ? 0 : reader.GetInt64(3);
         }
 
         if (relativePath is null)
@@ -146,6 +155,16 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
                 }
                 catch
                 {
+                }
+
+                // ADR-047 rev 5 / #131: the derived avatar.png was rendered from the
+                // primary image — deleting that source must reset the derived avatar,
+                // otherwise it survives as an orphan of a deleted original.
+                if (isPrimary == 1
+                    && string.Equals(assetTypeStr, "Image", StringComparison.Ordinal)
+                    && catalogItemId is not null)
+                {
+                    DeleteAvatarFile(catalogItemId);
                 }
             }
 

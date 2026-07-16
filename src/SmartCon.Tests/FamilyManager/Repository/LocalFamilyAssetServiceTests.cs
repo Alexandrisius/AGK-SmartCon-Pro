@@ -241,6 +241,46 @@ public sealed class LocalFamilyAssetServiceTests : IDisposable
         Assert.Single(assets);
     }
 
+    [Fact]
+    public async Task DeleteAssetAsync_PrimaryImage_AlsoDeletesAvatarFile()
+    {
+        // ADR-047 rev 5: the derived avatar must not survive its deleted source.
+        var itemId = await SeedItemAsync("AvatarDeletePrimary.rfa");
+        var source = CreateFakeAssetFile("primary-src.png", "IMG");
+        var asset = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, source, null);
+        await _service.SetPrimaryAssetAsync(asset.Id);
+        var crop = CreateFakeAssetFile("crop.png", "CROP");
+        await _service.SaveAvatarAsync(itemId, crop);
+        var avatarPath = _fixture.GetPathResolver().GetAvatarPath(itemId);
+        Assert.True(File.Exists(avatarPath));
+
+        var deleted = await _service.DeleteAssetAsync(asset.Id);
+
+        Assert.True(deleted);
+        Assert.False(File.Exists(avatarPath));
+        Assert.Null(await _service.GetAvatarImagePathAsync(itemId));
+    }
+
+    [Fact]
+    public async Task DeleteAssetAsync_NonPrimaryImage_KeepsAvatarFile()
+    {
+        var itemId = await SeedItemAsync("AvatarDeleteNonPrimary.rfa");
+        var primarySource = CreateFakeAssetFile("primary.png", "IMG1");
+        var otherSource = CreateFakeAssetFile("other.png", "IMG2");
+        var primary = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, primarySource, null);
+        var other = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, otherSource, null);
+        await _service.SetPrimaryAssetAsync(primary.Id);
+        var crop = CreateFakeAssetFile("crop.png", "CROP");
+        await _service.SaveAvatarAsync(itemId, crop);
+        var avatarPath = _fixture.GetPathResolver().GetAvatarPath(itemId);
+
+        var deleted = await _service.DeleteAssetAsync(other.Id);
+
+        Assert.True(deleted);
+        Assert.True(File.Exists(avatarPath));
+        Assert.Equal(avatarPath, await _service.GetAvatarImagePathAsync(itemId));
+    }
+
     public void Dispose()
     {
         _fixture.Dispose();

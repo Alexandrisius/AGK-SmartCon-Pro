@@ -127,8 +127,8 @@ public sealed class CropAvatarViewModelTests
 
         vm.ZoomAt(2, 300, 225); // display 800×600
         vm.MoveFrame(1000, 1000);
-        Assert.Equal(200, vm.FrameX, 6); // viewport right edge: 600-400
-        Assert.Equal(150, vm.FrameY, 6); // viewport bottom edge: 450-300
+        Assert.Equal(190, vm.FrameX, 6); // viewport right edge with 10px gutter: 600-10-400
+        Assert.Equal(140, vm.FrameY, 6); // viewport bottom edge with 10px gutter: 450-10-300
     }
 
     [Fact]
@@ -278,22 +278,61 @@ public sealed class CropAvatarViewModelTests
     }
 
     [Fact]
-    public void PreviewFractions_ReflectCurrentSelection()
+    public void PreviewTransform_MirrorsContainRenderer()
     {
         var (vm, _) = MakeVm();
 
-        // Initial: whole image selected.
-        Assert.Equal(0, vm.PreviewX, 6);
-        Assert.Equal(0, vm.PreviewY, 6);
-        Assert.Equal(1, vm.PreviewWidth, 6);
-        Assert.Equal(1, vm.PreviewHeight, 6);
+        // Initial: selection = whole 1600×1200 image.
+        // contain fit into 140×105: fit = min(140/1600, 105/1200) = 0.0875.
+        Assert.Equal(0, vm.PreviewRectX, 4);
+        Assert.Equal(0, vm.PreviewRectY, 4);
+        Assert.Equal(1600, vm.PreviewRectWidth, 4);
+        Assert.Equal(1200, vm.PreviewRectHeight, 4);
+        Assert.Equal(140, vm.PreviewViewWidth, 4);
+        Assert.Equal(105, vm.PreviewViewHeight, 4);
+        Assert.Equal(0, vm.PreviewViewLeft, 4);
+        Assert.Equal(0, vm.PreviewViewTop, 4);
 
-        // Frame 200×150 at the same top-left (scale 0.25 → 800×600 source px).
+        // Frame 200×150 at the same top-left (scale 0.25 → rect 800×600 px at (0,0)).
         vm.ResizeFrame(CropCorner.BottomRight, -200, -150);
+        // contain fit: min(140/800, 105/600) = 0.175.
+        Assert.Equal(800, vm.PreviewRectWidth, 4);
+        Assert.Equal(600, vm.PreviewRectHeight, 4);
+        Assert.Equal(140, vm.PreviewViewWidth, 4);
+        Assert.Equal(105, vm.PreviewViewHeight, 4);
+    }
 
-        Assert.Equal(0, vm.PreviewX, 6);
-        Assert.Equal(0, vm.PreviewY, 6);
-        Assert.Equal(0.5, vm.PreviewWidth, 6);
-        Assert.Equal(0.5, vm.PreviewHeight, 6);
+    [Fact]
+    public void PreviewTransform_PannedSelection_RectMatchesSourcePixels()
+    {
+        var (vm, _) = MakeVm();
+        vm.ZoomAt(3, 300, 225); // zoom = 2, display 1200×900, left = -300, top = -225
+        vm.PanBy(50, 25);
+
+        // scale = 0.75; image top-left = (-250, -200).
+        // rect = (466.67, 366.67, 533.33, 400) px — exactly 4:3.
+        Assert.Equal(350.0 / 0.75, vm.PreviewRectX, 3);
+        Assert.Equal(275.0 / 0.75, vm.PreviewRectY, 3);
+        Assert.Equal(400.0 / 0.75, vm.PreviewRectWidth, 3);
+        Assert.Equal(300.0 / 0.75, vm.PreviewRectHeight, 3);
+        // contain fit: min(140/533.33, 105/400) = 0.2625 → selection fills the box.
+        Assert.Equal(140, vm.PreviewViewWidth, 3);
+        Assert.Equal(105, vm.PreviewViewHeight, 3);
+        Assert.Equal(0, vm.PreviewViewLeft, 3);
+        Assert.Equal(0, vm.PreviewViewTop, 3);
+    }
+
+    [Fact]
+    public void PreviewTransform_TallSelection_SymmetricSideMargins()
+    {
+        var (vm, _) = MakeVm(800, 1200); // portrait source
+        // Narrow the frame to 200×300 → rect 400×600 px (tall), contain fit:
+        // min(140/400, 105/600) = 0.175 → shown 70×105 centered.
+        vm.ResizeFrame(CropCorner.BottomRight, -200, 0);
+
+        Assert.Equal(70, vm.PreviewViewWidth, 3);
+        Assert.Equal(105, vm.PreviewViewHeight, 3);
+        Assert.Equal(35, vm.PreviewViewLeft, 3); // (140-70)/2 — symmetric margins
+        Assert.Equal(0, vm.PreviewViewTop, 3);
     }
 }
