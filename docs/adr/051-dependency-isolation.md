@@ -81,3 +81,10 @@
 - Build: R19/R21/R24/R25 — 0 errors / 0 warnings.
 - Tests: 2019/2019 (46 новых: manifest builder, conflict analyzer, obsolete cleaner, backup, manifest writer).
 - Ручной тест (обязателен до релиза): чистая установка и обновление поверх (Updater + setup.exe) на R21 и R25; симуляция конфликта — адд-ин со старым `CommunityToolkit.Mvvm` 8.2.x рядом; проверка изоляции в логе.
+
+### Известные безобидные предупреждения ILRepack (не дефекты)
+
+При merge ILRepack печатает два класса WARN, оба проверены функционально (repro на Release-битах: 3D-узел, сериализация STJ, построение ServiceProvider — всё работает):
+
+1. `Duplicate resource ILLink.Substitutions.xml` — метаданные для IL Linker (триммер .NET, у нас не используется); при merge нескольких .NET-библиотек с одноимённым ресурсом остаётся одна копия. На runtime не влияет.
+2. `Method reference ... JsonConverter::set_ConverterStrategy ... modreq(IsExternalInit)` — ILRepack консервативно предупреждает, что определение `IsExternalInit` может отсутствовать в merge-наборе. Фактически тип `System.Runtime.CompilerServices.IsExternalInit` присутствует в merged-сборке (проверено на Release.R24), ссылка разрешается. К тому же init-сеттер `ConverterStrategy` вызывается только из object-initializer в пользовательском коде — наши кодовые пути его не трогают.
