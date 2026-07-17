@@ -91,10 +91,22 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
         }
         finally
         {
+            // Notify BEFORE the refresh: if the refresh below throws, the UI
+            // would otherwise stay stuck at IsRunning=true (dead Update button)
+            // until the next database switch.
             IsRunning = false;
+            StateChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        await RefreshAsync(_currentRevitVersion).ConfigureAwait(true);
+        try
+        {
+            await RefreshAsync(_currentRevitVersion).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"DbMigration post-update refresh failed: {ex.Message} [Action: переключите базу туда-сюда для повторной проверки состояния]");
+        }
     }
 
     private void SetState(int pending)

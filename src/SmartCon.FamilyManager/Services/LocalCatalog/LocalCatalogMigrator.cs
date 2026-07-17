@@ -76,11 +76,6 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 20, MigrateV20Async, ct);
         await RunMigrationAsync(connection, 21, MigrateV21Async, ct);
 
-        // Diagnostic: after the V15/V17/V18 table rebuilds, any remaining FK
-        // violation (orphan rows the cleanups could not anticipate) must be
-        // visible in the log — it would break the NEXT rebuild or write.
-        await LogForeignKeyViolationsAsync(connection, ct);
-
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
         {
@@ -600,6 +595,15 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         Func<SqliteConnection, CancellationToken, Task> migration,
         CancellationToken ct)
     {
+        // Skip cheaply when the migration is already applied — the FK-off
+        // dance and especially foreign_key_check (full-database scan) must
+        // NOT run on every database connect/switch.
+        if (await GetSchemaVersionAsync(connection, ct) >= version)
+        {
+            await migration(connection, ct);
+            return;
+        }
+
         using (var fkOff = connection.CreateCommand())
         {
             fkOff.CommandText = "PRAGMA foreign_keys=OFF";

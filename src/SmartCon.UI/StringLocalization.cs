@@ -290,6 +290,7 @@ public static class StringLocalization
         public const string FM_HashRecalc_PurgeConfirmTitle = "FM_HashRecalc_PurgeConfirmTitle";
         public const string FM_HashRecalc_PurgeConfirmBody = "FM_HashRecalc_PurgeConfirmBody";
         public const string FM_HashRecalc_PurgeResult = "FM_HashRecalc_PurgeResult";
+        public const string FM_HashRecalc_PurgeDirsFailed = "FM_HashRecalc_PurgeDirsFailed";
         public const string FM_BatchImport_StatusError = "FM_BatchImport_StatusError";
         public const string FM_BatchImport_ActionIncrement = "FM_BatchImport_ActionIncrement";
         public const string FM_BatchImport_ActionOverwrite = "FM_BatchImport_ActionOverwrite";

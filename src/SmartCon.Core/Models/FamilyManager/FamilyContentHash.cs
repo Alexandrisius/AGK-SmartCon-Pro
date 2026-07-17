@@ -39,6 +39,13 @@ public sealed record FamilyContentHash(
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
 ///     rows are excluded from the pending-migration count so the
 ///     migration dialog does not reappear forever.
+/// -2 (<see cref="RecalculationMissing"/>) — sentinel written by the
+///     migration for versions whose managed file is absent from disk.
+///     The migration cannot process them by definition, so they are
+///     excluded from the pending count (the update banner is about hash
+///     freshness, not file hygiene) — the user decides: purge the
+///     catalog rows from the summary screen, or restore the files and
+///     re-import.
 /// </remarks>
 public static class FamilyContentHashFormat
 {
@@ -51,4 +58,13 @@ public static class FamilyContentHashFormat
     /// a stale format) and are excluded from the pending count.
     /// </summary>
     public const int RecalculationSkipped = -1;
+
+    /// <summary>
+    /// Sentinel <c>hash_format_version</c> for versions whose managed
+    /// file was not found on disk during the migration. Excluded from
+    /// the pending count (the migration cannot recalculate what it
+    /// cannot open) but kept in the catalog for the user's purge /
+    /// restore decision.
+    /// </summary>
+    public const int RecalculationMissing = -2;
 }

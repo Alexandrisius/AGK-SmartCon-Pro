@@ -88,7 +88,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                     JOIN catalog_items ci ON ci.id = cv.catalog_item_id
                     JOIN family_files ff ON ff.id = cv.file_id
                     WHERE ci.family_source = 'loadable'
-                      AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1))
+                      AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1, -2))
                       AND cv.revit_major_version <= @maxRevit
                     GROUP BY cv.catalog_item_id, cv.version_label
                 )
@@ -103,7 +103,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                 FROM catalog_versions cv
                 JOIN catalog_items ci ON ci.id = cv.catalog_item_id
                 WHERE ci.family_source = 'system'
-                  AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1))
+                  AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1, -2))
                 """;
             var systemObj = await sysCmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
             var system = systemObj is long s ? (int)s : 0;
@@ -148,7 +148,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
         var updatedCount = 0;
         var wasCancelled = false;
 
-        var pendingWrites = new List<(IReadOnlyList<string> VersionIds, string? Hash, string ItemId, string Label, string? CurrentLabel)>();
+        var pendingWrites = new List<(IReadOnlyList<string> VersionIds, string? Hash, string ItemId, string Label, string? CurrentLabel, int MarkerWhenNoHash)>();
 
         for (var i = 0; i < groups.Count; i++)
         {
@@ -172,6 +172,10 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                     $"[Action: decide on the summary screen — purge the catalog row or keep it if the drive is temporarily unavailable]");
                 missing.Add(new HashRecalculationMissingFile(
                     group.CatalogItemId, group.ItemName, group.VersionLabel, group.FileName));
+                // The migration cannot recalculate what it cannot open —
+                // mark as Missing (-2) so these rows stop holding the
+                // update banner open. The summary still offers the purge.
+                pendingWrites.Add((group.AllVersionIds, null, group.CatalogItemId, group.VersionLabel, group.CurrentVersionLabel, FamilyContentHashFormat.RecalculationMissing));
                 continue;
             }
 
@@ -199,12 +203,12 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                     $"[Action: the version is marked as skipped (-1) and will not be retried; re-import the family to restore dedup]");
                 failed.Add(new HashRecalculationFailedFile(
                     group.ItemName, group.VersionLabel, group.FileName, error));
-                pendingWrites.Add((group.AllVersionIds, null, group.CatalogItemId, group.VersionLabel, group.CurrentVersionLabel));
+                pendingWrites.Add((group.AllVersionIds, null, group.CatalogItemId, group.VersionLabel, group.CurrentVersionLabel, FamilyContentHashFormat.RecalculationSkipped));
             }
             else
             {
                 var hash = _contentHasher.ComputeForLoadable(extract.LoadableSnapshot);
-                pendingWrites.Add((group.AllVersionIds, hash?.HexString, group.CatalogItemId, group.VersionLabel, group.CurrentVersionLabel));
+                pendingWrites.Add((group.AllVersionIds, hash?.HexString, group.CatalogItemId, group.VersionLabel, group.CurrentVersionLabel, FamilyContentHashFormat.RecalculationSkipped));
                 if (hash is not null)
                     updatedCount += group.AllVersionIds.Count;
             }
@@ -240,7 +244,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
             WasCancelled: wasCancelled);
     }
 
-    public async Task<(int DeletedItems, int DeletedVersions)> PurgeMissingAsync(
+    public async Task<(int DeletedItems, int DeletedVersions, int FailedDirectories)> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
         CancellationToken ct = default)
     {
@@ -250,6 +254,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
 
         var deletedItems = 0;
         var deletedVersions = 0;
+        var failedDirectories = 0;
 
         foreach (var itemGroup in missing.GroupBy(m => m.CatalogItemId))
         {
@@ -270,11 +275,31 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                 // catalog item (FK CASCADE cleans versions/types/attributes).
                 SmartConLogger.Info(
                     $"Purging catalog item {itemId} ('{itemGroup.First().ItemName}') — all versions missing");
-                var deleted = await _writableProvider.DeleteItemAsync(itemId, ct).ConfigureAwait(false);
-                if (deleted)
+                try
                 {
-                    deletedItems++;
-                    deletedVersions += itemGroup.Count();
+                    var deleted = await _writableProvider.DeleteItemAsync(itemId, ct).ConfigureAwait(false);
+                    if (deleted)
+                    {
+                        deletedItems++;
+                        deletedVersions += itemGroup.Count();
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // The files are ALREADY missing/unreachable — a filesystem
+                    // error must not block the catalog cleanup (that is the
+                    // whole point of the purge). Delete the rows DB-only and
+                    // report the stale directory for manual removal.
+                    failedDirectories++;
+                    SmartConLogger.Warn(
+                        $"Purge: cannot delete files for item {itemId}: {ex.Message} — deleting catalog rows anyway. " +
+                        $"[Action: удалите папку вручную: files\\{itemId}]");
+                    var dbDeleted = await DeleteItemDbOnlyAsync(itemId, ct).ConfigureAwait(false);
+                    if (dbDeleted)
+                    {
+                        deletedItems++;
+                        deletedVersions += itemGroup.Count();
+                    }
                 }
                 continue;
             }
@@ -308,24 +333,74 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
 
             foreach (var label in itemGroup.Select(g => g.VersionLabel).Distinct(StringComparer.Ordinal))
             {
-                var delResult = await _writableProvider.DeleteVersionAsync(itemId, label, ct).ConfigureAwait(false);
-                if (delResult.Success)
+                try
                 {
-                    // One label may have several Revit variants — count the
-                    // actual deleted rows, not the labels.
-                    deletedVersions += Math.Max(1, delResult.VersionsDeleted);
+                    var delResult = await _writableProvider.DeleteVersionAsync(itemId, label, ct).ConfigureAwait(false);
+                    if (delResult.Success)
+                    {
+                        // One label may have several Revit variants — count the
+                        // actual deleted rows, not the labels.
+                        deletedVersions += Math.Max(1, delResult.VersionsDeleted);
+                    }
+                    else
+                    {
+                        SmartConLogger.Warn(
+                            $"Failed to delete version '{label}' of item {itemId}: {delResult.ErrorMessage} " +
+                            $"[Action: see prior log lines; the row can be deleted manually from the properties dialog]");
+                    }
                 }
-                else
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
+                    failedDirectories++;
                     SmartConLogger.Warn(
-                        $"Failed to delete version '{label}' of item {itemId}: {delResult.ErrorMessage} " +
-                        $"[Action: see prior log lines; the row can be deleted manually from the properties dialog]");
+                        $"Purge: cannot delete files for version '{label}' of item {itemId}: {ex.Message} — deleting catalog rows anyway. " +
+                        $"[Action: удалите папку вручную: files\\{itemId}\\{label}]");
+                    var dbDeleted = await DeleteVersionDbOnlyAsync(itemId, label, ct).ConfigureAwait(false);
+                    deletedVersions += dbDeleted;
                 }
             }
         }
 
-        SmartConLogger.Info($"Purge finished: deletedItems={deletedItems}, deletedVersions={deletedVersions}");
-        return (deletedItems, deletedVersions);
+        SmartConLogger.Info(
+            $"Purge finished: deletedItems={deletedItems}, deletedVersions={deletedVersions}, failedDirectories={failedDirectories}");
+        return (deletedItems, deletedVersions, failedDirectories);
+    }
+
+    /// <summary>
+    /// DB-only fallback for purge when the managed directory is unreachable
+    /// (network drive permissions): deletes the catalog item row and lets the
+    /// FK cascade clean versions/types/attributes/files. The stale directory
+    /// is left on disk for manual removal.
+    /// </summary>
+    private async Task<bool> DeleteItemDbOnlyAsync(string itemId, CancellationToken ct)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using (var pragmaCmd = connection.CreateCommand())
+        {
+            pragmaCmd.CommandText = "PRAGMA foreign_keys = ON";
+            await pragmaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM catalog_items WHERE id = @id";
+        cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
+    }
+
+    private async Task<int> DeleteVersionDbOnlyAsync(string itemId, string label, CancellationToken ct)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using (var pragmaCmd = connection.CreateCommand())
+        {
+            pragmaCmd.CommandText = "PRAGMA foreign_keys = ON";
+            await pragmaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM catalog_versions WHERE catalog_item_id = @id AND version_label = @label";
+        cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+        cmd.Parameters.Add(new SqliteParameter("@label", label));
+        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private async Task<int> ReflagSystemRowsAsync(CancellationToken ct)
@@ -341,7 +416,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                 cmd.Transaction = tx;
                 cmd.CommandText = """
                     UPDATE catalog_versions SET hash_format_version = 2
-                    WHERE (hash_format_version IS NULL OR hash_format_version NOT IN (2, -1))
+                    WHERE (hash_format_version IS NULL OR hash_format_version NOT IN (2, -1, -2))
                       AND catalog_item_id IN (SELECT id FROM catalog_items WHERE family_source = 'system')
                     """;
                 versions = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -353,7 +428,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                 cmd.CommandText = """
                     UPDATE catalog_items SET hash_format_version = 2
                     WHERE family_source = 'system'
-                      AND (hash_format_version IS NULL OR hash_format_version NOT IN (2, -1))
+                      AND (hash_format_version IS NULL OR hash_format_version NOT IN (2, -1, -2))
                     """;
                 await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -384,7 +459,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
             JOIN catalog_items ci ON ci.id = cv.catalog_item_id
             JOIN family_files ff ON ff.id = cv.file_id
             WHERE ci.family_source = 'loadable'
-              AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1))
+              AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1, -2))
             ORDER BY ci.id, cv.version_label, cv.revit_major_version DESC
             """;
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -457,7 +532,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                 FROM catalog_versions cv
                 JOIN catalog_items ci ON ci.id = cv.catalog_item_id
                 WHERE ci.family_source = 'loadable'
-                  AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1))
+                  AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1, -2))
                 GROUP BY cv.catalog_item_id, cv.version_label
                 HAVING MAX(cv.revit_major_version) > @maxRevit
                   AND SUM(CASE WHEN cv.revit_major_version <= @maxRevit THEN 1 ELSE 0 END) = 0
@@ -469,7 +544,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
     }
 
     private async Task CommitBatchAsync(
-        List<(IReadOnlyList<string> VersionIds, string? Hash, string ItemId, string Label, string? CurrentLabel)> writes,
+        List<(IReadOnlyList<string> VersionIds, string? Hash, string ItemId, string Label, string? CurrentLabel, int MarkerWhenNoHash)> writes,
         CancellationToken ct)
     {
         using var connection = _database.CreateConnection();
@@ -477,7 +552,7 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
         using var tx = connection.BeginTransaction();
         try
         {
-            foreach (var (versionIds, hash, itemId, label, currentLabel) in writes)
+            foreach (var (versionIds, hash, itemId, label, currentLabel, markerWhenNoHash) in writes)
             {
                 // One UPDATE for ALL Revit variants of the group.
                 using (var cmd = connection.CreateCommand())
@@ -501,13 +576,14 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                     }
                     else
                     {
-                        // Unreadable file — permanently skipped (never retried,
-                        // excluded from the pending count).
+                        // Unreadable (-1) or missing (-2) file — permanently
+                        // out of the pending count (never retried).
                         cmd.CommandText = $"""
                             UPDATE catalog_versions
-                            SET hash_format_version = -1
+                            SET hash_format_version = @marker
                             WHERE id IN ({string.Join(", ", idParams)})
                             """;
+                        cmd.Parameters.Add(new SqliteParameter("@marker", markerWhenNoHash));
                     }
                     await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }

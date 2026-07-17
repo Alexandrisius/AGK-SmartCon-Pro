@@ -376,6 +376,7 @@ public static partial class LocalizationService
         ru["FM_HashRecalc_PurgeConfirmTitle"] = "Удаление записей"; en["FM_HashRecalc_PurgeConfirmTitle"] = "Delete records";
         ru["FM_HashRecalc_PurgeConfirmBody"] = "Удалить из каталога {0} записей о недоступных файлах? Действие нельзя отменить."; en["FM_HashRecalc_PurgeConfirmBody"] = "Delete {0} records of unavailable files from the catalog? This action cannot be undone.";
         ru["FM_HashRecalc_PurgeResult"] = "Удалено семейств: {0}, версий: {1}."; en["FM_HashRecalc_PurgeResult"] = "Families deleted: {0}, versions: {1}.";
+        ru["FM_HashRecalc_PurgeDirsFailed"] = "Папки на диске удалить не удалось (нет доступа): {0} — удалите их вручную."; en["FM_HashRecalc_PurgeDirsFailed"] = "Could not delete directories on disk (access denied): {0} — please remove them manually.";
 
         ru["FM_AttrStatus_Found"] = "Найдено"; en["FM_AttrStatus_Found"] = "Found";
         ru["FM_AttrStatus_MissingParameter"] = "Параметр не найден"; en["FM_AttrStatus_MissingParameter"] = "Parameter not found";

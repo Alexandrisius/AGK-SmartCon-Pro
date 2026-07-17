@@ -279,7 +279,7 @@ public sealed class CatalogHashRecalculationServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recalculate_MissingFile_ReportedAndLeftPending()
+    public async Task Recalculate_MissingFile_MarkedMissingAndExcludedFromPending()
     {
         var (itemId, versionId, _) = await SeedLegacyLoadableAsync("FamA", createFileOnDisk: false);
 
@@ -290,9 +290,12 @@ public sealed class CatalogHashRecalculationServiceTests : IDisposable
         Assert.Equal(0, result.UpdatedCount);
         Assert.Empty(_extractor.OpenedPaths);
 
-        // NOT marked — the user decides (purge or keep), so it stays pending.
+        // Marked as Missing (-2): the migration cannot recalculate what it
+        // cannot open, so the row must not hold the update banner open —
+        // the user decides (purge or restore + re-import).
         var (fmt, _) = await ReadVersionHashAsync(versionId);
-        Assert.Null(fmt);
+        Assert.Equal(-2, fmt);
+        Assert.Equal(0, await _sut.CountPendingAsync(2025));
 
         // The denormalized item columns must stay untouched — the migration
         // never writes a NULL/empty hash over the active item's data.
@@ -359,10 +362,11 @@ public sealed class CatalogHashRecalculationServiceTests : IDisposable
         var result = await _sut.RecalculateAsync(2025, null, CancellationToken.None);
         Assert.Single(result.MissingFiles);
 
-        var (deletedItems, deletedVersions) = await _sut.PurgeMissingAsync(result.MissingFiles, CancellationToken.None);
+        var (deletedItems, deletedVersions, failedDirs) = await _sut.PurgeMissingAsync(result.MissingFiles, CancellationToken.None);
 
         Assert.Equal(1, deletedItems);
         Assert.Equal(1, deletedVersions);
+        Assert.Equal(0, failedDirs);
         Assert.Null(await _fixture.GetProvider().GetItemAsync(itemId));
     }
 
@@ -378,10 +382,11 @@ public sealed class CatalogHashRecalculationServiceTests : IDisposable
         {
             new HashRecalculationMissingFile(itemId, "FamA", "v1", "FamA.rfa")
         };
-        var (deletedItems, deletedVersions) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+        var (deletedItems, deletedVersions, failedDirs) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
 
         Assert.Equal(0, deletedItems);
         Assert.Equal(1, deletedVersions);
+        Assert.Equal(0, failedDirs);
 
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.NotNull(item);
@@ -394,6 +399,37 @@ public sealed class CatalogHashRecalculationServiceTests : IDisposable
         var versions = await _fixture.GetProvider().GetVersionsAsync(itemId);
         Assert.Single(versions);
         Assert.Equal(v2Id, versions[0].Id);
+    }
+
+    [Fact]
+    public async Task PurgeMissing_DirectoryLocked_DeletesRowsDbOnlyAndReports()
+    {
+        // Item whose file is "missing" for the migration, but the managed
+        // directory actually exists and is locked (simulating a network
+        // drive permission problem): the catalog cleanup must still happen
+        // (DB-only), with the stale directory reported for manual removal.
+        var (itemId, _, _) = await SeedLegacyLoadableAsync("FamA", createFileOnDisk: false);
+
+        var itemDir = Path.Combine(_fixture.GetDatabaseRoot(), "files", itemId);
+        Directory.CreateDirectory(itemDir);
+        var lockFile = Path.Combine(itemDir, "stale.tmp");
+        await File.WriteAllTextAsync(lockFile, "locked");
+        await using var lockHandle = new FileStream(lockFile, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var missing = new[]
+        {
+            new HashRecalculationMissingFile(itemId, "FamA", "v1", "FamA.rfa")
+        };
+        var (deletedItems, deletedVersions, failedDirs) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+
+        // Catalog rows are gone despite the locked directory.
+        Assert.Equal(1, deletedItems);
+        Assert.Equal(1, deletedVersions);
+        Assert.Equal(1, failedDirs);
+        Assert.Null(await _fixture.GetProvider().GetItemAsync(itemId));
+
+        // The stale directory is left for manual removal.
+        Assert.True(Directory.Exists(itemDir));
     }
 
     private async Task<(string ItemId, string VersionId, string RelativePath)> SeedAdditionalVersionAsync(

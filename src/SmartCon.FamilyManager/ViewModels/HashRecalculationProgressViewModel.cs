@@ -229,7 +229,7 @@ public sealed partial class HashRecalculationProgressViewModel
 
         try
         {
-            var (deletedItems, deletedVersions) = await _recalculationService
+            var (deletedItems, deletedVersions, failedDirectories) = await _recalculationService
                 .PurgeMissingAsync(missing, CancellationToken.None)
                 .ConfigureAwait(true);
 
@@ -238,6 +238,13 @@ public sealed partial class HashRecalculationProgressViewModel
                 LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeResult)
                     ?? "Удалено семейств: {0}, версий: {1}.",
                 deletedItems, deletedVersions);
+            if (failedDirectories > 0)
+            {
+                SummaryText += Environment.NewLine + string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeDirsFailed)
+                        ?? "Папки на диске удалить не удалось (нет доступа): {0} — удалите их вручную.",
+                    failedDirectories);
+            }
         }
         catch (Exception ex)
         {

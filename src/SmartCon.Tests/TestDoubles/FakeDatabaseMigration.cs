@@ -24,6 +24,7 @@ public sealed class FakeDatabaseMigration : IDatabaseMigration
     public int RunCalls { get; private set; }
     public List<string>? SharedRunLog { get; set; }
     public Exception? CountException { get; set; }
+    public Exception? RunException { get; set; }
 
     /// <summary>Pending value returned after the sequence is exhausted.</summary>
     public int TerminalPending { get; set; }
@@ -42,6 +43,7 @@ public sealed class FakeDatabaseMigration : IDatabaseMigration
     {
         RunCalls++;
         SharedRunLog?.Add(Id);
+        if (RunException is not null) throw RunException;
         // A completed migration drains its pending queue to zero.
         _pendingSequence.Clear();
         _pendingSequence.Enqueue(TerminalPending);

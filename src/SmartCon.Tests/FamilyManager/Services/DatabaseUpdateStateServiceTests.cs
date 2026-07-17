@@ -143,4 +143,25 @@ public sealed class DatabaseUpdateStateServiceTests
         Assert.True(raised >= 2, $"expected >= 2 StateChanged events, got {raised}");
         Assert.False(sut.IsRunning);
     }
+
+    [Fact]
+    public async Task UpdateAsync_MigrationThrows_IsRunningResetAndNotified()
+    {
+        var broken = new FakeDatabaseMigration("broken", order: 1, 1)
+        {
+            RunException = new InvalidOperationException("migration blew up")
+        };
+        var (sut, _) = CreateSut(broken);
+        await sut.RefreshAsync(2025);
+        var notifications = new List<bool>();
+        sut.StateChanged += (_, _) => notifications.Add(sut.IsRunning);
+
+        await sut.UpdateAsync();
+
+        // The UI must not get stuck at IsRunning=true (dead Update button)
+        // even when the migration flow fails.
+        Assert.False(sut.IsRunning);
+        Assert.Contains(false, notifications);
+        Assert.True(notifications.Count >= 2, $"expected >= 2 StateChanged events, got {notifications.Count}");
+    }
 }

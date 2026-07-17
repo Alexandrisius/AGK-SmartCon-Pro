@@ -528,8 +528,8 @@
                         </Grid>
                     </Viewbox>
                 </ToggleButton>
-                <Border Width="8" Height="8"
-                        CornerRadius="4"
+                <Border Width="6" Height="6"
+                        CornerRadius="3"
                         Background="{DynamicResource DangerBrush}"
                         HorizontalAlignment="Right" VerticalAlignment="Top"
                         Margin="0,2,2,0"

@@ -64,10 +64,13 @@ public interface ICatalogHashRecalculationService
     /// version. When a deleted version was the active one, the active
     /// pointer is moved to the newest remaining version and the item's
     /// content hash / name are re-synchronized.
+    /// Filesystem errors (network drive permissions) do NOT block the
+    /// cleanup — rows are deleted DB-only and the stale directories are
+    /// reported for manual removal.
     /// </summary>
-    /// <returns>Number of deleted catalog items + versions (for the
-    /// summary message).</returns>
-    Task<(int DeletedItems, int DeletedVersions)> PurgeMissingAsync(
+    /// <returns>Number of deleted catalog items + versions, and the number
+    /// of directories that could not be removed (manual cleanup needed).</returns>
+    Task<(int DeletedItems, int DeletedVersions, int FailedDirectories)> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
         CancellationToken ct = default);
 }
