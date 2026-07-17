@@ -119,7 +119,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     public event Action? AvatarChanged;
 
     // Original values for dirty tracking (primary tab only)
-    private readonly string _originalName;
+    private string _originalName;
     private readonly string? _originalDescription;
     private readonly string? _originalCategoryId;
     private readonly List<string> _originalTags;
@@ -567,6 +567,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
     public async Task SaveAsync()
     {
+        if (IsReadOnly) return;
         if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
         try
         {

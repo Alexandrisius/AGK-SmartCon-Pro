@@ -590,7 +590,7 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             WHERE cv.content_hash = @hash
               AND cv.hash_format_version = @fmt
               AND ci.family_source = @source
-            ORDER BY cv.published_at_utc DESC
+            ORDER BY cv.published_at_utc DESC, cv.rowid DESC
             LIMIT 1
             """;
         cmd.Parameters.Add(new SqliteParameter("@hash", hexHash));

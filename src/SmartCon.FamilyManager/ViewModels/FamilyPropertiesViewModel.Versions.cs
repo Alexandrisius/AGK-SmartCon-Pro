@@ -158,6 +158,10 @@ public sealed partial class FamilyPropertiesViewModel
                 // the item in the DB — reflect it in the dialog.
                 if (result.NameChanged && result.NewName is not null)
                 {
+                    // The rename is already persisted by SetActiveVersionAsync —
+                    // sync the "original" BEFORE assigning Name so
+                    // HasUnsavedChanges stays false.
+                    _originalName = result.NewName;
                     Name = result.NewName;
                 }
                 SmartConLogger.Info(

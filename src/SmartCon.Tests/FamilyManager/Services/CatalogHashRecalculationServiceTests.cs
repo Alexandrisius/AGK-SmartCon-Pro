@@ -281,7 +281,7 @@ public sealed class CatalogHashRecalculationServiceTests : IDisposable
     [Fact]
     public async Task Recalculate_MissingFile_ReportedAndLeftPending()
     {
-        var (_, versionId, _) = await SeedLegacyLoadableAsync("FamA", createFileOnDisk: false);
+        var (itemId, versionId, _) = await SeedLegacyLoadableAsync("FamA", createFileOnDisk: false);
 
         var result = await _sut.RecalculateAsync(2025, null, CancellationToken.None);
 
@@ -293,6 +293,13 @@ public sealed class CatalogHashRecalculationServiceTests : IDisposable
         // NOT marked — the user decides (purge or keep), so it stays pending.
         var (fmt, _) = await ReadVersionHashAsync(versionId);
         Assert.Null(fmt);
+
+        // The denormalized item columns must stay untouched — the migration
+        // never writes a NULL/empty hash over the active item's data.
+        var item = await _fixture.GetProvider().GetItemAsync(itemId);
+        Assert.NotNull(item);
+        Assert.Null(item!.ContentHash);
+        Assert.Null(item.HashFormatVersion);
     }
 
     [Fact]
@@ -379,6 +386,10 @@ public sealed class CatalogHashRecalculationServiceTests : IDisposable
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.NotNull(item);
         Assert.Equal("v2", item!.CurrentVersionLabel);
+        // Switching the active pointer must re-sync the denormalized item
+        // hash/format to the new active version (ADR-049 §3).
+        Assert.Equal("SEEDEDHASH", item.ContentHash);
+        Assert.Equal(2, item.HashFormatVersion);
 
         var versions = await _fixture.GetProvider().GetVersionsAsync(itemId);
         Assert.Single(versions);

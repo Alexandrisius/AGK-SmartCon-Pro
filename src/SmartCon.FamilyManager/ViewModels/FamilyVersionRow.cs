@@ -141,7 +141,6 @@ public sealed partial class FamilyVersionRow : ObservableObject
         HashFormatVersion = hashFormatVersion;
         PublishedBy = publishedBy;
         TypeNames = typeNames ?? Array.Empty<string>();
-        FileName = fileName;
     }
 
     /// <summary>

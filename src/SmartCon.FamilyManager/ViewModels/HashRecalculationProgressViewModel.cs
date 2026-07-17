@@ -100,6 +100,20 @@ public sealed partial class HashRecalculationProgressViewModel
                 () => _recalculationService.RecalculateAsync(
                     _currentRevitVersion, progress, _runCts.Token));
         }
+        catch (OperationCanceledException)
+        {
+            // Defensive: the service handles cancel between files and
+            // returns WasCancelled=true; an OCE escaping anyway (e.g. from
+            // a pending-group query) must still render the cancelled
+            // summary, not a fake file-read failure.
+            _result = new CatalogHashRecalculationResult(
+                UpdatedCount: 0,
+                SystemRelabeledCount: 0,
+                NewerRevitCount: 0,
+                MissingFiles: Array.Empty<HashRecalculationMissingFile>(),
+                FailedFiles: Array.Empty<HashRecalculationFailedFile>(),
+                WasCancelled: true);
+        }
         catch (Exception ex)
         {
             SmartConLogger.Error(

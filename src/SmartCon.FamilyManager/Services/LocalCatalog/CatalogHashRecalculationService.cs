@@ -211,9 +211,12 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
 
             // Commit in batches so a cancel/crash never loses more than
             // CommitBatchSize files of work (and never holds a long lock).
+            // The batch itself always commits atomically (None token) —
+            // cancellation is handled BETWEEN files, so the user never
+            // sees a cancelled batch reported as a file-read failure.
             if (pendingWrites.Count >= CommitBatchSize)
             {
-                await CommitBatchAsync(pendingWrites, ct).ConfigureAwait(false);
+                await CommitBatchAsync(pendingWrites, CancellationToken.None).ConfigureAwait(false);
                 pendingWrites.Clear();
             }
         }
@@ -308,7 +311,9 @@ internal sealed class CatalogHashRecalculationService : ICatalogHashRecalculatio
                 var delResult = await _writableProvider.DeleteVersionAsync(itemId, label, ct).ConfigureAwait(false);
                 if (delResult.Success)
                 {
-                    deletedVersions++;
+                    // One label may have several Revit variants — count the
+                    // actual deleted rows, not the labels.
+                    deletedVersions += Math.Max(1, delResult.VersionsDeleted);
                 }
                 else
                 {

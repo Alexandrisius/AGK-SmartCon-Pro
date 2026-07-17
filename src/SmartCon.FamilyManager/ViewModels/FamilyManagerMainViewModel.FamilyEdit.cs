@@ -958,7 +958,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    public async Task MoveFamilyToCategoryAsync(string familyId, string? targetCategoryId)
+    private async Task MoveFamilyToCategoryAsync(string familyId, string? targetCategoryId)
     {
         if (!CanEdit)
         {

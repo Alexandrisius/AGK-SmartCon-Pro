@@ -495,8 +495,7 @@
 
             <!-- Database tools popup -->
             <Grid Grid.Column="2">
-                <ToggleButton Grid.Column="2"
-                              x:Name="DbToolsToggle"
+                <ToggleButton x:Name="DbToolsToggle"
                               IsChecked="{Binding IsOpen, ElementName=DbToolsPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                               Width="28"
                               Margin="0,0,0,0">

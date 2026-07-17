@@ -175,6 +175,9 @@ public sealed partial class FamilyManagerMainViewModel
 
     private async Task UpdateCategoryStaleAsync(CategoryNodeViewModel category, bool overwriteParameterValues)
     {
+        // Batch stale-update loads families into the project — same gate as
+        // UpdateStale* (Issue #126 read-only database while migrations pending).
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         IsStaleCheckInProgress = true;
         SmartConLogger.Debug(
             $"UpdateCategoryStaleAsync START: IsStaleCheckInProgress=true (was false). " +

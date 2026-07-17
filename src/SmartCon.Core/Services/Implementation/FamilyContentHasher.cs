@@ -37,7 +37,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             ("TypeCount", snapshot.Types.Count),
             ("FormCount", snapshot.Geometry.TotalFormCount),
             ("Hash", hex));
-        SmartConLogger.Info($"Loadable hash computed: {hex} ({snapshot.Parameters.Count} params, {snapshot.Types.Count} types, {snapshot.Geometry.TotalFormCount} forms)");
+        SmartConLogger.Info($"Loadable hash computed ({snapshot.Parameters.Count} params, {snapshot.Types.Count} types, {snapshot.Geometry.TotalFormCount} forms)");
         var preview = canonical.Length > 200
             ? canonical[..200] + "…[truncated]"
             : canonical;
@@ -72,7 +72,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             ("Category", snapshot.CategoryName),
             ("TypeCount", snapshot.Types.Count),
             ("Hash", hex));
-        SmartConLogger.Info($"System hash computed: {hex} ({snapshot.CategoryName}, {snapshot.Types.Count} types)");
+        SmartConLogger.Info($"System hash computed ({snapshot.CategoryName}, {snapshot.Types.Count} types)");
         var preview = canonical.Length > 200
             ? canonical[..200] + "…[truncated]"
             : canonical;

@@ -54,7 +54,7 @@ FamilyManagerPaneControl.xaml              — красная точка + ба�
 | Область | Команды |
 |---|---|
 | Импорт | `ImportFilesAsync`, `ImportFileToCategoryAsync`, `ImportSelectedElementsAsync`, `ImportActiveFileAsync` |
-| Загрузка в проект | `LoadToProject*`, `UpdateStale*`, loadable `PlaceTypeAsync`, loadable `StartPlacementDrag` (DnD) |
+| Загрузка в проект | `LoadToProject*`, `UpdateStale*`, `UpdateCategoryStaleAsync` (batch «Обновить» категории), loadable `PlaceTypeAsync`, loadable `StartPlacementDrag` (DnD) |
 | Семейства | `DeleteFamilyAsync`, `DropFamilyAsync` (DnD по категориям), `OpenCategoryEditorAsync` |
 | Свойства | `SaveAsync` (Общие), `MakeActiveAsync`, `DeleteVersion`, все write-команды ассетов (avatar/files/primary/version-binding) |
 

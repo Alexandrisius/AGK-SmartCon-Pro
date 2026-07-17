@@ -45,7 +45,7 @@
             <Style x:Key="VersionFileNameCell" TargetType="TextBlock"
                    BasedOn="{StaticResource LeftTextCell}">
                 <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
-                <Setter Property="ToolTip" Value="{Binding FileName}"/>
+                <Setter Property="ToolTip" Value="{Binding FileName, TargetNullValue='—'}"/>
             </Style>
         </ui:SingletonResources>
     </Window.Resources>
