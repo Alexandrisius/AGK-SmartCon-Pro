@@ -47,25 +47,39 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             await versionCmd.ExecuteNonQueryAsync(ct);
         }
 
-        await MigrateV2Async(connection, ct);
-        await MigrateV3Async(connection, ct);
-        await MigrateV4Async(connection, ct);
-        await MigrateV5Async(connection, ct);
-        await MigrateV6Async(connection, ct);
-        await MigrateV7Async(connection, ct);
-        await MigrateV9Async(connection, ct);
-        await MigrateV10Async(connection, ct);
-        await MigrateV11Async(connection, ct);
-        await MigrateV12Async(connection, ct);
-        await MigrateV13Async(connection, ct);
-        await MigrateV14Async(connection, ct);
-        await MigrateV15Async(connection, ct);
-        await MigrateV16Async(connection, ct);
-        await MigrateV17Async(connection, ct);
-        await MigrateV18Async(connection, ct);
-        await MigrateV19Async(connection, ct);
-        await MigrateV20Async(connection, ct);
-        await MigrateV21Async(connection, ct);
+        var initialVersion = await GetSchemaVersionAsync(connection, ct);
+        if (initialVersion < 21)
+        {
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v21");
+        }
+
+        await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
+        await RunMigrationAsync(connection, 3, MigrateV3Async, ct);
+        await RunMigrationAsync(connection, 4, MigrateV4Async, ct);
+        await RunMigrationAsync(connection, 5, MigrateV5Async, ct);
+        await RunMigrationAsync(connection, 6, MigrateV6Async, ct);
+        await RunMigrationAsync(connection, 7, MigrateV7Async, ct);
+        await RunMigrationAsync(connection, 9, MigrateV9Async, ct);
+        await RunMigrationAsync(connection, 10, MigrateV10Async, ct);
+        await RunMigrationAsync(connection, 11, MigrateV11Async, ct);
+        await RunMigrationAsync(connection, 12, MigrateV12Async, ct);
+        await RunMigrationAsync(connection, 13, MigrateV13Async, ct);
+        await RunMigrationAsync(connection, 14, MigrateV14Async, ct);
+        // V15/V17/V18 recreate tables: the family_types rebuilds DROP the
+        // parent of extracted_attribute_values — they must run under the
+        // FK-off rebuild recipe or the CASCADE wipes attribute values.
+        await RunRebuildMigrationAsync(connection, 15, MigrateV15Async, ct);
+        await RunMigrationAsync(connection, 16, MigrateV16Async, ct);
+        await RunRebuildMigrationAsync(connection, 17, MigrateV17Async, ct);
+        await RunRebuildMigrationAsync(connection, 18, MigrateV18Async, ct);
+        await RunMigrationAsync(connection, 19, MigrateV19Async, ct);
+        await RunMigrationAsync(connection, 20, MigrateV20Async, ct);
+        await RunMigrationAsync(connection, 21, MigrateV21Async, ct);
+
+        // Diagnostic: after the V15/V17/V18 table rebuilds, any remaining FK
+        // violation (orphan rows the cleanups could not anticipate) must be
+        // visible in the log — it would break the NEXT rebuild or write.
+        await LogForeignKeyViolationsAsync(connection, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -84,6 +98,60 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         await EnsureCriticalColumnsAsync(connection, ct);
+    }
+
+    private static async Task RunMigrationAsync(
+        SqliteConnection connection,
+        int version,
+        Func<SqliteConnection, CancellationToken, Task> migration,
+        CancellationToken ct)
+    {
+        try
+        {
+            await migration(connection, ct);
+        }
+        catch (Exception ex)
+        {
+            // Fail-fast is correct (a half-migrated schema is worse), but the
+            // log must name the failing migration — otherwise a truncated
+            // user log leaves zero chance to find the culprit.
+            SmartConLogger.Error(
+                $"Schema migration v{version} FAILED: {ex.GetType().Name}: {ex.Message} " +
+                $"[Action: пришлите smartcon.log разработчику; база не повреждена — миграция откачена транзакцией]");
+            throw;
+        }
+    }
+
+    private static async Task LogForeignKeyViolationsAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        try
+        {
+            var violations = new List<string>();
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA foreign_key_check";
+                using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    violations.Add(
+                        $"{reader.GetString(0)}.rowid={reader.GetValue(1)} → {reader.GetString(2)}({reader.GetValue(3)})");
+                    if (violations.Count >= 10) break;
+                }
+            }
+
+            if (violations.Count > 0)
+            {
+                SmartConLogger.Warn(
+                    $"foreign_key_check found {violations.Count}+ orphan rows after schema migrations: " +
+                    $"{string.Join("; ", violations)} [Action: пришлите smartcon.log разработчику; " +
+                    $"записи-«сироты» будут удалены при следующей rebuild-миграции]");
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"foreign_key_check failed: {ex.Message} [Action: диагностика пропущена, на работу не влияет]");
+        }
     }
 
     private static async Task MigrateV2Async(SqliteConnection connection, CancellationToken ct)
@@ -516,6 +584,45 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = "UPDATE schema_info SET value = '8' WHERE key = 'schema_version'";
         await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Runs a table-rebuild migration under the official SQLite recipe:
+    /// PRAGMA foreign_keys=OFF BEFORE the transaction (the pragma is a no-op
+    /// inside one) so DROP TABLE does not fire ON DELETE CASCADE on child
+    /// tables (family_types rebuild would otherwise wipe
+    /// extracted_attribute_values.type_id rows), then foreign_key_check for
+    /// diagnostics, then FK enforcement back on.
+    /// </summary>
+    private static async Task RunRebuildMigrationAsync(
+        SqliteConnection connection,
+        int version,
+        Func<SqliteConnection, CancellationToken, Task> migration,
+        CancellationToken ct)
+    {
+        using (var fkOff = connection.CreateCommand())
+        {
+            fkOff.CommandText = "PRAGMA foreign_keys=OFF";
+            await fkOff.ExecuteNonQueryAsync(ct);
+        }
+
+        try
+        {
+            await RunMigrationAsync(connection, version, migration, ct);
+        }
+        finally
+        {
+            try
+            {
+                await LogForeignKeyViolationsAsync(connection, ct);
+            }
+            finally
+            {
+                using var fkOn = connection.CreateCommand();
+                fkOn.CommandText = "PRAGMA foreign_keys=ON";
+                await fkOn.ExecuteNonQueryAsync(ct);
+            }
+        }
     }
 
     /// <summary>

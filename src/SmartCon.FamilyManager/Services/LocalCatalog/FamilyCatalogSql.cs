@@ -492,12 +492,15 @@ internal static class FamilyCatalogSql
     /// of orphan rows is what makes the table-recreate safe.
     /// </summary>
     public const string MigrateV15AddAttributeValuesForeignKey = """
-        -- 1. Clean up any orphan rows that would otherwise violate the new FK.
-        --    extracted_attribute_values.type_id is nullable; only NOT-NULL
-        --    values that don't match any family_types.id need cleanup.
+        -- 1. Clean up any orphan rows that would otherwise violate the new FKs.
+        --    Databases from the pre-FK-enforcement era may reference deleted
+        --    items, types, attribute definitions or import runs — all four
+        --    FK columns must be cleaned, not just type_id.
         DELETE FROM extracted_attribute_values
-        WHERE type_id IS NOT NULL
-          AND type_id NOT IN (SELECT id FROM family_types);
+        WHERE catalog_item_id NOT IN (SELECT id FROM catalog_items)
+           OR (type_id IS NOT NULL AND type_id NOT IN (SELECT id FROM family_types))
+           OR (attribute_id IS NOT NULL AND attribute_id NOT IN (SELECT id FROM attribute_definitions))
+           OR extraction_run_id NOT IN (SELECT id FROM family_data_import_runs);
 
         -- 2. Recreate extracted_attribute_values with the new FK constraint.
         DROP TABLE IF EXISTS extracted_attribute_values_new;
@@ -590,10 +593,13 @@ internal static class FamilyCatalogSql
     /// per-version type storage.
     /// </summary>
     public const string MigrateV17RecreateFamilyTypesWithVersionFk = """
-        -- 1. Clean up orphan rows: family_types.version_id pointing at non-existent catalog_versions.id
+        -- 1. Clean up orphan rows: every FK column of the recreated table
+        --    (version_id, catalog_item_id, file_id) — pre-FK-enforcement
+        --    databases may reference deleted versions, items or files.
         DELETE FROM family_types
-        WHERE version_id IS NOT NULL
-          AND version_id NOT IN (SELECT id FROM catalog_versions);
+        WHERE (version_id IS NOT NULL AND version_id NOT IN (SELECT id FROM catalog_versions))
+           OR catalog_item_id NOT IN (SELECT id FROM catalog_items)
+           OR (file_id IS NOT NULL AND file_id NOT IN (SELECT id FROM family_files));
 
         -- 2. Recreate family_types with the new FK constraint on version_id
         DROP TABLE IF EXISTS family_types_v17;
@@ -634,10 +640,14 @@ internal static class FamilyCatalogSql
     /// catalog_versions.id) are deleted before the recreate.
     /// </summary>
     public const string MigrateV17RecreateExtractedAttributeValuesWithVersionFk = """
-        -- 1. Clean up any orphan rows that would otherwise violate the new FK.
+        -- 1. Clean up any orphan rows that would otherwise violate the new FKs:
+        --    all five FK columns (version, item, type, attribute, run).
         DELETE FROM extracted_attribute_values
-        WHERE version_id IS NOT NULL
-          AND version_id NOT IN (SELECT id FROM catalog_versions);
+        WHERE (version_id IS NOT NULL AND version_id NOT IN (SELECT id FROM catalog_versions))
+           OR catalog_item_id NOT IN (SELECT id FROM catalog_items)
+           OR (type_id IS NOT NULL AND type_id NOT IN (SELECT id FROM family_types))
+           OR (attribute_id IS NOT NULL AND attribute_id NOT IN (SELECT id FROM attribute_definitions))
+           OR extraction_run_id NOT IN (SELECT id FROM family_data_import_runs);
 
         -- 2. Recreate extracted_attribute_values with the new FK constraint on version_id.
         DROP TABLE IF EXISTS extracted_attribute_values_v17;
@@ -728,10 +738,13 @@ internal static class FamilyCatalogSql
     /// project families.
     /// </summary>
     public const string MigrateV18RecreateFamilyTypesPerVersionUnique = """
-        -- 1. Clean up orphan rows (defensive — same as V17).
+        -- 1. Clean up orphan rows: every FK column of the recreated table
+        --    (version_id, catalog_item_id, file_id) — pre-FK-enforcement
+        --    databases may reference deleted versions, items or files.
         DELETE FROM family_types
-        WHERE version_id IS NOT NULL
-          AND version_id NOT IN (SELECT id FROM catalog_versions);
+        WHERE (version_id IS NOT NULL AND version_id NOT IN (SELECT id FROM catalog_versions))
+           OR catalog_item_id NOT IN (SELECT id FROM catalog_items)
+           OR (file_id IS NOT NULL AND file_id NOT IN (SELECT id FROM family_files));
 
         -- 2. Recreate family_types with per-version UNIQUE.
         DROP TABLE IF EXISTS family_types_v18;
