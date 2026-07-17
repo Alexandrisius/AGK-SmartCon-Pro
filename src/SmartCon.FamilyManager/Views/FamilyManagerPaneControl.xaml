@@ -493,32 +493,49 @@
                       Style="{DynamicResource CompactComboBox}"/>
 
             <!-- Database tools popup -->
-            <ToggleButton Grid.Column="2"
-                          x:Name="DbToolsToggle"
-                          IsChecked="{Binding IsOpen, ElementName=DbToolsPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                          Width="28"
-                          Margin="0,0,0,0"
-                          Style="{DynamicResource SecondaryToggleButton}"
-                          ToolTip="{loc:Loc FM_PBase_DatabaseTools}">
-                <Viewbox Width="14" Height="14" Stretch="Uniform">
-                    <Grid Width="24" Height="24">
-                        <iconPacks:PackIconMaterial Kind="Database"
-                                                       Width="22" Height="22"
-                                                       Foreground="{DynamicResource TextMutedBrush}"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        <Border Width="16" Height="16"
-                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                 Margin="0,0,-1,-1"
-                                 Background="{DynamicResource SurfaceBrush}"
-                                 CornerRadius="8">
-                            <iconPacks:PackIconMaterial Kind="Cog"
-                                                           Width="14" Height="14"
+            <Grid Grid.Column="2">
+                <ToggleButton Grid.Column="2"
+                              x:Name="DbToolsToggle"
+                              IsChecked="{Binding IsOpen, ElementName=DbToolsPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              Width="28"
+                              Margin="0,0,0,0">
+                    <ToggleButton.Style>
+                        <Style BasedOn="{StaticResource SecondaryToggleButton}" TargetType="ToggleButton">
+                            <Setter Property="ToolTip" Value="{loc:Loc FM_PBase_DatabaseTools}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDatabaseUpdateRequired}" Value="True">
+                                    <Setter Property="ToolTip" Value="{loc:Loc FM_PBase_UpdateDatabaseBadgeTooltip}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ToggleButton.Style>
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="24" Height="24">
+                            <iconPacks:PackIconMaterial Kind="Database"
+                                                           Width="22" Height="22"
                                                            Foreground="{DynamicResource TextMutedBrush}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </Grid>
-                </Viewbox>
-            </ToggleButton>
+                            <Border Width="16" Height="16"
+                                     HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                     Margin="0,0,-1,-1"
+                                     Background="{DynamicResource SurfaceBrush}"
+                                     CornerRadius="8">
+                                <iconPacks:PackIconMaterial Kind="Cog"
+                                                               Width="14" Height="14"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                    </Viewbox>
+                </ToggleButton>
+                <Border Width="8" Height="8"
+                        CornerRadius="4"
+                        Background="{DynamicResource DangerBrush}"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="0,-3,-3,0"
+                        IsHitTestVisible="False"
+                        Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
 
             <Popup x:Name="DbToolsPopup"
                    StaysOpen="False"
@@ -532,6 +549,30 @@
                         CornerRadius="6"
                         Padding="4">
                     <StackPanel>
+                        <Button Command="{Binding UpdateDatabaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                ToolTip="{loc:Loc FM_PBase_UpdateDatabaseTooltip}"
+                                Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{loc:Loc FM_PBase_UpdateDatabase}"
+                                           VerticalAlignment="Center"/>
+                                <Border Width="7" Height="7"
+                                        CornerRadius="4"
+                                        Margin="6,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource DangerBrush}"/>
+                            </StackPanel>
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
                         <Button Content="{loc:Loc FM_PBase_ConnectDatabase}"
                                 Command="{Binding ConnectDatabaseCommand}"
                                 MinWidth="180"

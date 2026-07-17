@@ -15,6 +15,13 @@ public sealed partial class FamilyVersionRow : ObservableObject
     public string VersionId { get; }
     public string VersionLabel { get; }
     public int RevitMajorVersion { get; }
+
+    /// <summary>
+    /// File name of this version's .rfa (Issue #126). May differ between
+    /// versions when a family was imported under a renamed file — the
+    /// catalog item's name follows the ACTIVE version's file name.
+    /// </summary>
+    public string? FileName { get; }
     public int? TypesCount { get; }
     public int? ParametersCount { get; }
     public DateTimeOffset PublishedAtUtc { get; }
@@ -118,11 +125,13 @@ public sealed partial class FamilyVersionRow : ObservableObject
         string? contentHash,
         int? hashFormatVersion,
         string? publishedBy,
-        IReadOnlyList<string> typeNames)
+        IReadOnlyList<string> typeNames,
+        string? fileName = null)
     {
         VersionId = versionId;
         VersionLabel = versionLabel;
         RevitMajorVersion = revitMajorVersion;
+        FileName = fileName;
         TypesCount = typesCount;
         ParametersCount = parametersCount;
         PublishedAtUtc = publishedAtUtc;
@@ -132,6 +141,7 @@ public sealed partial class FamilyVersionRow : ObservableObject
         HashFormatVersion = hashFormatVersion;
         PublishedBy = publishedBy;
         TypeNames = typeNames ?? Array.Empty<string>();
+        FileName = fileName;
     }
 
     /// <summary>

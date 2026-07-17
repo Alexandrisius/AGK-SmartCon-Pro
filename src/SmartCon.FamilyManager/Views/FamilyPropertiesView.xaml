@@ -40,6 +40,13 @@
                 <Setter Property="VerticalAlignment" Value="Center"/>
                 <Setter Property="Margin" Value="6,0"/>
             </Style>
+            <!-- Versions tab "Family name" column: long file names are
+                 ellipsed; the full name stays available in the tooltip. -->
+            <Style x:Key="VersionFileNameCell" TargetType="TextBlock"
+                   BasedOn="{StaticResource LeftTextCell}">
+                <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                <Setter Property="ToolTip" Value="{Binding FileName}"/>
+            </Style>
         </ui:SingletonResources>
     </Window.Resources>
 
@@ -764,19 +771,20 @@
                             <DataGridTextColumn x:Name="ColVersionLabel"
                                                 Binding="{Binding VersionLabel}"
                                                 ElementStyle="{StaticResource CenteredTextCell}"
-                                                Width="80" MinWidth="60"/>
+                                                Width="70" MinWidth="60"/>
+                            <!-- Issue #126: per-version family file name — the
+                                 item name follows the ACTIVE version's file
+                                 name, so archived versions may differ. Text
+                                 column: left-aligned + ellipsis (MS DataGrid
+                                 guidance), full name in tooltip. -->
+                            <DataGridTextColumn x:Name="ColVersionFileName"
+                                                Binding="{Binding FileName, TargetNullValue='—'}"
+                                                ElementStyle="{StaticResource VersionFileNameCell}"
+                                                Width="*" MinWidth="140"/>
                             <DataGridTextColumn x:Name="ColVersionRevit"
                                                 Binding="{Binding RevitMajorVersion}"
                                                 ElementStyle="{StaticResource CenteredTextCell}"
-                                                Width="70" MinWidth="50"/>
-                            <DataGridTextColumn x:Name="ColVersionDate"
-                                                Binding="{Binding PublishedAtText}"
-                                                ElementStyle="{StaticResource CenteredTextCell}"
-                                                Width="*" MinWidth="120"/>
-                            <DataGridTextColumn x:Name="ColVersionAuthor"
-                                                Binding="{Binding PublishedBy, TargetNullValue='—'}"
-                                                ElementStyle="{StaticResource CenteredTextCell}"
-                                                Width="100" MinWidth="80"/>
+                                                Width="60" MinWidth="50"/>
                             <!-- ADR-041 rev #5: Types column shows TypesCountDisplay
                                  (real count from TypeNames). Custom tooltip with
                                  vertical bulleted list + scroll for 40-50 types.
@@ -787,7 +795,7 @@
                                  longest type name (TextWrapping=NoWrap); MaxHeight
                                  + ScrollViewer prevent vertical overflow. -->
                             <DataGridTemplateColumn x:Name="ColVersionTypes"
-                                                    Width="70" MinWidth="50">
+                                                    Width="60" MinWidth="50">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding TypesCountDisplay}"
@@ -825,10 +833,18 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
+                            <DataGridTextColumn x:Name="ColVersionDate"
+                                                Binding="{Binding PublishedAtText}"
+                                                ElementStyle="{StaticResource CenteredTextCell}"
+                                                Width="130" MinWidth="120"/>
+                            <DataGridTextColumn x:Name="ColVersionAuthor"
+                                                Binding="{Binding PublishedBy, TargetNullValue='—'}"
+                                                ElementStyle="{StaticResource CenteredTextCell}"
+                                                Width="100" MinWidth="80"/>
                             <!-- Active badge: success-green pill instead of
                                  accent-blue (less visually aggressive compared
                                  to the active selection highlight). -->
-                            <DataGridTemplateColumn x:Name="ColVersionActive" Width="100" MinWidth="80">
+                            <DataGridTemplateColumn x:Name="ColVersionActive" Width="90" MinWidth="80">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Border Background="{DynamicResource SavedSuccessBrush}"

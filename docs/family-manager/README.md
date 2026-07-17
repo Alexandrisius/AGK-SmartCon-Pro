@@ -63,6 +63,7 @@ ExtensibleStorage остаётся паттерном существующих �
 | 28 | Active Version Management | [ADR-040](../adr/040-overwritecurrent-semantics.md), [ADR-041](../adr/041-active-version-management.md) | 2026-06-30 | schema v17-v19 |
 | 29 | 3D Preview | [ADR-042](../adr/042-familymanager-3d-preview.md) | 2026-07-01 | SharpGLTF + HelixToolkit |
 | 30 | Avatar Crop | [ADR-047](../adr/047-avatar-crop-derived-file.md) | 2026-07-16 | Issue #131: диалог кадрирования, производный `avatar.png` 560×420, единое превью 280×210 для свойств и tooltip, инвалидация при смене primary |
+| 32 | Content Hash v2 + Migration | [ADR-049](../adr/049-content-hash-v2-rename-invariant.md), [ADR-050](../adr/050-hash-recalculation-migration.md) | 2026-07-17 | Issue #126: rename-invariant дедуп (hash-first), cross-name ⚠, миграция хэшей v1→v2 с прогресс-диалогом, breaking 3.0.0 (без DDL-миграции) |
 
 ## Миграции SQLite V1..V19
 

@@ -58,7 +58,8 @@ public sealed partial class FamilyPropertiesViewModel
                     contentHash: v.ContentHash,
                     hashFormatVersion: v.HashFormatVersion,
                     publishedBy: v.PublishedBy,
-                    typeNames: Array.Empty<string>()))
+                    typeNames: Array.Empty<string>(),
+                    fileName: v.FileName))
                 .ToList();
 
             // ADR-041 rev #5: attach type-name list per version for the
@@ -150,9 +151,19 @@ public sealed partial class FamilyPropertiesViewModel
                 }
                 SelectedVersionRow = Versions.FirstOrDefault(r => r.IsActive);
                 VersionLabel = newLabel;
+                // Issue #126: the item name follows the ACTIVE version's
+                // file name. When the activated version was stored under a
+                // different name, SetActiveVersionAsync has already renamed
+                // the item in the DB — reflect it in the dialog.
+                if (result.NameChanged && result.NewName is not null)
+                {
+                    Name = result.NewName;
+                }
                 SmartConLogger.Info(
                     $"MakeActive succeeded: prev={result.PreviousVersionLabel ?? "<null>"} " +
-                    $"new={newLabel} hashSynced={result.ContentHashSynced}");
+                    $"new={newLabel} hashSynced={result.ContentHashSynced} " +
+                    $"nameChanged={result.NameChanged}" +
+                    (result.NameChanged ? $" ('{result.PreviousName}' -> '{result.NewName}')" : string.Empty));
                 DeleteVersionCommand.NotifyCanExecuteChanged();
                 MakeActiveCommand.NotifyCanExecuteChanged();
 

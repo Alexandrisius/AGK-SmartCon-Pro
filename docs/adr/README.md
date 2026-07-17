@@ -59,3 +59,5 @@
 | [046](046-hybrid-wpf-icon-sourcing.md) | Hybrid WPF Icon Sourcing — PackIconMaterial in module BAML, PathGeometry in SmartCon.UI | accepted | 2026-07-10 |
 | [047](047-avatar-crop-derived-file.md) | Avatar Crop — производный avatar.png 560×420, инвалидация при смене primary, единая миниатюра для аватарки и tooltip (Issue #131) | accepted | 2026-07-16 |
 | [048](048-batch-import-modeless-progress.md) | Batch Import - modeless диалог с живым прогрессом, паузой Остановить/Продолжить/Закрыть, поэлементный pipeline (Issue #127) | accepted | 2026-07-16 |
+| [049](049-content-hash-v2-rename-invariant.md) | Content Hash v2 — rename-invariant дедупликация (hash-first), cross-name дубликаты с ⚠, имя айтема следует за активной версией (Issue #126) | accepted | 2026-07-17 |
+| [050](050-hash-recalculation-migration.md) | Hash Recalculation Migration — user-initiated data repair v1→v2 с прогресс-диалогом, маркировка -1, purge недоступных (Issue #126) | accepted | 2026-07-17 |

@@ -76,6 +76,7 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task ExecuteUpdateStaleAsync(bool overwriteParameterValues)
     {
         if (SelectedItem is null) return;
+        if (!await EnsureDatabaseUpToDateForLoadAsync().ConfigureAwait(true)) return;
 
         var selectedId = SelectedItem.Id;
         var selectedName = SelectedItem.Name;
@@ -118,6 +119,7 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task ExecuteLoadOrUpdateAsync(bool overwriteParameterValues)
     {
         if (SelectedItem is null) return;
+        if (!await EnsureDatabaseUpToDateForLoadAsync().ConfigureAwait(true)) return;
 
         var selectedId = SelectedItem.Id;
         var selectedName = SelectedItem.Name;
@@ -207,6 +209,10 @@ public sealed partial class FamilyManagerMainViewModel
             await PlaceSystemTypeAsync(leaf.CatalogItemId, typeNode.TypeName, CurrentRevitVersion);
             return;
         }
+
+        // Loadable placement loads the family into the project — gate it
+        // on the database update state (Issue #126).
+        if (!await EnsureDatabaseUpToDateForLoadAsync().ConfigureAwait(true)) return;
 
         var catalogItemId = leaf.CatalogItemId;
         var familyName = leaf.DisplayName;

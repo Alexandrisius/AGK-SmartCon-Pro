@@ -190,6 +190,9 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public void ShowModelessBatchImportDialog(object viewModel) => _presenter.ShowModeless(viewModel);
 
     /// <inheritdoc/>
+    public void ShowHashRecalculationProgressDialog(object viewModel) => _presenter.ShowModeless(viewModel);
+
+    /// <inheritdoc/>
     public bool? ShowAvatarCropper(object viewModel) => _presenter.ShowDialog(viewModel);
 
     public SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request)

@@ -93,6 +93,13 @@ public interface IFamilyManagerDialogService
     void ShowModelessBatchImportDialog(object viewModel);
 
     /// <summary>
+    /// Show the hash-recalculation migration dialog (Issue #126) as a
+    /// modeless window (ADR-048 pattern). Returns immediately; the caller
+    /// runs the migration via the view model and awaits its completion.
+    /// </summary>
+    void ShowHashRecalculationProgressDialog(object viewModel);
+
+    /// <summary>
     /// Show the avatar crop dialog (issue #131, ADR-047). The viewModel must be a
     /// CropAvatarViewModel; returns true when the user applied the crop — read
     /// ResultPath from the viewModel in that case.

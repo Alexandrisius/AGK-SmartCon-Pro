@@ -986,12 +986,14 @@ public interface IFamilyImportPrecomputer
     Task<PrecomputedImportTriple?> BuildPrecomputedTripleAsync(
         string displayName,
         string extension,
+        string? forcedCatalogItemId = null,
         CancellationToken ct = default);
 }
 ```
 
 Семантика:
-- Нормализует `displayName` через `FamilyNameNormalizer` и ищет existing item через `IFamilyCatalogProvider.FindByNormalizedNameAsync`.
+- `forcedCatalogItemId` (Issue #126): когда дедуп-сервис сматчил строку к существующему айтему ПО ХЭШУ (возможно под другим именем), caller передаёт id этого айтема — triple целится в него (его next version label + managed path в ЕГО папке), а не в name-lookup. Иначе IncrementVersion писал бы файл в сиротскую GUID-папку и падал на UNIQUE constraint со стейл `v1`.
+- Без `forcedCatalogItemId`: нормализует `displayName` через `FamilyNameNormalizer` и ищет existing item через `IFamilyCatalogProvider.FindByNormalizedNameAsync`.
 - Если existing найден — возвращает `(existing.Id, ComputeNextVersionLabel(existing.Id), ComputeManagedFilePath(...))`: id сохраняется, версия инкрементируется (`vN → vN+1`).
 - Если existing не найден — возвращает `(Guid.NewGuid() в формате "N", "v1", ComputeManagedFilePath(...))`.
 - `extension` — расширение с ведущей точкой (`".rfa"` для loadable, `".rvt"` для system); `".rfa"` default для null/empty.
@@ -1072,12 +1074,87 @@ public interface IContentHashDedupService
 }
 ```
 
-**Business rules (from the business plan):**
-- If the normalized name is NOT in the catalog → `New` (hash is not checked — dedup only applies when names match).
-- If the name matches but no hash is available → `Existing` (fallback to name-only dedup).
-- If the name matches and the hash matches any version (current or archived) → `Duplicate` (returns `HashMatch` with the matched version).
-- If the name matches but the hash does not match any version → `Existing`.
+**Business rules (Issue #126, hash-first):**
+- Хэш совпал с любой версией (current или archived) ЛЮБОГО айтема каталога, независимо от имени → `Duplicate`. Найденный по хэшу айтем — канонический «existing» для MakeActive/IncrementVersion. Если его нормализованное имя отличается от имени строки — `IsCrossNameDuplicate = true` (batch-диалог рисует ⚠ с tooltip).
+- Хэш не совпал (или хэша нет) и имя есть в каталоге → `Existing`.
+- Хэш не совпал (или хэша нет) и имени нет в каталоге → `New`.
+- Конфликт имя/контент (хэш совпал с айтемом A, имя занято другим айтемом B): контент важнее — Duplicate к A, Warn в лог, действие по умолчанию Skip.
 - Cross-source separation: `"loadable"` hashes are never compared against `"system"` hashes and vice versa.
+
+---
+
+## ICatalogHashRecalculationService
+
+Одноразовая, инициируемая пользователем data-repair операция: пересчёт всех устаревших (v1/NULL) content-хэшей каталога в rename-invariant формат v2 (Issue #126). Намеренно НЕ часть `LocalCatalogMigrator` — пересчёт требует открытия каждого managed-файла в Revit (долго, нужен Revit main thread, cancellable, с прогрессом); мигратор схемы остаётся чистым DDL.
+
+**Файл:** `Services/Interfaces/ICatalogHashRecalculationService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/CatalogHashRecalculationService.cs`
+
+```csharp
+public interface ICatalogHashRecalculationService
+{
+    Task<int> CountPendingAsync(int currentRevitMajorVersion, CancellationToken ct = default);
+    Task<CatalogHashRecalculationResult> RecalculateAsync(
+        int currentRevitMajorVersion,
+        IProgress<CatalogHashRecalculationProgress>? progress,
+        CancellationToken ct = default);
+    Task<(int DeletedItems, int DeletedVersions)> PurgeMissingAsync(
+        IReadOnlyList<HashRecalculationMissingFile> missing,
+        CancellationToken ct = default);
+}
+```
+
+Семантика `hash_format_version`: `NULL/1` — pending; `2` — текущий формат; `-1` (`RecalculationSkipped`) — безвозвратно пропущено (нечитаемый файл), исключено из pending навсегда.
+
+Алгоритм:
+1. System-строки мигрируются мгновенным UPDATE флага — их v1 canonical string никогда не содержал имени, хэши уже rename-invariant; пересчёт из isolated .rvt рисковал бы рассинхроном с project-extracted хэшами.
+2. Loadable-версии группируются по `(catalog_item_id, version_label)`; открывается ОДИН файл на группу (наивысший `revit_major_version` ≤ запущенного Revit) — контент идентичен между Revit-вариантами, хэш применяется ко ВСЕМ вариантам группы (включая варианты новее запущенного Revit).
+3. Файлы открываются по одному (open → extract → close); документы НЕ держатся открытыми (нет фазы SaveAs, в отличие от batch import). Коммиты SQLite пачками по 10 файлов в одной транзакции (I-14: DELETE journal + busy_timeout, без WAL — БД может лежать на SMB).
+4. `PurgeMissingAsync` — по явному подтверждению пользователя удаляет записи о недоступных файлах: versions (FK CASCADE чистит types/attributes/nested), file records, items без версий; если удалённая версия была активной — active переключается на новейшую оставшуюся с ресинком хэша и имени.
+
+---
+
+## IFamilyMigrationExtractor
+
+Revit-bound граница миграции пересчёта (Issue #126): открывает ОДИН managed family-файл на Revit main thread, извлекает snapshot, закрывает документ. Реализация в SmartCon.Revit маршалит через `IFamilyManagerAwaitableEvent`; вызывающий `ICatalogHashRecalculationService` остаётся pure C# и юнит-тестируемым с fake-экстрактором.
+
+**Файл:** `Services/Interfaces/IFamilyMigrationExtractor.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyMigrationExtractor.cs`
+
+```csharp
+public interface IFamilyMigrationExtractor
+{
+    Task<FamilyMigrationExtractResult> ExtractLoadableAsync(
+        string absolutePath,
+        CancellationToken ct = default);
+}
+```
+
+- Открывает `.rfa` через `OpenDocumentFile`, извлекает `FamilySnapshot`, закрывает без сохранения. Не бросает через границу — ошибки в результате.
+- После каждого Close — `IUiFreezeRecoveryService.Nudge(" ")` (workaround #96: DockablePane freeze после циклов OpenDocumentFile+Close, REVIT-236376/237190).
+
+---
+
+## IDatabaseMigration
+
+Контракт одной миграции базы каталога — переиспользуемый паттерн «обновления базы» (`docs/architecture/database-migrations.md`, введён в Issue #126). Реализации обнаруживаются через DI (`IEnumerable<IDatabaseMigration>`), агрегируются `DatabaseMigrationCoordinator`; VM выставляет badge + команду «Обновить базу данных» и блокирует загрузку в проект, пока хотя бы одна миграция имеет pending > 0.
+
+**Файл:** `Services/Interfaces/IDatabaseMigration.cs`
+**Реализации:** `SmartCon.FamilyManager/Services/Migrations/HashRecalculationMigration.cs` (Id=`hash-v2`, Order=10) — регистрируются в `ServiceRegistrar` (секция «Database migrations»).
+
+```csharp
+public interface IDatabaseMigration
+{
+    string Id { get; }
+    int Order { get; }
+    Task<int> CountPendingAsync(int revitMajorVersion, CancellationToken ct = default);
+    Task RunAsync(int revitMajorVersion, CancellationToken ct = default);
+}
+```
+
+- `CountPendingAsync` — дешёвый SQL COUNT по маркерной колонке, без побочных эффектов: вызывается на каждом переключении базы.
+- `RunAsync` — обязан быть возобновляемым: прерывание/крах → следующий запуск продолжает с места остановки (маркер на запись + chunked commits; I-14: DELETE journal, без WAL).
+- `Order` — порядок выполнения при нескольких pending (ascending; schema-critical раньше data repair).
 
 ---
 

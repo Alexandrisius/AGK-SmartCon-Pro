@@ -12,7 +12,21 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="IsCurrentVersion"><c>true</c> if the matched version is
 /// the current version of the catalog item; <c>false</c> if it is an
 /// archived version (e.g. after rollback).</param>
+/// <param name="CurrentVersionLabel">Current active version label of the
+/// matched catalog item, or <c>null</c> if the item has none. Issue
+/// #126: with hash-first dedup the matched item is the canonical
+/// "existing" item for downstream actions, so its active label must
+/// travel with the match.</param>
+/// <param name="MatchedItemName">Display name of the matched catalog
+/// item. Differs from the imported file name for cross-name duplicates
+/// (rename-invariant hash, Issue #126).</param>
+/// <param name="MatchedItemNormalizedName">Normalized name of the
+/// matched catalog item. Compared against the imported row's normalized
+/// name to detect a cross-name duplicate.</param>
 public sealed record ContentHashMatch(
     string CatalogItemId,
     string MatchedVersionLabel,
-    bool IsCurrentVersion);
+    bool IsCurrentVersion,
+    string? CurrentVersionLabel,
+    string MatchedItemName,
+    string MatchedItemNormalizedName);

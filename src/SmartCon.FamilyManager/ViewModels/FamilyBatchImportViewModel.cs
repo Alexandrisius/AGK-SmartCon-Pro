@@ -257,14 +257,19 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 var newExistingId = dedupResult?.ExistingCatalogItemId ?? existing?.Id;
                 var newExistingVersionLabel = dedupResult?.ExistingVersionLabel ?? existing?.CurrentVersionLabel;
                 var newMatchedVersionLabel = dedupResult?.HashMatch?.MatchedVersionLabel;
+                var newIsCrossNameDuplicate = dedupResult?.IsCrossNameDuplicate ?? false;
+                var newMatchedItemName = dedupResult?.HashMatch?.MatchedItemName;
                 var newExistingCategoryId = existing?.CategoryId;
                 var newExistingCategoryPath = existing?.CategoryPath;
 
                 PrecomputedImportTriple? precomputed = null;
                 if (_importPrecomputer is not null)
                 {
+                    // Issue #126: when dedup matched an item by content
+                    // hash (possibly under a different name), the triple
+                    // must target that item, not the name lookup.
                     precomputed = await _importPrecomputer
-                        .BuildPrecomputedTripleAsync(newName, extension, token)
+                        .BuildPrecomputedTripleAsync(newName, extension, dedupResult?.ExistingCatalogItemId, token)
                         .ConfigureAwait(false);
                     if (token.IsCancellationRequested) return;
                 }
@@ -272,11 +277,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 var dispatcher = System.Windows.Application.Current?.Dispatcher;
                 if (dispatcher is not null && !dispatcher.CheckAccess())
                 {
-                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel));
+                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName));
                 }
                 else
                 {
-                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel);
+                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName);
                 }
             }
             catch (OperationCanceledException)
@@ -312,7 +317,9 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         string? newExistingCategoryId,
         string? newExistingCategoryPath,
         PrecomputedImportTriple? precomputed,
-        string? matchedVersionLabel = null)
+        string? matchedVersionLabel = null,
+        bool isCrossNameDuplicate = false,
+        string? matchedItemName = null)
     {
         if (row.Status != newStatus)
         {
@@ -321,6 +328,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         row.ExistingCatalogItemId = newExistingId;
         row.ExistingVersionLabel = newExistingVersionLabel;
         row.MatchedVersionLabel = matchedVersionLabel;
+        row.IsCrossNameDuplicate = isCrossNameDuplicate;
+        row.MatchedItemName = matchedItemName;
 
         if (!row.TargetCategoryIsManual)
         {
@@ -490,7 +499,9 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             HashFormatVersion: r.HashFormatVersion,
             MatchedVersionLabel: r.MatchedVersionLabel,
             LoadableSnapshot: r.LoadableSnapshot,
-            SystemSnapshot: r.SystemSnapshot)
+            SystemSnapshot: r.SystemSnapshot,
+            IsCrossNameDuplicate: r.IsCrossNameDuplicate,
+            MatchedItemName: r.MatchedItemName)
         {
             Action = r.Action
         }).ToList();

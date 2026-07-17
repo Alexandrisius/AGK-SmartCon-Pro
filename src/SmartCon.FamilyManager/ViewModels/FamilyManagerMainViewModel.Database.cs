@@ -77,6 +77,8 @@ public sealed partial class FamilyManagerMainViewModel
         RefreshConnections();
         _ = RefreshTreeViaExternalEventAsync();
         InvalidateLoadAndPlaceCommands();
+        // Issue #126: the switched-to database may carry stale hashes.
+        _ = RefreshDatabaseUpdateStateAsync();
     }
 
     partial void OnSelectedConnectionChanged(DatabaseListItem? value)
@@ -111,6 +113,8 @@ public sealed partial class FamilyManagerMainViewModel
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Switched to: {0}",
                         conn?.Name ?? connectionId);
+                    // Issue #126: the switched-to database may carry stale hashes.
+                    _ = RefreshDatabaseUpdateStateAsync();
                 }
                 else
                 {
@@ -315,6 +319,8 @@ public sealed partial class FamilyManagerMainViewModel
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Connected to: {0}",
                     conn.Name);
+                // Issue #126: an externally connected database may carry stale hashes.
+                _ = RefreshDatabaseUpdateStateAsync();
             }
             finally
             {

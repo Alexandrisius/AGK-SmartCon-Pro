@@ -57,17 +57,34 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_EmptySnapshot_DifferentNames_DifferentHashes()
+    public void ComputeForLoadable_SameContent_DifferentNames_SameHash()
     {
-        var snapshot1 = CreateLoadableSnapshot(familyName: "LogoA");
-        var snapshot2 = CreateLoadableSnapshot(familyName: "LogoB");
+        // Issue #126: hash format v2 is rename-invariant — the family name
+        // is mutable metadata and must NOT affect content identity.
+        var param = new FamilyParameterInfo("Width", "Double", "PG_GEOMETRY", false, false, null, false, false, null, null);
+        var type = new FamilyTypeSnapshot("DN50", [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)]);
+        var geometry = new GeometryMetrics(1, [new FormMetrics("Extrusion", true, 1250.0, 6, 12, null)]);
+
+        var snapshot1 = CreateLoadableSnapshot(familyName: "LogoA", parameters: [param], types: [type], geometry: geometry);
+        var snapshot2 = CreateLoadableSnapshot(familyName: "LogoB", parameters: [param], types: [type], geometry: geometry);
 
         var hash1 = _hasher.ComputeForLoadable(snapshot1);
         var hash2 = _hasher.ComputeForLoadable(snapshot2);
 
         Assert.NotNull(hash1);
         Assert.NotNull(hash2);
-        Assert.NotEqual(hash1.HexString, hash2.HexString);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_EmptySnapshot_DifferentNames_SameHash()
+    {
+        var hash1 = _hasher.ComputeForLoadable(CreateLoadableSnapshot(familyName: "LogoA"));
+        var hash2 = _hasher.ComputeForLoadable(CreateLoadableSnapshot(familyName: "LogoB"));
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
     }
 
     [Fact]
@@ -629,52 +646,6 @@ public class FamilyContentHasherTests
         Assert.NotNull(hash1);
         Assert.NotNull(hash2);
         Assert.Equal(hash1.HexString, hash2.HexString);
-    }
-
-    [Fact]
-    public void ComputeForLoadable_RfaExtension_StrippedFromHash()
-    {
-        var param = new FamilyParameterInfo("Width", "Double", "PG_GEOMETRY", false, false, null, false, false, null, null);
-        var snapshotWithRfa = CreateLoadableSnapshot(
-            familyName: "MyFamily.rfa",
-            parameters: [param],
-            types: [new FamilyTypeSnapshot("DN50",
-                [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)])]);
-        var snapshotWithoutRfa = CreateLoadableSnapshot(
-            familyName: "MyFamily",
-            parameters: [param],
-            types: [new FamilyTypeSnapshot("DN50",
-                [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)])]);
-
-        var hashWithRfa = _hasher.ComputeForLoadable(snapshotWithRfa);
-        var hashWithoutRfa = _hasher.ComputeForLoadable(snapshotWithoutRfa);
-
-        Assert.NotNull(hashWithRfa);
-        Assert.NotNull(hashWithoutRfa);
-        Assert.Equal(hashWithoutRfa.HexString, hashWithRfa.HexString);
-    }
-
-    [Fact]
-    public void ComputeForLoadable_RfaExtension_CaseInsensitive_Stripped()
-    {
-        var param = new FamilyParameterInfo("W", "Double", "", false, false, null, false, false, null, null);
-        var snapshotUpper = CreateLoadableSnapshot(
-            familyName: "Fam.RFA",
-            parameters: [param],
-            types: [new FamilyTypeSnapshot("T",
-                [new FamilyParameterValue("W", "Double", true, "1", 1.0, null)])]);
-        var snapshotNoExt = CreateLoadableSnapshot(
-            familyName: "Fam",
-            parameters: [param],
-            types: [new FamilyTypeSnapshot("T",
-                [new FamilyParameterValue("W", "Double", true, "1", 1.0, null)])]);
-
-        var hashUpper = _hasher.ComputeForLoadable(snapshotUpper);
-        var hashNoExt = _hasher.ComputeForLoadable(snapshotNoExt);
-
-        Assert.NotNull(hashUpper);
-        Assert.NotNull(hashNoExt);
-        Assert.Equal(hashNoExt.HexString, hashUpper.HexString);
     }
 
     [Fact]

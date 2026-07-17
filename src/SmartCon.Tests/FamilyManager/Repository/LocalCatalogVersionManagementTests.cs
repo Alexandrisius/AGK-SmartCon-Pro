@@ -107,7 +107,7 @@ public sealed class SetActiveVersionAsyncTests : IDisposable
         var v1Request = new FamilyImportRequest(
             FilePath: v1Path, RevitMajorVersion: 2025, Category: null,
             Tags: null, Description: null, CategoryId: null,
-            FamilySource: "loadable", RevitCategory: null, FileName: "Family-V1.rfa");
+            FamilySource: "loadable", RevitCategory: null, FileName: "Family-V1");
         var v1Result = await _importService.ImportFileAsync(v1Request);
         var itemId = v1Result.CatalogItemId!;
 
@@ -278,6 +278,46 @@ public sealed class SetActiveVersionAsyncTests : IDisposable
         // Now attempt to activate v2 — must fail.
         var setResult = await provider.SetActiveVersionAsync(itemId, "v2");
         Assert.False(setResult.Success);
+    }
+
+    [Fact]
+    public async Task SetActiveVersion_DifferentFileName_UpdatesItemName()
+    {
+        // Issue #126: the catalog item name follows the ACTIVE version's
+        // file name. The seed stores v1 as "Family-V1.rfa" and v2 as
+        // "Family-V2.rfa" — activating v2 must rename the item.
+        var (itemId, _, _) = await SeedItemWithTwoVersionsAsync();
+        var provider = _fixture.GetProvider();
+
+        var result = await provider.SetActiveVersionAsync(itemId, "v2");
+
+        Assert.True(result.Success);
+        Assert.True(result.NameChanged);
+        Assert.Equal("Family-V2", result.NewName);
+
+        var item = await provider.GetItemAsync(itemId);
+        Assert.Equal("Family-V2", item?.Name);
+        Assert.Equal(
+            SmartCon.Core.Services.FamilyManager.FamilyNameNormalizer.Normalize("Family-V2"),
+            item?.NormalizedName);
+    }
+
+    [Fact]
+    public async Task SetActiveVersion_SameFileName_NameUnchanged()
+    {
+        // Activating the version whose file name matches the current item
+        // name must NOT rewrite the name (NameChanged = false). The seed
+        // already names the item "Family-V1" — the v1 file base name.
+        var (itemId, _, _) = await SeedItemWithTwoVersionsAsync();
+        var provider = _fixture.GetProvider();
+
+        var result = await provider.SetActiveVersionAsync(itemId, "v1");
+
+        Assert.True(result.Success);
+        Assert.False(result.NameChanged);
+
+        var item = await provider.GetItemAsync(itemId);
+        Assert.Equal("Family-V1", item?.Name);
     }
 }
 

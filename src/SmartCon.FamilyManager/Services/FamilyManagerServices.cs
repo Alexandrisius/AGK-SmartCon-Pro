@@ -1,3 +1,4 @@
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services.LocalCatalog;
@@ -106,4 +107,12 @@ public sealed record FamilyManagerServices(
     /// can be re-evaluated even when no switch happens (e.g. the current doc
     /// matches the existing active base).
     /// </summary>
-    IProjectBaseBindingEvaluator ProjectBaseEvaluator);
+    IProjectBaseBindingEvaluator ProjectBaseEvaluator,
+    /// <summary>
+    /// Database migrations (docs/architecture/database-migrations.md,
+    /// Issue #126): aggregates all registered <c>IDatabaseMigration</c>
+    /// implementations. The main VM checks for pending records after init
+    /// and on every database switch, drives the badge + "Update database"
+    /// command, and gates load-into-project while anything is pending.
+    /// </summary>
+    DatabaseMigrationCoordinator MigrationCoordinator);

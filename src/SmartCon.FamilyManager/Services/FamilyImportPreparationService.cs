@@ -181,7 +181,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 Status: dedupResult.Status,
                 ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
                 ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-                MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
+                MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
+                IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
+                MatchedItemName: dedupResult.HashMatch?.MatchedItemName);
         }
         catch (Exception ex)
         {
@@ -683,7 +685,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
             ExistingVersionLabel: dedupResult.ExistingVersionLabel,
             MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
-            GeometryPerType: geometryPerType);
+            GeometryPerType: geometryPerType,
+            IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
+            MatchedItemName: dedupResult.HashMatch?.MatchedItemName);
     }
 
     private async Task<PreparedFamilyItem> PrepareSystemCategoryAsync(
@@ -739,7 +743,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             Status: dedupResult.Status,
             ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
             ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
+            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
+            IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
+            MatchedItemName: dedupResult.HashMatch?.MatchedItemName);
     }
 
     private async Task<PreparedFamilyItem> PrepareLoadableFromProjectAsync(
@@ -824,7 +830,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             Status: dedupResult.Status,
             ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
             ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
+            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
+            IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
+            MatchedItemName: dedupResult.HashMatch?.MatchedItemName);
     }
 
     private int GetRevitMajorVersion()

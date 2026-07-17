@@ -282,7 +282,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
 
         var precomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(prepared.DisplayName, ".rfa", CancellationToken.None)
+            .BuildPrecomputedTripleAsync(prepared.DisplayName, ".rfa", prepared.ExistingCatalogItemId, CancellationToken.None)
             .ConfigureAwait(false);
         var precomputedCatalogItemId = precomputed?.CatalogItemId ?? Guid.NewGuid().ToString("N");
         var precomputedVersionLabel = precomputed?.VersionLabel ?? "v1";
@@ -316,7 +316,9 @@ public sealed partial class FamilyManagerMainViewModel
             HashFormatVersion: prepared.ContentHash?.FormatVersion,
             MatchedVersionLabel: prepared.MatchedVersionLabel,
             LoadableSnapshot: prepared.LoadableSnapshot,
-            SystemSnapshot: prepared.SystemSnapshot)
+            SystemSnapshot: prepared.SystemSnapshot,
+            IsCrossNameDuplicate: prepared.IsCrossNameDuplicate,
+            MatchedItemName: prepared.MatchedItemName)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -349,7 +351,7 @@ public sealed partial class FamilyManagerMainViewModel
         var displayName = importItem.FileName;
 
         var postDialogPrecomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(displayName, ".rfa", CancellationToken.None)
+            .BuildPrecomputedTripleAsync(displayName, ".rfa", importItem.ExistingCatalogItemId, CancellationToken.None)
             .ConfigureAwait(false);
         var resolvedCatalogItemId = postDialogPrecomputed?.CatalogItemId
             ?? importItem.PrecomputedCatalogItemId

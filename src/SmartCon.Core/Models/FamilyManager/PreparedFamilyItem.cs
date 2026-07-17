@@ -44,4 +44,6 @@ public sealed record PreparedFamilyItem(
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
     string? MatchedVersionLabel = null,
-    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null);
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
+    bool IsCrossNameDuplicate = false,
+    string? MatchedItemName = null);

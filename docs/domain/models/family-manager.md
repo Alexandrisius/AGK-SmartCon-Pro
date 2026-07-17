@@ -708,7 +708,8 @@ public enum FamilyBatchImportAction
 Результат переключения активной версии каталог-айтема на существующую версию.
 Обновляет `catalog_items.current_version_label` и синхронизирует `content_hash`/`hash_format_version`
 с активируемой версией (чтобы content-hash дедупликация оставалась консистентной).
-См. ADR-041.
+Issue #126: имя айтема следует за именем файла АКТИВНОЙ версии (`name` + `normalized_name`).
+См. ADR-041, ADR-049.
 
 **Файл:** `SetActiveVersionResult.cs`
 
@@ -720,8 +721,14 @@ public sealed record SetActiveVersionResult(
     string? PreviousVersionLabel,
     DateTimeOffset ActivatedAtUtc,
     bool ContentHashSynced,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    bool NameChanged = false,
+    string? PreviousName = null,
+    string? NewName = null);
 ```
+
+- `NameChanged` — Issue #126: имя айтема обновлено до имени файла активированной версии.
+- `PreviousName` / `NewName` — имя до/после переключения (NewName = имя файла версии без расширения).
 
 ---
 
@@ -1844,7 +1851,7 @@ public sealed record FormMetrics(
 
 ## ContentHashMatch
 
-Result of a cross-version content-hash search. Returned when a content hash matches a version (current or archived) of a catalog item. Used to display "Дубликат (vN)" in the batch dialog.
+Result of a cross-version content-hash search. Returned when a content hash matches a version (current or archived) of a catalog item. Used to display "Дубликат (vN)" in the batch dialog. Issue #126: расширен именем найденного айтема и его активной версией — с hash-first дедупликацией найденный по хэшу айтем является каноническим «existing» для MakeActive/IncrementVersion даже когда его имя отличается от имени файла.
 
 **Файл:** Models/FamilyManager/ContentHashMatch.cs
 
@@ -1852,18 +1859,23 @@ Result of a cross-version content-hash search. Returned when a content hash matc
 public sealed record ContentHashMatch(
     string CatalogItemId,
     string MatchedVersionLabel,
-    bool IsCurrentVersion);
+    bool IsCurrentVersion,
+    string? CurrentVersionLabel,
+    string MatchedItemName,
+    string MatchedItemNormalizedName);
 `
 
 - CatalogItemId — ID of the catalog item whose version matched.
 - MatchedVersionLabel — label of the matching version (e.g. "v2").
 - IsCurrentVersion — 	rue if matched is current version; alse if archived (e.g. after rollback).
+- CurrentVersionLabel — активная версия найденного айтема (Issue #126).
+- MatchedItemName / MatchedItemNormalizedName — имя найденного айтема; отличается от имени файла при cross-name дубликате (Issue #126).
 
 ---
 
 ## ContentHashDedupResult
 
-Result of the content-hash dedup check for a single batch-import row. Combines the name-based lookup with the cross-version hash search to produce the final FamilyBatchImportStatus.
+Result of the content-hash dedup check for a single batch-import row. Issue #126: hash-first порядок — поиск по хэшу по всем версиям каталога независимо от имени, имя — вторым шагом.
 
 **Файл:** Models/FamilyManager/ContentHashDedupResult.cs
 
@@ -1872,16 +1884,18 @@ public sealed record ContentHashDedupResult(
     FamilyBatchImportStatus Status,
     string? ExistingCatalogItemId,
     string? ExistingVersionLabel,
-    ContentHashMatch? HashMatch);
+    ContentHashMatch? HashMatch,
+    bool IsCrossNameDuplicate = false);
 `
 
 - Status — final status: New, Existing, Duplicate, or Error.
-- ExistingCatalogItemId — ID of the existing item found by normalized name, or 
-ull.
-- ExistingVersionLabel — current version label of the existing item, or 
+- ExistingCatalogItemId — для Duplicate: айтем, найденный ПО ХЭШУ (может иметь другое имя); для Existing: айтем по нормализованному имени; 
+ull для New/Error.
+- ExistingVersionLabel — current version label of the resolved item, or 
 ull.
 - HashMatch — cross-version hash match details if Status == Duplicate; otherwise 
 ull.
+- IsCrossNameDuplicate — Issue #126: хэш совпал с айтемом под другим именем (файл переименован); batch-диалог рисует ⚠ с tooltip.
 
 ---
 
@@ -1906,7 +1920,10 @@ public sealed record PreparedFamilyItem(
     FamilyBatchImportStatus Status = FamilyBatchImportStatus.New,
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
-    string? MatchedVersionLabel = null);
+    string? MatchedVersionLabel = null,
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
+    bool IsCrossNameDuplicate = false,
+    string? MatchedItemName = null);
 `
 
 - SourcePath — file path for UC-1, virtual placeholder for UC-3/UC-4 ("system://...", "loadable://...").
@@ -1917,6 +1934,7 @@ ull depending on FamilySource.
 - Source — v2.0.0 source payload for UC-3/UC-4 post-dialog staging; 
 ull for UC-1/UC-2.
 - MatchedVersionLabel — set when Status == Duplicate so the UI can show "Дубликат (v2)".
+- IsCrossNameDuplicate / MatchedItemName — Issue #126: хэш совпал с айтемом под другим именем; прокидывается в batch-строку для ⚠-иконки и tooltip.
 ---
 
 ## FamilyContentHash
@@ -1933,14 +1951,103 @@ public sealed record FamilyContentHash(
 
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
+    public const int RecalculationSkipped = -1;
 }
 ```
 
 - `HexString` — SHA-256 hex string (uppercase, no dashes).
-- `FormatVersion` — algorithm version, bumped when canonical-string format changes so old hashes do not produce false duplicate matches against new ones.
+- `FormatVersion` — algorithm version, bumped when canonical-string format changes so old hashes do not produce false duplicate matches against newly computed hashes.
 - `SourceKind` — `"loadable"` or `"system"`. Used to enforce cross-source separation (system hashes never match loadable hashes and vice versa).
-- `FamilyContentHashFormat.CurrentVersion` — current format version (= 1). Old rows with a lower `FormatVersion` will not produce false duplicate matches against newly computed hashes.
+- `FamilyContentHashFormat.CurrentVersion` — **= 2 (Issue #126, rename-invariant)**. История: v1 — loadable canonical string включал имя семейства (`FHV1|LOADABLE|{name}|...`), переименованные файлы давали другой хэш; v2 — имя исключено (`FHV2|LOADABLE|{cat}|...`). System canonical string не изменилась (`FHV1|SYSTEM|...` — имени никогда не было), system-строки мигрируются дешёвым UPDATE флага без пересчёта.
+- `FamilyContentHashFormat.RecalculationSkipped` — sentinel `-1`: миграция помечает версии, чей файл безвозвратно нечитаем; исключены из pending-числа и никогда не ретраятся.
+
+---
+
+## CatalogHashRecalculationProgress
+
+Прогресс миграции пересчёта хэшей (Issue #126), репортится раз в обработанный файл.
+
+**Файл:** `Models/FamilyManager/CatalogHashRecalculationProgress.cs`
+
+```csharp
+public sealed record CatalogHashRecalculationProgress(
+    int Current,
+    int Total,
+    string CurrentFileName);
+```
+
+---
+
+## CatalogHashRecalculationResult
+
+Результат миграции пересчёта хэшей (Issue #126).
+
+**Файл:** `Models/FamilyManager/CatalogHashRecalculationResult.cs`
+
+```csharp
+public sealed record CatalogHashRecalculationResult(
+    int UpdatedCount,
+    int SystemRelabeledCount,
+    int NewerRevitCount,
+    IReadOnlyList<HashRecalculationMissingFile> MissingFiles,
+    IReadOnlyList<HashRecalculationFailedFile> FailedFiles,
+    bool WasCancelled);
+```
+
+- `UpdatedCount` — версий пересчитано в v2 (все Revit-варианты обработанного label).
+- `SystemRelabeledCount` — system-версии, мигрированные дешёвым UPDATE флага (их v1-хэши уже rename-invariant).
+- `NewerRevitCount` — версии, оставленные pending: все их файловые варианты сохранены в Revit НОВЕЕ запущенного; будут предложены снова при открытии каталога в новом Revit.
+- `MissingFiles` — файлы не найдены; НЕ изменены (пользователь решает: purge или оставить).
+- `FailedFiles` — файлы нечитаемы; помечены `hash_format_version = -1` (никогда не ретраятся).
+- `WasCancelled` — пользователь прервал; закоммиченные пачки сохранены, остаток будет предложен при следующем показе диалога.
+
+---
+
+## HashRecalculationMissingFile
+
+Версия каталога, чей managed-файл не найден на диске при миграции (Issue #126). Показывается на summary-экране; пользователь решает — удалить записи из каталога или оставить (файл может быть на временно недоступном диске).
+
+**Файл:** `Models/FamilyManager/HashRecalculationMissingFile.cs`
+
+```csharp
+public sealed record HashRecalculationMissingFile(
+    string CatalogItemId,
+    string ItemName,
+    string VersionLabel,
+    string FileName);
+```
+
+---
+
+## HashRecalculationFailedFile
+
+Версия каталога, чей файл существует, но не прочитался при миграции (повреждён, ошибка Revit API). Помечается `hash_format_version = -1` навсегда (Issue #126).
+
+**Файл:** `Models/FamilyManager/HashRecalculationFailedFile.cs`
+
+```csharp
+public sealed record HashRecalculationFailedFile(
+    string ItemName,
+    string VersionLabel,
+    string FileName,
+    string ErrorMessage);
+```
+
+---
+
+## FamilyMigrationExtractResult
+
+Результат извлечения snapshot из одного файла для миграции (Issue #126). Никогда не бросает исключение через границу — ошибка в `ErrorMessage`, батч продолжается.
+
+**Файл:** `Models/FamilyManager/FamilyMigrationExtractResult.cs`
+
+```csharp
+public sealed record FamilyMigrationExtractResult(
+    bool Success,
+    FamilySnapshot? LoadableSnapshot,
+    string? ErrorMessage);
+```
 
 ---
 
@@ -2150,6 +2257,28 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 - Blank values excluded (IsBlankValue(hasValue, text)): HasValue=false, empty string, INVALID (no element), UNSUPPORTED, READERROR. Numeric zero is NOT blank.
 - Auto-generated parameters excluded (IsAutoGeneratedParameter(name)): anything containing IfcGUID or IFC GUID (case-insensitive). Revit regenerates these on every .rvt save — including them would break cross-document stability.
 - 10 unit tests in src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs cover blank-value exclusion, INVALID exclusion, numeric zero significance, IFC GUID exclusion, loadable-family blank values, parameter/type/geometry/SharedNested independence, and cross-source prefix separation.
+
+---
+
+## DatabaseMigrationCoordinator
+
+Pure-C# агрегатор всех зарегистрированных `IDatabaseMigration` (паттерн `docs/architecture/database-migrations.md`, Issue #126). Используется `FamilyManagerMainViewModel` для молчаливой проверки pending (badge state) и для запуска миграций командой «Обновить базу данных». Без Revit API — юнит-тестируется с fake-миграциями.
+
+**Файл:** `Services/Implementation/DatabaseMigrationCoordinator.cs`
+
+```csharp
+public sealed class DatabaseMigrationCoordinator
+{
+    public DatabaseMigrationCoordinator(IEnumerable<IDatabaseMigration> migrations);
+    public Task<int> CountTotalPendingAsync(int revitMajorVersion, CancellationToken ct = default);
+    public Task RunPendingAsync(int revitMajorVersion, CancellationToken ct = default);
+}
+```
+
+- Сортировка по `IDatabaseMigration.Order` (ascending) при построении — порядок регистрации в DI не важен.
+- `CountTotalPendingAsync` суммирует pending всех миграций; сломанная миграция даёт вклад 0 + Warn (одна ошибка не прячет остальные).
+- `RunPendingAsync` перед каждым запуском перепроверяет pending (skip при 0), уважает CancellationToken между миграциями; сбой перепроверки одной миграции не прерывает остальные.
+- 8 unit-тестов: `src/SmartCon.Tests/Core/Services/DatabaseMigrationCoordinatorTests.cs`.
 
 ---
 
