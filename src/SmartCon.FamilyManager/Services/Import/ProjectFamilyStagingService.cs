@@ -44,6 +44,14 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
             return Task.FromResult<FamilyBatchImportItem?>(item);
         }
 
+        // Issue #126 / ADR-041: MakeActive imports NO file — only the
+        // active-version pointer is switched. Staging would write an
+        // orphan managed .rvt no catalog row references.
+        if (item.Action == FamilyBatchImportAction.MakeActive)
+        {
+            return Task.FromResult<FamilyBatchImportItem?>(item);
+        }
+
         return _awaitableEvent.RaiseAsync(_ =>
         {
             var source = (FamilyImportSource.SystemSource)item.Source!;
@@ -112,6 +120,14 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
     {
         if (item.Source is not FamilyImportSource.LoadableSource
             || !item.FilePath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult<FamilyBatchImportItem?>(item);
+        }
+
+        // Issue #126 / ADR-041: MakeActive imports NO file — only the
+        // active-version pointer is switched. Staging would write an
+        // orphan managed .rfa no catalog row references.
+        if (item.Action == FamilyBatchImportAction.MakeActive)
         {
             return Task.FromResult<FamilyBatchImportItem?>(item);
         }

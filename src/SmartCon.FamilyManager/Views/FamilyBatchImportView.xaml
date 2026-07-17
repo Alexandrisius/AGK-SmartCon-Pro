@@ -178,18 +178,37 @@
                                         MinWidth="50"
                                         IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
-                    <DataGridTextColumn x:Name="ColStatus"
-                                        Width="Auto"
-                                        MinWidth="100"
-                                        IsReadOnly="True"
-                                        ElementStyle="{StaticResource CenterCell}">
-                        <DataGridTextColumn.Binding>
-                            <MultiBinding Converter="{StaticResource StatusConverter}">
-                                <Binding Path="Status"/>
-                                <Binding Path="MatchedVersionLabel"/>
-                            </MultiBinding>
-                        </DataGridTextColumn.Binding>
-                    </DataGridTextColumn>
+                    <DataGridTemplateColumn x:Name="ColStatus"
+                                            Width="Auto"
+                                            MinWidth="110"
+                                            IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                    <TextBlock VerticalAlignment="Center">
+                                        <TextBlock.Text>
+                                            <MultiBinding Converter="{StaticResource StatusConverter}">
+                                                <Binding Path="Status"/>
+                                                <Binding Path="MatchedVersionLabel"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                    <!-- Issue #126: warning icon for cross-name duplicates.
+                                         Shown only when the content hash matched an item under
+                                         a DIFFERENT name (the file was renamed). The tooltip
+                                         explains what MakeActive / IncrementVersion will do. -->
+                                    <TextBlock Text="⚠"
+                                               Margin="4,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource WarningBrush}"
+                                               ToolTip="{Binding CrossNameDuplicateTooltip}"
+                                               Visibility="{Binding IsCrossNameDuplicate, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn x:Name="ColCategory"
                                             Width="*"
                                             MinWidth="120">

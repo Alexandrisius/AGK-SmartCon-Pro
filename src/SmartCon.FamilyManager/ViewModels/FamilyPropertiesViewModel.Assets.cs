@@ -198,6 +198,7 @@ public sealed partial class FamilyPropertiesViewModel
     [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task ChangeAvatar()
     {
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
         var path = _dialogService.ShowAssetOpenFileDialog(
             LanguageManager.GetString(StringLocalization.Keys.FM_Props_SelectImage) ?? "Select image",
             FamilyAssetType.Image);
@@ -221,6 +222,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task RemoveAvatar()
     {
         if (!HasAvatar) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         // ADR-047: removes the derived avatar + primary flag; the source image
         // assets themselves are kept (they can be deleted individually from the list).
@@ -241,6 +243,7 @@ public sealed partial class FamilyPropertiesViewModel
     [RelayCommand(CanExecute = nameof(CanWrite))]
     private async Task AddFileUnified()
     {
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
         var path = ShowUnifiedAssetOpenFileDialog();
         if (path is null) return;
 
@@ -286,6 +289,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task AddAsset(string assetTypeStr)
     {
         if (!Enum.TryParse<FamilyAssetType>(assetTypeStr, out var assetType)) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         var path = _dialogService.ShowAssetOpenFileDialog(
             LanguageManager.GetString(StringLocalization.Keys.FM_Props_AddFile) ?? "Select file",
@@ -314,6 +318,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task DeleteAsset(ContentAssetRow? row)
     {
         if (row is null) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
         var asset = row.Asset;
 
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_Props_ConfirmDeleteAssetTitle) ?? "Delete file";
@@ -362,6 +367,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task SetAsPrimary(ContentAssetRow? row)
     {
         if (row is null || row.Asset.AssetType != FamilyAssetType.Image) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         // #131: pick the crop area for the new avatar before marking primary.
         var path = await _assetService.ResolveAssetPathAsync(row.Asset.Id);
@@ -449,6 +455,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task ToggleAssetVersionBinding(ContentAssetRow? row)
     {
         if (row is null || !row.CanToggleVersionBinding) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
         var asset = row.Asset;
 
         var newLabel = row.IsVersionBound ? null : VersionLabel;

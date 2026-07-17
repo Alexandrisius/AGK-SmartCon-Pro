@@ -277,6 +277,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -493,32 +494,48 @@
                       Style="{DynamicResource CompactComboBox}"/>
 
             <!-- Database tools popup -->
-            <ToggleButton Grid.Column="2"
-                          x:Name="DbToolsToggle"
-                          IsChecked="{Binding IsOpen, ElementName=DbToolsPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                          Width="28"
-                          Margin="0,0,0,0"
-                          Style="{DynamicResource SecondaryToggleButton}"
-                          ToolTip="{loc:Loc FM_PBase_DatabaseTools}">
-                <Viewbox Width="14" Height="14" Stretch="Uniform">
-                    <Grid Width="24" Height="24">
-                        <iconPacks:PackIconMaterial Kind="Database"
-                                                       Width="22" Height="22"
-                                                       Foreground="{DynamicResource TextMutedBrush}"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        <Border Width="16" Height="16"
-                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                 Margin="0,0,-1,-1"
-                                 Background="{DynamicResource SurfaceBrush}"
-                                 CornerRadius="8">
-                            <iconPacks:PackIconMaterial Kind="Cog"
-                                                           Width="14" Height="14"
+            <Grid Grid.Column="2">
+                <ToggleButton x:Name="DbToolsToggle"
+                              IsChecked="{Binding IsOpen, ElementName=DbToolsPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              Width="28"
+                              Margin="0,0,0,0">
+                    <ToggleButton.Style>
+                        <Style BasedOn="{StaticResource SecondaryToggleButton}" TargetType="ToggleButton">
+                            <Setter Property="ToolTip" Value="{loc:Loc FM_PBase_DatabaseTools}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDatabaseUpdateRequired}" Value="True">
+                                    <Setter Property="ToolTip" Value="{loc:Loc FM_PBase_UpdateDatabaseBadgeTooltip}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ToggleButton.Style>
+                    <Viewbox Width="14" Height="14" Stretch="Uniform">
+                        <Grid Width="24" Height="24">
+                            <iconPacks:PackIconMaterial Kind="Database"
+                                                           Width="22" Height="22"
                                                            Foreground="{DynamicResource TextMutedBrush}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </Grid>
-                </Viewbox>
-            </ToggleButton>
+                            <Border Width="16" Height="16"
+                                     HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                     Margin="0,0,-1,-1"
+                                     Background="{DynamicResource SurfaceBrush}"
+                                     CornerRadius="8">
+                                <iconPacks:PackIconMaterial Kind="Cog"
+                                                               Width="14" Height="14"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                    </Viewbox>
+                </ToggleButton>
+                <Border Width="6" Height="6"
+                        CornerRadius="3"
+                        Background="{DynamicResource DangerBrush}"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="0,2,2,0"
+                        IsHitTestVisible="False"
+                        Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
 
             <Popup x:Name="DbToolsPopup"
                    StaysOpen="False"
@@ -532,6 +549,22 @@
                         CornerRadius="6"
                         Padding="4">
                     <StackPanel>
+                        <Button Content="{loc:Loc FM_PBase_UpdateDatabase}"
+                                Command="{Binding UpdateDatabaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                ToolTip="{loc:Loc FM_PBase_UpdateDatabaseTooltip}"
+                                Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
                         <Button Content="{loc:Loc FM_PBase_ConnectDatabase}"
                                 Command="{Binding ConnectDatabaseCommand}"
                                 MinWidth="180"
@@ -593,8 +626,44 @@
             </Popup>
         </Grid>
 
-        <!-- Row 2: Refresh + Search -->
-        <Grid Grid.Row="2" Margin="0,0,0,8">
+        <!-- Row 2: Database update banner (visible only while migrations are pending, Issue #126) -->
+        <Border Grid.Row="2"
+                Margin="0,0,0,8"
+                Padding="10,6"
+                CornerRadius="6"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource WarningBrush}"
+                BorderThickness="1"
+                Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <iconPacks:PackIconMaterial Kind="AlertOutline"
+                                            Width="16" Height="16"
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource WarningBrush}"/>
+                <TextBlock Grid.Column="1"
+                           Text="{loc:Loc FM_DbUpdate_BannerText}"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+                <Button Grid.Column="2"
+                        Content="{loc:Loc FM_DbUpdate_BannerButton}"
+                        Command="{Binding UpdateDatabaseCommand}"
+                        Style="{DynamicResource PrimaryButton}"
+                        MinWidth="80"
+                        Height="24"
+                        Padding="10,0"
+                        Margin="10,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <!-- Row 3: Refresh + Search -->
+        <Grid Grid.Row="3" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -656,7 +725,7 @@
              way to ensure the sticky overlay is drawn above all TreeViewItems
              (TranslateTransform on TreeViewItem headers does not promote
              Z-order relative to sibling TreeViewItems). -->
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="4">
             <TreeView x:Name="CategoryTree"
                       ItemsSource="{Binding TreeNodes}"
                       behaviors:TreeViewBehaviors.RightClickSelect="True"
@@ -972,7 +1041,7 @@
             </Border>
         </Grid>
 
-        <Grid Grid.Row="4" Margin="0,4,0,0">
+        <Grid Grid.Row="5" Margin="0,4,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>

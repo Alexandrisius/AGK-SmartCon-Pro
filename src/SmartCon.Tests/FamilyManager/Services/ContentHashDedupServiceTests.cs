@@ -40,14 +40,40 @@ public class ContentHashDedupServiceTests
             RevitCategory: null);
     }
 
+    private static ContentHashMatch CreateMatch(
+        string itemId = "item-1",
+        string matchedLabel = "v2",
+        bool isCurrent = true,
+        string? currentLabel = "v2",
+        string itemName = "TestFamily")
+    {
+        return new ContentHashMatch(
+            CatalogItemId: itemId,
+            MatchedVersionLabel: matchedLabel,
+            IsCurrentVersion: isCurrent,
+            CurrentVersionLabel: currentLabel,
+            MatchedItemName: itemName,
+            MatchedItemNormalizedName: itemName.ToLowerInvariant());
+    }
+
     private static FamilyContentHash CreateHash(string hex = "ABC123")
     {
         return new FamilyContentHash(hex, FamilyContentHashFormat.CurrentVersion, "loadable");
     }
 
-    [Fact]
-    public async Task CheckAsync_NameNotFound_ReturnsNew()
+    private void SetupHashSearch(string hex, string source, ContentHashMatch? match)
     {
+        _mockProvider
+            .Setup(p => p.FindByContentHashAcrossVersionsAsync(
+                hex, FamilyContentHashFormat.CurrentVersion, source,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(match);
+    }
+
+    [Fact]
+    public async Task CheckAsync_HashNotMatched_NameNotFound_ReturnsNew()
+    {
+        SetupHashSearch("ABC123", "loadable", null);
         _mockProvider
             .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
@@ -57,6 +83,7 @@ public class ContentHashDedupServiceTests
         Assert.Equal(FamilyBatchImportStatus.New, result.Status);
         Assert.Null(result.ExistingCatalogItemId);
         Assert.Null(result.HashMatch);
+        Assert.False(result.IsCrossNameDuplicate);
     }
 
     [Fact]
@@ -76,51 +103,47 @@ public class ContentHashDedupServiceTests
     }
 
     [Fact]
-    public async Task CheckAsync_NameFound_HashMatchesCurrentVersion_ReturnsDuplicate()
+    public async Task CheckAsync_HashMatchesCurrentVersion_SameName_ReturnsDuplicate()
     {
         var item = CreateCatalogItem(currentVersion: "v2");
-        var match = new ContentHashMatch("item-1", "v2", true);
+        var match = CreateMatch(currentLabel: "v2");
 
         _mockProvider
             .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);
-        _mockProvider
-            .Setup(p => p.FindByContentHashAcrossVersionsAsync(
-                "ABC123", FamilyContentHashFormat.CurrentVersion, "loadable",
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(match);
+        SetupHashSearch("ABC123", "loadable", match);
 
         var result = await _sut.CheckAsync("testfamily", CreateHash(), "loadable");
 
         Assert.Equal(FamilyBatchImportStatus.Duplicate, result.Status);
         Assert.Equal("item-1", result.ExistingCatalogItemId);
+        Assert.Equal("v2", result.ExistingVersionLabel);
         Assert.NotNull(result.HashMatch);
         Assert.Equal("v2", result.HashMatch!.MatchedVersionLabel);
         Assert.True(result.HashMatch.IsCurrentVersion);
+        Assert.False(result.IsCrossNameDuplicate);
     }
 
     [Fact]
-    public async Task CheckAsync_NameFound_HashMatchesArchivedVersion_ReturnsDuplicate()
+    public async Task CheckAsync_HashMatchesArchivedVersion_SameName_ReturnsDuplicate()
     {
         var item = CreateCatalogItem(currentVersion: "v3");
-        var match = new ContentHashMatch("item-1", "v2", false);
+        var match = CreateMatch(matchedLabel: "v2", isCurrent: false, currentLabel: "v3");
 
         _mockProvider
             .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);
-        _mockProvider
-            .Setup(p => p.FindByContentHashAcrossVersionsAsync(
-                "ABC123", FamilyContentHashFormat.CurrentVersion, "loadable",
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(match);
+        SetupHashSearch("ABC123", "loadable", match);
 
         var result = await _sut.CheckAsync("testfamily", CreateHash(), "loadable");
 
         Assert.Equal(FamilyBatchImportStatus.Duplicate, result.Status);
         Assert.Equal("item-1", result.ExistingCatalogItemId);
+        Assert.Equal("v3", result.ExistingVersionLabel);
         Assert.NotNull(result.HashMatch);
         Assert.Equal("v2", result.HashMatch!.MatchedVersionLabel);
         Assert.False(result.HashMatch.IsCurrentVersion);
+        Assert.False(result.IsCrossNameDuplicate);
     }
 
     [Fact]
@@ -131,11 +154,7 @@ public class ContentHashDedupServiceTests
         _mockProvider
             .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);
-        _mockProvider
-            .Setup(p => p.FindByContentHashAcrossVersionsAsync(
-                "ABC123", FamilyContentHashFormat.CurrentVersion, "loadable",
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ContentHashMatch?)null);
+        SetupHashSearch("ABC123", "loadable", null);
 
         var result = await _sut.CheckAsync("testfamily", CreateHash(), "loadable");
 
@@ -163,8 +182,12 @@ public class ContentHashDedupServiceTests
     }
 
     [Fact]
-    public async Task CheckAsync_NameNotFound_DoesNotSearchByHash()
+    public async Task CheckAsync_NameNotFound_HashSearchedFirst()
     {
+        // Issue #126: hash-first order — the hash lookup ALWAYS runs when
+        // a hash is available, independent of the name. Only when the
+        // hash misses does the name lookup run.
+        SetupHashSearch("ABC123", "loadable", null);
         _mockProvider
             .Setup(p => p.FindByNormalizedNameAsync("unique", It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
@@ -174,14 +197,14 @@ public class ContentHashDedupServiceTests
         Assert.Equal(FamilyBatchImportStatus.New, result.Status);
         _mockProvider.Verify(
             p => p.FindByContentHashAcrossVersionsAsync(
-                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+                "ABC123", FamilyContentHashFormat.CurrentVersion, "loadable",
                 It.IsAny<CancellationToken>()),
-            Times.Never,
-            "Hash search must NOT be called when name is not found — dedup only applies on name match");
+            Times.Once,
+            "Hash search MUST run first, even when the name is not in the catalog");
     }
 
     [Fact]
-    public async Task CheckAsync_NameFound_NoHash_DoesNotSearchByHash()
+    public async Task CheckAsync_NoHash_DoesNotSearchByHash()
     {
         var item = CreateCatalogItem();
         _mockProvider
@@ -202,17 +225,11 @@ public class ContentHashDedupServiceTests
     [Fact]
     public async Task CheckAsync_Duplicate_PassesFamilySourceToHashSearch()
     {
-        var item = CreateCatalogItem(familySource: "system");
-        var match = new ContentHashMatch("item-1", "v1", true);
-
+        var match = CreateMatch(itemName: "Трубы", matchedLabel: "v1", currentLabel: "v1");
+        SetupHashSearch("DEF456", "system", match);
         _mockProvider
             .Setup(p => p.FindByNormalizedNameAsync("трубы", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(item);
-        _mockProvider
-            .Setup(p => p.FindByContentHashAcrossVersionsAsync(
-                "DEF456", FamilyContentHashFormat.CurrentVersion, "system",
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(match);
+            .ReturnsAsync(CreateCatalogItem(familySource: "system"));
 
         var hash = new FamilyContentHash("DEF456", FamilyContentHashFormat.CurrentVersion, "system");
         var result = await _sut.CheckAsync("трубы", hash, "system");
@@ -223,5 +240,67 @@ public class ContentHashDedupServiceTests
                 "DEF456", FamilyContentHashFormat.CurrentVersion, "system",
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task CheckAsync_HashMatchesDifferentName_ReturnsCrossNameDuplicate()
+    {
+        // Issue #126 core scenario: the file was renamed. The name is NOT
+        // in the catalog, but the content hash matches an item under a
+        // different name -> Duplicate with IsCrossNameDuplicate = true.
+        var match = CreateMatch(itemId: "item-9", itemName: "OldName", matchedLabel: "v2", currentLabel: "v3");
+        SetupHashSearch("ABC123", "loadable", match);
+        _mockProvider
+            .Setup(p => p.FindByNormalizedNameAsync("newname", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FamilyCatalogItem?)null);
+
+        var result = await _sut.CheckAsync("newname", CreateHash(), "loadable");
+
+        Assert.Equal(FamilyBatchImportStatus.Duplicate, result.Status);
+        Assert.True(result.IsCrossNameDuplicate);
+        Assert.Equal("item-9", result.ExistingCatalogItemId);
+        Assert.Equal("v3", result.ExistingVersionLabel);
+        Assert.NotNull(result.HashMatch);
+        Assert.Equal("v2", result.HashMatch!.MatchedVersionLabel);
+        Assert.Equal("OldName", result.HashMatch.MatchedItemName);
+    }
+
+    [Fact]
+    public async Task CheckAsync_NameContentConflict_ContentWins()
+    {
+        // Issue #126 conflict: content matches item A ("ItemA"), but the
+        // row's name belongs to a DIFFERENT item B. Content wins — the
+        // row is a cross-name Duplicate of A.
+        var match = CreateMatch(itemId: "item-a", itemName: "ItemA", matchedLabel: "v1", currentLabel: "v1");
+        SetupHashSearch("ABC123", "loadable", match);
+        _mockProvider
+            .Setup(p => p.FindByNormalizedNameAsync("itemb", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateCatalogItem(id: "item-b", name: "ItemB"));
+
+        var result = await _sut.CheckAsync("itemb", CreateHash(), "loadable");
+
+        Assert.Equal(FamilyBatchImportStatus.Duplicate, result.Status);
+        Assert.True(result.IsCrossNameDuplicate);
+        Assert.Equal("item-a", result.ExistingCatalogItemId);
+    }
+
+    [Fact]
+    public async Task CheckAsync_CrossNameDuplicate_NameOwnedBySameItem_NoConflict()
+    {
+        // The matched item's name differs from the row's name, but the
+        // name lookup resolves to the SAME item (e.g. the item was
+        // renamed in the catalog earlier). Still a cross-name duplicate,
+        // but no conflicting third item.
+        var match = CreateMatch(itemId: "item-1", itemName: "ItemA", matchedLabel: "v1", currentLabel: "v1");
+        SetupHashSearch("ABC123", "loadable", match);
+        _mockProvider
+            .Setup(p => p.FindByNormalizedNameAsync("itemb", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateCatalogItem(id: "item-1", name: "ItemB"));
+
+        var result = await _sut.CheckAsync("itemb", CreateHash(), "loadable");
+
+        Assert.Equal(FamilyBatchImportStatus.Duplicate, result.Status);
+        Assert.True(result.IsCrossNameDuplicate);
+        Assert.Equal("item-1", result.ExistingCatalogItemId);
     }
 }

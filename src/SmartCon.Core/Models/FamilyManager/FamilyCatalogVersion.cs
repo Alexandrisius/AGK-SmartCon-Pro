@@ -14,6 +14,10 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="ParametersCount">Number of family parameters if extracted.</param>
 /// <param name="PublishedAtUtc">When this version was published.</param>
 /// <param name="PublishedBy">Username of the Revit user who published this version (ADR-041 rev #5).</param>
+/// <param name="FileName">File name of the version's .rfa (from <c>family_files</c>).
+/// Populated only by <c>GetVersionsAsync</c> (LEFT JOIN) for the Versions tab —
+/// other queries leave it null. The item name follows the ACTIVE version's file
+/// name (Issue #126), so per-version names may differ from the item name.</param>
 public sealed record FamilyCatalogVersion(
     string Id,
     string CatalogItemId,
@@ -25,4 +29,5 @@ public sealed record FamilyCatalogVersion(
     DateTimeOffset PublishedAtUtc,
     string? ContentHash = null,
     int? HashFormatVersion = null,
-    string? PublishedBy = null);
+    string? PublishedBy = null,
+    string? FileName = null);

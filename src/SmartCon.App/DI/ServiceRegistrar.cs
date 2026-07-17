@@ -141,6 +141,7 @@ public static class ServiceRegistrar
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
+            presenter.Register<HashRecalculationProgressViewModel>(vm => new HashRecalculationProgressView(vm));
             presenter.Register<FmProjectBaseRulesEditorViewModel>(vm => new FmProjectBaseRulesEditorView(vm));
             presenter.Register<FmParseRuleViewModel>(vm => new FmParseRuleView(vm));
             presenter.Register<FmFieldLibraryViewModel>(vm => new FmFieldLibraryView(vm));
@@ -228,6 +229,18 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyContentHasher, SmartCon.Core.Services.Implementation.FamilyContentHasher>();
         services.AddSingleton<IContentHashDedupService, SmartCon.FamilyManager.Services.ContentHashDedupService>();
         services.AddSingleton<SmartCon.FamilyManager.Services.FamilyImportPreparationService>();
+
+        // --- FamilyManager Hash Recalculation Migration (Issue #126) ---
+        services.AddSingleton<IFamilyMigrationExtractor, SmartCon.Revit.FamilyManager.RevitFamilyMigrationExtractor>();
+        services.AddSingleton<ICatalogHashRecalculationService, SmartCon.FamilyManager.Services.LocalCatalog.CatalogHashRecalculationService>();
+
+        // --- Database migrations (docs/architecture/database-migrations.md) ---
+        // Register every IDatabaseMigration here; the coordinator aggregates
+        // them and the main VM drives badge state + "Update database" + the
+        // load-into-project gate automatically.
+        services.AddSingleton<IDatabaseMigration, SmartCon.FamilyManager.Services.Migrations.HashRecalculationMigration>();
+        services.AddSingleton<DatabaseMigrationCoordinator>();
+        services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 
         // --- FamilyManager 3D Geometry Preview (ADR-042 / Issue #92) ---
         services.AddSingleton<IFamilyGeometryExtractor, SmartCon.Revit.FamilyManager.RevitFamilyGeometryExtractor>();

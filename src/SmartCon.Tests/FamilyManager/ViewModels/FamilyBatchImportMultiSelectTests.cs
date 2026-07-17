@@ -478,8 +478,9 @@ public sealed class FamilyBatchImportMultiSelectTests
             .Setup(p => p.BuildPrecomputedTripleAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string displayName, string ext, CancellationToken _) =>
+            .ReturnsAsync((string displayName, string ext, string? _, CancellationToken __) =>
                 new PrecomputedImportTriple(
                     CatalogItemId: Guid.NewGuid().ToString("N"),
                     VersionLabel: "v1",
@@ -573,6 +574,7 @@ public sealed class FamilyBatchImportMultiSelectTests
             .Setup(p => p.BuildPrecomputedTripleAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PrecomputedImportTriple(
                 CatalogItemId: existingId,
@@ -911,6 +913,7 @@ public sealed class FamilyBatchImportMultiSelectTests
             .Setup(p => p.BuildPrecomputedTripleAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((PrecomputedImportTriple?)null);
 

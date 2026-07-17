@@ -84,23 +84,33 @@ internal sealed partial class LocalCatalogProvider
         using var tx = connection.BeginTransaction();
         try
         {
-            // Step 1: Read previous current_version_label + content_hash of the target version.
+            // Step 1: Read previous current_version_label + name, the target
+            // version's content_hash, and the target version's file name.
+            // Issue #126: the catalog item name follows the ACTIVE version's
+            // file name, so MakeActive onto a version stored under a
+            // different file name renames the item accordingly.
             // If multiple Revit variants exist for the same label, pick the closest to current Revit (highest).
             string? previousLabel;
+            string? previousName = null;
             string? versionContentHash = null;
             int? versionHashFormat = null;
+            string? targetFileName = null;
 
             using (var readCmd = connection.CreateCommand())
             {
                 readCmd.Transaction = tx;
                 readCmd.CommandText = """
                     SELECT ci.current_version_label AS prev_label,
+                           ci.name AS prev_name,
                            cv.content_hash AS target_hash,
-                           cv.hash_format_version AS target_hash_fmt
+                           cv.hash_format_version AS target_hash_fmt,
+                           ff.file_name AS target_file_name
                     FROM catalog_items ci
                     LEFT JOIN catalog_versions cv
                         ON cv.catalog_item_id = ci.id
                        AND cv.version_label = @label
+                    LEFT JOIN family_files ff
+                        ON ff.id = cv.file_id
                     WHERE ci.id = @itemId
                     ORDER BY cv.revit_major_version DESC
                     LIMIT 1
@@ -123,12 +133,18 @@ internal sealed partial class LocalCatalogProvider
                 previousLabel = reader.IsDBNull(reader.GetOrdinal("prev_label"))
                     ? null
                     : reader.GetString(reader.GetOrdinal("prev_label"));
+                previousName = reader.IsDBNull(reader.GetOrdinal("prev_name"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("prev_name"));
                 versionContentHash = reader.IsDBNull(reader.GetOrdinal("target_hash"))
                     ? null
                     : reader.GetString(reader.GetOrdinal("target_hash"));
                 versionHashFormat = reader.IsDBNull(reader.GetOrdinal("target_hash_fmt"))
                     ? null
                     : reader.GetInt32(reader.GetOrdinal("target_hash_fmt"));
+                targetFileName = reader.IsDBNull(reader.GetOrdinal("target_file_name"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("target_file_name"));
             }
 
             // Check that at least one row in catalog_versions matched the label.
@@ -150,11 +166,22 @@ internal sealed partial class LocalCatalogProvider
                         Success: false, CatalogItemId: catalogItemId, VersionLabel: versionLabel,
                         PreviousVersionLabel: previousLabel, ActivatedAtUtc: DateTimeOffset.UtcNow,
                         ContentHashSynced: false,
-                        ErrorMessage: $"Version with label '{versionLabel}' not found for catalog item {catalogItemId}");
+                        ErrorMessage: $"Version with label '{versionLabel}' not found for catalog item {catalogItemId}",
+                        PreviousName: previousName);
                 }
             }
 
-            // Step 2: Atomically switch the pointer + sync content_hash (ADR-041 A.03).
+            // Issue #126: resolve the item name from the activated version's
+            // file name (without extension). When the version has no file
+            // record the name is left untouched.
+            var newName = !string.IsNullOrEmpty(targetFileName)
+                ? Path.GetFileNameWithoutExtension(targetFileName)
+                : null;
+            var nameChanged = newName is not null
+                && !string.Equals(newName, previousName, StringComparison.Ordinal);
+
+            // Step 2: Atomically switch the pointer + sync content_hash (ADR-041 A.03)
+            // + adopt the activated version's file name (Issue #126).
             using (var updCmd = connection.CreateCommand())
             {
                 updCmd.Transaction = tx;
@@ -163,12 +190,20 @@ internal sealed partial class LocalCatalogProvider
                     SET current_version_label = @label,
                         content_hash = @contentHash,
                         hash_format_version = @hashFmt,
+                        name = COALESCE(@newName, name),
+                        normalized_name = COALESCE(@newNormalizedName, normalized_name),
                         updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 updCmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
                 updCmd.Parameters.Add(new SqliteParameter("@contentHash", (object?)versionContentHash ?? DBNull.Value));
                 updCmd.Parameters.Add(new SqliteParameter("@hashFmt", versionHashFormat.HasValue ? (object)versionHashFormat.Value : DBNull.Value));
+                updCmd.Parameters.Add(new SqliteParameter("@newName",
+                    nameChanged ? (object)newName! : DBNull.Value));
+                updCmd.Parameters.Add(new SqliteParameter("@newNormalizedName",
+                    nameChanged
+                        ? (object)Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(newName!)
+                        : DBNull.Value));
                 updCmd.Parameters.Add(new SqliteParameter("@now", DateTimeOffset.UtcNow.ToString("o")));
                 updCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
@@ -180,17 +215,24 @@ internal sealed partial class LocalCatalogProvider
                         Success: false, CatalogItemId: catalogItemId, VersionLabel: versionLabel,
                         PreviousVersionLabel: previousLabel, ActivatedAtUtc: DateTimeOffset.UtcNow,
                         ContentHashSynced: false,
-                        ErrorMessage: "catalog_items UPDATE affected 0 rows");
+                        ErrorMessage: "catalog_items UPDATE affected 0 rows",
+                        PreviousName: previousName);
                 }
             }
 
             tx.Commit();
             var hashSynced = versionContentHash is not null;
-            SmartConLogger.Info($"switched active version: prev={(previousLabel ?? "<null>")} new={versionLabel} hashSynced={hashSynced}");
+            SmartConLogger.Info(
+                $"switched active version: prev={(previousLabel ?? "<null>")} new={versionLabel} " +
+                $"hashSynced={hashSynced} nameChanged={nameChanged}" +
+                (nameChanged ? $" ('{previousName}' -> '{newName}')" : string.Empty));
             return new SetActiveVersionResult(
                 Success: true, CatalogItemId: catalogItemId, VersionLabel: versionLabel,
                 PreviousVersionLabel: previousLabel, ActivatedAtUtc: DateTimeOffset.UtcNow,
-                ContentHashSynced: hashSynced);
+                ContentHashSynced: hashSynced,
+                NameChanged: nameChanged,
+                PreviousName: previousName,
+                NewName: nameChanged ? newName : previousName);
         }
         catch (Exception)
         {

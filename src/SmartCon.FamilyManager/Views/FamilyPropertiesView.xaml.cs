@@ -132,6 +132,7 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
     private void InitializeVersionGridHeaders()
     {
         ColVersionLabel.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Version) ?? "Version";
+        ColVersionFileName.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_FileName) ?? "Family name";
         ColVersionRevit.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Revit) ?? "Revit";
         ColVersionDate.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Date) ?? "Date";
         ColVersionAuthor.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Author) ?? "Author";

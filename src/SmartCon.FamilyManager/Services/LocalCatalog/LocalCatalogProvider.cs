@@ -309,7 +309,13 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT * FROM catalog_versions WHERE catalog_item_id = @itemId ORDER BY published_at_utc DESC";
+        cmd.CommandText = """
+            SELECT cv.*, ff.file_name
+            FROM catalog_versions cv
+            LEFT JOIN family_files ff ON ff.id = cv.file_id
+            WHERE cv.catalog_item_id = @itemId
+            ORDER BY cv.published_at_utc DESC
+            """;
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
         var versions = new List<FamilyCatalogVersion>();
@@ -477,7 +483,8 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))),
         ContentHash: TryGetString(reader, "content_hash"),
         HashFormatVersion: TryGetInt(reader, "hash_format_version"),
-        PublishedBy: TryGetString(reader, "published_by"));
+        PublishedBy: TryGetString(reader, "published_by"),
+        FileName: TryGetString(reader, "file_name"));
 
     private static FamilyFileRecord ReadFileRecord(SqliteDataReader reader) => new(
         Id: reader.GetString(reader.GetOrdinal("id")),
@@ -567,16 +574,23 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
+        // Issue #126: also select the matched item's name/normalized_name/
+        // current_version_label so the dedup service can detect a cross-name
+        // duplicate and treat the matched item as the canonical "existing"
+        // item for MakeActive / IncrementVersion. The lookup itself is
+        // covered by ix_catalog_versions_content_hash (partial index).
         cmd.CommandText = """
             SELECT cv.catalog_item_id AS itemId,
                    cv.version_label AS versionLabel,
-                   ci.current_version_label AS currentLabel
+                   ci.current_version_label AS currentLabel,
+                   ci.name AS itemName,
+                   ci.normalized_name AS itemNormalizedName
             FROM catalog_versions cv
             JOIN catalog_items ci ON cv.catalog_item_id = ci.id
             WHERE cv.content_hash = @hash
               AND cv.hash_format_version = @fmt
               AND ci.family_source = @source
-            ORDER BY cv.published_at_utc DESC
+            ORDER BY cv.published_at_utc DESC, cv.rowid DESC
             LIMIT 1
             """;
         cmd.Parameters.Add(new SqliteParameter("@hash", hexHash));
@@ -597,7 +611,10 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         return new ContentHashMatch(
             CatalogItemId: itemId,
             MatchedVersionLabel: versionLabel,
-            IsCurrentVersion: isCurrent);
+            IsCurrentVersion: isCurrent,
+            CurrentVersionLabel: currentLabel,
+            MatchedItemName: reader.GetString(reader.GetOrdinal("itemName")),
+            MatchedItemNormalizedName: reader.GetString(reader.GetOrdinal("itemNormalizedName")));
     }
 }
 

@@ -49,6 +49,16 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// the version label whose stored hash matched this row's hash (e.g. "v2").
 /// Displayed in the dialog as "Duplicate (v2)". <c>null</c> otherwise.
 /// </param>
+/// <param name="IsCrossNameDuplicate">
+/// Issue #126: <c>true</c> when the content hash matched an item whose
+/// name differs from this row's file name (the file was renamed). The
+/// batch dialog renders a warning icon with a tooltip for such rows.
+/// </param>
+/// <param name="MatchedItemName">
+/// Issue #126: display name of the catalog item whose version matched
+/// the content hash. Used by the cross-name duplicate tooltip.
+/// <c>null</c> unless <see cref="Status"/> is Duplicate.
+/// </param>
 /// <param name="LoadableSnapshot">
 /// Phase 27: in-memory snapshot of the loadable family extracted during
 /// Phase 1 Prepare. Survives the dialog round-trip so Phase 3 Commit can
@@ -85,7 +95,9 @@ public sealed record FamilyBatchImportItem(
     FamilySnapshot? LoadableSnapshot = null,
     SystemFamilySnapshot? SystemSnapshot = null,
     string? PublishedBy = null,
-    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null)
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
+    bool IsCrossNameDuplicate = false,
+    string? MatchedItemName = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

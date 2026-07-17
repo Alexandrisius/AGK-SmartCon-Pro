@@ -20,6 +20,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         using var _scope = SmartConLogger.BeginScope("FMImport",
             ("Method", "ImportFilesAsync"));
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import Files";
         var paths = _dialogService.ShowImportFilesDialog(title);
         if (paths is null || paths.Length == 0) return;
@@ -32,6 +33,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (SelectedTreeNode is not CategoryNodeViewModel categoryNode) return;
         if (categoryNode.CategoryId == "__no_category__") return;
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
 
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import File";
         var paths = _dialogService.ShowImportFilesDialog(title);
@@ -115,7 +117,7 @@ public sealed partial class FamilyManagerMainViewModel
                     : p.Status;
 
                 var precomputed = await _importPrecomputer
-                    .BuildPrecomputedTripleAsync(p.DisplayName, ".rfa", CancellationToken.None)
+                    .BuildPrecomputedTripleAsync(p.DisplayName, ".rfa", p.ExistingCatalogItemId, CancellationToken.None)
                     .ConfigureAwait(false);
 
                 items.Add(new FamilyBatchImportItem(
@@ -142,7 +144,9 @@ public sealed partial class FamilyManagerMainViewModel
                     MatchedVersionLabel: p.MatchedVersionLabel,
                     LoadableSnapshot: p.LoadableSnapshot,
                     SystemSnapshot: p.SystemSnapshot,
-                    GeometryPerType: p.GeometryPerType)
+                    GeometryPerType: p.GeometryPerType,
+                    IsCrossNameDuplicate: p.IsCrossNameDuplicate,
+                    MatchedItemName: p.MatchedItemName)
                 {
                     Action = status == FamilyBatchImportStatus.Duplicate
                         ? FamilyBatchImportAction.Skip
@@ -255,6 +259,7 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task ImportSelectedElementsAsync()
     {
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         IsLoading = true;
         StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SelectElementsPrompt)
             ?? "Выберите элементы в Revit (системные или загружаемые семейства)...";
@@ -436,8 +441,11 @@ public sealed partial class FamilyManagerMainViewModel
             }
 
             var extension = p.FamilySource == "system" ? ".rvt" : ".rfa";
+            // Issue #126: when dedup matched this row to an existing item
+            // by content hash (possibly under a different name), the
+            // precomputed triple must target THAT item, not a name lookup.
             var precomputed = await _importPrecomputer
-                .BuildPrecomputedTripleAsync(p.DisplayName, extension, ct)
+                .BuildPrecomputedTripleAsync(p.DisplayName, extension, p.ExistingCatalogItemId, ct)
                 .ConfigureAwait(false);
 
             var status = p.ErrorMessage is not null
@@ -467,7 +475,9 @@ public sealed partial class FamilyManagerMainViewModel
                 HashFormatVersion: p.ContentHash?.FormatVersion,
                 MatchedVersionLabel: p.MatchedVersionLabel,
                 LoadableSnapshot: p.LoadableSnapshot,
-                SystemSnapshot: p.SystemSnapshot)
+                SystemSnapshot: p.SystemSnapshot,
+                IsCrossNameDuplicate: p.IsCrossNameDuplicate,
+                MatchedItemName: p.MatchedItemName)
             {
                 Action = status == FamilyBatchImportStatus.Duplicate
                     ? FamilyBatchImportAction.Skip
@@ -531,7 +541,7 @@ public sealed partial class FamilyManagerMainViewModel
         // pay one extra read here; the trade-off is worth it for the
         // invariant guarantee.
         var precomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(displayName, ".rvt", ct)
+            .BuildPrecomputedTripleAsync(displayName, ".rvt", null, ct)
             .ConfigureAwait(false);
 
         SmartConLogger.Info(
@@ -611,7 +621,7 @@ public sealed partial class FamilyManagerMainViewModel
         // — go through the precomputer so the initial build and the
         // post-rename re-derivation cannot drift apart.
         var precomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(loadable.FamilyName, ".rfa", ct)
+            .BuildPrecomputedTripleAsync(loadable.FamilyName, ".rfa", null, ct)
             .ConfigureAwait(false);
 
         return new FamilyBatchImportItem(

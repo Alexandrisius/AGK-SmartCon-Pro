@@ -34,6 +34,16 @@ public sealed class FileFamilyStagingService : IFileFamilyStagingService
             return Task.FromResult(item);
         }
 
+        // Issue #126 / ADR-041: MakeActive imports NO file — it only
+        // switches current_version_label on the matched catalog item.
+        // Staging would SaveAs the held document into the precomputed
+        // vN+1 path and leave an orphan managed file that no
+        // catalog_versions row references.
+        if (item.Action == FamilyBatchImportAction.MakeActive)
+        {
+            return Task.FromResult(item);
+        }
+
         return _awaitableEvent.RaiseAsync(_ =>
         {
             string managedRfaPath;

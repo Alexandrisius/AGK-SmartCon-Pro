@@ -583,4 +583,133 @@ public sealed class LocalCatalogMigratorTests
             Assert.Null(result);
         }
     }
+
+    /// <summary>
+    /// Regression for the "FOREIGN KEY constraint failed" connect failure on
+    /// legacy databases: pre-FK-enforcement databases can carry orphan rows in
+    /// EVERY FK column of the rebuilt tables (not just the ones the original
+    /// cleanups covered). The V15/V17/V18 rebuilds must clean orphans by all
+    /// FK columns and let the database connect.
+    /// </summary>
+    [Fact]
+    public async Task Migrate_LegacyDatabaseWithOrphanRows_CleansAllFkColumns()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        // Seed: one valid entity graph + orphan rows in every FK column the
+        // rebuilds cover. Test connections default to foreign_keys=OFF, so
+        // orphan inserts succeed (exactly how legacy databases got them).
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+
+            // The pooled physical connection inherits foreign_keys=ON from
+            // the migrator — disable it explicitly so the orphan inserts
+            // succeed (exactly how legacy databases got their orphans).
+            using (var fkOff = connection.CreateCommand())
+            {
+                fkOff.CommandText = "PRAGMA foreign_keys=OFF";
+                await fkOff.ExecuteNonQueryAsync();
+            }
+
+            using (var seed = connection.CreateCommand())
+            {
+                seed.CommandText = """
+                    INSERT INTO catalog_items (id, name, normalized_name, family_source, created_at_utc, updated_at_utc)
+                    VALUES ('item1', 'FamA', 'fama', 'loadable', '2024-01-01', '2024-01-01');
+                    INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                    VALUES ('file1', 'files/item1/v1/FamA.rfa', 'FamA.rfa', 2021, '2024-01-01');
+                    INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc)
+                    VALUES ('ver1', 'item1', 'file1', 'v1', 2021, '2024-01-01');
+                    INSERT INTO attribute_definitions (id, name, is_active, created_at_utc)
+                    VALUES ('attr1', 'ParamA', 1, '2024-01-01');
+                    INSERT INTO family_data_import_runs (id, catalog_item_id, revit_major_version, started_at_utc)
+                    VALUES ('run1', 'item1', 2021, '2024-01-01');
+
+                    -- valid rows that MUST survive the rebuilds
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+                    VALUES ('type-ok', 'item1', 'T1', 0, 'ver1', 'file1');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, version_id, file_id, type_id, attribute_id,
+                                                          parameter_name, storage_type, value_text, status,
+                                                          extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ok', 'item1', 'ver1', 'file1', 'type-ok', 'attr1',
+                            'ParamA', 'String', 'X', 'Found', 'run1', '2024-01-01');
+
+                    -- orphan rows: every FK column, one per violation kind
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+                    VALUES ('type-ghost-item', 'ghost-item', 'T2', 0, 'ver1', 'file1');
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+                    VALUES ('type-ghost-file', 'item1', 'T3', 0, 'ver1', 'ghost-file');
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+                    VALUES ('type-ghost-ver', 'item1', 'T4', 0, 'ghost-ver', 'file1');
+
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-item', 'ghost-item', 'P1', 'run1', '2024-01-01');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, type_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-type', 'item1', 'ghost-type', 'P2', 'run1', '2024-01-01');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, attribute_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-attr', 'item1', 'ghost-attr', 'P3', 'run1', '2024-01-01');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, version_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-ver', 'item1', 'ghost-ver', 'P4', 'run1', '2024-01-01');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-run', 'item1', 'P5', 'ghost-run', '2024-01-01');
+                    """;
+                await seed.ExecuteNonQueryAsync();
+            }
+
+            // Rewind to v14 so V15..V21 re-run against the dirty data.
+            using var rewind = connection.CreateCommand();
+            rewind.CommandText = "UPDATE schema_info SET value = '14' WHERE key='schema_version'";
+            await rewind.ExecuteNonQueryAsync();
+        }
+
+        // Must not throw — previously failed with "FOREIGN KEY constraint failed".
+        await fixture.GetMigrator().MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using var versionCmd = verify.CreateCommand();
+        versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+        Assert.Equal("21", (string?)await versionCmd.ExecuteScalarAsync());
+
+        // Orphans are gone from both rebuilt tables.
+        foreach (var (table, ghostId) in new[]
+        {
+            ("family_types", "type-ghost-item"),
+            ("family_types", "type-ghost-file"),
+            ("family_types", "type-ghost-ver"),
+            ("extracted_attribute_values", "eav-ghost-item"),
+            ("extracted_attribute_values", "eav-ghost-type"),
+            ("extracted_attribute_values", "eav-ghost-attr"),
+            ("extracted_attribute_values", "eav-ghost-ver"),
+            ("extracted_attribute_values", "eav-ghost-run"),
+        })
+        {
+            using var cmd = verify.CreateCommand();
+            cmd.CommandText = $"SELECT COUNT(*) FROM {table} WHERE id = '{ghostId}'";
+            Assert.Equal(0L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+
+        // Valid rows survived the rebuilds.
+        using (var cmd = verify.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM family_types WHERE id = 'type-ok'";
+            Assert.Equal(1L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+        using (var cmd = verify.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM extracted_attribute_values WHERE id = 'eav-ok'";
+            Assert.Equal(1L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+
+        // No FK violations remain anywhere in the database.
+        using (var cmd = verify.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA foreign_key_check";
+            using var reader = await cmd.ExecuteReaderAsync();
+            Assert.False(await reader.ReadAsync(), "foreign_key_check must find no violations after migration");
+        }
+    }
 }

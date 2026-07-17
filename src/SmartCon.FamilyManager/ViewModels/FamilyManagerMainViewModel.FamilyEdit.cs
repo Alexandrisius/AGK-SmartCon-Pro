@@ -21,6 +21,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         using var _scope = SmartConLogger.BeginScope("FMEdit",
             ("Method", "OpenCategoryEditorAsync"));
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         var editorVm = _viewModelFactory.CreateCategoryTreeEditorViewModel();
         editorVm.Saved += () => _ = LoadTreeAsync();
         await editorVm.InitializeAsync();
@@ -135,6 +136,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         using var _scope = SmartConLogger.BeginScope("FMImport",
             ("Method", "ImportActiveFileAsync"));
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         IsLoading = true;
         var sessionStart = DateTime.Now;
         try
@@ -282,7 +284,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
 
         var precomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(prepared.DisplayName, ".rfa", CancellationToken.None)
+            .BuildPrecomputedTripleAsync(prepared.DisplayName, ".rfa", prepared.ExistingCatalogItemId, CancellationToken.None)
             .ConfigureAwait(false);
         var precomputedCatalogItemId = precomputed?.CatalogItemId ?? Guid.NewGuid().ToString("N");
         var precomputedVersionLabel = precomputed?.VersionLabel ?? "v1";
@@ -316,7 +318,9 @@ public sealed partial class FamilyManagerMainViewModel
             HashFormatVersion: prepared.ContentHash?.FormatVersion,
             MatchedVersionLabel: prepared.MatchedVersionLabel,
             LoadableSnapshot: prepared.LoadableSnapshot,
-            SystemSnapshot: prepared.SystemSnapshot)
+            SystemSnapshot: prepared.SystemSnapshot,
+            IsCrossNameDuplicate: prepared.IsCrossNameDuplicate,
+            MatchedItemName: prepared.MatchedItemName)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -349,7 +353,7 @@ public sealed partial class FamilyManagerMainViewModel
         var displayName = importItem.FileName;
 
         var postDialogPrecomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(displayName, ".rfa", CancellationToken.None)
+            .BuildPrecomputedTripleAsync(displayName, ".rfa", importItem.ExistingCatalogItemId, CancellationToken.None)
             .ConfigureAwait(false);
         var resolvedCatalogItemId = postDialogPrecomputed?.CatalogItemId
             ?? importItem.PrecomputedCatalogItemId
@@ -896,6 +900,7 @@ public sealed partial class FamilyManagerMainViewModel
         using var _scope = SmartConLogger.BeginScope("FMEdit",
             ("Method", "DeleteFamilyAsync"));
         if (SelectedItem is null) return;
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
 
         var confirmed = _dialogService.ShowConfirmation(
             LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteTitle) ?? "Delete Family",
@@ -953,7 +958,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    public async Task MoveFamilyToCategoryAsync(string familyId, string? targetCategoryId)
+    private async Task MoveFamilyToCategoryAsync(string familyId, string? targetCategoryId)
     {
         if (!CanEdit)
         {
@@ -994,6 +999,7 @@ public sealed partial class FamilyManagerMainViewModel
             ("Method", "DropFamilyAsync"));
         if (info is not { Payload: FamilyLeafNodeViewModel leaf, Target: CategoryNodeViewModel target })
             return;
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
 
         var categoryId = target.CategoryId == "__no_category__"
             ? null

@@ -106,4 +106,12 @@ public sealed record FamilyManagerServices(
     /// can be re-evaluated even when no switch happens (e.g. the current doc
     /// matches the existing active base).
     /// </summary>
-    IProjectBaseBindingEvaluator ProjectBaseEvaluator);
+    IProjectBaseBindingEvaluator ProjectBaseEvaluator,
+    /// <summary>
+    /// Database-update state (docs/architecture/database-migrations.md,
+    /// Issue #126): shared singleton holding "update required / pending /
+    /// running". The main VM refreshes it after init and on every database
+    /// switch and maps it onto the badge/banner UI; write commands across
+    /// the module gate through it (read-only database while pending).
+    /// </summary>
+    IDatabaseUpdateStateService UpdateState);

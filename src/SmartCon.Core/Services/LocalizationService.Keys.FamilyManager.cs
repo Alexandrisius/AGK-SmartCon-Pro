@@ -177,6 +177,7 @@ public static partial class LocalizationService
         ru["FM_Tab_3DView"] = "3D Просмотр"; en["FM_Tab_3DView"] = "3D Preview";
         ru["FM_Tab_Versions"] = "Версии"; en["FM_Tab_Versions"] = "Versions";
         ru["FM_Version_Column_Version"] = "Версия"; en["FM_Version_Column_Version"] = "Version";
+        ru["FM_Version_Column_FileName"] = "Имя семейства"; en["FM_Version_Column_FileName"] = "Family name";
         ru["FM_Version_Column_Revit"] = "Revit"; en["FM_Version_Column_Revit"] = "Revit";
         ru["FM_Version_Column_Date"] = "Дата"; en["FM_Version_Column_Date"] = "Date";
         ru["FM_Version_Column_Author"] = "Автор"; en["FM_Version_Column_Author"] = "Author";
@@ -355,6 +356,27 @@ public static partial class LocalizationService
         ru["FM_BatchImport_ProgressExtracting"] = "Обработка {0} из {1} — {2}"; en["FM_BatchImport_ProgressExtracting"] = "Processing {0} of {1} — {2}";
         ru["FM_BatchImport_Finalizing"] = "Завершение..."; en["FM_BatchImport_Finalizing"] = "Finalizing...";
         ru["FM_BatchImport_SummaryFormat"] = "Импортировано: {0}, пропущено: {1}, ошибок: {2}"; en["FM_BatchImport_SummaryFormat"] = "Imported: {0}, skipped: {1}, errors: {2}";
+        ru["FM_BatchImport_CrossNameDuplicate_Tooltip"] = "Содержимое совпадает с семейством \"{0}\" ({1}), хотя имя файла другое.\n\"Сделать активной\" — файл не импортируется, активируется найденная версия.\n\"Новая версия\" — семейство \"{0}\" будет переименовано в имя этого файла."; en["FM_BatchImport_CrossNameDuplicate_Tooltip"] = "Content matches family \"{0}\" ({1}) although the file name differs.\n\"Make Active\" — the file is not imported; the matched version is activated.\n\"New Version\" — family \"{0}\" will be renamed to this file's name.";
+
+        // Hash Recalculation Migration (Issue #126)
+        ru["FM_HashRecalc_Title"] = "Обновление базы семейств"; en["FM_HashRecalc_Title"] = "Family Database Update";
+        ru["FM_HashRecalc_LoadBlockedTitle"] = "Требуется обновление базы"; en["FM_HashRecalc_LoadBlockedTitle"] = "Database Update Required";
+        ru["FM_HashRecalc_LoadBlockedBody"] = "Действие временно недоступно: база данных создана в старой версии SmartCon и требует обновления ({0} записей). До завершения обновления база работает в режиме просмотра.\n\nОбновить сейчас? Процесс можно прервать — он продолжится с места остановки."; en["FM_HashRecalc_LoadBlockedBody"] = "This action is temporarily unavailable: the database was created by an older SmartCon version and must be updated ({0} records). Until the update completes, the database is read-only.\n\nUpdate now? You can interrupt the process — it will resume from where it stopped.";
+        ru["FM_HashRecalc_Starting"] = "Подготовка..."; en["FM_HashRecalc_Starting"] = "Preparing...";
+        ru["FM_HashRecalc_ProgressFormat"] = "Обработка {0} из {1} — {2}"; en["FM_HashRecalc_ProgressFormat"] = "Processing {0} of {1} — {2}";
+        ru["FM_HashRecalc_Stopping"] = "Прерываю..."; en["FM_HashRecalc_Stopping"] = "Stopping...";
+        ru["FM_HashRecalc_SummaryUpdated"] = "Обновлено версий: {0} (системных помечено: {1})"; en["FM_HashRecalc_SummaryUpdated"] = "Versions updated: {0} (system flagged: {1})";
+        ru["FM_HashRecalc_SummaryFailed"] = "Не удалось прочитать (пропущены навсегда): {0}"; en["FM_HashRecalc_SummaryFailed"] = "Could not be read (permanently skipped): {0}";
+        ru["FM_HashRecalc_SummaryNewerRevit"] = "Требуют более новой версии Revit: {0}"; en["FM_HashRecalc_SummaryNewerRevit"] = "Require a newer Revit version: {0}";
+        ru["FM_HashRecalc_SummaryMissing"] = "Файлы не найдены на диске: {0}"; en["FM_HashRecalc_SummaryMissing"] = "Files not found on disk: {0}";
+        ru["FM_HashRecalc_SummaryCancelled"] = "Прервано пользователем — обновление продолжится при следующем запуске."; en["FM_HashRecalc_SummaryCancelled"] = "Interrupted by user — the update will resume on the next launch.";
+        ru["FM_HashRecalc_Cancel"] = "Прервать"; en["FM_HashRecalc_Cancel"] = "Interrupt";
+        ru["FM_HashRecalc_Close"] = "Закрыть"; en["FM_HashRecalc_Close"] = "Close";
+        ru["FM_HashRecalc_PurgeButton"] = "Удалить записи недоступных ({0})"; en["FM_HashRecalc_PurgeButton"] = "Delete unavailable records ({0})";
+        ru["FM_HashRecalc_PurgeConfirmTitle"] = "Удаление записей"; en["FM_HashRecalc_PurgeConfirmTitle"] = "Delete records";
+        ru["FM_HashRecalc_PurgeConfirmBody"] = "Удалить из каталога {0} записей о недоступных файлах? Действие нельзя отменить."; en["FM_HashRecalc_PurgeConfirmBody"] = "Delete {0} records of unavailable files from the catalog? This action cannot be undone.";
+        ru["FM_HashRecalc_PurgeResult"] = "Удалено семейств: {0}, версий: {1}."; en["FM_HashRecalc_PurgeResult"] = "Families deleted: {0}, versions: {1}.";
+        ru["FM_HashRecalc_PurgeDirsFailed"] = "Папки на диске удалить не удалось (нет доступа): {0} — удалите их вручную."; en["FM_HashRecalc_PurgeDirsFailed"] = "Could not delete directories on disk (access denied): {0} — please remove them manually.";
 
         ru["FM_AttrStatus_Found"] = "Найдено"; en["FM_AttrStatus_Found"] = "Found";
         ru["FM_AttrStatus_MissingParameter"] = "Параметр не найден"; en["FM_AttrStatus_MissingParameter"] = "Parameter not found";
@@ -434,6 +456,16 @@ public static partial class LocalizationService
         en["FM_PBase_DeleteDatabase"] = "Delete database";
         ru["FM_PBase_DatabaseTools"] = "Инструменты базы";
         en["FM_PBase_DatabaseTools"] = "Database tools";
+        ru["FM_PBase_UpdateDatabase"] = "Обновить базу данных";
+        en["FM_PBase_UpdateDatabase"] = "Update database";
+        ru["FM_PBase_UpdateDatabaseTooltip"] = "Пересчитать контрольные суммы семейств (база создана в старой версии SmartCon)";
+        en["FM_PBase_UpdateDatabaseTooltip"] = "Recalculate family checksums (database was created by an older SmartCon version)";
+        ru["FM_PBase_UpdateDatabaseBadgeTooltip"] = "Требуется обновление базы данных";
+        en["FM_PBase_UpdateDatabaseBadgeTooltip"] = "Database update required";
+        ru["FM_DbUpdate_BannerText"] = "База данных создана в старой версии SmartCon и работает в режиме просмотра. Обновите её, чтобы импортировать и изменять семейства.";
+        en["FM_DbUpdate_BannerText"] = "The database was created by an older SmartCon version and is read-only. Update it to import and modify families.";
+        ru["FM_DbUpdate_BannerButton"] = "Обновить";
+        en["FM_DbUpdate_BannerButton"] = "Update";
         ru["FM_PBase_Title"] = "Привязка базы проекта к имени файла";
         en["FM_PBase_Title"] = "Project Base Binding Rules";
         ru["FM_PBase_ProjectNameLabel"] = "Проект:";

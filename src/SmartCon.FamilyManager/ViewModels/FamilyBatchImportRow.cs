@@ -94,7 +94,47 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     /// not Duplicate.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CrossNameDuplicateTooltip))]
     private string? _matchedVersionLabel;
+
+    /// <summary>
+    /// Issue #126: <c>true</c> when the content hash matched a catalog
+    /// item whose name differs from this row's file name (the file was
+    /// renamed). The status column renders a warning icon with
+    /// <see cref="CrossNameDuplicateTooltip"/> for such rows.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CrossNameDuplicateTooltip))]
+    private bool _isCrossNameDuplicate;
+
+    /// <summary>
+    /// Issue #126: display name of the catalog item whose version
+    /// matched the content hash. Used by <see cref="CrossNameDuplicateTooltip"/>.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CrossNameDuplicateTooltip))]
+    private string? _matchedItemName;
+
+    /// <summary>
+    /// Issue #126: localized explanation shown as the warning icon's
+    /// tooltip for cross-name duplicates. Empty when not applicable.
+    /// </summary>
+    public string CrossNameDuplicateTooltip
+    {
+        get
+        {
+            if (!IsCrossNameDuplicate)
+                return string.Empty;
+            var format = SmartCon.UI.LanguageManager.GetString(
+                SmartCon.UI.StringLocalization.Keys.FM_BatchImport_CrossNameDuplicate_Tooltip)
+                ?? "Content matches family \"{0}\" ({1}) although the file name differs.";
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                format,
+                MatchedItemName ?? string.Empty,
+                MatchedVersionLabel ?? string.Empty);
+        }
+    }
 
     [ObservableProperty]
     private int? _typeCount;
@@ -203,6 +243,8 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _precomputedContentHash = item.ContentHash;
         _hashFormatVersion = item.HashFormatVersion;
         _matchedVersionLabel = item.MatchedVersionLabel;
+        _isCrossNameDuplicate = item.IsCrossNameDuplicate;
+        _matchedItemName = item.MatchedItemName;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
         // Display rule for the category cell:

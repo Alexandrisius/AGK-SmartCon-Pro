@@ -58,7 +58,8 @@ public sealed partial class FamilyPropertiesViewModel
                     contentHash: v.ContentHash,
                     hashFormatVersion: v.HashFormatVersion,
                     publishedBy: v.PublishedBy,
-                    typeNames: Array.Empty<string>()))
+                    typeNames: Array.Empty<string>(),
+                    fileName: v.FileName))
                 .ToList();
 
             // ADR-041 rev #5: attach type-name list per version for the
@@ -108,6 +109,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task MakeActiveAsync(CancellationToken ct)
     {
         if (SelectedVersionRow is null) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         using var _scope = SmartConLogger.BeginScope("FMProperties",
             ("Method", nameof(MakeActiveAsync)),
@@ -150,9 +152,23 @@ public sealed partial class FamilyPropertiesViewModel
                 }
                 SelectedVersionRow = Versions.FirstOrDefault(r => r.IsActive);
                 VersionLabel = newLabel;
+                // Issue #126: the item name follows the ACTIVE version's
+                // file name. When the activated version was stored under a
+                // different name, SetActiveVersionAsync has already renamed
+                // the item in the DB — reflect it in the dialog.
+                if (result.NameChanged && result.NewName is not null)
+                {
+                    // The rename is already persisted by SetActiveVersionAsync —
+                    // sync the "original" BEFORE assigning Name so
+                    // HasUnsavedChanges stays false.
+                    _originalName = result.NewName;
+                    Name = result.NewName;
+                }
                 SmartConLogger.Info(
                     $"MakeActive succeeded: prev={result.PreviousVersionLabel ?? "<null>"} " +
-                    $"new={newLabel} hashSynced={result.ContentHashSynced}");
+                    $"new={newLabel} hashSynced={result.ContentHashSynced} " +
+                    $"nameChanged={result.NameChanged}" +
+                    (result.NameChanged ? $" ('{result.PreviousName}' -> '{result.NewName}')" : string.Empty));
                 DeleteVersionCommand.NotifyCanExecuteChanged();
                 MakeActiveCommand.NotifyCanExecuteChanged();
 
@@ -225,6 +241,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task DeleteVersion(CancellationToken ct)
     {
         if (SelectedVersionRow is null) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         using var _scope = SmartConLogger.BeginScope("FMProperties",
             ("Method", nameof(DeleteVersion)),

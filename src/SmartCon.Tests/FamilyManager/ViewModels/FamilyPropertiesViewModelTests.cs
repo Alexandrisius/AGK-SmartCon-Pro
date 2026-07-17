@@ -48,7 +48,8 @@ public sealed class FamilyPropertiesViewModelTests
             renameService: new Mock<IFamilyStorageRenameService>().Object,
             geometryPipeline: geometryPipeline.Object,
             fileResolver: fileResolver.Object,
-            avatarCropService: new Mock<IAvatarCropService>().Object);
+            avatarCropService: new Mock<IAvatarCropService>().Object,
+            updateState: new TestDoubles.FakeDatabaseUpdateStateService());
 
         return (vm, assetService, geometryPipeline);
     }

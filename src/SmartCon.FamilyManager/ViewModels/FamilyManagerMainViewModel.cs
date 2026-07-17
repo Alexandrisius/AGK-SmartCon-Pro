@@ -67,6 +67,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IContentHashDedupService _dedupService;
     private readonly IUiFreezeRecoveryService _freezeRecovery;
     private readonly IActiveDocumentChangeNotifier _activeDocumentNotifier;
+    private readonly IDatabaseUpdateStateService _updateState;
     private readonly IProjectBaseActivator _projectBaseActivator;
     private readonly IProjectBaseBindingEvaluator _projectBaseEvaluator;
 
@@ -187,8 +188,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _dedupService = services.DedupService;
         _freezeRecovery = services.FreezeRecovery;
         _activeDocumentNotifier = services.ActiveDocumentNotifier;
+        _updateState = services.UpdateState;
         _projectBaseActivator = services.ProjectBaseActivator;
         _projectBaseEvaluator = services.ProjectBaseEvaluator;
+
+        _updateState.StateChanged += OnDatabaseUpdateStateChanged;
+        SyncDatabaseUpdateState();
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         _activeDocumentNotifier.ActiveDocumentChanged += OnActiveDocumentChanged;
@@ -252,7 +257,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
             return;
         }
-        _ = RefreshTreeViaExternalEventAsync();
+        // The ExternalEvent round-trip wires up the Revit context; the
+        // update-state check below depends on DetectRevitVersion, so it
+        // must run after it, not fire-and-forget in parallel.
+        await RefreshTreeViaExternalEventAsync().ConfigureAwait(true);
+        // Issue #126: detect stale (v1) content hashes — shows the red
+        // badge + "Update database" command; never pops a dialog.
+        await RefreshDatabaseUpdateStateAsync().ConfigureAwait(true);
     }
 
     private static void DumpLoadedAssembliesBeforeTruncate()
@@ -794,6 +805,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         using var _scope = SmartConLogger.BeginScope("FMVM",
             ("Method", "Dispose"));
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+        _updateState.StateChanged -= OnDatabaseUpdateStateChanged;
         _activeDocumentNotifier.ActiveDocumentChanged -= OnActiveDocumentChanged;
         _activeDocumentNotifier.ActiveDocumentPathChanged -= OnActiveDocumentPathChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;

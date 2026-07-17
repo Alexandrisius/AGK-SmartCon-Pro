@@ -30,6 +30,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IFamilyGeometryPipeline _geometryPipeline;
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IAvatarCropService _avatarCropService;
+    private readonly IDatabaseUpdateStateService _updateState;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -118,7 +119,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     public event Action? AvatarChanged;
 
     // Original values for dirty tracking (primary tab only)
-    private readonly string _originalName;
+    private string _originalName;
     private readonly string? _originalDescription;
     private readonly string? _originalCategoryId;
     private readonly List<string> _originalTags;
@@ -233,7 +234,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IFamilyStorageRenameService renameService,
         IFamilyGeometryPipeline geometryPipeline,
         IFamilyFileResolver fileResolver,
-        IAvatarCropService avatarCropService)
+        IAvatarCropService avatarCropService,
+        IDatabaseUpdateStateService updateState)
     {
         SmartConLogger.Info($"FamilyPropertiesViewModel ctor: start for itemId={catalogItemId} name='{name}'");
         _catalogItemId = catalogItemId;
@@ -253,6 +255,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _geometryPipeline = geometryPipeline;
         _fileResolver = fileResolver;
         _avatarCropService = avatarCropService;
+        _updateState = updateState;
 
         Name = name;
         Description = description;
@@ -564,6 +567,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
     public async Task SaveAsync()
     {
+        if (IsReadOnly) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
         try
         {
             SmartConLogger.Info($"Saving for {_catalogItemId}, new name='{Name}'");

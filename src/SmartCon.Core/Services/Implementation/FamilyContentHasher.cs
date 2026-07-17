@@ -37,7 +37,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             ("TypeCount", snapshot.Types.Count),
             ("FormCount", snapshot.Geometry.TotalFormCount),
             ("Hash", hex));
-        SmartConLogger.Info($"Loadable hash computed: {hex} ({snapshot.Parameters.Count} params, {snapshot.Types.Count} types, {snapshot.Geometry.TotalFormCount} forms)");
+        SmartConLogger.Info($"Loadable hash computed ({snapshot.Parameters.Count} params, {snapshot.Types.Count} types, {snapshot.Geometry.TotalFormCount} forms)");
         var preview = canonical.Length > 200
             ? canonical[..200] + "…[truncated]"
             : canonical;
@@ -72,7 +72,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             ("Category", snapshot.CategoryName),
             ("TypeCount", snapshot.Types.Count),
             ("Hash", hex));
-        SmartConLogger.Info($"System hash computed: {hex} ({snapshot.CategoryName}, {snapshot.Types.Count} types)");
+        SmartConLogger.Info($"System hash computed ({snapshot.CategoryName}, {snapshot.Types.Count} types)");
         var preview = canonical.Length > 200
             ? canonical[..200] + "…[truncated]"
             : canonical;
@@ -86,14 +86,15 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 
     /// <summary>
     /// Build the canonical string for a loadable family snapshot.
-    /// Format: FHV1|LOADABLE|{name}|{cat}|PARAMS|...|TYPES|...|GEOM|...|NESTED|...
+    /// Format: FHV2|LOADABLE|{cat}|PARAMS|...|TYPES|...|GEOM|...|NESTED|...
+    /// The family name is intentionally NOT part of the hash (v2,
+    /// Issue #126): content identity is rename-invariant, the name is
+    /// mutable metadata.
     /// </summary>
     internal static string BuildLoadableCanonicalString(FamilySnapshot snapshot)
     {
         var sb = new StringBuilder(512);
-        sb.Append("FHV1|LOADABLE|");
-        sb.Append(StripRfaExtension(snapshot.FamilyName) ?? string.Empty);
-        sb.Append('|');
+        sb.Append("FHV2|LOADABLE|");
         sb.Append(snapshot.Category ?? string.Empty);
         sb.Append('|');
 
@@ -177,6 +178,10 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     /// <summary>
     /// Build the canonical string for a system family snapshot.
     /// Format: FHV1|SYSTEM|{catName}|{catId}|TYPES|...
+    /// The <c>FHV1</c> prefix is intentional even at format version 2:
+    /// the system canonical string never contained a name, so v1 and v2
+    /// system hashes are byte-identical and existing rows stay valid
+    /// after a cheap flag migration (Issue #126).
     /// </summary>
     internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
     {
@@ -267,21 +272,5 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         var hash = sha256.ComputeHash(bytes);
         return BitConverter.ToString(hash).Replace("-", string.Empty);
 #endif
-    }
-
-    /// <summary>
-    /// Strips a trailing <c>.rfa</c> extension (case-insensitive) from the
-    /// family name. <c>Document.Title</c> may or may not include the
-    /// extension depending on how the family document was opened
-    /// (<c>EditFamily</c> from a project includes it; opening a managed
-    /// <c>.rfa</c> file directly does not). Stripping here is a defensive
-    /// measure so the hash is stable regardless of the source path.
-    /// </summary>
-    private static string StripRfaExtension(string? name)
-    {
-        if (name is null || name.Length == 0) return string.Empty;
-        if (name.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
-            return name.Substring(0, name.Length - 4);
-        return name;
     }
 }
