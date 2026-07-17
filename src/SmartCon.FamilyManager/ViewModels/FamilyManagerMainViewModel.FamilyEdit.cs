@@ -21,6 +21,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         using var _scope = SmartConLogger.BeginScope("FMEdit",
             ("Method", "OpenCategoryEditorAsync"));
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         var editorVm = _viewModelFactory.CreateCategoryTreeEditorViewModel();
         editorVm.Saved += () => _ = LoadTreeAsync();
         await editorVm.InitializeAsync();
@@ -135,6 +136,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         using var _scope = SmartConLogger.BeginScope("FMImport",
             ("Method", "ImportActiveFileAsync"));
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         IsLoading = true;
         var sessionStart = DateTime.Now;
         try
@@ -898,6 +900,7 @@ public sealed partial class FamilyManagerMainViewModel
         using var _scope = SmartConLogger.BeginScope("FMEdit",
             ("Method", "DeleteFamilyAsync"));
         if (SelectedItem is null) return;
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
 
         var confirmed = _dialogService.ShowConfirmation(
             LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteTitle) ?? "Delete Family",
@@ -996,6 +999,7 @@ public sealed partial class FamilyManagerMainViewModel
             ("Method", "DropFamilyAsync"));
         if (info is not { Payload: FamilyLeafNodeViewModel leaf, Target: CategoryNodeViewModel target })
             return;
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
 
         var categoryId = target.CategoryId == "__no_category__"
             ? null

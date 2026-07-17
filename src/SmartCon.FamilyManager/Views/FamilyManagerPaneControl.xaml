@@ -277,6 +277,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -634,8 +635,44 @@
             </Popup>
         </Grid>
 
-        <!-- Row 2: Refresh + Search -->
-        <Grid Grid.Row="2" Margin="0,0,0,8">
+        <!-- Row 2: Database update banner (visible only while migrations are pending, Issue #126) -->
+        <Border Grid.Row="2"
+                Margin="0,0,0,8"
+                Padding="10,6"
+                CornerRadius="6"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource WarningBrush}"
+                BorderThickness="1"
+                Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <iconPacks:PackIconMaterial Kind="AlertOutline"
+                                            Width="16" Height="16"
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource WarningBrush}"/>
+                <TextBlock Grid.Column="1"
+                           Text="{loc:Loc FM_DbUpdate_BannerText}"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+                <Button Grid.Column="2"
+                        Content="{loc:Loc FM_DbUpdate_BannerButton}"
+                        Command="{Binding UpdateDatabaseCommand}"
+                        Style="{DynamicResource PrimaryButton}"
+                        MinWidth="80"
+                        Height="24"
+                        Padding="10,0"
+                        Margin="10,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <!-- Row 3: Refresh + Search -->
+        <Grid Grid.Row="3" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -697,7 +734,7 @@
              way to ensure the sticky overlay is drawn above all TreeViewItems
              (TranslateTransform on TreeViewItem headers does not promote
              Z-order relative to sibling TreeViewItems). -->
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="4">
             <TreeView x:Name="CategoryTree"
                       ItemsSource="{Binding TreeNodes}"
                       behaviors:TreeViewBehaviors.RightClickSelect="True"
@@ -1013,7 +1050,7 @@
             </Border>
         </Grid>
 
-        <Grid Grid.Row="4" Margin="0,4,0,0">
+        <Grid Grid.Row="5" Margin="0,4,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>

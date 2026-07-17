@@ -361,7 +361,7 @@ public static partial class LocalizationService
         // Hash Recalculation Migration (Issue #126)
         ru["FM_HashRecalc_Title"] = "Обновление базы семейств"; en["FM_HashRecalc_Title"] = "Family Database Update";
         ru["FM_HashRecalc_LoadBlockedTitle"] = "Требуется обновление базы"; en["FM_HashRecalc_LoadBlockedTitle"] = "Database Update Required";
-        ru["FM_HashRecalc_LoadBlockedBody"] = "Загрузка семейств в проект временно недоступна: база данных создана в старой версии SmartCon и требует обновления контрольных сумм ({0} записей).\n\nОбновить сейчас? Процесс можно прервать — обновление продолжится позже."; en["FM_HashRecalc_LoadBlockedBody"] = "Loading families into the project is temporarily unavailable: the database was created by an older SmartCon version and its checksums must be updated ({0} records).\n\nUpdate now? You can interrupt the process — the update will resume later.";
+        ru["FM_HashRecalc_LoadBlockedBody"] = "Действие временно недоступно: база данных создана в старой версии SmartCon и требует обновления ({0} записей). До завершения обновления база работает в режиме просмотра.\n\nОбновить сейчас? Процесс можно прервать — он продолжится с места остановки."; en["FM_HashRecalc_LoadBlockedBody"] = "This action is temporarily unavailable: the database was created by an older SmartCon version and must be updated ({0} records). Until the update completes, the database is read-only.\n\nUpdate now? You can interrupt the process — it will resume from where it stopped.";
         ru["FM_HashRecalc_Starting"] = "Подготовка..."; en["FM_HashRecalc_Starting"] = "Preparing...";
         ru["FM_HashRecalc_ProgressFormat"] = "Обработка {0} из {1} — {2}"; en["FM_HashRecalc_ProgressFormat"] = "Processing {0} of {1} — {2}";
         ru["FM_HashRecalc_Stopping"] = "Прерываю..."; en["FM_HashRecalc_Stopping"] = "Stopping...";
@@ -461,6 +461,10 @@ public static partial class LocalizationService
         en["FM_PBase_UpdateDatabaseTooltip"] = "Recalculate family checksums (database was created by an older SmartCon version)";
         ru["FM_PBase_UpdateDatabaseBadgeTooltip"] = "Требуется обновление базы данных";
         en["FM_PBase_UpdateDatabaseBadgeTooltip"] = "Database update required";
+        ru["FM_DbUpdate_BannerText"] = "База данных создана в старой версии SmartCon и работает в режиме просмотра. Обновите её, чтобы импортировать и изменять семейства.";
+        en["FM_DbUpdate_BannerText"] = "The database was created by an older SmartCon version and is read-only. Update it to import and modify families.";
+        ru["FM_DbUpdate_BannerButton"] = "Обновить";
+        en["FM_DbUpdate_BannerButton"] = "Update";
         ru["FM_PBase_Title"] = "Привязка базы проекта к имени файла";
         en["FM_PBase_Title"] = "Project Base Binding Rules";
         ru["FM_PBase_ProjectNameLabel"] = "Проект:";

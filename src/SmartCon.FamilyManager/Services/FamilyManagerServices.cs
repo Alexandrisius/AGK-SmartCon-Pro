@@ -1,4 +1,3 @@
-using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services.LocalCatalog;
@@ -109,10 +108,10 @@ public sealed record FamilyManagerServices(
     /// </summary>
     IProjectBaseBindingEvaluator ProjectBaseEvaluator,
     /// <summary>
-    /// Database migrations (docs/architecture/database-migrations.md,
-    /// Issue #126): aggregates all registered <c>IDatabaseMigration</c>
-    /// implementations. The main VM checks for pending records after init
-    /// and on every database switch, drives the badge + "Update database"
-    /// command, and gates load-into-project while anything is pending.
+    /// Database-update state (docs/architecture/database-migrations.md,
+    /// Issue #126): shared singleton holding "update required / pending /
+    /// running". The main VM refreshes it after init and on every database
+    /// switch and maps it onto the badge/banner UI; write commands across
+    /// the module gate through it (read-only database while pending).
     /// </summary>
-    DatabaseMigrationCoordinator MigrationCoordinator);
+    IDatabaseUpdateStateService UpdateState);

@@ -23,9 +23,11 @@
 ```
 IDatabaseMigration (Core)              — контракт одной миграции
 DatabaseMigrationCoordinator (Core)    — агрегатор: сумма pending + запуск по Order
+IDatabaseUpdateStateService (Core)     — разделяемое состояние «update required»
+DatabaseUpdateStateService (FamilyManager) — реализация: gate-диалог + запуск миграций
 HashRecalculationMigration (FamilyManager) — пример реализации (Issue #126)
-FamilyManagerMainViewModel.HashRecalc.cs   — UX: badge + команда + load gate
-FamilyManagerPaneControl.xaml              — красная точка + «Обновить базу данных»
+FamilyManagerMainViewModel.HashRecalc.cs   — маппинг состояния в VM + команда
+FamilyManagerPaneControl.xaml              — красная точка + баннер + «Обновить базу данных»
 ```
 
 ### UX (единый для всех миграций)
@@ -35,16 +37,29 @@ FamilyManagerPaneControl.xaml              — красная точка + «О�
    `RevitContext` ещё не готов и версия Revit = 0) и после каждого
    переключения/подключения базы.
 2. Pending > 0 → **красная точка** на кнопке «Инструменты базы» (справа от
-   списка БД) + tooltip «Требуется обновление базы данных».
+   списка БД) + tooltip «Требуется обновление базы данных» + **жёлтый баннер**
+   под строкой БД: «база работает в режиме просмотра» + кнопка «Обновить».
 3. В popup инструментов — команда **«Обновить базу данных»** (видна только
    при pending > 0), тоже с красной точкой. Пользователь запускает когда
    удобно.
-4. **Load gate:** пока pending > 0, команды загрузки семейств в проект
-   (`LoadToProject*`, `UpdateStale*`, loadable `PlaceTypeAsync`) блокируются
-   диалогом с объяснением и кнопкой «Обновить сейчас»
-   (`EnsureDatabaseUpToDateForLoadAsync()`). Причина: миграция обычно чинит
-   данные, от которых зависит корректность загрузки/дедупа — работать на
-   старых данных = молчаливая деградация.
+4. **База read-only пока pending > 0.** Каждая write-команда модуля гейтится
+   через `IDatabaseUpdateStateService.EnsureUpToDateAsync()` — диалог с
+   объяснением и кнопкой «Обновить сейчас»; «Нет» = операция отменена.
+   Причина: миграция обычно чинит данные, от которых зависит корректность
+   записей (напр. дедуп по хэшам) — писать в старую базу = плодить мусор.
+
+Гейтнутые операции (по состоянию на Issue #126):
+
+| Область | Команды |
+|---|---|
+| Импорт | `ImportFilesAsync`, `ImportFileToCategoryAsync`, `ImportSelectedElementsAsync`, `ImportActiveFileAsync` |
+| Загрузка в проект | `LoadToProject*`, `UpdateStale*`, loadable `PlaceTypeAsync` |
+| Семейства | `DeleteFamilyAsync`, `DropFamilyAsync` (DnD по категориям), `OpenCategoryEditorAsync` |
+| Свойства | `SaveAsync` (Общие), `MakeActiveAsync`, `DeleteVersion`, все write-команды ассетов (avatar/files/primary/version-binding) |
+
+НЕ гейтятся: просмотр (дерево, поиск, свойства, 3D, тултипы), открытие
+семейства в Revit (`EditFamily*` — не пишет в БД), управление подключениями
+БД, профиль, настройки project-base.
 
 ## Как добавить новую миграцию
 
@@ -72,8 +87,12 @@ public sealed class MyFeatureMigration : IDatabaseMigration
 services.AddSingleton<IDatabaseMigration, MyFeatureMigration>();
 ```
 
-Всё остальное — автоматически: badge, команда, load gate, агрегация pending,
-порядок выполнения. Координатор резолвится через `IEnumerable<IDatabaseMigration>`.
+Всё остальное — автоматически: badge, баннер, команда, read-only gate,
+агрегация pending, порядок выполнения. Координатор резолвится через
+`IEnumerable<IDatabaseMigration>`; состояние держит singleton
+`IDatabaseUpdateStateService` (его же инжектируй в свою VM, если твоей
+фиче нужен gate на свои write-операции — вызови `EnsureUpToDateAsync()`
+первой строкой команды).
 
 ## Жёсткие требования к реализации миграции
 

@@ -109,6 +109,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task MakeActiveAsync(CancellationToken ct)
     {
         if (SelectedVersionRow is null) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         using var _scope = SmartConLogger.BeginScope("FMProperties",
             ("Method", nameof(MakeActiveAsync)),
@@ -236,6 +237,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task DeleteVersion(CancellationToken ct)
     {
         if (SelectedVersionRow is null) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         using var _scope = SmartConLogger.BeginScope("FMProperties",
             ("Method", nameof(DeleteVersion)),

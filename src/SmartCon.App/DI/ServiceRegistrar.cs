@@ -240,6 +240,7 @@ public static class ServiceRegistrar
         // load-into-project gate automatically.
         services.AddSingleton<IDatabaseMigration, SmartCon.FamilyManager.Services.Migrations.HashRecalculationMigration>();
         services.AddSingleton<DatabaseMigrationCoordinator>();
+        services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 
         // --- FamilyManager 3D Geometry Preview (ADR-042 / Issue #92) ---
         services.AddSingleton<IFamilyGeometryExtractor, SmartCon.Revit.FamilyManager.RevitFamilyGeometryExtractor>();

@@ -1,19 +1,20 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
 /// <summary>
 /// Database-update feature (docs/architecture/database-migrations.md,
-/// Issue #126). All registered <c>IDatabaseMigration</c> implementations are
-/// checked silently after the initial database connection and after every
-/// database switch — no dialogs are shown unprompted. When anything is
-/// pending, a red badge appears on the database-tools button and an
-/// "Update database" command becomes available; loading families into the
-/// project is gated until the update completes (e.g. v1 hashes cannot
-/// match v2, so dedup would silently degrade to name-only matching).
+/// Issue #126). The shared <see cref="IDatabaseUpdateStateService"/> is
+/// refreshed silently after the initial database connection and after
+/// every database switch — no dialogs are shown unprompted. While the
+/// update is required the database is read-only: a red badge + banner are
+/// shown, an "Update database" command is available in the database-tools
+/// popup, and every write command gates through
+/// <see cref="EnsureDatabaseUpToDateAsync"/>.
 /// </summary>
 public sealed partial class FamilyManagerMainViewModel
 {
@@ -29,6 +30,16 @@ public sealed partial class FamilyManagerMainViewModel
 
     private bool CanUpdateDatabase => HasActiveDatabase && !IsDatabaseUpdateRunning;
 
+    private void OnDatabaseUpdateStateChanged(object? sender, EventArgs e) => SyncDatabaseUpdateState();
+
+    private void SyncDatabaseUpdateState()
+    {
+        IsDatabaseUpdateRequired = _updateState.IsUpdateRequired;
+        PendingDatabaseUpdateCount = _updateState.PendingCount;
+        IsDatabaseUpdateRunning = _updateState.IsRunning;
+        UpdateDatabaseCommand.NotifyCanExecuteChanged();
+    }
+
     private async Task RefreshDatabaseUpdateStateAsync()
     {
         // Re-detect here: at VM construction the Revit context may not be
@@ -41,7 +52,7 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (!HasActiveDatabase)
         {
-            SetDatabaseUpdateState(0);
+            _updateState.Reset();
             return;
         }
         if (CurrentRevitVersion <= 0)
@@ -53,23 +64,13 @@ public sealed partial class FamilyManagerMainViewModel
 
         try
         {
-            var pending = await _migrationCoordinator
-                .CountTotalPendingAsync(CurrentRevitVersion)
-                .ConfigureAwait(true);
-            SetDatabaseUpdateState(pending);
+            await _updateState.RefreshAsync(CurrentRevitVersion).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn(
                 $"DbMigration pending check failed: {ex.Message} [Action: повторите при следующем запуске; если ошибка повторяется — проверьте целостность catalog.db]");
         }
-    }
-
-    private void SetDatabaseUpdateState(int pending)
-    {
-        PendingDatabaseUpdateCount = pending;
-        IsDatabaseUpdateRequired = pending > 0;
-        UpdateDatabaseCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand(CanExecute = nameof(CanUpdateDatabase))]
@@ -79,59 +80,39 @@ public sealed partial class FamilyManagerMainViewModel
         {
             DetectRevitVersion();
         }
-        if (PendingDatabaseUpdateCount <= 0 || CurrentRevitVersion <= 0) return;
+        if (!_updateState.IsUpdateRequired || CurrentRevitVersion <= 0) return;
 
-        IsDatabaseUpdateRunning = true;
         using var _scope = SmartConLogger.BeginScope("DbMigration",
             ("Method", nameof(UpdateDatabaseAsync)),
-            ("Pending", PendingDatabaseUpdateCount));
+            ("Pending", _updateState.PendingCount));
 
-        try
+        await _updateState.UpdateAsync().ConfigureAwait(true);
+
+        // Migrations may have purged catalog rows or re-synced item
+        // hashes/names — rebuild the tree to reflect the final state.
+        if (!_updateState.IsUpdateRequired)
         {
-            await _migrationCoordinator
-                .RunPendingAsync(CurrentRevitVersion)
-                .ConfigureAwait(true);
-
-            // Migrations may have purged catalog rows or re-synced item
-            // hashes/names — rebuild the tree to reflect the final state.
             await RefreshTreeViaExternalEventAsync().ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error(
-                $"DbMigration update flow failed: {ex.GetType().Name}: {ex.Message} " +
-                $"[Action: проверьте лог smartcon.log; закоммиченные пачки сохранены, повторный запуск продолжит с места остановки]");
-        }
-        finally
-        {
-            IsDatabaseUpdateRunning = false;
-            await RefreshDatabaseUpdateStateAsync().ConfigureAwait(true);
         }
     }
 
     /// <summary>
-    /// Gate for load-into-project commands: while the database has pending
-    /// migrations, loading is blocked with an explanation and an offer to
-    /// run the update immediately. Returns true when loading may proceed.
+    /// Gate for write commands (imports, loads into project, edits,
+    /// deletes, version management): while the database has pending
+    /// migrations the write is blocked with an explanation and an offer to
+    /// run the update immediately. Returns true when the write may proceed.
     /// </summary>
-    private async Task<bool> EnsureDatabaseUpToDateForLoadAsync()
+    private async Task<bool> EnsureDatabaseUpToDateAsync()
     {
-        if (!IsDatabaseUpdateRequired) return true;
+        if (!_updateState.IsUpdateRequired) return true;
 
-        var confirmed = _dialogService.ShowConfirmation(
-            LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_LoadBlockedTitle)
-                ?? "Требуется обновление базы",
-            string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_LoadBlockedBody)
-                    ?? "Загрузка семейств в проект временно недоступна: база данных создана в старой версии SmartCon и требует обновления контрольных сумм ({0} записей).\n\nОбновить сейчас?",
-                PendingDatabaseUpdateCount));
-        if (!confirmed)
+        var proceeded = await _updateState.EnsureUpToDateAsync().ConfigureAwait(true);
+        if (proceeded && !_updateState.IsUpdateRequired)
         {
-            SmartConLogger.Info("DbMigration: load to project postponed — database update declined by user");
-            return false;
+            // The user just completed the update — the catalog content may
+            // have changed (purge / hash re-sync), so rebuild the tree.
+            await RefreshTreeViaExternalEventAsync().ConfigureAwait(true);
         }
-
-        await UpdateDatabaseAsync().ConfigureAwait(true);
-        return !IsDatabaseUpdateRequired;
+        return proceeded;
     }
 }

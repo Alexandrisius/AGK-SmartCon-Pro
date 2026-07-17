@@ -8,7 +8,6 @@ using SmartCon.Core.Common;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
-using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Selectors;
@@ -68,7 +67,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IContentHashDedupService _dedupService;
     private readonly IUiFreezeRecoveryService _freezeRecovery;
     private readonly IActiveDocumentChangeNotifier _activeDocumentNotifier;
-    private readonly DatabaseMigrationCoordinator _migrationCoordinator;
+    private readonly IDatabaseUpdateStateService _updateState;
     private readonly IProjectBaseActivator _projectBaseActivator;
     private readonly IProjectBaseBindingEvaluator _projectBaseEvaluator;
 
@@ -189,9 +188,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _dedupService = services.DedupService;
         _freezeRecovery = services.FreezeRecovery;
         _activeDocumentNotifier = services.ActiveDocumentNotifier;
-        _migrationCoordinator = services.MigrationCoordinator;
+        _updateState = services.UpdateState;
         _projectBaseActivator = services.ProjectBaseActivator;
         _projectBaseEvaluator = services.ProjectBaseEvaluator;
+
+        _updateState.StateChanged += OnDatabaseUpdateStateChanged;
+        SyncDatabaseUpdateState();
 
         _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
         _activeDocumentNotifier.ActiveDocumentChanged += OnActiveDocumentChanged;
@@ -803,6 +805,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         using var _scope = SmartConLogger.BeginScope("FMVM",
             ("Method", "Dispose"));
         _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
+        _updateState.StateChanged -= OnDatabaseUpdateStateChanged;
         _activeDocumentNotifier.ActiveDocumentChanged -= OnActiveDocumentChanged;
         _activeDocumentNotifier.ActiveDocumentPathChanged -= OnActiveDocumentPathChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;

@@ -347,6 +347,8 @@ public static class StringLocalization
         public const string FM_PBase_UpdateDatabase = "FM_PBase_UpdateDatabase";
         public const string FM_PBase_UpdateDatabaseTooltip = "FM_PBase_UpdateDatabaseTooltip";
         public const string FM_PBase_UpdateDatabaseBadgeTooltip = "FM_PBase_UpdateDatabaseBadgeTooltip";
+        public const string FM_DbUpdate_BannerText = "FM_DbUpdate_BannerText";
+        public const string FM_DbUpdate_BannerButton = "FM_DbUpdate_BannerButton";
         public const string FM_PBase_Title = "FM_PBase_Title";
         public const string FM_PBase_ProjectNameLabel = "FM_PBase_ProjectNameLabel";
         public const string FM_PBase_UseCurrentFile = "FM_PBase_UseCurrentFile";

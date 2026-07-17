@@ -20,6 +20,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         using var _scope = SmartConLogger.BeginScope("FMImport",
             ("Method", "ImportFilesAsync"));
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import Files";
         var paths = _dialogService.ShowImportFilesDialog(title);
         if (paths is null || paths.Length == 0) return;
@@ -32,6 +33,7 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (SelectedTreeNode is not CategoryNodeViewModel categoryNode) return;
         if (categoryNode.CategoryId == "__no_category__") return;
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
 
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_ImportFile) ?? "Import File";
         var paths = _dialogService.ShowImportFilesDialog(title);
@@ -257,6 +259,7 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanEditOps))]
     private async Task ImportSelectedElementsAsync()
     {
+        if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         IsLoading = true;
         StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SelectElementsPrompt)
             ?? "Выберите элементы в Revit (системные или загружаемые семейства)...";

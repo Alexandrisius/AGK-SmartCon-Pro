@@ -1158,6 +1158,33 @@ public interface IDatabaseMigration
 
 ---
 
+## IDatabaseUpdateStateService
+
+Разделяемое singleton-состояние «база требует обновления» (`docs/architecture/database-migrations.md`, Issue #126). MainViewModel обновляет его после инициализации и на каждом переключении базы; любая VM модуля блокирует write-операции через `EnsureUpToDateAsync()`. Пока `IsUpdateRequired` — база read-only: импорт (файлы/активный файл/выделенные), загрузка в проект, редактирование/удаление семейств, управление версиями, ассеты и редактор категорий гейтятся диалогом с предложением обновить.
+
+**Файл:** `Services/Interfaces/IDatabaseUpdateStateService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Migrations/DatabaseUpdateStateService.cs`
+
+```csharp
+public interface IDatabaseUpdateStateService
+{
+    bool IsUpdateRequired { get; }
+    int PendingCount { get; }
+    bool IsRunning { get; }
+    event EventHandler? StateChanged;
+    Task RefreshAsync(int revitMajorVersion, CancellationToken ct = default);
+    void Reset();
+    Task<bool> EnsureUpToDateAsync();
+    Task UpdateAsync();
+}
+```
+
+- `RefreshAsync` — пересчёт через `DatabaseMigrationCoordinator` (SQL COUNT); `Reset` — при отсутствии активной БД.
+- `EnsureUpToDateAsync` — gate: true сразу при чистой базе; иначе диалог с объяснением → «Да» запускает миграции, «Нет» — операция отменена.
+- `UpdateAsync` — безусловный запуск (команда «Обновить базу данных»); ошибки логируются, закоммиченные пачки сохраняются.
+
+---
+
 ## IFamilyGeometryExtractor
 
 Extracts tessellated 3D geometry from a managed `.rfa` file (ADR-042). Implementations MUST run on the Revit UI thread (I-01) because `OpenDocumentFile` / `element.get_Geometry(Options)` / `Face.Triangulate()` are all Revit API calls — callers marshal via `IFamilyManagerAwaitableEvent.RaiseAsync<T>`.
