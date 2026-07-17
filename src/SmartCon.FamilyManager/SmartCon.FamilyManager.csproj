@@ -11,8 +11,17 @@
     <NoWarn>$(NoWarn);CA1510</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup>
+  <!-- CommunityToolkit.Mvvm: net48 — внутри merged SmartCon.Dependencies (ADR-051) -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <!-- ADR-051: merged deps (net48) + toolkit (net8, сшит в SmartCon.Dependencies) -->
+  <ItemGroup>
+    <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" />
     <PackageReference Include="MahApps.Metro.IconPacks.Material" />
   </ItemGroup>
@@ -30,6 +39,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+  </ItemGroup>
+
+  <!-- System.Text.Encoding.CodePages + UTF.Unknown: net48 — внутри merged SmartCon.Dependencies (ADR-051) -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <PackageReference Include="System.Text.Encoding.CodePages" />
     <PackageReference Include="UTF.Unknown" />
   </ItemGroup>

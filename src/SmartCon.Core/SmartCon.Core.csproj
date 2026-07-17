@@ -18,9 +18,9 @@
     </PackageReference>
   </ItemGroup>
 
-  <!-- System.Text.Json: встроен в .NET 8 BCL. Для net48 — NuGet. -->
+  <!-- System.Text.Json: .NET 8 BCL. На net48 — внутри merged SmartCon.Dependencies (ADR-051). -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
-    <PackageReference Include="System.Text.Json" />
+    <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>
 
   <ItemGroup>

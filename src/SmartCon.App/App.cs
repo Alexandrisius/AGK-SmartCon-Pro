@@ -3,8 +3,10 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.UI;
+using SmartCon.App.Diagnostics;
 using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
+using SmartCon.Core.Deployment;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.FamilyManager;
@@ -12,20 +14,50 @@ using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Threading;
 using SmartCon.FamilyManager;
 using SmartCon.UI;
+#if NET8_0_OR_GREATER
+using AppBase = Nice3point.Revit.Toolkit.External.ExternalApplication;
+#else
+using AppBase = Autodesk.Revit.UI.IExternalApplication;
+#endif
 
 namespace SmartCon.App;
 
 /// <summary>
 /// SmartCon Revit plugin entry point. Registers the Ribbon panel, DI container,
 /// and handles self-update on startup.
+/// On net8 (Revit 2025+) inherits Nice3point.Revit.Toolkit ExternalApplication so the
+/// plugin runs inside the isolated 'SmartCon' AssemblyLoadContext (ADR-051, Issue #134).
 /// </summary>
-public sealed class App : IExternalApplication
+public sealed class App : AppBase
 {
     private static readonly string s_smartConDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "SmartCon");
 
+#if NET8_0_OR_GREATER
+    public override void OnStartup()
+    {
+        Result = OnStartupCore(Application);
+    }
+
+    public override void OnShutdown()
+    {
+        OnShutdownCore();
+    }
+#else
     public Result OnStartup(UIControlledApplication application)
+    {
+        return OnStartupCore(application);
+    }
+
+    public Result OnShutdown(UIControlledApplication application)
+    {
+        OnShutdownCore();
+        return Result.Succeeded;
+    }
+#endif
+
+    private static Result OnStartupCore(UIControlledApplication application)
     {
 #if NETFRAMEWORK
         System.Net.ServicePointManager.SecurityProtocol |=
@@ -40,6 +72,8 @@ public sealed class App : IExternalApplication
             ApplyUpdaterSelfUpdate();
             CleanupStalePendingUpdate();
             CleanupLegacyStageFolder();
+            AddinManifestHealer.EnsureCurrent(application);
+            DependencyGuard.ScanLoadedAssemblies();
             ServiceLocator.Initialize(application);
             LanguageManager.Initialize();
             RegisterNativeLibraryResolvers();
@@ -57,6 +91,12 @@ public sealed class App : IExternalApplication
             TaskDialog.Show("SmartCon - Error", $"Failed to load SmartCon:\n{ex.Message}");
             return Result.Failed;
         }
+    }
+
+    private static void OnShutdownCore()
+    {
+        TryLaunchUpdater();
+        ServiceLocator.Dispose();
     }
 
     /// <summary>
@@ -167,7 +207,7 @@ public sealed class App : IExternalApplication
                 var ex = args.ExceptionObject as Exception;
                 SmartConLogger.Error(
                     $"[AppDomain.UnhandledException] IsTerminating={args.IsTerminating}, " +
-                    $"Type={ex?.GetType().Name ?? "?"}: {ex?.Message ?? args.ExceptionObject}");
+                    (ex is not null ? DescribeException(ex) : args.ExceptionObject?.ToString()));
                 if (ex?.StackTrace is not null)
                     SmartConLogger.Error($"Stack: {ex.StackTrace}");
             }
@@ -180,7 +220,7 @@ public sealed class App : IExternalApplication
             try
             {
                 SmartConLogger.Error(
-                    $"[TaskScheduler.UnobservedTaskException] Type={args.Exception.GetType().Name}: {args.Exception.Message}\n{args.Exception.StackTrace}");
+                    $"[TaskScheduler.UnobservedTaskException] {DescribeException(args.Exception)}\n{args.Exception.StackTrace}");
             }
             catch { }
         };
@@ -195,7 +235,7 @@ public sealed class App : IExternalApplication
                 try
                 {
                     SmartConLogger.Error(
-                        $"[Dispatcher.UnhandledException] Type={args.Exception.GetType().Name}: {args.Exception.Message}\n{args.Exception.StackTrace}");
+                        $"[Dispatcher.UnhandledException] {DescribeException(args.Exception)}\n{args.Exception.StackTrace}");
                 }
                 catch { }
                 args.Handled = false;
@@ -212,15 +252,26 @@ public sealed class App : IExternalApplication
         Mark("4: RegisterGlobalExceptionHandlers done");
     }
 
+    /// <summary>
+    /// Formats an exception with its full inner-exception chain — the outer
+    /// exception alone (e.g. XamlParseException) hides the real root cause
+    /// (see Issue #134, R23 ViewBoxModel3D crash: XamlParseException →
+    /// TypeInitializationException → FileLoadException 0x80131044).
+    /// </summary>
+    private static string DescribeException(Exception ex)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (var cur = ex; cur != null; cur = cur.InnerException)
+        {
+            if (!ReferenceEquals(cur, ex))
+                sb.Append(" ---> ");
+            sb.Append(cur.GetType().Name).Append(": ").Append(cur.Message);
+        }
+        return sb.ToString();
+    }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, BestFitMapping = false)]
     private static extern IntPtr LoadLibraryEx(string lpFileName, IntPtr hFile, uint dwFlags);
-
-    public Result OnShutdown(UIControlledApplication application)
-    {
-        TryLaunchUpdater();
-        ServiceLocator.Dispose();
-        return Result.Succeeded;
-    }
 
     private static void ApplyUpdaterSelfUpdate()
     {
@@ -315,16 +366,154 @@ public sealed class App : IExternalApplication
         LegacyStageFolderCleaner.Cleanup(Path.Combine(s_smartConDir, "FamilyManager"));
     }
 
+#if NETFRAMEWORK
+    private static readonly Lazy<HashSet<string>> s_mergedAssemblyNames = new(LoadMergedAssemblyNames);
+
+    /// <summary>
+    /// Reads the embedded merged-dependencies.txt (ADR-051): the single source of
+    /// truth for which third-party assemblies are ILRepack-merged into
+    /// SmartCon.Dependencies.dll on net48.
+    /// </summary>
+    private static HashSet<string> LoadMergedAssemblyNames()
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var assembly = typeof(App).Assembly;
+            using var stream = assembly.GetManifestResourceStream("SmartCon.App.Resources.merged-dependencies.txt");
+            if (stream is null) return names;
+            using var reader = new StreamReader(stream);
+            while (reader.ReadLine() is { } line)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0 || trimmed.StartsWith("#", StringComparison.Ordinal))
+                    continue;
+                names.Add(Path.GetFileNameWithoutExtension(trimmed));
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"LoadMergedAssemblyNames failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: merged assemblies will resolve from loose files — check SmartCon.App resources]");
+        }
+        return names;
+    }
+#endif
+
+    /// <summary>
+    /// Last-resort assembly resolution for the add-in folder.
+    /// net48: merged third-party names (ADR-051) are served from SmartCon.Dependencies.dll —
+    /// never from loose files and never from another add-in's version. Everything else falls
+    /// back to already-loaded assemblies, then to the plugin folder.
+    /// net8: safety net for the default context only; the isolated AssemblyLoadContext
+    /// resolves plugin dependencies on its own.
+    /// </summary>
     private static Assembly? OnAssemblyResolve(object? sender, ResolveEventArgs args)
     {
-        var name = new AssemblyName(args.Name).Name;
-        var loaded = AppDomain.CurrentDomain.GetAssemblies()
-            .FirstOrDefault(a => a.GetName().Name == name);
-        if (loaded != null) return loaded;
-        var pluginDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
-        if (pluginDir is null) return null;
-        var path = Path.Combine(pluginDir, name + ".dll");
-        return File.Exists(path) ? Assembly.LoadFrom(path) : null;
+        try
+        {
+            var requested = new AssemblyName(args.Name);
+            var name = requested.Name;
+            if (string.IsNullOrEmpty(name))
+                return null;
+
+            using var _scope = SmartConLogger.BeginScope("AsmResolve",
+                ("Method", nameof(OnAssemblyResolve)),
+                ("Assembly", name));
+
+#if NETFRAMEWORK
+            if (s_mergedAssemblyNames.Value.Contains(name))
+            {
+                var merged = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(a => a.GetName().Name == "SmartCon.Dependencies");
+                if (merged is null)
+                {
+                    var mergedDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
+                    var mergedPath = mergedDir is null ? null : Path.Combine(mergedDir, "SmartCon.Dependencies.dll");
+                    if (mergedPath is not null && File.Exists(mergedPath))
+                        merged = Assembly.LoadFrom(mergedPath);
+                }
+
+                if (merged is null)
+                {
+                    SmartConLogger.Warn(
+                        $"Merged assembly requested but SmartCon.Dependencies.dll not found for '{args.Name}' " +
+                        "[Action: reinstall SmartCon via setup.exe — the merged dependency assembly is missing]");
+                    return null;
+                }
+
+                SmartConLogger.Debug($"Resolved '{args.Name}' from SmartCon.Dependencies (merged)");
+                return merged;
+            }
+#endif
+
+            var loaded = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a => a.GetName().Name == name);
+            var pluginDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
+            var path = pluginDir is null ? null : Path.Combine(pluginDir, name + ".dll");
+
+            // Another add-in already loaded an OLDER version than requested:
+            // returning it would surface as MissingMethod/TypeLoad/0x80131040 downstream
+            // (Issue #134). Prefer the file from our folder when it satisfies the request —
+            // for strong-named dependencies this yields an exact-identity side-by-side load.
+            if (loaded != null && requested.Version is not null
+                && loaded.GetName().Version is not null
+                && loaded.GetName().Version < requested.Version
+                && path is not null && File.Exists(path))
+            {
+                try
+                {
+                    var onDisk = AssemblyName.GetAssemblyName(path);
+                    if (onDisk.Version is not null && onDisk.Version >= requested.Version)
+                    {
+                        SmartConLogger.Debug(
+                            $"Resolved '{args.Name}' from plugin folder (already-loaded v{loaded.GetName().Version} is older)");
+                        return Assembly.LoadFrom(path);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug($"Version probe failed for '{path}': {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+
+            if (loaded != null)
+            {
+                var loadedVersion = loaded.GetName().Version;
+                if (requested.Version is not null && loadedVersion is not null && loadedVersion < requested.Version)
+                {
+                    SmartConLogger.Warn(
+                        $"Version downgrade: requested '{args.Name}', returning already-loaded " +
+                        $"{loaded.FullName} from '{loaded.Location}' " +
+                        "[Action: another add-in loaded an older version first — update it; " +
+                        "see Issue #134 for the isolation roadmap]");
+                }
+                else
+                {
+                    SmartConLogger.Debug($"Resolved '{args.Name}' from already-loaded v{loadedVersion}");
+                }
+                return loaded;
+            }
+
+            if (pluginDir is null)
+                return null;
+            if (path is not null && File.Exists(path))
+            {
+                SmartConLogger.Debug($"Resolved '{args.Name}' from plugin folder");
+                return Assembly.LoadFrom(path);
+            }
+
+            SmartConLogger.Debug($"Not resolved: '{args.Name}'");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"OnAssemblyResolve failed for '{args.Name}': {ex.GetType().Name}: {ex.Message} " +
+                "[Action: report to SmartCon support with smartcon.log]");
+            return null;
+        }
     }
 
     /// <summary>

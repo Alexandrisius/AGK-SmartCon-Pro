@@ -12,17 +12,36 @@ using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.ProjectManagement.ViewModels;
 using SmartCon.ProjectManagement.Views;
+#if NET8_0_OR_GREATER
+using CommandBase = Nice3point.Revit.Toolkit.External.ExternalCommand;
+#else
+using CommandBase = Autodesk.Revit.UI.IExternalCommand;
+#endif
 
 namespace SmartCon.ProjectManagement.Commands;
 
 [Transaction(TransactionMode.Manual)]
-public sealed class ShareProjectCommand : IExternalCommand
+public sealed class ShareProjectCommand : CommandBase
 {
     private ShareProgressViewModel? _progressVm;
     private ShareProgressView? _progressView;
 
+#if NET8_0_OR_GREATER
+    public override void Execute()
+    {
+        Result = ExecuteCore(Application, out var message);
+        ErrorMessage = message;
+    }
+#else
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
+        return ExecuteCore(commandData.Application, out message);
+    }
+#endif
+
+    private Result ExecuteCore(UIApplication uiApp, out string message)
+    {
+        message = string.Empty;
         using var _ = SmartConLogger.BeginScope("ShareProject",
             ("Method", "Execute"));
         using var measure = SmartConLogger.Measure("ShareProject.Execute");
@@ -31,7 +50,7 @@ public sealed class ShareProjectCommand : IExternalCommand
         {
             SmartConLogger.Info("ShareProjectCommand started.");
 
-            var uiapp = commandData.Application;
+            var uiapp = uiApp;
             CommandHelper.InitializeContext(uiapp);
             var originalDoc = CommandHelper.GetDocument();
 
@@ -107,7 +126,7 @@ public sealed class ShareProjectCommand : IExternalCommand
 
                     var dialogView = new Views.ExportNameDialog(dialogVm)
                     {
-                        Owner = GetMainWindow(commandData.Application)
+                        Owner = GetMainWindow(uiApp)
                     };
                     dialogView.ShowDialog();
 
@@ -151,7 +170,7 @@ public sealed class ShareProjectCommand : IExternalCommand
             var isWorkshared = originalDoc.IsWorkshared;
             var originalPathName = originalDoc.PathName;
 
-            ShowProgress(commandData.Application.MainWindowHandle);
+            ShowProgress(uiApp.MainWindowHandle);
 
             EventHandler<Autodesk.Revit.DB.Events.FailuresProcessingEventArgs>? failureHandler = null;
             failureHandler = (sender, args) =>

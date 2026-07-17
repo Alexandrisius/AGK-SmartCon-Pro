@@ -1,0 +1,21 @@
+# Сторонние сборки, сшитые ILRepack в SmartCon.Dependencies.dll (net48, ADR-051 / Issue #134).
+# Правило merge: пакет сшивается, только если ни один подписанный сторонний компонент
+# не ссылается на него по strong name. Loose-файлы (CT.Common/Diagnostics, M.E.DI.Abstractions,
+# System.Memory/Buffers/Unsafe/Tasks.Extensions/Numerics.Vectors, CodePages) остаются на диске
+# как подписанные оригиналы и НЕ должны попадать в этот список.
+# Используется:
+#   - SmartCon.App (OnAssemblyResolve): эти имена резолвятся из SmartCon.Dependencies.dll, НЕ с диска.
+#   - release.ps1: копируется в архивы как obsolete-files.txt — Updater и installer удаляют
+#     эти файлы при обновлении/установке поверх старых версий.
+# Формат: одно имя файла на строку, строки с '#' — комментарии.
+# Держать в синхронизации с src/SmartCon.Dependencies/ILRepack.targets.
+CommunityToolkit.Mvvm.dll
+Microsoft.Extensions.DependencyInjection.dll
+Microsoft.Bcl.AsyncInterfaces.dll
+System.Text.Json.dll
+System.Text.Encodings.Web.dll
+UtfUnknown.dll
+# Исторический мусор (поставлялся версиями < 2.0.0 до Issue #129):
+SharpGLTF.Core.dll
+SharpGLTF.Toolkit.dll
+SharpGLTF.Runtime.dll

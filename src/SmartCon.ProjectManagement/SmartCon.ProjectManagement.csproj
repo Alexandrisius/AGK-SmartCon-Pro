@@ -9,8 +9,13 @@
     <NoWarn>CS0067</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <!-- ADR-051: merged deps (net48) + toolkit (net8, сшит в SmartCon.Dependencies) -->
+  <ItemGroup>
+    <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>
 
   <!-- RevitAPI + RevitAPIUI: ExcludeAssets=runtime — DLL не копируется в output -->

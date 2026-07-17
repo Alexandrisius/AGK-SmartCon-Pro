@@ -1,0 +1,7 @@
+<Project>
+  <!-- Points ILRepack.Lib.MSBuild.Task at our explicit merge list
+       (overrides the package default that merges every dll in output). -->
+  <PropertyGroup>
+    <ILRepackTargetsFile>$(MSBuildThisFileDirectory)ILRepack.targets</ILRepackTargetsFile>
+  </PropertyGroup>
+</Project>
