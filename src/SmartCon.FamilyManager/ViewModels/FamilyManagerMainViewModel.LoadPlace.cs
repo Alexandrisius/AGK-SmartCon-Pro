@@ -11,12 +11,21 @@ namespace SmartCon.FamilyManager.ViewModels;
 public sealed partial class FamilyManagerMainViewModel
 {
     [RelayCommand(CanExecute = nameof(CanStartPlacementDrag))]
-    private void StartPlacementDrag(object? item)
+    private async Task StartPlacementDrag(object? item)
     {
         if (item is not FamilyTypeNodeViewModel typeNode) return;
 
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return;
+
+        // DnD placement loads the family into the project via the Revit-side
+        // drop handler — gate it here, before the drag starts (Issue #126).
+        // System types only copy from the isolated .rvt (no catalog write).
+        if (leaf.FamilySource != "system"
+            && !await EnsureDatabaseUpToDateAsync().ConfigureAwait(true))
+        {
+            return;
+        }
 
         var data = new FamilyPlacementDragData(
             leaf.CatalogItemId,

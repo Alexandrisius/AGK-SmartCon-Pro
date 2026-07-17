@@ -533,7 +533,7 @@
                         CornerRadius="4"
                         Background="{DynamicResource DangerBrush}"
                         HorizontalAlignment="Right" VerticalAlignment="Top"
-                        Margin="0,-3,-3,0"
+                        Margin="0,2,2,0"
                         IsHitTestVisible="False"
                         Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}"/>
             </Grid>
@@ -550,7 +550,8 @@
                         CornerRadius="6"
                         Padding="4">
                     <StackPanel>
-                        <Button Command="{Binding UpdateDatabaseCommand}"
+                        <Button Content="{loc:Loc FM_PBase_UpdateDatabase}"
+                                Command="{Binding UpdateDatabaseCommand}"
                                 MinWidth="180"
                                 HorizontalContentAlignment="Left"
                                 Padding="10,6"
@@ -559,15 +560,6 @@
                                 Cursor="Hand"
                                 ToolTip="{loc:Loc FM_PBase_UpdateDatabaseTooltip}"
                                 Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{loc:Loc FM_PBase_UpdateDatabase}"
-                                           VerticalAlignment="Center"/>
-                                <Border Width="7" Height="7"
-                                        CornerRadius="4"
-                                        Margin="6,0,0,0"
-                                        VerticalAlignment="Center"
-                                        Background="{DynamicResource DangerBrush}"/>
-                            </StackPanel>
                             <i:Interaction.Triggers>
                                 <i:EventTrigger EventName="Click">
                                     <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>

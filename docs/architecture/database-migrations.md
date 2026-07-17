@@ -36,12 +36,13 @@ FamilyManagerPaneControl.xaml              — красная точка + ба�
    инициализации панели (после первого ExternalEvent round-trip — иначе
    `RevitContext` ещё не готов и версия Revit = 0) и после каждого
    переключения/подключения базы.
-2. Pending > 0 → **красная точка** на кнопке «Инструменты базы» (справа от
-   списка БД) + tooltip «Требуется обновление базы данных» + **жёлтый баннер**
-   под строкой БД: «база работает в режиме просмотра» + кнопка «Обновить».
+2. Pending > 0 → **жёлтый баннер** под строкой БД (основной индикатор:
+   объяснение «режим просмотра» + кнопка «Обновить») + **красная точка**
+   внутри кнопки «Инструменты базы» (beacon, указывает куда нажимать;
+   tooltip меняется на «Требуется обновление базы данных»).
 3. В popup инструментов — команда **«Обновить базу данных»** (видна только
-   при pending > 0), тоже с красной точкой. Пользователь запускает когда
-   удобно.
+   при pending > 0) — логичный дом операции для будущих миграций. Без
+   собственной точки: она и так видна только при pending.
 4. **База read-only пока pending > 0.** Каждая write-команда модуля гейтится
    через `IDatabaseUpdateStateService.EnsureUpToDateAsync()` — диалог с
    объяснением и кнопкой «Обновить сейчас»; «Нет» = операция отменена.
@@ -53,7 +54,7 @@ FamilyManagerPaneControl.xaml              — красная точка + ба�
 | Область | Команды |
 |---|---|
 | Импорт | `ImportFilesAsync`, `ImportFileToCategoryAsync`, `ImportSelectedElementsAsync`, `ImportActiveFileAsync` |
-| Загрузка в проект | `LoadToProject*`, `UpdateStale*`, loadable `PlaceTypeAsync` |
+| Загрузка в проект | `LoadToProject*`, `UpdateStale*`, loadable `PlaceTypeAsync`, loadable `StartPlacementDrag` (DnD) |
 | Семейства | `DeleteFamilyAsync`, `DropFamilyAsync` (DnD по категориям), `OpenCategoryEditorAsync` |
 | Свойства | `SaveAsync` (Общие), `MakeActiveAsync`, `DeleteVersion`, все write-команды ассетов (avatar/files/primary/version-binding) |
 
