@@ -267,6 +267,15 @@ Pure C# парсер имени файла по `FileNameTemplate`. Pure без 
 
 **Файл:** `SmartCon.Core/Common/Constants.cs`
 
+## PipeAbsorption
+
+Лимиты гашения смещения длиной труб (ADR-052). `MinPipeLengthMm = 100.0` — минимальная
+монтажная длина трубы после укорочения (SI); `MinPipeLengthFt = 100 / 304.8` — то же
+в Internal Units (decimal feet, I-02). Revit API допускает трубу от ~2.5 мм (1/10"),
+но короче 100 мм вставка не монтируется на стройке.
+
+**Файл:** `SmartCon.Core/Constants.cs`
+
 ---
 
 ## ServiceHost

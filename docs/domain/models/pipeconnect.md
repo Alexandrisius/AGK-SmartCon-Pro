@@ -671,3 +671,25 @@ public static class ChainTraversalRunner
         int startDepth, int targetLevel, int maxLevel, Func<int?> step);
 }
 ```
+
+---
+
+## PipeAdjustOp
+
+Дельты концов кривой прямой трубы для per-level гашения смещения (ADR-052).
+Результат `PipeLengthAbsorber.Compute`. Применяется как
+`Line.CreateBound(start + StartDelta, end + EndDelta)`.
+Элемент идентифицируется сырым `long` — тестируемость без Revit runtime.
+Все величины в Internal Units (decimal feet, I-02).
+
+**Файл:** `SmartCon.Core/Models/PipeAdjustOp.cs`
+
+```csharp
+public sealed record PipeAdjustOp
+{
+    public required long ElementId { get; init; }
+    public required Vec3 StartDelta { get; init; }      // дельта endpoint 0
+    public required Vec3 EndDelta { get; init; }        // дельта endpoint 1
+    public required double AbsorbedLengthFt { get; init; }  // >0 укорочение, <0 удлинение, 0 трансляция
+}
+```

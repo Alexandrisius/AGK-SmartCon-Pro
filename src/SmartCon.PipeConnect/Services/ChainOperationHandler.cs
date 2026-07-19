@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
 using SmartCon.Core.Models;
@@ -77,6 +78,8 @@ public sealed class ChainOperationHandler(
     /// <summary>
     /// Rollback a chain level: restore elements to their snapshot state,
     /// delete inserted reducers, and reconnect original connections.
+    /// Per-level absorption (ADR-052) touches only the level's own elements,
+    /// so rollback restores exactly this level — symmetric with increment.
     /// </summary>
     /// <param name="doc">Active Revit document.</param>
     /// <param name="groupSession">Active transaction group session.</param>
@@ -161,7 +164,8 @@ public sealed class ChainOperationHandler(
         var elemProxyForAlign = connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
         var alignTarget = ResolveAlignTarget(doc, reducerId, parentProxy);
 
-        AlignElement(doc, elemId, elemProxyForAlign, alignTarget);
+        if (!TryAlignPipeByLength(doc, elemId, elemProxyForAlign, alignTarget))
+            AlignElement(doc, elemId, elemProxyForAlign, alignTarget);
         ReconnectIncrementElement(doc, elemId, edge.Value, parentProxy, reducerId);
 
         SmartConLogger.Debug($"── Element {elemId.GetValue()} ready ──");
@@ -380,6 +384,78 @@ public sealed class ChainOperationHandler(
         alignmentSvc.ApplyAlignment(doc, elemId, alignTarget, elemProxyForAlign);
     }
 
+    /// <summary>
+    /// Per-level displacement absorption (ADR-052): when the element being aligned
+    /// is itself a straight pipe and its alignment is a pure translation, the pipe
+    /// changes its length instead of moving as a rigid body — the near end (facing
+    /// the parent) follows the offset, the far end keeps only the non-absorbed
+    /// remainder. The remainder propagates to the next level through the classic
+    /// flow, so levels connect one element at a time, symmetric with rollback.
+    /// Returns true when the pipe was aligned by length change; false → caller
+    /// falls back to the classic rigid <see cref="AlignElement"/>.
+    /// </summary>
+    private bool TryAlignPipeByLength(
+        Document doc,
+        ElementId elemId,
+        ConnectorProxy? elemProxyForAlign,
+        ConnectorProxy? alignTarget)
+    {
+        if (alignTarget is null || elemProxyForAlign is null)
+            return false;
+
+        if (doc.GetElement(elemId) is not MEPCurve mc
+            || mc.Location is not LocationCurve lc
+            || lc.Curve is not Line line)
+            return false;
+
+        var alignResult = ConnectorAligner.ComputeAlignment(
+            alignTarget.OriginVec3, alignTarget.BasisZVec3, alignTarget.BasisXVec3,
+            elemProxyForAlign.OriginVec3, elemProxyForAlign.BasisZVec3, elemProxyForAlign.BasisXVec3);
+
+        if (alignResult.BasisZRotation is not null || alignResult.BasisXSnap is not null)
+        {
+            SmartConLogger.Debug($"    d. Absorb: rotation required → rigid align");
+            return false;
+        }
+
+        var offset = alignResult.InitialOffset;
+        if (VectorUtils.IsZero(offset))
+            return false;
+
+        var p0 = line.GetEndPoint(0);
+        var p1 = line.GetEndPoint(1);
+        var op = PipeLengthAbsorber.Compute(
+            elemId.GetValue(),
+            new Vec3(p0.X, p0.Y, p0.Z),
+            new Vec3(p1.X, p1.Y, p1.Z),
+            elemProxyForAlign.OriginVec3,
+            offset,
+            PipeAbsorption.MinPipeLengthFt);
+        if (op is null)
+            return false;
+
+        var newStart = new XYZ(p0.X + op.StartDelta.X, p0.Y + op.StartDelta.Y, p0.Z + op.StartDelta.Z);
+        var newEnd = new XYZ(p1.X + op.EndDelta.X, p1.Y + op.EndDelta.Y, p1.Z + op.EndDelta.Z);
+
+        try
+        {
+            lc.Curve = Line.CreateBound(newStart, newEnd);
+            doc.Regenerate();
+            SmartConLogger.Debug($"    d. Absorb: pipe {elemId.GetValue()} " +
+                $"offset={VectorUtils.Length(offset) * FeetToMm:F1}mm, " +
+                $"absorbed={op.AbsorbedLengthFt * FeetToMm:F1}mm, " +
+                $"newLen={newStart.DistanceTo(newEnd) * FeetToMm:F1}mm");
+        }
+        catch (Exception exCurve)
+        {
+            SmartConLogger.Warn($"    d. Absorb: set curve failed: {exCurve.Message} " +
+                $"[Action: проверьте длину трубы и соединения вокруг, подключите вручную]");
+            return false;
+        }
+
+        return true;
+    }
+
     private void ReconnectIncrementElement(
         Document doc,
         ElementId elemId,
@@ -428,7 +504,7 @@ public sealed class ChainOperationHandler(
         var elemRaw = doc.GetElement(elemId);
         SmartConLogger.Debug($" ── Element id={elemId.GetValue()} '{elemRaw?.Name}' ({elemRaw?.GetType().Name}) ──");
 
-            DisconnectElementConnections(doc, elemId);
+        DisconnectElementConnections(doc, elemId);
         DeleteTrackedReducers(doc, snapshotStore, elemId);
 
         var snapshot = snapshotStore.Get(elemId);

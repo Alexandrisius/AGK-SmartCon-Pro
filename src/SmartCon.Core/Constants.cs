@@ -47,6 +47,21 @@ public static class Tolerance
     public const double CollinearityThreshold = 0.9;
 }
 
+/// <summary>
+/// Limits for displacement absorption by pipe length (DisplacementAbsorptionPlanner).
+/// Revit API hard minimum for a MEPCurve is 1/10 inch (~2.54 mm) — far below any
+/// mountable insert. We never go under the mounting minimum so every adjusted pipe
+/// remains a piece that can actually be cut and installed on site.
+/// </summary>
+public static class PipeAbsorption
+{
+    /// <summary>Minimum pipe length after absorption shortening, in millimeters (SI).</summary>
+    public const double MinPipeLengthMm = 100.0;
+
+    /// <summary>Minimum pipe length after absorption shortening, in Internal Units (decimal feet). 100 mm / 304.8.</summary>
+    public const double MinPipeLengthFt = MinPipeLengthMm * Units.MmToFeet;
+}
+
 public static class Lookup
 {
     public const double ConstraintMatchMm = 0.02;

@@ -79,3 +79,25 @@ public sealed record RotationStep(Vec3 Axis, double AngleRadians);
 Парсинг CSV LookupTable семейства Revit.
 
 **Файл:** `Math/LookupTableCsvParser.cs`
+
+---
+
+## PipeLengthAbsorber
+
+Per-level гашение смещения длиной трубы (ADR-052, pure math на Vec3).
+Когда подключаемый элемент сам — прямая труба и выравнивание — чистая трансляция,
+труба меняет длину вместо жёсткого перемещения: ближний к родителю конец следует
+за offset, дальний получает только непоглощённый остаток. Укорочение ограничено
+`PipeAbsorption.MinPipeLengthMm` = 100 мм, удлинение без ограничений.
+
+**Файл:** `Math/PipeLengthAbsorber.cs`
+
+```csharp
+public static class PipeLengthAbsorber
+{
+    // null при вырожденной геометрии (нулевой offset или нулевая длина).
+    public static PipeAdjustOp? Compute(
+        long elementId, Vec3 pipeStart, Vec3 pipeEnd, Vec3 entryPoint,
+        Vec3 offset, double minPipeLength);
+}
+```

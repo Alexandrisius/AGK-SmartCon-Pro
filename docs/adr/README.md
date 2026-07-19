@@ -62,3 +62,4 @@
 | [049](049-content-hash-v2-rename-invariant.md) | Content Hash v2 — rename-invariant дедупликация (hash-first), cross-name дубликаты с ⚠, имя айтема следует за активной версией (Issue #126) | accepted | 2026-07-17 |
 | [050](050-hash-recalculation-migration.md) | Hash Recalculation Migration — user-initiated data repair v1→v2 с прогресс-диалогом, маркировка -1, purge недоступных (Issue #126) | accepted | 2026-07-17 |
 | [051](051-dependency-isolation.md) | Dependency Isolation — ILRepack merge (net48) + Nice3point ALC (net8) + конвейер миграции (Updater/installer/self-healing .addin) (Issue #134) | accepted | 2026-07-17 |
+| [052](052-pipe-length-displacement-absorption.md) | PipeConnect — гашение смещения сети длиной трубы на её собственном уровне (PipeLengthAbsorber, min 100 мм, поэлементная симметрия +/−) | accepted | 2026-07-19 |
