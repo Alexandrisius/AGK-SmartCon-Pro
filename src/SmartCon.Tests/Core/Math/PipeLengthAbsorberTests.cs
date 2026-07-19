@@ -133,4 +133,69 @@ public sealed class PipeLengthAbsorberTests
         Assert.Equal(0.0, remainder.X, 6);
         Assert.Equal(Ft(1), remainder.Y, 6);
     }
+
+    [Fact]
+    public void ComputeFlexPath_EntryAtStart_MovesOnlyFirstPoint()
+    {
+        var w = new Vec3(Ft(20), Ft(5), 0);
+        var points = new List<Vec3>
+        {
+            new(0, 0, 0), new(Ft(100), Ft(30), 0), new(Ft(200), 0, 0),
+        };
+
+        var result = PipeLengthAbsorber.ComputeFlexPath(points, Vec3.Zero, w, MinLenFt);
+
+        Assert.NotNull(result);
+        Assert.Equal(3, result.Count);
+        Assert.Equal(w, result[0]);
+        // Промежуточная и концевая точки не тронуты.
+        Assert.Equal(new Vec3(Ft(100), Ft(30), 0), result[1]);
+        Assert.Equal(new Vec3(Ft(200), 0, 0), result[2]);
+    }
+
+    [Fact]
+    public void ComputeFlexPath_EntryAtEnd_MovesOnlyLastPoint()
+    {
+        var w = new Vec3(0, 0, Ft(50));
+        var points = new List<Vec3>
+        {
+            new(0, 0, 0), new(Ft(100), Ft(30), 0), new(Ft(200), 0, 0),
+        };
+
+        var result = PipeLengthAbsorber.ComputeFlexPath(points, new Vec3(Ft(200), 0, 0), w, MinLenFt);
+
+        Assert.NotNull(result);
+        Assert.Equal(new Vec3(0, 0, 0), result[0]);
+        Assert.Equal(new Vec3(Ft(100), Ft(30), 0), result[1]);
+        Assert.Equal(new Vec3(Ft(200), 0, Ft(50)), result[2]);
+    }
+
+    [Fact]
+    public void ComputeFlexPath_PathTooShortAfterMove_ReturnsNull()
+    {
+        // Two-point path of 90 mm; moving one endpoint onto the other collapses it below 100 mm.
+        var points = new List<Vec3> { new(0, 0, 0), new(Ft(90), 0, 0) };
+
+        var result = PipeLengthAbsorber.ComputeFlexPath(
+            points, Vec3.Zero, new Vec3(Ft(90), 0, 0), MinLenFt);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ComputeFlexPath_ZeroOffset_ReturnsNull()
+    {
+        var points = new List<Vec3> { new(0, 0, 0), new(Ft(200), 0, 0) };
+
+        Assert.Null(PipeLengthAbsorber.ComputeFlexPath(points, Vec3.Zero, Vec3.Zero, MinLenFt));
+    }
+
+    [Fact]
+    public void ComputeFlexPath_SinglePoint_ReturnsNull()
+    {
+        var points = new List<Vec3> { new(0, 0, 0) };
+
+        Assert.Null(PipeLengthAbsorber.ComputeFlexPath(
+            points, Vec3.Zero, new Vec3(Ft(20), 0, 0), MinLenFt));
+    }
 }

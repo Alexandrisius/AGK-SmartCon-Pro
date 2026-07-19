@@ -99,5 +99,10 @@ public static class PipeLengthAbsorber
     public static PipeAdjustOp? Compute(
         long elementId, Vec3 pipeStart, Vec3 pipeEnd, Vec3 entryPoint,
         Vec3 offset, double minPipeLength);
+
+    // FlexPipe: новый путь точек — двигается только концевая точка со стороны
+    // родителя, промежуточные сохраняются verbatim. null если путь < minPathLength.
+    public static IReadOnlyList<Vec3>? ComputeFlexPath(
+        IReadOnlyList<Vec3> points, Vec3 entryPoint, Vec3 offset, double minPathLength);
 }
 ```

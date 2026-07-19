@@ -52,6 +52,8 @@ public static partial class LocalizationService
         en["Tx_ChainLevel"] = "Chain: level {0}";
         ru["Tx_ChainRollback"] = "Цепочка: откат уровня {0}";
         en["Tx_ChainRollback"] = "Chain: rollback level {0}";
+        ru["Tx_ChainSeal"] = "Цепочка: финальное переподключение";
+        en["Tx_ChainSeal"] = "Chain: final reconnect";
 
         ru["Status_Rotated"] = "Повернуто на {0}°";
         en["Status_Rotated"] = "Rotated by {0}°";
@@ -115,6 +117,10 @@ public static partial class LocalizationService
         en["Status_ConnectingNetwork"] = "Connecting entire network…";
         ru["Status_LevelsConnected"] = "Подключено {0} уровней";
         en["Status_LevelsConnected"] = "{0} levels connected";
+        ru["Status_LevelsSkipped"] = "Уровень {0} (пропущено без изменений: {1})";
+        en["Status_LevelsSkipped"] = "Level {0} ({1} idle level(s) skipped)";
+        ru["Status_ChainSealed"] = "Сеть скомпенсирована на уровне {0} — дальнейшие уровни не требуются";
+        en["Status_ChainSealed"] = "Network fully compensated at level {0} — no further levels needed";
 
         ru["Pick_FirstElement"] = "PipeConnect: выберите ПЕРВЫЙ элемент (будет присоединён)";
         en["Pick_FirstElement"] = "PipeConnect: select FIRST element (to be connected)";

@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
@@ -39,7 +40,12 @@ public sealed class ChainOperationHandler(
     /// <param name="snapshotStore">Store for element snapshots (for rollback).</param>
     /// <param name="warmedElementIds">Set of already-warmed element IDs.</param>
     /// <param name="nextLevel">BFS level index to process.</param>
-    public void IncrementLevel(
+    /// <returns>
+    /// True when at least one element of the level actually changed (moved, rotated,
+    /// resized, reducer inserted, or absorbed by pipe length). False = idle level —
+    /// only disconnect/reconnect churn; callers may auto-skip such levels.
+    /// </returns>
+    public bool IncrementLevel(
         Document doc,
         ITransactionGroupSession groupSession,
         ConnectionGraph graph,
@@ -60,19 +66,21 @@ public sealed class ChainOperationHandler(
         foreach (var elemId in levelElements)
             SaveSnapshotForLevelElement(doc, elemId, graph, snapshotStore);
 
+        bool anyWork = false;
         groupSession.RunInTransaction(string.Format(LocalizationService.GetString("Tx_ChainLevel"), nextLevel), doc =>
         {
             int elemIndex = 0;
             foreach (var elemId in levelElements)
             {
                 elemIndex++;
-                ProcessIncrementElement(doc, graph, snapshotStore, nextLevel, elemId, elemIndex, levelElements.Count);
+                anyWork |= ProcessIncrementElement(doc, graph, snapshotStore, nextLevel, elemId, elemIndex, levelElements.Count);
             }
 
             doc.Regenerate();
         });
 
-        SmartConLogger.Debug($"═══ LEVEL {nextLevel} DONE ═══");
+        SmartConLogger.Debug($"═══ LEVEL {nextLevel} DONE ═══ (anyWork={anyWork})");
+        return anyWork;
     }
 
     /// <summary>
@@ -110,6 +118,110 @@ public sealed class ChainOperationHandler(
         });
     }
 
+    /// <summary>
+    /// Try to "seal" the chain early (ADR-052): when the displacement is already
+    /// fully absorbed and the remaining downstream needs no resize work, the
+    /// boundary edges (currentDepth → currentDepth+1) are reconnected and the
+    /// rest of the network is left completely untouched — no per-level churn.
+    /// Returns true when the chain is sealed (caller disables further increments).
+    /// A level is "quiet" when every boundary child has zero alignment offset,
+    /// no required rotation and a matching radius, and every deeper piping edge
+    /// has matching radii (a resize deeper would require classic processing).
+    /// </summary>
+    public bool TrySealQuietChain(
+        Document doc,
+        ITransactionGroupSession groupSession,
+        ConnectionGraph graph,
+        int currentDepth)
+    {
+        if (currentDepth + 1 >= graph.Levels.Count)
+            return true;
+
+        var levelOf = new Dictionary<long, int>();
+        for (int level = 0; level < graph.Levels.Count; level++)
+            foreach (var id in graph.Levels[level])
+                levelOf[id.GetValue()] = level;
+
+        var boundaryEdges = new List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>();
+
+        foreach (var childId in graph.Levels[currentDepth + 1])
+        {
+            var edge = FindEdgeToParent(childId, currentDepth + 1, graph);
+            if (edge is null)
+                return false;
+
+            var parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
+            var childProxy = connSvc.RefreshConnector(doc, childId, edge.Value.ElemConnIdx);
+            if (parentProxy is null || childProxy is null)
+                continue;
+
+            if (parentProxy.Domain != Domain.DomainPiping || childProxy.Domain != Domain.DomainPiping)
+                continue;
+
+            double radiusDelta = System.Math.Abs(parentProxy.Radius - childProxy.Radius);
+            if (radiusDelta > 1e-5)
+                return false;
+
+            var alignResult = ConnectorAligner.ComputeAlignment(
+                parentProxy.OriginVec3, parentProxy.BasisZVec3, parentProxy.BasisXVec3,
+                childProxy.OriginVec3, childProxy.BasisZVec3, childProxy.BasisXVec3);
+
+            if (!VectorUtils.IsZero(alignResult.InitialOffset)
+                || alignResult.BasisZRotation is not null
+                || alignResult.BasisXSnap is not null)
+                return false;
+
+            boundaryEdges.Add((edge.Value.ParentId, edge.Value.ParentConnIdx, childId, edge.Value.ElemConnIdx));
+        }
+
+        foreach (var edge in graph.Edges)
+        {
+            if (!levelOf.TryGetValue(edge.FromElementId.GetValue(), out int fromLevel)
+                || !levelOf.TryGetValue(edge.ToElementId.GetValue(), out int toLevel)
+                || fromLevel <= currentDepth
+                || toLevel <= currentDepth)
+                continue;
+
+            var fromProxy = connSvc.RefreshConnector(doc, edge.FromElementId, edge.FromConnectorIndex);
+            var toProxy = connSvc.RefreshConnector(doc, edge.ToElementId, edge.ToConnectorIndex);
+            if (fromProxy is null || toProxy is null)
+                continue;
+
+            if (fromProxy.Domain != Domain.DomainPiping || toProxy.Domain != Domain.DomainPiping)
+                continue;
+
+            double radiusDelta = System.Math.Abs(fromProxy.Radius - toProxy.Radius);
+            if (radiusDelta > 1e-5)
+            {
+                SmartConLogger.Debug($"Seal: radius mismatch at deeper edge " +
+                    $"{edge.FromElementId.GetValue()}↔{edge.ToElementId.GetValue()} " +
+                    $"({radiusDelta * FeetToMm:F2}mm) → classic flow");
+                return false;
+            }
+        }
+
+        groupSession.RunInTransaction(LocalizationService.GetString("Tx_ChainSeal"), doc =>
+        {
+            foreach (var (parentId, parentConnIdx, childId, childConnIdx) in boundaryEdges)
+            {
+                try
+                {
+                    connSvc.ConnectTo(doc, parentId, parentConnIdx, childId, childConnIdx);
+                }
+                catch (Exception exConn)
+                {
+                    SmartConLogger.Warn($"Seal: ConnectTo {parentId.GetValue()}↔{childId.GetValue()} " +
+                        $"failed: {exConn.Message} [Action: подключите границу сети вручную]");
+                }
+            }
+            doc.Regenerate();
+        });
+
+        SmartConLogger.Info($"Seal: chain sealed at level {currentDepth}, " +
+            $"boundary edges={boundaryEdges.Count}, deeper levels untouched");
+        return true;
+    }
+
     private void SaveSnapshotForLevelElement(
         Document doc,
         ElementId elemId,
@@ -124,7 +236,7 @@ public sealed class ChainOperationHandler(
             $"symbolId={snapshot.FamilySymbolId?.GetValue()}, connections={snapshot.Connections.Count}");
     }
 
-    private void ProcessIncrementElement(
+    private bool ProcessIncrementElement(
         Document doc,
         ConnectionGraph graph,
         NetworkSnapshotStore snapshotStore,
@@ -141,7 +253,7 @@ public sealed class ChainOperationHandler(
         if (edge is null)
         {
             SmartConLogger.Warn($"b. Edge to parent NOT FOUND → skip");
-            return;
+            return false;
         }
 
         SmartConLogger.Debug($"b. Edge: parent={edge.Value.ParentId.GetValue()} " +
@@ -151,24 +263,38 @@ public sealed class ChainOperationHandler(
         if (parentProxy is null)
         {
             SmartConLogger.Warn($"parentProxy=NULL → skip");
-            return;
+            return false;
         }
 
         SmartConLogger.Debug($"parent: R={parentProxy.Radius * FeetToMm:F2}mm " +
             $"(DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)}) " +
             $"origin=({parentProxy.Origin.X:F4},{parentProxy.Origin.Y:F4},{parentProxy.Origin.Z:F4})");
 
-        var reducerId = AdjustElementSize(doc, graph, snapshotStore, elemId, edge.Value, parentProxy);
+        var (reducerId, sizeChanged) = AdjustElementSize(doc, graph, snapshotStore, elemId, edge.Value, parentProxy);
 
         parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
         var elemProxyForAlign = connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
         var alignTarget = ResolveAlignTarget(doc, reducerId, parentProxy);
 
-        if (!TryAlignPipeByLength(doc, elemId, elemProxyForAlign, alignTarget))
-            AlignElement(doc, elemId, elemProxyForAlign, alignTarget);
+        AlignmentResult? alignResult = null;
+        if (alignTarget is not null && elemProxyForAlign is not null)
+        {
+            alignResult = ConnectorAligner.ComputeAlignment(
+                alignTarget.OriginVec3, alignTarget.BasisZVec3, alignTarget.BasisXVec3,
+                elemProxyForAlign.OriginVec3, elemProxyForAlign.BasisZVec3, elemProxyForAlign.BasisXVec3);
+        }
+
+        bool alignmentChanged = alignResult is not null
+            && (!VectorUtils.IsZero(alignResult.InitialOffset)
+                || alignResult.BasisZRotation is not null
+                || alignResult.BasisXSnap is not null);
+
+        if (!TryAlignPipeByLength(doc, elemId, elemProxyForAlign, alignResult))
+            AlignElement(doc, elemId, elemProxyForAlign, alignResult);
         ReconnectIncrementElement(doc, elemId, edge.Value, parentProxy, reducerId);
 
         SmartConLogger.Debug($"── Element {elemId.GetValue()} ready ──");
+        return sizeChanged || reducerId is not null || alignmentChanged;
     }
 
     private void LogIncrementElementHeader(Document doc, ElementId elemId, int elemIndex, int levelCount)
@@ -199,7 +325,7 @@ public sealed class ChainOperationHandler(
         SmartConLogger.Debug($"a. Disconnect done: {disconnected} connections broken, всего коннекторов={allConns.Count}");
     }
 
-    private ElementId? AdjustElementSize(
+    private (ElementId? ReducerId, bool SizeChanged) AdjustElementSize(
         Document doc,
         ConnectionGraph graph,
         NetworkSnapshotStore snapshotStore,
@@ -246,14 +372,14 @@ public sealed class ChainOperationHandler(
 
             if (elemRefreshed is not null && verifyDelta > 1e-5)
                 reducerId = InsertReducerForMismatch(doc, snapshotStore, elemId, parentProxy, elemRefreshed);
-        }
-        else
-        {
-            SmartConLogger.Debug($"    c. Sizes match, no adjustment needed");
+
+            doc.Regenerate();
+            return (reducerId, true);
         }
 
+        SmartConLogger.Debug($"    c. Sizes match, no adjustment needed");
         doc.Regenerate();
-        return reducerId;
+        return (null, false);
     }
 
     private void AdjustRelatedFamilyConnectors(
@@ -373,44 +499,43 @@ public sealed class ChainOperationHandler(
         return alignTarget;
     }
 
-    private void AlignElement(Document doc, ElementId elemId, ConnectorProxy? elemProxyForAlign, ConnectorProxy? alignTarget)
+    private void AlignElement(Document doc, ElementId elemId, ConnectorProxy? elemProxyForAlign, AlignmentResult? alignResult)
     {
-        if (alignTarget is null || elemProxyForAlign is null)
+        if (alignResult is null || elemProxyForAlign is null)
             return;
 
-        SmartConLogger.Debug($"    d. Align: elem R={elemProxyForAlign.Radius * FeetToMm:F2}mm " +
-            $"→ target R={alignTarget.Radius * FeetToMm:F2}mm");
+        SmartConLogger.Debug($"    d. Align: offset={VectorUtils.Length(alignResult.InitialOffset) * FeetToMm:F1}mm");
 
-        alignmentSvc.ApplyAlignment(doc, elemId, alignTarget, elemProxyForAlign);
+        alignmentSvc.ApplyAlignment(doc, elemId, alignResult, elemProxyForAlign.ConnectorIndex);
     }
 
     /// <summary>
     /// Per-level displacement absorption (ADR-052): when the element being aligned
-    /// is itself a straight pipe and its alignment is a pure translation, the pipe
-    /// changes its length instead of moving as a rigid body — the near end (facing
-    /// the parent) follows the offset, the far end keeps only the non-absorbed
-    /// remainder. The remainder propagates to the next level through the classic
-    /// flow, so levels connect one element at a time, symmetric with rollback.
-    /// Returns true when the pipe was aligned by length change; false → caller
+    /// is itself a straight pipe or a flex pipe and its alignment is a pure
+    /// translation, the pipe changes its length/path instead of moving as a rigid
+    /// body — the end facing the parent follows the offset, the other end keeps
+    /// only the non-absorbed remainder (straight) or stays put (flex bends).
+    /// The remainder propagates to the next level through the classic flow.
+    /// Returns true when the pipe was aligned by geometry change; false → caller
     /// falls back to the classic rigid <see cref="AlignElement"/>.
     /// </summary>
     private bool TryAlignPipeByLength(
         Document doc,
         ElementId elemId,
         ConnectorProxy? elemProxyForAlign,
-        ConnectorProxy? alignTarget)
+        AlignmentResult? alignResult)
     {
-        if (alignTarget is null || elemProxyForAlign is null)
+        if (alignResult is null || elemProxyForAlign is null)
             return false;
 
-        if (doc.GetElement(elemId) is not MEPCurve mc
-            || mc.Location is not LocationCurve lc
-            || lc.Curve is not Line line)
+        var elem = doc.GetElement(elemId);
+        bool isFlex = elem is FlexPipe;
+        if (elem is not MEPCurve mc || mc.Location is not LocationCurve lc)
             return false;
 
-        var alignResult = ConnectorAligner.ComputeAlignment(
-            alignTarget.OriginVec3, alignTarget.BasisZVec3, alignTarget.BasisXVec3,
-            elemProxyForAlign.OriginVec3, elemProxyForAlign.BasisZVec3, elemProxyForAlign.BasisXVec3);
+        var line = lc.Curve as Line;
+        if (!isFlex && line is null)
+            return false;
 
         if (alignResult.BasisZRotation is not null || alignResult.BasisXSnap is not null)
         {
@@ -422,6 +547,18 @@ public sealed class ChainOperationHandler(
         if (VectorUtils.IsZero(offset))
             return false;
 
+        return isFlex
+            ? TryAbsorbFlexPipe(doc, elemId, (FlexPipe)elem, elemProxyForAlign, offset)
+            : TryAbsorbStraightPipe(doc, elemId, elemProxyForAlign, offset, line!);
+    }
+
+    private bool TryAbsorbStraightPipe(
+        Document doc,
+        ElementId elemId,
+        ConnectorProxy elemProxyForAlign,
+        Vec3 offset,
+        Line line)
+    {
         var p0 = line.GetEndPoint(0);
         var p1 = line.GetEndPoint(1);
         var op = PipeLengthAbsorber.Compute(
@@ -437,9 +574,10 @@ public sealed class ChainOperationHandler(
         var newStart = new XYZ(p0.X + op.StartDelta.X, p0.Y + op.StartDelta.Y, p0.Z + op.StartDelta.Z);
         var newEnd = new XYZ(p1.X + op.EndDelta.X, p1.Y + op.EndDelta.Y, p1.Z + op.EndDelta.Z);
 
+        var mc = (MEPCurve)doc.GetElement(elemId);
         try
         {
-            lc.Curve = Line.CreateBound(newStart, newEnd);
+            ((LocationCurve)mc.Location).Curve = Line.CreateBound(newStart, newEnd);
             doc.Regenerate();
             SmartConLogger.Debug($"    d. Absorb: pipe {elemId.GetValue()} " +
                 $"offset={VectorUtils.Length(offset) * FeetToMm:F1}mm, " +
@@ -450,6 +588,53 @@ public sealed class ChainOperationHandler(
         {
             SmartConLogger.Warn($"    d. Absorb: set curve failed: {exCurve.Message} " +
                 $"[Action: проверьте длину трубы и соединения вокруг, подключите вручную]");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Flex pipe absorption: only the endpoint facing the parent moves by the full
+    /// offset via the FlexPipe.Points setter (LocationCurve.Curve assignment throws
+    /// for flex elements — see ADR-052). Intermediate points are preserved exactly;
+    /// Revit maintains connectivity automatically.
+    /// </summary>
+    private bool TryAbsorbFlexPipe(
+        Document doc,
+        ElementId elemId,
+        FlexPipe flexPipe,
+        ConnectorProxy elemProxyForAlign,
+        Vec3 offset)
+    {
+        var currentPoints = flexPipe.Points;
+        var vecPoints = new List<Vec3>(currentPoints.Count);
+        foreach (var p in currentPoints)
+            vecPoints.Add(new Vec3(p.X, p.Y, p.Z));
+
+        var newPath = PipeLengthAbsorber.ComputeFlexPath(
+            vecPoints, elemProxyForAlign.OriginVec3, offset, PipeAbsorption.MinPipeLengthFt);
+        if (newPath is null)
+        {
+            SmartConLogger.Debug($"    d. Absorb: flex path too short after offset → rigid align");
+            return false;
+        }
+
+        var xyzPoints = new List<XYZ>(newPath.Count);
+        foreach (var v in newPath)
+            xyzPoints.Add(new XYZ(v.X, v.Y, v.Z));
+
+        try
+        {
+            flexPipe.Points = xyzPoints;
+            doc.Regenerate();
+            SmartConLogger.Debug($"    d. Absorb: flexpipe {elemId.GetValue()} " +
+                $"offset={VectorUtils.Length(offset) * FeetToMm:F1}mm, points={xyzPoints.Count}");
+        }
+        catch (Exception exFlex)
+        {
+            SmartConLogger.Warn($"    d. Absorb: flex points failed: {exFlex.Message} " +
+                $"[Action: проверьте форму гибкой трубы и соединения вокруг, подключите вручную]");
             return false;
         }
 
@@ -611,6 +796,15 @@ public sealed class ChainOperationHandler(
             curveEnd = line.GetEndPoint(1);
         }
 
+        IReadOnlyList<XYZ>? flexPoints = null;
+        if (elem is FlexPipe flexPipe)
+        {
+            var pts = flexPipe.Points;
+            var copy = new List<XYZ>(pts.Count);
+            copy.AddRange(pts);
+            flexPoints = copy;
+        }
+
         double connRadius = 0;
         XYZ? firstConnOrigin = null;
         int firstConnIdx = -1;
@@ -635,6 +829,7 @@ public sealed class ChainOperationHandler(
             FiBasisZ = fiBasisZ,
             CurveStart = curveStart,
             CurveEnd = curveEnd,
+            FlexPoints = flexPoints,
             FirstConnectorOrigin = firstConnOrigin,
             FirstConnectorIndex = firstConnIdx,
             ConnectorRadius = connRadius,
@@ -662,7 +857,20 @@ public sealed class ChainOperationHandler(
         }
         doc.Regenerate();
 
-        if (snapshot.CurveStart is not null && snapshot.CurveEnd is not null
+        if (snapshot.FlexPoints is not null && mc is FlexPipe restoreFlex)
+        {
+            SmartConLogger.Debug($"   c. FlexPipe: restore {snapshot.FlexPoints.Count} points");
+            try
+            {
+                restoreFlex.Points = new List<XYZ>(snapshot.FlexPoints);
+            }
+            catch (Exception exFlex)
+            {
+                SmartConLogger.Warn($"   c. FlexPipe: restore points failed: {exFlex.Message} " +
+                    $"[Action: проверьте форму гибкой трубы и восстановите вручную]");
+            }
+        }
+        else if (snapshot.CurveStart is not null && snapshot.CurveEnd is not null
             && mc.Location is LocationCurve lc && lc.Curve is Line)
         {
             SmartConLogger.Debug($"   c. MEPCurve: restore curve " +

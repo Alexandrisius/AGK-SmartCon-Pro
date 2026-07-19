@@ -71,4 +71,39 @@ public static class PipeLengthAbsorber
             AbsorbedLengthFt = absorbed,
         };
     }
+
+    /// <summary>
+    /// Compute a new point path for a flexible pipe absorbing the alignment offset:
+    /// only the endpoint facing the parent moves by the full offset (a flex pipe
+    /// bends, so no axial math is needed), every intermediate point is preserved
+    /// exactly as the user arranged it.
+    /// </summary>
+    /// <param name="points">Current flex pipe points including both endpoints.</param>
+    /// <param name="entryPoint">Origin of the connector facing the parent element.</param>
+    /// <param name="offset">Alignment translation the flex pipe must follow.</param>
+    /// <param name="minPathLength">Minimum allowed polyline path length after the change.</param>
+    /// <returns>New point list, or null when the path would become too short or input is degenerate.</returns>
+    public static IReadOnlyList<Vec3>? ComputeFlexPath(
+        IReadOnlyList<Vec3> points,
+        Vec3 entryPoint,
+        Vec3 offset,
+        double minPathLength)
+    {
+        if (points.Count < 2 || VectorUtils.IsZero(offset))
+            return null;
+
+        int lastIndex = points.Count - 1;
+        bool nearIsStart = VectorUtils.DistanceTo(entryPoint, points[0])
+            <= VectorUtils.DistanceTo(entryPoint, points[lastIndex]);
+
+        var result = new List<Vec3>(points);
+        int nearIndex = nearIsStart ? 0 : lastIndex;
+        result[nearIndex] = result[nearIndex] + offset;
+
+        double pathLength = 0.0;
+        for (int i = 1; i < result.Count; i++)
+            pathLength += VectorUtils.DistanceTo(result[i - 1], result[i]);
+
+        return pathLength < minPathLength ? null : result;
+    }
 }

@@ -21,14 +21,45 @@ public sealed partial class PipeConnectEditorViewModel
 
     private const int MaxChainLevel = 30;
 
-    [RelayCommand(CanExecute = nameof(CanIncrementChain))]
-    private void IncrementChainDepth() => TryIncrementChainDepth();
+    /// <summary>
+    /// Per-level work flags: true when the level's increment actually changed
+    /// something (move/rotate/resize/reducer/absorption). Idle levels (only
+    /// reconnect churn) are auto-skipped in both directions so the user never
+    /// steps through levels where nothing happens (ADR-052).
+    /// </summary>
+    private readonly Dictionary<int, bool> _levelDidWork = new();
 
-    private bool TryIncrementChainDepth()
+    /// <summary>
+    /// True when the chain is sealed early (ADR-052): displacement fully absorbed,
+    /// no resize work downstream, boundary reconnected. Further increments and
+    /// ConnectAll are disabled — nothing left to do.
+    /// </summary>
+    private bool _chainSealed;
+
+    [RelayCommand(CanExecute = nameof(CanIncrementChain))]
+    private void IncrementChainDepth()
     {
+        int skipped = 0;
+        while (TryIncrementChainDepth(out bool didWork))
+        {
+            if (didWork) break;
+            skipped++;
+            if (!CanIncrementChain()) break;
+        }
+
+        if (skipped > 0)
+        {
+            SmartConLogger.Info($"IncrementChainDepth: skipped {skipped} idle level(s), depth={ChainDepth}");
+            StatusMessage = string.Format(LocalizationService.GetString("Status_LevelsSkipped"), ChainDepth, skipped);
+        }
+    }
+
+    private bool TryIncrementChainDepth(out bool didWork)
+    {
+        didWork = false;
         using var _scope = SmartConLogger.BeginScope("EditorChain",
             ("Method", "IncrementChainDepth"));
-        if (_chainGraph is null) return false;
+        if (_chainGraph is null || _chainSealed) return false;
         int nextLevel = ChainDepth + 1;
         if (nextLevel >= _chainGraph.Levels.Count) return false;
 
@@ -37,12 +68,18 @@ public sealed partial class PipeConnectEditorViewModel
 
         try
         {
-            _chainOpHandler.IncrementLevel(
+            didWork = _chainOpHandler.IncrementLevel(
                 _doc, _groupSession!, _chainGraph, _snapshotStore, _warmedElementIds, nextLevel);
 
             ChainDepth = nextLevel;
+            _levelDidWork[nextLevel] = didWork;
+
+            _chainSealed = _chainOpHandler.TrySealQuietChain(_doc, _groupSession!, _chainGraph, ChainDepth);
+
             UpdateChainUI();
-            StatusMessage = string.Format(LocalizationService.GetString("Status_LevelAttached"), nextLevel);
+            StatusMessage = _chainSealed
+                ? string.Format(LocalizationService.GetString("Status_ChainSealed"), ChainDepth)
+                : string.Format(LocalizationService.GetString("Status_LevelAttached"), nextLevel);
             return true;
         }
         catch (Exception ex)
@@ -61,15 +98,34 @@ public sealed partial class PipeConnectEditorViewModel
         => IsSessionActive && !IsBusy
         && _chainGraph is not null
         && !_chainDisabledByCycle
+        && !_chainSealed
         && ChainDepth < _chainGraph.MaxLevel
         && ChainDepth < MaxChainLevel;
 
     [RelayCommand(CanExecute = nameof(CanDecrementChain))]
     private void DecrementChainDepth()
     {
+        int skipped = 0;
+        while (DecrementChainDepthCore())
+        {
+            bool didWork = !_levelDidWork.TryGetValue(ChainDepth + 1, out bool dw) || dw;
+            if (didWork) break;
+            skipped++;
+            if (ChainDepth <= 0) break;
+        }
+
+        if (skipped > 0)
+        {
+            SmartConLogger.Info($"DecrementChainDepth: skipped {skipped} idle level(s), depth={ChainDepth}");
+            StatusMessage = string.Format(LocalizationService.GetString("Status_LevelsSkipped"), ChainDepth, skipped);
+        }
+    }
+
+    private bool DecrementChainDepthCore()
+    {
         using var _scope = SmartConLogger.BeginScope("EditorChain",
             ("Method", "DecrementChainDepth"));
-        if (_chainGraph is null || ChainDepth <= 0) return;
+        if (_chainGraph is null || ChainDepth <= 0) return false;
 
         IsBusy = true;
         StatusMessage = string.Format(LocalizationService.GetString("Status_RollbackLevel"), ChainDepth);
@@ -80,13 +136,16 @@ public sealed partial class PipeConnectEditorViewModel
                 _doc, _groupSession!, _chainGraph, _snapshotStore, ChainDepth);
 
             ChainDepth--;
+            _chainSealed = false;
             UpdateChainUI();
             StatusMessage = string.Format(LocalizationService.GetString("Status_LevelDetached"), ChainDepth + 1);
+            return true;
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"Error: {ex.Message}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Rollback"), ex.Message);
+            return false;
         }
         finally
         {
@@ -111,7 +170,13 @@ public sealed partial class PipeConnectEditorViewModel
 
             var result = ChainTraversalRunner.Run(
                 ChainDepth, targetLevel, MaxChainLevel,
-                () => TryIncrementChainDepth() ? ChainDepth : (int?)null);
+                () => TryIncrementChainDepth(out _) ? ChainDepth : (int?)null);
+
+            if (_chainSealed)
+            {
+                StatusMessage = string.Format(LocalizationService.GetString("Status_ChainSealed"), ChainDepth);
+                return;
+            }
 
             switch (result.StopReason)
             {
@@ -145,6 +210,7 @@ public sealed partial class PipeConnectEditorViewModel
         => IsSessionActive && !IsBusy
         && _chainGraph is not null
         && !_chainDisabledByCycle
+        && !_chainSealed
         && ChainDepth < _chainGraph.MaxLevel
         && ChainDepth < MaxChainLevel;
 

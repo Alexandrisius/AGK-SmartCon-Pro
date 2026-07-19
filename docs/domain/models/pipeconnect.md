@@ -304,12 +304,26 @@ public sealed class VirtualCtcStore
 
 ## NetworkSnapshot
 
-Снапшот позиции элемента для отката цепочки.
+Снапшот состояния элемента для отката цепочки (кнопка `−`). Для FamilyInstance —
+полный Transform, для MEPCurve — концы кривой, для FlexPipe — весь путь точек
+verbatim (форма, заданная пользователем, восстанавливается полностью, ADR-052).
 
 **Файл:** `SmartCon.Core/Models/NetworkSnapshot.cs`
 
 ```csharp
-public sealed record NetworkSnapshot(ElementId ElementId, XYZ OriginalOrigin);
+public sealed record ElementSnapshot
+{
+    public ElementId ElementId { get; init; }
+    public bool IsMepCurve { get; init; }
+    public XYZ? FiOrigin/FiBasisX/FiBasisY/FiBasisZ { get; init; }  // FamilyInstance
+    public XYZ? CurveStart/CurveEnd { get; init; }                  // MEPCurve (Line)
+    public IReadOnlyList<XYZ>? FlexPoints { get; init; }            // FlexPipe — весь путь
+    public XYZ? FirstConnectorOrigin { get; init; }                 // fallback-позиция
+    public double ConnectorRadius { get; init; }
+    public ElementId? FamilySymbolId { get; init; }
+    public IReadOnlyDictionary<int, double> ConnectorRadii { get; init; }
+    public IReadOnlyList<ConnectionRecord> Connections { get; init; }
+}
 ```
 
 ---
