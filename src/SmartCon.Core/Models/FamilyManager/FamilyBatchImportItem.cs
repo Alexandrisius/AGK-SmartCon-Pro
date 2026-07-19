@@ -59,6 +59,18 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// the content hash. Used by the cross-name duplicate tooltip.
 /// <c>null</c> unless <see cref="Status"/> is Duplicate.
 /// </param>
+/// <param name="ExistingCategoryId">
+/// Issue #135: real category of the existing catalog item this row
+/// resolves to (<see cref="ExistingCatalogItemId"/>), independent of
+/// <see cref="TargetCategoryId"/> — the target may be overridden by the
+/// «Импорт в категорию» command or the picker. Used by the batch dialog
+/// to warn that a locked target category will MOVE the existing family
+/// between categories on import.
+/// </param>
+/// <param name="ExistingCategoryPath">
+/// Issue #135: human-readable path of <see cref="ExistingCategoryId"/>
+/// for the move-warning tooltip.
+/// </param>
 /// <param name="LoadableSnapshot">
 /// Phase 27: in-memory snapshot of the loadable family extracted during
 /// Phase 1 Prepare. Survives the dialog round-trip so Phase 3 Commit can
@@ -97,7 +109,9 @@ public sealed record FamilyBatchImportItem(
     string? PublishedBy = null,
     IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
     bool IsCrossNameDuplicate = false,
-    string? MatchedItemName = null)
+    string? MatchedItemName = null,
+    string? ExistingCategoryId = null,
+    string? ExistingCategoryPath = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

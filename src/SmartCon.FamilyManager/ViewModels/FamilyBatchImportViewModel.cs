@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.FamilyManager;
@@ -94,6 +95,26 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 item.TargetCategoryName ??= defaultCategoryName;
             }
             var row = new FamilyBatchImportRow(item);
+            // Issue #135 defect 1: when the dialog was opened via
+            // «Импорт в категорию» (defaultCategoryId != null), the
+            // preselected category is an explicit user instruction —
+            // lock it (Command) so a rename never resets it to
+            // «Без категории». A category inherited from an existing
+            // catalog item stays automatic (AutoName) and continues to
+            // follow renames.
+            if (!string.IsNullOrEmpty(defaultCategoryId)
+                && string.Equals(row.TargetCategoryId, defaultCategoryId, StringComparison.Ordinal))
+            {
+                row.CategoryProvenance = CategoryProvenance.Command;
+            }
+            else if (!string.IsNullOrEmpty(row.TargetCategoryId))
+            {
+                row.CategoryProvenance = CategoryProvenance.AutoName;
+            }
+            else
+            {
+                row.CategoryProvenance = CategoryProvenance.None;
+            }
             row.PropertyChanged += OnRowPropertyChanged;
             row.PickCategoryRequested += OnRowPickCategoryRequestedAsync;
             row.ActionChanged += OnRowActionChanged;
@@ -101,6 +122,13 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.SelectionChanged += OnRowSelectionChanged;
             row.NameChanged += OnRowNameChanged;
             Items.Add(row);
+        }
+        var commandLockedCount = Items.Count(r => r.CategoryProvenance == CategoryProvenance.Command);
+        if (commandLockedCount > 0)
+        {
+            SmartConLogger.Debug(
+                $"BatchImport.Category: locked {commandLockedCount}/{Items.Count} rows to command category " +
+                $"'{defaultCategoryName ?? defaultCategoryId}' (provenance=Command)");
         }
         UpdateCanImport();
     }
@@ -135,21 +163,24 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     // the dynamic ExistingCatalogItemId lookup — otherwise
                     // renaming to another existing family would keep the
                     // row at "Без категории" instead of pulling the
-                    // target family's category. Clear the manual flag so
+                    // target family's category. Clear the lock so
                     // ApplyNameChangeResult picks the category up again.
+                    // Issue #135: provenance is set BEFORE the path so the
+                    // CategoryChanged batch-apply observes the new source
+                    // provenance.
+                    row.CategoryProvenance = CategoryProvenance.None;
                     row.TargetCategoryId = null;
                     row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
-                    row.TargetCategoryIsManual = false;
                 }
                 else
                 {
-                    row.TargetCategoryId = result;
-                    row.TargetCategoryPath = pickerVm.SelectedPath;
                     // v2.0.1: a real category choice is a deliberate
                     // "move to this category" instruction. Lock the
                     // category so a subsequent rename does not silently
                     // re-categorize the row.
-                    row.TargetCategoryIsManual = true;
+                    row.CategoryProvenance = CategoryProvenance.Manual;
+                    row.TargetCategoryId = result;
+                    row.TargetCategoryPath = pickerVm.SelectedPath;
                 }
                 // OnTargetCategoryPathChanged partial-method on Row fires
                 // ApplyCategoryToSelection, so the multi-select batch effect
@@ -225,6 +256,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 await Task.Delay(NameChangeDebounceMs, token).ConfigureAwait(false);
                 if (token.IsCancellationRequested) return;
 
+                using var _scope = SmartConLogger.BeginScope("FMImport",
+                    ("Method", nameof(OnRowNameChanged)),
+                    ("Row", newName));
+
                 var normalized = FamilyNameNormalizer.Normalize(newName);
 
                 FamilyContentHash? contentHash = null;
@@ -259,8 +294,47 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 var newMatchedVersionLabel = dedupResult?.HashMatch?.MatchedVersionLabel;
                 var newIsCrossNameDuplicate = dedupResult?.IsCrossNameDuplicate ?? false;
                 var newMatchedItemName = dedupResult?.HashMatch?.MatchedItemName;
+                var isHashMatch = dedupResult?.HashMatch is not null;
                 var newExistingCategoryId = existing?.CategoryId;
                 var newExistingCategoryPath = existing?.CategoryPath;
+
+                // Issue #135 defect 2: when dedup matched an item by
+                // content hash (ADR-049, possibly under a different name),
+                // the category must come from the HASH-MATCHED item — the
+                // name lookup above misses for a unique new name and would
+                // reset the category to «Без категории» even though the
+                // duplicate's category should be preserved.
+                if (isHashMatch && dedupResult!.ExistingCatalogItemId is not null && _catalogProvider is not null)
+                {
+                    try
+                    {
+                        var hashMatchedItem = await _catalogProvider
+                            .GetItemAsync(dedupResult.ExistingCatalogItemId, token)
+                            .ConfigureAwait(false);
+                        if (hashMatchedItem is not null)
+                        {
+                            newExistingCategoryId = hashMatchedItem.CategoryId;
+                            newExistingCategoryPath = hashMatchedItem.CategoryPath;
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        SmartConLogger.Warn(
+                            $"BatchImport.NameChange hash-match category lookup failed for '{dedupResult.ExistingCatalogItemId}': {ex.Message} " +
+                            $"[Action: проверьте, что БД каталога доступна; категория строки может быть неактуальной]");
+                    }
+                    if (token.IsCancellationRequested) return;
+                }
+
+                // Issue #135 (P1): provenance the rename handler will
+                // assign when the row is NOT locked. Locked rows keep
+                // their Command/Manual provenance untouched.
+                var newAutoProvenance = newStatus switch
+                {
+                    FamilyBatchImportStatus.Duplicate when isHashMatch => CategoryProvenance.AutoHash,
+                    FamilyBatchImportStatus.Existing or FamilyBatchImportStatus.Duplicate => CategoryProvenance.AutoName,
+                    _ => CategoryProvenance.None,
+                };
 
                 PrecomputedImportTriple? precomputed = null;
                 if (_importPrecomputer is not null)
@@ -277,11 +351,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 var dispatcher = System.Windows.Application.Current?.Dispatcher;
                 if (dispatcher is not null && !dispatcher.CheckAccess())
                 {
-                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName));
+                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName, newAutoProvenance));
                 }
                 else
                 {
-                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName);
+                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName, newAutoProvenance);
                 }
             }
             catch (OperationCanceledException)
@@ -289,7 +363,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             }
             catch (Exception ex)
             {
-                SmartCon.Core.Logging.SmartConLogger.Warn(
+                SmartConLogger.Warn(
                     $"BatchImport.NameChange lookup failed: {ex.Message} [Action: проверьте, что БД каталога доступна; статус строки может быть неактуальным до Refresh]");
             }
         }, token);
@@ -319,7 +393,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         PrecomputedImportTriple? precomputed,
         string? matchedVersionLabel = null,
         bool isCrossNameDuplicate = false,
-        string? matchedItemName = null)
+        string? matchedItemName = null,
+        CategoryProvenance newAutoProvenance = CategoryProvenance.None)
     {
         if (row.Status != newStatus)
         {
@@ -331,10 +406,21 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         row.IsCrossNameDuplicate = isCrossNameDuplicate;
         row.MatchedItemName = matchedItemName;
 
+        // Issue #135 (P2): the existing item's REAL category always
+        // follows the lookup — even for locked rows — so the move-warning
+        // can compare it against the locked target category.
+        row.ExistingCategoryId = newExistingCategoryId;
+        row.ExistingCategoryPath = newExistingCategoryPath;
+
         if (!row.TargetCategoryIsManual)
         {
+            var previousCategoryId = row.TargetCategoryId;
             if ((newStatus == FamilyBatchImportStatus.Existing || newStatus == FamilyBatchImportStatus.Duplicate) && newExistingId is not null)
             {
+                // Provenance BEFORE the path: the CategoryChanged
+                // batch-apply (fired by the path setter) must observe the
+                // row's new provenance to decide about locked targets.
+                row.CategoryProvenance = newAutoProvenance;
                 row.TargetCategoryId = newExistingCategoryId;
                 row.TargetCategoryPath = !string.IsNullOrWhiteSpace(newExistingCategoryPath)
                     ? newExistingCategoryPath!
@@ -342,9 +428,34 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             }
             else
             {
+                row.CategoryProvenance = CategoryProvenance.None;
                 row.TargetCategoryId = null;
                 row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
             }
+
+            // Issue #135 (P4): make the silent auto-change visible — the
+            // view flashes the category cell on every token increment.
+            if (!string.Equals(previousCategoryId, row.TargetCategoryId, StringComparison.Ordinal))
+            {
+                row.CategoryFlashToken++;
+                SmartConLogger.Debug(
+                    $"BatchImport.Category: '{row.FileName}' auto-category " +
+                    $"'{previousCategoryId ?? "<none>"}' -> '{row.TargetCategoryId ?? "<none>"}' " +
+                    $"(status={newStatus}, provenance={row.CategoryProvenance})");
+            }
+        }
+        else
+        {
+            SmartConLogger.Debug(
+                $"BatchImport.Category: '{row.FileName}' rename kept locked category " +
+                $"'{row.TargetCategoryId ?? "<none>"}' (status={newStatus}, provenance={row.CategoryProvenance})");
+        }
+
+        if (row.ShowCategoryMoveWarning)
+        {
+            SmartConLogger.Debug(
+                $"BatchImport.Category: '{row.FileName}' will MOVE existing item from " +
+                $"'{row.ExistingCategoryPath ?? row.ExistingCategoryId}' to '{row.TargetCategoryPath}' on import");
         }
 
         if (precomputed is not null)
@@ -390,17 +501,36 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     {
         if (_batchApplying) return;
         _batchApplying = true;
+        var applied = 0;
+        var skippedLocked = 0;
         try
         {
             foreach (var target in GetOtherSelectedRows(source))
             {
+                // Issue #135 defect 3: an AUTOMATIC change (rename
+                // re-derivation) must not clobber a locked category on
+                // other selected rows; an explicit user choice (picker,
+                // provenance Manual) applies to everyone, locks included.
+                if (target.TargetCategoryIsManual && !source.TargetCategoryIsManual)
+                {
+                    skippedLocked++;
+                    continue;
+                }
+                target.CategoryProvenance = source.CategoryProvenance;
                 target.TargetCategoryId = id;
                 target.TargetCategoryPath = path;
+                applied++;
             }
         }
         finally
         {
             _batchApplying = false;
+        }
+        if (applied > 0 || skippedLocked > 0)
+        {
+            SmartConLogger.Debug(
+                $"BatchImport.Category: batch-applied '{path}' to {applied} row(s) from '{source.FileName}' " +
+                $"(provenance={source.CategoryProvenance}, skippedLocked={skippedLocked})");
         }
     }
 
@@ -501,7 +631,9 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             LoadableSnapshot: r.LoadableSnapshot,
             SystemSnapshot: r.SystemSnapshot,
             IsCrossNameDuplicate: r.IsCrossNameDuplicate,
-            MatchedItemName: r.MatchedItemName)
+            MatchedItemName: r.MatchedItemName,
+            ExistingCategoryId: r.ExistingCategoryId,
+            ExistingCategoryPath: r.ExistingCategoryPath)
         {
             Action = r.Action
         }).ToList();

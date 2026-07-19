@@ -320,7 +320,9 @@ public sealed partial class FamilyManagerMainViewModel
             LoadableSnapshot: prepared.LoadableSnapshot,
             SystemSnapshot: prepared.SystemSnapshot,
             IsCrossNameDuplicate: prepared.IsCrossNameDuplicate,
-            MatchedItemName: prepared.MatchedItemName)
+            MatchedItemName: prepared.MatchedItemName,
+            ExistingCategoryId: existingCategoryId,
+            ExistingCategoryPath: existingCategoryName)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip

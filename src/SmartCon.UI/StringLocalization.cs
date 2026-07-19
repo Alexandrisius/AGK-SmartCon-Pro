@@ -273,6 +273,12 @@ public static class StringLocalization
         public const string FM_BatchImport_StatusExisting = "FM_BatchImport_StatusExisting";
         public const string FM_BatchImport_StatusDuplicate = "FM_BatchImport_StatusDuplicate";
         public const string FM_BatchImport_CrossNameDuplicate_Tooltip = "FM_BatchImport_CrossNameDuplicate_Tooltip";
+        public const string FM_BatchImport_CategoryMoveWarning_Tooltip = "FM_BatchImport_CategoryMoveWarning_Tooltip";
+        public const string FM_CategoryProvenance_Command = "FM_CategoryProvenance_Command";
+        public const string FM_CategoryProvenance_Manual = "FM_CategoryProvenance_Manual";
+        public const string FM_CategoryProvenance_AutoName = "FM_CategoryProvenance_AutoName";
+        public const string FM_CategoryProvenance_AutoHash = "FM_CategoryProvenance_AutoHash";
+        public const string FM_CategoryProvenance_None = "FM_CategoryProvenance_None";
         public const string FM_HashRecalc_Title = "FM_HashRecalc_Title";
         public const string FM_HashRecalc_LoadBlockedTitle = "FM_HashRecalc_LoadBlockedTitle";
         public const string FM_HashRecalc_LoadBlockedBody = "FM_HashRecalc_LoadBlockedBody";

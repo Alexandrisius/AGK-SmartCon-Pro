@@ -357,6 +357,12 @@ public static partial class LocalizationService
         ru["FM_BatchImport_Finalizing"] = "Завершение..."; en["FM_BatchImport_Finalizing"] = "Finalizing...";
         ru["FM_BatchImport_SummaryFormat"] = "Импортировано: {0}, пропущено: {1}, ошибок: {2}"; en["FM_BatchImport_SummaryFormat"] = "Imported: {0}, skipped: {1}, errors: {2}";
         ru["FM_BatchImport_CrossNameDuplicate_Tooltip"] = "Содержимое совпадает с семейством \"{0}\" ({1}), хотя имя файла другое.\n\"Сделать активной\" — файл не импортируется, активируется найденная версия.\n\"Новая версия\" — семейство \"{0}\" будет переименовано в имя этого файла."; en["FM_BatchImport_CrossNameDuplicate_Tooltip"] = "Content matches family \"{0}\" ({1}) although the file name differs.\n\"Make Active\" — the file is not imported; the matched version is activated.\n\"New Version\" — family \"{0}\" will be renamed to this file's name.";
+        ru["FM_BatchImport_CategoryMoveWarning_Tooltip"] = "\"{0}\" будет перемещено из \"{1}\" в \"{2}\" при импорте."; en["FM_BatchImport_CategoryMoveWarning_Tooltip"] = "\"{0}\" will be moved from \"{1}\" to \"{2}\" on import.";
+        ru["FM_CategoryProvenance_Command"] = "Задано командой «Импорт в категорию»"; en["FM_CategoryProvenance_Command"] = "Set by the 'Import to Category' command";
+        ru["FM_CategoryProvenance_Manual"] = "Выбрано вами"; en["FM_CategoryProvenance_Manual"] = "Picked by you";
+        ru["FM_CategoryProvenance_AutoName"] = "Из каталога (совпадение имени)"; en["FM_CategoryProvenance_AutoName"] = "From catalog (name match)";
+        ru["FM_CategoryProvenance_AutoHash"] = "Из дубликата (совпадение содержимого)"; en["FM_CategoryProvenance_AutoHash"] = "From duplicate (content match)";
+        ru["FM_CategoryProvenance_None"] = "Категория не назначена"; en["FM_CategoryProvenance_None"] = "No category assigned";
 
         // Hash Recalculation Migration (Issue #126)
         ru["FM_HashRecalc_Title"] = "Обновление базы семейств"; en["FM_HashRecalc_Title"] = "Family Database Update";

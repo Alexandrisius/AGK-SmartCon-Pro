@@ -144,9 +144,11 @@ public sealed partial class FamilyManagerMainViewModel
                     MatchedVersionLabel: p.MatchedVersionLabel,
                     LoadableSnapshot: p.LoadableSnapshot,
                     SystemSnapshot: p.SystemSnapshot,
-                    GeometryPerType: p.GeometryPerType,
-                    IsCrossNameDuplicate: p.IsCrossNameDuplicate,
-                    MatchedItemName: p.MatchedItemName)
+                GeometryPerType: p.GeometryPerType,
+                IsCrossNameDuplicate: p.IsCrossNameDuplicate,
+                MatchedItemName: p.MatchedItemName,
+                ExistingCategoryId: existingCategoryId,
+                ExistingCategoryPath: existingCategoryName)
                 {
                     Action = status == FamilyBatchImportStatus.Duplicate
                         ? FamilyBatchImportAction.Skip
@@ -477,7 +479,9 @@ public sealed partial class FamilyManagerMainViewModel
                 LoadableSnapshot: p.LoadableSnapshot,
                 SystemSnapshot: p.SystemSnapshot,
                 IsCrossNameDuplicate: p.IsCrossNameDuplicate,
-                MatchedItemName: p.MatchedItemName)
+                MatchedItemName: p.MatchedItemName,
+                ExistingCategoryId: existingCategoryId,
+                ExistingCategoryPath: existingCategoryName)
             {
                 Action = status == FamilyBatchImportStatus.Duplicate
                     ? FamilyBatchImportAction.Skip
@@ -567,7 +571,9 @@ public sealed partial class FamilyManagerMainViewModel
             Source: source,
             PrecomputedCatalogItemId: precomputed?.CatalogItemId,
             PrecomputedVersionLabel: precomputed?.VersionLabel,
-            PrecomputedManagedPath: precomputed?.ManagedPath);
+            PrecomputedManagedPath: precomputed?.ManagedPath,
+            ExistingCategoryId: targetCategoryId,
+            ExistingCategoryPath: targetCategoryName);
     }
 
     private async Task<FamilyBatchImportItem?> BuildLoadableFamilyBatchRowVirtualAsync(
@@ -641,6 +647,8 @@ public sealed partial class FamilyManagerMainViewModel
             Source: source,
             PrecomputedCatalogItemId: precomputed?.CatalogItemId,
             PrecomputedVersionLabel: precomputed?.VersionLabel,
-            PrecomputedManagedPath: precomputed?.ManagedPath);
+            PrecomputedManagedPath: precomputed?.ManagedPath,
+            ExistingCategoryId: targetCategoryId,
+            ExistingCategoryPath: targetCategoryName);
     }
 }
