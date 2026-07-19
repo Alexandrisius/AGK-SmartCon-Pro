@@ -73,6 +73,20 @@ public sealed class FileFamilyStagingService : IFileFamilyStagingService
                 managedRfaPath = item.PrecomputedManagedPath!;
             }
 
+            var stagedFileName = SafeFileName.SanitizeFileName(item.FileName);
+            var managedDir = Path.GetDirectoryName(managedRfaPath);
+            var managedName = Path.GetFileNameWithoutExtension(managedRfaPath);
+            if (!string.IsNullOrEmpty(stagedFileName)
+                && !string.IsNullOrEmpty(managedDir)
+                && !string.Equals(managedName, stagedFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                SmartConLogger.Warn(
+                    $"Precomputed managed path filename '{managedName}' does not match item name '{item.FileName}' — " +
+                    $"staging as '{stagedFileName}.rfa' so the loaded family gets the display name " +
+                    $"[Action: если повторяется, проверьте что rename-триплет строки успел пересчитаться до старта импорта]");
+                managedRfaPath = Path.Combine(managedDir, stagedFileName + ".rfa");
+            }
+
             var parent = Path.GetDirectoryName(managedRfaPath);
             if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
             if (File.Exists(managedRfaPath))

@@ -154,6 +154,30 @@ public sealed partial class FamilyBatchImportViewModel
         ProgressMaximum = Items.Count;
         SyncStateProperties();
 
+        Task[] pendingRenames;
+        lock (_pendingNameChangesLock)
+        {
+            pendingRenames = _pendingNameChanges.Values.Select(v => v.Task).ToArray();
+        }
+        if (pendingRenames.Length > 0)
+        {
+            SmartConLogger.Info(
+                $"BatchImport: awaiting {pendingRenames.Length} pending name-change recomputation(s) before snapshotting rows");
+            try
+            {
+                await Task.WhenAll(pendingRenames);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                SmartConLogger.Warn(
+                    $"BatchImport: name-change recomputation failed while awaiting before import: {ex.Message} " +
+                    $"[Action: проверьте, что БД каталога доступна; импорт продолжится с текущими данными строк]");
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
         var items = GetResultItems();
         if (!string.IsNullOrEmpty(_publishedByUser))
         {

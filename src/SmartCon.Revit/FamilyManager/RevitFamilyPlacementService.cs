@@ -56,6 +56,10 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
             return false;
         }
 
+        SmartConLogger.Info(
+            $"ActivateAndPlaceType: activating {RevitFamilySearchService.DescribeFamily(family)}, " +
+            $"symbolUniqueId={symbol.UniqueId}");
+
         if (!symbol.IsActive)
         {
             _transactionService.RunInTransaction("Activate Family Symbol", _ =>

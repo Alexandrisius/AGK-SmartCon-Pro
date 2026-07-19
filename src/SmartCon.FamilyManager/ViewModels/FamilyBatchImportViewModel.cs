@@ -63,7 +63,17 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// the user typed a unique name).
     /// </summary>
     private const int NameChangeDebounceMs = 250;
-    private CancellationTokenSource? _nameChangeCts;
+
+    /// <summary>
+    /// Per-row pending name-change recomputation. A single shared CTS
+    /// cancelled the PREVIOUS row's recompute when two rows were renamed
+    /// in quick succession, leaving the first row with a stale
+    /// precomputed triple; <see cref="RunImportAsync"/> awaits every
+    /// pending task before snapshotting rows so a rename typed right
+    /// before pressing Import cannot race the import.
+    /// </summary>
+    private readonly Dictionary<FamilyBatchImportRow, (CancellationTokenSource Cts, Task Task)> _pendingNameChanges = new();
+    private readonly object _pendingNameChangesLock = new();
 
     public FamilyBatchImportViewModel(
         IReadOnlyList<FamilyBatchImportItem> items,
@@ -237,10 +247,17 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         if (_catalogProvider is null && _importPrecomputer is null) return;
         if (string.IsNullOrWhiteSpace(newName)) return;
 
-        _nameChangeCts?.Cancel();
-        _nameChangeCts?.Dispose();
+        lock (_pendingNameChangesLock)
+        {
+            if (_pendingNameChanges.TryGetValue(row, out var previous))
+            {
+                previous.Cts.Cancel();
+                previous.Cts.Dispose();
+                _pendingNameChanges.Remove(row);
+            }
+        }
+
         var cts = new CancellationTokenSource();
-        _nameChangeCts = cts;
         var token = cts.Token;
 
         var extension = ResolveExtensionForRow(row);
@@ -249,7 +266,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         var rowHashFormatVersion = row.HashFormatVersion;
         var rowFamilySource = row.FamilySource;
 
-        _ = Task.Run(async () =>
+        var renameTask = Task.Run(async () =>
         {
             try
             {
@@ -367,6 +384,26 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     $"BatchImport.NameChange lookup failed: {ex.Message} [Action: проверьте, что БД каталога доступна; статус строки может быть неактуальным до Refresh]");
             }
         }, token);
+
+        lock (_pendingNameChangesLock)
+        {
+            _pendingNameChanges[row] = (cts, renameTask);
+        }
+        _ = renameTask.ContinueWith(
+            _ =>
+            {
+                lock (_pendingNameChangesLock)
+                {
+                    if (_pendingNameChanges.TryGetValue(row, out var current)
+                        && ReferenceEquals(current.Task, renameTask))
+                    {
+                        _pendingNameChanges.Remove(row);
+                    }
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private static string ResolveExtensionForRow(FamilyBatchImportRow row)
@@ -559,9 +596,15 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         if (_disposed) return;
         _disposed = true;
 
-        _nameChangeCts?.Cancel();
-        _nameChangeCts?.Dispose();
-        _nameChangeCts = null;
+        lock (_pendingNameChangesLock)
+        {
+            foreach (var pending in _pendingNameChanges.Values)
+            {
+                pending.Cts.Cancel();
+                pending.Cts.Dispose();
+            }
+            _pendingNameChanges.Clear();
+        }
         DisposeExecution();
 
         foreach (var row in Items)

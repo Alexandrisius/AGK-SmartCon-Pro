@@ -91,12 +91,31 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             var isTypeLoaded = isFamilyLoaded && _searchService.HasFamilyType(familyName, typeName);
             SmartConLogger.Info($"Family '{familyName}' loaded: {isFamilyLoaded}, Type '{typeName}' loaded: {isTypeLoaded}");
 
+            if (isFamilyLoaded)
+            {
+                var projectFamily = FindFamilyByName(document.Document, familyName);
+                if (projectFamily is not null)
+                {
+                    var marker = _versionStore.ReadFromLoadedFamily(document.Document, projectFamily.Id);
+                    var markerCatalogItemId = marker?.CatalogItemId ?? "<none>";
+                    var catalogMatch = string.Equals(markerCatalogItemId, dragData.CatalogItemId, StringComparison.OrdinalIgnoreCase);
+                    SmartConLogger.Info(
+                        $"Drop identity check: {RevitFamilySearchService.DescribeFamily(projectFamily)}, " +
+                        $"dragCatalogItemId='{dragData.CatalogItemId}', markerCatalogItemId='{markerCatalogItemId}', " +
+                        $"markerVersionLabel='{marker?.VersionLabel ?? "<none>"}', catalogMatch={catalogMatch}");
+                }
+            }
+
             if (!isFamilyLoaded || !isTypeLoaded)
             {
                 resolved = AsyncBridge.RunSync(() => _fileResolver
                     .ResolveForLoadAsync(dragData.CatalogItemId, _targetRevitVersion, CancellationToken.None));
 
-                if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                SmartConLogger.Info(
+                    $"Drop resolved file: path='{resolved?.AbsolutePath}', versionLabel='{resolved?.VersionLabel}', " +
+                    $"catalogItemId='{dragData.CatalogItemId}', isVirtual={dragData.IsVirtual}");
+
+                if (resolved is null || string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
                     SmartConLogger.Warn($"No file resolved for '{familyName}'");
                     return;

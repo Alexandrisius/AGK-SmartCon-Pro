@@ -86,14 +86,18 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             loadedFamily = family;
             success = true;
 
+            SmartConLogger.Info(
+                $"[{attemptName}] LoadFamily returned: {RevitFamilySearchService.DescribeFamily(family)}, sourcePath='{path}'");
+
             var preferredName = options.PreferredName?.Trim();
             if (!string.IsNullOrWhiteSpace(preferredName)
                 && !string.Equals(family.Name, preferredName, StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
+                    var nameBeforeRename = family.Name;
                     family.Name = preferredName;
-                    renameResult = $"Renamed family to '{preferredName}'";
+                    renameResult = $"Renamed family '{nameBeforeRename}' to '{preferredName}'";
                 }
                 catch (Exception ex)
                 {
@@ -370,9 +374,17 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             if (loaded && symbol is not null)
             {
                 var familyName = symbol.FamilyName;
-                SmartConLogger.Info($"Symbol '{typeName}' loaded successfully from family '{familyName}'");
+                var hostFamily = symbol.Family;
+                SmartConLogger.Info(
+                    $"Symbol '{typeName}' loaded successfully from family '{familyName}' — " +
+                    $"hostFamily=({RevitFamilySearchService.DescribeFamily(hostFamily)}), " +
+                    $"symbolUniqueId={symbol.UniqueId}, sourcePath='{normalizedPath}'");
                 return new FamilyLoadResult(true, familyName, $"Type '{typeName}' loaded", null, FamilyLoadStatus.Loaded);
             }
+
+            SmartConLogger.Info(
+                $"LoadFamilySymbol returned false for '{typeName}' from '{normalizedPath}' — " +
+                "falling back to existing family lookup");
 
             // If LoadFamilySymbol returns false, it may be because the type already exists.
             // Try to find the symbol in the existing family.
@@ -384,6 +396,9 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
 
             if (existingFamily is not null)
             {
+                SmartConLogger.Info(
+                    $"Fallback found existing family: {RevitFamilySearchService.DescribeFamily(existingFamily)}");
+
                 var existingSymbol = existingFamily.GetFamilySymbolIds()
                     .Select(id => doc.GetElement(id))
                     .OfType<Autodesk.Revit.DB.FamilySymbol>()
