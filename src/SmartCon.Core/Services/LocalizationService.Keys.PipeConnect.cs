@@ -186,8 +186,6 @@ public static partial class LocalizationService
         ru["Fitting_ReducerSuffix"] = "🔧 {0} (переход)";
         en["Fitting_ReducerSuffix"] = "🔧 {0} (transition)";
 
-        ru["Warn_SizeNotExactUnconstrained"] = "Размер DN{0} не найден точно. Ближайший DN{1} (other connectors will change).";
-        en["Warn_SizeNotExactUnconstrained"] = "Size DN{0} not found exactly. Nearest DN{1} (other connectors will change).";
         ru["Warn_SizeNotInTable"] = "Размер DN{0} отсутствует в таблице. Будет выбран DN{1}, нужен переходник.";
         en["Warn_SizeNotInTable"] = "Size DN{0} not in table. Nearest DN{1} will be used, reducer needed.";
         ru["Warn_NoSizeParameter"] = "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.";

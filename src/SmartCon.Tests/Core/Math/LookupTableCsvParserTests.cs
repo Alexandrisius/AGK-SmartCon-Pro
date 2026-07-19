@@ -254,6 +254,50 @@ public sealed class LookupTableCsvParserTests
         Assert.Equal(2, result.Count);
     }
 
+    // ── Регрессия #138: кран Giacomini R919 ────────────────────────────
+    // Комбинация (DN1=20, DN2=15) отсутствует в таблице. При constraint DN2=15
+    // для колонки DN1 доступен ТОЛЬКО DN15 — выбор DN20 ломал семейство.
+
+    private static readonly string[] R919Csv =
+    {
+        ",BP_NominalDiameter##pipe_size##millimeters,BP_NominalDiameter_2##pipe_size##millimeters,A##length##millimeters",
+        "1,15.000000,15.000000,87.000000",
+        "2,15.000000,20.000000,90.000000",
+        "3,20.000000,20.000000,97.000000",
+        "4,20.000000,25.000000,101.000000",
+        "5,25.000000,25.000000,109.000000",
+        "6,25.000000,32.000000,115.000000",
+        "7,32.000000,32.000000,123.000000",
+    };
+
+    private static readonly CsvColumnMapping[] R919Columns =
+    {
+        new(1, "BP_NominalDiameter"),
+        new(2, "BP_NominalDiameter_2"),
+    };
+
+    [Fact]
+    public void ExtractColumnValues_R919_ConstraintDn2Eq15_OnlyDn15Available()
+    {
+        var constraints = new LookupColumnConstraint[]
+        {
+            new(ConnectorIndex: 3, ParameterName: "BP_NominalDiameter_2", ValueMm: 15.0),
+        };
+
+        var result = LookupTableCsvParser.ExtractColumnValues(R919Csv, 1, R919Columns, constraints);
+
+        Assert.Single(result);
+        Assert.Equal(15.0, result[0]);
+    }
+
+    [Fact]
+    public void ExtractColumnValues_R919_NoConstraints_AllDn1ValuesAvailable()
+    {
+        var result = LookupTableCsvParser.ExtractColumnValues(R919Csv, 1, R919Columns, null);
+
+        Assert.Equal(new[] { 15.0, 20.0, 25.0, 32.0 }, result.Distinct().OrderBy(v => v).ToArray());
+    }
+
     // ── ApplyConstraintFilter ──────────────────────────────────────────
 
     [Fact]

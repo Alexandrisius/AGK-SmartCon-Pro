@@ -124,7 +124,7 @@ public sealed class ConnectExecutor
             else if (currentFittingId is not null)
             {
                 ValidateFittingBranch(doc, staticConn, currentFittingId, ref dynFresh, ref updatedDynamic,
-                    dyn, positionEpsFt, radiusEps, angleEpsDeg, userManuallyChangedSize,
+                    dyn, context.Session.ParamTargetRadius, positionEpsFt, radiusEps, angleEpsDeg, userManuallyChangedSize,
                     ref needsPrimaryReducer);
             }
             else if (primaryReducerId is not null)
@@ -585,6 +585,7 @@ public sealed class ConnectExecutor
         ref ConnectorProxy dynFresh,
         ref ConnectorProxy? updatedDynamic,
         ConnectorProxy originalDyn,
+        double? planTargetRadius,
         double positionEpsFt,
         double radiusEps,
         double angleEpsDeg,
@@ -619,19 +620,33 @@ public sealed class ConnectExecutor
                 }
                 else
                 {
-                    SmartConLogger.Warn($"Mismatch fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — trying to adjust dynamic");
+                    // See #138: цель ресайза — план сессии (уже проверен по lookup-таблице
+                    // с учётом constraints остальных коннекторов). Прямая запись fc2.Radius
+                    // могла создать комбинацию DN, отсутствующую в таблице, и сломать семейство.
+                    double targetRadius = planTargetRadius ?? fc2.Radius;
+                    SmartConLogger.Warn($"Mismatch fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — trying to adjust dynamic " +
+                        $"(target={targetRadius * FeetToMm:F2}mm{(planTargetRadius is null ? "" : ", from session plan")})");
                     bool fixed1 = _paramResolver.TrySetConnectorRadius(
-                        doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, fc2.Radius);
+                        doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, targetRadius);
                     doc.Regenerate();
                     if (fixed1)
                     {
                         dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
                         updatedDynamic = dynFresh;
                         SmartConLogger.Debug($"→ dynamic adjusted to {dynFresh.Radius * FeetToMm:F2}mm");
+
+                        double verifyDelta = System.Math.Abs(dynFresh.Radius - fc2.Radius);
+                        if (verifyDelta > radiusEps)
+                        {
+                            SmartConLogger.Warn($"Actual radius ({dynFresh.Radius * FeetToMm:F2}mm) ≠ fc2 ({fc2.Radius * FeetToMm:F2}mm) — reducer needed. " +
+                                $"[Action: будет вставлен переходник между фитингом и dynamic-элементом]");
+                            needsPrimaryReducer = true;
+                        }
                     }
                     else
                     {
-                        SmartConLogger.Warn("Dynamic adjustment failed — reducer needed");
+                        SmartConLogger.Warn("Dynamic adjustment failed — reducer needed. " +
+                            $"[Action: будет вставлен переходник между фитингом и dynamic-элементом]");
                         needsPrimaryReducer = true;
                     }
                 }
@@ -773,9 +788,13 @@ public sealed class ConnectExecutor
             }
             else
             {
-                SmartConLogger.Warn($"Direct: mismatch Δ={rErr * FeetToMm:F2}mm — trying to adjust dynamic");
+                // See #138: цель ресайза — план сессии (проверен по lookup-таблице
+                // с constraints остальных коннекторов), а не «сырой» радиус static.
+                double targetRadius = context.Session.ParamTargetRadius ?? staticConn.Radius;
+                SmartConLogger.Warn($"Direct: mismatch Δ={rErr * FeetToMm:F2}mm — trying to adjust dynamic " +
+                    $"(target={targetRadius * FeetToMm:F2}mm{(context.Session.ParamTargetRadius is null ? "" : ", from session plan")})");
                 bool fixed2 = _paramResolver.TrySetConnectorRadius(
-                    doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, staticConn.Radius);
+                    doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, targetRadius);
                 doc.Regenerate();
 
                 if (fixed2)
