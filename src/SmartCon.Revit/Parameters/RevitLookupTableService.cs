@@ -147,6 +147,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         foreach (Connector c in cm.Connectors)
         {
             if (c.ConnectorType == ConnectorType.Curve) continue;
+            if (!c.IsRoundSafe()) continue;
             currentRadii[(int)c.Id] = c.Radius;
         }
 
@@ -154,6 +155,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         foreach (Connector c in cm.Connectors)
         {
             if (c.ConnectorType == ConnectorType.Curve) continue;
+            if (!c.IsRoundSafe()) continue;
             allConnectorIndices.Add((int)c.Id);
         }
         SmartConLogger.Debug($"  allConnectorIndices: [{string.Join(", ", allConnectorIndices)}]");

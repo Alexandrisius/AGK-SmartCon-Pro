@@ -67,6 +67,7 @@ public sealed class ConnectorService : IConnectorService
         return cm.Connectors
                  .Cast<Connector>()
                  .Where(c => c.ConnectorType != ConnectorType.Curve && !c.IsConnected)
+                 .Where(c => c.Domain == Domain.DomainPiping)
                  .Select(c => c.ToProxy())
                  .ToList();
     }
@@ -101,6 +102,7 @@ public sealed class ConnectorService : IConnectorService
         return cm.Connectors
                  .Cast<Connector>()
                  .Where(c => c.ConnectorType != ConnectorType.Curve)
+                 .Where(c => c.Domain == Domain.DomainPiping)
                  .Select(c => c.ToProxy())
                  .ToList();
     }

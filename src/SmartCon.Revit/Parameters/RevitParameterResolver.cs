@@ -67,7 +67,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             return [];
         }
 
-        SmartConLogger.Debug($"  connector[{connectorIndex}] found, Radius={connector.Radius:F6} ft ({connector.Radius * FeetToMm:F2} mm)");
+        SmartConLogger.Debug($"  connector[{connectorIndex}] found, Radius={connector.GetRadiusSafe():F6} ft ({connector.GetRadiusSafe() * FeetToMm:F2} mm)");
 
         var mepInfo = connector.GetMEPConnectorInfo() as MEPFamilyConnectorInfo;
         if (mepInfo is null)
@@ -329,7 +329,7 @@ public sealed class RevitParameterResolver : IParameterResolver
                     continue;
                 }
 
-                double newRadius = conn.Radius;
+                double newRadius = conn.GetRadiusSafe();
                 double delta = System.Math.Abs(newRadius - targetRadius);
 
                 SmartConLogger.Debug($"    newRadius={newRadius:F6} ft ({newRadius * FeetToMm:F2} mm), delta={delta:F6}");
@@ -386,6 +386,7 @@ public sealed class RevitParameterResolver : IParameterResolver
                         foreach (Connector ac in afterCm.Connectors)
                         {
                             if (ac.ConnectorType == ConnectorType.Curve) continue;
+                            if (!ac.IsRoundSafe()) continue;
                             SmartConLogger.Debug($"     conn[{ac.Id}]: R={ac.Radius * FeetToMm:F2}mm, " +
                             $"domain={ac.Domain}, connected={(ac.AllRefs?.Size > 0)}");
                         }
@@ -466,9 +467,11 @@ public sealed class RevitParameterResolver : IParameterResolver
                     continue;
                 }
 
-                double staticDelta = System.Math.Abs(staticConn.Radius - staticRadius);
-                double dynDelta = System.Math.Abs(dynConn.Radius - dynRadius);
-                SmartConLogger.Debug($"    staticR={staticConn.Radius:F6} (Δ={staticDelta:F6}), dynR={dynConn.Radius:F6} (Δ={dynDelta:F6})");
+                double staticConnRadius = staticConn.GetRadiusSafe();
+                double dynConnRadius = dynConn.GetRadiusSafe();
+                double staticDelta = System.Math.Abs(staticConnRadius - staticRadius);
+                double dynDelta = System.Math.Abs(dynConnRadius - dynRadius);
+                SmartConLogger.Debug($"    staticR={staticConnRadius:F6} (Δ={staticDelta:F6}), dynR={dynConnRadius:F6} (Δ={dynDelta:F6})");
 
                 if (staticDelta < Epsilon)
                 {
@@ -476,7 +479,7 @@ public sealed class RevitParameterResolver : IParameterResolver
                     {
                         bestExactDynDelta = dynDelta;
                         bestExactId = symbolId;
-                        bestExactDynRadius = dynConn.Radius;
+                        bestExactDynRadius = dynConnRadius;
                         SmartConLogger.Debug($"    → New best (static exact): dynΔ={dynDelta:F6}");
                     }
                 }
@@ -485,7 +488,7 @@ public sealed class RevitParameterResolver : IParameterResolver
                 {
                     bestFallbackStaticDelta = staticDelta;
                     bestFallbackId = symbolId;
-                    bestFallbackDynRadius = dynConn.Radius;
+                    bestFallbackDynRadius = dynConnRadius;
                     SmartConLogger.Debug($"    → New best fallback: staticΔ={staticDelta:F6}");
                 }
             }

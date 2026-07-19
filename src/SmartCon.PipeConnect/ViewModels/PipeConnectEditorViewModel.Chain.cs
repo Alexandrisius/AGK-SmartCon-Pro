@@ -22,13 +22,15 @@ public sealed partial class PipeConnectEditorViewModel
     private const int MaxChainLevel = 30;
 
     [RelayCommand(CanExecute = nameof(CanIncrementChain))]
-    private void IncrementChainDepth()
+    private void IncrementChainDepth() => TryIncrementChainDepth();
+
+    private bool TryIncrementChainDepth()
     {
         using var _scope = SmartConLogger.BeginScope("EditorChain",
             ("Method", "IncrementChainDepth"));
-        if (_chainGraph is null) return;
+        if (_chainGraph is null) return false;
         int nextLevel = ChainDepth + 1;
-        if (nextLevel >= _chainGraph.Levels.Count) return;
+        if (nextLevel >= _chainGraph.Levels.Count) return false;
 
         IsBusy = true;
         StatusMessage = string.Format(LocalizationService.GetString("Status_AttachingLevel"), nextLevel);
@@ -41,11 +43,13 @@ public sealed partial class PipeConnectEditorViewModel
             ChainDepth = nextLevel;
             UpdateChainUI();
             StatusMessage = string.Format(LocalizationService.GetString("Status_LevelAttached"), nextLevel);
+            return true;
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"Error: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Chain"), ex.Message);
+            return false;
         }
         finally
         {
@@ -104,15 +108,27 @@ public sealed partial class PipeConnectEditorViewModel
         try
         {
             int targetLevel = _chainGraph.MaxLevel;
-            int processed = 0;
 
-            while (ChainDepth < targetLevel && ChainDepth < MaxChainLevel)
+            var result = ChainTraversalRunner.Run(
+                ChainDepth, targetLevel, MaxChainLevel,
+                () => TryIncrementChainDepth() ? ChainDepth : (int?)null);
+
+            switch (result.StopReason)
             {
-                IncrementChainDepth();
-                processed++;
+                case ChainTraversalStopReason.Completed:
+                    StatusMessage = string.Format(
+                        LocalizationService.GetString("Status_LevelsConnected"), result.Processed);
+                    break;
+                case ChainTraversalStopReason.NoProgress:
+                    SmartConLogger.Warn($"ConnectAllChain stopped: ChainDepth did not advance at level {result.FinalDepth}. " +
+                        $"[Action: сообщите разработчикам — шаг обхода завершился без продвижения глубины, зацикливание предотвращено]");
+                    break;
+                case ChainTraversalStopReason.StepFailed:
+                    // StatusMessage с текстом ошибки уже установлен в TryIncrementChainDepth.
+                    SmartConLogger.Warn($"ConnectAllChain stopped at level {result.FinalDepth} after {result.Processed} level(s): step failed. " +
+                        $"[Action: проверьте сообщение об ошибке в статусной строке и повторите подключение]");
+                    break;
             }
-
-            StatusMessage = string.Format(LocalizationService.GetString("Status_LevelsConnected"), processed);
         }
         catch (Exception ex)
         {

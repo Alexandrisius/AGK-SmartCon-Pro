@@ -650,3 +650,24 @@ public sealed class ElementIdEqualityComparer : IEqualityComparer<ElementId>
     public int GetHashCode(ElementId obj);
 }
 ```
+
+---
+
+## ChainTraversalRunner
+
+Драйвер обхода цепочки уровней («Подключить всё») с непробиваемой защитой от бесконечного цикла. Шаг обязан либо продвинуть глубину, либо вернуть null (ошибка) — иначе обход останавливается с причиной `NoProgress`. См. issue #137.
+
+**Файл:** `SmartCon.Core/Services/ChainTraversalRunner.cs`
+
+```csharp
+public enum ChainTraversalStopReason { Completed, StepFailed, NoProgress }
+
+public readonly record struct ChainTraversalResult(
+    int FinalDepth, int Processed, ChainTraversalStopReason StopReason);
+
+public static class ChainTraversalRunner
+{
+    public static ChainTraversalResult Run(
+        int startDepth, int targetLevel, int maxLevel, Func<int?> step);
+}
+```

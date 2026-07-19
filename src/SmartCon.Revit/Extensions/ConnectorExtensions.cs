@@ -67,6 +67,45 @@ public static class ConnectorExtensions
     }
 
     /// <summary>
+    /// Безопасная проверка формы коннектора.
+    /// Connector.Shape getter бросает InvalidOperationException если у коннектора нет формы —
+    /// такой коннектор считается не круглым.
+    /// </summary>
+    public static bool IsRoundSafe(this Connector connector)
+    {
+#if NETFRAMEWORK
+        if (connector is null) throw new ArgumentNullException(nameof(connector));
+#else
+        ArgumentNullException.ThrowIfNull(connector);
+#endif
+
+        try
+        {
+            return connector.Shape == ConnectorProfileType.Round;
+        }
+        catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Безопасное чтение радиуса: для не-круглых коннекторов (электрические, Invalid shape)
+    /// Connector.Radius бросает InvalidOperationException — возвращаем 0.
+    /// См. issue #137.
+    /// </summary>
+    public static double GetRadiusSafe(this Connector connector)
+    {
+#if NETFRAMEWORK
+        if (connector is null) throw new ArgumentNullException(nameof(connector));
+#else
+        ArgumentNullException.ThrowIfNull(connector);
+#endif
+
+        return connector.IsRoundSafe() ? connector.Radius : 0.0;
+    }
+
+    /// <summary>
     /// Преобразовать Connector в ConnectorProxy.
     /// </summary>
     public static ConnectorProxy ToProxy(this Connector connector)

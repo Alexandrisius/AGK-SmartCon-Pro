@@ -77,7 +77,7 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                 ? ovr
                 : ConnectionTypeCode.Parse(GetConnectorDescriptionSafe(c));
             connCtcMap.Add((c, ctc));
-            SmartConLogger.Info($"conn[{c.Id}] CTC={ctc.Value} R={c.Radius * FeetToMm:F1}mm (static CTC={staticProxy.ConnectionTypeCode.Value}, dyn CTC={dynamicTypeCode.Value})");
+            SmartConLogger.Info($"conn[{c.Id}] CTC={ctc.Value} R={c.GetRadiusSafe() * FeetToMm:F1}mm (static CTC={staticProxy.ConnectionTypeCode.Value}, dyn CTC={dynamicTypeCode.Value})");
         }
 
         if (staticProxy.ConnectionTypeCode.IsDefined)
@@ -116,8 +116,8 @@ public sealed class RevitFittingInsertService : IFittingInsertService
                     fitConn1 = best.Fc1;
                     fitConn2 = best.Fc2;
                     SmartConLogger.Info($"Strategy 0 (direct-connect rules): " +
-                        $"fc1=conn[{fitConn1.Id}] R={fitConn1.Radius * FeetToMm:F1}mm (→static R={staticProxy.Radius * FeetToMm:F1}mm), " +
-                        $"fc2=conn[{fitConn2.Id}] R={fitConn2.Radius * FeetToMm:F1}mm, " +
+                        $"fc1=conn[{fitConn1.Id}] R={fitConn1.GetRadiusSafe() * FeetToMm:F1}mm (→static R={staticProxy.Radius * FeetToMm:F1}mm), " +
+                        $"fc2=conn[{fitConn2.Id}] R={fitConn2.GetRadiusSafe() * FeetToMm:F1}mm, " +
                         $"score={best.Score * FeetToMm:F2}mm ({validPairs.Count} pairs)");
                 }
             }
@@ -202,11 +202,11 @@ public sealed class RevitFittingInsertService : IFittingInsertService
         var fitConn1Proxy = fitConn1!.ToProxy();
         if (fitConn1Proxy is null) return null;
 
-        SmartConLogger.Info($"BEFORE: fc1=conn[{fitConn1.Id}] origin={fitConn1Proxy.OriginVec3} R={fitConn1.Radius * FeetToMm:F1}mm BZ={fitConn1Proxy.BasisZVec3}");
+        SmartConLogger.Info($"BEFORE: fc1=conn[{fitConn1.Id}] origin={fitConn1Proxy.OriginVec3} R={fitConn1.GetRadiusSafe() * FeetToMm:F1}mm BZ={fitConn1Proxy.BasisZVec3}");
         if (fitConn2 is not null)
         {
             var fc2p = fitConn2.ToProxy();
-            SmartConLogger.Info($"BEFORE: fc2=conn[{fitConn2.Id}] origin={fc2p?.OriginVec3} R={fitConn2.Radius * FeetToMm:F1}mm BZ={fc2p?.BasisZVec3}");
+            SmartConLogger.Info($"BEFORE: fc2=conn[{fitConn2.Id}] origin={fc2p?.OriginVec3} R={fitConn2.GetRadiusSafe() * FeetToMm:F1}mm BZ={fc2p?.BasisZVec3}");
         }
 
         // Вычислить выравнивание фитинга к static коннектору
