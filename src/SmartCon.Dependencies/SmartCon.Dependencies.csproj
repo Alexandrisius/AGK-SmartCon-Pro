@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Host for ILRepack-merged third-party dependencies (Issue #134, ADR-051).
+    Merge rule (verified by enumerating strong-named references of every signed
+    third-party in our closure): a package may be merged ONLY IF no signed
+    third-party assembly references it by strong name. Signed consumers reject
+    a merged substitute: unsigned → 0x80131044 "Strong name required",
+    signed-but-different-identity → 0x80131040 "manifest does not match".
+    Everything else stays LOOSE on disk as the original signed files:
+      CommunityToolkit.Common/.Diagnostics (HelixToolkit → 4aff 8.3.0.0),
+      M.E.DI.Abstractions (Logging.Abstractions → adb 8.0.0.2),
+      System.Memory/Buffers/Unsafe/Tasks.Extensions/Numerics.Vectors (Roslyn/Helix),
+      System.Text.Encoding.CodePages (Roslyn → b03f 7.0.0.0).
+    net8.0-windows: merges ONLY Nice3point.Revit.Toolkit (unsigned — merge-safe).
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
+    <AssemblyName>SmartCon.Dependencies</AssemblyName>
+    <RootNamespace>SmartCon.Dependencies</RootNamespace>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <!-- Потребители обязаны компилироваться против ПОСТ-мёрджа сборки:
+         ref/ reference assembly генерируется во время CoreCompile (до ILRepack)
+         и не содержит сшитых типов → CS0246 у потребителей -->
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <!-- MERGE-список (6 пакетов, только наши неподписанные потребители).
+         CommunityToolkit.Mvvm: analyzers текут к потребителям (source-генераторы),
+         остальные активы — нет (PrivateAssets). Транзитивы (Common/Diagnostics,
+         Memory/Buffers/...) попадают в output проекта для ILRepack LibraryPath,
+         но НЕ сшиваются и НЕ текут к потребителям. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" PrivateAssets="compile;runtime;contentFiles;build;buildTransitive;native" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Json" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Encodings.Web" PrivateAssets="all" />
+    <PackageReference Include="UTF.Unknown" PrivateAssets="all" />
+    <!-- Транзитивы для LibraryPath (loose-файлы, не merge) -->
+    <PackageReference Include="CommunityToolkit.Common" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Diagnostics" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" PrivateAssets="all" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" PrivateAssets="all" />
+    <PackageReference Include="System.Memory" PrivateAssets="all" />
+    <PackageReference Include="System.Buffers" PrivateAssets="all" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" PrivateAssets="all" />
+    <PackageReference Include="System.Numerics.Vectors" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <!-- Только toolkit: его типы получают наш identity и не конфликтуют с другими
+         адд-инами, загрузившими свою версию Nice3point.Revit.Toolkit в Default context -->
+    <PackageReference Include="Nice3point.Revit.Toolkit" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

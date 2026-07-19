@@ -49,6 +49,7 @@
     <ProjectReference Include="..\SmartCon.PipeConnect\SmartCon.PipeConnect.csproj" />
     <ProjectReference Include="..\SmartCon.ProjectManagement\SmartCon.ProjectManagement.csproj" />
     <ProjectReference Include="..\SmartCon.FamilyManager\SmartCon.FamilyManager.csproj" />
+    <ProjectReference Include="..\SmartCon.Updater\SmartCon.Updater.csproj" />
   </ItemGroup>
 
 </Project>

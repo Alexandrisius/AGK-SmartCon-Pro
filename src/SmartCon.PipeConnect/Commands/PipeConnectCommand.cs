@@ -7,19 +7,38 @@ using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.Views;
 using System.Windows.Interop;
+#if NET8_0_OR_GREATER
+using CommandBase = Nice3point.Revit.Toolkit.External.ExternalCommand;
+#else
+using CommandBase = Autodesk.Revit.UI.IExternalCommand;
+#endif
 
 namespace SmartCon.PipeConnect.Commands;
 
 [Transaction(TransactionMode.Manual)]
-public sealed class PipeConnectCommand : IExternalCommand
+public sealed class PipeConnectCommand : CommandBase
 {
+#if NET8_0_OR_GREATER
+    public override void Execute()
+    {
+        Result = ExecuteCore(Application, out var message);
+        ErrorMessage = message;
+    }
+#else
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
+        return ExecuteCore(commandData.Application, out message);
+    }
+#endif
+
+    private static Result ExecuteCore(UIApplication uiApp, out string message)
+    {
+        message = string.Empty;
         var sessionStart = DateTime.Now;
         SmartConLogger.LogSessionStart("PipeConnect");
         try
         {
-            CommandHelper.InitializeContext(commandData.Application);
+            CommandHelper.InitializeContext(uiApp);
             var doc = CommandHelper.GetDocument();
 
             var factory = ServiceHost.GetService<IPipeConnectViewModelFactory>();
@@ -34,7 +53,7 @@ public sealed class PipeConnectCommand : IExternalCommand
             vm.Init();
 
             var view = new PipeConnectEditorView(vm);
-            new WindowInteropHelper(view).Owner = commandData.Application.MainWindowHandle;
+            new WindowInteropHelper(view).Owner = uiApp.MainWindowHandle;
             view.ShowDialog();
 
             return Result.Succeeded;

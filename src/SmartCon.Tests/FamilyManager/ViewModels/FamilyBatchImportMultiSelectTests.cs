@@ -744,7 +744,7 @@ public sealed class FamilyBatchImportMultiSelectTests
 
         row.TargetCategoryId = "cat-plumbing";
         row.TargetCategoryPath = "Plumbing";
-        row.TargetCategoryIsManual = true;
+        row.CategoryProvenance = CategoryProvenance.Manual;
 
         row.FileName = "ExistingWithCategory2";
 
@@ -805,7 +805,7 @@ public sealed class FamilyBatchImportMultiSelectTests
         // flag so a subsequent rename can re-categorize by name.
         row.TargetCategoryId = null;
         row.TargetCategoryPath = "Без категории";
-        row.TargetCategoryIsManual = false;
+        row.CategoryProvenance = CategoryProvenance.None;
         Assert.Null(row.TargetCategoryId);
 
         row.FileName = "RenamedTarget";
@@ -879,7 +879,7 @@ public sealed class FamilyBatchImportMultiSelectTests
 
         row.TargetCategoryId = "cat-plumbing";
         row.TargetCategoryPath = "Plumbing";
-        row.TargetCategoryIsManual = true;
+        row.CategoryProvenance = CategoryProvenance.Manual;
 
         row.FileName = "TotallyUniqueName";
 

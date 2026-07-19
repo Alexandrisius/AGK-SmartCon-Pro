@@ -245,6 +245,13 @@ foreach ($bc in $buildConfigs) {
     Remove-Item "$publishDir\AdWindows*.dll" -ErrorAction SilentlyContinue
     Remove-Item "$publishDir\UIAutomation*.dll" -ErrorAction SilentlyContinue
 
+    # ADR-051 (Issue #134): obsolete-files.txt — список dll, сшитых ILRepack в SmartCon.Dependencies.
+    # Updater и installer удаляют эти файлы при обновлении/установке поверх старых версий.
+    # ТОЛЬКО net48-архивы: на net8 те же имена нужны как loose-файлы и удалять их нельзя.
+    if ($tag -in @("R19", "R21", "R24")) {
+        Copy-Item "$SrcDir\SmartCon.App\Resources\merged-dependencies.txt" "$publishDir\obsolete-files.txt" -Force
+    }
+
     Write-Ok "SmartCon [$tag] published to $publishDir"
 
     $zipName = "SmartCon-$newVersion-$tag.zip"

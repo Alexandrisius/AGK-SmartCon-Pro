@@ -27,6 +27,19 @@
 | **FamilyManager** | да | — | да | — | — | — | — |
 | **Tests** | да | — | — | — | да | да | да |
 
+### SmartCon.Dependencies (net48 only, ADR-051)
+
+`SmartCon.Dependencies` — **листовой** хост для ILRepack-merge сторонних NuGet-зависимостей.
+Правила:
+
+- На него ссылаются (`ProjectReference`) все проекты **только** при `'$(TargetFramework)' == 'net48'`
+  (Core, Revit, UI, App, PipeConnect, ProjectManagement, FamilyManager). На net8.0-windows
+  ссылок нет — там те же пакеты подключаются напрямую, а изоляцию даёт ALC.
+- Он сам **не зависит** ни от одного проекта solution (только NuGet).
+- Запрещено добавлять в него ссылки на проекты SmartCon — иначе их типы тоже уедут в merge.
+- Транзитивные пути сшитых пакетов (HelixToolkit → CommunityToolkit.*, Roslyn → CodePages и т.д.)
+  обрезаны централизованно в `src/Directory.Build.targets` (`ExcludeAssets`), иначе CS0433.
+
 ## Жёсткие запреты
 
 1. **Core -> Revit:** `SmartCon.Core` НЕ ссылается на `SmartCon.Revit`. Core ссылается на `RevitAPI.dll` как compile-time reference (CopyLocal=false) только для типов-carriers (`ElementId`, `XYZ`, и т.д.). Core **не вызывает** методы Revit API. См. I-09.

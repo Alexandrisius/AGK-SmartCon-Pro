@@ -14,10 +14,40 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- Full deps.json for the isolated AssemblyLoadContext (ADR-051) -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
   </PropertyGroup>
 
-  <ItemGroup>
+  <!-- Microsoft.Extensions.DependencyInjection: net48 — внутри merged SmartCon.Dependencies (ADR-051) -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <!-- Loose-файлы, обязанные лежать в output на net48 (ADR-051):
+       транзитивные зависимости merged-сборки + зависимости подписанных чужих
+       компонентов (Roslyn/HelixToolkit) — поставляются как ПОДПИСАННЫЕ оригиналы,
+       иначе merged STJ/M.E.DI и Helix не резолвятся в рантайме -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="CommunityToolkit.Common" />
+    <PackageReference Include="CommunityToolkit.Diagnostics" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" />
+    <PackageReference Include="System.Memory" />
+    <PackageReference Include="System.Buffers" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" />
+    <PackageReference Include="System.Numerics.Vectors" />
+    <PackageReference Include="System.Text.Encoding.CodePages" />
+  </ItemGroup>
+
+  <!-- Dependency isolation (ADR-051): net48 — merged third-party deps;
+       net8 — Nice3point.Revit.Toolkit сшит в SmartCon.Dependencies (иначе чужой адд-ин
+       поднимет свою версию toolkit в Default context → 0x80131621). Базовые классы
+       ExternalApplication/ExternalCommand из toolkit гоняют код в изолированном ALC. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" />
   </ItemGroup>
 
@@ -47,6 +77,9 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\Icons\*.png" />
+    <!-- Единый источник списка сшитых сборок (ADR-051): читается OnAssemblyResolve;
+         release.ps1 копирует его в релизные архивы как obsolete-files.txt -->
+    <EmbeddedResource Include="Resources\merged-dependencies.txt" />
   </ItemGroup>
 
 </Project>

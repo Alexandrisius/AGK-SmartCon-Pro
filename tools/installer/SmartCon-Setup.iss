@@ -57,6 +57,9 @@ Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.dll"; DestDir: "{
 Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.deps.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\..\artifacts\publish\SmartCon-R25\SmartCon.Updater.runtimeconfig.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
+; --- ADR-051: список сшитых ILRepack dll для удаления при обновлении (не копируется, извлекается в коде) ---
+Source: "..\..\src\SmartCon.App\Resources\merged-dependencies.txt"; Flags: dontcopy
+
 [Registry]
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2019-2020"; ValueData: "{app}\2019-2020"; Check: NeedR19; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2021-2023"; ValueData: "{app}\2021-2023"; Check: NeedR21; Flags: uninsdeletevalue
@@ -154,7 +157,7 @@ begin
   Result := True;
 end;
 
-procedure WriteAddinFile(const RevitVersion, DllSubDir: String);
+procedure WriteAddinFile(const RevitVersion, DllSubDir: String; const IncludeIsolation: Boolean);
 var
   AddinContent, AddinPath, AppDataDir: String;
 begin
@@ -171,9 +174,45 @@ begin
     '    <FullClassName>SmartCon.App.App</FullClassName>' + #13#10 +
     '    <VendorId>AGK</VendorId>' + #13#10 +
     '    <VendorDescription>AGK Engineering</VendorDescription>' + #13#10 +
-    '  </AddIn>' + #13#10 +
-    '</RevitAddIns>';
+    '  </AddIn>' + #13#10;
+  { ADR-051: ManifestSettings активирует изолированный AssemblyLoadContext (Revit 2025+) }
+  if IncludeIsolation then
+    AddinContent := AddinContent +
+      '  <ManifestSettings>' + #13#10 +
+      '    <UseRevitContext>False</UseRevitContext>' + #13#10 +
+      '    <ContextName>SmartCon</ContextName>' + #13#10 +
+      '  </ManifestSettings>' + #13#10;
+  AddinContent := AddinContent + '</RevitAddIns>';
   SaveStringToFile(AddinPath, AddinContent, False);
+end;
+
+{ ADR-051: удаление dll, сшитых ILRepack в SmartCon.Dependencies, из папок установки.
+  Список — merged-dependencies.txt (единый источник, см. src/SmartCon.App/Resources). }
+procedure DeleteObsoleteDlls;
+var
+  TmpPath, Line, AppDir: String;
+  Lines: TArrayOfString;
+  I, J: Integer;
+  SubDirs: array[0..4] of String;
+begin
+  SubDirs[0] := '2019-2020';
+  SubDirs[1] := '2021-2023';
+  SubDirs[2] := '2024';
+  SubDirs[3] := '2025';
+  SubDirs[4] := '2026';
+  TmpPath := ExpandConstant('{tmp}\merged-dependencies.txt');
+  ExtractTemporaryFile('merged-dependencies.txt');
+  if not LoadStringsFromFile(TmpPath, Lines) then
+    Exit;
+  AppDir := ExpandConstant('{app}');
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Line := Trim(Lines[I]);
+    if (Line = '') or (Copy(Line, 1, 1) = '#') then
+      Continue;
+    for J := 0 to GetArrayLength(SubDirs) - 1 do
+      DeleteFile(AppDir + '\' + SubDirs[J] + '\' + Line);
+  end;
 end;
 
 procedure RemoveAddinAndDlls(const RevitVersion, DllSubDir: String);
@@ -187,30 +226,36 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then
+  begin
+    DeleteObsoleteDlls;
+  end;
   if CurStep = ssPostInstall then
   begin
     if NeedR19 then
     begin
-      if Revit2019Installed then WriteAddinFile('2019', '2019-2020');
-      if Revit2020Installed then WriteAddinFile('2020', '2019-2020');
+      if Revit2019Installed then WriteAddinFile('2019', '2019-2020', False);
+      if Revit2020Installed then WriteAddinFile('2020', '2019-2020', False);
     end;
     if NeedR21 then
     begin
-      if Revit2021Installed then WriteAddinFile('2021', '2021-2023');
-      if Revit2022Installed then WriteAddinFile('2022', '2021-2023');
-      if Revit2023Installed then WriteAddinFile('2023', '2021-2023');
+      if Revit2021Installed then WriteAddinFile('2021', '2021-2023', False);
+      if Revit2022Installed then WriteAddinFile('2022', '2021-2023', False);
+      if Revit2023Installed then WriteAddinFile('2023', '2021-2023', False);
     end;
     if NeedR24 then
     begin
-      if Revit2024Installed then WriteAddinFile('2024', '2024');
+      if Revit2024Installed then WriteAddinFile('2024', '2024', False);
     end;
     if NeedR25 then
     begin
-      if Revit2025Installed then WriteAddinFile('2025', '2025');
+      { Revit 2025: ManifestSettings НЕЛЬЗЯ — парсер отвергает весь манифест (ADR-051);
+        изоляция там выполняется Nice3point.Revit.Toolkit без манифеста }
+      if Revit2025Installed then WriteAddinFile('2025', '2025', False);
     end;
     if NeedR26 then
     begin
-      if Revit2026Installed then WriteAddinFile('2026', '2026');
+      if Revit2026Installed then WriteAddinFile('2026', '2026', True);
     end;
   end;
 end;

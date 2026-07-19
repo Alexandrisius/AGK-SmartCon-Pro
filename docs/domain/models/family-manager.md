@@ -654,17 +654,33 @@ public sealed record FamilyBatchImportItem(
     string? RevitCategory = null,
     string? OriginalSourcePath = null,
     IReadOnlyList<FamilySourceTypeInfo>? SourceTypes = null,
-    FamilyImportSource? Source = null)
+    FamilyImportSource? Source = null,
+    string? PrecomputedCatalogItemId = null,
+    string? PrecomputedVersionLabel = null,
+    string? PrecomputedManagedPath = null,
+    string? ContentHash = null,
+    int? HashFormatVersion = null,
+    string? MatchedVersionLabel = null,
+    FamilySnapshot? LoadableSnapshot = null,
+    SystemFamilySnapshot? SystemSnapshot = null,
+    string? PublishedBy = null,
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
+    bool IsCrossNameDuplicate = false,
+    string? MatchedItemName = null,
+    string? ExistingCategoryId = null,
+    string? ExistingCategoryPath = null)
 {
     public FamilyBatchImportAction Action { get; set; }
     public string? TargetCategoryId { get; set; }
     public string? TargetCategoryName { get; set; }
+    public string? PublishedByUser { get; set; }
 }
 ```
 
 - `FilePath` — для UC-1/UC-2 (импорт с диска или активного `.rfa`) это реальный путь к файлу. Для UC-3/UC-4 (импорт активного проекта / выделенных элементов) это placeholder `"system://..."` или `"loadable://..."` до подтверждения пользователем, после чего `ProcessProjectImportAsync` перезаписывает это поле на managed-путь.
 - `Source` (v2.0.0) — payload для пост-диалогового staging flow (UC-3/UC-4). `null` для UC-1/UC-2 (файл уже на диске). `SystemSource` / `LoadableSource` — sealed record-union, см. [FamilyImportSource](#familyimportsource).
 - v2.0.0 breaking change: поля `Sha256` и `FileSizeBytes` удалены — SHA-256 dedup и показ размера файла больше не используются (см. ADR-035).
+- `ExistingCategoryId` / `ExistingCategoryPath` (Issue #135) — реальная категория существующего айтема (`ExistingCatalogItemId`), независимо от `TargetCategoryId` (которая может быть перекрыта командой «Импорт в категорию» или пикером). Используется диалогом для предупреждения «семейство будет перемещено между категориями» (P2).
 
 ---
 
@@ -1896,6 +1912,31 @@ ull.
 - HashMatch — cross-version hash match details if Status == Duplicate; otherwise 
 ull.
 - IsCrossNameDuplicate — Issue #126: хэш совпал с айтемом под другим именем (файл переименован); batch-диалог рисует ⚠ с tooltip.
+
+---
+
+## CategoryProvenance
+
+Источник категории строки batch-диалога (Issue #135). Единственный источник правды для lock-семантики: `Command` и `Manual` — залочены (rename не сбрасывает категорию); `AutoName`, `AutoHash`, `None` — пересчитываются rename-хендлером.
+
+**Файл:** Models/FamilyManager/CategoryProvenance.cs
+
+`csharp
+public enum CategoryProvenance
+{
+    None = 0,
+    AutoName = 1,
+    AutoHash = 2,
+    Command = 3,
+    Manual = 4,
+}
+`
+
+- None — категория не назначена (плейсхолдер «Без категории»).
+- AutoName — подтянута из каталога по совпадению нормализованного имени.
+- AutoHash — подтянута из hash-matched дубликата (ADR-049: контент совпал, имя может отличаться).
+- Command — предвыбор команды «Импорт в категорию»; rename в имя существующего семейства ПЕРЕМЕЩАЕТ его в эту категорию при импорте.
+- Manual — явный выбор пользователя (пикер или multi-select batch apply).
 
 ---
 

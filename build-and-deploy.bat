@@ -74,7 +74,7 @@ if not exist "%DLL_R26%" mkdir "%DLL_R26%"
 copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\*.dll" "%DLL_R26%\" >nul
 copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\SmartCon.App.deps.json" "%DLL_R26%\" >nul 2>nul
 if exist "%ADDIN_R26%" (
-    call :WriteAddin "%ADDIN_R26%\SmartCon.addin" "%DLL_R26%\SmartCon.App.dll"
+    call :WriteAddin "%ADDIN_R26%\SmartCon.addin" "%DLL_R26%\SmartCon.App.dll" "isolation"
     echo [OK] Revit 2026
 ) else (
     echo [SKIP] Revit 2026 not installed
@@ -84,6 +84,7 @@ echo.
 echo [8/10] Deploying to Revit 2021-2024...
 set "DLL_R24=%APPDATA%\SmartCon\2024"
 if not exist "%DLL_R24%" mkdir "%DLL_R24%"
+call :CleanObsolete "%DLL_R24%"
 copy /Y "src\SmartCon.App\bin\Debug.R24\net48\win-x64\*.dll" "%DLL_R24%\" >nul
 set "ADDIN_R24=%APPDATA%\Autodesk\Revit\Addins\2024"
 if exist "%ADDIN_R24%" (
@@ -96,6 +97,7 @@ if exist "%ADDIN_R24%" (
 
 set "DLL_R21=%APPDATA%\SmartCon\2021-2023"
 if not exist "%DLL_R21%" mkdir "%DLL_R21%"
+call :CleanObsolete "%DLL_R21%"
 copy /Y "src\SmartCon.App\bin\Debug.R21\net48\win-x64\*.dll" "%DLL_R21%\" >nul
 
 set "ADDIN_2023=%APPDATA%\Autodesk\Revit\Addins\2023"
@@ -130,6 +132,7 @@ echo.
 echo [9/10] Deploying to Revit 2019-2020...
 set "DLL_R19=%APPDATA%\SmartCon\2019-2020"
 if not exist "%DLL_R19%" mkdir "%DLL_R19%"
+call :CleanObsolete "%DLL_R19%"
 copy /Y "src\SmartCon.App\bin\Debug.R19\net48\win-x64\*.dll" "%DLL_R19%\" >nul
 set "ADDIN_R19=%APPDATA%\Autodesk\Revit\Addins\2019"
 if exist "%ADDIN_R19%" (
@@ -182,5 +185,25 @@ echo     ^<FullClassName^>SmartCon.App.App^</FullClassName^> >> "%~1"
 echo     ^<VendorId^>AGK^</VendorId^> >> "%~1"
 echo     ^<VendorDescription^>AGK Engineering^</VendorDescription^> >> "%~1"
 echo   ^</AddIn^> >> "%~1"
+if /i "%~3"=="isolation" (
+echo   ^<ManifestSettings^> >> "%~1"
+echo     ^<UseRevitContext^>False^</UseRevitContext^> >> "%~1"
+echo     ^<ContextName^>SmartCon^</ContextName^> >> "%~1"
+echo   ^</ManifestSettings^> >> "%~1"
+)
 echo ^</RevitAddIns^> >> "%~1"
+goto :eof
+
+:CleanObsolete
+REM Deletes ILRepack-merged third-party dlls (ADR-051, net48 merge) from a net48 deploy folder.
+REM Do NOT run for net8 folders (2025/2026): those names are needed there as loose files.
+REM %1 = target folder. List source: src\SmartCon.App\Resources\merged-dependencies.txt
+for /f "usebackq tokens=* delims=" %%F in ("src\SmartCon.App\Resources\merged-dependencies.txt") do (
+    set "obsoleteLine=%%F"
+    if not "!obsoleteLine:~0,1!"=="#" if not "!obsoleteLine!"=="" (
+        if exist "%~1\!obsoleteLine!" (
+            del /q "%~1\!obsoleteLine!" 2>nul && echo   [CLEAN] !obsoleteLine!
+        )
+    )
+)
 goto :eof

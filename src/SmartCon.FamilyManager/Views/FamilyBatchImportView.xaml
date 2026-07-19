@@ -56,6 +56,22 @@
                 <Setter Property="IsSelected"
                         Value="{Binding IsSelected, Mode=TwoWay}"/>
             </Style>
+            <!--
+                Issue #135 (P1/P4): category column cell. The tooltip
+                explains WHERE the category came from (provenance), and
+                the cell flashes (whole-cell, light blue, hold+fade) when
+                the rename handler changes the category automatically.
+                BasedOn the shared compact cell so padding/selection
+                behaviour stays identical to the other columns.
+            -->
+            <Style x:Key="CategoryCellStyle"
+                   TargetType="DataGridCell"
+                   BasedOn="{StaticResource CompactDataGridCell}">
+                <Setter Property="ToolTip"
+                        Value="{Binding CategoryProvenanceDescription}"/>
+                <Setter Property="behaviors:CellFlashBehavior.FlashToken"
+                        Value="{Binding CategoryFlashToken}"/>
+            </Style>
         </ResourceDictionary>
     </controls:DialogWindowBase.Resources>
 
@@ -211,22 +227,52 @@
                     </DataGridTemplateColumn>
                     <DataGridTemplateColumn x:Name="ColCategory"
                                             Width="*"
-                                            MinWidth="120">
+                                            MinWidth="120"
+                                            CellStyle="{StaticResource CategoryCellStyle}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Grid VerticalAlignment="Center">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
+                                    <!--
+                                        Issue #135 (P3): italic+gray ghost for the
+                                        «Без категории» placeholder so it never reads
+                                        as a real category. No bold for locked
+                                        categories — provenance lives in the cell
+                                        tooltip (P1).
+                                    -->
                                     <TextBlock Grid.Column="0"
-                                              Text="{Binding TargetCategoryPath}"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Left"
-                                              TextTrimming="CharacterEllipsis"
-                                              Margin="4,0"
-                                              Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    <Button Grid.Column="1"
+                                               Text="{Binding TargetCategoryPath}"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Left"
+                                               TextTrimming="CharacterEllipsis"
+                                               Margin="4,0"
+                                               Foreground="{DynamicResource TextPrimaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding TargetCategoryId}" Value="{x:Null}">
+                                                        <Setter Property="FontStyle" Value="Italic"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <!-- Issue #135 (P2): warn that the locked category
+                                         will MOVE the existing family on import. Same
+                                         visual pattern as the cross-name duplicate ⚠. -->
+                                    <TextBlock Grid.Column="1"
+                                               Text="⚠"
+                                               Margin="2,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource WarningBrush}"
+                                               ToolTip="{Binding CategoryMoveWarningTooltip}"
+                                               Visibility="{Binding ShowCategoryMoveWarning, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Grid.Column="2"
                                             Content="..."
                                             Command="{Binding PickCategoryCommand}"
                                             Padding="6,0"

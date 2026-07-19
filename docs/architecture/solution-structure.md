@@ -14,6 +14,8 @@ SmartCon.sln
 ├── SmartCon.PipeConnect       <- Модуль PipeConnect: Commands, ViewModels, Views.
 ├── SmartCon.ProjectManagement <- Модуль ProjectManagement: Share Project (ISO 19650).
 ├── SmartCon.FamilyManager     <- Модуль FamilyManager: управление библиотекой семейств Revit (dockable panel, SQLite catalog).
+├── SmartCon.Dependencies      <- net48-only: ILRepack-хост сторонних зависимостей (ADR-051).
+│                                 Не референсится на net8 — там изоляция через ALC (Nice3point.Revit.Toolkit).
 ├── SmartCon.Tests             <- Unit + ViewModel тесты (xUnit + Moq).
 └── SmartCon.Updater           <- Standalone .NET 8 updater: применяет pending
                                    update при закрытии Revit (staging-based).
@@ -88,6 +90,9 @@ SmartCon.Core/
 │   └── FormulaEngine/                 <- AST-парсер формул
 ├── Logging/
 │   └── SmartConLogger.cs              <- файловый логгер
+├── Deployment/
+│   ├── SmartConAddinManifest.cs       <- генератор .addin манифеста (ADR-051)
+│   └── DependencyConflictAnalyzer.cs  <- анализ конфликтов зависимостей (ADR-051)
 ├── Compatibility/
 │   ├── ElementIdCompat.cs             <- абстракция над 32/64-bit ElementId (multi-version)
 │   ├── NetFrameworkCompat.cs          <- polyfills для .NET Framework 4.8
@@ -167,15 +172,39 @@ SmartCon.UI/
 
 ```
 SmartCon.App/
-├── App.cs                             <- IExternalApplication (OnStartup/OnShutdown)
+├── App.cs                             <- IExternalApplication (net48) / ExternalApplication (net8, ADR-051)
 ├── Ribbon/
 │   └── RibbonBuilder.cs              <- создание кнопок на ленте Revit
 ├── DI/
 │   ├── ServiceLocator.cs             <- IoC-контейнер (MEDI)
 │   └── ServiceRegistrar.cs           <- регистрация всех сервисов
+├── Diagnostics/
+│   ├── DependencyGuard.cs            <- стартовый скан конфликтов зависимостей (ADR-051)
+│   └── AddinManifestHealer.cs        <- self-healing .addin манифеста (ADR-051)
 └── Resources/
     ├── SmartCon.addin                 <- манифест для Revit
+    ├── merged-dependencies.txt        <- список ILRepack-сшитых dll (единый источник, ADR-051)
     └── Icons/                         <- иконки для Ribbon
+```
+
+---
+
+## SmartCon.Dependencies (net48 only)
+
+Хост для ILRepack-merge сторонних зависимостей (ADR-051, Issue #134). Собирается только
+под net48; на net8.0-windows не референсится (там изоляция через AssemblyLoadContext
+Nice3point.Revit.Toolkit). Содержит один маркерный тип `DependencyHost` и пайплайн
+`ILRepack.targets` — на выходе единая `SmartCon.Dependencies.dll` со сшитыми типами
+(CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, System.Text.Json и др.).
+Транзитивные пути этих пакетов в потребителях обрезаны централизованно в
+`src/Directory.Build.targets`.
+
+```
+SmartCon.Dependencies/
+├── SmartCon.Dependencies.csproj       <- пакеты merge-списка (PrivateAssets)
+├── ILRepack.Config.props              <- указатель на кастомный targets
+├── ILRepack.targets                   <- явный список InputAssemblies для merge
+└── DependencyHost.cs                  <- маркер для поиска merged-сборки в рантайме
 ```
 
 ---
@@ -407,5 +436,9 @@ SmartCon.Tests/
 │   ├── AllowedValuesViewModelTests.cs
 │   ├── ExportNameDialogViewModelTests.cs
 │   └── ParseRuleViewModelTests.cs
+├── Updater/
+│   ├── AddinManifestWriterTests.cs
+│   ├── ObsoleteFileCleanerTests.cs
+│   └── UpdateBackupManagerTests.cs
 └── TestDoubles/
 ```
