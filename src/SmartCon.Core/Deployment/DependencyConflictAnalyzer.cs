@@ -14,14 +14,16 @@ public sealed record DependencyConflict(string Name, Version LoadedVersion, Vers
 /// </summary>
 public static class DependencyConflictAnalyzer
 {
-    /// <summary>Минимальные assembly-версии, с которыми собран SmartCon.</summary>
+    /// <summary>Минимальные assembly-версии, с которыми собран SmartCon.
+    /// System.Text.Json исключён намеренно: на net48 он merged (конфликт невозможен),
+    /// на net8 поставляется shared-рантаймом с assembly version 8.0.0.0 (false positive,
+    /// версия NuGet-пакета 8.0.0.6 ≠ версии сборки рантайма).</summary>
     public static IReadOnlyDictionary<string, Version> MinimumVersions { get; } =
         new Dictionary<string, Version>(StringComparer.OrdinalIgnoreCase)
         {
             ["CommunityToolkit.Mvvm"] = new Version(8, 4, 0, 0),
             ["Microsoft.Extensions.DependencyInjection"] = new Version(8, 0, 0, 1),
             ["Microsoft.Bcl.AsyncInterfaces"] = new Version(10, 0, 0, 1),
-            ["System.Text.Json"] = new Version(8, 0, 0, 6),
             ["System.Threading.Tasks.Extensions"] = new Version(4, 2, 4, 0),
             ["System.Runtime.CompilerServices.Unsafe"] = new Version(6, 0, 3, 0),
         };

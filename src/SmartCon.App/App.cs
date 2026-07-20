@@ -69,6 +69,11 @@ public sealed class App : AppBase
         RegisterGlobalExceptionHandlers();
         try
         {
+#if NET8_0_OR_GREATER
+            SmartConLogger.Info(
+                $"SmartCon host context: {System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(App).Assembly)?.Name ?? "(unknown)"} " +
+                $"(App assembly: {typeof(App).Assembly.Location})");
+#endif
             ApplyUpdaterSelfUpdate();
             CleanupStalePendingUpdate();
             CleanupLegacyStageFolder();
@@ -88,6 +93,7 @@ public sealed class App : AppBase
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"Failed to load SmartCon: {DescribeException(ex)}\n{ex.StackTrace}");
             TaskDialog.Show("SmartCon - Error", $"Failed to load SmartCon:\n{ex.Message}");
             return Result.Failed;
         }

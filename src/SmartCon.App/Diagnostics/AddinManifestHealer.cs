@@ -61,12 +61,40 @@ internal static class AddinManifestHealer
                 $".addin manifest healed for Revit {year} " +
                 $"(nativeIsolation={(year >= SmartConAddinManifest.FirstNativeIsolationRevitYear ? "on" : "n/a")}, " +
                 $"assembly='{assemblyPath}')");
+
+            DetectStaleProgramDataManifest(year);
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn(
                 $"AddinManifestHealer failed: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: reinstall SmartCon via setup.exe to restore the .addin manifest]");
+        }
+    }
+
+    /// <summary>
+    /// Detects a duplicate SmartCon manifest in the machine-wide ProgramData add-ins folder.
+    /// A stale manifest there loads a second (old) SmartCon instance into the Default
+    /// context — the user sees "Failed to load SmartCon" from the OLD copy while the new
+    /// one loads fine (Issue #134 diagnostics).
+    /// </summary>
+    private static void DetectStaleProgramDataManifest(int year)
+    {
+        try
+        {
+            var programDataManifest = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "Autodesk", "Revit", "Addins", year.ToString(), "SmartCon.addin");
+            if (File.Exists(programDataManifest))
+            {
+                SmartConLogger.Warn(
+                    $"Stale SmartCon manifest found in ProgramData: '{programDataManifest}' — it may load a duplicate/old SmartCon instance " +
+                    "[Action: delete this file manually (requires admin rights); SmartCon is registered per-user in %APPDATA%]");
+            }
+        }
+        catch
+        {
+            // diagnostics only — never affect startup
         }
     }
 }
