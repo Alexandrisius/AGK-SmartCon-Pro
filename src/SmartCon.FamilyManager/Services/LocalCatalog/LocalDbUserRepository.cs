@@ -15,7 +15,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<DbUser?> GetUserAsync(string userId, CancellationToken ct = default)
     {
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT user_id, display_name, role, status, joined_at_utc, last_seen_at_utc FROM db_users WHERE user_id = @userId";
@@ -28,7 +28,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<IReadOnlyList<DbUser>> GetAllUsersAsync(CancellationToken ct = default)
     {
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT user_id, display_name, role, status, joined_at_utc, last_seen_at_utc FROM db_users ORDER BY joined_at_utc";
@@ -41,7 +41,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<DbUser> GetOrCreateUserAsync(UserIdentity identity, CancellationToken ct = default)
     {
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
 
         using var tx = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
@@ -98,7 +98,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
         if (role == DbUserRole.Owner)
             throw new InvalidOperationException("Use TransferOwnershipAsync to assign Owner role.");
 
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
 
         using var tx = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
@@ -130,7 +130,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<bool> UpdateUserStatusAsync(string userId, DbUserStatus status, CancellationToken ct = default)
     {
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "UPDATE db_users SET status = @status WHERE user_id = @userId";
@@ -141,7 +141,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<bool> RemoveUserAsync(string userId, CancellationToken ct = default)
     {
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
 
         using var tx = connection.BeginTransaction();
@@ -164,7 +164,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<int> GetUserCountAsync(CancellationToken ct = default)
     {
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM db_users";
@@ -177,7 +177,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
         if (currentOwnerUserId == newOwnerUserId)
             return false;
 
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
 
         using var tx = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
@@ -219,7 +219,7 @@ internal sealed class LocalDbUserRepository : IDbUserRepository
 
     public async Task<string?> GetOwnerIdentityAsync(CancellationToken ct = default)
     {
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT owner_identity FROM database_meta LIMIT 1";

@@ -18,7 +18,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
     {
         Directory.CreateDirectory(_database.GetDatabaseRoot());
 
-        using var connection = _database.CreateConnection();
+        using var connection = _database.CreateWritableConnection();
         await connection.OpenAsync(ct);
 
         using (var foreignKeysCmd = connection.CreateCommand())

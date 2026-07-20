@@ -244,8 +244,10 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 
 - DELETE journal mode для универсальной совместимости (локальные диски и сетевые SMB)
 - DELETE mode используется universally для любых путей (локальные D:/C: и сетевые UNC)
+- WAL **запрещён** — не работает поверх сетевых ФС (процессы на разных машинах не разделяют shared memory wal-index), см. ADR-050
 - Только один writer одновременно (ограничение SQLite)
-- `LocalCatalogDatabase.SwitchToPath` защищён lock-ом
+- Read-only роли (Engineer) получают коннекшены с `Mode=ReadOnly` — `DbAccessControlService` выставляет флаг через `LocalCatalogDatabase.SetWriteAccess` после резолва роли. Операции, которые обязаны писать независимо от роли (bookkeeping `db_users`, миграции схемы), используют `CreateWritableConnection()`
+- `LocalCatalogDatabase.SwitchToPath` защищён lock-ом и сбрасывает write access в writable до повторного резолва роли
 - `new SqliteConnection()` вне `LocalCatalogDatabase` **запрещён**
 
 ---
