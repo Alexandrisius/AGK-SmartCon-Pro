@@ -202,6 +202,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 InitLegacyFlow();
             }
 
+            TrySealChainIfQuiet();
+
             RefreshAutoSelectSize();
             SmartConLogger.Info("DONE");
         }
@@ -378,7 +380,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                     ?? _activeDynamic;
                 var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
                 if (!VectorUtils.IsZero(offset))
-                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                    PipeAbsorptionApplier.MoveOrAbsorb(
+                        doc, _transformSvc, _activeDynamic.OwnerElementId, activeProxy.OriginVec3, offset);
             }
 
             doc.Regenerate();
@@ -482,7 +485,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                             ?? _activeDynamic;
                         var offset = newReducerConn2.OriginVec3 - dynProxy.OriginVec3;
                         if (!SmartCon.Core.Math.VectorUtils.IsZero(offset))
-                            _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                            PipeAbsorptionApplier.MoveOrAbsorb(
+                                doc, _transformSvc, _activeDynamic.OwnerElementId, dynProxy.OriginVec3, offset);
                         doc.Regenerate();
                     });
                 }

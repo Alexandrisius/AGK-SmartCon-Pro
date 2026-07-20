@@ -67,7 +67,8 @@ public sealed partial class PipeConnectEditorViewModel
 
                 var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
                 if (!VectorUtils.IsZero(offset))
-                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                    PipeAbsorptionApplier.MoveOrAbsorb(
+                        doc, _transformSvc, _activeDynamic.OwnerElementId, activeProxy.OriginVec3, offset);
             }
 
             doc.Regenerate();
@@ -81,6 +82,7 @@ public sealed partial class PipeConnectEditorViewModel
             StatusMessage = string.Format(LocalizationService.GetString("Status_ReducerSet"), reducer.DisplayName);
             SizeFittingConnectors(_doc, insertedId, fitConn2, adjustDynamicToFit: false, alignTarget);
             SmartConLogger.Info($"DONE reducerId={_primaryReducerId.GetValue()}");
+            TrySealChainIfQuiet();
             return true;
         }
 
@@ -146,7 +148,8 @@ public sealed partial class PipeConnectEditorViewModel
 
                 var offset = fitConn2.OriginVec3 - dynProxy.OriginVec3;
                 if (!VectorUtils.IsZero(offset))
-                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                    PipeAbsorptionApplier.MoveOrAbsorb(
+                        doc, _transformSvc, _activeDynamic.OwnerElementId, dynProxy.OriginVec3, offset);
             }
 
             doc.Regenerate();
@@ -166,7 +169,8 @@ public sealed partial class PipeConnectEditorViewModel
                             ?? _activeDynamic;
                         var offset = sizedConn2.OriginVec3 - dynProxy.OriginVec3;
                         if (!VectorUtils.IsZero(offset))
-                            _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                            PipeAbsorptionApplier.MoveOrAbsorb(
+                                doc, _transformSvc, _activeDynamic.OwnerElementId, dynProxy.OriginVec3, offset);
                         doc.Regenerate();
                     });
                 }
@@ -178,6 +182,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
 
         StatusMessage = LocalizationService.GetString("Status_CtcReflected");
+        TrySealChainIfQuiet();
     }
 
     [RelayCommand(CanExecute = nameof(CanReflectFittingCtc))]
@@ -310,7 +315,8 @@ public sealed partial class PipeConnectEditorViewModel
 
                 var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
                 if (!VectorUtils.IsZero(offset))
-                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                    PipeAbsorptionApplier.MoveOrAbsorb(
+                        doc, _transformSvc, _activeDynamic.OwnerElementId, activeProxy.OriginVec3, offset);
             }
 
             doc.Regenerate();
@@ -362,6 +368,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
 
         SmartConLogger.Info($"DONE fittingId={_currentFittingId?.GetValue()}");
+        TrySealChainIfQuiet();
     }
 }
 

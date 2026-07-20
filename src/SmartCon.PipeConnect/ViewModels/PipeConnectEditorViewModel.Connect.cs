@@ -274,7 +274,8 @@ public sealed partial class PipeConnectEditorViewModel
                             ?? _activeDynamic;
                         var offset = rConn2.OriginVec3 - activeProxy.OriginVec3;
                         if (!SmartCon.Core.Math.VectorUtils.IsZero(offset))
-                            _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                            PipeAbsorptionApplier.MoveOrAbsorb(
+                                doc, _transformSvc, _activeDynamic.OwnerElementId, activeProxy.OriginVec3, offset);
                     }
                 }
 

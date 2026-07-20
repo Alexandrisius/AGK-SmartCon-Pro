@@ -92,7 +92,7 @@ public sealed class PipeConnectSizeHandler(
                 {
                     var distMm = VectorUtils.Length(correction) * FeetToMm;
                     SmartConLogger.Info($"PositionCorrection: {distMm:F3} mm");
-                    transformSvc.MoveElement(d, dynId, correction);
+                    PipeAbsorptionApplier.MoveOrAbsorb(d, transformSvc, dynId, refreshed.OriginVec3, correction);
                 }
             }
 

@@ -36,6 +36,25 @@ public sealed partial class PipeConnectEditorViewModel
     /// </summary>
     private bool _chainSealed;
 
+    /// <summary>
+    /// Re-evaluate the early seal (ADR-052): when the boundary level is quiet
+    /// (zero offsets, no rotations, matching radii everywhere downstream) the
+    /// boundary is reconnected and +/ConnectAll are disabled, so the user never
+    /// presses buttons that do nothing. Also unseals automatically when a
+    /// fitting/reducer change makes the boundary non-quiet again.
+    /// </summary>
+    private void TrySealChainIfQuiet()
+    {
+        if (_chainGraph is null || _groupSession is null || !IsSessionActive)
+            return;
+
+        _chainSealed = _chainOpHandler.TrySealQuietChain(_doc, _groupSession, _chainGraph, ChainDepth);
+        UpdateChainUI();
+
+        if (_chainSealed)
+            StatusMessage = string.Format(LocalizationService.GetString("Status_ChainSealed"), ChainDepth);
+    }
+
     [RelayCommand(CanExecute = nameof(CanIncrementChain))]
     private void IncrementChainDepth()
     {

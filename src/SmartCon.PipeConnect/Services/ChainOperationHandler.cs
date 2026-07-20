@@ -687,9 +687,8 @@ public sealed class ChainOperationHandler(
     /// Per-level displacement absorption (ADR-052): when the element being aligned
     /// is itself a straight pipe or a flex pipe and its alignment is a pure
     /// translation, the pipe changes its length/path instead of moving as a rigid
-    /// body — the end facing the parent follows the offset, the other end keeps
-    /// only the non-absorbed remainder (straight) or stays put (flex bends).
-    /// The remainder propagates to the next level through the classic flow.
+    /// body (PipeAbsorptionApplier). The remainder propagates to the next level
+    /// through the classic flow.
     /// Returns true when the pipe was aligned by geometry change; false → caller
     /// falls back to the classic rigid <see cref="AlignElement"/>.
     /// </summary>
@@ -702,15 +701,6 @@ public sealed class ChainOperationHandler(
         if (alignResult is null || elemProxyForAlign is null)
             return false;
 
-        var elem = doc.GetElement(elemId);
-        bool isFlex = elem is FlexPipe;
-        if (elem is not MEPCurve mc || mc.Location is not LocationCurve lc)
-            return false;
-
-        var line = lc.Curve as Line;
-        if (!isFlex && line is null)
-            return false;
-
         if (alignResult.BasisZRotation is not null || alignResult.BasisXSnap is not null)
         {
             SmartConLogger.Debug($"    d. Absorb: rotation required → rigid align");
@@ -721,98 +711,7 @@ public sealed class ChainOperationHandler(
         if (VectorUtils.IsZero(offset))
             return false;
 
-        return isFlex
-            ? TryAbsorbFlexPipe(doc, elemId, (FlexPipe)elem, elemProxyForAlign, offset)
-            : TryAbsorbStraightPipe(doc, elemId, elemProxyForAlign, offset, line!);
-    }
-
-    private bool TryAbsorbStraightPipe(
-        Document doc,
-        ElementId elemId,
-        ConnectorProxy elemProxyForAlign,
-        Vec3 offset,
-        Line line)
-    {
-        var p0 = line.GetEndPoint(0);
-        var p1 = line.GetEndPoint(1);
-        var op = PipeLengthAbsorber.Compute(
-            elemId.GetValue(),
-            new Vec3(p0.X, p0.Y, p0.Z),
-            new Vec3(p1.X, p1.Y, p1.Z),
-            elemProxyForAlign.OriginVec3,
-            offset,
-            PipeAbsorption.MinPipeLengthFt);
-        if (op is null)
-            return false;
-
-        var newStart = new XYZ(p0.X + op.StartDelta.X, p0.Y + op.StartDelta.Y, p0.Z + op.StartDelta.Z);
-        var newEnd = new XYZ(p1.X + op.EndDelta.X, p1.Y + op.EndDelta.Y, p1.Z + op.EndDelta.Z);
-
-        var mc = (MEPCurve)doc.GetElement(elemId);
-        try
-        {
-            ((LocationCurve)mc.Location).Curve = Line.CreateBound(newStart, newEnd);
-            doc.Regenerate();
-            SmartConLogger.Debug($"    d. Absorb: pipe {elemId.GetValue()} " +
-                $"offset={VectorUtils.Length(offset) * FeetToMm:F1}mm, " +
-                $"absorbed={op.AbsorbedLengthFt * FeetToMm:F1}mm, " +
-                $"newLen={newStart.DistanceTo(newEnd) * FeetToMm:F1}mm");
-        }
-        catch (Exception exCurve)
-        {
-            SmartConLogger.Warn($"    d. Absorb: set curve failed: {exCurve.Message} " +
-                $"[Action: проверьте длину трубы и соединения вокруг, подключите вручную]");
-            return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Flex pipe absorption: only the endpoint facing the parent moves by the full
-    /// offset via the FlexPipe.Points setter (LocationCurve.Curve assignment throws
-    /// for flex elements — see ADR-052). Intermediate points are preserved exactly;
-    /// Revit maintains connectivity automatically.
-    /// </summary>
-    private bool TryAbsorbFlexPipe(
-        Document doc,
-        ElementId elemId,
-        FlexPipe flexPipe,
-        ConnectorProxy elemProxyForAlign,
-        Vec3 offset)
-    {
-        var currentPoints = flexPipe.Points;
-        var vecPoints = new List<Vec3>(currentPoints.Count);
-        foreach (var p in currentPoints)
-            vecPoints.Add(new Vec3(p.X, p.Y, p.Z));
-
-        var newPath = PipeLengthAbsorber.ComputeFlexPath(
-            vecPoints, elemProxyForAlign.OriginVec3, offset, PipeAbsorption.MinPipeLengthFt);
-        if (newPath is null)
-        {
-            SmartConLogger.Debug($"    d. Absorb: flex path too short after offset → rigid align");
-            return false;
-        }
-
-        var xyzPoints = new List<XYZ>(newPath.Count);
-        foreach (var v in newPath)
-            xyzPoints.Add(new XYZ(v.X, v.Y, v.Z));
-
-        try
-        {
-            flexPipe.Points = xyzPoints;
-            doc.Regenerate();
-            SmartConLogger.Debug($"    d. Absorb: flexpipe {elemId.GetValue()} " +
-                $"offset={VectorUtils.Length(offset) * FeetToMm:F1}mm, points={xyzPoints.Count}");
-        }
-        catch (Exception exFlex)
-        {
-            SmartConLogger.Warn($"    d. Absorb: flex points failed: {exFlex.Message} " +
-                $"[Action: проверьте форму гибкой трубы и соединения вокруг, подключите вручную]");
-            return false;
-        }
-
-        return true;
+        return PipeAbsorptionApplier.TryApply(doc, elemId, elemProxyForAlign.OriginVec3, offset);
     }
 
     private void ReconnectIncrementElement(

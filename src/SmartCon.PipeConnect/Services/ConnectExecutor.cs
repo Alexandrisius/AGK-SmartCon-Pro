@@ -373,7 +373,8 @@ public sealed class ConnectExecutor
 
                     var offset = newFitConn2.OriginVec3 - dynProxy.OriginVec3;
                     if (!VectorUtils.IsZero(offset))
-                        _transformSvc.MoveElement(txDoc, currentDynamic.OwnerElementId, offset);
+                        PipeAbsorptionApplier.MoveOrAbsorb(
+                            txDoc, _transformSvc, currentDynamic.OwnerElementId, dynProxy.OriginVec3, offset);
 
                     txDoc.Regenerate();
 
@@ -518,7 +519,10 @@ public sealed class ConnectExecutor
         if (posErr > positionEpsFt)
         {
             SmartConLogger.Warn($"dynamic offset by {posErr * FeetToMm:F2} mm — correcting");
-            PositionCorrector.ApplyOffset(doc, _transformSvc, dynFresh.OwnerElementId, target.OriginVec3 - dynFresh.OriginVec3);
+            PipeAbsorptionApplier.MoveOrAbsorb(
+                doc, _transformSvc, dynFresh.OwnerElementId, dynFresh.OriginVec3,
+                target.OriginVec3 - dynFresh.OriginVec3);
+            doc.Regenerate();
             dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
             updatedDynamic = dynFresh;
         }
@@ -831,7 +835,10 @@ public sealed class ConnectExecutor
         var posErrD = VectorUtils.DistanceTo(dynFresh.OriginVec3, staticConn.OriginVec3);
         if (posErrD > positionEpsFt)
         {
-            PositionCorrector.ApplyOffset(doc, _transformSvc, dynFresh.OwnerElementId, staticConn.OriginVec3 - dynFresh.OriginVec3);
+            PipeAbsorptionApplier.MoveOrAbsorb(
+                doc, _transformSvc, dynFresh.OwnerElementId, dynFresh.OriginVec3,
+                staticConn.OriginVec3 - dynFresh.OriginVec3);
+            doc.Regenerate();
         }
 
         double angleZD = VectorUtils.AngleBetween(staticConn.BasisZVec3, dynFresh.BasisZVec3);
