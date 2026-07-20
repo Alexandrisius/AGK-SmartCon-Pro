@@ -56,7 +56,7 @@
          dependency on SQLitePCLRaw.bundle_e_sqlite3 2.1.6 in its NuGet metadata, and CPM alone does
          not override that nested dep. See dependabot bump c321226 for historical context. -->
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.28" />
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
 
     <!-- CodePages encoding provider для Windows-1251 и других ANSI кодировок (не встроены в .NET Core) -->
     <PackageVersion Include="System.Text.Encoding.CodePages" Version="8.0.0" />
