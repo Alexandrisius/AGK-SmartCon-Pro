@@ -7,7 +7,7 @@
     <!-- MVVM Toolkit — работает на обоих TFM (netstandard2.0) -->
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageVersion Include="CommunityToolkit.Common" Version="8.3.2" />
-    <PackageVersion Include="CommunityToolkit.Diagnostics" Version="8.3.2" />
+    <PackageVersion Include="CommunityToolkit.Diagnostics" Version="8.4.2" />
 
     <!-- DI — НЕ ОБНОВЛЯТЬ выше 8.x! Версии 9.0+ дропнули net48.
          При апгрейде убедиться что новая версия поддерживает net48 -->
