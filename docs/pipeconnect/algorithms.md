@@ -112,6 +112,33 @@ correction = static.Origin - newDynamic.Origin
 - Перед изменением параметра типа — `SubTransaction` для проверки (preview), затем Commit или Rollback.
 - Результат `SolveFor()` округляется до 6 знаков decimal feet перед записью.
 
+### DN-компенсация на уровнях сети (ADR-053, ревизия 2026-07-20)
+
+При обработке уровней (`ChainOperationHandler.AdjustElementSize`) несовпадение
+радиусов с родителем разрешается иерархией стратегий:
+
+```
+1. TRANSITION — элемент сам становится переходным (тройник DN25×DN25 → DN20×DN25).
+   TransitionSizeMatcher по prefetch-нутым GetAvailableFamilySizes:
+   target-порт совпадает точно, остальные порты меняются минимально (идеально 0).
+   Применение: ApplyQueryParamsIfExists → иначе per-connector TrySetConnectorRadius.
+   Опции со сменой FamilySymbol исключены.
+2. REDUCER — редьюсер из маппинга CTC (NetworkMover.InsertReducer),
+   элемент и сеть не трогаем (для FamilyInstance — до resize).
+3. RESIZE — классический resize; каскад останавливается на первом
+   DN-поглощающем элементе ниже (зеркало pipe length absorption, §7).
+```
+
+`AdjustRelatedFamilyConnectors` трогает только порты с **общим** DN-параметром
+(`DnParamsShared` — сравнение имён из `GetConnectorRadiusDependencies`).
+Независимые порты сохраняют DN — точечный фикс #146.
+
+Prefetch конфигураций — в snapshot-фазе `IncrementLevel` (вне транзакции:
+`GetAvailableFamilySizes` требует `IsModifiable == false` из-за EditFamily).
+
+Known limitation: семейства без lookup/типов с nested-IF формулами, ожидающими
+конкретные DN — см. ADR-053.
+
 ---
 
 ## 3. Алгоритм подбора фитингов (S5)

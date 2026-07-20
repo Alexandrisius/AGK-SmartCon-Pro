@@ -24,7 +24,8 @@ public sealed class ChainOperationHandler(
     IParameterResolver paramResolver,
     IFittingInsertService fittingInsertSvc,
     INetworkMover networkMover,
-    IAlignmentService alignmentSvc)
+    IAlignmentService alignmentSvc,
+    IDynamicSizeResolver sizeResolver)
 {
 #pragma warning restore CS9113
     /// <summary>Describes the edge from an element to its parent in the chain graph.</summary>
@@ -66,6 +67,8 @@ public sealed class ChainOperationHandler(
         foreach (var elemId in levelElements)
             SaveSnapshotForLevelElement(doc, elemId, graph, snapshotStore);
 
+        var transitionOptions = PrefetchTransitionOptions(doc, graph, nextLevel, levelElements);
+
         bool anyWork = false;
         groupSession.RunInTransaction(string.Format(LocalizationService.GetString("Tx_ChainLevel"), nextLevel), doc =>
         {
@@ -73,7 +76,7 @@ public sealed class ChainOperationHandler(
             foreach (var elemId in levelElements)
             {
                 elemIndex++;
-                anyWork |= ProcessIncrementElement(doc, graph, snapshotStore, nextLevel, elemId, elemIndex, levelElements.Count);
+                anyWork |= ProcessIncrementElement(doc, graph, snapshotStore, nextLevel, elemId, elemIndex, levelElements.Count, transitionOptions);
             }
 
             doc.Regenerate();
@@ -81,6 +84,54 @@ public sealed class ChainOperationHandler(
 
         SmartConLogger.Debug($"═══ LEVEL {nextLevel} DONE ═══ (anyWork={anyWork})");
         return anyWork;
+    }
+
+    /// <summary>
+    /// Pre-fetch available size configurations for FamilyInstance elements that
+    /// mismatch their parent radius. Must run OUTSIDE a transaction
+    /// (GetAvailableFamilySizes uses EditFamily, which requires IsModifiable == false).
+    /// Used by the TRANSITION strategy inside the level transaction (ADR-053).
+    /// </summary>
+    private Dictionary<long, IReadOnlyList<FamilySizeOption>> PrefetchTransitionOptions(
+        Document doc,
+        ConnectionGraph graph,
+        int nextLevel,
+        IReadOnlyList<ElementId> levelElements)
+    {
+        var result = new Dictionary<long, IReadOnlyList<FamilySizeOption>>();
+        foreach (var elemId in levelElements)
+        {
+            if (doc.GetElement(elemId) is not FamilyInstance)
+                continue;
+
+            var edge = FindEdgeToParent(elemId, nextLevel, graph);
+            if (edge is null)
+                continue;
+
+            var parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
+            var elemProxy = connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
+            if (parentProxy is null || elemProxy is null)
+                continue;
+
+            if (System.Math.Abs(parentProxy.Radius - elemProxy.Radius) <= 1e-5)
+                continue;
+
+            try
+            {
+                var options = sizeResolver.GetAvailableFamilySizes(doc, elemId, edge.Value.ElemConnIdx);
+                if (options.Count > 0)
+                {
+                    result[elemId.GetValue()] = options;
+                    SmartConLogger.Debug($"  Prefetch: elemId={elemId.GetValue()}, {options.Count} size options");
+                }
+            }
+            catch (Exception exPrefetch)
+            {
+                SmartConLogger.Warn($"  Prefetch sizes failed for {elemId.GetValue()}: {exPrefetch.Message} " +
+                    $"[Action: переходная конфигурация недоступна, будет классический resize]");
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -243,7 +294,8 @@ public sealed class ChainOperationHandler(
         int nextLevel,
         ElementId elemId,
         int elemIndex,
-        int levelCount)
+        int levelCount,
+        IReadOnlyDictionary<long, IReadOnlyList<FamilySizeOption>> transitionOptions)
     {
         LogIncrementElementHeader(doc, elemId, elemIndex, levelCount);
 
@@ -270,7 +322,7 @@ public sealed class ChainOperationHandler(
             $"(DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)}) " +
             $"origin=({parentProxy.Origin.X:F4},{parentProxy.Origin.Y:F4},{parentProxy.Origin.Z:F4})");
 
-        var (reducerId, sizeChanged) = AdjustElementSize(doc, graph, snapshotStore, elemId, edge.Value, parentProxy);
+        var (reducerId, sizeChanged) = AdjustElementSize(doc, graph, snapshotStore, elemId, edge.Value, parentProxy, transitionOptions);
 
         parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
         var elemProxyForAlign = connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
@@ -325,13 +377,23 @@ public sealed class ChainOperationHandler(
         SmartConLogger.Debug($"a. Disconnect done: {disconnected} connections broken, всего коннекторов={allConns.Count}");
     }
 
+    /// <summary>
+    /// DN compensation strategy chain (ADR-053), in priority order:
+    /// 1. TRANSITION — the element itself becomes a transition fitting (only the
+    ///    parent-facing port changes, other ports keep their DN, downstream untouched);
+    /// 2. REDUCER — insert a reducer from the CTC mapping (element fully untouched);
+    /// 3. RESIZE — classic uniform resize, cascade continues to the next level,
+    ///    where strategies 1–2 are tried again (cascade stops at the first
+    ///    DN-absorbing element — mirrors pipe length absorption, #139).
+    /// </summary>
     private (ElementId? ReducerId, bool SizeChanged) AdjustElementSize(
         Document doc,
         ConnectionGraph graph,
         NetworkSnapshotStore snapshotStore,
         ElementId elemId,
         ParentEdge edge,
-        ConnectorProxy parentProxy)
+        ConnectorProxy parentProxy,
+        IReadOnlyDictionary<long, IReadOnlyList<FamilySizeOption>> transitionOptions)
     {
         ElementId? reducerId = null;
         double targetRadius = parentProxy.Radius;
@@ -345,41 +407,117 @@ public sealed class ChainOperationHandler(
         SmartConLogger.Debug($"    c. AdjustSize: target={targetRadius * FeetToMm:F2}mm (DN{targetDn}), " +
             $"elem={elemRadius * FeetToMm:F2}mm (DN{elemDn}), delta={delta * FeetToMm:F4}mm, needsAdjust={delta > 1e-5}");
 
-        if (elemRefreshed is not null && delta > 1e-5)
+        if (elemRefreshed is null || delta <= 1e-5)
         {
-            SmartConLogger.Debug($"    c.1 TrySetConnectorRadius(elemId={elemId.GetValue()}, " +
-                $"connIdx={edge.ElemConnIdx}, target={targetRadius * FeetToMm:F2}mm)...");
-            bool setResult = paramResolver.TrySetConnectorRadius(
-                doc, elemId, edge.ElemConnIdx, targetRadius);
-            SmartConLogger.Debug($"    c.1 TrySetConnectorRadius → {(setResult ? "OK" : "FAILED")}");
-
+            SmartConLogger.Debug($"    c. Sizes match, no adjustment needed");
             doc.Regenerate();
-
-            AdjustRelatedFamilyConnectors(doc, graph, elemId, edge.ElemConnIdx, targetRadius);
-
-            doc.Regenerate();
-
-            LogAdjustedFamilyDiagnostics(doc, elemId);
-
-            elemRefreshed = connSvc.RefreshConnector(doc, elemId, edge.ElemConnIdx);
-            double actualRadius = elemRefreshed?.Radius ?? 0;
-            double actualDn = System.Math.Round(actualRadius * 2.0 * FeetToMm);
-            double verifyDelta = System.Math.Abs(targetRadius - actualRadius);
-
-            SmartConLogger.Debug($"    c.3 Verification: actualR={actualRadius * FeetToMm:F2}mm " +
-                $"(DN{actualDn}), targetR={targetRadius * FeetToMm:F2}mm (DN{targetDn}), " +
-                $"delta={verifyDelta * FeetToMm:F4}mm, match={verifyDelta <= 1e-5}");
-
-            if (elemRefreshed is not null && verifyDelta > 1e-5)
-                reducerId = InsertReducerForMismatch(doc, snapshotStore, elemId, parentProxy, elemRefreshed);
-
-            doc.Regenerate();
-            return (reducerId, true);
+            return (null, false);
         }
 
-        SmartConLogger.Debug($"    c. Sizes match, no adjustment needed");
+        // ── 1. TRANSITION: только порт к родителю меняет DN, остальные сохраняются ──
+        if (doc.GetElement(elemId) is FamilyInstance
+            && TryApplyTransitionSize(doc, elemId, edge.ElemConnIdx, targetRadius, transitionOptions))
+        {
+            elemRefreshed = connSvc.RefreshConnector(doc, elemId, edge.ElemConnIdx);
+            if (elemRefreshed is not null && System.Math.Abs(targetRadius - elemRefreshed.Radius) <= 1e-5)
+            {
+                SmartConLogger.Debug($"    c. Transition verified: DN{targetDn}, downstream DN preserved");
+                doc.Regenerate();
+                return (null, true);
+            }
+            SmartConLogger.Debug($"    c. Transition verify failed → next strategy");
+        }
+
+        // ── 2. REDUCER: элемент и сеть полностью не трогаем ──
+        if (doc.GetElement(elemId) is FamilyInstance && elemRefreshed is not null)
+        {
+            reducerId = InsertReducerForMismatch(doc, snapshotStore, elemId, parentProxy, elemRefreshed);
+            if (reducerId is not null)
+            {
+                doc.Regenerate();
+                return (reducerId, true);
+            }
+        }
+
+        // ── 3. RESIZE: классический равномерный resize (каскад) ──
+        SmartConLogger.Debug($"    c.3 Resize: TrySetConnectorRadius(elemId={elemId.GetValue()}, " +
+            $"connIdx={edge.ElemConnIdx}, target={targetRadius * FeetToMm:F2}mm)...");
+        bool setResult = paramResolver.TrySetConnectorRadius(
+            doc, elemId, edge.ElemConnIdx, targetRadius);
+        SmartConLogger.Debug($"    c.3 TrySetConnectorRadius → {(setResult ? "OK" : "FAILED")}");
+
         doc.Regenerate();
-        return (null, false);
+
+        AdjustRelatedFamilyConnectors(doc, graph, elemId, edge.ElemConnIdx, targetRadius);
+
+        doc.Regenerate();
+
+        LogAdjustedFamilyDiagnostics(doc, elemId);
+
+        elemRefreshed = connSvc.RefreshConnector(doc, elemId, edge.ElemConnIdx);
+        double actualRadius = elemRefreshed?.Radius ?? 0;
+        double actualDn = System.Math.Round(actualRadius * 2.0 * FeetToMm);
+        double verifyDelta = System.Math.Abs(targetRadius - actualRadius);
+
+        SmartConLogger.Debug($"    c.3 Verification: actualR={actualRadius * FeetToMm:F2}mm " +
+            $"(DN{actualDn}), targetR={targetRadius * FeetToMm:F2}mm (DN{targetDn}), " +
+            $"delta={verifyDelta * FeetToMm:F4}mm, match={verifyDelta <= 1e-5}");
+
+        if (elemRefreshed is not null && verifyDelta > 1e-5)
+            reducerId = InsertReducerForMismatch(doc, snapshotStore, elemId, parentProxy, elemRefreshed);
+
+        doc.Regenerate();
+        return (reducerId, true);
+    }
+
+    /// <summary>
+    /// TRANSITION strategy: apply a family configuration where only the
+    /// parent-facing port changes DN and all other ports keep theirs
+    /// (TransitionSizeMatcher over prefetched lookup/symbol configurations).
+    /// Returns true when a configuration was applied (caller verifies the result).
+    /// </summary>
+    private bool TryApplyTransitionSize(
+        Document doc,
+        ElementId elemId,
+        int primaryConnIdx,
+        double targetRadius,
+        IReadOnlyDictionary<long, IReadOnlyList<FamilySizeOption>> transitionOptions)
+    {
+        if (!transitionOptions.TryGetValue(elemId.GetValue(), out var options) || options.Count == 0)
+            return false;
+
+        var currentConns = connSvc.GetAllConnectors(doc, elemId);
+        var currentRadii = new Dictionary<int, double>();
+        foreach (var c in currentConns)
+            currentRadii[c.ConnectorIndex] = c.Radius;
+
+        var option = TransitionSizeMatcher.FindBestTransition(options, targetRadius, primaryConnIdx, currentRadii);
+        if (option is null)
+        {
+            SmartConLogger.Debug($"    c.1 Transition: no config with target DN{System.Math.Round(targetRadius * 2.0 * FeetToMm)} " +
+                $"→ next strategy");
+            return false;
+        }
+
+        double otherDelta = TransitionSizeMatcher.OtherPortsDelta(option, primaryConnIdx, currentRadii);
+        SmartConLogger.Debug($"    c.1 Transition: '{option.DisplayName}' " +
+            $"(other ports delta={otherDelta * FeetToMm:F2}mm)");
+
+        bool applied = PipeConnectSizeHandler.ApplyQueryParamsIfExists(doc, elemId, option);
+        if (!applied)
+        {
+            foreach (var kvp in option.AllConnectorRadii)
+            {
+                if (!currentRadii.TryGetValue(kvp.Key, out var curR)
+                    || System.Math.Abs(kvp.Value - curR) > 1e-5)
+                {
+                    paramResolver.TrySetConnectorRadius(doc, elemId, kvp.Key, kvp.Value);
+                }
+            }
+        }
+
+        doc.Regenerate();
+        return true;
     }
 
     private void AdjustRelatedFamilyConnectors(
@@ -413,19 +551,55 @@ public sealed class ChainOperationHandler(
                 continue;
             }
 
-            if (IsConnectorInGraph(graph, elemId, c.ConnectorIndex))
-            {
-                SmartConLogger.Debug($"    c.2 TrySetConnectorRadius(connIdx={c.ConnectorIndex}, " +
-                    $"currentR={c.Radius * FeetToMm:F2}mm, target={targetRadius * FeetToMm:F2}mm)...");
-                bool r2 = paramResolver.TrySetConnectorRadius(doc, elemId, c.ConnectorIndex, targetRadius);
-                SmartConLogger.Debug($"    c.2 → {(r2 ? "OK" : "FAILED")}");
-            }
-            else
+            if (!IsConnectorInGraph(graph, elemId, c.ConnectorIndex))
             {
                 SmartConLogger.Debug($"    c.2 conn[{c.ConnectorIndex}]: NOT in graph, " +
                     $"R={c.Radius * FeetToMm:F2}mm ≠ target {targetRadius * FeetToMm:F2}mm — пропущен");
+                continue;
             }
+
+            // ADR-053: трогаем только порты, чей DN-параметр общий с primary
+            // (физически не могут отличаться). Независимые порты сохраняют свой DN —
+            // именно так семейство становится переходным вместо равномерного resize.
+            if (!DnParamsShared(doc, elemId, primaryConnectorIndex, c.ConnectorIndex))
+            {
+                SmartConLogger.Debug($"    c.2 conn[{c.ConnectorIndex}]: independent DN param " +
+                    $"(R={c.Radius * FeetToMm:F2}mm) — сохранён");
+                continue;
+            }
+
+            SmartConLogger.Debug($"    c.2 TrySetConnectorRadius(connIdx={c.ConnectorIndex}, " +
+                $"currentR={c.Radius * FeetToMm:F2}mm, target={targetRadius * FeetToMm:F2}mm)...");
+            bool r2 = paramResolver.TrySetConnectorRadius(doc, elemId, c.ConnectorIndex, targetRadius);
+            SmartConLogger.Debug($"    c.2 → {(r2 ? "OK" : "FAILED")}");
         }
+    }
+
+    /// <summary>
+    /// True when two connectors of the same element are driven by the same DN
+    /// parameter (changing one inevitably changes the other). Compared via
+    /// ParameterDependency names from GetConnectorRadiusDependencies.
+    /// Unknown dependencies → conservative true (shared).
+    /// </summary>
+    private bool DnParamsShared(Document doc, ElementId elemId, int connIdxA, int connIdxB)
+    {
+        var depsA = paramResolver.GetConnectorRadiusDependencies(doc, elemId, connIdxA);
+        var depsB = paramResolver.GetConnectorRadiusDependencies(doc, elemId, connIdxB);
+        if (depsA.Count == 0 || depsB.Count == 0)
+            return true;
+
+        var depA = depsA[0];
+        var depB = depsB[0];
+
+        if (depA.BuiltIn is not null || depB.BuiltIn is not null)
+            return depA.BuiltIn == depB.BuiltIn;
+
+        string? keyA = depA.DirectParamName ?? depA.RootParamName;
+        string? keyB = depB.DirectParamName ?? depB.RootParamName;
+        if (keyA is null || keyB is null)
+            return true;
+
+        return string.Equals(keyA, keyB, StringComparison.Ordinal);
     }
 
     private bool IsConnectorInGraph(ConnectionGraph graph, ElementId elemId, int connectorIndex)

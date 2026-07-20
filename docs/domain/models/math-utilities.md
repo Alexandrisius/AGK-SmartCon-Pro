@@ -68,6 +68,31 @@ public sealed record RotationStep(Vec3 Axis, double AngleRadians);
 
 **Файл:** `Math/BestSizeMatcher.cs`
 
+---
+
+## TransitionSizeMatcher
+
+Подбор переходной конфигурации multi-DN семейства (ADR-053): target-порт совпадает
+точно с требуемым радиусом, остальные порты меняются минимально (идеально — 0,
+«чистый» переход, downstream не трогается). Опции со сменой FamilySymbol и
+auto-select исключаются. Pure math над `FamilySizeOption`.
+
+**Файл:** `Math/TransitionSizeMatcher.cs`
+
+```csharp
+public static class TransitionSizeMatcher
+{
+    public static FamilySizeOption? FindBestTransition(
+        IReadOnlyList<FamilySizeOption> candidates, double targetRadius,
+        int targetConnIdx, IReadOnlyDictionary<int, double> currentRadii,
+        double radiusTolerance = 1e-5);
+
+    public static double OtherPortsDelta(
+        FamilySizeOption option, int targetConnIdx,
+        IReadOnlyDictionary<int, double> currentRadii);
+}
+```
+
 ## SizeRowSymbolMatcher
 
 Сопоставление строки типоразмера с символом DN.
