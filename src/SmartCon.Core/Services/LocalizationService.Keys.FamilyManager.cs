@@ -74,7 +74,9 @@ public static partial class LocalizationService
         ru["FM_DbNotFoundAtPath"] = "В выбранной папке не найден файл catalog.db. Укажите корректную папку существующей БД SmartCon."; en["FM_DbNotFoundAtPath"] = "The selected folder does not contain catalog.db. Please select a valid SmartCon database folder.";
         ru["FM_DbDeleted"] = "База данных \"{0}\" удалена"; en["FM_DbDeleted"] = "Database \"{0}\" deleted";
         ru["FM_DbDeleteError"] = "Ошибка удаления БД: {0}"; en["FM_DbDeleteError"] = "Error deleting database: {0}";
-        ru["FM_DbDeleteSingle"] = "Нельзя удалить единственную базу данных."; en["FM_DbDeleteSingle"] = "Cannot delete the only database.";
+        ru["FM_EmptyState_NoDatabaseTitle"] = "Нет подключённых баз данных"; en["FM_EmptyState_NoDatabaseTitle"] = "No databases connected";
+        ru["FM_EmptyState_NoDatabaseHint"] = "Создайте новую базу или подключите существующую — кнопка «+» рядом со списком баз."; en["FM_EmptyState_NoDatabaseHint"] = "Create a new database or connect an existing one — use the '+' button next to the database list.";
+        ru["FM_ConnectionsEmpty"] = "Нет баз данных"; en["FM_ConnectionsEmpty"] = "No databases";
         ru["FM_DbDeleteTitle"] = "Удаление базы данных"; en["FM_DbDeleteTitle"] = "Delete Database";
         ru["FM_DbDeletePrompt"] = "Введите \"{0}\" для подтверждения удаления:"; en["FM_DbDeletePrompt"] = "Enter \"{0}\" to confirm deletion:";
         ru["FM_DbDeleteFilesLocked"] = "БД \"{0}\" удалена из списка, но файлы не удалены, так как используются в проекте. Закройте Revit, чтобы удалить остатки."; en["FM_DbDeleteFilesLocked"] = "Database \"{0}\" removed from the list, but files could not be deleted because they are in use by the project. Close Revit to remove remaining files.";
@@ -273,7 +275,6 @@ public static partial class LocalizationService
 
         ru["FM_FamilyNotFoundAfterLoad"] = "Семейство не найдено после загрузки"; en["FM_FamilyNotFoundAfterLoad"] = "Family not found after loading";
         ru["FM_FamilyNotLoaded"] = "Семейство \"{0}\" не загружено в проект. Используйте \"Загрузить в проект\"."; en["FM_FamilyNotLoaded"] = "Family \"{0}\" not loaded in project. Use 'Load to Project'.";
-        ru["FM_CannotDisconnectOnlyDatabase"] = "Нельзя отключить единственную базу данных."; en["FM_CannotDisconnectOnlyDatabase"] = "Cannot disconnect the only database.";
 
         ru["FM_AL_Title"] = "Библиотека атрибутов"; en["FM_AL_Title"] = "Attribute Library";
         ru["FM_AL_Search"] = "Поиск атрибутов..."; en["FM_AL_Search"] = "Search attributes...";

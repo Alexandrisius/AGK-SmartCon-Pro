@@ -108,7 +108,7 @@ internal sealed class DatabaseManager : IDatabaseManager
         }
     }
 
-    public event EventHandler<string>? ActiveDatabaseChanged;
+    public event EventHandler<string?>? ActiveDatabaseChanged;
 
     public IReadOnlyList<DatabaseConnection> ListConnections()
     {
@@ -415,15 +415,13 @@ internal sealed class DatabaseManager : IDatabaseManager
         if (registry.ActiveConnectionId == connectionId)
         {
             var other = connections.FirstOrDefault();
-            if (other is null)
-                return false;
-
-            newActiveId = other.Id;
-            _catalogDatabase.SwitchToPath(other.Path);
+            newActiveId = other?.Id;
+            if (other is not null)
+                _catalogDatabase.SwitchToPath(other.Path);
         }
 
         await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
-        ActiveDatabaseChanged?.Invoke(this, newActiveId ?? connectionId);
+        ActiveDatabaseChanged?.Invoke(this, newActiveId);
         return true;
     }
 
@@ -440,11 +438,9 @@ internal sealed class DatabaseManager : IDatabaseManager
         if (registry.ActiveConnectionId == connectionId)
         {
             var other = connections.FirstOrDefault();
-            if (other is null)
-                return false;
-
-            newActiveId = other.Id;
-            _catalogDatabase.SwitchToPath(other.Path);
+            newActiveId = other?.Id;
+            if (other is not null)
+                _catalogDatabase.SwitchToPath(other.Path);
         }
 
         if (Directory.Exists(conn.Path))
@@ -479,7 +475,7 @@ internal sealed class DatabaseManager : IDatabaseManager
 
                 if (newActiveId != registry.ActiveConnectionId)
                 {
-                    ActiveDatabaseChanged?.Invoke(this, newActiveId!);
+                    ActiveDatabaseChanged?.Invoke(this, newActiveId);
                 }
 
                 var message = LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteFilesLocked)
@@ -492,7 +488,7 @@ internal sealed class DatabaseManager : IDatabaseManager
 
         if (newActiveId != registry.ActiveConnectionId)
         {
-            ActiveDatabaseChanged?.Invoke(this, newActiveId!);
+            ActiveDatabaseChanged?.Invoke(this, newActiveId);
         }
 
         SmartConLogger.Info($"DatabaseManager.Delete: Database '{conn.Name}' deleted");

@@ -61,9 +61,9 @@ public interface IDatabaseManager
     /// <summary>Unregister a database connection (does NOT delete files on disk).</summary>
     Task<bool> DisconnectDatabaseAsync(string connectionId, CancellationToken ct = default);
 
-    /// <summary>Delete a database and all its files on disk. Cannot delete the active database.</summary>
+    /// <summary>Delete a database and all its files on disk. Deleting the active or last database is allowed; the active connection becomes null.</summary>
     Task<bool> DeleteDatabaseAsync(string connectionId, CancellationToken ct = default);
 
-    /// <summary>Event raised when the active database changes.</summary>
-    event EventHandler<string>? ActiveDatabaseChanged;
+    /// <summary>Event raised when the active database changes. Argument is null when no database remains connected.</summary>
+    event EventHandler<string?>? ActiveDatabaseChanged;
 }

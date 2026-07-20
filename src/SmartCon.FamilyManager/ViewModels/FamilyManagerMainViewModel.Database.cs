@@ -68,7 +68,7 @@ public sealed partial class FamilyManagerMainViewModel
         return new DatabaseListItem(connection, evaluation.Kind, evaluation.Reason);
     }
 
-    private void OnActiveDatabaseChanged(object? sender, string connectionId)
+    private void OnActiveDatabaseChanged(object? sender, string? connectionId)
     {
         // D-10: stale cache is per-DB. Snapshot from the previous DB must not leak
         // into the new tree (different catalog items, different versions).
@@ -363,15 +363,6 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (SelectedConnection is null) return;
 
-        var connections = _databaseManager.ListConnections();
-        if (connections.Count <= 1)
-        {
-            _dialogService.ShowWarning(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Disconnect",
-                LanguageManager.GetString(StringLocalization.Keys.FM_CannotDisconnectOnlyDatabase) ?? "Cannot disconnect the only database.");
-            return;
-        }
-
         IsLoading = true;
         try
         {
@@ -400,16 +391,6 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task DeleteDatabaseAsync()
     {
         if (SelectedConnection is null) return;
-
-        var isActive = _databaseManager.GetActiveConnection()?.Id == SelectedConnection.Connection.Id;
-        var connections = _databaseManager.ListConnections();
-        if (isActive && connections.Count <= 1)
-        {
-            _dialogService.ShowWarning(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Delete Database",
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteSingle) ?? "Cannot delete the only database.");
-            return;
-        }
 
         var confirm = _dialogService.ShowInputDialog(
             LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Delete Database",

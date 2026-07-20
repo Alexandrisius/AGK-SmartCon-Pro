@@ -483,15 +483,26 @@
             </Popup>
 
             <!-- Active database -->
-            <ComboBox Grid.Column="1"
-                      ItemsSource="{Binding Connections}"
-                      SelectedItem="{Binding SelectedConnection}"
-                      ItemTemplateSelector="{StaticResource DbItemTemplateSelector}"
-                      VerticalContentAlignment="Center"
-                      Margin="0,0,2,0"
-                      MinWidth="80"
-                      Height="28"
-                      Style="{DynamicResource CompactComboBox}"/>
+            <Grid Grid.Column="1">
+                <ComboBox ItemsSource="{Binding Connections}"
+                          SelectedItem="{Binding SelectedConnection}"
+                          ItemTemplateSelector="{StaticResource DbItemTemplateSelector}"
+                          VerticalContentAlignment="Center"
+                          Margin="0,0,2,0"
+                          MinWidth="80"
+                          Height="28"
+                          Style="{DynamicResource CompactComboBox}"/>
+                <!-- Watermark для пустого списка: стандартный приём (muted text
+                     внутри пустого комбобокса) — пустой dropdown без пояснения
+                     выглядит как баг -->
+                <TextBlock Text="{loc:Loc FM_ConnectionsEmpty}"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontSize="12"
+                           VerticalAlignment="Center"
+                           Margin="8,0,24,0"
+                           IsHitTestVisible="False"
+                           Visibility="{Binding HasActiveDatabase, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+            </Grid>
 
             <!-- Database tools popup -->
             <Grid Grid.Column="2">
@@ -1039,6 +1050,36 @@
                     Background="Transparent">
                 <StackPanel x:Name="StickyStack" Background="Transparent"/>
             </Border>
+
+            <!-- Empty state: ни одной БД не подключено (первый запуск или
+                 удалена/отключена последняя БД). IsHitTestVisible=False —
+                 чисто информационный оверлей, кнопки не нужны: создание и
+                 подключение БД идёт через «+» рядом со списком баз. -->
+            <StackPanel Panel.ZIndex="500"
+                        IsHitTestVisible="False"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Visibility="{Binding HasActiveDatabase, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                <iconPacks:PackIconMaterial Kind="Database"
+                                            Width="44" Height="44"
+                                            Opacity="0.5"
+                                            Foreground="{DynamicResource TextMutedBrush}"
+                                            HorizontalAlignment="Center"/>
+                <TextBlock Text="{loc:Loc FM_EmptyState_NoDatabaseTitle}"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,12,0,0"/>
+                <TextBlock Text="{loc:Loc FM_EmptyState_NoDatabaseHint}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           HorizontalAlignment="Center"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           MaxWidth="280"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
         </Grid>
 
         <Grid Grid.Row="5" Margin="0,4,0,0">

@@ -422,4 +422,46 @@ public sealed class DatabaseManagerTests
         await Assert.ThrowsAsync<FileNotFoundException>(
             () => fixture.Manager.ConnectDatabaseAsync(emptyDir));
     }
+
+    [Fact]
+    public async Task DisconnectDatabaseAsync_LastConnection_SucceedsAndClearsActive()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var conn = await fixture.Manager.CreateDatabaseAsync("TestDB", Path.Combine(fixture.TempDir, "dbs"));
+
+        var result = await fixture.Manager.DisconnectDatabaseAsync(conn.Id);
+
+        Assert.True(result);
+        Assert.Null(fixture.Manager.GetActiveConnection());
+        Assert.Empty(fixture.Manager.ListConnections());
+        Assert.True(Directory.Exists(conn.Path));
+    }
+
+    [Fact]
+    public async Task DeleteDatabaseAsync_LastConnection_SucceedsAndClearsActive()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var conn = await fixture.Manager.CreateDatabaseAsync("TestDB", Path.Combine(fixture.TempDir, "dbs"));
+
+        var result = await fixture.Manager.DeleteDatabaseAsync(conn.Id);
+
+        Assert.True(result);
+        Assert.Null(fixture.Manager.GetActiveConnection());
+        Assert.Empty(fixture.Manager.ListConnections());
+        Assert.False(Directory.Exists(conn.Path));
+    }
+
+    [Fact]
+    public async Task DeleteDatabaseAsync_LastConnection_RaisesEventWithNull()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var conn = await fixture.Manager.CreateDatabaseAsync("TestDB", Path.Combine(fixture.TempDir, "dbs"));
+
+        string? captured = "not-null-marker";
+        fixture.Manager.ActiveDatabaseChanged += (_, id) => captured = id;
+
+        await fixture.Manager.DeleteDatabaseAsync(conn.Id);
+
+        Assert.Null(captured);
+    }
 }

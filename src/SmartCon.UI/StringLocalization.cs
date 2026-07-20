@@ -336,7 +336,9 @@ public static class StringLocalization
         public const string FM_DbNotFoundAtPath = "FM_DbNotFoundAtPath";
         public const string FM_DbDeleted = "FM_DbDeleted";
         public const string FM_DbDeleteError = "FM_DbDeleteError";
-        public const string FM_DbDeleteSingle = "FM_DbDeleteSingle";
+        public const string FM_EmptyState_NoDatabaseTitle = "FM_EmptyState_NoDatabaseTitle";
+        public const string FM_EmptyState_NoDatabaseHint = "FM_EmptyState_NoDatabaseHint";
+        public const string FM_ConnectionsEmpty = "FM_ConnectionsEmpty";
         public const string FM_DbDeleteTitle = "FM_DbDeleteTitle";
         public const string FM_DbDeletePrompt = "FM_DbDeletePrompt";
         public const string FM_DbDeleteFilesLocked = "FM_DbDeleteFilesLocked";
@@ -615,7 +617,6 @@ public static class StringLocalization
         public const string FM_Crop_CoverHint = "FM_Crop_CoverHint";
         public const string FM_FamilyNotFoundAfterLoad = "FM_FamilyNotFoundAfterLoad";
         public const string FM_FamilyNotLoaded = "FM_FamilyNotLoaded";
-        public const string FM_CannotDisconnectOnlyDatabase = "FM_CannotDisconnectOnlyDatabase";
         public const string FM_ErrorFormat = "FM_ErrorFormat";
         public const string FM_AL_Title = "FM_AL_Title";
         public const string FM_AL_Search = "FM_AL_Search";
