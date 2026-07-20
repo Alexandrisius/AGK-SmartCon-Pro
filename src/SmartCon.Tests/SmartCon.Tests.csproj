@@ -40,10 +40,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="UTF.Unknown" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
     <ProjectReference Include="..\SmartCon.UI\SmartCon.UI.csproj" />
     <ProjectReference Include="..\SmartCon.PipeConnect\SmartCon.PipeConnect.csproj" />

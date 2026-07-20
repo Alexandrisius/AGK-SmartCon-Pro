@@ -101,8 +101,9 @@
     <DefineConstants Condition="'$(TargetFramework)' == 'net8.0-windows' AND !Exists('C:\Program Files\Autodesk\Revit 2025\AdWindows.dll') AND !Exists('C:\Program Files\Autodesk\Revit 2026\AdWindows.dll')">$(DefineConstants);NO_ADWINDOWS</DefineConstants>
   </PropertyGroup>
 
-  <!-- System.Text.Json: .NET 8 BCL. На net48 — внутри merged SmartCon.Dependencies (ADR-051). -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+  <!-- System.Text.Json: .NET 8 BCL. На net48 — внутри merged SmartCon.Dependencies (ADR-051).
+       UTF.Unknown: на обеих TFM — внутри merged SmartCon.Dependencies. -->
+  <ItemGroup>
     <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>
   <!-- System.Net.Http: HttpClient из .NET Framework для net48. -->
@@ -112,11 +113,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
-  </ItemGroup>
-
-  <!-- UTF.Unknown: net48 — внутри merged SmartCon.Dependencies (ADR-051) -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
-    <PackageReference Include="UTF.Unknown" />
   </ItemGroup>
 
 </Project>

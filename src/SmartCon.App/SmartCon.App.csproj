@@ -18,11 +18,6 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
   </PropertyGroup>
 
-  <!-- Microsoft.Extensions.DependencyInjection: net48 — внутри merged SmartCon.Dependencies (ADR-051) -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-  </ItemGroup>
-
   <!-- Loose-файлы, обязанные лежать в output на net48 (ADR-051):
        транзитивные зависимости merged-сборки + зависимости подписанных чужих
        компонентов (Roslyn/HelixToolkit) — поставляются как ПОДПИСАННЫЕ оригиналы,
@@ -39,10 +34,10 @@
     <PackageReference Include="System.Text.Encoding.CodePages" />
   </ItemGroup>
 
-  <!-- Dependency isolation (ADR-051): net48 — merged third-party deps;
-       net8 — Nice3point.Revit.Toolkit сшит в SmartCon.Dependencies (иначе чужой адд-ин
-       поднимет свою версию toolkit в Default context → 0x80131621). Базовые классы
-       ExternalApplication/ExternalCommand из toolkit гоняют код в изолированном ALC. -->
+  <!-- Dependency isolation (ADR-051): на ОБЕИХ TFM конфликтные пакеты сшиты ILRepack
+       в SmartCon.Dependencies (CT.Mvvm, M.E.DI, UTF.Unknown на обеих + toolkit на net8).
+       Типы с нашим identity не сталкиваются с чужими версиями в Default context
+       (Eneca/CT.Mvvm 8.2 и т.п.). ExcludeAssets пакетов — в Directory.Build.targets. -->
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>

@@ -24,6 +24,9 @@
     <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
       <InputAssemblies Include="$(OutputPath)SmartCon.Dependencies.dll" />
       <InputAssemblies Include="$(OutputPath)Nice3point.Revit.Toolkit.dll" />
+      <InputAssemblies Include="$(OutputPath)CommunityToolkit.Mvvm.dll" />
+      <InputAssemblies Include="$(OutputPath)Microsoft.Extensions.DependencyInjection.dll" />
+      <InputAssemblies Include="$(OutputPath)UtfUnknown.dll" />
     </ItemGroup>
 
     <ILRepack

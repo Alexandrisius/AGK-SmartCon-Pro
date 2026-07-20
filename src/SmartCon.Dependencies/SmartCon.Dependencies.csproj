@@ -49,9 +49,20 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
-    <!-- Только toolkit: его типы получают наш identity и не конфликтуют с другими
-         адд-инами, загрузившими свою версию Nice3point.Revit.Toolkit в Default context -->
+    <!-- net8 merge: toolkit + конфликтные NuGet-зависимости. На .NET Core нет
+         strong-name enforcement net48-стиля, поэтому merge безопасен для всех них:
+         типы получают identity SmartCon.Dependencies и не могут столкнуться с чужими
+         версиями в Default-контексте (Eneca/CT.Mvvm 8.2 → 0x80131621 больше не наш).
+         CommunityToolkit.Mvvm: analyzers текут к потребителям (source-генераторы).
+         STJ/Bcl.AsyncInterfaces/Encodings.Web на net8 НЕ мержим — предоставляет framework. -->
     <PackageReference Include="Nice3point.Revit.Toolkit" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Mvvm" PrivateAssets="compile;runtime;contentFiles;build;buildTransitive;native" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" PrivateAssets="all" />
+    <PackageReference Include="UTF.Unknown" PrivateAssets="all" />
+    <!-- Транзитивы для LibraryPath (не merge, поставляются loose для Roslyn/Helix) -->
+    <PackageReference Include="CommunityToolkit.Common" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Diagnostics" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

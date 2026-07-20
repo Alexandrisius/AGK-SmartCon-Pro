@@ -35,17 +35,17 @@
 - Транзитивные пути merge-пакетов обрезаны централизованно в `src/Directory.Build.targets` (`ExcludeAssets`) — иначе CS0433 и сырые dll в output.
 - `OnAssemblyResolve` (net48): merge-имена — только из `SmartCon.Dependencies.dll`; если чужой адд-ин уже загрузил **более старую** версию прочей сборки — предпочитаем файл из нашей папки, удовлетворяющий запросу (exact-identity side-by-side load), вместо возврата старой.
 
-### 2. net8 (Revit 2025+): AssemblyLoadContext через Nice3point.Revit.Toolkit
+### 2. net8 (Revit 2025+): ILRepack merge (та же механика, что net48)
 
-Изоляция по образцу RevitLookup 2025.0.8 (production-proven):
+**Изначальный план (ALC через Nice3point.Revit.Toolkit) провалился в бою:** NuGet-сборки toolkit 2025.1.0/2025.2.0 НЕ содержат `AddinLoadContext` — Nice3point удалил собственную реализацию изоляции, т.к. Revit 2026 получил её нативно (проверено перебором всех 2025.x пакетов и подтверждено форумом Autodesk: «The version 2025.1.0 does not have context isolation»). В changelog toolkit записи о 2025.1.x/2025.2.x отсутствуют — это пост-removal сборки. Версии с рабочим ALC — только 2025.0.1–2025.0.3, но их API несовместим с 2025.2.0 (пин проверён и отвергнут: `Application` типа `ApplicationServices.Application` ломает команды). Нативная изоляция Revit 2026 на момент решения сыровата даже у Autodesk (форум: не изолирует корректно и в 2026.1).
 
-- `Nice3point.Revit.Toolkit` (`VersionOverride="$(RevitVersion).*"` → 2025.*; собственная ALC-реализация существует в линейке 2025.x и удалена из 2026.0.0, т.к. Revit 2026 получил нативную изоляцию). **Сам toolkit сшит ILRepack в `SmartCon.Dependencies.dll` (net8-таргет):** toolkit — это общая точка конфликта Default-контекста (любой другой адд-ин, напр. RevitLookup с toolkit 2025.0.x, загружает свою версию первым → `0x80131621` при нашей загрузке — подтверждено инцидентом). В merged-identity наш toolkit не пересекается с чужим. Механизм бриджа сохраняется: все наши entry-сборки (App + 3 модуля команд) делят одну копию toolkit из `SmartCon.Dependencies.dll` → один общий ALC.
-- **Механика на Revit 2025** (подтверждено исходником `AddinLoadContext.cs` в теге 2025.0.3): базовые классы toolkit создают изолированный контекст **от пути сборки** (имя папки = имя контекста), манифест не участвует. Поэтому на Revit 2025 изоляция работает БЕЗ каких-либо изменений манифеста.
-- **`ManifestSettings` — только нативная фича Revit 2026+** («Option for Add-in Dependency Isolation», API Changes 2026). На Revit 2025 тег категорически ЗАПРЕЩЁН: парсер отвергает весь манифест (`Failed to load add-in manifest file: The 'ManifestSettings' tag is incorrect`) — плагин вообще не грузится (инцидент при первой реализации, пойман журналом Revit). Nice3point SDK по той же причине вырезает этот узел для целей < 2026.
-- Итог по манифестам: Revit 2025 — манифест без `ManifestSettings` (изоляция через toolkit); Revit 2026+ — манифест с `<ManifestSettings><UseRevitContext>False</UseRevitContext><ContextName>SmartCon</ContextName></ManifestSettings>` (нативная изоляция; toolkit обнаруживает не-default контекст и работает напрямую).
-- `App` наследует `ExternalApplication` (toolkit) вместо `IExternalApplication`; все 6 команд наследуют `ExternalCommand` вместо `IExternalCommand`. На net48 те же классы компилируются с интерфейсами Revit — через alias-shim `CommandBase`/`AppBase` (`#if NET8_0_OR_GREATER`), тело команд вынесено в `ExecuteCore(UIApplication, out string)`.
-- `EnableDynamicLoading=true` (net8) — полный `deps.json` для резолвера изолированного контекста.
-- `IExternalEventHandler`/`IDockablePaneProvider` конвертации не требуют: инстанцируются нашим кодом внутри контекста. `IExternalCommandAvailability` и `IUpdater` в проекте отсутствуют.
+**Принятое решение — merge на net8** (рекомендация ricaun: «the easiest option to isolate the plugin would be to ILRepack all the dependencies inside the main plugin dll»; тот же принцип, что IsRepackable у RevitLookup). На .NET Core нет strong-name enforcement уровня net48 (загрузчик биндит по simple name, конфликт возможен только при совпадении simple name в одном контексте) — поэтому merge безопасен для любых пакетов:
+
+**net8 merge-список:** Nice3point.Revit.Toolkit (2025.2.0 — используется только ради базовых классов/ResolveHelper, его ALC не используется), CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, UTF.Unknown.
+
+**Намеренно НЕ мержим на net8:** System.Text.Json, Microsoft.Bcl.AsyncInterfaces, System.Text.Encodings.Web, System.Text.Encoding.CodePages — предоставляются shared-фреймворком .NET (проверено наличием в `dotnet/shared/Microsoft.NETCore.App`), конфликт невозможен по построению. CT.Common/Diagnostics и M.E.DI.Abstractions — loose (нужны Roslyn/HelixToolkit).
+
+Результат: наш код вообще не запрашивает `CommunityToolkit.Mvvm`/`Microsoft.Extensions.DependencyInjection` по имени — чужая старая версия в Default-контексте (Eneca Auditor 8.2.0.0) физически не может вызвать 0x80131621. `ManifestSettings` для Revit 2026+ сохранён как бонус (нативная изоляция поверх merge).
 
 ### 3. Резолвер и детектор (обе платформы)
 
