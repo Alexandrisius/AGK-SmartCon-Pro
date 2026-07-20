@@ -12,6 +12,10 @@ updates:
       - dependency-name: "Nice3point.Revit.Api*"
       - dependency-name: "Microsoft.Extensions.DependencyInjection"
         versions: [">= 9.0.0"]
+      # Loose на net48 (ADR-051): нужна Roslyn/HelixToolkit с exact identity,
+      # M.E.DI 8.0.1 скомпилирован против Abstractions 8.0.0.0 → бамп = manifest mismatch.
+      - dependency-name: "Microsoft.Extensions.DependencyInjection.Abstractions"
+        versions: [">= 9.0.0"]
       - dependency-name: "System.Text.Json"
         versions: [">= 9.0.0"]
       - dependency-name: "Microsoft.NET.Test.Sdk"
@@ -24,6 +28,27 @@ updates:
         versions: [">= 9.0.0"]
       - dependency-name: "SQLitePCLRaw.bundle_e_sqlite3"
         versions: [">= 3.0.0"]
+      # 2.1.12 сломан upstream: из lib.e_sqlite3 удалили runtimes/win-arm,
+      # но buildTransitive/net461 targets на него ссылается → MSB3030 на net48 (см. #145).
+      - dependency-name: "SQLitePCLRaw.bundle_e_sqlite3"
+        versions: ["2.1.12"]
+      # Полный фриз (ADR-051): пин 10.0.1 = resolved-состояние для ILRepack merged
+      # SmartCon.Dependencies на net48. Любой бамп меняет identity сшитой сборки.
+      - dependency-name: "Microsoft.Bcl.AsyncInterfaces"
+      # Фриз на 8.3.x (ADR-051, инцидент #134): loose на net48, HelixToolkit ссылается
+      # по exact strong name 8.3.0.0/4aff → бамп = 0x80131040 manifest mismatch в Revit.
+      - dependency-name: "CommunityToolkit.Common"
+        versions: [">= 8.4.0"]
+      - dependency-name: "CommunityToolkit.Diagnostics"
+        versions: [">= 8.4.0"]
+      # Frozen polyfills (ADR-042): пины форсят legacy-совместимые версии на обоих TFM,
+      # новые ломают net48 (CS1739 DefaultInterpolatedStringHandler).
+      - dependency-name: "System.Memory"
+      - dependency-name: "System.Buffers"
+      - dependency-name: "System.Runtime.CompilerServices.Unsafe"
+      - dependency-name: "System.Threading.Tasks.Extensions"
+      - dependency-name: "System.Text.Encodings.Web"
+      - dependency-name: "System.Numerics.Vectors"
       # v9+ targets .NET 9/10 — incompatible with net8.0 (Revit 2025) and net48 (Revit 2024).
       # Static constructor in LocalFamilyImportService.TypeCatalog.cs throws TypeInitializationException.
       # See #114. Keep on 8.x until SmartCon drops net8.0/net48 support.
