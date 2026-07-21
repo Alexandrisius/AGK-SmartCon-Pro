@@ -10,7 +10,7 @@ using SmartCon.UI;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
-public sealed partial class AboutViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class AboutViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel
 {
     private readonly IUpdateService _updateService;
     private readonly IUpdateSettingsRepository _settingsRepo;
@@ -69,10 +69,20 @@ public sealed partial class AboutViewModel : ObservableObject, IObservableReques
 
         LanguageIndex = LocalizationService.CurrentLanguage == Language.EN ? 1 : 0;
 
-        LocalizationService.LanguageChanged += () => OnPropertyChanged(nameof(VersionDisplay));
+        // Named handler (not a lambda) so we can unsubscribe — the event is
+        // static and would otherwise root this transient VM for the whole
+        // Revit session every time the About dialog is opened.
+        LocalizationService.LanguageChanged += OnLanguageChanged;
 
         RefreshPendingState();
     }
+
+    private void OnLanguageChanged() => OnPropertyChanged(nameof(VersionDisplay));
+
+    private void UnsubscribeLanguageChanged() =>
+        LocalizationService.LanguageChanged -= OnLanguageChanged;
+
+    public void ConfirmClose(CloseConfirmationArgs args) => UnsubscribeLanguageChanged();
 
     [RelayCommand]
     private async Task CheckForUpdate()
@@ -173,7 +183,12 @@ public sealed partial class AboutViewModel : ObservableObject, IObservableReques
     }
 
     [RelayCommand]
-    private void Close() => RequestClose?.Invoke(null);
+    private void Close()
+    {
+        // RequestClose path bypasses DialogWindowBase.ConfirmClose — unsubscribe here too.
+        UnsubscribeLanguageChanged();
+        RequestClose?.Invoke(null);
+    }
 
     [RelayCommand]
     private void OpenLink(string url) =>

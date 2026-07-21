@@ -294,12 +294,23 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     [RelayCommand]
     private async Task OkAsync() => await SaveAsync();
 
-    public void ConfirmClose(CloseConfirmationArgs args) =>
+    public void ConfirmClose(CloseConfirmationArgs args)
+    {
         this.ConfirmUnsavedChanges(
             args,
             _dialogService.ShowYesNoCancel,
             LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
             LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
+
+        // X / Alt+F4 paths that proceed with the close (clean window or the
+        // user chose "No") never pass through RequestClose, which is where
+        // Detach() is normally wired — unsubscribe from the singleton
+        // mediator here or this VM stays rooted for the whole session.
+        // When args.Cancel is set the window stays open (or SaveAsync will
+        // re-request close, which detaches via RequestClose).
+        if (!args.Cancel)
+            Detach();
+    }
 
     [RelayCommand]
     private async Task CancelAsync()
