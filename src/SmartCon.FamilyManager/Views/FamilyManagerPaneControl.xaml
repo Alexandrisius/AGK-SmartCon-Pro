@@ -512,12 +512,7 @@
                               Margin="0,0,0,0">
                     <ToggleButton.Style>
                         <Style BasedOn="{StaticResource SecondaryToggleButton}" TargetType="ToggleButton">
-                            <Setter Property="ToolTip" Value="{loc:Loc FM_PBase_DatabaseTools}"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsDatabaseUpdateRequired}" Value="True">
-                                    <Setter Property="ToolTip" Value="{loc:Loc FM_PBase_UpdateDatabaseBadgeTooltip}"/>
-                                </DataTrigger>
-                            </Style.Triggers>
+                            <Setter Property="ToolTip" Value="{Binding DatabaseUpdateBadgeTooltip}"/>
                         </Style>
                     </ToggleButton.Style>
                     <Viewbox Width="14" Height="14" Stretch="Uniform">
@@ -541,11 +536,21 @@
                 </ToggleButton>
                 <Border Width="6" Height="6"
                         CornerRadius="3"
-                        Background="{DynamicResource DangerBrush}"
                         HorizontalAlignment="Right" VerticalAlignment="Top"
                         Margin="0,2,2,0"
                         IsHitTestVisible="False"
-                        Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}"/>
+                        Visibility="{Binding HasDatabaseUpdateIndicator, Converter={StaticResource BoolToVis}}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{DynamicResource WarningBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDatabaseUpdateRequired}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
             </Grid>
 
             <Popup x:Name="DbToolsPopup"
@@ -569,7 +574,7 @@
                                 BorderThickness="0"
                                 Cursor="Hand"
                                 ToolTip="{loc:Loc FM_PBase_UpdateDatabaseTooltip}"
-                                Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding HasAnyDatabaseUpdate, Converter={StaticResource BoolToVis}}">
                             <i:Interaction.Triggers>
                                 <i:EventTrigger EventName="Click">
                                     <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
@@ -658,7 +663,7 @@
                                             VerticalAlignment="Center"
                                             Foreground="{DynamicResource WarningBrush}"/>
                 <TextBlock Grid.Column="1"
-                           Text="{loc:Loc FM_DbUpdate_BannerText}"
+                           Text="{Binding DatabaseUpdateBannerText}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center"
                            Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -669,7 +674,8 @@
                         MinWidth="80"
                         Height="24"
                         Padding="10,0"
-                        Margin="10,0,0,0"/>
+                        Margin="10,0,0,0"
+                        Visibility="{Binding HasProcessableCriticalPending, Converter={StaticResource BoolToVis}}"/>
             </Grid>
         </Border>
 

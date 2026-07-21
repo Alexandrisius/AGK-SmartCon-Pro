@@ -34,6 +34,14 @@ public interface IFamilyManagerDialogService
     /// <summary>Show error message.</summary>
     void ShowError(string title, string message);
 
+    /// <summary>
+    /// Show an informational message in the styled dialog with a single
+    /// "Понятно" button (the OK-only variant of the confirmation dialog).
+    /// Prefer this over <see cref="ShowWarning"/> for gate/explanation
+    /// dialogs in FamilyManager — the system MessageBox looks foreign.
+    /// </summary>
+    void ShowInfo(string title, string message);
+
     /// <summary>Show simple input dialog and return entered text, or null if cancelled.</summary>
     string? ShowInputDialog(string title, string prompt, string defaultText = "");
 
@@ -93,11 +101,12 @@ public interface IFamilyManagerDialogService
     void ShowModelessBatchImportDialog(object viewModel);
 
     /// <summary>
-    /// Show the hash-recalculation migration dialog (Issue #126) as a
-    /// modeless window (ADR-048 pattern). Returns immediately; the caller
-    /// runs the migration via the view model and awaits its completion.
+    /// Show the unified database update dialog (ADR-054) as a modeless
+    /// window (ADR-048 pattern): ONE dialog runs the actualization engine
+    /// over every pending family. Returns immediately; the caller runs the
+    /// update via the view model and awaits its completion.
     /// </summary>
-    void ShowHashRecalculationProgressDialog(object viewModel);
+    void ShowDatabaseUpdateProgressDialog(object viewModel);
 
     /// <summary>
     /// Show the avatar crop dialog (issue #131, ADR-047). The viewModel must be a

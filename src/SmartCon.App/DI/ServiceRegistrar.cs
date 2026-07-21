@@ -143,7 +143,7 @@ public static class ServiceRegistrar
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
             presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
-            presenter.Register<HashRecalculationProgressViewModel>(vm => new HashRecalculationProgressView(vm));
+            presenter.Register<DatabaseUpdateProgressViewModel>(vm => new DatabaseUpdateProgressView(vm));
             presenter.Register<FmProjectBaseRulesEditorViewModel>(vm => new FmProjectBaseRulesEditorView(vm));
             presenter.Register<FmParseRuleViewModel>(vm => new FmParseRuleView(vm));
             presenter.Register<FmFieldLibraryViewModel>(vm => new FmFieldLibraryView(vm));
@@ -234,14 +234,16 @@ public static class ServiceRegistrar
 
         // --- FamilyManager Hash Recalculation Migration (Issue #126) ---
         services.AddSingleton<IFamilyMigrationExtractor, SmartCon.Revit.FamilyManager.RevitFamilyMigrationExtractor>();
-        services.AddSingleton<ICatalogHashRecalculationService, SmartCon.FamilyManager.Services.LocalCatalog.CatalogHashRecalculationService>();
 
-        // --- Database migrations (docs/architecture/database-migrations.md) ---
-        // Register every IDatabaseMigration here; the coordinator aggregates
-        // them and the main VM drives badge state + "Update database" + the
-        // load-into-project gate automatically.
-        services.AddSingleton<IDatabaseMigration, SmartCon.FamilyManager.Services.Migrations.HashRecalculationMigration>();
-        services.AddSingleton<DatabaseMigrationCoordinator>();
+        // --- Database actualization engine (ADR-054, docs/architecture/database-migrations.md) ---
+        // THE single "update database" service: unions task detections,
+        // opens each pending family file once, applies pending tasks.
+        // New extraction-time features = one new IDatabaseActualizationTask
+        // class registered below — engine/dialog/gate/resume/purge are free.
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.HashFormatActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.AttributesActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.GlbPreviewActualizationTask>();
+        services.AddSingleton<ICatalogActualizationService, SmartCon.FamilyManager.Services.Actualization.CatalogActualizationService>();
         services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 
         // --- FamilyManager 3D Geometry Preview (ADR-042 / Issue #92) ---

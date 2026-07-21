@@ -45,6 +45,60 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
             .ConfigureAwait(false);
     }
 
+    public async Task<FamilyMigrationExtractResult> ExtractLoadableWithGeometryAsync(
+        string absolutePath,
+        CancellationToken ct = default)
+    {
+        var fileName = System.IO.Path.GetFileName(absolutePath);
+        return await _awaitableEvent
+            .RaiseAsync(appObj => ExtractWithGeometryOnMainThread(appObj, absolutePath, fileName, ct), ct)
+            .ConfigureAwait(false);
+    }
+
+    private FamilyMigrationExtractResult ExtractWithGeometryOnMainThread(
+        object appObj, string absolutePath, string fileName, CancellationToken ct)
+    {
+        Document? doc = null;
+        try
+        {
+            var app = ((UIApplication)appObj).Application;
+            doc = app.OpenDocumentFile(absolutePath);
+            if (!doc.IsFamilyDocument)
+            {
+                return FamilyMigrationExtractResult.Fail(
+                    "not a family document (IsFamilyDocument=false)");
+            }
+
+            var snapshot = _snapshotExtractor.ExtractFromFamilyDocument(doc);
+
+            // Geometry failure must not kill the snapshot — the caller
+            // falls back to the pipeline's own extraction pass.
+            IReadOnlyList<FamilyGeometryPerType>? geometry = null;
+            try
+            {
+                geometry = _snapshotExtractor.ExtractGeometryPerType(doc, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                SmartConLogger.Debug(
+                    $"Migration geometry extract failed for '{fileName}': {ex.GetType().Name}: {ex.Message}");
+            }
+
+            return FamilyMigrationExtractResult.Ok(snapshot, geometry);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"Migration extract failed for '{fileName}': {ex.GetType().Name}: {ex.Message}");
+            return FamilyMigrationExtractResult.Fail($"{ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            CloseTemporaryDocument(doc);
+        }
+    }
+
     private FamilyMigrationExtractResult ExtractOnMainThread(
         object appObj, string absolutePath, string fileName)
     {
@@ -70,18 +124,23 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
         }
         finally
         {
-            if (doc is not null)
-            {
-                try { doc.Close(false); } catch { /* already closed / invalid */ }
-                // REVIT-237190: force synchronous COM cleanup of the temporary
-                // document, bypassing the finalizer. Best-effort: on Revit
-                // versions where Document is a managed wrapper (not a real COM
-                // object) ReleaseComObject throws ArgumentException — ignored.
-                try { System.Runtime.InteropServices.Marshal.ReleaseComObject(doc); } catch { }
-            }
-            // Workaround #96: force the WPF/render-thread resync after each
-            // OpenDocumentFile+Close cycle. Single-space = invisible balloon.
-            try { _freezeRecovery.Nudge(" "); } catch { /* best-effort */ }
+            CloseTemporaryDocument(doc);
         }
+    }
+
+    private void CloseTemporaryDocument(Document? doc)
+    {
+        if (doc is not null)
+        {
+            try { doc.Close(false); } catch { /* already closed / invalid */ }
+            // REVIT-237190: force synchronous COM cleanup of the temporary
+            // document, bypassing the finalizer. Best-effort: on Revit
+            // versions where Document is a managed wrapper (not a real COM
+            // object) ReleaseComObject throws ArgumentException — ignored.
+            try { System.Runtime.InteropServices.Marshal.ReleaseComObject(doc); } catch { }
+        }
+        // Workaround #96: force the WPF/render-thread resync after each
+        // OpenDocumentFile+Close cycle. Single-space = invisible balloon.
+        try { _freezeRecovery.Nudge(" "); } catch { /* best-effort */ }
     }
 }

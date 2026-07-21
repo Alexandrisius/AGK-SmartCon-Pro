@@ -1,32 +1,38 @@
 using SmartCon.Core.Logging;
-using SmartCon.Core.Services.Implementation;
+using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.Services.Migrations;
 
 /// <summary>
-/// Default <see cref="IDatabaseUpdateStateService"/>: aggregates pending
-/// counts via <see cref="DatabaseMigrationCoordinator"/>, shows the gate
-/// dialog and runs migrations. UI texts come from LanguageManager, so this
-/// implementation lives in FamilyManager (Core stays UI-free, I-09).
+/// Default <see cref="IDatabaseUpdateStateService"/>: pending counts come
+/// from the actualization engine (<see cref="ICatalogActualizationService"/>),
+/// shows the gate dialog and runs the unified update dialog. UI texts come
+/// from LanguageManager, so this implementation lives in FamilyManager
+/// (Core stays UI-free, I-09).
 /// </summary>
 public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
 {
-    private readonly DatabaseMigrationCoordinator _coordinator;
+    private readonly ICatalogActualizationService _actualization;
     private readonly IFamilyManagerDialogService _dialogService;
     private int _currentRevitVersion;
 
     public DatabaseUpdateStateService(
-        DatabaseMigrationCoordinator coordinator,
+        ICatalogActualizationService actualization,
         IFamilyManagerDialogService dialogService)
     {
-        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _actualization = actualization ?? throw new ArgumentNullException(nameof(actualization));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
     }
 
     public bool IsUpdateRequired { get; private set; }
     public int PendingCount { get; private set; }
+    public int OptionalPendingCount { get; private set; }
+    public int NewerOnlyCriticalCount { get; private set; }
+    public int NewerOnlyRequiredRevitVersion { get; private set; }
+    public int NewerOnlyOptionalRequiredRevitVersion { get; private set; }
+    public int NewerOnlyPendingCount { get; private set; }
     public bool IsRunning { get; private set; }
 
     public event EventHandler? StateChanged;
@@ -34,15 +40,15 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
     public async Task RefreshAsync(int revitMajorVersion, CancellationToken ct = default)
     {
         _currentRevitVersion = revitMajorVersion;
-        var pending = await _coordinator
-            .CountTotalPendingAsync(revitMajorVersion, ct)
+        var breakdown = await _actualization
+            .CountPendingBreakdownAsync(revitMajorVersion, ct)
             .ConfigureAwait(true);
-        SetState(pending);
+        SetState(breakdown);
     }
 
     public void Reset()
     {
-        SetState(0);
+        SetState(DatabasePendingBreakdown.Empty);
     }
 
     public async Task<bool> EnsureUpToDateAsync()
@@ -51,6 +57,23 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
         if (IsRunning)
         {
             SmartConLogger.Info("DbMigration: write op gated — update already running");
+            return false;
+        }
+
+        if (PendingCount <= 0)
+        {
+            // Only NEWER-Revit critical pending (ADR-054 §3a): it cannot be
+            // fixed in the running Revit — block with the required version
+            // in the styled info dialog, no immediate-update offer.
+            _dialogService.ShowInfo(
+                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_LoadBlockedTitle)
+                    ?? "Требуется обновление базы",
+                string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_LoadBlockedBodyNewerRevit)
+                        ?? "База данных требует обновления в Revit {0} или новее и работает в режиме просмотра. Откройте её в Revit {0}+ и выполните «Обновить базу» — тогда всё обновится за один раз.",
+                    NewerOnlyRequiredRevitVersion));
+            SmartConLogger.Info(
+                $"DbMigration: write op gated — newer-Revit-only critical pending ({NewerOnlyCriticalCount}), requires Revit {NewerOnlyRequiredRevitVersion}+");
             return false;
         }
 
@@ -75,13 +98,30 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
     {
         if (IsRunning || _currentRevitVersion <= 0) return;
 
+        var breakdown = await _actualization
+            .CountPendingBreakdownAsync(_currentRevitVersion)
+            .ConfigureAwait(true);
+        if (breakdown.TotalProcessable <= 0) return;
+
         IsRunning = true;
         StateChanged?.Invoke(this, EventArgs.Empty);
         try
         {
-            await _coordinator
-                .RunPendingAsync(_currentRevitVersion)
-                .ConfigureAwait(true);
+            // Unified update (ADR-054): ONE dialog runs the actualization
+            // engine over every pending family — one file open, all
+            // pending tasks applied.
+            var vm = new ViewModels.DatabaseUpdateProgressViewModel(
+                _actualization, _dialogService, _currentRevitVersion);
+            _dialogService.ShowDatabaseUpdateProgressDialog(vm);
+            try
+            {
+                await vm.RunAsync().ConfigureAwait(true);
+                await vm.DialogCompletion.ConfigureAwait(true);
+            }
+            finally
+            {
+                vm.Dispose();
+            }
         }
         catch (Exception ex)
         {
@@ -109,12 +149,23 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
         }
     }
 
-    private void SetState(int pending)
+    private void SetState(DatabasePendingBreakdown breakdown)
     {
-        var required = pending > 0;
-        if (IsUpdateRequired == required && PendingCount == pending) return;
+        var required = breakdown.TotalCritical > 0;
+        if (IsUpdateRequired == required
+            && PendingCount == breakdown.Critical
+            && OptionalPendingCount == breakdown.Optional
+            && NewerOnlyCriticalCount == breakdown.NewerOnlyCritical
+            && NewerOnlyRequiredRevitVersion == breakdown.NewerOnlyCriticalRequiredRevitVersion
+            && NewerOnlyOptionalRequiredRevitVersion == breakdown.NewerOnlyOptionalRequiredRevitVersion
+            && NewerOnlyPendingCount == breakdown.NewerOnlyOptional) return;
         IsUpdateRequired = required;
-        PendingCount = pending;
+        PendingCount = breakdown.Critical;
+        OptionalPendingCount = breakdown.Optional;
+        NewerOnlyCriticalCount = breakdown.NewerOnlyCritical;
+        NewerOnlyRequiredRevitVersion = breakdown.NewerOnlyCriticalRequiredRevitVersion;
+        NewerOnlyOptionalRequiredRevitVersion = breakdown.NewerOnlyOptionalRequiredRevitVersion;
+        NewerOnlyPendingCount = breakdown.NewerOnlyOptional;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 }

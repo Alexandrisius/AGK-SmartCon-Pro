@@ -11,6 +11,11 @@ public sealed class FakeDatabaseUpdateStateService : IDatabaseUpdateStateService
 {
     public bool IsUpdateRequired { get; set; }
     public int PendingCount { get; set; }
+    public int OptionalPendingCount { get; set; }
+    public int NewerOnlyCriticalCount { get; set; }
+    public int NewerOnlyRequiredRevitVersion { get; set; }
+    public int NewerOnlyOptionalRequiredRevitVersion { get; set; }
+    public int NewerOnlyPendingCount { get; set; }
     public bool IsRunning { get; set; }
     public bool EnsureResult { get; set; } = true;
 

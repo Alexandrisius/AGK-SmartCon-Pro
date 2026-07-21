@@ -19,10 +19,147 @@ namespace SmartCon.FamilyManager.ViewModels;
 public sealed partial class FamilyManagerMainViewModel
 {
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAnyDatabaseUpdate))]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
+    [NotifyPropertyChangedFor(nameof(HasDatabaseUpdateIndicator))]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBadgeTooltip))]
     private bool _isDatabaseUpdateRequired;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
+    [NotifyPropertyChangedFor(nameof(HasProcessableCriticalPending))]
     private int _pendingDatabaseUpdateCount;
+
+    /// <summary>
+    /// Pending OPTIONAL migrations (ADR-054). Drives (together with the
+    /// critical state) the visibility of the single unified "Обновить
+    /// базу" menu command — never the banner, badge or write-op gate.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasOptionalDatabaseUpdates))]
+    [NotifyPropertyChangedFor(nameof(HasAnyDatabaseUpdate))]
+    [NotifyPropertyChangedFor(nameof(HasOptionalPendingIndicator))]
+    [NotifyPropertyChangedFor(nameof(HasDatabaseUpdateIndicator))]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBadgeTooltip))]
+    private int _optionalDatabaseUpdateCount;
+
+    /// <summary>
+    /// True when optional migrations are pending AND the current user may
+    /// run them (Owner/BimMaster — Engineer connections are read-only).
+    /// </summary>
+    public bool HasOptionalDatabaseUpdates => OptionalDatabaseUpdateCount > 0 && CanEdit;
+
+    /// <summary>
+    /// Visibility of the single unified "Обновить базу" menu command
+    /// (ADR-054): there is actual work in the RUNNING Revit — processable
+    /// critical pending (any role) or optional pending for a write-capable
+    /// role. When only newer-Revit critical records gate, the command is
+    /// hidden: it would run an empty pass (the gate text explains the
+    /// required Revit version instead).
+    /// </summary>
+    public bool HasAnyDatabaseUpdate => HasProcessableCriticalPending || HasOptionalDatabaseUpdates;
+
+    /// <summary>
+    /// Pending records whose files all require a NEWER Revit and are
+    /// OPTIONAL (ADR-054 §3a). Non-blocking: drives only the amber
+    /// indicator on the database-tools toggle — these records cannot be
+    /// fixed in the running Revit and do not affect write integrity.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasOptionalPendingIndicator))]
+    [NotifyPropertyChangedFor(nameof(HasDatabaseUpdateIndicator))]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBadgeTooltip))]
+    private int _newerOnlyDatabaseUpdateCount;
+
+    /// <summary>
+    /// Visibility of the SINGLE indicator dot on the database-tools toggle
+    /// (ADR-054 §3a): red when CRITICAL pending gates the database
+    /// (processable or newer-only — the gate holds until perfectly
+    /// updated), amber when only non-blocking OPTIONAL records remain
+    /// (recommended, not required — processable here or newer-only).
+    /// </summary>
+    public bool HasDatabaseUpdateIndicator => IsDatabaseUpdateRequired || HasOptionalPendingIndicator;
+
+    /// <summary>
+    /// True when ANY optional (non-blocking) pending exists — processable
+    /// in the running Revit or newer-only. Drives the amber indicator:
+    /// "рекомендовано обновить" — the menu command (when processable here)
+    /// or a newer-Revit pass.
+    /// </summary>
+    public bool HasOptionalPendingIndicator => OptionalDatabaseUpdateCount > 0 || NewerOnlyDatabaseUpdateCount > 0;
+
+    /// <summary>
+    /// True when processable CRITICAL pending exists — the banner's
+    /// "Обновить" button makes sense (an immediate update lifts the gate).
+    /// When only newer-Revit critical records gate, the button is hidden:
+    /// nothing here lifts the gate.
+    /// </summary>
+    public bool HasProcessableCriticalPending => PendingDatabaseUpdateCount > 0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
+    [NotifyPropertyChangedFor(nameof(HasAnyDatabaseUpdate))]
+    private int _newerOnlyCriticalCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
+    private int _newerOnlyRequiredRevitVersion;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBadgeTooltip))]
+    private int _newerOnlyOptionalRequiredRevitVersion;
+
+    /// <summary>
+    /// Tooltip of the database-tools toggle — mirrors the indicator state
+    /// (ADR-054 §3a): critical gate text, or the recommended-update text
+    /// with the Revit version where it can run.
+    /// </summary>
+    public string DatabaseUpdateBadgeTooltip
+    {
+        get
+        {
+            if (IsDatabaseUpdateRequired)
+            {
+                return LanguageManager.GetString(StringLocalization.Keys.FM_PBase_UpdateDatabaseBadgeTooltip)
+                    ?? "Требуется обновление базы данных";
+            }
+            if (NewerOnlyDatabaseUpdateCount > 0)
+            {
+                return string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_PBase_OptionalBadgeTooltipNewerRevit)
+                        ?? "Есть рекомендуемые обновления базы — требуется Revit {0} или новее.",
+                    NewerOnlyOptionalRequiredRevitVersion);
+            }
+            if (OptionalDatabaseUpdateCount > 0)
+            {
+                return LanguageManager.GetString(StringLocalization.Keys.FM_PBase_OptionalBadgeTooltip)
+                    ?? "Есть рекомендуемые обновления базы — выполните «Обновить базу» в текущей версии Revit.";
+            }
+            return LanguageManager.GetString(StringLocalization.Keys.FM_PBase_DatabaseTools)
+                ?? "Инструменты базы";
+        }
+    }
+
+    /// <summary>
+    /// Banner text (ADR-054 §3a): the default read-only explanation when
+    /// processable critical pending exists; the "update in Revit {0}+"
+    /// variant when ONLY newer-Revit critical records gate the database.
+    /// </summary>
+    public string DatabaseUpdateBannerText
+    {
+        get
+        {
+            if (PendingDatabaseUpdateCount > 0 || NewerOnlyCriticalCount <= 0)
+            {
+                return LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_BannerText)
+                    ?? "База данных создана в старой версии SmartCon и работает в режиме просмотра. Обновите её, чтобы импортировать и изменять семейства.";
+            }
+            return string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_BannerTextNewerRevit)
+                    ?? "База данных требует обновления в Revit {0} или новее и работает в режиме просмотра. Откройте её в Revit {0}+ и выполните «Обновить базу» — тогда всё обновится за один раз.",
+                NewerOnlyRequiredRevitVersion);
+        }
+    }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpdateDatabaseCommand))]
@@ -36,6 +173,11 @@ public sealed partial class FamilyManagerMainViewModel
     {
         IsDatabaseUpdateRequired = _updateState.IsUpdateRequired;
         PendingDatabaseUpdateCount = _updateState.PendingCount;
+        OptionalDatabaseUpdateCount = _updateState.OptionalPendingCount;
+        NewerOnlyCriticalCount = _updateState.NewerOnlyCriticalCount;
+        NewerOnlyRequiredRevitVersion = _updateState.NewerOnlyRequiredRevitVersion;
+        NewerOnlyOptionalRequiredRevitVersion = _updateState.NewerOnlyOptionalRequiredRevitVersion;
+        NewerOnlyDatabaseUpdateCount = _updateState.NewerOnlyPendingCount;
         IsDatabaseUpdateRunning = _updateState.IsRunning;
         UpdateDatabaseCommand.NotifyCanExecuteChanged();
     }
@@ -80,17 +222,19 @@ public sealed partial class FamilyManagerMainViewModel
         {
             DetectRevitVersion();
         }
-        if (!_updateState.IsUpdateRequired || CurrentRevitVersion <= 0) return;
+        if (CurrentRevitVersion <= 0) return;
+        if (!_updateState.IsUpdateRequired && _updateState.OptionalPendingCount <= 0) return;
 
         using var _scope = SmartConLogger.BeginScope("DbMigration",
             ("Method", nameof(UpdateDatabaseAsync)),
-            ("Pending", _updateState.PendingCount));
+            ("Pending", _updateState.PendingCount + _updateState.OptionalPendingCount));
 
         await _updateState.UpdateAsync().ConfigureAwait(true);
 
-        // Migrations may have purged catalog rows or re-synced item
-        // hashes/names — rebuild the tree to reflect the final state.
-        if (!_updateState.IsUpdateRequired)
+        // Migrations may have purged catalog rows or re-written
+        // types/attributes/hashes — rebuild the tree to reflect the final
+        // state.
+        if (!_updateState.IsUpdateRequired && _updateState.OptionalPendingCount <= 0)
         {
             await RefreshTreeViaExternalEventAsync().ConfigureAwait(true);
         }

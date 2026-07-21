@@ -10,13 +10,22 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// otherwise <c>null</c>.</param>
 /// <param name="ErrorMessage">Short failure description on failure;
 /// otherwise <c>null</c>.</param>
+/// <param name="Geometry">Per-type geometry extracted in the same open
+/// session (database actualization, ADR-054); <c>null</c> when geometry
+/// was not requested or failed (the caller falls back to a dedicated
+/// geometry extraction pass).</param>
 public sealed record FamilyMigrationExtractResult(
     bool Success,
     FamilySnapshot? LoadableSnapshot,
-    string? ErrorMessage)
+    string? ErrorMessage,
+    IReadOnlyList<FamilyGeometryPerType>? Geometry = null)
 {
     public static FamilyMigrationExtractResult Ok(FamilySnapshot snapshot)
         => new(true, snapshot, null);
+
+    public static FamilyMigrationExtractResult Ok(
+        FamilySnapshot snapshot, IReadOnlyList<FamilyGeometryPerType>? geometry)
+        => new(true, snapshot, null, geometry);
 
     public static FamilyMigrationExtractResult Fail(string errorMessage)
         => new(false, null, errorMessage);

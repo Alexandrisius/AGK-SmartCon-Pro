@@ -8,20 +8,21 @@ using SmartCon.UI;
 namespace SmartCon.FamilyManager.ViewModels;
 
 /// <summary>
-/// ViewModel for the hash-recalculation migration dialog (Issue #126).
-/// Modeless progress dialog by the ADR-048 pattern: drives
-/// <see cref="ICatalogHashRecalculationService.RecalculateAsync"/> with
-/// <see cref="IProgress{T}"/> + CancellationToken, then shows a summary
-/// with an optional purge action for missing files.
+/// ViewModel for the UNIFIED database update dialog (ADR-054): ONE modeless
+/// window (ADR-048 pattern) that runs the actualization engine
+/// (<see cref="ICatalogActualizationService.RunAllPendingAsync"/>) over
+/// every pending family — one file open, all pending tasks applied — then
+/// shows a combined summary with an optional purge action for missing
+/// files.
 /// </summary>
-public sealed partial class HashRecalculationProgressViewModel
+public sealed partial class DatabaseUpdateProgressViewModel
     : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, IDisposable
 {
-    private readonly ICatalogHashRecalculationService _recalculationService;
+    private readonly ICatalogActualizationService _actualization;
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly int _currentRevitVersion;
     private CancellationTokenSource? _runCts;
-    private CatalogHashRecalculationResult? _result;
+    private DatabaseMigrationResult? _result;
     private bool _isRunning;
 
     private readonly TaskCompletionSource<bool?> _completionTcs =
@@ -62,29 +63,27 @@ public sealed partial class HashRecalculationProgressViewModel
 
     public Task<bool?> DialogCompletion => _completionTcs.Task;
 
-    public HashRecalculationProgressViewModel(
-        ICatalogHashRecalculationService recalculationService,
+    public DatabaseUpdateProgressViewModel(
+        ICatalogActualizationService actualization,
         IFamilyManagerDialogService dialogService,
-        int currentRevitVersion,
-        int totalPending)
+        int currentRevitVersion)
     {
-        _recalculationService = recalculationService ?? throw new ArgumentNullException(nameof(recalculationService));
+        _actualization = actualization ?? throw new ArgumentNullException(nameof(actualization));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _currentRevitVersion = currentRevitVersion;
-        ProgressMaximum = Math.Max(1, totalPending);
-        StatusText = LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_Starting)
+        StatusText = LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_Starting)
             ?? "Подготовка...";
     }
 
     /// <summary>
-    /// Runs the migration. Must be called AFTER the dialog is shown.
-    /// Completes when the summary screen is displayed (the dialog stays
-    /// open until the user closes it — await <see cref="DialogCompletion"/>
-    /// for that).
+    /// Runs all pending migrations. Must be called AFTER the dialog is
+    /// shown. Completes when the summary screen is displayed (the dialog
+    /// stays open until the user closes it — await
+    /// <see cref="DialogCompletion"/> for that).
     /// </summary>
     public async Task RunAsync()
     {
-        using var _scope = SmartConLogger.BeginScope("HashRecalc",
+        using var _scope = SmartConLogger.BeginScope("DbMigration",
             ("Method", nameof(RunAsync)),
             ("RevitVersion", _currentRevitVersion));
 
@@ -92,42 +91,30 @@ public sealed partial class HashRecalculationProgressViewModel
         CanClose = false;
         CanCancel = true;
         _runCts = new CancellationTokenSource();
-        var progress = new Progress<CatalogHashRecalculationProgress>(OnProgress);
+        var progress = new Progress<DatabaseMigrationProgress>(OnProgress);
 
         try
         {
             _result = await Task.Run(
-                () => _recalculationService.RecalculateAsync(
+                () => _actualization.RunAllPendingAsync(
                     _currentRevitVersion, progress, _runCts.Token));
         }
         catch (OperationCanceledException)
         {
-            // Defensive: the service handles cancel between files and
-            // returns WasCancelled=true; an OCE escaping anyway (e.g. from
-            // a pending-group query) must still render the cancelled
-            // summary, not a fake file-read failure.
-            _result = new CatalogHashRecalculationResult(
-                UpdatedCount: 0,
-                SystemRelabeledCount: 0,
-                NewerRevitCount: 0,
-                MissingFiles: Array.Empty<HashRecalculationMissingFile>(),
-                FailedFiles: Array.Empty<HashRecalculationFailedFile>(),
-                WasCancelled: true);
+            // Defensive: the engine handles cancel between files and
+            // returns WasCancelled=true; an OCE escaping anyway must still
+            // render the cancelled summary, not a fake failure.
+            _result = DatabaseMigrationResult.Cancelled;
         }
         catch (Exception ex)
         {
             SmartConLogger.Error(
-                $"Hash recalculation failed: {ex.GetType().Name}: {ex.Message} " +
+                $"Database update failed: {ex.GetType().Name}: {ex.Message} " +
                 $"[Action: проверьте лог smartcon.log; БД остаётся консистентной — обновлённые пачки закоммичены]");
-            _result = new CatalogHashRecalculationResult(
-                UpdatedCount: 0,
-                SystemRelabeledCount: 0,
-                NewerRevitCount: 0,
-                MissingFiles: Array.Empty<HashRecalculationMissingFile>(),
-                FailedFiles: new[]
-                {
-                    new HashRecalculationFailedFile("—", "—", "—", ex.Message)
-                },
+            _result = new DatabaseMigrationResult(
+                0, 0,
+                Array.Empty<HashRecalculationMissingFile>(),
+                new[] { new HashRecalculationFailedFile("—", "—", "—", ex.Message) },
                 WasCancelled: false);
         }
 
@@ -135,12 +122,12 @@ public sealed partial class HashRecalculationProgressViewModel
         ShowSummary();
     }
 
-    private void OnProgress(CatalogHashRecalculationProgress p)
+    private void OnProgress(DatabaseMigrationProgress p)
     {
         ProgressValue = p.Current;
         ProgressMaximum = Math.Max(1, p.Total);
         StatusText = string.Format(
-            LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_ProgressFormat)
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_ProgressFormat)
                 ?? "Обработка {0} из {1} — {2}",
             p.Current, p.Total, p.CurrentFileName);
     }
@@ -151,23 +138,23 @@ public sealed partial class HashRecalculationProgressViewModel
         var lines = new List<string>
         {
             string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_SummaryUpdated)
-                    ?? "Обновлено версий: {0} (системных помечено: {1})",
-                result.UpdatedCount, result.SystemRelabeledCount)
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_SummaryUpdated)
+                    ?? "Обновлено записей: {0}",
+                result.UpdatedCount)
         };
 
         if (result.FailedFiles.Count > 0)
         {
             lines.Add(string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_SummaryFailed)
-                    ?? "Не удалось прочитать (пропущены навсегда): {0}",
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_SummaryFailed)
+                    ?? "Не удалось обработать (будут предложены снова): {0}",
                 result.FailedFiles.Count));
         }
 
         if (result.NewerRevitCount > 0)
         {
             lines.Add(string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_SummaryNewerRevit)
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_SummaryNewerRevit)
                     ?? "Требуют более новой версии Revit: {0}",
                 result.NewerRevitCount));
         }
@@ -175,7 +162,7 @@ public sealed partial class HashRecalculationProgressViewModel
         if (result.MissingFiles.Count > 0)
         {
             lines.Add(string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_SummaryMissing)
+                LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_SummaryMissing)
                     ?? "Файлы не найдены на диске: {0}",
                 result.MissingFiles.Count));
             PurgeButtonText = string.Format(
@@ -187,15 +174,19 @@ public sealed partial class HashRecalculationProgressViewModel
 
         if (result.WasCancelled)
         {
-            lines.Add(LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_SummaryCancelled)
+            lines.Add(LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_SummaryCancelled)
                 ?? "Прервано пользователем — обновление продолжится при следующем запуске.");
         }
 
         SummaryText = string.Join(Environment.NewLine, lines);
         StatusText = string.Empty;
-        IsSummaryVisible = true;
+        // CanClose BEFORE IsSummaryVisible: observers reacting to the
+        // summary flag (auto-close in tests, UX rules) must already see
+        // the Close command enabled — otherwise DialogCompletion never
+        // completes and the caller deadlocks.
         CanCancel = false;
         CanClose = true;
+        IsSummaryVisible = true;
     }
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
@@ -204,7 +195,7 @@ public sealed partial class HashRecalculationProgressViewModel
         if (_runCts is null || _runCts.IsCancellationRequested) return;
         _runCts.Cancel();
         CanCancel = false;
-        StatusText = LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_Stopping)
+        StatusText = LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_Stopping)
             ?? "Прерываю...";
     }
 
@@ -223,13 +214,13 @@ public sealed partial class HashRecalculationProgressViewModel
                 missing.Count));
         if (!confirmed) return;
 
-        using var _scope = SmartConLogger.BeginScope("HashRecalc",
+        using var _scope = SmartConLogger.BeginScope("DbMigration",
             ("Method", nameof(PurgeMissingAsync)),
             ("Count", missing.Count));
 
         try
         {
-            var (deletedItems, deletedVersions, failedDirectories) = await _recalculationService
+            var (deletedItems, deletedVersions, failedDirectories) = await _actualization
                 .PurgeMissingAsync(missing, CancellationToken.None)
                 .ConfigureAwait(true);
 
