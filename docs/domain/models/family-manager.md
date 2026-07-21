@@ -2036,14 +2036,55 @@ public static class FamilyContentHashFormat
 
 ---
 
-## CatalogHashRecalculationProgress
+## DatabasePendingBreakdown
 
-Прогресс миграции пересчёта хэшей (Issue #126), репортится раз в обработанный файл.
+Разбивка pending-записей актуализации по уровням и открываемости (ADR-054 §3a). `Critical`/`Optional` — processable группы; `NewerOnlyCritical` — группы, требующие Revit новее запущенного (гейтят как processable critical — база read-only до идеальной миграции); `NewerOnlyOptional` — только янтарный индикатор; `NewerOnlyCriticalRequiredRevitVersion` — минимальный Revit для обновления всех newer-only critical групп за один раз.
 
-**Файл:** `Models/FamilyManager/CatalogHashRecalculationProgress.cs`
+**Файл:** `Models/FamilyManager/DatabasePendingBreakdown.cs`
 
 ```csharp
-public sealed record CatalogHashRecalculationProgress(
+public sealed record DatabasePendingBreakdown(
+    int Critical,
+    int Optional,
+    int NewerOnlyCritical,
+    int NewerOnlyOptional,
+    int NewerOnlyCriticalRequiredRevitVersion,
+    int NewerOnlyOptionalRequiredRevitVersion)
+{
+    public static DatabasePendingBreakdown Empty { get; }
+    public int TotalProcessable => Critical + Optional;
+    public int TotalCritical => Critical + NewerOnlyCritical;   // условие гейта
+}
+```
+
+- `NewerOnlyCriticalRequiredRevitVersion` — минимальный Revit для обновления всех newer-only critical групп за раз (тексты баннера/гейта).
+- `NewerOnlyOptionalRequiredRevitVersion` — то же для optional групп (тултип янтарной точки).
+
+---
+
+## NewerOnlyPendingInfo
+
+Newer-Revit-only pending одной задачи актуализации (ADR-054 §3a): число групп, чьи файловые варианты ВСЕ новее запущенного Revit, и минимальный Revit, в котором они все становятся processable за один проход (`MAX` по группам от `MIN(вариант Revit)` — группа открываема, когда запущенный Revit ≥ её самого старого варианта).
+
+**Файл:** `Models/FamilyManager/NewerOnlyPendingInfo.cs`
+
+```csharp
+public sealed record NewerOnlyPendingInfo(int Count, int RequiredRevitVersion)
+{
+    public static NewerOnlyPendingInfo None { get; }
+}
+```
+
+---
+
+## DatabaseMigrationProgress
+
+Item-прогресс одной задачи/движка актуализации (ADR-054) — общая форма для всех задач; единый диалог обновления рисует её напрямую. Репортится раз в обработанный файл.
+
+**Файл:** `Models/FamilyManager/DatabaseMigrationProgress.cs`
+
+```csharp
+public sealed record DatabaseMigrationProgress(
     int Current,
     int Total,
     string CurrentFileName);
@@ -2051,28 +2092,99 @@ public sealed record CatalogHashRecalculationProgress(
 
 ---
 
-## CatalogHashRecalculationResult
+## DatabaseMigrationResult
 
-Результат миграции пересчёта хэшей (Issue #126).
+Нормализованный исход прогона одной миграции БД (ADR-054). Каждая миграция маппит свой внутренний результат в эту форму, чтобы единый диалог показал общую сводку.
 
-**Файл:** `Models/FamilyManager/CatalogHashRecalculationResult.cs`
+**Файл:** `Models/FamilyManager/DatabaseMigrationResult.cs`
 
 ```csharp
-public sealed record CatalogHashRecalculationResult(
+public sealed record DatabaseMigrationResult(
     int UpdatedCount,
-    int SystemRelabeledCount,
     int NewerRevitCount,
     IReadOnlyList<HashRecalculationMissingFile> MissingFiles,
     IReadOnlyList<HashRecalculationFailedFile> FailedFiles,
-    bool WasCancelled);
+    bool WasCancelled)
+{
+    public static DatabaseMigrationResult Cancelled { get; }
+}
 ```
 
-- `UpdatedCount` — версий пересчитано в v2 (все Revit-варианты обработанного label).
-- `SystemRelabeledCount` — system-версии, мигрированные дешёвым UPDATE флага (их v1-хэши уже rename-invariant).
-- `NewerRevitCount` — версии, оставленные pending: все их файловые варианты сохранены в Revit НОВЕЕ запущенного; будут предложены снова при открытии каталога в новом Revit.
-- `MissingFiles` — файлы не найдены; НЕ изменены (пользователь решает: purge или оставить).
-- `FailedFiles` — файлы нечитаемы; помечены `hash_format_version = -1` (никогда не ретраятся).
-- `WasCancelled` — пользователь прервал; закоммиченные пачки сохранены, остаток будет предложен при следующем показе диалога.
+- `UpdatedCount` — успешно обработанные записи.
+- `NewerRevitCount` — записи, оставленные pending: файловые варианты требуют Revit новее запущенного.
+- `MissingFiles` — managed-файлы не найдены на диске.
+- `FailedFiles` — файлы открылись, но извлечение упало.
+- `WasCancelled` — прервано пользователем; закоммиченные пачки сохранены.
+
+---
+
+## ActualizationVariant
+
+Одна Revit-вариация version label каталога (ADR-054, движок актуализации). Контент идентичен между вариантами одного label — движок открывает ОДИН вариант, задачи применяют результат ко ВСЕМ.
+
+**Файл:** `Models/FamilyManager/ActualizationVariant.cs`
+
+```csharp
+public sealed record ActualizationVariant(
+    string VersionId,
+    string FileId,
+    int RevitMajorVersion,
+    string RelativePath,
+    string FileName);
+```
+
+---
+
+## ActualizationGroup
+
+Рабочая единица движка актуализации (ADR-054): группа `(catalog_item, version_label)` со ВСЕМИ её Revit-вариантами. `Key` (`catalogItemId|versionLabel`) — общий с задачами ключ детекции.
+
+**Файл:** `Models/FamilyManager/ActualizationGroup.cs`
+
+```csharp
+public sealed record ActualizationGroup(
+    string CatalogItemId,
+    string ItemName,
+    string VersionLabel,
+    bool IsActiveLabel,
+    IReadOnlyList<ActualizationVariant> Variants)
+{
+    public string Key => CatalogItemId + "|" + VersionLabel;
+}
+```
+
+---
+
+## FamilyActualizationContext
+
+Всё, что нужно задаче актуализации для записи своих артефактов по ОДНОЙ группе (ADR-054): группа, открытый вариант и продукты ЕДИНОЙ сессии открытия (snapshot + per-type геометрия; `Geometry` = `null` при её сбое — задачи делают fallback).
+
+**Файл:** `Models/FamilyManager/FamilyActualizationContext.cs`
+
+```csharp
+public sealed record FamilyActualizationContext(
+    ActualizationGroup Group,
+    ActualizationVariant OpenedVariant,
+    string AbsolutePath,
+    FamilySnapshot Snapshot,
+    IReadOnlyList<FamilyGeometryPerType>? Geometry);
+```
+
+---
+
+## ActualizationFailureKind
+
+Причина, по которой группа не смогла быть извлечена (ADR-054). Задача решает по виду сбоя, как пометить свой критерий (hash пишет терминальные -2/-1; attributes/glb остаются pending и ретраятся).
+
+**Файл:** `Models/FamilyManager/ActualizationFailureKind.cs`
+
+```csharp
+public enum ActualizationFailureKind
+{
+    MissingFile,       // managed-файл не найден на диске
+    ExtractionFailed,  // файл есть, но open/extract упал (повреждён, ошибка Revit)
+}
+```
 
 ---
 
@@ -2118,8 +2230,11 @@ public sealed record HashRecalculationFailedFile(
 public sealed record FamilyMigrationExtractResult(
     bool Success,
     FamilySnapshot? LoadableSnapshot,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    IReadOnlyList<FamilyGeometryPerType>? Geometry = null);
 ```
+
+- `Geometry` (ADR-054) — per-type геометрия из той же open-сессии (catalog backfill); `null`, если геометрия не запрашивалась или упала (caller делает fallback на отдельный проход).
 
 ---
 
@@ -2336,28 +2451,6 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 - Blank values excluded (IsBlankValue(hasValue, text)): HasValue=false, empty string, INVALID (no element), UNSUPPORTED, READERROR. Numeric zero is NOT blank.
 - Auto-generated parameters excluded (IsAutoGeneratedParameter(name)): anything containing IfcGUID or IFC GUID (case-insensitive). Revit regenerates these on every .rvt save — including them would break cross-document stability.
 - 10 unit tests in src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs cover blank-value exclusion, INVALID exclusion, numeric zero significance, IFC GUID exclusion, loadable-family blank values, parameter/type/geometry/SharedNested independence, and cross-source prefix separation.
-
----
-
-## DatabaseMigrationCoordinator
-
-Pure-C# агрегатор всех зарегистрированных `IDatabaseMigration` (паттерн `docs/architecture/database-migrations.md`, Issue #126). Используется `FamilyManagerMainViewModel` для молчаливой проверки pending (badge state) и для запуска миграций командой «Обновить базу данных». Без Revit API — юнит-тестируется с fake-миграциями.
-
-**Файл:** `Services/Implementation/DatabaseMigrationCoordinator.cs`
-
-```csharp
-public sealed class DatabaseMigrationCoordinator
-{
-    public DatabaseMigrationCoordinator(IEnumerable<IDatabaseMigration> migrations);
-    public Task<int> CountTotalPendingAsync(int revitMajorVersion, CancellationToken ct = default);
-    public Task RunPendingAsync(int revitMajorVersion, CancellationToken ct = default);
-}
-```
-
-- Сортировка по `IDatabaseMigration.Order` (ascending) при построении — порядок регистрации в DI не важен.
-- `CountTotalPendingAsync` суммирует pending всех миграций; сломанная миграция даёт вклад 0 + Warn (одна ошибка не прячет остальные).
-- `RunPendingAsync` перед каждым запуском перепроверяет pending (skip при 0), уважает CancellationToken между миграциями; сбой перепроверки одной миграции не прерывает остальные.
-- 8 unit-тестов: `src/SmartCon.Tests/Core/Services/DatabaseMigrationCoordinatorTests.cs`.
 
 ---
 
