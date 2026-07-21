@@ -221,7 +221,7 @@ public sealed class CtcFamilyWriter(
 
         if (result.Count != items.Count)
         {
-            SmartConLogger.Warn($"Spatial matching: matched {result.Count}/{items.Count} items — fallback to positional");
+            SmartConLogger.Warn($"Spatial matching: matched {result.Count}/{items.Count} items — fallback to positional [Action: проверьте CTC-маппинг коннекторов вручную после записи]");
             return null;
         }
 

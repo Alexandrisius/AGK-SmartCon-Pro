@@ -1,6 +1,7 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.Services;
@@ -46,6 +47,7 @@ public sealed class SettingsCommand : CommandBase
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"SettingsCommand failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             message = ex.Message;
             return Result.Failed;
         }

@@ -93,7 +93,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"Error (ignored): {ex.Message}");
+            SmartConLogger.Warn($"Error (ignored): {ex.Message} [Action: глубина цепочки сброшена в 0 — проверьте целостность цепочки элементов]");
             ChainDepth = 0;
         }
 
@@ -120,7 +120,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"Error (ignored): {ex.Message}");
+            SmartConLogger.Warn($"Error (ignored): {ex.Message} [Action: восстановление уровней цепочки прервано — проверьте целостность цепочки элементов]");
         }
 
         _chainDisabledByCycle = false;

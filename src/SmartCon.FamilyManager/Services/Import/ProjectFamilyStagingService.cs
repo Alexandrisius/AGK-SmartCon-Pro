@@ -263,7 +263,7 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
         }
         if (family.IsInPlace)
         {
-            SmartConLogger.Warn($"Skipping in-place family '{info.FamilyName}'");
+            SmartConLogger.Warn($"Skipping in-place family '{info.FamilyName}' [Action: in-place семейства не поддерживаются каталогом — пересоздайте его как загружаемое семейство и импортируйте снова]");
             return null;
         }
 

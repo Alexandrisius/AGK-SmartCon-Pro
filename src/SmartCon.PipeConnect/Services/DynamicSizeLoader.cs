@@ -125,11 +125,19 @@ public sealed class DynamicSizeLoader(
                 SymbolName = autoSymbolName
             });
 
-            foreach (var size in availableConfigs)
+            // `with` is hoisted into a LINQ Select (materialized BEFORE the
+            // mutation loop): record `with` directly inside a for/foreach
+            // body can freeze the STA thread (record-with-freeze.md). The
+            // dedup check below intentionally stays in the loop — it must
+            // observe items added by previous iterations.
+            var clearedConfigs = availableConfigs
+                .Select(size => size with { IsAutoSelect = false })
+                .ToList();
+            foreach (var size in clearedConfigs)
             {
                 if (!sizes.Any(s => s.DisplayName == size.DisplayName))
                 {
-                    sizes.Add(size with { IsAutoSelect = false });
+                    sizes.Add(size);
                     SmartConLogger.Debug($"  Added: {size.DisplayName}");
                 }
             }
@@ -140,7 +148,7 @@ public sealed class DynamicSizeLoader(
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"LoadInitialSizes error: {ex.Message}");
+            SmartConLogger.Warn($"LoadInitialSizes error: {ex.Message} [Action: проверьте CSV lookup-таблицу и параметры семейства — динамический подбор размера отключён для этой сессии]");
             hasSizeOptions = false;
         }
 

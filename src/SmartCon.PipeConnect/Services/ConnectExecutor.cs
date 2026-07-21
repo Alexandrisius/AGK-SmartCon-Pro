@@ -333,7 +333,7 @@ public sealed class ConnectExecutor
             currentDynamic = updatedDynamic;
             result = realignFitConn2;
         }
-        catch (Exception ex) { SmartConLogger.Warn($"Best-effort error in SizeFitting: {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"Best-effort error in SizeFitting: {ex.Message} [Action: соединение продолжится без подбора размера — проверьте размеры фитинга вручную]"); }
 
         return new SizeFittingResult(result, currentDynamic);
     }
@@ -386,7 +386,7 @@ public sealed class ConnectExecutor
                 txDoc.Regenerate();
             });
         }
-        catch (Exception ex) { SmartConLogger.Warn($"Best-effort error in RealignAfterSizing: {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"Best-effort error in RealignAfterSizing: {ex.Message} [Action: соединение продолжится — проверьте выравнивание коннекторов вручную]"); }
 
         return (newFitConn2, currentDynamic);
     }
@@ -662,7 +662,7 @@ public sealed class ConnectExecutor
             double antiParallelErr = System.Math.Abs(angleZ - System.Math.PI) * 180.0 / System.Math.PI;
             SmartConLogger.Debug($"BasisZ: angle fc2↔dyn={angleZ * 180 / System.Math.PI:F1}° (ideal=180°, dev={antiParallelErr:F1}°)");
             if (antiParallelErr > angleEpsDeg)
-                SmartConLogger.Warn($"WARNING: BasisZ not anti-parallel (dev. {antiParallelErr:F1}°) — connection may fail");
+                SmartConLogger.Warn($"WARNING: BasisZ not anti-parallel (dev. {antiParallelErr:F1}°) — connection may fail [Action: проверьте ориентацию коннекторов — возможно потребуется ручной поворот элемента]");
         }
     }
 
@@ -787,7 +787,7 @@ public sealed class ConnectExecutor
         {
             if (userManuallyChangedSize)
             {
-                SmartConLogger.Warn($"User manually changed size (Δ={rErr * FeetToMm:F2}mm) → reducer needed");
+                SmartConLogger.Warn($"User manually changed size (Δ={rErr * FeetToMm:F2}mm) → reducer needed [Action: добавьте редуктор в mapping или верните размер динамического элемента]");
                 needsPrimaryReducer = true;
             }
             else
@@ -809,7 +809,7 @@ public sealed class ConnectExecutor
 
                     if (verifyDelta > radiusEps)
                     {
-                        SmartConLogger.Warn($"Actual radius ({dynFresh.Radius * FeetToMm:F2}mm) ≠ static ({staticConn.Radius * FeetToMm:F2}mm) — falling back to nearest, reducer needed");
+                        SmartConLogger.Warn($"Actual radius ({dynFresh.Radius * FeetToMm:F2}mm) ≠ static ({staticConn.Radius * FeetToMm:F2}mm) — falling back to nearest, reducer needed [Action: проверьте mapping редукторов для этой пары размеров]");
                         needsPrimaryReducer = true;
 
                         if (context.Session.ParamTargetRadius is { } bestRadius)
@@ -844,7 +844,7 @@ public sealed class ConnectExecutor
         double angleZD = VectorUtils.AngleBetween(staticConn.BasisZVec3, dynFresh.BasisZVec3);
         double antiErrD = System.Math.Abs(angleZD - System.Math.PI) * 180.0 / System.Math.PI;
         if (antiErrD > angleEpsDeg)
-            SmartConLogger.Warn($"WARNING: BasisZ not anti-parallel (dev. {antiErrD:F1}°)");
+            SmartConLogger.Warn($"WARNING: BasisZ not anti-parallel (dev. {antiErrD:F1}°) [Action: проверьте ориентацию коннекторов — возможно потребуется ручной поворот элемента]");
     }
 
     // ...

@@ -506,7 +506,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 else
                 {
                     IsReducerVisible = true;
-                    SmartConLogger.Warn("Reducer needed but no reducer families found");
+                    SmartConLogger.Warn("Reducer needed but no reducer families found [Action: добавьте семейство редуктора в mapping (Настройки → Правила)]");
                 }
             }
         }
