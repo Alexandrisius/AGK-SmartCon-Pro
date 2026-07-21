@@ -238,7 +238,7 @@ public sealed class ShareProjectCommand : CommandBase
                         }
                         catch (Exception syncEx)
                         {
-                            SmartConLogger.Warn($"Sync failed: {syncEx.Message}");
+                            SmartConLogger.Warn($"Sync failed: {syncEx.Message} [Action: пользователю показан диалог — можно продолжить share без синхронизации или синхронизировать модель вручную]");
 
                             using var td = new Autodesk.Revit.UI.TaskDialog("Share Project");
                             td.MainInstruction = $"Synchronization failed:\n{syncEx.Message}";
@@ -247,7 +247,7 @@ public sealed class ShareProjectCommand : CommandBase
 
                             if (td.Show() != TaskDialogResult.Yes)
                             {
-                                ReportProgress("Cancelled", 0);
+                                ReportProgress(LocalizationService.GetString("PM_Step_Cancelled"), 0);
                                 CloseProgress();
                                 return Result.Cancelled;
                             }
@@ -283,6 +283,31 @@ public sealed class ShareProjectCommand : CommandBase
                 else
                 {
                     ReportProgress(LocalizationService.GetString("PM_Step_TempProject"), 15);
+
+                    // Save the original document BEFORE closing it. The share
+                    // flow closes the user's document and reopens it from disk
+                    // — without this save every unsaved user change would be
+                    // silently discarded (and missing from the shared output
+                    // too). The workshared branch does the equivalent via
+                    // SynchronizeWithCentral with SaveLocalAfter = true.
+                    // On failure we abort BEFORE closing anything, so the
+                    // user keeps the open document with all changes.
+                    try
+                    {
+                        originalDoc.Save();
+                        SmartConLogger.Info("Saved original non-workshared document before share.");
+                    }
+                    catch (Exception saveEx)
+                    {
+                        SmartConLogger.Error($"Failed to save original document before share: {saveEx.Message}");
+                        uiapp.Application.FailuresProcessing -= failureHandler;
+                        uiapp.DialogBoxShowing -= dialogHandler;
+                        ReportProgress(LocalizationService.GetString("PM_Step_Failed"), 0);
+                        CloseProgress();
+                        Autodesk.Revit.UI.TaskDialog.Show("Share Project",
+                            $"Failed to save the project before sharing:\n{saveEx.Message}\n\nShare cancelled — your document is still open with all changes.");
+                        return Result.Failed;
+                    }
 
                     tempDoc = uiapp.Application.NewProjectDocument(UnitSystem.Metric);
                     tempPath = System.IO.Path.Combine(
@@ -361,12 +386,13 @@ public sealed class ShareProjectCommand : CommandBase
                     if (tempDoc is not null && tempDoc.IsValidObject)
                         tempDoc.Close(false);
                 }
-                catch { }
+                catch (Exception ex) { SmartConLogger.Debug($"tempDoc.Close after success failed (ignored): {ex.Message}"); }
                 tempDoc = null;
 
                 if (tempPath is not null && System.IO.File.Exists(tempPath))
                 {
-                    try { System.IO.File.Delete(tempPath); } catch { }
+                    try { System.IO.File.Delete(tempPath); }
+                    catch (Exception ex) { SmartConLogger.Debug($"temp file delete failed (ignored): {ex.Message}"); }
                     tempPath = null;
                 }
 
@@ -380,11 +406,11 @@ public sealed class ShareProjectCommand : CommandBase
                     }
                     catch (Exception postSyncEx)
                     {
-                        SmartConLogger.Warn($"Post-reopen sync failed: {postSyncEx.Message}");
+                        SmartConLogger.Warn($"Post-reopen sync failed: {postSyncEx.Message} [Action: синхронизируйте модель с центральным файлом вручную — share-файл уже создан]");
                     }
                 }
 
-                ReportProgress("Done", 100);
+                ReportProgress(LocalizationService.GetString("PM_Step_Done"), 100);
                 CloseProgress();
 
                 uiapp.Application.FailuresProcessing -= failureHandler;
@@ -392,14 +418,11 @@ public sealed class ShareProjectCommand : CommandBase
 
                 var elapsedSec = measure.GetElapsedMilliseconds() / 1000.0;
 
-                var successMsg =
-                    $"Project shared successfully.\n\n" +
-                    $"Path: {sharedFilePath}\n" +
-                    $"Elements deleted: {deletedCount}\n" +
-                    $"Time: {elapsedSec:F1}s";
-
                 SmartConLogger.Info($"Share succeeded: {sharedFilePath} ({elapsedSec:F1}s, {deletedCount} deleted)");
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", successMsg);
+
+                var resultVm = new ShareResultViewModel(sharedFilePath, deletedCount, elapsedSec);
+                var presenter = ServiceHost.GetService<IDialogPresenter>();
+                presenter.ShowDialog(resultVm);
                 return Result.Succeeded;
             }
             catch (Exception ex)
@@ -411,18 +434,19 @@ public sealed class ShareProjectCommand : CommandBase
                     if (detachedDoc is not null && detachedDoc.IsValidObject)
                         detachedDoc.Close(false);
                 }
-                catch { }
+                catch (Exception closeEx) { SmartConLogger.Debug($"detachedDoc.Close in error path failed (ignored): {closeEx.Message}"); }
 
                 try
                 {
                     if (tempDoc is not null && tempDoc.IsValidObject)
                         tempDoc.Close(false);
                 }
-                catch { }
+                catch (Exception closeEx) { SmartConLogger.Debug($"tempDoc.Close in error path failed (ignored): {closeEx.Message}"); }
 
                 if (tempPath is not null && System.IO.File.Exists(tempPath))
                 {
-                    try { System.IO.File.Delete(tempPath); } catch { }
+                    try { System.IO.File.Delete(tempPath); }
+                    catch (Exception delEx) { SmartConLogger.Debug($"temp file delete in error path failed (ignored): {delEx.Message}"); }
                 }
 
                 try

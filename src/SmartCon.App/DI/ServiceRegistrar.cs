@@ -130,6 +130,7 @@ public static class ServiceRegistrar
             presenter.Register<MappingEditorViewModel>(vm => new MappingEditorView(vm));
             presenter.Register<PipeConnectEditorViewModel>(vm => new PipeConnectEditorView(vm));
             presenter.Register<ShareSettingsViewModel>(vm => new ShareSettingsView(vm));
+            presenter.Register<ShareResultViewModel>(vm => new ShareResultView(vm));
             presenter.Register<ExportNameDialogViewModel>(vm => new ExportNameDialog(vm));
             presenter.Register<PmParseRuleViewModel>(vm => new PmParseRuleView(vm));
             presenter.Register<PmFieldLibraryViewModel>(vm => new PmFieldLibraryView(vm));
