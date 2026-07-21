@@ -20,6 +20,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     private readonly IRevitContext _revitContext;
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
+    private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
 
     public StaleFamilyUpdater(
         IFamilyLoadService loadService,
@@ -29,7 +30,8 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         IFamilyManagerAwaitableEvent awaitable,
         IRevitContext revitContext,
         IFamilyVersionWriter versionWriter,
-        IClock clock)
+        IClock clock,
+        ISharedNestedFamilyRepository? nestedSharedRepository = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(loadService);
@@ -58,6 +60,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         _revitContext = revitContext;
         _versionWriter = versionWriter;
         _clock = clock;
+        _nestedSharedRepository = nestedSharedRepository;
     }
 
     public async Task<bool> UpdateFamilyAsync(
@@ -151,6 +154,31 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 return (false, null);
             }
 
+            // Pre-resolve shared-nested names BEFORE entering the ExternalEvent
+            // callback. The callback below blocks the Revit main thread with
+            // .GetAwaiter().GetResult(), which is only safe when every await
+            // inside completes synchronously. Resolving the SQLite lookup here
+            // (true async caller context) removes the only asynchronous gap
+            // from ReloadFamilyPreservingLoadedTypesAsync — a latent deadlock
+            // if Microsoft.Data.Sqlite ever yields asynchronously.
+            IReadOnlyList<string>? nestedNames = null;
+            if (_nestedSharedRepository is not null)
+            {
+                try
+                {
+                    nestedNames = await _nestedSharedRepository
+                        .GetNamesForCurrentVersionAsync(catalogItemId, ct)
+                        .ConfigureAwait(true);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    SmartConLogger.Warn(
+                        $"UpdateFamily[{catalogItemId}]: failed to pre-resolve nested names: " +
+                        $"{ex.GetType().Name}: {ex.Message}. " +
+                        "[Action: continuing without fallback names — dialog may show placeholder in Revit 2023/2024.2]");
+                }
+            }
+
             // Issue #101: Stale Update must reload the family while preserving
             // the set of types currently loaded in the project. A plain
             // LoadFamily pulls in EVERY type defined in the .rfa (could be 50),
@@ -165,6 +193,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                     overwriteParameterValues,
                     onStatusMessage: null,
                     onSharedDecision: req => _dialogService.ShowSharedFamiliesLoadModeDialog(req),
+                    nestedSharedNames: nestedNames,
                     ct: ct).GetAwaiter().GetResult(),
                 ct).ConfigureAwait(true);
 

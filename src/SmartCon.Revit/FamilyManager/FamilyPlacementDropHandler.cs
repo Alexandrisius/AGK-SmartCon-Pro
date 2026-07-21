@@ -21,6 +21,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly IFamilyVersionStore _versionStore;
     private readonly IStaleDetector _staleDetector;
     private readonly IClock _clock;
+    private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
     private readonly int _targetRevitVersion;
     private readonly Action? _onCompleted;
     private readonly Action<string>? _onError;
@@ -42,7 +43,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         Action<string>? onError = null,
         Action<string>? onSuccess = null,
         Action<string>? onStatusMessage = null,
-        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null)
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        ISharedNestedFamilyRepository? nestedSharedRepository = null)
     {
         _searchService = searchService;
         _fileResolver = fileResolver;
@@ -58,6 +60,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _onSuccess = onSuccess;
         _onStatusMessage = onStatusMessage;
         _onSharedDecision = onSharedDecision;
+        _nestedSharedRepository = nestedSharedRepository;
     }
 
     public void Execute(UIDocument document, object data)
@@ -117,11 +120,35 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
 
                 if (resolved is null || string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
-                    SmartConLogger.Warn($"No file resolved for '{familyName}'");
+                    SmartConLogger.Warn($"No file resolved for '{familyName}' [Action: проверьте, что для этой версии Revit в каталоге есть файл семейства; при необходимости выполните миграцию данных]");
                     return;
                 }
 
                 FamilyLoadResult result;
+                // Pre-resolve shared-nested names via AsyncBridge (pure SQLite —
+                // SAFE per AsyncBridge docs) BEFORE the blocking load calls.
+                // Execute() runs on the Revit main thread and blocks on
+                // .GetAwaiter().GetResult(); passing pre-resolved names removes
+                // the internal SQLite await from LoadFamilyAsync /
+                // LoadFamilySymbolAsync so the whole load completes
+                // synchronously (latent-deadlock hardening, same as
+                // StaleFamilyUpdater).
+                IReadOnlyList<string>? nestedNames = null;
+                if (_nestedSharedRepository is not null)
+                {
+                    try
+                    {
+                        nestedNames = AsyncBridge.RunSync(() => _nestedSharedRepository
+                            .GetNamesForCurrentVersionAsync(dragData.CatalogItemId, CancellationToken.None));
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Warn(
+                            $"Failed to pre-resolve nested names for '{dragData.CatalogItemId}': {ex.Message} " +
+                            "[Action: continuing without fallback names — dialog may show placeholder in Revit 2023/2024.2]");
+                    }
+                }
+
                 if (dragData.IsVirtual)
                 {
                     var options = FamilyLoadOptions.Default with { PreferredName = familyName };
@@ -130,6 +157,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                         options,
                         onStatusMessage: _onStatusMessage,
                         onSharedDecision: _onSharedDecision,
+                        nestedSharedNames: nestedNames,
                         ct: CancellationToken.None).GetAwaiter().GetResult();
                 }
                 else
@@ -139,6 +167,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                         typeName,
                         onStatusMessage: _onStatusMessage,
                         onSharedDecision: _onSharedDecision,
+                        nestedSharedNames: nestedNames,
                         catalogItemId: dragData.CatalogItemId,
                         ct: CancellationToken.None).GetAwaiter().GetResult();
                 }

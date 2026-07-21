@@ -54,6 +54,11 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         bool success = false;
 
         string? renameResult = null;
+        // Logging is captured into locals inside the transaction lambda and
+        // emitted AFTER it commits — file I/O on the main thread inside a
+        // transaction callback is a known WPF freeze factor
+        // (revit-api-best-practice/references/transaction-callback-freeze.md).
+        string? loadedDescription = null;
 
         // Issue #76 verification: log the attempt number and whether
         // IFamilyLoadOptions is supplied (so OnSharedFamilyFound callback
@@ -85,9 +90,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
 
             loadedFamily = family;
             success = true;
-
-            SmartConLogger.Info(
-                $"[{attemptName}] LoadFamily returned: {RevitFamilySearchService.DescribeFamily(family)}, sourcePath='{path}'");
+            loadedDescription = RevitFamilySearchService.DescribeFamily(family);
 
             var preferredName = options.PreferredName?.Trim();
             if (!string.IsNullOrWhiteSpace(preferredName)
@@ -105,6 +108,9 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
                 }
             }
         });
+
+        if (loadedDescription is not null)
+            SmartConLogger.Info($"[{attemptName}] LoadFamily returned: {loadedDescription}, sourcePath='{path}'");
 
         if (renameResult is not null)
             SmartConLogger.Info($"[{attemptName}] {renameResult}");
@@ -431,6 +437,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         bool overwriteParameterValues,
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        IReadOnlyList<string>? nestedSharedNames = null,
         CancellationToken ct = default)
     {
         var doc = _revitContext.GetDocument();
@@ -453,10 +460,13 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         // Resolve shared-nested names once (REVIT-198137 fallback for the
         // per-type OnSharedFamilyFound callbacks). Same path as a regular
         // family load so the dialog shows the real nested name in Revit
-        // 2023 / 2024 < 24.3.0.13.
-        IReadOnlyList<string>? resolvedNestedNames = null;
+        // 2023 / 2024 < 24.3.0.13. Caller-provided names take priority:
+        // callers that block synchronously inside an ExternalEvent callback
+        // (Stale Update, .GetAwaiter().GetResult()) pre-resolve them so this
+        // method contains no asynchronous gap on the Revit main thread.
+        IReadOnlyList<string>? resolvedNestedNames = nestedSharedNames;
         var catalogItemId = file.CatalogItemId;
-        if (!string.IsNullOrEmpty(catalogItemId) && _nestedSharedRepository is not null)
+        if (resolvedNestedNames is null && !string.IsNullOrEmpty(catalogItemId) && _nestedSharedRepository is not null)
         {
             try
             {
@@ -557,7 +567,6 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             overwriteParameterValues, onStatusMessage, onSharedDecision, resolvedNestedNames);
 
         var reloadedCount = 0;
-        var failedNames = new List<string>();
 
         try
         {
@@ -571,65 +580,64 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             //
             // NOTE: after the first LoadFamilySymbol that triggers a definition
             // reload, `existingFamily` is invalid — do NOT touch it below.
-            var group = new TransactionGroup(doc, "SmartCon: Reload Family (Preserve Types)");
-            try
+            //
+            // I-03: the group is created via ITransactionService.BeginGroupSession,
+            // never `new TransactionGroup` directly. Assimilate runs only when
+            // at least one symbol reload committed; on exception the session's
+            // Dispose rolls the whole batch back (all-or-nothing per family).
+            using var groupSession = _transactionService.BeginGroupSession("SmartCon: Reload Family (Preserve Types)");
+
+            foreach (var typeName in existingTypeNames)
             {
-                group.Start();
+                if (ct.IsCancellationRequested) break;
 
-                foreach (var typeName in existingTypeNames)
+                var symbolOk = false;
+                Autodesk.Revit.DB.FamilySymbol? localSymbol = null;
+
+                groupSession.RunInTransaction("Reload Family Symbol", _ =>
                 {
-                    if (ct.IsCancellationRequested) break;
+                    symbolOk = doc.LoadFamilySymbol(
+                        normalizedPath, typeName, loadOptions, out localSymbol);
+                });
 
-                    var symbolOk = false;
-                    Autodesk.Revit.DB.FamilySymbol? localSymbol = null;
-
-                    _transactionService.RunInTransaction("Reload Family Symbol", _ =>
-                    {
-                        symbolOk = doc.LoadFamilySymbol(
-                            normalizedPath, typeName, loadOptions, out localSymbol);
-                    });
-
-                    if (symbolOk)
-                    {
-                        reloadedCount++;
-                        SmartConLogger.Info($"Symbol '{typeName}' reloaded successfully");
-                    }
-                    else
-                    {
-                        // LoadFamilySymbol returns false when the family is
-                        // loaded but unchanged after the first type reload.
-                        // This is the expected behaviour for the 2nd..Nth
-                        // symbol when no further definition changes remain.
-                        // The type is still present (definition is already
-                        // current), so we treat it as success.
-                        reloadedCount++;
-                        SmartConLogger.Info(
-                            $"Symbol '{typeName}' reload returned false (family already current for this " +
-                            "symbol — likely 2nd+ type after first reload). Treating as success.");
-                    }
+                if (symbolOk)
+                {
+                    reloadedCount++;
+                    SmartConLogger.Info($"Symbol '{typeName}' reloaded successfully");
+                }
+                else
+                {
+                    // LoadFamilySymbol returns false when the family is
+                    // loaded but unchanged after the first type reload.
+                    // This is the expected behaviour for the 2nd..Nth
+                    // symbol when no further definition changes remain.
+                    // The type is still present (definition is already
+                    // current), so we treat it as success.
+                    reloadedCount++;
+                    SmartConLogger.Info(
+                        $"Symbol '{typeName}' reload returned false (family already current for this " +
+                        "symbol — likely 2nd+ type after first reload). Treating as success.");
                 }
             }
-            finally
-            {
-                if (group.HasStarted())
-                    group.Assimilate();
-            }
 
-            if (reloadedCount == 0 && failedNames.Count == existingTypeNames.Count)
+            if (reloadedCount == 0)
             {
-                var errorMessage = $"Failed to reload any of the {existingTypeNames.Count} type(s)";
+                // Nothing reloaded (cancelled before the first symbol). Skip
+                // Assimilate — the session Dispose rolls the empty group back —
+                // and report failure so the caller does NOT persist a fresh
+                // version marker for a family that was never touched.
+                var errorMessage = $"Failed to reload any of the {existingTypeNames.Count} type(s) (cancelled or rejected)";
                 SmartConLogger.Info(errorMessage);
                 return new FamilyLoadResult(false, displayFamilyName, null, errorMessage, FamilyLoadStatus.Failed);
             }
 
+            groupSession.Assimilate();
+
             var msg = $"Family '{displayFamilyName}' updated preserving {reloadedCount}/{existingTypeNames.Count} loaded type(s)";
-            if (failedNames.Count > 0)
-                msg += $", {failedNames.Count} failed: [{string.Join(", ", failedNames)}]";
             SmartConLogger.Info(msg);
 
             return new FamilyLoadResult(
-                true, displayFamilyName, msg, null,
-                failedNames.Count == 0 ? FamilyLoadStatus.Updated : FamilyLoadStatus.Loaded);
+                true, displayFamilyName, msg, null, FamilyLoadStatus.Updated);
         }
         catch (Exception ex)
         {

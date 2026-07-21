@@ -245,8 +245,26 @@ public interface IFamilyLoadService
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
         IReadOnlyList<string>? nestedSharedNames = null,
         CancellationToken ct = default);
+
+    Task<FamilyLoadResult> ReloadFamilyPreservingLoadedTypesAsync(
+        FamilyResolvedFile file, bool overwriteParameterValues,
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        IReadOnlyList<string>? nestedSharedNames = null,
+        CancellationToken ct = default);
 }
 ```
+
+`ReloadFamilyPreservingLoadedTypesAsync` (Issue #101): перезагружает семейство,
+сохраняя набор уже загруженных в проект типов (per-type `LoadFamilySymbol` внутри
+одной `TransactionGroup`-сессии через `ITransactionService.BeginGroupSession` — I-03).
+Параметр `nestedSharedNames` (добавлен вместе с аудит-харденингом): вызывающие,
+которые блокируют метод синхронно внутри ExternalEvent-callback
+(`StaleFamilyUpdater`, `.GetAwaiter().GetResult()`), **обязаны** предварительно
+резолвить и передать список — это убирает единственный асинхронный (SQLite) await
+из метода и гарантирует синхронное завершение на Revit main thread
+(латентный deadlock: async-методы Microsoft.Data.Sqlite завершаются синхронно,
+но контракт на это не полагается).
 
 `onSharedDecision` вызывается один раз для каждого конфликтующего shared nested
 (когда Revit сообщает `OnSharedFamilyFound`). Должен блокировать вызывающий поток
