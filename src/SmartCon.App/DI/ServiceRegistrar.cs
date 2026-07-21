@@ -142,6 +142,7 @@ public static class ServiceRegistrar
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
+            presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
             presenter.Register<HashRecalculationProgressViewModel>(vm => new HashRecalculationProgressView(vm));
             presenter.Register<FmProjectBaseRulesEditorViewModel>(vm => new FmProjectBaseRulesEditorView(vm));
             presenter.Register<FmParseRuleViewModel>(vm => new FmParseRuleView(vm));

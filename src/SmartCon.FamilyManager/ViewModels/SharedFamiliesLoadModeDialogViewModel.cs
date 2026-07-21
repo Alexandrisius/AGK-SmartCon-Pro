@@ -94,9 +94,13 @@ public sealed partial class SharedFamiliesLoadModeDialogViewModel : ObservableOb
         bool showBatchProgress = false;
         if (request.TotalInBatch > 1)
         {
+            // TotalInBatch = ALL shared nested in the .rfa (catalog), NOT the
+            // conflict count — Revit fires OnSharedFamilyFound only for nested
+            // that are both loaded in the project AND changed. The text must
+            // not imply "N dialogs are coming" — only the ordinal is truthful.
             batchProgress = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_LoadShared_BatchProgress)
-                    ?? "Shared nested {0} of {1}",
+                    ?? "Conflict #{0} — file has {1} shared nested families, Revit asks only for changed ones",
                 request.IndexInBatch, request.TotalInBatch);
             showBatchProgress = true;
         }

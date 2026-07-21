@@ -428,8 +428,8 @@ public static partial class LocalizationService
         ru["FM_LoadShared_Skip"] = "Пропущено: {0}";
         en["FM_LoadShared_Skip"] = "Skipped: {0}";
 
-        ru["FM_LoadShared_BatchProgress"] = "Общее вложенное {0} из {1}";
-        en["FM_LoadShared_BatchProgress"] = "Shared nested {0} of {1}";
+        ru["FM_LoadShared_BatchProgress"] = "Конфликт №{0} — в файле {1} общих вложенных, Revit спрашивает только об изменённых";
+        en["FM_LoadShared_BatchProgress"] = "Conflict #{0} — file has {1} shared nested families, Revit asks only for changed ones";
 
         ru["FM_LoadShared_SourceFromCatalog"] = "имя из каталога SmartCon";
         en["FM_LoadShared_SourceFromCatalog"] = "name from SmartCon catalog";
