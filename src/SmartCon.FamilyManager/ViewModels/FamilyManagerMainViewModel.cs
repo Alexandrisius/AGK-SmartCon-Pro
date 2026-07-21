@@ -369,7 +369,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     {
         var currentPath = _cachedProjectPath;
         if (_loadedFamilyNamesCache is not null &&
-            _loadedFamilyNamesCacheProjectPath == currentPath)
+            string.Equals(_loadedFamilyNamesCacheProjectPath, currentPath, StringComparison.OrdinalIgnoreCase))
         {
             return _loadedFamilyNamesCache;
         }
@@ -666,7 +666,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 {
                     GetLoadedFamilyNamesCached();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug($"GetLoadedFamilyNamesCached failed during refresh (ignored, cache stays stale): {ex.Message}");
+                }
             });
 
             IsLoading = true;

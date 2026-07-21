@@ -175,7 +175,8 @@ public sealed partial class FamilyManagerMainViewModel
                 importPrecomputer: _importPrecomputer,
                 dedupService: _dedupService,
                 executor: executor,
-                publishedByUser: _revitContext.GetUsername());
+                publishedByUser: _revitContext.GetUsername(),
+                dispatcher: _dispatcher);
 
             _dialogService.ShowModelessBatchImportDialog(vm);
             await vm.DialogCompletion;
@@ -210,6 +211,9 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error(
+                $"ImportFilesAsync failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace} " +
+                "[Action: check smartcon.log for the failing family; prepared documents will be closed]");
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}",
@@ -287,6 +291,8 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
+                SmartConLogger.Error(
+                    $"ImportSelectedElementsAsync (pick elements) failed: {ex.GetType().Name}: {ex.Message}");
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Ошибка импорта: {0}",
                     ex.Message);

@@ -55,9 +55,13 @@ public sealed class LocalCatalogDatabase
             _dbPath = Path.Combine(_databaseRoot, "catalog.db");
             _canWrite = true;
             _connectionString = BuildConnectionString(_dbPath, canWrite: true);
+
+            // Must stay inside the lock: EnsureJournalModeDeleteOnCreation
+            // reads _dbPath/_connectionString — outside the lock a concurrent
+            // SwitchToPath could repoint them at the other database.
+            Directory.CreateDirectory(databaseRootPath);
+            EnsureJournalModeDeleteOnCreation();
         }
-        Directory.CreateDirectory(databaseRootPath);
-        EnsureJournalModeDeleteOnCreation();
     }
 
     private void EnsureJournalModeDeleteOnCreation()

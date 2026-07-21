@@ -73,6 +73,11 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
             if (doc is not null)
             {
                 try { doc.Close(false); } catch { /* already closed / invalid */ }
+                // REVIT-237190: force synchronous COM cleanup of the temporary
+                // document, bypassing the finalizer. Best-effort: on Revit
+                // versions where Document is a managed wrapper (not a real COM
+                // object) ReleaseComObject throws ArgumentException — ignored.
+                try { System.Runtime.InteropServices.Marshal.ReleaseComObject(doc); } catch { }
             }
             // Workaround #96: force the WPF/render-thread resync after each
             // OpenDocumentFile+Close cycle. Single-space = invisible balloon.

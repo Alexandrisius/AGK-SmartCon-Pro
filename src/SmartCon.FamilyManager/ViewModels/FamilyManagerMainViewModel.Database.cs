@@ -129,6 +129,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (InvalidOperationException ex)
         {
+            SmartConLogger.Error($"SwitchDatabase failed (InvalidOperation): {ex.Message}");
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database",
                 ex.Message);
@@ -136,6 +137,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"SwitchDatabase failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database",
                 ex.Message);

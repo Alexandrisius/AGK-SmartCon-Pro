@@ -335,7 +335,8 @@ public sealed partial class FamilyManagerMainViewModel
             _viewModelFactory,
             catalogProvider: _catalogProvider,
             importPrecomputer: _importPrecomputer,
-            dedupService: _dedupService);
+            dedupService: _dedupService,
+            dispatcher: _dispatcher);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -824,7 +825,8 @@ public sealed partial class FamilyManagerMainViewModel
             importPrecomputer: _importPrecomputer,
             dedupService: _dedupService,
             executor: executor,
-            publishedByUser: _revitContext.GetUsername());
+            publishedByUser: _revitContext.GetUsername(),
+            dispatcher: _dispatcher);
 
         _dialogService.ShowModelessBatchImportDialog(vm);
         await vm.DialogCompletion;

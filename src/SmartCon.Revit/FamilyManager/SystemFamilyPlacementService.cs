@@ -66,7 +66,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             var existingType = FindTypeByName(activeDoc, sourceType.Name, sourceType.Category?.Id);
             if (existingType is not null)
             {
-                try { sourceDoc.Close(false); } catch { }
+                CloseAndRelease(sourceDoc);
                 sourceDoc = null;
                 ActivatePlacement(uiApp, existingType);
                 return;
@@ -83,7 +83,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
 
             var copiedType = FindTypeByName(activeDoc, sourceType.Name, sourceType.Category?.Id);
 
-            try { sourceDoc.Close(false); } catch { }
+            CloseAndRelease(sourceDoc);
             sourceDoc = null;
 
             if (copiedType is not null)
@@ -93,8 +93,20 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         }
         finally
         {
-            try { sourceDoc?.Close(false); } catch { }
+            if (sourceDoc is not null)
+            {
+                CloseAndRelease(sourceDoc);
+            }
         }
+    }
+
+    private static void CloseAndRelease(Document doc)
+    {
+        try { doc.Close(false); } catch { }
+        // REVIT-237190: best-effort synchronous COM cleanup after Close —
+        // throws ArgumentException on Revit versions where Document is a
+        // managed wrapper, which is fine to ignore.
+        try { System.Runtime.InteropServices.Marshal.ReleaseComObject(doc); } catch { }
     }
 
     private static void ActivatePlacement(UIApplication uiApp, ElementType elementType)
