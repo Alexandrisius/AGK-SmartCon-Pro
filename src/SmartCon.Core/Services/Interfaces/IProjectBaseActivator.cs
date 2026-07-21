@@ -16,7 +16,10 @@ public interface IProjectBaseActivator
     /// For the document with file path <paramref name="currentFilePath"/>,
     /// pick the first project-scoped base whose binding matches, switch the
     /// active database to it, and return its connection id. If no project
-    /// base matches, fall back to the first <see cref="BaseType.General"/>
+    /// base matches: keep the current active base when it is a
+    /// <see cref="BaseType.General"/> one (the user's manual selection is
+    /// preserved); otherwise (no active base, or the active project base no
+    /// longer matches) fall back to the first <see cref="BaseType.General"/>
     /// connection. If neither kind has any candidate, leave the active
     /// database unchanged and return <c>null</c>.
     /// </summary>
