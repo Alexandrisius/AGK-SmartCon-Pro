@@ -33,6 +33,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             ("FamilyDocPath", string.IsNullOrEmpty(familyDoc.PathName) ? "<empty>" : Path.GetFileName(familyDoc.PathName)),
             ("IsValidObject", familyDoc.IsValidObject));
 
+        ParameterUnitDiagnostics.LogDocumentUnits(familyDoc, "SnapshotExtract");
+
         var fm = familyDoc.FamilyManager;
         var familyName = familyDoc.Title;
         if (familyName.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
@@ -352,16 +354,34 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             .ToLookup(s => s.Name, s => s, StringComparer.Ordinal);
 
         var result = new List<FamilyTypeSnapshot>();
+        var allTypes = fm.Types.Cast<FamilyType>().ToList();
+        var hasNamedTypes = allTypes.Any(t => !string.IsNullOrWhiteSpace(t.Name));
 
-        foreach (FamilyType familyType in fm.Types)
+        foreach (FamilyType familyType in allTypes)
         {
+            string typeName;
             if (string.IsNullOrWhiteSpace(familyType.Name))
             {
-                SmartConLogger.Debug("  ExtractTypes: skipping unnamed default type");
-                continue;
-            }
+                if (hasNamedTypes)
+                {
+                    // The unnamed default type is a phantom duplicate of the
+                    // current type when user-created types exist — skip it.
+                    SmartConLogger.Debug("  ExtractTypes: skipping unnamed default type (named types present)");
+                    continue;
+                }
 
-            var typeName = familyType.Name;
+                // Families without user-created types carry all parameter
+                // values on the single unnamed default type. Extract it under
+                // the hash-stable synthetic name '<default>' — renaming the
+                // file must not shift FHV2, and the type name participates in
+                // the canonical string (FamilyContentHasher). See #152.
+                typeName = FamilyTypeSnapshot.DefaultTypeName;
+                SmartConLogger.Debug("  ExtractTypes: using synthetic name '<default>' for the sole unnamed default type");
+            }
+            else
+            {
+                typeName = familyType.Name;
+            }
             var values = new List<FamilyParameterValue>();
 
             foreach (var pair in paramMap)
@@ -411,6 +431,9 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             string? valueText = null;
             double? valueNumber = null;
             string? resolvedName = null;
+            string? valueDisplay = null;
+            string? specTypeId = null;
+            string? unitTypeId = null;
 
             switch (param.StorageType)
             {
@@ -418,6 +441,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     var dblVal = familyType.AsDouble(param);
                     valueNumber = dblVal;
                     valueText = FormattableString.Invariant($"{dblVal:0.######}");
+                    if (dblVal.HasValue)
+                    {
+                        valueDisplay = Compatibility.RevitUnitsCompat.FormatDisplayValue(familyDoc, param, dblVal.Value);
+                        specTypeId = Compatibility.RevitUnitsCompat.GetSpecTypeIdString(param.Definition);
+                        unitTypeId = Compatibility.RevitUnitsCompat.GetUnitTypeIdString(param);
+                    }
+                    ParameterUnitDiagnostics.LogFamilyTypeDouble(familyType, param, parameterName, dblVal, "Snapshot");
                     break;
 
                 case StorageType.Integer:
@@ -456,7 +486,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 HasValue: true,
                 ValueText: valueText,
                 ValueNumber: valueNumber,
-                ResolvedElementName: resolvedName);
+                ResolvedElementName: resolvedName,
+                ValueDisplay: valueDisplay,
+                SpecTypeId: specTypeId,
+                UnitTypeId: unitTypeId);
         }
         catch (Exception ex)
         {
@@ -729,6 +762,9 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 string? valueText = null;
                 double? valueNumber = null;
                 string? resolvedName = null;
+                string? valueDisplay = null;
+                string? specTypeId = null;
+                string? unitTypeId = null;
 
                 switch (param.StorageType)
                 {
@@ -736,6 +772,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                         var dblVal = param.AsDouble();
                         valueNumber = dblVal;
                         valueText = FormattableString.Invariant($"{dblVal:0.######}");
+                        valueDisplay = Compatibility.RevitUnitsCompat.FormatDisplayValue(projectDoc, param, dblVal);
+                        specTypeId = Compatibility.RevitUnitsCompat.GetSpecTypeIdString(param.Definition);
+                        unitTypeId = Compatibility.RevitUnitsCompat.GetUnitTypeIdString(param);
+                        ParameterUnitDiagnostics.LogParameterDouble(param, paramName!, dblVal, "SystemSnapshot");
                         break;
 
                     case StorageType.Integer:
@@ -774,7 +814,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     HasValue: true,
                     ValueText: valueText,
                     ValueNumber: valueNumber,
-                    ResolvedElementName: resolvedName));
+                    ResolvedElementName: resolvedName,
+                    ValueDisplay: valueDisplay,
+                    SpecTypeId: specTypeId,
+                    UnitTypeId: unitTypeId));
             }
             catch (Exception ex)
             {

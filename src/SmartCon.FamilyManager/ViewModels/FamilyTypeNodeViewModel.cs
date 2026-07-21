@@ -19,13 +19,14 @@ public sealed class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
         string typeName,
         bool isVirtual = false,
         string familySource = "loadable",
-        string? uniqueId = null)
+        string? uniqueId = null,
+        string? displayName = null)
     {
         CatalogItemId = catalogItemId;
         TypeName = typeName;
         IsVirtual = isVirtual;
         FamilySource = familySource;
         UniqueId = uniqueId;
-        DisplayName = typeName;
+        DisplayName = displayName ?? typeName;
     }
 }

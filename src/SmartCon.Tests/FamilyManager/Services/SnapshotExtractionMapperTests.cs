@@ -427,4 +427,92 @@ public sealed class SnapshotExtractionMapperTests
 
         Assert.Equal(0, result);
     }
+
+    // ---- ValueDisplay / UnitTypeId mapping ----
+
+    [Fact]
+    public void ToExtractionResult_Loadable_PrefersValueDisplayOverRawValueText()
+    {
+        var snapshot = new FamilySnapshot(
+            FamilyName: "Sleeve", Category: "Pipe Fittings",
+            Parameters: new[]
+            {
+                new FamilyParameterInfo("DN", "Double", "", IsInstance: false, IsShared: false,
+                    null, false, false, null, null),
+            },
+            Types: new[]
+            {
+                new FamilyTypeSnapshot("<default>", new[]
+                {
+                    new FamilyParameterValue("DN", "Double", HasValue: true,
+                        ValueText: "0.984252", ValueNumber: 0.984251968503937, ResolvedElementName: null,
+                        ValueDisplay: "300 мм",
+                        SpecTypeId: "autodesk.spec.aec:length-2.0.0",
+                        UnitTypeId: "autodesk.unit.unit:millimeters-1.0.1"),
+                }),
+            },
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+
+        var result = SnapshotExtractionMapper.ToExtractionResult(snapshot, revitMajorVersion: 2025);
+
+        var dn = result.Types[0].Values.Single(v => v.ParameterName == "DN");
+        Assert.Equal("300 мм", dn.ValueText);
+        Assert.Equal(0.984251968503937, dn.ValueNumber);
+        Assert.Equal("autodesk.unit.unit:millimeters-1.0.1", dn.UnitTypeId);
+        Assert.Equal(AttributeValueStatus.Found, dn.Status);
+    }
+
+    [Fact]
+    public void ToExtractionResult_Loadable_FallsBackToValueText_WhenValueDisplayNull()
+    {
+        var snapshot = new FamilySnapshot(
+            FamilyName: "F", Category: "C",
+            Parameters: new[]
+            {
+                new FamilyParameterInfo("Note", "String", "", IsInstance: false, IsShared: false,
+                    null, false, false, null, null),
+            },
+            Types: new[]
+            {
+                new FamilyTypeSnapshot("T1", new[]
+                {
+                    new FamilyParameterValue("Note", "String", HasValue: true,
+                        ValueText: "hello", ValueNumber: null, ResolvedElementName: null),
+                }),
+            },
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+
+        var result = SnapshotExtractionMapper.ToExtractionResult(snapshot, revitMajorVersion: 2025);
+
+        var note = result.Types[0].Values.Single(v => v.ParameterName == "Note");
+        Assert.Equal("hello", note.ValueText);
+        Assert.Null(note.UnitTypeId);
+    }
+
+    [Fact]
+    public void ToExtractionResult_System_PrefersValueDisplayAndMapsUnitTypeId()
+    {
+        var snapshot = new SystemFamilySnapshot(
+            CategoryName: "Трубы", CategoryId: -2008044,
+            Types: new[]
+            {
+                new SystemTypeSnapshot("Стандартный", new[]
+                {
+                    new SystemParameterValue("PN", "Double", HasValue: true,
+                        ValueText: "487680", ValueNumber: 487680.0, ResolvedElementName: null,
+                        ValueDisplay: "16 бар",
+                        SpecTypeId: "autodesk.spec.aec.piping:pressure-2.0.0",
+                        UnitTypeId: "autodesk.unit.unit:bars-1.0.1"),
+                }),
+            });
+
+        var result = SnapshotExtractionMapper.ToExtractionResult(snapshot, revitMajorVersion: 2025);
+
+        var pn = result.Types[0].Values.Single(v => v.ParameterName == "PN");
+        Assert.Equal("16 бар", pn.ValueText);
+        Assert.Equal(487680.0, pn.ValueNumber);
+        Assert.Equal("autodesk.unit.unit:bars-1.0.1", pn.UnitTypeId);
+    }
 }

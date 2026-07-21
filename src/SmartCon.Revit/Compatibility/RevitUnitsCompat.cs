@@ -327,6 +327,166 @@ public static class RevitUnitsCompat
     }
 #endif
 
+    // ── Display formatting (FamilyManager attribute values) ─────────────
+
+    /// <summary>
+    /// Форматирует internal-units значение Double-параметра в человекочитаемую
+    /// строку по unit-настройкам документа-владельца с принудительным символом
+    /// единицы ("300 мм", "16 бар"). R21+: <c>UnitFormatUtils.Format</c> +
+    /// <c>FormatValueOptions { AppendUnitSymbol = true }</c> — символ добавляется
+    /// даже когда FormatOptions спеки его не задаёт (типично для Length).
+    /// R19-R20: конвертация в DisplayUnitType параметра + первый валидный символ
+    /// через <c>LabelUtils.GetLabelFor(UnitSymbolType)</c>.
+    /// Возвращает <c>null</c>, когда spec не measurable или форматирование
+    /// невозможно — вызывающий код обязан fallback'нуться на AsValueString/raw.
+    /// </summary>
+#if REVIT2021_OR_GREATER
+    public static string? FormatDisplayValue(Document unitsSource, FamilyParameter param, double internalValue)
+        => FormatDisplayValueCore(unitsSource, GetSpecTypeId(param.Definition), internalValue);
+
+    public static string? FormatDisplayValue(Document unitsSource, Parameter param, double internalValue)
+        => FormatDisplayValueCore(unitsSource, GetSpecTypeId(param.Definition), internalValue);
+#else
+    public static string? FormatDisplayValue(Document unitsSource, FamilyParameter param, double internalValue)
+        => FormatDisplayValueLegacy(SafeGetDisplayUnitType(param), internalValue);
+
+    public static string? FormatDisplayValue(Document unitsSource, Parameter param, double internalValue)
+        => FormatDisplayValueLegacy(SafeGetDisplayUnitType(param), internalValue);
+#endif
+
+    /// <summary>
+    /// Spec параметра как строка (Forge TypeId на R21+, ParameterType enum name
+    /// на R19-R20) для диагностики и персистентности. <c>null</c> при ошибке.
+    /// </summary>
+    public static string? GetSpecTypeIdString(Definition? def)
+    {
+#if REVIT2021_OR_GREATER
+        return GetSpecTypeId(def)?.TypeId;
+#else
+        try { return def?.ParameterType.ToString(); }
+        catch { return null; }
+#endif
+    }
+
+    /// <summary>
+    /// Display unit параметра как строка (Forge TypeId на R21+, DisplayUnitType
+    /// enum name на R19-R20). <c>null</c> при ошибке или отсутствии unit.
+    /// </summary>
+    public static string? GetUnitTypeIdString(FamilyParameter param)
+    {
+#if REVIT2021_OR_GREATER
+        try { return param.GetUnitTypeId()?.TypeId; }
+        catch { return null; }
+#else
+        try
+        {
+            var dut = param.DisplayUnitType;
+            return dut == DisplayUnitType.DUT_UNDEFINED ? null : dut.ToString();
+        }
+        catch { return null; }
+#endif
+    }
+
+    /// <inheritdoc cref="GetUnitTypeIdString(FamilyParameter)"/>
+    public static string? GetUnitTypeIdString(Parameter param)
+    {
+#if REVIT2021_OR_GREATER
+        try { return param.GetUnitTypeId()?.TypeId; }
+        catch { return null; }
+#else
+        try
+        {
+            var dut = param.DisplayUnitType;
+            return dut == DisplayUnitType.DUT_UNDEFINED ? null : dut.ToString();
+        }
+        catch { return null; }
+#endif
+    }
+
+#if REVIT2021_OR_GREATER
+#if REVIT2024_OR_GREATER
+    private static ForgeTypeId? GetSpecTypeId(Definition? def)
+    {
+        if (def is null) return null;
+        try
+        {
+            return def.GetDataType();
+        }
+        catch { return null; }
+    }
+#else
+    // R21 binary runs on Revit 2021-2023: Definition.GetSpecTypeId() was
+    // REMOVED in Revit 2023 and Definition.GetDataType() was only ADDED in
+    // 2022 — no single compile-time API covers all three versions, and any
+    // direct reference to a missing method poisons the JIT of the caller
+    // (MissingMethodException escapes the surrounding try/catch on net48).
+    // Resolve via cached reflection instead. See #153.
+    private static readonly System.Reflection.MethodInfo? GetDataTypeMethod =
+        typeof(Definition).GetMethod("GetDataType", System.Type.EmptyTypes);
+    private static readonly System.Reflection.MethodInfo? GetSpecTypeIdMethod =
+        typeof(Definition).GetMethod("GetSpecTypeId", System.Type.EmptyTypes);
+
+    private static ForgeTypeId? GetSpecTypeId(Definition? def)
+    {
+        if (def is null) return null;
+        try
+        {
+            if (GetDataTypeMethod is not null)
+                return GetDataTypeMethod.Invoke(def, null) as ForgeTypeId;
+            if (GetSpecTypeIdMethod is not null)
+                return GetSpecTypeIdMethod.Invoke(def, null) as ForgeTypeId;
+        }
+        catch { }
+        return null;
+    }
+#endif
+
+    private static string? FormatDisplayValueCore(Document unitsSource, ForgeTypeId? spec, double internalValue)
+    {
+        if (unitsSource is null || spec is null) return null;
+        try
+        {
+            // UnitFormatUtils.Format throws ArgumentException for non-measurable
+            // specs (UnitUtils.IsMeasurableSpec is unavailable on Revit 2021).
+            var options = new FormatValueOptions { AppendUnitSymbol = true };
+            var formatted = UnitFormatUtils.Format(unitsSource.GetUnits(), spec, internalValue, false, options);
+            return UnitSymbolFixup.Correct(formatted);
+        }
+        catch { return null; }
+    }
+#else
+    private static DisplayUnitType SafeGetDisplayUnitType(FamilyParameter param)
+    {
+        try { return param.DisplayUnitType; }
+        catch { return DisplayUnitType.DUT_UNDEFINED; }
+    }
+
+    private static DisplayUnitType SafeGetDisplayUnitType(Parameter param)
+    {
+        try { return param.DisplayUnitType; }
+        catch { return DisplayUnitType.DUT_UNDEFINED; }
+    }
+
+    private static string? FormatDisplayValueLegacy(DisplayUnitType dut, double internalValue)
+    {
+        try
+        {
+            if (dut == DisplayUnitType.DUT_UNDEFINED) return null;
+            var converted = UnitUtils.ConvertFromInternalUnits(internalValue, dut);
+            var text = converted.ToString("0.######", CultureInfo.InvariantCulture);
+            var symbols = FormatOptions.GetValidUnitSymbols(dut);
+            if (symbols is not null && symbols.Count > 0)
+            {
+                var label = LabelUtils.GetLabelFor(symbols[0]);
+                if (!string.IsNullOrEmpty(label))
+                    return UnitSymbolFixup.Correct(text + " " + label);
+            }
+            return text;
+        }
+        catch { return null; }
+    }
+#endif
+
     // ── Internal helpers ────────────────────────────────────────────────
 
     /// <summary>

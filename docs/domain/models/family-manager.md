@@ -1141,6 +1141,31 @@ trim'ит, lower-case'ит, и резолвит в canonical key:
 
 ---
 
+## UnitSymbolFixup
+
+Pure C# коррекция известных ошибок русской локализации Autodesk в символах
+единиц, которые Revit возвращает из `AsValueString` / `UnitFormatUtils.Format`.
+RU-таблица символов Revit рендерит единицу давления бар как «бары», но по
+ГОСТ 8.417 «бар» несклоняем — корректное отображение «16 бар». Правила —
+замены хвостового токена (ordinal), неизвестные строки проходят без изменений.
+Вынесено в Core для unit-тестирования без Revit API; применяется в
+`RevitUnitsCompat.FormatDisplayValue` и в fallback-точках `AsValueString`.
+
+**Файл:** `Services/Implementation/UnitSymbolFixup.cs`
+
+```csharp
+public static class UnitSymbolFixup
+{
+    public static string? Correct(string? formatted);
+}
+```
+
+9 unit-тестов в `UnitSymbolFixupTests.cs` покрывают замену «бары»→«бар»,
+no-op для корректных/английских/прочих символов, null/empty и не-хвостовые
+позиции.
+
+---
+
 ## FamilyMetadataExtractionResult
 
 Результат извлечения метаданных из `.rfa`. MVP — только файловые метаданные (имя, размер, хеш).
@@ -1790,13 +1815,16 @@ public sealed record FamilyParameterValue(
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);
 `
 
 - FamilyName — from FamilyManager or family document title.
 - Category — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
 - Parameters — all schema-level parameters, sorted by name. Includes SharedParamGuid for shared params and BuiltInParameterId enum name for built-ins (null for user/shared).
-- Types — all family types with their values. Unnamed types skipped.
+- Types — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values.
 - Geometry — aggregated GeometryMetrics from all GenericForm elements.
 - SharedNestedFamilyNames — names of shared nested families (ADR-034), sorted.
 - FamilyParameterValue.HasValue distinguishes "no value" (alse) from "value is zero" (	rue, ValueNumber=0) — hash treats them differently.
@@ -1825,7 +1853,10 @@ public sealed record SystemParameterValue(
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);
 `
 
 - CategoryName — display name (e.g. "Трубы", "Воздуховоды").
@@ -2129,16 +2160,20 @@ public sealed record FamilyParameterValue(
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);
 ```
 
 - `FamilyName` — from `FamilyManager` or family document title.
 - `Category` — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
 - `Parameters` — all schema-level parameters, sorted by name. Includes `SharedParamGuid` for shared params and `BuiltInParameterId` enum name for built-ins (null for user/shared).
-- `Types` — all family types with their values. Unnamed types skipped.
+- `Types` — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values.
 - `Geometry` — aggregated `GeometryMetrics` from all `GenericForm` elements.
 - `SharedNestedFamilyNames` — names of shared nested families (ADR-034), sorted.
 - `FamilyParameterValue.HasValue` distinguishes "no value" (`false`) from "value is zero" (`true`, `ValueNumber=0`) — hash treats them differently.
+- `FamilyParameterValue.ValueDisplay` — human-readable value formatted per the owning document's unit settings with the unit symbol (e.g. "300 мм", "16 бар"); `null` when not applicable. NOT part of the content hash — display metadata only. `SpecTypeId`/`UnitTypeId` carry the Forge TypeId strings (legacy enum names on R19-R20) and are likewise excluded from the hash.
 
 ---
 
@@ -2164,7 +2199,10 @@ public sealed record SystemParameterValue(
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);
 ```
 
 - `CategoryName` — display name (e.g. "Трубы", "Воздуховоды").

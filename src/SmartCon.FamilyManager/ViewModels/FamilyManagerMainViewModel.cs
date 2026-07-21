@@ -601,7 +601,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     {
                         leaf.Children.Add(new FamilyTypeNodeViewModel(
                             t.CatalogItemId, t.Name, isVirtual: false,
-                            familySource: leaf.FamilySource, uniqueId: t.UniqueId));
+                            familySource: leaf.FamilySource, uniqueId: t.UniqueId,
+                            displayName: t.Name == Core.Models.FamilyManager.FamilyTypeSnapshot.DefaultTypeName
+                                ? leaf.DisplayName
+                                : null));
                     }
                 }
 

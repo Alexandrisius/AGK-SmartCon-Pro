@@ -85,6 +85,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [ObservableProperty] private int _attributesFoundCount;
     [ObservableProperty] private int _attributesMissingCount;
     [ObservableProperty] private bool _hasTypes;
+    [ObservableProperty] private bool _showTypeSelector;
     [ObservableProperty] private bool _isReadOnly;
 
     partial void OnSelectedAttributeGroupChanged(string? value)
@@ -375,7 +376,11 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
             var types = await _typeRepository.GetTypesForItemAsync(_catalogItemId, ct);
             AvailableTypes = new ObservableCollection<FamilyTypeSelectorItem>(
-                types.Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
+                types.Select(t => new FamilyTypeSelectorItem
+                {
+                    TypeId = t.Id,
+                    TypeName = t.Name == Core.Models.FamilyManager.FamilyTypeSnapshot.DefaultTypeName ? Name : t.Name
+                }));
             HasTypes = AvailableTypes.Count > 0;
 
             if (!HasTypes)
@@ -383,6 +388,15 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                 AvailableTypes.Add(new FamilyTypeSelectorItem { TypeId = null, TypeName = Name });
                 HasTypes = true;
             }
+
+            // Show the selector only when there is something meaningful to
+            // choose or to read: 2+ types, OR a single user-created (named)
+            // type. A single '<default>' type or the virtual family-name
+            // entry carries no extra information — hide the selector then,
+            // mirroring the 3D viewer which drops the phantom type.
+            ShowTypeSelector = types.Count > 1
+                || (types.Count == 1
+                    && types[0].Name != Core.Models.FamilyManager.FamilyTypeSnapshot.DefaultTypeName);
 
             var allValues = await _valueRepository.GetValuesForItemAsync(_catalogItemId, run.VersionId, ct);
             _allValues = allValues;

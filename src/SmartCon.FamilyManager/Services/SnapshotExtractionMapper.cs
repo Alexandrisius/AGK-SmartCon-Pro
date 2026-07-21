@@ -200,7 +200,8 @@ internal static class SnapshotExtractionMapper
         AttributeScope? scope = null;
         if (scopeByName is not null && scopeByName.TryGetValue(v.ParameterName, out var s))
             scope = s;
-        return ToValueResultCore(v.ParameterName, v.StorageType, v.HasValue, v.ValueText, v.ValueNumber, scope);
+        return ToValueResultCore(v.ParameterName, v.StorageType, v.HasValue, v.ValueText, v.ValueNumber, scope,
+            v.ValueDisplay, v.UnitTypeId);
     }
 
     private static FamilyExtractionValueResult ToValueResult(
@@ -211,7 +212,8 @@ internal static class SnapshotExtractionMapper
         var scope = fixedScope;
         if (scope is null && scopeByName is not null && scopeByName.TryGetValue(v.ParameterName, out var s))
             scope = s;
-        return ToValueResultCore(v.ParameterName, v.StorageType, v.HasValue, v.ValueText, v.ValueNumber, scope);
+        return ToValueResultCore(v.ParameterName, v.StorageType, v.HasValue, v.ValueText, v.ValueNumber, scope,
+            v.ValueDisplay, v.UnitTypeId);
     }
 
     private static FamilyExtractionValueResult ToValueResultCore(
@@ -220,7 +222,9 @@ internal static class SnapshotExtractionMapper
         bool hasValue,
         string? valueText,
         double? valueNumber,
-        AttributeScope? scope)
+        AttributeScope? scope,
+        string? valueDisplay,
+        string? unitTypeId)
     {
         if (!hasValue)
         {
@@ -243,10 +247,10 @@ internal static class SnapshotExtractionMapper
             parameterName,
             scope,
             storageType,
-            ValueText: valueText,
+            ValueText: valueDisplay ?? valueText,
             ValueRaw: valueRaw,
             ValueNumber: valueNumber,
-            UnitTypeId: null,
+            UnitTypeId: unitTypeId,
             Status: AttributeValueStatus.Found,
             Message: null);
     }
