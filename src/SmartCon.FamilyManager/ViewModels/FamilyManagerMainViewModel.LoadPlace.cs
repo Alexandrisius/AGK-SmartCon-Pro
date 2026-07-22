@@ -46,7 +46,10 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return false;
 
-        return leaf.ContentStatus == ContentStatus.Active && _accessControl.CanLoadToProject && _activeBaseCompatibleWithCurrentDoc;
+        return leaf.ContentStatus == ContentStatus.Active
+            && !leaf.IsRevitIncompatible
+            && _accessControl.CanLoadToProject
+            && _activeBaseCompatibleWithCurrentDoc;
     }
 
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]

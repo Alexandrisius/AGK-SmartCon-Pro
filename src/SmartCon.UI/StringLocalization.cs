@@ -470,6 +470,10 @@ public static class StringLocalization
         public const string FM_StaleUpdateInProgress = "FM_StaleUpdateInProgress";
         public const string FM_StaleCategoryTooltipOne = "FM_StaleCategoryTooltipOne";
         public const string FM_StaleCategoryTooltipMany = "FM_StaleCategoryTooltipMany";
+        public const string FM_UnavailableTooltipDeprecated = "FM_UnavailableTooltipDeprecated";
+        public const string FM_UnavailableTooltipDeprecatedShort = "FM_UnavailableTooltipDeprecatedShort";
+        public const string FM_UnavailableTooltipRevitFix = "FM_UnavailableTooltipRevitFix";
+        public const string FM_UnavailableTooltipRevitNone = "FM_UnavailableTooltipRevitNone";
         public const string FM_UpdateSuccess = "FM_UpdateSuccess";
         public const string FM_UpdateIdentical = "FM_UpdateIdentical";
         public const string FM_UpdateIdenticalCurrent = "FM_UpdateIdenticalCurrent";

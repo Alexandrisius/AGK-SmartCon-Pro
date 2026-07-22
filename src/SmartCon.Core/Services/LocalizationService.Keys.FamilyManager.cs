@@ -108,6 +108,10 @@ public static partial class LocalizationService
         ru["FM_StaleUpdateInProgress"] = "Обновление…"; en["FM_StaleUpdateInProgress"] = "Updating…";
         ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
         ru["FM_StaleCategoryTooltipMany"] = "{0} устаревших семейств"; en["FM_StaleCategoryTooltipMany"] = "{0} stale families";
+        ru["FM_UnavailableTooltipDeprecated"] = "Неактуальное семейство — загрузка в проект запрещена. Вернуть в работу: Свойства → Статус «Актуальное»."; en["FM_UnavailableTooltipDeprecated"] = "Family is deprecated — loading into the project is not allowed. To restore: Properties → Status 'Current'.";
+        ru["FM_UnavailableTooltipDeprecatedShort"] = "Неактуальное семейство — загрузка в проект запрещена."; en["FM_UnavailableTooltipDeprecatedShort"] = "Family is deprecated — loading into the project is not allowed.";
+        ru["FM_UnavailableTooltipRevitFix"] = "Сохранено в Revit {0} — нельзя загрузить в Revit {1}. Сделайте активной совместимую версию: Свойства → Версии."; en["FM_UnavailableTooltipRevitFix"] = "Saved in Revit {0} — cannot be loaded into Revit {1}. Make a compatible version active: Properties → Versions.";
+        ru["FM_UnavailableTooltipRevitNone"] = "Сохранено в Revit {0} — нельзя загрузить в Revit {1}. В каталоге нет версии, совместимой с Revit {1}."; en["FM_UnavailableTooltipRevitNone"] = "Saved in Revit {0} — cannot be loaded into Revit {1}. The catalog has no version compatible with Revit {1}.";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
         ru["FM_UpdateIdenticalCurrent"] = "Этот файл уже является текущей версией семейства"; en["FM_UpdateIdenticalCurrent"] = "This file is already the current version of this family";

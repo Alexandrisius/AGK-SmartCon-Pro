@@ -136,7 +136,10 @@ public sealed partial class FamilyManagerMainViewModel
                     Tags = item.Tags,
                     Description = item.Description,
                     FamilySource = item.FamilySource,
-                }, _assetService, isStale: isStale, staleReason: staleReason));
+                    ActiveRevitMajorVersion = item.ActiveRevitMajorVersion,
+                    MinRevitMajorVersion = item.MinRevitMajorVersion,
+                }, _assetService, isStale: isStale, staleReason: staleReason,
+                    currentRevitVersion: CurrentRevitVersion));
             }
             _noCategoryNode.FamilyCount = uncategorized.Count;
             // Mirror the logic from BuildCategoryNode so the _noCategoryNode
@@ -274,7 +277,10 @@ public sealed partial class FamilyManagerMainViewModel
                     Tags = item.Tags,
                     Description = item.Description,
                     FamilySource = item.FamilySource,
-                }, _assetService, isStale: isStale, staleReason: staleReason));
+                    ActiveRevitMajorVersion = item.ActiveRevitMajorVersion,
+                    MinRevitMajorVersion = item.MinRevitMajorVersion,
+                }, _assetService, isStale: isStale, staleReason: staleReason,
+                    currentRevitVersion: CurrentRevitVersion));
             }
         }
 

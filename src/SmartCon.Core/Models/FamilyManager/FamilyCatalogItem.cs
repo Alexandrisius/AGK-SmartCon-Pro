@@ -17,4 +17,6 @@ public sealed record FamilyCatalogItem(
     string FamilySource = "loadable",
     string? RevitCategory = null,
     string? ContentHash = null,
-    int? HashFormatVersion = null);
+    int? HashFormatVersion = null,
+    int? ActiveRevitMajorVersion = null,
+    int? MinRevitMajorVersion = null);

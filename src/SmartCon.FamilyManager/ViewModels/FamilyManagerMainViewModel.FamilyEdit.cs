@@ -89,7 +89,11 @@ public sealed partial class FamilyManagerMainViewModel
         {
             var result = _dialogService.ShowProperties(vm);
             SmartConLogger.Info($"OpenProperties: ShowProperties returned result={result}");
-            if (result != true) return;
+
+            // MakeActive on the Versions tab commits to the DB immediately —
+            // even a Cancelled dialog may have changed the active version's
+            // Revit major version, which drives the tree's availability badge.
+            if (result != true && !vm.ActiveVersionChanged) return;
 
             await LoadTreeAsync();
             ExpandAndSelectItem(itemId);

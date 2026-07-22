@@ -18,4 +18,6 @@ public sealed partial class FamilyCatalogItemRow : ObservableObject
     [ObservableProperty] private string? _description;
     [ObservableProperty] private string _revitVersions = string.Empty;
     [ObservableProperty] private string _familySource = "loadable";
+    [ObservableProperty] private int? _activeRevitMajorVersion;
+    [ObservableProperty] private int? _minRevitMajorVersion;
 }

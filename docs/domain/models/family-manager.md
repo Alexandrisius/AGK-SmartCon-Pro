@@ -221,6 +221,8 @@ public static class FamilyAssetTypeExtensions
 
 Логическая запись каталога семейств — основная сущность, к которой привязаны версии и файлы.
 
+`ActiveRevitMajorVersion` — Revit-версия файла активной версии (`current_version_label`); заполняется только в `SearchAsync` (скалярный подзапрос `MIN(revit_major_version)` по активной метке), в остальных выборках `null`. `MinRevitMajorVersion` — минимальная Revit-версия среди всех версий айтема; используется деревом каталога для индикации недоступности (замок + серый текст) и tooltip-подсказки «есть совместимая версия».
+
 **Файл:** `FamilyCatalogItem.cs`
 
 ```csharp
@@ -237,7 +239,31 @@ public sealed record FamilyCatalogItem(
     IReadOnlyList<string> Tags,
     string? PublishedBy,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string FamilySource = "loadable",
+    string? RevitCategory = null,
+    string? ContentHash = null,
+    int? HashFormatVersion = null,
+    int? ActiveRevitMajorVersion = null,
+    int? MinRevitMajorVersion = null);
+```
+
+---
+
+## FamilyUnavailableReason
+
+Причина, по которой семейство недоступно для загрузки в текущий документ Revit. Управляет замком и серым текстом в дереве каталога, а также текстом tooltip (причина + способ восстановления доступа).
+
+**Файл:** `FamilyUnavailableReason.cs`
+
+```csharp
+public enum FamilyUnavailableReason
+{
+    None = 0,
+    Deprecated = 1,
+    RevitVersion = 2,
+    DeprecatedAndRevitVersion = 3,
+}
 ```
 
 ---

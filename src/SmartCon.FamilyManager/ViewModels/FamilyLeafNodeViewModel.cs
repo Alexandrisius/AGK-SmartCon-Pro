@@ -21,13 +21,47 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     public string FamilySource { get; }
     public FamilyTooltipViewModel TooltipViewModel { get; }
 
+    public int? ActiveRevitMajorVersion { get; }
+    public int? MinRevitMajorVersion { get; }
+    public int CurrentRevitVersion { get; }
+
+    public bool IsDeprecated => ContentStatus != ContentStatus.Active;
+
+    public bool IsRevitIncompatible =>
+        ActiveRevitMajorVersion.HasValue
+        && CurrentRevitVersion > 0
+        && ActiveRevitMajorVersion.Value > CurrentRevitVersion;
+
+    public bool IsUnavailable => IsDeprecated || IsRevitIncompatible;
+
+    public FamilyUnavailableReason UnavailableReason =>
+        (IsDeprecated, IsRevitIncompatible) switch
+        {
+            (true, true) => FamilyUnavailableReason.DeprecatedAndRevitVersion,
+            (true, false) => FamilyUnavailableReason.Deprecated,
+            (false, true) => FamilyUnavailableReason.RevitVersion,
+            _ => FamilyUnavailableReason.None,
+        };
+
+    public int? RequiredRevitVersion => IsRevitIncompatible ? ActiveRevitMajorVersion : null;
+
+    public bool HasCompatibleVersion =>
+        MinRevitMajorVersion.HasValue
+        && CurrentRevitVersion > 0
+        && MinRevitMajorVersion.Value <= CurrentRevitVersion;
+
     [ObservableProperty]
     private bool _isStale;
 
     [ObservableProperty]
     private StaleReason _staleReason;
 
-    public FamilyLeafNodeViewModel(FamilyCatalogItemRow row, IFamilyAssetService assetService, bool isStale = false, StaleReason staleReason = StaleReason.None)
+    public FamilyLeafNodeViewModel(
+        FamilyCatalogItemRow row,
+        IFamilyAssetService assetService,
+        bool isStale = false,
+        StaleReason staleReason = StaleReason.None,
+        int currentRevitVersion = 0)
     {
         CatalogItemId = row.Id;
         CategoryId = row.CategoryId;
@@ -41,6 +75,9 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         Description = row.Description;
         FamilySource = row.FamilySource;
         TooltipViewModel = new FamilyTooltipViewModel(row.Id, row.Description, assetService);
+        ActiveRevitMajorVersion = row.ActiveRevitMajorVersion;
+        MinRevitMajorVersion = row.MinRevitMajorVersion;
+        CurrentRevitVersion = currentRevitVersion;
         _isStale = isStale;
         _staleReason = staleReason;
     }
