@@ -17,11 +17,15 @@ ADR-054.
 
 ## Ключевая идея
 
-«Хэш устарел», «нет атрибутов», «нет 3D» — это одно и то же: **у записи не хватает
+«Хэш устарел», «нет атрибутов», «нет 3D», «нет Revit-категории» — это одно и то же: **у записи не хватает
 артефактов, извлекаемых из файла**. Поэтому вместо «миграций-стадий» — **движок + задачи**:
 движок находит семьи, которым не хватает хотя бы одного артефакта, открывает каждый файл
 **ровно один раз** (snapshot + геометрия в одной сессии) и применяет **только недостающие**
 задачи. Цена новой фичи со старыми данными — один класс-задача.
+
+Группы грузятся для `family_source IN ('loadable','system')`; диспатч экстракции — по
+расширению managed-файла: `.rfa` → полный snapshot+геометрия, staged `.rvt` (system) →
+category-only `ExtractSystemCategoryAsync` (system-задачи не требуют полного snapshot).
 
 ## Состав паттерна
 
@@ -45,6 +49,7 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 | `HashFormatActualizationTask` (`hash-v2`) | 10 | да | Хэши v2: apply на все Revit-варианты + ресинк item; system re-flag в file-free pass; терминальные маркеры -1/-2 |
 | `AttributesActualizationTask` (`attributes-v1`) | 20 | нет | Типы + значения + shared nested + счётчики `types_count`/`parameters_count` (active label; чинит #151/#152/#153) |
 | `GlbPreviewActualizationTask` (`glb-v1`) | 30 | нет | Auto-extracted 3D GLB превью (active label) |
+| `RevitCategoryActualizationTask` (`revit-category-v1`) | 40 | нет | Backfill `catalog_items.revit_category` для loadable+system (active label; system `.rvt` — category-only extraction `ExtractSystemCategoryAsync`) |
 
 ## Два уровня критичности
 
@@ -100,35 +105,41 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 Сценарий: фича добавила колонку/артефакт, который надо заполнить для старых баз извлечёнными
 из файла данными.
 
-1. Создай класс-задачу в `SmartCon.FamilyManager/Services/Actualization/`:
+1. Создай класс-задачу в `SmartCon.FamilyManager/Services/Actualization/`, унаследовав
+   `SqlDetectionActualizationTaskBase` — она реализует три метода-детекта из абстрактного
+   `DetectionSql` и даёт дефолты `RunFileFreePassAsync`→0 / `HandleGroupFailureAsync`→retry:
 
 ```csharp
-internal sealed class MyFeatureActualizationTask : IDatabaseActualizationTask
+internal sealed class MyFeatureActualizationTask : SqlDetectionActualizationTaskBase
 {
-    public string Id => "my-feature-v1";
-    public int Order => 40;                 // после glb-v1 (30), с шагом 10
-    public bool IsCritical => false;        // true — если без данных запись плодит мусор
+    public MyFeatureActualizationTask(LocalCatalogDatabase database) : base(database) { }
 
-    public Task<int> CountPendingAsync(int revit, CancellationToken ct)
-        // Дешёвый SQL COUNT групп, processable в запущенном Revit
-        // (cv.revit_major_version <= @maxRevit). Для badge/меню.
+    public override string Id => "my-feature-v1";
+    public override int Order => 50;                // после revit-category-v1 (40), с шагом 10
+    public override bool IsCritical => false;       // true — если без данных запись плодит мусор
 
-    public Task<IReadOnlyCollection<string>> LoadPendingGroupKeysAsync(int revit, CancellationToken ct)
-        // Ключи "itemId|versionLabel" ВСЕХ pending-групп (любой Revit —
-        // движок сам классифицирует openability и посчитает newer-pending).
+    // Дешёвый FROM/JOIN/WHERE фрагмент по «пустоте колонок»; группировка
+    // (item|label), фильтр Revit, newer-only — в базовом классе.
+    protected override string DetectionSql => """
+        FROM catalog_versions cv
+        JOIN catalog_items ci ON ci.id = cv.catalog_item_id
+        WHERE ci.family_source = 'loadable'
+          AND cv.version_label = ci.current_version_label
+          AND NOT EXISTS(SELECT 1 FROM my_feature_table x
+                          WHERE x.catalog_item_id = ci.id AND x.version_id = cv.id)
+        """;
 
-    public Task<int> RunFileFreePassAsync(int revit, CancellationToken ct)
-        => Task.FromResult(0);              // работа без файлов (обычно нет)
-
-    public Task ApplyAsync(FamilyActualizationContext ctx, CancellationToken ct)
+    public override Task ApplyAsync(FamilyActualizationContext ctx, CancellationToken ct)
         // Записать своё из ctx.Snapshot / ctx.Geometry / ctx.Group / ctx.OpenedVariant.
-        // Идемпотентно! Короткие транзакции (I-14). Артефакт обязан
-        // погасить свой детект — иначе семья останется pending навсегда.
-
-    public Task HandleGroupFailureAsync(ActualizationGroup group, ActualizationFailureKind kind, CancellationToken ct)
-        => Task.CompletedTask;              // или терминальный маркер, как у hash (-1/-2)
+        // Идемпотентно! Короткие транзакции через унаследованное Database (I-14).
+        // Артефакт обязан погасить свой детект — иначе семья останется pending навсегда.
 }
 ```
+
+Отклонения — через `override` virtual-членов базы (образец: `HashFormatActualizationTask`
+переопределяет `CountPendingAsync` (+system rows), `RunFileFreePassAsync` (system re-flag) и
+`HandleGroupFailureAsync` (терминальные маркеры -1/-2)). Полный шаблон: навык
+`smartcon-db-actualization` → `references/task-template.md`.
 
 2. Зарегистрируй в `ServiceRegistrar` (секция «Database actualization engine»):
 

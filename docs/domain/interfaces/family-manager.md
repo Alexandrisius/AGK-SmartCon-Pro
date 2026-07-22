@@ -1140,7 +1140,7 @@ public interface IContentHashDedupService
 
 ## ICatalogActualizationService
 
-**Единый** сервис актуализации БД (ADR-054): движок, который union'ит детекты всех зарегистрированных `IDatabaseActualizationTask`, открывает каждую pending-семью ровно один раз (snapshot + геометрия в одной сессии через `IFamilyMigrationExtractor.ExtractLoadableWithGeometryAsync`) и применяет только pending-задачи. Новые extraction-time фичи = новый класс-задача — движок, диалог, гейт, resume и purge бесплатны.
+**Единый** сервис актуализации БД (ADR-054): движок, который union'ит детекты всех зарегистрированных `IDatabaseActualizationTask`, открывает каждую pending-семью ровно один раз (snapshot + геометрия в одной сессии через `IFamilyMigrationExtractor.ExtractLoadableWithGeometryAsync`; staged system `.rvt` — category-only через `ExtractSystemCategoryAsync`, диспатч по расширению managed-файла) и применяет только pending-задачи. Группы грузятся для `family_source IN ('loadable','system')` — system-группы инертны для задач с loadable-scope детектом. Новые extraction-time фичи = новый класс-задача — движок, диалог, гейт, resume и purge бесплатны.
 
 **Файл:** `Services/Interfaces/ICatalogActualizationService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/Actualization/CatalogActualizationService.cs`
@@ -1216,11 +1216,15 @@ public interface IFamilyMigrationExtractor
     Task<FamilyMigrationExtractResult> ExtractLoadableWithGeometryAsync(
         string absolutePath,
         CancellationToken ct = default);
+    Task<FamilyMigrationExtractResult> ExtractSystemCategoryAsync(
+        string absolutePath,
+        CancellationToken ct = default);
 }
 ```
 
 - Открывает `.rfa` через `OpenDocumentFile`, извлекает `FamilySnapshot`, закрывает без сохранения. Не бросает через границу — ошибки в результате.
 - `ExtractLoadableWithGeometryAsync` (ADR-054) — та же open→extract→close сессия плюс per-type геометрия (`FamilyMigrationExtractResult.Geometry`): файл открывается ровно один раз. Ошибка геометрии НЕ роняет результат — snapshot остаётся валидным, `Geometry` = `null` (caller делает fallback на отдельный проход геометрии).
+- `ExtractSystemCategoryAsync` — для staged system `.rvt` (проектный документ): извлекает ТОЛЬКО display name Revit-категории. Детект идёт через `SystemCategoryRegistry` — канонический whitelist системных категорий продукта (тот же, что у `AnalyzeActiveProject`): сначала по размещённым инстансам (доменная истина мини-проекта — типоразмерами в БД становится только выставленное на виде), fallback — по скопированным типам для Phase-2 категорий, которые копируются без размещения (`placed=0`: перекрытия/крыши/лестницы/...). Дефолтный контент чистого проекта (уровни, виды, материалы, импосты) исключён конструктивно — его нет в реестре. Ничего не найдено → Ok с пустой категорией (задача пишет терминальный `''` маркер, без вечного retry). Возвращает минимальный `FamilySnapshot` — единая форма контекста движка. Движок диспатчит по расширению managed-файла (`.rvt` → system, `.rfa` → loadable).
 - После каждого Close — `IUiFreezeRecoveryService.Nudge(" ")` (workaround #96: DockablePane freeze после циклов OpenDocumentFile+Close, REVIT-236376/237190).
 
 ---

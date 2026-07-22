@@ -246,6 +246,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.HashFormatActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.AttributesActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.GlbPreviewActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.RevitCategoryActualizationTask>();
         services.AddSingleton<ICatalogActualizationService, SmartCon.FamilyManager.Services.Actualization.CatalogActualizationService>();
         services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 

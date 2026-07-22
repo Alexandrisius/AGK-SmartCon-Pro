@@ -33,6 +33,7 @@ public sealed class FamilyPropertiesViewModelTests
             versionLabel: "v1",
             createdAtText: null,
             updatedAtText: null,
+            revitCategory: null,
             writableProvider: new Mock<IWritableFamilyCatalogProvider>().Object,
             catalogProvider: new Mock<IFamilyCatalogProvider>().Object,
             categoryRepository: new Mock<ICategoryRepository>().Object,

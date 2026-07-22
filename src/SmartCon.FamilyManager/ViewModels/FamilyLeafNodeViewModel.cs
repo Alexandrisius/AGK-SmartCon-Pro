@@ -20,6 +20,7 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     public IReadOnlyList<string> Tags { get; }
     public string? Description { get; }
     public string FamilySource { get; }
+    public string? RevitCategory { get; }
     public FamilyTooltipViewModel TooltipViewModel { get; }
 
     public IReadOnlyList<string> MatchedTags { get; }
@@ -79,6 +80,7 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         Tags = row.Tags;
         Description = row.Description;
         FamilySource = row.FamilySource;
+        RevitCategory = row.RevitCategory;
         TooltipViewModel = new FamilyTooltipViewModel(row.Id, row.Description, assetService);
         ActiveRevitMajorVersion = row.ActiveRevitMajorVersion;
         MinRevitMajorVersion = row.MinRevitMajorVersion;

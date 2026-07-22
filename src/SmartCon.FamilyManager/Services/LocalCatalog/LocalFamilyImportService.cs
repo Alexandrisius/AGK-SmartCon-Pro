@@ -119,8 +119,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 SmartConLogger.Warn(
                     $"ImportFileAsync: source FilePath '{filePath}' differs from " +
                     $"precomputed managed path '{managedRfaPath}' [Action: verify " +
-                    $"BuildSystemFamilyBatchRowVirtualAsync / " +
-                    $"BuildLoadableFamilyBatchRowVirtualAsync output]");
+                    $"MapPreparedItemsToBatchItemsAsync output]");
             }
         }
         else
@@ -213,7 +212,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 else
                 {
                     await UpdateCatalogItemVersionAsync(connection, catalogItemId, versionLabel, now, ct,
-                        request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
+                        request.ContentHash, request.HashFormatVersion, request.RevitCategory).ConfigureAwait(false);
                 }
 
                 await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
@@ -558,7 +557,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                             ContentHash: item.ContentHash,
                             HashFormatVersion: item.HashFormatVersion,
                         PublishedBy: item.PublishedByUser,
-                        PreextractedGeometry: item.GeometryPerType);
+                        PreextractedGeometry: item.GeometryPerType,
+                        RevitCategory: item.RevitCategory);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -727,7 +727,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
             {
                 await InsertFileRecordAsync(connection, fileRecordId, relativePath, finalMetadata, revitVersion, now, ct).ConfigureAwait(false);
                 await UpdateCatalogItemWithNameAsync(connection, request.CatalogItemId, newName, normalizedName, versionLabel, now, ct,
-                    request.ContentHash, request.HashFormatVersion).ConfigureAwait(false);
+                    request.ContentHash, request.HashFormatVersion, request.RevitCategory).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(request.CategoryId))
                 {
                     await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);

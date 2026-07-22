@@ -41,6 +41,7 @@ public sealed class CatalogActualizationServiceTests : IDisposable
     {
         public Queue<FamilyMigrationExtractResult> Results { get; } = new();
         public List<string> OpenedPaths { get; } = new();
+        public List<string> SystemCategoryPaths { get; } = new();
         public FamilySnapshot? DefaultSnapshot { get; set; }
 
         public Task<FamilyMigrationExtractResult> ExtractLoadableAsync(
@@ -51,6 +52,16 @@ public sealed class CatalogActualizationServiceTests : IDisposable
             string absolutePath, CancellationToken ct = default)
         {
             OpenedPaths.Add(absolutePath);
+            var result = Results.Count > 0
+                ? Results.Dequeue()
+                : FamilyMigrationExtractResult.Ok(DefaultSnapshot!);
+            return Task.FromResult(result);
+        }
+
+        public Task<FamilyMigrationExtractResult> ExtractSystemCategoryAsync(
+            string absolutePath, CancellationToken ct = default)
+        {
+            SystemCategoryPaths.Add(absolutePath);
             var result = Results.Count > 0
                 ? Results.Dequeue()
                 : FamilyMigrationExtractResult.Ok(DefaultSnapshot!);
@@ -112,6 +123,23 @@ public sealed class CatalogActualizationServiceTests : IDisposable
 
         Assert.Equal(0, result.UpdatedCount);
         Assert.Empty(_extractor.OpenedPaths);
+    }
+
+    [Fact]
+    public async Task Run_SystemGroup_UsesSystemCategoryExtraction()
+    {
+        var (itemS, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "Pipes", familySource: "system");
+        _extractor.DefaultSnapshot = new FamilySnapshot(
+            "Pipes", "Трубы", [], [], new GeometryMetrics(0, []), []);
+        _taskA.PendingKeys.Add(itemS + "|v1");
+
+        var result = await _sut.RunAllPendingAsync(2025, null, CancellationToken.None);
+
+        Assert.Equal(1, result.UpdatedCount);
+        Assert.Single(_extractor.SystemCategoryPaths);
+        Assert.Empty(_extractor.OpenedPaths);
+        Assert.Equal(1, _taskA.ApplyCalls);
     }
 
     [Fact]

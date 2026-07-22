@@ -59,6 +59,7 @@ public sealed partial class FamilyManagerMainViewModel
                 SelectedItem.VersionLabel,
                 null,
                 updatedAt,
+                SelectedItem.RevitCategory,
                 isReadOnly: !CanEdit);
             SmartConLogger.Info("OpenProperties: VM created, calling InitializeCommand...");
 
@@ -311,7 +312,7 @@ public sealed partial class FamilyManagerMainViewModel
             FamilySource: "loadable",
             TypeCount: SnapshotExtractionMapper.ResolveTypeCount(
                 prepared.LoadableSnapshot, prepared.SystemSnapshot, prepared.SourceTypes),
-            RevitCategory: null,
+            RevitCategory: prepared.LoadableSnapshot?.Category,
             OriginalSourcePath: prepared.SourcePath,
             SourceTypes: null,
             Source: null,

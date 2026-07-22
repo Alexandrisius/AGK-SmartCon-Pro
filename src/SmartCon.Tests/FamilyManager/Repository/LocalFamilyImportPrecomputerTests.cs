@@ -12,9 +12,8 @@ namespace SmartCon.Tests.FamilyManager.Repository;
 ///
 /// v2.0.0 regression: the precomputer is the single source of truth
 /// for the canonical (CatalogItemId, VersionLabel, ManagedPath) triple.
-/// Both the initial dialog build (<c>BuildSystemFamilyBatchRowVirtualAsync</c>
-/// / <c>BuildLoadableFamilyBatchRowVirtualAsync</c>) and the dialog
-/// rename handler (<c>FamilyBatchImportViewModel.OnRowNameChanged</c>)
+/// Both the initial dialog build (<c>MapPreparedItemsToBatchItemsAsync</c>)
+/// and the dialog rename handler (<c>FamilyBatchImportViewModel.OnRowNameChanged</c>)
 /// go through it. The tests below pin every leg of that contract.
 /// </summary>
 public sealed class LocalFamilyImportPrecomputerTests : IDisposable

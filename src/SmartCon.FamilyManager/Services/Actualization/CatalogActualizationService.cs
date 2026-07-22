@@ -136,10 +136,10 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
             }
         }
 
-        // Step 3: load group rows for the union (all loadable groups are
-        // loaded once and intersected in memory — rows are small, and the
+        // Step 3: load group rows for the union (loadable and system groups
+        // are loaded once and intersected in memory — rows are small, and the
         // key-set filter beats a per-task IN query).
-        var allGroups = await LoadAllLoadableGroupsAsync(ct).ConfigureAwait(false);
+        var allGroups = await LoadAllGroupsAsync(ct).ConfigureAwait(false);
         var processable = new List<(ActualizationGroup Group, ActualizationVariant Openable)>();
         var newerRevitCount = 0;
         foreach (var group in allGroups)
@@ -196,7 +196,12 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
             FamilyMigrationExtractResult extract;
             try
             {
-                extract = await _extractor.ExtractLoadableWithGeometryAsync(absolutePath, ct).ConfigureAwait(false);
+                // Managed-storage convention: system families are staged as
+                // .rvt projects (category-only extraction — the engine's one
+                // open per group stays), loadable families as .rfa.
+                extract = openable.RelativePath.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
+                    ? await _extractor.ExtractSystemCategoryAsync(absolutePath, ct).ConfigureAwait(false)
+                    : await _extractor.ExtractLoadableWithGeometryAsync(absolutePath, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -422,11 +427,13 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
     }
 
     /// <summary>
-    /// All loadable (item, label) groups with ALL their variants, ordered
-    /// so the FIRST variant of a group is the one saved in the highest
-    /// Revit version.
+    /// All loadable and system (item, label) groups with ALL their variants,
+    /// ordered so the FIRST variant of a group is the one saved in the
+    /// highest Revit version. System groups are inert for tasks whose
+    /// detection is loadable-scoped — they are extracted only when a task
+    /// (e.g. revit-category) keys them as pending.
     /// </summary>
-    private async Task<List<ActualizationGroup>> LoadAllLoadableGroupsAsync(CancellationToken ct)
+    private async Task<List<ActualizationGroup>> LoadAllGroupsAsync(CancellationToken ct)
     {
         var groups = new List<ActualizationGroup>();
         using var connection = _database.CreateConnection();
@@ -440,7 +447,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
             FROM catalog_versions cv
             JOIN catalog_items ci ON ci.id = cv.catalog_item_id
             JOIN family_files ff ON ff.id = cv.file_id
-            WHERE ci.family_source = 'loadable'
+            WHERE ci.family_source IN ('loadable', 'system')
             ORDER BY ci.id, cv.version_label, cv.revit_major_version DESC
             """;
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);

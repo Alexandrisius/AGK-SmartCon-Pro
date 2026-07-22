@@ -468,6 +468,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 UpdatedAtUtc = leaf.UpdatedAtUtc,
                 Tags = leaf.Tags,
                 Description = leaf.Description,
+                RevitCategory = leaf.RevitCategory,
                 ActiveRevitMajorVersion = leaf.ActiveRevitMajorVersion,
                 MinRevitMajorVersion = leaf.MinRevitMajorVersion,
             };
@@ -489,6 +490,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
+                    RevitCategory = parentLeaf.RevitCategory,
                     ActiveRevitMajorVersion = parentLeaf.ActiveRevitMajorVersion,
                     MinRevitMajorVersion = parentLeaf.MinRevitMajorVersion,
                 };

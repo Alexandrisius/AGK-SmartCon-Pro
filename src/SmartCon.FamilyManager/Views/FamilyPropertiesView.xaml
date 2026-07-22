@@ -201,9 +201,14 @@
                         </WrapPanel>
                     </Border>
 
-                <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11">
-                    <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
-                </TextBlock>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11">
+                        <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="16,0,0,0">
+                        <Run Text="{loc:Loc FM_Props_RevitCategory}"/>: <Run Text="{Binding RevitCategoryDisplay, Mode=OneWay}"/>
+                    </TextBlock>
+                </StackPanel>
             </StackPanel>
         </Grid>
 

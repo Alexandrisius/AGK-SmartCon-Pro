@@ -55,6 +55,95 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
             .ConfigureAwait(false);
     }
 
+    public async Task<FamilyMigrationExtractResult> ExtractSystemCategoryAsync(
+        string absolutePath,
+        CancellationToken ct = default)
+    {
+        var fileName = System.IO.Path.GetFileName(absolutePath);
+        return await _awaitableEvent
+            .RaiseAsync(appObj => ExtractSystemCategoryOnMainThread(appObj, absolutePath, fileName), ct)
+            .ConfigureAwait(false);
+    }
+
+    private FamilyMigrationExtractResult ExtractSystemCategoryOnMainThread(
+        object appObj, string absolutePath, string fileName)
+    {
+        Document? doc = null;
+        try
+        {
+            var app = ((UIApplication)appObj).Application;
+            doc = app.OpenDocumentFile(absolutePath);
+            if (doc.IsFamilyDocument)
+            {
+                return FamilyMigrationExtractResult.Fail(
+                    "expected a staged project document (IsFamilyDocument=true)");
+            }
+
+            // The staged .rvt is our own clean project: copied types + placed
+            // instances of exactly ONE system category. Placed instances are
+            // the domain truth — only what's on the view becomes catalog
+            // types. Detection goes through SystemCategoryRegistry (the
+            // product's canonical whitelist of system categories, the same
+            // one AnalyzeActiveProject uses) — default project content
+            // (levels, views, materials, curtain mullions) is excluded by
+            // construction, no heuristics.
+            string? categoryName = null;
+            foreach (var entry in SystemCategoryRegistry.Entries)
+            {
+                var instance = new FilteredElementCollector(doc)
+                    .OfCategory(entry.Category)
+                    .WhereElementIsNotElementType()
+                    .FirstOrDefault();
+                if (instance?.Category is not null)
+                {
+                    categoryName = instance.Category.Name;
+                    break;
+                }
+            }
+
+            // Phase-2 registry categories are copied WITHOUT placement
+            // (PlacementHandler = null → placed=0, e.g. floors/roofs/stairs) —
+            // fall back to the copied types through the same whitelist.
+            if (categoryName is null)
+            {
+                foreach (var entry in SystemCategoryRegistry.Entries)
+                {
+                    var type = new FilteredElementCollector(doc)
+                        .OfCategory(entry.Category)
+                        .WhereElementIsElementType()
+                        .FirstOrDefault();
+                    if (type?.Category is not null)
+                    {
+                        categoryName = type.Category.Name;
+                        break;
+                    }
+                }
+            }
+
+            // No staged instances/types = an empty mini-project (degenerate
+            // but terminal): report an empty category so the caller writes
+            // its "known missing" marker instead of retrying forever.
+            var snapshot = new FamilySnapshot(
+                FamilyName: System.IO.Path.GetFileNameWithoutExtension(fileName),
+                Category: categoryName ?? string.Empty,
+                Parameters: [],
+                Types: [],
+                Geometry: new GeometryMetrics(0, []),
+                SharedNestedFamilyNames: []);
+            return FamilyMigrationExtractResult.Ok(snapshot);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"System category extract failed for '{fileName}': {ex.GetType().Name}: {ex.Message}");
+            return FamilyMigrationExtractResult.Fail($"{ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            CloseTemporaryDocument(doc);
+        }
+    }
+
     private FamilyMigrationExtractResult ExtractWithGeometryOnMainThread(
         object appObj, string absolutePath, string fileName, CancellationToken ct)
     {

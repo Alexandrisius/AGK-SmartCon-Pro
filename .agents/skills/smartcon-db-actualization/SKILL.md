@@ -23,9 +23,10 @@ SSOT по архитектуре: `docs/architecture/database-migrations.md` + `
 |---|---|
 | Контракт | `src/SmartCon.Core/Services/Interfaces/IDatabaseActualizationTask.cs`, `ICatalogActualizationService.cs` |
 | Движок | `src/SmartCon.FamilyManager/Services/Actualization/CatalogActualizationService.cs` |
-| Задачи | та же папка: `HashFormatActualizationTask` (`hash-v2`, Order=10, critical), `AttributesActualizationTask` (`attributes-v1`, 20, optional), `GlbPreviewActualizationTask` (`glb-v1`, 30, optional) |
+| База задач | `SqlDetectionActualizationTaskBase` (та же папка) — реализует 3 метода-детекта из абстрактного `DetectionSql`; дефолты: `RunFileFreePassAsync`→0, `HandleGroupFailureAsync`→retry. Наследуй её, не копируй шаблон |
+| Задачи | та же папка: `HashFormatActualizationTask` (`hash-v2`, Order=10, critical, override'ит 3 члена), `AttributesActualizationTask` (`attributes-v1`, 20, optional), `GlbPreviewActualizationTask` (`glb-v1`, 30, optional), `RevitCategoryActualizationTask` (`revit-category-v1`, 40, optional) |
 | Модели Core | `Actualization{Group,Variant}`, `FamilyActualizationContext`, `ActualizationFailureKind`, `DatabasePendingBreakdown`, `NewerOnlyPendingInfo`, `DatabaseMigration{Progress,Result}` |
-| Revit-граница | `IFamilyMigrationExtractor.ExtractLoadableWithGeometryAsync` (SmartCon.Revit) — ОДИН open: snapshot+geometry |
+| Revit-граница | `IFamilyMigrationExtractor.ExtractLoadableWithGeometryAsync` (SmartCon.Revit) — ОДИН open: snapshot+geometry. Staged system `.rvt` → `ExtractSystemCategoryAsync` (category-only); движок диспатчит по расширению, группы грузятся для `family_source IN ('loadable','system')` |
 | Состояние/UX | `IDatabaseUpdateStateService` (+ impl в `Services/Migrations/`), `DatabaseUpdateProgressViewModel/View`, `FamilyManagerMainViewModel.HashRecalc.cs`, `FamilyManagerPaneControl.xaml` (DbTools toggle/banner/popup) |
 | DI | `SmartCon.App/DI/ServiceRegistrar.cs` — секция «Database actualization engine» |
 
@@ -51,12 +52,12 @@ Newer-only (все варианты файла новее запущенного
 
 ## Как добавить задачу (пошагово)
 
-1. Прочитай `references/task-template.md` — там полный шаблон класса с SQL.
-2. Создай `XxxActualizationTask` в `Services/Actualization/` (`internal sealed`).
-3. Детект = дешёвый SQL по «пустоте колонок» (три метода: count processable, newer-only info, keys всех групп). Scope (active-only vs все версии, system vs loadable) — твой, живёт в SQL.
-4. `ApplyAsync` — идемпотентная запись из `ctx.Snapshot`/`ctx.Geometry`; короткие транзакции через `LocalCatalogDatabase` (I-14). **Записанный артефакт обязан погасить твой детект** — иначе вечный pending.
-5. `HandleGroupFailureAsync` — терминальный маркер (как у hash: -1/-2) или `Task.CompletedTask` (ретрай при следующем запуске). Терминальный маркер = детект его уважает (`NOT IN (2,-1,-2)`).
-6. `RunFileFreePassAsync` — почти всегда `Task.FromResult(0)` (только для мгновенных UPDATE без файлов, как system re-flag у hash).
+1. Прочитай `references/task-template.md` — там минимальный шаблон на базовом классе.
+2. Создай `XxxActualizationTask : SqlDetectionActualizationTaskBase` в `Services/Actualization/` (`internal sealed`). Объяви только: `Id`, `Order` (шаг 10), `IsCritical`, `DetectionSql`, `ApplyAsync` — три метода-детекта даёт база. Отклонения — через `override` отдельных virtual-членов (образец: hash-задача).
+3. Детект = дешёвый SQL-фрагмент `FROM catalog_versions cv JOIN catalog_items ci ... WHERE ...` по «пустоте колонок», группировка `(item|label)` — в базе. Scope (active-only vs все версии, system vs loadable) — твой, живёт в SQL.
+4. `ApplyAsync` — идемпотентная запись из `ctx.Snapshot`/`ctx.Geometry`; короткие транзакции через `Database` (унаследованное свойство, I-14). **Записанный артефакт обязан погасить твой детект** — иначе вечный pending.
+5. `HandleGroupFailureAsync` — по умолчанию retry (ничего не пиши). Override только для терминального маркера (как у hash: -1/-2) — тогда детект обязан его уважать (`NOT IN (2,-1,-2)`).
+6. `RunFileFreePassAsync` — по умолчанию 0. Override только для мгновенных UPDATE без файлов (как system re-flag у hash).
 7. DI: `services.AddSingleton<IDatabaseActualizationTask, XxxActualizationTask>();`
 8. Тесты: SQLite fixture + `CatalogSeedHelper` (см. `HashFormatActualizationTaskTests`): детект (processable/newer/healthy), apply пишет и **гасит детект** (re-count = 0!), failure-маркеры.
 9. Доки: `docs/architecture/database-migrations.md` (таблица задач), domain interfaces/models, `validate-docs.ps1`.
@@ -65,7 +66,7 @@ Newer-only (все варианты файла новее запущенного
 ## Жёсткие правила (нарушение = баг, пойманный на этой сессии)
 
 - **НЕ** открывай документы в задаче — snapshot/geometry приходят в контексте из одного open'а движка (исключение: сервисы со своим `IFamilyManagerAwaitableEvent`, как `IFamilyGeometryPipeline`).
-- `CountPendingAsync` — только processable (фильтр Revit), `LoadPendingGroupKeysAsync` — ВСЕ группы (движок классифицирует). `GetNewerOnlyPendingAsync` — openability по ВСЕМ вариантам группы (apply идёт на все!), `RequiredRevitVersion = MAX over groups of MIN(variant revit)`.
+- Семантика детекта реализована в `SqlDetectionActualizationTaskBase` — **не переопределяй** три метода без нужды: `CountPendingAsync` — только processable (фильтр Revit), `LoadPendingGroupKeysAsync` — ВСЕ группы (движок классифицирует), `GetNewerOnlyPendingAsync` — openability по ВСЕМ вариантам группы (apply идёт на все!), `RequiredRevitVersion = MAX over groups of MIN(variant revit)`.
 - Данные/хэш — на ВСЕ Revit-варианты label (контент идентичен); ресинк `catalog_items` только когда `Group.IsActiveLabel`.
 - net48: **нет `IReadOnlySet<T>`** (используй `IReadOnlyCollection<T>`), **нет default interface methods** — все члены контракта обязательные.
 - `Progress<T>` в тестах — гонка (Post в xUnit context): в координирующем коде inline-адаптер `IProgress<T>`, в тестах синхронный fake (см. gotchas).
@@ -76,9 +77,10 @@ Newer-only (все варианты файла новее запущенного
 
 | Нужно | Копируй |
 |---|---|
-| Маркерная колонка + терминальные состояния + все версии + file-free pass | `HashFormatActualizationTask` |
+| Маркерная колонка + терминальные состояния + все версии + file-free pass + кастомный count (override'ы поверх базы) | `HashFormatActualizationTask` |
 | Replace-запись через существующие репозитории + счётчики + active-only | `AttributesActualizationTask` |
 | Вызов сервиса, который сам маршалит в Revit (GLB pipeline) | `GlbPreviewActualizationTask` |
+| Минимальная задача: item-level UPDATE одной колонки из snapshot | `RevitCategoryActualizationTask` |
 
 ## Ссылки
 

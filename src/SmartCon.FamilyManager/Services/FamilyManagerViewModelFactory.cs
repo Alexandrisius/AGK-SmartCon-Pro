@@ -89,12 +89,13 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? versionLabel,
         string? createdAtText, string? updatedAtText,
+        string? revitCategory = null,
         bool isReadOnly = false)
     {
         return new FamilyPropertiesViewModel(
             catalogItemId, name, description,
             categoryId, categoryPath, tags, contentStatus,
-            versionLabel, createdAtText, updatedAtText,
+            versionLabel, createdAtText, updatedAtText, revitCategory,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
             _geometryPipeline, _fileResolver, _avatarCropService, _updateState)

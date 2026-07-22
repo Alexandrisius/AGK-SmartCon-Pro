@@ -401,8 +401,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     /// <summary>
     /// v2.0.0: <see cref="IFamilyImportService.GetNextVersionLabelAsync"/>
     /// must read the last version from the catalog and increment by one.
-    /// Called by the VM in BuildSystemFamilyBatchRowVirtualAsync /
-    /// BuildLoadableFamilyBatchRowVirtualAsync.
+    /// Called by the VM in MapPreparedItemsToBatchItemsAsync.
     /// </summary>
     [Fact]
     public async Task GetNextVersionLabelAsync_ReturnsV1ForNewAndIncrementsForExisting()

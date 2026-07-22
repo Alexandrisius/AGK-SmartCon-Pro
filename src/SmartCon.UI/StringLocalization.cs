@@ -561,6 +561,7 @@ public static class StringLocalization
         public const string FM_Warn_FilesNotDeleted_Body = "FM_Warn_FilesNotDeleted_Body";
         public const string FM_BatchImport_MakeActive = "FM_BatchImport_MakeActive";
         public const string FM_Props_Version = "FM_Props_Version";
+        public const string FM_Props_RevitCategory = "FM_Props_RevitCategory";
         public const string FM_Props_Created = "FM_Props_Created";
         public const string FM_Props_Updated = "FM_Props_Updated";
         public const string FM_Props_NoAvatar = "FM_Props_NoAvatar";

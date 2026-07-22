@@ -1,9 +1,11 @@
 # Шаблон задачи актуализации (`IDatabaseActualizationTask`)
 
-Полный рабочий шаблон новой задачи. Пример: фича добавила колонку `flange_thickness`,
-которую надо заполнить для старых баз из файла. Копируй и меняй детект/apply.
+Минимальный рабочий шаблон новой задачи на базовом классе `SqlDetectionActualizationTaskBase`.
+Пример: фича добавила колонку `flange_thickness`, которую надо заполнить для старых баз из файла.
+Копируй и меняй детект/apply. **Три метода-детекта, file-free pass и retry-политику даёт база —
+не копируй их из старых задач.**
 
-## 1. Класс-задача
+## 1. Класс-задача (~50 строк)
 
 `src/SmartCon.FamilyManager/Services/Actualization/MyFeatureActualizationTask.cs`
 
@@ -19,22 +21,22 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// OPTIONAL actualization task (Id=<c>my-feature-v1</c>): what it backfills,
 /// for which scope (active label, loadable). ADR-054.
 /// </summary>
-internal sealed class MyFeatureActualizationTask : IDatabaseActualizationTask
+internal sealed class MyFeatureActualizationTask : SqlDetectionActualizationTaskBase
 {
-    private readonly LocalCatalogDatabase _database;
-    // + сервисы записи (репозитории), НЕ Revit-объекты
-
+    // + сервисы записи (репозитории) в ctor, НЕ Revit-объекты
     public MyFeatureActualizationTask(LocalCatalogDatabase database /*, repos */)
+        : base(database)
     {
-        _database = database ?? throw new ArgumentNullException(nameof(database));
     }
 
-    public string Id => "my-feature-v1";
-    public int Order => 40;                 // после glb-v1 (30), шаг 10
-    public bool IsCritical => false;        // реши по таблице в SKILL.md!
+    public override string Id => "my-feature-v1";
+    public override int Order => 50;                // после revit-category-v1 (40), шаг 10
+    public override bool IsCritical => false;       // реши по таблице в SKILL.md!
 
-    // Детект: «пустота колонок». Scope (здесь: loadable, ACTIVE label) — твой.
-    private const string DetectionSql = """
+    // Детект: FROM/JOIN/WHERE фрагмент по «пустоте колонок».
+    // Группировка (item|label), фильтр Revit, newer-only — в базовом классе.
+    // Scope (здесь: loadable, ACTIVE label) — твой.
+    protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
         WHERE ci.family_source = 'loadable'
@@ -43,76 +45,11 @@ internal sealed class MyFeatureActualizationTask : IDatabaseActualizationTask
                           WHERE x.catalog_item_id = ci.id AND x.version_id = cv.id)
         """;
 
-    public async Task<int> CountPendingAsync(int revitMajorVersion, CancellationToken ct = default)
-    {
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"""
-            SELECT COUNT(*) FROM (
-                SELECT cv.catalog_item_id, cv.version_label
-                {DetectionSql}
-                  AND cv.revit_major_version <= @maxRevit
-                GROUP BY cv.catalog_item_id, cv.version_label
-            )
-            """;
-        cmd.Parameters.Add(new SqliteParameter("@maxRevit", revitMajorVersion));
-        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-        return result is long l ? (int)l : 0;
-    }
-
-    public async Task<NewerOnlyPendingInfo> GetNewerOnlyPendingAsync(int revitMajorVersion, CancellationToken ct = default)
-    {
-        // НЕ менять без нужды: openability по ВСЕМ вариантам группы,
-        // RequiredRevitVersion = MAX over groups of MIN(variant revit).
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"""
-            SELECT COUNT(*), COALESCE(MAX((
-                SELECT MIN(cv2.revit_major_version) FROM catalog_versions cv2
-                WHERE cv2.catalog_item_id = p.itemId AND cv2.version_label = p.label)), 0)
-            FROM (
-                SELECT DISTINCT cv.catalog_item_id AS itemId, cv.version_label AS label
-                {DetectionSql}
-            ) p
-            WHERE NOT EXISTS (
-                SELECT 1 FROM catalog_versions cv3
-                WHERE cv3.catalog_item_id = p.itemId AND cv3.version_label = p.label
-                  AND cv3.revit_major_version <= @maxRevit
-            )
-            """;
-        cmd.Parameters.Add(new SqliteParameter("@maxRevit", revitMajorVersion));
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return NewerOnlyPendingInfo.None;
-        return new NewerOnlyPendingInfo(reader.GetInt32(0), reader.GetInt32(1));
-    }
-
-    public async Task<IReadOnlyCollection<string>> LoadPendingGroupKeysAsync(int revitMajorVersion, CancellationToken ct = default)
-    {
-        var keys = new HashSet<string>(StringComparer.Ordinal);
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"""
-            SELECT DISTINCT cv.catalog_item_id, cv.version_label
-            {DetectionSql}
-            """;
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-        {
-            keys.Add(reader.GetString(0) + "|" + reader.GetString(1));
-        }
-        return keys;
-    }
-
-    public Task<int> RunFileFreePassAsync(int revitMajorVersion, CancellationToken ct = default)
-        => Task.FromResult(0);   // почти всегда 0; file-free = мгновенные UPDATE без файлов
-
-    public async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
+    public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
     {
         // Пишем своё из context.Snapshot / context.Geometry.
-        // Данные — на КАЖДЫЙ вариант label (контент идентичен между вариантами).
+        // Данные — на КАЖДЫЙ вариант label (контент идентичен между вариантами);
+        // ресинк catalog_items — только когда context.Group.IsActiveLabel.
         foreach (var variant in context.Group.Variants)
         {
             // await _myRepo.UpsertAsync(context.Group.CatalogItemId, variant.VersionId, value, ct);
@@ -121,19 +58,19 @@ internal sealed class MyFeatureActualizationTask : IDatabaseActualizationTask
         // иначе группа останется pending навсегда (вечный янтарь/гейт).
         await Task.CompletedTask;
     }
-
-    public Task HandleGroupFailureAsync(
-        ActualizationGroup group, ActualizationFailureKind kind, CancellationToken ct = default)
-    {
-        // Вариант А (ретрай, рекомендуется для данных): ничего — детект сам
-        // сработает снова при следующем запуске (транзиентные ошибки самозаживают).
-        return Task.CompletedTask;
-
-        // Вариант Б (терминальный маркер, как у hash): UPDATE marker колонки
-        // (-1 extraction failed / -2 missing) — детект обязан их исключать.
-    }
 }
 ```
+
+### Когда нужен override поверх базы
+
+| Член | Дефолт базы | Когда переопределять |
+|---|---|---|
+| `RunFileFreePassAsync` | `Task.FromResult(0)` | Мгновенные UPDATE без открытия файлов (hash: system re-flag) |
+| `HandleGroupFailureAsync` | `Task.CompletedTask` (retry в след. запуске) | Терминальный маркер (hash: -1/-2) — тогда детект обязан его исключать (`NOT IN (2,-1,-2)`) |
+| `CountPendingAsync` | count processable групп из `DetectionSql` | Доп. счётчики вне групповой модели (hash: + system rows) |
+| `LoadPendingGroupKeysAsync` / `GetNewerOnlyPendingAsync` | из `DetectionSql` | Почти никогда — семантика инвариантна движку |
+
+Образец override'ов: `HashFormatActualizationTask`.
 
 ## 2. DI
 
@@ -160,10 +97,10 @@ services.AddSingleton<IDatabaseActualizationTask, MyFeatureActualizationTask>();
 
 ## 4. Чеклист перед коммитом
 
-- [ ] Детект — SQL COUNT/keys, без побочных эффектов (вызывается на каждом переключении базы)
+- [ ] Детект — SQL-фрагмент FROM/JOIN/WHERE, без побочных эффектов (вызывается на каждом переключении базы)
 - [ ] Apply идемпотентен (DELETE+INSERT или UPSERT)
 - [ ] Apply гасит детект (есть тест!)
-- [ ] Короткие транзакции, соединения через `LocalCatalogDatabase` (I-14, без WAL)
+- [ ] Короткие транзакции, соединения через унаследованное `Database` (I-14, без WAL)
 - [ ] Решение critical/optional задокументировано в XML-doc класса (почему)
 - [ ] `Order` — следующее число с шагом 10
 - [ ] Тесты зелёные, сборки R19/R21/R24/R25 0/0

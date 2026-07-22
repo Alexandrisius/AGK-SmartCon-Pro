@@ -14,6 +14,7 @@ public interface IFamilyManagerViewModelFactory
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? versionLabel,
         string? createdAtText, string? updatedAtText,
+        string? revitCategory = null,
         bool isReadOnly = false);
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();

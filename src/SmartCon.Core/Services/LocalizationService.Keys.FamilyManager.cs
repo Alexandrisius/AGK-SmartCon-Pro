@@ -203,6 +203,7 @@ public static partial class LocalizationService
         ru["FM_Warn_FilesNotDeleted_Body"] = "Версия удалена из базы, но файлы на диске остались (вероятно, заблокированы Revit или другим процессом). Путь: {0}"; en["FM_Warn_FilesNotDeleted_Body"] = "Version was deleted from the database but some files remain on disk (likely locked by Revit or another process). Path: {0}";
         ru["FM_BatchImport_MakeActive"] = "Сделать активной"; en["FM_BatchImport_MakeActive"] = "Make Active";
         ru["FM_Props_Version"] = "Версия"; en["FM_Props_Version"] = "Version";
+        ru["FM_Props_RevitCategory"] = "Категория Revit"; en["FM_Props_RevitCategory"] = "Revit Category";
         ru["FM_Props_Created"] = "Создано"; en["FM_Props_Created"] = "Created";
         ru["FM_Props_Updated"] = "Обновлено"; en["FM_Props_Updated"] = "Updated";
         ru["FM_Props_NoAvatar"] = "Нет изображения"; en["FM_Props_NoAvatar"] = "No image";

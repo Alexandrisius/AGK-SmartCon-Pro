@@ -43,6 +43,10 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [ObservableProperty] private ContentStatus _contentStatus;
     [ObservableProperty] private StatusOption? _selectedStatus;
     [ObservableProperty] private string? _versionLabel;
+    [ObservableProperty] private string? _revitCategory;
+
+    public string RevitCategoryDisplay =>
+        string.IsNullOrWhiteSpace(RevitCategory) ? "—" : RevitCategory!;
 
     partial void OnVersionLabelChanged(string? value)
     {
@@ -220,6 +224,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         string? versionLabel,
         string? createdAtText,
         string? updatedAtText,
+        string? revitCategory,
         IWritableFamilyCatalogProvider writableProvider,
         IFamilyCatalogProvider catalogProvider,
         ICategoryRepository categoryRepository,
@@ -271,6 +276,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         VersionLabel = versionLabel;
         CreatedAtText = createdAtText;
         UpdatedAtText = updatedAtText;
+        RevitCategory = revitCategory;
 
         _originalName = name;
         _originalDescription = description;

@@ -26,9 +26,8 @@ namespace SmartCon.FamilyManager.Services.LocalCatalog;
 /// <c>FindByNormalizedNameAsync</c> + <c>GetNextVersionLabelAsync</c> +
 /// <c>ComputeManagedFilePath</c> for the purpose of pre-computing an
 /// import triple. The dialog rename handler goes through here, and so
-/// does the initial <c>BuildSystemFamilyBatchRowVirtualAsync</c> /
-/// <c>BuildLoadableFamilyBatchRowVirtualAsync</c> build (so the two
-/// stay in lock-step on the next-version math).
+/// does the initial <c>MapPreparedItemsToBatchItemsAsync</c> build (so
+/// the two stay in lock-step on the next-version math).
 /// </para>
 /// <para>
 /// <b>Pure compute, no side effects.</b> This service MUST NOT touch

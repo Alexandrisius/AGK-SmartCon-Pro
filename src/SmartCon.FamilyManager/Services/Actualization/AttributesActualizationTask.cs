@@ -14,10 +14,11 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// "extracted broken" (<c>READERROR</c> — #153; raw units with
 /// <c>unit_type_id IS NULL</c> — #151). Writes are idempotent replaces
 /// (DELETE+INSERT per version), so re-processing is always safe.
+/// Failure policy: no terminal marker — transient extraction errors
+/// self-heal on the next run (default base-class behaviour).
 /// </summary>
-internal sealed class AttributesActualizationTask : IDatabaseActualizationTask
+internal sealed class AttributesActualizationTask : SqlDetectionActualizationTaskBase
 {
-    private readonly LocalCatalogDatabase _database;
     private readonly IFamilyDataImportService _dataImportService;
     private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
 
@@ -25,20 +26,20 @@ internal sealed class AttributesActualizationTask : IDatabaseActualizationTask
         LocalCatalogDatabase database,
         IFamilyDataImportService dataImportService,
         ISharedNestedFamilyRepository sharedNestedRepository)
+        : base(database)
     {
-        _database = database ?? throw new ArgumentNullException(nameof(database));
         _dataImportService = dataImportService ?? throw new ArgumentNullException(nameof(dataImportService));
         _sharedNestedRepository = sharedNestedRepository ?? throw new ArgumentNullException(nameof(sharedNestedRepository));
     }
 
-    public string Id => "attributes-v1";
-    public int Order => 20;
-    public bool IsCritical => false;
+    public override string Id => "attributes-v1";
+    public override int Order => 20;
+    public override bool IsCritical => false;
 
     // Active-label variants missing extraction data (A) or carrying broken
     // values (B). Scope: loadable, ACTIVE version only (older versions are
     // history); system families excluded (staged .rvt may not exist).
-    private const string DetectionSql = """
+    protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
         WHERE ci.family_source = 'loadable'
@@ -54,77 +55,7 @@ internal sealed class AttributesActualizationTask : IDatabaseActualizationTask
                                  OR (v.storage_type = 'Double' AND v.status = 'Found' AND v.unit_type_id IS NULL))))
         """;
 
-    public async Task<int> CountPendingAsync(int revitMajorVersion, CancellationToken ct = default)
-    {
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"""
-            SELECT COUNT(*) FROM (
-                SELECT cv.catalog_item_id, cv.version_label
-                {DetectionSql}
-                  AND cv.revit_major_version <= @maxRevit
-                GROUP BY cv.catalog_item_id, cv.version_label
-            )
-            """;
-        cmd.Parameters.Add(new SqliteParameter("@maxRevit", revitMajorVersion));
-        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-        return result is long l ? (int)l : 0;
-    }
-
-    public async Task<IReadOnlyCollection<string>> LoadPendingGroupKeysAsync(int revitMajorVersion, CancellationToken ct = default)
-    {
-        // ALL pending groups, including newer-Revit-only — the engine
-        // classifies openability and reports them as newer-pending.
-        var keys = new HashSet<string>(StringComparer.Ordinal);
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"""
-            SELECT DISTINCT cv.catalog_item_id, cv.version_label
-            {DetectionSql}
-            """;
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-        {
-            keys.Add(reader.GetString(0) + "|" + reader.GetString(1));
-        }
-        return keys;
-    }
-
-    public async Task<NewerOnlyPendingInfo> GetNewerOnlyPendingAsync(int revitMajorVersion, CancellationToken ct = default)
-    {
-        // Pending groups with NO openable variant (openability is checked
-        // across all variants of the active label — the engine applies the
-        // result to every variant). RequiredRevitVersion = minimum Revit
-        // making ALL newer-only groups processable in one pass.
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"""
-            SELECT COUNT(*), COALESCE(MAX((
-                SELECT MIN(cv2.revit_major_version) FROM catalog_versions cv2
-                WHERE cv2.catalog_item_id = p.itemId AND cv2.version_label = p.label)), 0)
-            FROM (
-                SELECT DISTINCT cv.catalog_item_id AS itemId, cv.version_label AS label
-                {DetectionSql}
-            ) p
-            WHERE NOT EXISTS (
-                SELECT 1 FROM catalog_versions cv3
-                WHERE cv3.catalog_item_id = p.itemId AND cv3.version_label = p.label
-                  AND cv3.revit_major_version <= @maxRevit
-            )
-            """;
-        cmd.Parameters.Add(new SqliteParameter("@maxRevit", revitMajorVersion));
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return NewerOnlyPendingInfo.None;
-        return new NewerOnlyPendingInfo(reader.GetInt32(0), reader.GetInt32(1));
-    }
-
-    public Task<int> RunFileFreePassAsync(int revitMajorVersion, CancellationToken ct = default)
-        => Task.FromResult(0);
-
-    public async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
+    public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
     {
         var snapshot = context.Snapshot;
         var extraction = SnapshotExtractionMapper.ToExtractionResult(
@@ -145,18 +76,10 @@ internal sealed class AttributesActualizationTask : IDatabaseActualizationTask
         await UpdateCountersAsync(context.Group, snapshot, ct).ConfigureAwait(false);
     }
 
-    public Task HandleGroupFailureAsync(
-        ActualizationGroup group, ActualizationFailureKind kind, CancellationToken ct = default)
-    {
-        // No terminal marker: attributes stay pending and are retried on
-        // the next run (transient extraction errors self-heal).
-        return Task.CompletedTask;
-    }
-
     private async Task UpdateCountersAsync(
         ActualizationGroup group, FamilySnapshot snapshot, CancellationToken ct)
     {
-        using var connection = _database.CreateConnection();
+        using var connection = Database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         var idParams = new string[group.Variants.Count];

@@ -33,4 +33,20 @@ public interface IFamilyMigrationExtractor
     Task<FamilyMigrationExtractResult> ExtractLoadableWithGeometryAsync(
         string absolutePath,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Open <paramref name="absolutePath"/> (<c>.rvt</c> staged system-family
+    /// project) and extract ONLY the Revit category display name (e.g.
+    /// "Трубы") — the single artifact the actualization engine needs from
+    /// system families. Detection: placed instances via the product's
+    /// canonical system-category registry (instances are the domain truth
+    /// of a staged mini-project), with a copied-types fallback for
+    /// categories staged without placement. Returned as a minimal
+    /// <see cref="FamilySnapshot"/> (category set, everything else empty)
+    /// so the engine's context shape stays uniform. Never throws across
+    /// the boundary.
+    /// </summary>
+    Task<FamilyMigrationExtractResult> ExtractSystemCategoryAsync(
+        string absolutePath,
+        CancellationToken ct = default);
 }

@@ -25,7 +25,8 @@ internal static class CatalogSeedHelper
         string? contentHash = null,
         bool createFileOnDisk = true,
         string familySource = "loadable",
-        string? currentLabel = null)
+        string? currentLabel = null,
+        string? revitCategory = null)
     {
         var itemId = Guid.NewGuid().ToString("N");
         var versionId = Guid.NewGuid().ToString();
@@ -65,14 +66,15 @@ internal static class CatalogSeedHelper
             cmd.Transaction = tx;
             cmd.CommandText = """
                 INSERT INTO catalog_items (id, name, normalized_name, current_version_label,
-                                           family_source, hash_format_version, created_at_utc, updated_at_utc)
-                VALUES (@id, @name, @norm, @currentLabel, @source, @fmt, @t, @t)
+                                           family_source, revit_category, hash_format_version, created_at_utc, updated_at_utc)
+                VALUES (@id, @name, @norm, @currentLabel, @source, @revitCategory, @fmt, @t, @t)
                 """;
             cmd.Parameters.Add(new SqliteParameter("@id", itemId));
             cmd.Parameters.Add(new SqliteParameter("@name", name));
             cmd.Parameters.Add(new SqliteParameter("@norm", name.ToLowerInvariant()));
             cmd.Parameters.Add(new SqliteParameter("@currentLabel", currentLabel));
             cmd.Parameters.Add(new SqliteParameter("@source", familySource));
+            cmd.Parameters.Add(new SqliteParameter("@revitCategory", (object?)revitCategory ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@fmt", (object?)hashFormatVersion ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
             await cmd.ExecuteNonQueryAsync();

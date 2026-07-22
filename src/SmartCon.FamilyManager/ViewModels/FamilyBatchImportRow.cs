@@ -31,8 +31,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     /// <summary>
     /// v2.0.0: precomputed canonical managed path the VM allocated up
-    /// front in <c>BuildSystemFamilyBatchRowVirtualAsync</c> /
-    /// <c>BuildLoadableFamilyBatchRowVirtualAsync</c>. The staging
+    /// front in <c>MapPreparedItemsToBatchItemsAsync</c>. The staging
     /// helper writes the staged file at this exact path (so the
     /// managed-path invariant
     /// <c>family_files.relative_path = "{dbRoot}/files/&lt;catalogItemId&gt;/&lt;versionLabel&gt;/&lt;name&gt;"</c>
