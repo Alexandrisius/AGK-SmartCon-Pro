@@ -832,11 +832,9 @@
                                                     Width="60" MinWidth="50">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding TypesCountDisplay}"
-                                                   TextAlignment="Center"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center">
-                                            <TextBlock.ToolTip>
+                                        <Grid Background="Transparent"
+                                              ToolTipService.IsEnabled="{Binding HasTypeNames}">
+                                            <Grid.ToolTip>
                                                 <ToolTip MaxHeight="340" Padding="6,4"
                                                          Background="{DynamicResource SurfaceBrush}"
                                                          BorderBrush="{DynamicResource BorderAltBrush}"
@@ -862,8 +860,12 @@
                                                         </ItemsControl>
                                                     </ScrollViewer>
                                                 </ToolTip>
-                                            </TextBlock.ToolTip>
-                                        </TextBlock>
+                                            </Grid.ToolTip>
+                                            <TextBlock Text="{Binding TypesCountDisplay}"
+                                                       TextAlignment="Center"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

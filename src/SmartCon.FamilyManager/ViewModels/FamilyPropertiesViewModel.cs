@@ -379,7 +379,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                 types.Select(t => new FamilyTypeSelectorItem
                 {
                     TypeId = t.Id,
-                    TypeName = t.Name == Core.Models.FamilyManager.FamilyTypeSnapshot.DefaultTypeName ? Name : t.Name
+                    TypeName = FamilyTypeSnapshot.ResolveDisplayName(t.Name, Name)
                 }));
             HasTypes = AvailableTypes.Count > 0;
 

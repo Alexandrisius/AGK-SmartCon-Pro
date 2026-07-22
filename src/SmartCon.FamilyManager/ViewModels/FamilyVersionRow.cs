@@ -33,21 +33,16 @@ public sealed partial class FamilyVersionRow : ObservableObject
     /// <summary>
     /// Type names that belong to this specific version (loaded via
     /// <c>GetTypesForItemVersionAsync</c>). Used for the tooltip on the
-    /// "Types" column (ADR-041 rev #5). Compact: no row-details / banner —
-    /// <see cref="TypeNamesTooltip"/> shows the full list on hover.
+    /// "Types" column (ADR-041 rev #5). Display-ready: the synthetic
+    /// "&lt;default&gt;" marker is already replaced with the family name
+    /// by the loader (<c>FamilyPropertiesViewModel.LoadVersionsAsync</c>).
     /// </summary>
     public IReadOnlyList<string> TypeNames { get; private set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Pre-formatted tooltip text for the Types cell. Either:
-    /// <list type="bullet">
-    /// <item>"— нет типов —" when <see cref="TypeNames"/> is empty</item>
-    /// <item>The full list joined by ", " otherwise</item>
-    /// </list>
-    /// </summary>
-    public string TypeNamesTooltip => TypeNames.Count == 0
-        ? "— нет типов —"
-        : string.Join(", ", TypeNames);
+    /// <summary><c>true</c> when <see cref="TypeNames"/> is non-empty —
+    /// drives <c>ToolTipService.IsEnabled</c> on the Types cell so an empty
+    /// tooltip never pops up.</summary>
+    public bool HasTypeNames => TypeNames.Count > 0;
 
     /// <summary>
     /// Display string for the "Types" column. Shows the actual number of

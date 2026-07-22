@@ -164,6 +164,23 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public SystemFamilySnapshot? SystemSnapshot { get; }
 
     /// <summary>
+    /// Display-ready type names for the Types-column tooltip, resolved from
+    /// the same Prepare payloads that feed <see cref="TypeCount"/>
+    /// (<see cref="Services.SnapshotExtractionMapper.ResolveTypeNames"/>), so
+    /// the tooltip always matches the number in the column. The synthetic
+    /// "&lt;default&gt;" marker is shown under the current <see cref="FileName"/>
+    /// — renaming the row re-resolves the substitution.
+    /// Empty when Prepare failed or produced no snapshot.
+    /// </summary>
+    public IReadOnlyList<string> TypeNames =>
+        Services.SnapshotExtractionMapper.ResolveTypeNames(
+            LoadableSnapshot, SystemSnapshot, SourceTypes, FileName) ?? [];
+
+    /// <summary><c>true</c> when <see cref="TypeNames"/> is non-empty —
+    /// drives <c>ToolTipService.IsEnabled</c> on the Types cell.</summary>
+    public bool HasTypeNames => TypeNames.Count > 0;
+
+    /// <summary>
     /// VM-owned selection state. Bound to <c>DataGridRow.IsSelected</c> in
     /// XAML so that the selection survives clicks on inline editors
     /// (ComboBox dropdown, "…" Button) — those clicks collapse
@@ -294,6 +311,8 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AvailableActions))]
+    [NotifyPropertyChangedFor(nameof(TypeNames))]
+    [NotifyPropertyChangedFor(nameof(HasTypeNames))]
     private string _fileName = string.Empty;
 
     [ObservableProperty]

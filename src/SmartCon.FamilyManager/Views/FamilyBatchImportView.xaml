@@ -188,12 +188,47 @@
                                         MinWidth="80"
                                         IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
-                    <DataGridTextColumn x:Name="ColTypeCount"
-                                        Binding="{Binding TypeCount, Converter={StaticResource TypeCountConverter}}"
-                                        Width="Auto"
-                                        MinWidth="50"
-                                        IsReadOnly="True"
-                                        ElementStyle="{StaticResource CenterCell}"/>
+                    <DataGridTemplateColumn x:Name="ColTypeCount"
+                                            Width="Auto"
+                                            MinWidth="50"
+                                            IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid Background="Transparent"
+                                      ToolTipService.IsEnabled="{Binding HasTypeNames}">
+                                    <Grid.ToolTip>
+                                        <ToolTip MaxHeight="340" Padding="6,4"
+                                                 Background="{DynamicResource SurfaceBrush}"
+                                                 BorderBrush="{DynamicResource BorderAltBrush}"
+                                                 BorderThickness="1">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                          HorizontalScrollBarVisibility="Hidden">
+                                                <ItemsControl ItemsSource="{Binding TypeNames}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                                <TextBlock Text="•"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                           FontSize="13"
+                                                                           Margin="0,0,6,0"
+                                                                           VerticalAlignment="Top"/>
+                                                                <TextBlock Text="{Binding}"
+                                                                           TextWrapping="NoWrap"
+                                                                           FontSize="12"
+                                                                           VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </ToolTip>
+                                    </Grid.ToolTip>
+                                    <TextBlock Text="{Binding TypeCount, Converter={StaticResource TypeCountConverter}}"
+                                               Style="{StaticResource CenterCell}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn x:Name="ColStatus"
                                             Width="Auto"
                                             MinWidth="110"

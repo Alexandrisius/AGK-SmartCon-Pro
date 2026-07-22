@@ -428,6 +428,94 @@ public sealed class SnapshotExtractionMapperTests
         Assert.Equal(0, result);
     }
 
+    // ---- ResolveTypeNames ----
+
+    [Fact]
+    public void ResolveTypeNames_SourceTypesNotNull_ReturnsSourceTypeNames()
+    {
+        var sourceTypes = new[]
+        {
+            new FamilySourceTypeInfo("uid-1", "DN50", "Pipes", -2008044),
+            new FamilySourceTypeInfo("uid-2", "DN100", "Pipes", -2008044),
+        };
+        var loadableSnapshot = new FamilySnapshot(
+            FamilyName: "F", Category: "C",
+            Parameters: Array.Empty<FamilyParameterInfo>(),
+            Types: new[] { new FamilyTypeSnapshot("X", Array.Empty<FamilyParameterValue>()) },
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+
+        var result = SnapshotExtractionMapper.ResolveTypeNames(
+            loadableSnapshot, systemSnapshot: null, sourceTypes, familyName: "F");
+
+        Assert.Equal(new[] { "DN50", "DN100" }, result);
+    }
+
+    [Fact]
+    public void ResolveTypeNames_LoadableSnapshot_ReturnsSnapshotTypeNames()
+    {
+        var loadableSnapshot = new FamilySnapshot(
+            FamilyName: "Valve", Category: "Pipe Fittings",
+            Parameters: Array.Empty<FamilyParameterInfo>(),
+            Types: new[]
+            {
+                new FamilyTypeSnapshot("DN50", Array.Empty<FamilyParameterValue>()),
+                new FamilyTypeSnapshot("DN100", Array.Empty<FamilyParameterValue>()),
+            },
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+
+        var result = SnapshotExtractionMapper.ResolveTypeNames(
+            loadableSnapshot, systemSnapshot: null, sourceTypes: null, familyName: "Valve");
+
+        Assert.Equal(new[] { "DN50", "DN100" }, result);
+    }
+
+    [Fact]
+    public void ResolveTypeNames_LoadableSnapshot_DefaultType_ResolvedToFamilyName()
+    {
+        var loadableSnapshot = new FamilySnapshot(
+            FamilyName: "Valve", Category: "Pipe Fittings",
+            Parameters: Array.Empty<FamilyParameterInfo>(),
+            Types: new[]
+            {
+                new FamilyTypeSnapshot(FamilyTypeSnapshot.DefaultTypeName, Array.Empty<FamilyParameterValue>()),
+            },
+            Geometry: new GeometryMetrics(0, Array.Empty<FormMetrics>()),
+            SharedNestedFamilyNames: Array.Empty<string>());
+
+        var result = SnapshotExtractionMapper.ResolveTypeNames(
+            loadableSnapshot, systemSnapshot: null, sourceTypes: null, familyName: "Valve");
+
+        Assert.Equal(new[] { "Valve" }, result);
+    }
+
+    [Fact]
+    public void ResolveTypeNames_SystemSnapshot_ReturnsSystemTypeNames()
+    {
+        var systemSnapshot = new SystemFamilySnapshot(
+            CategoryName: "Трубы", CategoryId: -2008044,
+            Types: new[]
+            {
+                new SystemTypeSnapshot("DN50", Array.Empty<SystemParameterValue>()),
+                new SystemTypeSnapshot("DN100", Array.Empty<SystemParameterValue>()),
+            });
+
+        var result = SnapshotExtractionMapper.ResolveTypeNames(
+            loadableSnapshot: null, systemSnapshot, sourceTypes: null, familyName: "Трубы");
+
+        Assert.Equal(new[] { "DN50", "DN100" }, result);
+    }
+
+    [Fact]
+    public void ResolveTypeNames_AllNull_ReturnsNull()
+    {
+        var result = SnapshotExtractionMapper.ResolveTypeNames(
+            loadableSnapshot: null, systemSnapshot: null, sourceTypes: null, familyName: "F");
+
+        Assert.Null(result);
+    }
+
     // ---- ValueDisplay / UnitTypeId mapping ----
 
     [Fact]

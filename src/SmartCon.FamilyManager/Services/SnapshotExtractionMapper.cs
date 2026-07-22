@@ -283,6 +283,32 @@ internal static class SnapshotExtractionMapper
     }
 
     /// <summary>
+    /// Resolves the display-ready type-name list for the batch import
+    /// dialog's Types-column tooltip. Same source priority as
+    /// <see cref="ResolveTypeCount"/> (sourceTypes → loadableSnapshot →
+    /// systemSnapshot → <c>null</c>), so the tooltip always matches the
+    /// number shown in the column. The synthetic
+    /// <see cref="FamilyTypeSnapshot.DefaultTypeName"/> literal is replaced
+    /// with <paramref name="familyName"/> via
+    /// <see cref="FamilyTypeSnapshot.ResolveDisplayName"/> — the user never
+    /// sees the raw "&lt;default&gt;" marker.
+    /// </summary>
+    public static IReadOnlyList<string>? ResolveTypeNames(
+        FamilySnapshot? loadableSnapshot,
+        SystemFamilySnapshot? systemSnapshot,
+        IReadOnlyList<FamilySourceTypeInfo>? sourceTypes,
+        string familyName)
+    {
+        if (sourceTypes is not null)
+            return sourceTypes.Select(t => FamilyTypeSnapshot.ResolveDisplayName(t.Name, familyName)).ToList();
+        if (loadableSnapshot?.Types is not null)
+            return loadableSnapshot.Types.Select(t => FamilyTypeSnapshot.ResolveDisplayName(t.Name, familyName)).ToList();
+        if (systemSnapshot?.Types is not null)
+            return systemSnapshot.Types.Select(t => FamilyTypeSnapshot.ResolveDisplayName(t.Name, familyName)).ToList();
+        return null;
+    }
+
+    /// <summary>
     /// Computes a best-effort ValueRaw string matching the convention of
     /// <c>RevitFamilyDataExtractionService.ExtractValueForParameter</c>:
     /// Double → invariant full-precision, Integer → ToString, String → value,

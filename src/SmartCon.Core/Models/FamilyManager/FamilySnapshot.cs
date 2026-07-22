@@ -88,6 +88,17 @@ public sealed record FamilyTypeSnapshot(
     /// UI layers must display the family name instead of this literal.
     /// </summary>
     public const string DefaultTypeName = "<default>";
+
+    /// <summary>
+    /// Single display rule for <see cref="DefaultTypeName"/>: the unnamed
+    /// default type is always shown to the user under the family name,
+    /// never as the raw synthetic literal. Every UI surface (catalog tree,
+    /// properties tabs, batch import tooltip) must resolve through this
+    /// method instead of comparing against <see cref="DefaultTypeName"/>
+    /// inline.
+    /// </summary>
+    public static string ResolveDisplayName(string typeName, string familyName) =>
+        typeName == DefaultTypeName ? familyName : typeName;
 }
 
 /// <summary>

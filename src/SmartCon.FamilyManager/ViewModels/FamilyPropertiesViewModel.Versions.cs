@@ -82,7 +82,9 @@ public sealed partial class FamilyPropertiesViewModel
                 {
                     var types = await _typeRepository.GetTypesForItemVersionAsync(
                         _catalogItemId, row.VersionId, ct).ConfigureAwait(true);
-                    row.SetTypeNames(types.Select(t => t.Name).ToList());
+                    row.SetTypeNames(types
+                        .Select(t => Core.Models.FamilyManager.FamilyTypeSnapshot.ResolveDisplayName(t.Name, Name))
+                        .ToList());
                 }
                 catch (Exception typeEx)
                 {

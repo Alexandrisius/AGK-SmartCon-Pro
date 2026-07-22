@@ -1903,7 +1903,7 @@ public sealed record FamilyParameterValue(
 - FamilyName — from FamilyManager or family document title.
 - Category — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
 - Parameters — all schema-level parameters, sorted by name. Includes SharedParamGuid for shared params and BuiltInParameterId enum name for built-ins (null for user/shared).
-- Types — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values.
+- Types — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values. UI never shows the literal — `FamilyTypeSnapshot.ResolveDisplayName(typeName, familyName)` substitutes the family name (catalog tree, properties tabs, batch import tooltip).
 - Geometry — aggregated GeometryMetrics from all GenericForm elements.
 - SharedNestedFamilyNames — names of shared nested families (ADR-034), sorted.
 - FamilyParameterValue.HasValue distinguishes "no value" (alse) from "value is zero" (	rue, ValueNumber=0) — hash treats them differently.
@@ -2363,7 +2363,7 @@ public sealed record FamilyParameterValue(
 - `FamilyName` — from `FamilyManager` or family document title.
 - `Category` — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
 - `Parameters` — all schema-level parameters, sorted by name. Includes `SharedParamGuid` for shared params and `BuiltInParameterId` enum name for built-ins (null for user/shared).
-- `Types` — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values.
+- `Types` — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values. UI never shows the literal — `FamilyTypeSnapshot.ResolveDisplayName(typeName, familyName)` substitutes the family name (catalog tree, properties tabs, batch import tooltip).
 - `Geometry` — aggregated `GeometryMetrics` from all `GenericForm` elements.
 - `SharedNestedFamilyNames` — names of shared nested families (ADR-034), sorted.
 - `FamilyParameterValue.HasValue` distinguishes "no value" (`false`) from "value is zero" (`true`, `ValueNumber=0`) — hash treats them differently.
