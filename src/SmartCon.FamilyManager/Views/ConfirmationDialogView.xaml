@@ -12,10 +12,14 @@
         ShowInTaskbar="False"
         Background="{DynamicResource BackgroundBrush}">
 
-    <Window.Resources>
-        <ui:SingletonResources/>
-        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
-    </Window.Resources>
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
 
     <Grid Margin="16" MinWidth="320">
         <Grid.RowDefinitions>
