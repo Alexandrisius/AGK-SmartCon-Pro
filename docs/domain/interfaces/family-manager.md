@@ -771,6 +771,43 @@ public interface ICategoryAttributeBindingService
 
 ---
 
+## ISharedParameterFileParser
+
+Парсер файла общих параметров Revit (ФОП, .txt) без Revit API. Tab-delimited формат,
+секции `*META` / `*GROUP` / `*PARAM`; порядок колонок берётся из заголовков секций
+с фиксированным fallback. Кодировка определяется по BOM (UTF-8/UTF-16) с fallback UTF-8.
+
+**Файл:** `ISharedParameterFileParser.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/SharedParameterFileParser.cs`
+
+```csharp
+public interface ISharedParameterFileParser
+{
+    IReadOnlyList<SharedParameterEntry> ParseFile(string filePath);
+    IReadOnlyList<SharedParameterEntry> ParseContent(string content);
+}
+```
+
+---
+
+## IFamilyManagerUserSettingsRepository
+
+Хранение пользовательских настроек FamilyManager уровня машины (JSON-файл).
+Используется для кэширования пути к файлу общих параметров (ФОП).
+
+**Файл:** `IFamilyManagerUserSettingsRepository.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/JsonFamilyManagerUserSettingsRepository.cs`
+
+```csharp
+public interface IFamilyManagerUserSettingsRepository
+{
+    FamilyManagerUserSettings Load();
+    void Save(FamilyManagerUserSettings settings);
+}
+```
+
+---
+
 ## IAttributePresetService
 
 Управление пресетами атрибутов, определяющими какие параметры извлекать для каждой категории. Поддерживает наследование категорий.

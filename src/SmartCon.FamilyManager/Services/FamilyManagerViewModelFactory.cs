@@ -29,6 +29,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IAvatarCropService _avatarCropService;
     private readonly IDatabaseUpdateStateService _updateState;
+    private readonly ISharedParameterFileParser _sharedParameterFileParser;
+    private readonly IFamilyManagerUserSettingsRepository _userSettingsRepository;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -52,7 +54,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyGeometryPipeline geometryPipeline,
         IFamilyFileResolver fileResolver,
         IAvatarCropService avatarCropService,
-        IDatabaseUpdateStateService updateState)
+        IDatabaseUpdateStateService updateState,
+        ISharedParameterFileParser sharedParameterFileParser,
+        IFamilyManagerUserSettingsRepository userSettingsRepository)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -76,6 +80,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _fileResolver = fileResolver;
         _avatarCropService = avatarCropService;
         _updateState = updateState;
+        _sharedParameterFileParser = sharedParameterFileParser;
+        _userSettingsRepository = userSettingsRepository;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -104,7 +110,13 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()
     {
         return new AttributeLibraryViewModel(
-            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository, _metadataMediator);
+            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository, _metadataMediator, this);
+    }
+
+    public SharedParameterPickerViewModel CreateSharedParameterPickerViewModel(IEnumerable<string> existingNames)
+    {
+        return new SharedParameterPickerViewModel(
+            _sharedParameterFileParser, _userSettingsRepository, _dialogService, existingNames);
     }
 
     public CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true)

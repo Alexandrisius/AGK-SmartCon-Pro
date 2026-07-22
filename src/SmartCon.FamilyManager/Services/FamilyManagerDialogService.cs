@@ -168,6 +168,20 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
+    public string? ShowOpenTextFileDialog(string title, string? initialDirectory = null)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog();
+        dialog.Title = title;
+        dialog.Filter = "Shared parameters (*.txt)|*.txt|All files (*.*)|*.*";
+        dialog.CheckFileExists = true;
+        dialog.CheckPathExists = true;
+        if (!string.IsNullOrWhiteSpace(initialDirectory))
+            dialog.InitialDirectory = initialDirectory;
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    public bool? ShowSharedParameterPicker(object viewModel) => _presenter.ShowDialog(viewModel);
+
     public string? ShowSaveJsonDialog(string title, string? defaultFileName = null)
     {
         var dialog = new Microsoft.Win32.SaveFileDialog();

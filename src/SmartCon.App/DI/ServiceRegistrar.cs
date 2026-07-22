@@ -140,6 +140,7 @@ public static class ServiceRegistrar
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
             presenter.Register<CropAvatarViewModel>(vm => new CropAvatarView(vm));
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
+            presenter.Register<SharedParameterPickerViewModel>(vm => new SharedParameterPickerView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
             presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
@@ -189,6 +190,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IAvatarCropService, WpfAvatarCropService>();
         services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
+        services.AddSingleton<ISharedParameterFileParser, SharedParameterFileParser>();
+        services.AddSingleton<IFamilyManagerUserSettingsRepository, JsonFamilyManagerUserSettingsRepository>();
         services.AddSingleton<LocalAttributeDefinitionRepository>();
         services.AddSingleton<IAttributeDefinitionRepository>(sp => sp.GetRequiredService<LocalAttributeDefinitionRepository>());
         services.AddSingleton<LocalCategoryAttributeBindingService>();

@@ -54,6 +54,19 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
     public bool? ShowAllowedValues(object viewModel) => throw new NotImplementedException();
     public string? ShowCategoryPicker(object viewModel) => throw new NotImplementedException();
     public string? ShowOpenJsonDialog(string title, string? initialDirectory = null) => throw new NotImplementedException();
+    public string? ShowOpenTextFileDialog(string title, string? initialDirectory = null) => throw new NotImplementedException();
+
+    /// <summary>
+    /// Configurable handler for the shared-parameter picker dialog. When set,
+    /// it receives the picker view model (pre-select items and return the
+    /// dialog result). When null, the call throws — accidental usage fails loudly.
+    /// </summary>
+    public Func<object, bool?>? SharedParameterPickerHandler { get; set; }
+
+    public bool? ShowSharedParameterPicker(object viewModel)
+        => SharedParameterPickerHandler is null
+            ? throw new NotImplementedException()
+            : SharedParameterPickerHandler(viewModel);
     public string? ShowSaveJsonDialog(string title, string? defaultFileName = null) => throw new NotImplementedException();
     public bool? ShowProperties(object viewModel) => throw new NotImplementedException();
     public string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null) => throw new NotImplementedException();

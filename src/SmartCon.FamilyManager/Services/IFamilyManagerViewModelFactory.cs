@@ -18,6 +18,7 @@ public interface IFamilyManagerViewModelFactory
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
     AttributeLibraryViewModel CreateAttributeLibraryViewModel();
+    SharedParameterPickerViewModel CreateSharedParameterPickerViewModel(IEnumerable<string> existingNames);
     CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
     ProfileViewModel CreateProfileViewModel();
     ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "");

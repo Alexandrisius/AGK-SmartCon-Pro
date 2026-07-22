@@ -460,6 +460,59 @@ public sealed record EffectiveCategoryAttribute(
 
 ---
 
+## SharedParameterEntry
+
+Одна запись параметра, распарсенная из файла общих параметров Revit (ФОП, .txt).
+Чистый data carrier — парсер живёт в Core и не трогает Revit API.
+Группа ФОП переносится только как отображаемое имя (`GroupName`) и не импортируется
+в пользовательские группы атрибутов.
+
+**Файл:** `SharedParameterEntry.cs`
+
+```csharp
+public sealed record SharedParameterEntry(
+    Guid ParameterGuid,
+    string Name,
+    string DataType,
+    string? DataCategory,
+    string? GroupName,
+    string? Description);
+```
+
+---
+
+## FamilyManagerUserSettings
+
+Пользовательские настройки FamilyManager уровня машины (не привязаны к конкретной базе).
+Хранятся в `%APPDATA%\SmartCon\FamilyManager\user-settings.json`. Сейчас — кэш пути к ФОП.
+
+**Файл:** `FamilyManagerUserSettings.cs`
+
+```csharp
+public sealed record FamilyManagerUserSettings(string? SharedParametersFilePath);
+```
+
+---
+
+## SharedParameterFileParser
+
+Реализация `ISharedParameterFileParser` — pure C# парсер ФОП (.txt): tab-delimited строки,
+порядок колонок из заголовков `*GROUP`/`*PARAM` с фиксированным fallback,
+BOM-детекция кодировки (UTF-8/UTF-16 LE/BE). Бросает `InvalidDataException`,
+если секция `*PARAM` отсутствует.
+
+**Файл:** `SmartCon.Core/Services/Implementation/SharedParameterFileParser.cs`
+
+---
+
+## JsonFamilyManagerUserSettingsRepository
+
+JSON-репозиторий для `FamilyManagerUserSettings`. Файл: `%APPDATA%\SmartCon\FamilyManager\user-settings.json`.
+
+**Файл:** `SmartCon.Core/Services/Implementation/JsonFamilyManagerUserSettingsRepository.cs`
+
+---
+
 ## CategoryNode
 
 Узел дерева категорий. Формирует иерархию категорий каталога семейств.

@@ -297,6 +297,27 @@ public static partial class LocalizationService
         ru["FM_AL_EnterGroup"] = "Имя группы:"; en["FM_AL_EnterGroup"] = "Group name:";
         ru["FM_AL_DeactivateTitle"] = "Деактивация атрибута"; en["FM_AL_DeactivateTitle"] = "Deactivate Attribute";
         ru["FM_AL_DeactivateMessage"] = "Атрибут используется в {0} категориях. При деактивации все привязки будут удалены. Продолжить?"; en["FM_AL_DeactivateMessage"] = "Attribute is used in {0} categories. Deactivating will remove all bindings. Continue?";
+        ru["FM_AL_FromSharedParams"] = "Из ФОП"; en["FM_AL_FromSharedParams"] = "From SP file";
+        ru["FM_AL_ImportedFromSP"] = "Добавлено из ФОП: {0}. Нажмите OK для сохранения."; en["FM_AL_ImportedFromSP"] = "Added from SP file: {0}. Click OK to save.";
+        ru["FM_CTE_NoGroups"] = "Нет групп"; en["FM_CTE_NoGroups"] = "No groups";
+
+        ru["FM_SP_Title"] = "Импорт из файла общих параметров"; en["FM_SP_Title"] = "Import from Shared Parameters";
+        ru["FM_SP_Browse"] = "Обзор…"; en["FM_SP_Browse"] = "Browse…";
+        ru["FM_SP_BrowseTitle"] = "Выберите файл общих параметров"; en["FM_SP_BrowseTitle"] = "Select shared parameters file";
+        ru["FM_SP_PathPlaceholder"] = "Путь к файлу общих параметров (.txt)"; en["FM_SP_PathPlaceholder"] = "Shared parameters file path (.txt)";
+        ru["FM_SP_Search"] = "Поиск параметров..."; en["FM_SP_Search"] = "Search parameters...";
+        ru["FM_SP_ColName"] = "Имя"; en["FM_SP_ColName"] = "Name";
+        ru["FM_SP_ColDescription"] = "Описание"; en["FM_SP_ColDescription"] = "Description";
+        ru["FM_SP_SelectAll"] = "Выбрать все"; en["FM_SP_SelectAll"] = "Select all";
+        ru["FM_SP_DeselectAll"] = "Снять все"; en["FM_SP_DeselectAll"] = "Clear all";
+        ru["FM_SP_Add"] = "Добавить"; en["FM_SP_Add"] = "Add";
+        ru["FM_SP_SelectedFormat"] = "Выбрано: {0} из {1}"; en["FM_SP_SelectedFormat"] = "Selected: {0} of {1}";
+        ru["FM_SP_AlreadyExists"] = "(уже есть)"; en["FM_SP_AlreadyExists"] = "(exists)";
+        ru["FM_SP_ParseError"] = "Не удалось прочитать файл общих параметров: {0}"; en["FM_SP_ParseError"] = "Failed to read shared parameters file: {0}";
+        ru["FM_SP_NoParams"] = "В файле не найдено параметров"; en["FM_SP_NoParams"] = "No parameters found in file";
+        ru["FM_SP_NothingSelected"] = "Не выбрано ни одного атрибута"; en["FM_SP_NothingSelected"] = "No attributes selected";
+        ru["FM_SP_CachedFileMissing"] = "Ранее выбранный файл не найден. Выберите файл заново."; en["FM_SP_CachedFileMissing"] = "Previously selected file was not found. Please browse again.";
+        ru["FM_SP_AllGroups"] = "Все группы"; en["FM_SP_AllGroups"] = "All groups";
 
         ru["FM_Profile"] = "Профиль"; en["FM_Profile"] = "Profile";
         ru["FM_ProfileTitle"] = "Профиль пользователя"; en["FM_ProfileTitle"] = "User Profile";

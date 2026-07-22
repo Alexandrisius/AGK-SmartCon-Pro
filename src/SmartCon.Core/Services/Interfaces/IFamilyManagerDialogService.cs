@@ -76,6 +76,16 @@ public interface IFamilyManagerDialogService
     /// <summary>Show open file dialog filtered for .json files.</summary>
     string? ShowOpenJsonDialog(string title, string? initialDirectory = null);
 
+    /// <summary>Show open file dialog filtered for .txt files (shared parameters file).</summary>
+    string? ShowOpenTextFileDialog(string title, string? initialDirectory = null);
+
+    /// <summary>
+    /// Show the shared-parameter picker dialog (import attributes from a ФОП
+    /// file). Returns true when the user confirmed the selection — read the
+    /// selected entries from the view model afterwards.
+    /// </summary>
+    bool? ShowSharedParameterPicker(object viewModel);
+
     /// <summary>Show save file dialog for .json files.</summary>
     string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
 
