@@ -1215,7 +1215,7 @@ public interface IDatabaseUpdateStateService
 
 - `RefreshAsync` — пересчёт через движок `ICatalogActualizationService` (`DatabasePendingBreakdown`); `Reset` — при отсутствии активной БД.
 - `IsUpdateRequired` (ADR-054 §3a) — ЛЮБОЙ critical pending: processable (`PendingCount`) ИЛИ newer-only (`NewerOnlyCriticalCount`) — база read-only до идеальной миграции.
-- `EnsureUpToDateAsync` — gate: processable critical → диалог «Обновить сейчас?»; только newer-critical → предупреждение с `NewerOnlyRequiredRevitVersion` (оффера нет — здесь не починить).
+- `EnsureUpToDateAsync` — gate: read-only роль (Engineer) → styled info «обновление выполнит Owner/BIM-мастер» (без оффера — запись бы упала); processable critical → диалог «Обновить сейчас?»; только newer-critical → предупреждение с `NewerOnlyRequiredRevitVersion` (оффера нет — здесь не починить).
 - `UpdateAsync` — ЕДИНЫЙ прогон движка через единый диалог (команда «Обновить базу», ADR-054); ошибки логируются, закоммиченные записи сохраняются.
 - `OptionalPendingCount` (ADR-054) — processable pending OPTIONAL задач; влияет только на видимость команды «Обновить базу», никогда не гейтит write-операции.
 - `NewerOnlyPendingCount` (ADR-054 §3a) — OPTIONAL newer-only записи; только янтарный индикатор, база остаётся рабочей.

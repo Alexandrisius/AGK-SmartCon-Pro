@@ -282,6 +282,7 @@ public static class StringLocalization
         public const string FM_HashRecalc_LoadBlockedTitle = "FM_HashRecalc_LoadBlockedTitle";
         public const string FM_HashRecalc_LoadBlockedBody = "FM_HashRecalc_LoadBlockedBody";
         public const string FM_HashRecalc_LoadBlockedBodyNewerRevit = "FM_HashRecalc_LoadBlockedBodyNewerRevit";
+        public const string FM_HashRecalc_LoadBlockedBodyReadOnlyRole = "FM_HashRecalc_LoadBlockedBodyReadOnlyRole";
         public const string FM_HashRecalc_PurgeButton = "FM_HashRecalc_PurgeButton";
         public const string FM_HashRecalc_PurgeConfirmTitle = "FM_HashRecalc_PurgeConfirmTitle";
         public const string FM_HashRecalc_PurgeConfirmBody = "FM_HashRecalc_PurgeConfirmBody";
@@ -361,6 +362,7 @@ public static class StringLocalization
         public const string FM_PBase_OptionalBadgeTooltipNewerRevit = "FM_PBase_OptionalBadgeTooltipNewerRevit";
         public const string FM_DbUpdate_BannerText = "FM_DbUpdate_BannerText";
         public const string FM_DbUpdate_BannerTextNewerRevit = "FM_DbUpdate_BannerTextNewerRevit";
+        public const string FM_DbUpdate_BannerTextReadOnlyRole = "FM_DbUpdate_BannerTextReadOnlyRole";
         public const string FM_DbUpdate_BannerButton = "FM_DbUpdate_BannerButton";
         public const string FM_PBase_Title = "FM_PBase_Title";
         public const string FM_PBase_ProjectNameLabel = "FM_PBase_ProjectNameLabel";

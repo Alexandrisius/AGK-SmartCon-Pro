@@ -16,14 +16,17 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
 {
     private readonly ICatalogActualizationService _actualization;
     private readonly IFamilyManagerDialogService _dialogService;
+    private readonly IDbAccessControlService _accessControl;
     private int _currentRevitVersion;
 
     public DatabaseUpdateStateService(
         ICatalogActualizationService actualization,
-        IFamilyManagerDialogService dialogService)
+        IFamilyManagerDialogService dialogService,
+        IDbAccessControlService accessControl)
     {
         _actualization = actualization ?? throw new ArgumentNullException(nameof(actualization));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+        _accessControl = accessControl ?? throw new ArgumentNullException(nameof(accessControl));
     }
 
     public bool IsUpdateRequired { get; private set; }
@@ -57,6 +60,20 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
         if (IsRunning)
         {
             SmartConLogger.Info("DbMigration: write op gated — update already running");
+            return false;
+        }
+
+        if (!_accessControl.CanEdit)
+        {
+            // Read-only role (Engineer): the update physically cannot write
+            // (SQLite Mode=ReadOnly) — do not offer it. The banner already
+            // explains that only Owner/BimMaster can run the update.
+            _dialogService.ShowInfo(
+                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_LoadBlockedTitle)
+                    ?? "Требуется обновление базы",
+                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_LoadBlockedBodyReadOnlyRole)
+                    ?? "База данных требует обновления и работает в режиме просмотра. Обновление может выполнить пользователь с ролью Owner или BIM-мастер — обратитесь к нему.");
+            SmartConLogger.Info("DbMigration: write op gated — update required, but the current role is read-only");
             return false;
         }
 

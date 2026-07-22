@@ -36,7 +36,6 @@ public sealed partial class FamilyManagerMainViewModel
     /// базу" menu command — never the banner, badge or write-op gate.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasOptionalDatabaseUpdates))]
     [NotifyPropertyChangedFor(nameof(HasAnyDatabaseUpdate))]
     [NotifyPropertyChangedFor(nameof(HasOptionalPendingIndicator))]
     [NotifyPropertyChangedFor(nameof(HasDatabaseUpdateIndicator))]
@@ -44,20 +43,13 @@ public sealed partial class FamilyManagerMainViewModel
     private int _optionalDatabaseUpdateCount;
 
     /// <summary>
-    /// True when optional migrations are pending AND the current user may
-    /// run them (Owner/BimMaster — Engineer connections are read-only).
-    /// </summary>
-    public bool HasOptionalDatabaseUpdates => OptionalDatabaseUpdateCount > 0 && CanEdit;
-
-    /// <summary>
     /// Visibility of the single unified "Обновить базу" menu command
-    /// (ADR-054): there is actual work in the RUNNING Revit — processable
-    /// critical pending (any role) or optional pending for a write-capable
-    /// role. When only newer-Revit critical records gate, the command is
-    /// hidden: it would run an empty pass (the gate text explains the
-    /// required Revit version instead).
+    /// (ADR-054): actual work exists in the RUNNING Revit AND the current
+    /// role may write (Owner/BimMaster — Engineer connections are
+    /// read-only, the update would fail on write anyway).
     /// </summary>
-    public bool HasAnyDatabaseUpdate => HasProcessableCriticalPending || HasOptionalDatabaseUpdates;
+    public bool HasAnyDatabaseUpdate =>
+        CanEdit && (PendingDatabaseUpdateCount > 0 || OptionalDatabaseUpdateCount > 0);
 
     /// <summary>
     /// Pending records whose files all require a NEWER Revit and are
@@ -89,12 +81,12 @@ public sealed partial class FamilyManagerMainViewModel
     public bool HasOptionalPendingIndicator => OptionalDatabaseUpdateCount > 0 || NewerOnlyDatabaseUpdateCount > 0;
 
     /// <summary>
-    /// True when processable CRITICAL pending exists — the banner's
-    /// "Обновить" button makes sense (an immediate update lifts the gate).
-    /// When only newer-Revit critical records gate, the button is hidden:
-    /// nothing here lifts the gate.
+    /// True when processable CRITICAL pending exists AND the current role
+    /// may write — the banner's "Обновить" button makes sense (an
+    /// immediate update lifts the gate). Hidden when only newer-Revit
+    /// critical records gate or for read-only roles.
     /// </summary>
-    public bool HasProcessableCriticalPending => PendingDatabaseUpdateCount > 0;
+    public bool HasProcessableCriticalPending => PendingDatabaseUpdateCount > 0 && CanEdit;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
@@ -149,6 +141,11 @@ public sealed partial class FamilyManagerMainViewModel
     {
         get
         {
+            if (!CanEdit)
+            {
+                return LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_BannerTextReadOnlyRole)
+                    ?? "База данных требует обновления и работает в режиме просмотра. Обновление может выполнить пользователь с ролью Owner или BIM-мастер — обратитесь к нему.";
+            }
             if (PendingDatabaseUpdateCount > 0 || NewerOnlyCriticalCount <= 0)
             {
                 return LanguageManager.GetString(StringLocalization.Keys.FM_DbUpdate_BannerText)

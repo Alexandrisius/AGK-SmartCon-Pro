@@ -52,18 +52,35 @@ public sealed class DatabaseUpdateStateServiceTests
             => throw new NotImplementedException();
     }
 
-    private static (DatabaseUpdateStateService sut, FakeFamilyManagerDialogService dialogs, FakeCatalogActualizationService engine) CreateSut(
+    private sealed class FakeAccessControl : IDbAccessControlService
+    {
+        public bool CanEdit { get; set; } = true;
+        public bool CanImport => CanEdit;
+        public bool CanManageUsers => false;
+        public bool CanLoadToProject => true;
+        public bool IsOwner => false;
+        public bool IsBanned => false;
+        public Task<SmartCon.Core.Models.FamilyManager.DbUserRole> GetCurrentUserRoleAsync(CancellationToken ct = default)
+            => Task.FromResult(CanEdit ? SmartCon.Core.Models.FamilyManager.DbUserRole.Owner : SmartCon.Core.Models.FamilyManager.DbUserRole.Engineer);
+        public Task<SmartCon.Core.Models.FamilyManager.DbUser> GetCurrentUserAsync(CancellationToken ct = default)
+            => throw new NotImplementedException();
+        public Task RefreshCurrentUserAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public void InvalidateCache() { }
+    }
+
+    private static (DatabaseUpdateStateService sut, FakeFamilyManagerDialogService dialogs, FakeCatalogActualizationService engine, FakeAccessControl access) CreateSut(
         DatabasePendingBreakdown? breakdown = null)
     {
         var engine = new FakeCatalogActualizationService { Breakdown = breakdown ?? DatabasePendingBreakdown.Empty };
         var dialogs = new FakeFamilyManagerDialogService();
-        return (new DatabaseUpdateStateService(engine, dialogs), dialogs, engine);
+        var access = new FakeAccessControl();
+        return (new DatabaseUpdateStateService(engine, dialogs, access), dialogs, engine, access);
     }
 
     [Fact]
     public async Task RefreshAsync_PendingMigration_SetsStateAndRaises()
     {
-        var (sut, _, _) = CreateSut(new DatabasePendingBreakdown(3, 5, 0, 0, 0, 0));
+        var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(3, 5, 0, 0, 0, 0));
         var raised = 0;
         sut.StateChanged += (_, _) => raised++;
 
@@ -78,7 +95,7 @@ public sealed class DatabaseUpdateStateServiceTests
     [Fact]
     public async Task RefreshAsync_NoPending_KeepsStateClear_NoEvent()
     {
-        var (sut, _, _) = CreateSut();
+        var (sut, _, _, _) = CreateSut();
         var raised = 0;
         sut.StateChanged += (_, _) => raised++;
 
@@ -95,7 +112,7 @@ public sealed class DatabaseUpdateStateServiceTests
     {
         // OPTIONAL newer-only records: NO banner, NO gate — just the amber
         // indicator count (ADR-054 §3a).
-        var (sut, _, _) = CreateSut(new DatabasePendingBreakdown(0, 0, 0, 5, 0, 2025));
+        var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(0, 0, 0, 5, 0, 2025));
         await sut.RefreshAsync(2025);
 
         Assert.False(sut.IsUpdateRequired);
@@ -110,7 +127,7 @@ public sealed class DatabaseUpdateStateServiceTests
         // CRITICAL newer-only (ADR-054 §3a): the database stays read-only
         // until perfectly updated — but no immediate update is offered
         // (nothing is fixable in the running Revit).
-        var (sut, dialogs, engine) = CreateSut(new DatabasePendingBreakdown(0, 0, 1, 0, 2026, 0));
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(0, 0, 1, 0, 2026, 0));
         await sut.RefreshAsync(2025);
         Assert.True(sut.IsUpdateRequired);
         Assert.Equal(0, sut.PendingCount);
@@ -132,7 +149,7 @@ public sealed class DatabaseUpdateStateServiceTests
     {
         // Full gate (ADR-054 §3a): after fixing the processable part, the
         // newer-only critical remainder keeps the database read-only.
-        var (sut, dialogs, engine) = CreateSut(new DatabasePendingBreakdown(2, 0, 1, 0, 2026, 0));
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(2, 0, 1, 0, 2026, 0));
         engine.AfterRunBreakdown = new DatabasePendingBreakdown(0, 0, 1, 0, 2026, 0);
         await sut.RefreshAsync(2025);
         dialogs.ConfirmationAnswer = true;
@@ -148,7 +165,7 @@ public sealed class DatabaseUpdateStateServiceTests
     [Fact]
     public async Task Reset_AfterPending_ClearsStateAndRaises()
     {
-        var (sut, _, _) = CreateSut(new DatabasePendingBreakdown(2, 1, 0, 0, 0, 0));
+        var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(2, 1, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         var raised = 0;
         sut.StateChanged += (_, _) => raised++;
@@ -164,7 +181,7 @@ public sealed class DatabaseUpdateStateServiceTests
     [Fact]
     public async Task EnsureUpToDateAsync_NotRequired_ReturnsTrueWithoutDialog()
     {
-        var (sut, dialogs, _) = CreateSut();
+        var (sut, dialogs, _, _) = CreateSut();
         await sut.RefreshAsync(2025);
 
         var proceed = await sut.EnsureUpToDateAsync();
@@ -176,7 +193,7 @@ public sealed class DatabaseUpdateStateServiceTests
     [Fact]
     public async Task EnsureUpToDateAsync_Declined_ReturnsFalse_EngineNotRun()
     {
-        var (sut, dialogs, engine) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         dialogs.ConfirmationAnswer = false;
 
@@ -191,7 +208,7 @@ public sealed class DatabaseUpdateStateServiceTests
     [Fact]
     public async Task EnsureUpToDateAsync_Confirmed_RunsEngine_ClearsState_ReturnsTrue()
     {
-        var (sut, dialogs, engine) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         dialogs.ConfirmationAnswer = true;
 
@@ -205,9 +222,28 @@ public sealed class DatabaseUpdateStateServiceTests
     }
 
     [Fact]
+    public async Task EnsureUpToDateAsync_ReadOnlyRole_GatesWithRoleText_NoOffer_NoRun()
+    {
+        // Engineer (read-only): the update physically cannot write — no
+        // "update now" offer, just the styled info pointing at Owner/BimMaster.
+        var (sut, dialogs, engine, access) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
+        access.CanEdit = false;
+        await sut.RefreshAsync(2025);
+        dialogs.ConfirmationAnswer = true;
+
+        var proceed = await sut.EnsureUpToDateAsync();
+
+        Assert.False(proceed);
+        Assert.Equal(1, dialogs.InfoCalls);
+        Assert.Equal(0, dialogs.ConfirmationCalls);
+        Assert.Equal(0, engine.RunCalls);
+        Assert.True(sut.IsUpdateRequired);
+    }
+
+    [Fact]
     public async Task UpdateAsync_RunsEngine_RefreshesState()
     {
-        var (sut, _, engine) = CreateSut(new DatabasePendingBreakdown(1, 4, 0, 0, 0, 0));
+        var (sut, _, engine, _) = CreateSut(new DatabasePendingBreakdown(1, 4, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         Assert.True(sut.IsUpdateRequired);
 
@@ -221,7 +257,7 @@ public sealed class DatabaseUpdateStateServiceTests
     [Fact]
     public async Task UpdateAsync_NothingPending_DoesNotShowDialog()
     {
-        var (sut, dialogs, engine) = CreateSut();
+        var (sut, dialogs, engine, _) = CreateSut();
         await sut.RefreshAsync(2025);
 
         await sut.UpdateAsync();
@@ -233,7 +269,7 @@ public sealed class DatabaseUpdateStateServiceTests
     [Fact]
     public async Task UpdateAsync_EmitsRunningTransitionEvents()
     {
-        var (sut, _, _) = CreateSut(new DatabasePendingBreakdown(1, 0, 0, 0, 0, 0));
+        var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(1, 0, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         var raised = 0;
         sut.StateChanged += (_, _) => raised++;
@@ -250,7 +286,7 @@ public sealed class DatabaseUpdateStateServiceTests
     [Fact]
     public async Task UpdateAsync_EngineThrows_IsRunningResetAndNotified()
     {
-        var (sut, _, engine) = CreateSut(new DatabasePendingBreakdown(1, 0, 0, 0, 0, 0));
+        var (sut, _, engine, _) = CreateSut(new DatabasePendingBreakdown(1, 0, 0, 0, 0, 0));
         engine.RunException = new InvalidOperationException("engine blew up");
         await sut.RefreshAsync(2025);
         var notifications = new List<bool>();

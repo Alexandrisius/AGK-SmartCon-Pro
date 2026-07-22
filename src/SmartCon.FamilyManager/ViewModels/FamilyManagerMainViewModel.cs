@@ -127,8 +127,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
     [NotifyCanExecuteChangedFor(nameof(DropFamilyCommand))]
-    [NotifyPropertyChangedFor(nameof(HasOptionalDatabaseUpdates))]
     [NotifyPropertyChangedFor(nameof(HasAnyDatabaseUpdate))]
+    [NotifyPropertyChangedFor(nameof(HasProcessableCriticalPending))]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
     private bool _canEdit;
 
     [ObservableProperty]
