@@ -4,7 +4,7 @@ public static partial class LocalizationService
 {
     private static void AddFamilyManagerKeys(Dictionary<string, string> ru, Dictionary<string, string> en)
     {
-        ru["FM_SearchPlaceholder"] = "Поиск семейств..."; en["FM_SearchPlaceholder"] = "Search families...";
+        ru["FM_SearchPlaceholder"] = "Поиск по имени или тегу..."; en["FM_SearchPlaceholder"] = "Search by name or tag...";
         ru["FM_Import"] = "Импорт"; en["FM_Import"] = "Import";
         ru["FM_ImportFile"] = "Импорт файла"; en["FM_ImportFile"] = "Import File";
         ru["FM_ImportFolder"] = "Импорт папки"; en["FM_ImportFolder"] = "Import Folder";

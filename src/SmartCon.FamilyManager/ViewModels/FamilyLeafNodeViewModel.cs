@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -20,6 +21,9 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     public string? Description { get; }
     public string FamilySource { get; }
     public FamilyTooltipViewModel TooltipViewModel { get; }
+
+    public IReadOnlyList<string> MatchedTags { get; }
+    public bool HasMatchedTags => MatchedTags.Count > 0;
 
     public int? ActiveRevitMajorVersion { get; }
     public int? MinRevitMajorVersion { get; }
@@ -61,7 +65,8 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         IFamilyAssetService assetService,
         bool isStale = false,
         StaleReason staleReason = StaleReason.None,
-        int currentRevitVersion = 0)
+        int currentRevitVersion = 0,
+        string? searchText = null)
     {
         CatalogItemId = row.Id;
         CategoryId = row.CategoryId;
@@ -80,5 +85,31 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         CurrentRevitVersion = currentRevitVersion;
         _isStale = isStale;
         _staleReason = staleReason;
+        MatchedTags = ComputeMatchedTags(row.Name, row.Tags, searchText);
+    }
+
+    private static IReadOnlyList<string> ComputeMatchedTags(
+        string name, IReadOnlyList<string> tags, string? searchText)
+    {
+        if (string.IsNullOrWhiteSpace(searchText) || tags.Count == 0)
+            return [];
+
+        var tokens = FamilySearchNormalizer.Tokenize(searchText!);
+        if (tokens.Count == 0)
+            return [];
+
+        var normalizedName = FamilySearchNormalizer.Normalize(name);
+        var tagOnlyTokens = tokens.Where(t => !normalizedName.Contains(t)).ToList();
+        if (tagOnlyTokens.Count == 0)
+            return [];
+
+        return tags
+            .Where(tag =>
+            {
+                var normalizedTag = FamilySearchNormalizer.Normalize(tag);
+                return tagOnlyTokens.Any(t => normalizedTag.Contains(t));
+            })
+            .Take(3)
+            .ToList();
     }
 }

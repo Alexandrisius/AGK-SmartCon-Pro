@@ -128,4 +128,67 @@ public sealed class FamilyLeafNodeViewModelTests
         Assert.True(leaf.IsRevitIncompatible);
         Assert.False(leaf.HasCompatibleVersion);
     }
+
+    private static FamilyLeafNodeViewModel CreateLeafWithTags(
+        string name, string[] tags, string? searchText)
+    {
+        var row = new FamilyCatalogItemRow
+        {
+            Id = "item1",
+            Name = name,
+            Tags = tags,
+        };
+        return new FamilyLeafNodeViewModel(row, AssetService, searchText: searchText);
+    }
+
+    [Fact]
+    public void MatchedTags_Empty_WhenNoSearchText()
+    {
+        var leaf = CreateLeafWithTags("FamA", ["steel"], null);
+
+        Assert.Empty(leaf.MatchedTags);
+        Assert.False(leaf.HasMatchedTags);
+    }
+
+    [Fact]
+    public void MatchedTags_Empty_WhenTokenMatchesNameOnly()
+    {
+        var leaf = CreateLeafWithTags("Steel Pipe", ["steel"], "steel");
+
+        Assert.Empty(leaf.MatchedTags);
+        Assert.False(leaf.HasMatchedTags);
+    }
+
+    [Fact]
+    public void MatchedTags_ReturnsTag_WhenTokenMatchesTagOnly()
+    {
+        var leaf = CreateLeafWithTags("Pipe A", ["stainless steel"], "steel");
+
+        Assert.Equal(["stainless steel"], leaf.MatchedTags);
+        Assert.True(leaf.HasMatchedTags);
+    }
+
+    [Fact]
+    public void MatchedTags_OnlyNameUnmatchedTokens_Considered()
+    {
+        var leaf = CreateLeafWithTags("Pipe A", ["pipe", "stainless steel"], "pipe steel");
+
+        Assert.Equal(["stainless steel"], leaf.MatchedTags);
+    }
+
+    [Fact]
+    public void MatchedTags_CaseInsensitive()
+    {
+        var leaf = CreateLeafWithTags("Pipe A", ["Stainless STEEL"], "steel");
+
+        Assert.Equal(["Stainless STEEL"], leaf.MatchedTags);
+    }
+
+    [Fact]
+    public void MatchedTags_CappedAtThree()
+    {
+        var leaf = CreateLeafWithTags("Pipe A", ["steel-1", "steel-2", "steel-3", "steel-4"], "steel");
+
+        Assert.Equal(3, leaf.MatchedTags.Count);
+    }
 }

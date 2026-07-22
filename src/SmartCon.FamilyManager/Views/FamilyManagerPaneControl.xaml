@@ -1037,6 +1037,37 @@
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
 
+                            <ItemsControl ItemsSource="{Binding MatchedTags}"
+                                          VerticalAlignment="Center"
+                                          Visibility="{Binding HasMatchedTags, Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="8" Height="16"
+                                                VerticalAlignment="Center"
+                                                Background="{DynamicResource HoverAltSurfaceBrush}"
+                                                BorderBrush="{DynamicResource BorderAltBrush}"
+                                                BorderThickness="1"
+                                                Margin="4,0,0,0" Padding="6,0">
+                                            <ContentControl VerticalAlignment="Center"
+                                                            FontSize="10"
+                                                            Foreground="{DynamicResource TextSecondaryBrush}">
+                                                <ContentControl.Content>
+                                                    <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                                        <Binding Path=""/>
+                                                        <Binding Path="DataContext.SearchText" RelativeSource="{RelativeSource AncestorType=TreeView}"/>
+                                                    </MultiBinding>
+                                                </ContentControl.Content>
+                                            </ContentControl>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
                             <TextBlock Text="{loc:Loc FM_Stale}"
                                        Foreground="{DynamicResource WarningBrush}"
                                        FontSize="10"
