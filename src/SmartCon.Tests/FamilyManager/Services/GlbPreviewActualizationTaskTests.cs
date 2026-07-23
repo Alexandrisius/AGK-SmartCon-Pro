@@ -85,6 +85,29 @@ public sealed class GlbPreviewActualizationTaskTests : IDisposable
     }
 
     [Fact]
+    public async Task CountPending_TerminalMarker_NotPending()
+    {
+        // #157: glb_state = -1 (family legitimately has no extractable 3D)
+        // clears the detection even though no Model3D asset exists.
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamNo3D", glbState: -1);
+
+        Assert.Equal(0, await _sut.CountPendingAsync(2025));
+    }
+
+    [Fact]
+    public async Task LoadPendingKeys_ExcludesTerminalMarker()
+    {
+        var (markedItem, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamNo3D", glbState: -1);
+        var (pendingItem, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamPending");
+
+        var keys = await _sut.LoadPendingGroupKeysAsync(2025);
+
+        Assert.Contains(pendingItem + "|v1", keys);
+        Assert.DoesNotContain(markedItem + "|v1", keys);
+    }
+
+    [Fact]
     public async Task Apply_RunsPipeline_WithContextGeometryAndOpenedVariant()
     {
         var geometry = Array.Empty<FamilyGeometryPerType>();

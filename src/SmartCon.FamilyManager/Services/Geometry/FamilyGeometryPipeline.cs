@@ -101,6 +101,10 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                 SmartConLogger.Warn(
                     $"Geometry pipeline skipped: no preview extracted for '{familyName}' v{versionLabel} " +
                     "[Action: verify family has visible 3D solids; 3D preview will be unavailable for this version]");
+                // #157: the family legitimately has no extractable 3D
+                // (2D/annotation-only symbol). Write the terminal marker so
+                // the glb-v1 detection clears instead of pending forever.
+                await WriteGlbStateAsync(catalogItemId, versionLabel, -1, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -183,6 +187,62 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
         SmartConLogger.Info(
             $"Geometry pipeline finished: family='{familyName}', v='{versionLabel}', " +
             $"written={writtenCount}, skippedEmpty={skippedEmptyCount}, totalTypes={geometry.Count}");
+
+        if (writtenCount > 0)
+        {
+            // #157 heal: a previous terminal marker (family had no geometry
+            // at an earlier import) is obsolete — the family now produces
+            // real previews. Clear it on every variant of the label.
+            await WriteGlbStateAsync(catalogItemId, versionLabel, null, ct).ConfigureAwait(false);
+        }
+        else if (skippedEmptyCount == geometry.Count)
+        {
+            // Every type produced empty geometry — genuinely no 3D content.
+            // GLB write failures are NOT marked: those are transient and
+            // must stay pending for a retry.
+            await WriteGlbStateAsync(catalogItemId, versionLabel, -1, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// #157: writes/clears the terminal "no extractable geometry" marker on
+    /// every variant of (<paramref name="catalogItemId"/>,
+    /// <paramref name="versionLabel"/>) — the content is identical across
+    /// variants, so the marker is too. <paramref name="state"/> = -1 marks
+    /// terminal no-geometry (glb-v1 detection clears);
+    /// <see langword="null"/> heals it (only rows currently at -1 are
+    /// touched). Best-effort: a marker failure never breaks the pipeline.
+    /// </summary>
+    private async Task WriteGlbStateAsync(
+        string catalogItemId, string versionLabel, int? state, CancellationToken ct)
+    {
+        try
+        {
+            using var connection = _database.CreateConnection();
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = state is not null
+                ? """
+                    UPDATE catalog_versions SET glb_state = @state
+                    WHERE catalog_item_id = @itemId AND version_label = @label
+                    """
+                : """
+                    UPDATE catalog_versions SET glb_state = NULL
+                    WHERE catalog_item_id = @itemId AND version_label = @label
+                      AND glb_state = -1
+                    """;
+            cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            cmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+            if (state is not null)
+                cmd.Parameters.Add(new SqliteParameter("@state", state.Value));
+            var rows = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            SmartConLogger.Debug(
+                $"WriteGlbStateAsync: item={catalogItemId}, v={versionLabel}, state={(state?.ToString() ?? "NULL")}, rows={rows}");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"WriteGlbStateAsync skipped: {ex.Message}");
+        }
     }
 
     /// <summary>

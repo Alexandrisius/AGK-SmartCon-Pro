@@ -58,6 +58,7 @@ internal static class FamilyCatalogSql
             parameters_count INTEGER,
             content_hash TEXT,
             hash_format_version INTEGER,
+            glb_state INTEGER,
             published_at_utc TEXT NOT NULL,
             published_by TEXT,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
@@ -842,5 +843,19 @@ internal static class FamilyCatalogSql
     /// project base configuration survives DisconnectDatabaseAsync + ConnectDatabaseAsync.
     public const string MigrateV21AddProjectBindingColumn = """
         ALTER TABLE database_meta ADD COLUMN project_binding_json TEXT
+        """;
+
+    /// <summary>
+    /// V23 (#157): adds <c>glb_state INTEGER</c> to <c>catalog_versions</c> —
+    /// the glb-v1 task's terminal "known missing" marker for families whose
+    /// geometry legitimately does not exist (2D/annotation-only symbols).
+    /// NULL = not attempted (detection pending), -1 = no extractable 3D
+    /// (terminal, detection cleared). Written by FamilyGeometryPipeline at
+    /// the shared choke point, so import hooks and the actualization task
+    /// get the marker for free; a later import with real geometry heals it
+    /// back to NULL.
+    /// </summary>
+    public const string MigrateV23AddGlbStateColumn = """
+        ALTER TABLE catalog_versions ADD COLUMN glb_state INTEGER
         """;
 }

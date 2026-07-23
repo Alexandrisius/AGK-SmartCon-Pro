@@ -48,7 +48,7 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 |---|---|---|---|
 | `HashFormatActualizationTask` (`hash-v2`) | 10 | да | Хэши v2: apply на все Revit-варианты + ресинк item; system re-flag в file-free pass; терминальные маркеры -1/-2 |
 | `AttributesActualizationTask` (`attributes-v1`) | 20 | нет | Типы + значения + shared nested + счётчики `types_count`/`parameters_count` (active label; чинит #151/#152/#153) |
-| `GlbPreviewActualizationTask` (`glb-v1`) | 30 | нет | Auto-extracted 3D GLB превью (active label) |
+| `GlbPreviewActualizationTask` (`glb-v1`) | 30 | нет | Auto-extracted 3D GLB превью (active label). Терминальный маркер #157 (V23): семейство без извлекаемой 3D-геометрии (2D/символьные) получает `catalog_versions.glb_state = -1` от пайплайна — детект гаснет, иначе вечный pending |
 | `RevitCategoryActualizationTask` (`revit-category-v1`) | 40 | нет | Backfill `catalog_items.revit_category` для loadable+system (active label; system `.rvt` — category-only extraction `ExtractSystemCategoryAsync`) |
 | `FamilyFactsActualizationTask` (`family-facts-v1`) | 50 | нет | Backfill `catalog_items.revit_category_id` + `family_facts` (ADR-055; детект SQL генерируется из `FamilyFactRuleSet` — новая категория/факт в реестре автоматически расширяет детект; system получает только category id) |
 

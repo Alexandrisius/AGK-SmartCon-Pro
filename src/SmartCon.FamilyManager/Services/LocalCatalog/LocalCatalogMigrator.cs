@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 22)
+        if (initialVersion < 23)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v22");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v23");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -76,6 +76,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 20, MigrateV20Async, ct);
         await RunMigrationAsync(connection, 21, MigrateV21Async, ct);
         await RunMigrationAsync(connection, 22, MigrateV22Async, ct);
+        await RunMigrationAsync(connection, 23, MigrateV23Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -992,6 +993,43 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// V23 (#157): adds <c>catalog_versions.glb_state INTEGER</c> — terminal
+    /// "no extractable geometry" marker for the glb-v1 task (-1). Without
+    /// it, families that legitimately have no 3D (2D/annotation symbols)
+    /// stayed pending forever (eternal amber dot).
+    /// </summary>
+    private static async Task MigrateV23Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 23) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "glb_state", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV23AddGlbStateColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '23' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v23: added glb_state column to catalog_versions (terminal no-geometry marker for glb-v1, #157)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1153,6 +1191,13 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN hash_format_version INTEGER";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_versions", "glb_state", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV23AddGlbStateColumn;
             await cmd.ExecuteNonQueryAsync(ct);
         }
 

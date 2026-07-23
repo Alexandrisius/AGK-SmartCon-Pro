@@ -10,8 +10,12 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// each loadable item (ADR-054). Detection: no <c>family_assets</c> row
 /// with <c>asset_type='Model3D'</c> and the auto-preview description for
 /// the label. The asset row clears its own detection once written.
-/// Failure policy: no terminal marker — the criterion stays pending and
-/// is retried on the next run (default base-class behaviour).
+/// Terminal marker (#157, schema V23): when the family legitimately has
+/// no extractable geometry (2D/annotation-only symbol), the pipeline
+/// writes <c>catalog_versions.glb_state = -1</c> and the detection clears
+/// — otherwise such families stayed pending forever (eternal amber dot).
+/// Transient failures (missing file, GLB write error) get NO marker and
+/// are retried on the next run (default base-class behaviour).
 /// </summary>
 internal sealed class GlbPreviewActualizationTask : SqlDetectionActualizationTaskBase
 {
@@ -34,6 +38,7 @@ internal sealed class GlbPreviewActualizationTask : SqlDetectionActualizationTas
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
         WHERE ci.family_source = 'loadable'
           AND cv.version_label = ci.current_version_label
+          AND COALESCE(cv.glb_state, 0) <> -1
           AND NOT EXISTS(SELECT 1 FROM family_assets a
                           WHERE a.catalog_item_id = ci.id AND a.version_label = cv.version_label
                             AND a.asset_type = 'Model3D' AND a.description LIKE 'auto-extracted-preview:%')
