@@ -28,7 +28,7 @@ namespace SmartCon.Core.Services.Interfaces;
 /// </remarks>
 public interface IDatabaseActualizationTask
 {
-    /// <summary>Stable unique id (e.g. <c>"hash-v2"</c>), used in logs.</summary>
+    /// <summary>Stable unique id (e.g. <c>"hash-v3"</c>), used in logs.</summary>
     string Id { get; }
 
     /// <summary>

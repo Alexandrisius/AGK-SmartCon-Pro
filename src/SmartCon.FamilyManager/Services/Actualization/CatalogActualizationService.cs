@@ -232,7 +232,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
 
             var context = new FamilyActualizationContext(
                 group, openable, absolutePath,
-                extract.LoadableSnapshot, extract.Geometry);
+                extract.LoadableSnapshot, extract.Geometry, extract.SystemSnapshot);
 
             var groupFailed = false;
             foreach (var task in pendingTasks)

@@ -34,6 +34,15 @@ public sealed record FamilyContentHash(
 ///     canonical string is unchanged (<c>FHV1|SYSTEM|...</c>) because
 ///     it never contained a name — system rows are migrated by a cheap
 ///     flag update without recomputation.
+/// 3 — content coverage v3 (Issue #159, ADR-056). Loadable: category
+///     ordinal replaces the locale-dependent display name; new sections
+///     FACTS (Part Type), FLAGS (behavior), CONN (connectors), geometry
+///     gains bounding box + surface area + curve lengths, non-shared
+///     nested families join NESTED; values are escaped. System:
+///     <c>FHV3|SYSTEM|{catId}|...</c> drops the locale-dependent
+///     category name and gains per-type STRUCT (compound layers) and
+///     ROUTING (routing preferences) sections. Both sources need a
+///     full file-based recomputation (critical task <c>hash-v3</c>).
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -49,7 +58,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

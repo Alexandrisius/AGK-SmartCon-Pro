@@ -40,6 +40,20 @@ public interface IFamilySnapshotExtractor
         BuiltInCategory builtInCategory);
 
     /// <summary>
+    /// Extract a <see cref="SystemFamilySnapshot"/> from a staged
+    /// mini-project (.rvt) during database actualization (ADR-056).
+    /// Type discovery: placed instances first (domain truth for placed
+    /// categories); when nothing is placed (Phase-2 categories copied
+    /// without placement) ALL types of the category are collected —
+    /// the caller trims them to the catalog's authoritative type list.
+    /// </summary>
+    /// <param name="stagedDoc">Open staged mini-project document.</param>
+    /// <param name="builtInCategory">The system category to extract.</param>
+    SystemFamilySnapshot ExtractSystemCategoryFromStagedProject(
+        Document stagedDoc,
+        BuiltInCategory builtInCategory);
+
+    /// <summary>
     /// Extracts 3D tessellated geometry for EACH family type by iterating
     /// <c>FamilyManager.CurrentType</c> inside a Transaction+RollBack
     /// (I-03b). Type-dependent extrusions that return empty

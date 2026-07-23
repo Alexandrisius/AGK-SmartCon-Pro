@@ -47,12 +47,15 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         var parameters = ExtractParameters(fm);
         var types = ExtractTypes(fm, familyDoc);
         var geometry = ExtractGeometry(familyDoc);
-        var sharedNested = ExtractSharedNestedNames(familyDoc);
+        var (sharedNested, nonSharedNested) = ExtractNestedNames(familyDoc);
+        var connectors = ExtractConnectors(familyDoc);
+        var behaviorFlags = ExtractBehaviorFlags(familyDoc);
 
         SmartConLogger.Info(
             $"Family snapshot: '{familyName}', {parameters.Count} params, " +
             $"{types.Count} types, {geometry.TotalFormCount} forms, " +
-            $"{sharedNested.Count} shared nested" +
+            $"{sharedNested.Count} shared nested, {nonSharedNested.Count} non-shared nested, " +
+            $"{connectors.Count} connectors" +
             $"{(facts.Count > 0 ? $", {facts.Count} facts" : string.Empty)}");
 
         return new FamilySnapshot(
@@ -63,7 +66,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             Geometry: geometry,
             SharedNestedFamilyNames: sharedNested,
             CategoryId: categoryId,
-            Facts: facts.Count > 0 ? facts : null);
+            Facts: facts.Count > 0 ? facts : null,
+            Connectors: connectors.Count > 0 ? connectors : null,
+            BehaviorFlags: behaviorFlags,
+            NonSharedNestedFamilyNames: nonSharedNested.Count > 0 ? nonSharedNested : null);
     }
 
     public IReadOnlyList<FamilyGeometryPerType> ExtractGeometryPerType(
@@ -609,11 +615,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 .Cast<GenericForm>()
                 .ToList();
 
-            var symbolicCount = CountElements(familyDoc,
+            var (symbolicCount, symbolicLength) = CountAndMeasureCurves(familyDoc,
                 new CurveElementFilter(CurveElementType.SymbolicCurve));
-            var detailCount = CountElements(familyDoc,
+            var (detailCount, detailLength) = CountAndMeasureCurves(familyDoc,
                 new CurveElementFilter(CurveElementType.DetailCurve));
-            var modelCount = CountElements(familyDoc,
+            var (modelCount, modelLength) = CountAndMeasureCurves(familyDoc,
                 new CurveElementFilter(CurveElementType.ModelCurve));
             var textNoteCount = CountElements(familyDoc, typeof(TextNote));
             var refPlaneCount = CountElements(familyDoc, typeof(ReferencePlane));
@@ -628,7 +634,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 return new GeometryMetrics(
                     0, Array.Empty<FormMetrics>(),
                     symbolicCount, detailCount, modelCount,
-                    textNoteCount, refPlaneCount, dimensionCount);
+                    textNoteCount, refPlaneCount, dimensionCount,
+                    symbolicLength, detailLength, modelLength);
             }
 
             var options = new Options
@@ -661,7 +668,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             return new GeometryMetrics(
                 forms.Count, sortedMetrics,
                 symbolicCount, detailCount, modelCount,
-                textNoteCount, refPlaneCount, dimensionCount);
+                textNoteCount, refPlaneCount, dimensionCount,
+                symbolicLength, detailLength, modelLength);
         }
         catch (Exception ex)
         {
@@ -669,6 +677,38 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 $"Geometry extraction failed: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: hash will use 0 forms — check family document for corruption]");
             return new GeometryMetrics(0, Array.Empty<FormMetrics>());
+        }
+    }
+
+    /// <summary>
+    /// Count curve elements matching the filter and sum their geometry
+    /// curve lengths (ADR-056). Length catches 2D edits that keep the
+    /// element count constant (redrawn line of the same kind).
+    /// </summary>
+    private static (int Count, double TotalLength) CountAndMeasureCurves(Document doc, ElementFilter filter)
+    {
+        try
+        {
+            var count = 0;
+            double length = 0;
+            foreach (var element in new FilteredElementCollector(doc).WherePasses(filter))
+            {
+                count++;
+                try
+                {
+                    if (element is CurveElement { GeometryCurve: not null } curveElement)
+                        length += curveElement.GeometryCurve.Length;
+                }
+                catch
+                {
+                    // single curve unreadable — count stays, length skips it
+                }
+            }
+            return (count, length);
+        }
+        catch
+        {
+            return (0, 0);
         }
     }
 
@@ -705,9 +745,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         var formKind = form.GetType().Name;
         var isSolid = form.IsSolid;
         double volume = 0;
+        double surfaceArea = 0;
         int faceCount = 0;
         int edgeCount = 0;
         string? subcategoryName = null;
+        BoundingBoxSnapshot? bounds = null;
 
         try
         {
@@ -718,9 +760,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 {
                     if (geomObj is Solid solid && solid.Volume > 0)
                     {
-                        volume += solid.Volume;
-                        faceCount += solid.Faces.Size;
-                        edgeCount += solid.Edges.Size;
+                        AccumulateSolid(solid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount);
                     }
                     else if (geomObj is GeometryInstance geomInst)
                     {
@@ -731,9 +771,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                             {
                                 if (innerObj is Solid innerSolid && innerSolid.Volume > 0)
                                 {
-                                    volume += innerSolid.Volume;
-                                    faceCount += innerSolid.Faces.Size;
-                                    edgeCount += innerSolid.Edges.Size;
+                                    AccumulateSolid(innerSolid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount);
                                 }
                             }
                         }
@@ -745,6 +783,22 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         {
             SmartConLogger.Debug(
                 $"Geometry read failed for form '{formKind}' (Id={form.Id}): {ex.Message}");
+        }
+
+        try
+        {
+            var bbox = form.get_BoundingBox(null);
+            if (bbox is not null)
+            {
+                bounds = new BoundingBoxSnapshot(
+                    bbox.Min.X, bbox.Min.Y, bbox.Min.Z,
+                    bbox.Max.X, bbox.Max.Y, bbox.Max.Z);
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"Bounding box read failed for form '{formKind}' (Id={form.Id}): {ex.Message}");
         }
 
         try
@@ -762,13 +816,42 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             Volume: volume,
             FaceCount: faceCount,
             EdgeCount: edgeCount,
-            SubcategoryName: subcategoryName);
+            SubcategoryName: subcategoryName,
+            SurfaceArea: surfaceArea,
+            Bounds: bounds);
     }
 
-    private static IReadOnlyList<string> ExtractSharedNestedNames(Document familyDoc)
+    private static void AccumulateSolid(
+        Solid solid, ref double volume, ref double surfaceArea, ref int faceCount, ref int edgeCount)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<string>();
+        volume += solid.Volume;
+        faceCount += solid.Faces.Size;
+        edgeCount += solid.Edges.Size;
+        try
+        {
+            foreach (Face face in solid.Faces)
+            {
+                surfaceArea += face.Area;
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Face area accumulation failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Nested family names split by the shared flag (ADR-056): shared
+    /// nested families keep their long-standing hash role, non-shared
+    /// ones join in FHV3 (their replacement is real content too).
+    /// Single collector pass for both lists.
+    /// </summary>
+    private static (List<string> Shared, List<string> NonShared) ExtractNestedNames(Document familyDoc)
+    {
+        var seenShared = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenNonShared = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var shared = new List<string>();
+        var nonShared = new List<string>();
 
         try
         {
@@ -780,23 +863,29 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 var family = fi.Symbol?.Family;
                 if (family is null) continue;
 
-                if (!IsSharedFamily(family)) continue;
-
                 var name = family.Name;
                 if (string.IsNullOrWhiteSpace(name)) continue;
-                if (!seen.Add(name)) continue;
 
-                result.Add(name);
+                if (IsSharedFamily(family))
+                {
+                    if (seenShared.Add(name))
+                        shared.Add(name);
+                }
+                else
+                {
+                    if (seenNonShared.Add(name))
+                        nonShared.Add(name);
+                }
             }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Debug($"Shared nested scan failed: {ex.Message}");
+            SmartConLogger.Debug($"Nested family scan failed: {ex.Message}");
         }
 
-        return result
-            .OrderBy(n => n, StringComparer.Ordinal)
-            .ToList();
+        return (
+            shared.OrderBy(n => n, StringComparer.Ordinal).ToList(),
+            nonShared.OrderBy(n => n, StringComparer.Ordinal).ToList());
     }
 
     private static bool IsSharedFamily(Autodesk.Revit.DB.Family family)
@@ -809,6 +898,176 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Connector elements of the family (ADR-056, Issue #159): domain,
+    /// profile, sizes, system classification, origin and intra-family
+    /// linkage. Returned pre-sorted (Domain, Shape, SystemClassification,
+    /// Origin) with <see cref="ConnectorSnapshot.LinkedIndex"/> computed
+    /// against that order — the hasher re-sorts with the identical key,
+    /// which is a no-op for this list. Every property read is isolated:
+    /// a connector whose size is not applicable to its profile yields
+    /// <c>null</c>, never an exception.
+    /// </summary>
+    private static List<ConnectorSnapshot> ExtractConnectors(Document familyDoc)
+    {
+        try
+        {
+            var elements = new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(ConnectorElement))
+                .Cast<ConnectorElement>()
+                .ToList();
+
+            if (elements.Count == 0)
+                return new List<ConnectorSnapshot>(0);
+
+            var sorted = elements
+                .OrderBy(el => SafeDomain(el))
+                .ThenBy(el => SafeShape(el))
+                .ThenBy(el => SafeSystemClassification(el))
+                .ThenBy(el => SafeOrigin(el)?.X ?? 0)
+                .ThenBy(el => SafeOrigin(el)?.Y ?? 0)
+                .ThenBy(el => SafeOrigin(el)?.Z ?? 0)
+                .ToList();
+
+            var indexByElementId = new Dictionary<long, int>(sorted.Count);
+            for (var i = 0; i < sorted.Count; i++)
+            {
+                indexByElementId[GetElementIdValue(sorted[i].Id)] = i;
+            }
+
+            var result = new List<ConnectorSnapshot>(sorted.Count);
+            foreach (var el in sorted)
+            {
+                var origin = SafeOrigin(el);
+                var linkedIndex = -1;
+                try
+                {
+                    var linked = el.GetLinkedConnectorElement();
+                    if (linked is not null &&
+                        indexByElementId.TryGetValue(GetElementIdValue(linked.Id), out var found))
+                    {
+                        linkedIndex = found;
+                    }
+                }
+                catch
+                {
+                    // no linked connector
+                }
+
+                result.Add(new ConnectorSnapshot(
+                    Domain: SafeDomain(el),
+                    Shape: SafeShape(el),
+                    SystemClassification: SafeSystemClassification(el),
+                    IsPrimary: SafeIsPrimary(el),
+                    Width: SafeDimension(el, nameof(ConnectorElement.Width)),
+                    Height: SafeDimension(el, nameof(ConnectorElement.Height)),
+                    Radius: SafeDimension(el, nameof(ConnectorElement.Radius)),
+                    OriginX: origin?.X ?? 0,
+                    OriginY: origin?.Y ?? 0,
+                    OriginZ: origin?.Z ?? 0,
+                    LinkedIndex: linkedIndex));
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Connector scan failed: {ex.Message}");
+            return new List<ConnectorSnapshot>(0);
+        }
+    }
+
+    private static int SafeDomain(ConnectorElement el)
+    {
+        try { return (int)el.Domain; }
+        catch { return 0; }
+    }
+
+    private static int SafeShape(ConnectorElement el)
+    {
+        try { return (int)el.Shape; }
+        catch { return 0; }
+    }
+
+    private static int SafeSystemClassification(ConnectorElement el)
+    {
+        try { return (int)el.SystemClassification; }
+        catch { return 0; }
+    }
+
+    private static bool SafeIsPrimary(ConnectorElement el)
+    {
+        try { return el.IsPrimary; }
+        catch { return false; }
+    }
+
+    private static XYZ? SafeOrigin(ConnectorElement el)
+    {
+        try { return el.Origin; }
+        catch { return null; }
+    }
+
+    private static double? SafeDimension(ConnectorElement el, string propertyName)
+    {
+        try
+        {
+            return propertyName switch
+            {
+                nameof(ConnectorElement.Width) => el.Width,
+                nameof(ConnectorElement.Height) => el.Height,
+                nameof(ConnectorElement.Radius) => el.Radius,
+                _ => null,
+            };
+        }
+        catch
+        {
+            // dimension not applicable to this profile (e.g. Radius on rectangular)
+            return null;
+        }
+    }
+
+    private static long GetElementIdValue(ElementId id)
+    {
+#if REVIT2024_OR_GREATER
+        return id.Value;
+#else
+        return id.IntegerValue;
+#endif
+    }
+
+    /// <summary>
+    /// Behavior flags from the <c>Family</c> element (ADR-056): shared,
+    /// work-plane-based, always-vertical, cut-with-voids. These are
+    /// built-in parameters on <c>OwnerFamily</c>, invisible to
+    /// <c>FamilyManager.GetParameters()</c>.
+    /// </summary>
+    private static FamilyBehaviorFlags? ExtractBehaviorFlags(Document familyDoc)
+    {
+        var family = familyDoc.OwnerFamily;
+        if (family is null) return null;
+
+        return new FamilyBehaviorFlags(
+            IsShared: ReadBoolFlag(family, BuiltInParameter.FAMILY_SHARED),
+            IsWorkPlaneBased: ReadBoolFlag(family, BuiltInParameter.FAMILY_WORK_PLANE_BASED),
+            IsAlwaysVertical: ReadBoolFlag(family, BuiltInParameter.FAMILY_ALWAYS_VERTICAL),
+            AllowsCutWithVoids: ReadBoolFlag(family, BuiltInParameter.FAMILY_ALLOW_CUT_WITH_VOIDS));
+    }
+
+    private static bool? ReadBoolFlag(Element element, BuiltInParameter builtInParameter)
+    {
+        try
+        {
+            var param = element.get_Parameter(builtInParameter);
+            if (param is null || !param.HasValue || param.StorageType != StorageType.Integer)
+                return null;
+            return param.AsInteger() != 0;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -943,7 +1202,271 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 
         return new SystemTypeSnapshot(
             Name: name,
-            Values: sortedValues);
+            Values: sortedValues,
+            Structure: ExtractCompoundStructure(elementType, projectDoc),
+            Routing: ExtractRoutingPreferences(elementType, projectDoc));
+    }
+
+    /// <summary>
+    /// Compound structure (layer stack) of a host type — Basic walls,
+    /// floors, roofs, ceilings (ADR-056). <c>null</c> for non-host types
+    /// and for hosts without a compound structure (stacked/curtain
+    /// walls): both are deterministic canonical states, distinct from
+    /// each other only by the type itself.
+    /// </summary>
+    private static CompoundStructureSnapshot? ExtractCompoundStructure(
+        ElementType elementType, Document doc)
+    {
+        if (elementType is not HostObjAttributes hostType)
+            return null;
+
+        try
+        {
+            using var compoundStructure = hostType.GetCompoundStructure();
+            if (compoundStructure is null)
+                return null;
+
+            var layers = compoundStructure.GetLayers();
+            var variableLayerIndex = compoundStructure.VariableLayerIndex;
+            var snapshots = new List<CompoundLayerSnapshot>(layers.Count);
+
+            for (var i = 0; i < layers.Count; i++)
+            {
+                var layer = layers[i];
+                string? materialName = null;
+                try
+                {
+                    if (layer.MaterialId is not null && layer.MaterialId != ElementId.InvalidElementId)
+                    {
+                        materialName = doc.GetElement(layer.MaterialId)?.Name;
+                    }
+                }
+                catch
+                {
+                    materialName = null;
+                }
+
+                snapshots.Add(new CompoundLayerSnapshot(
+                    Function: (int)layer.Function,
+                    Width: layer.Width,
+                    MaterialName: materialName,
+                    IsVariable: i == variableLayerIndex));
+            }
+
+            return new CompoundStructureSnapshot(
+                ExteriorShellLayerCount: compoundStructure.GetNumberOfShellLayers(ShellLayerType.Exterior),
+                InteriorShellLayerCount: compoundStructure.GetNumberOfShellLayers(ShellLayerType.Interior),
+                Layers: snapshots);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"CompoundStructure read failed for type '{elementType.Name}': {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Routing preferences of a MEP curve type — pipe, duct, cable tray,
+    /// conduit (ADR-056). <c>null</c> for non-MEP types. Rules keep
+    /// manager order (first matching rule wins — order is content).
+    /// Resolved part names are family-qualified for fitting symbols
+    /// (<c>"{Family}:{Type}"</c>) so two fittings sharing a type name
+    /// cannot collide.
+    /// </summary>
+    private static RoutingPreferencesSnapshot? ExtractRoutingPreferences(
+        ElementType elementType, Document doc)
+    {
+        if (elementType is not MEPCurveType mepCurveType)
+            return null;
+
+        try
+        {
+            using var manager = mepCurveType.RoutingPreferenceManager;
+            if (manager is null)
+                return null;
+
+            var rules = new List<RoutingRuleSnapshot>();
+            foreach (RoutingPreferenceRuleGroupType group in Enum.GetValues(typeof(RoutingPreferenceRuleGroupType)))
+            {
+                if (group == RoutingPreferenceRuleGroupType.Undefined)
+                    continue;
+
+                int ruleCount = manager.GetNumberOfRules(group);
+                for (var i = 0; i < ruleCount; i++)
+                {
+                    RoutingPreferenceRule rule;
+                    try
+                    {
+                        rule = manager.GetRule(group, i);
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Debug(
+                            $"Routing rule read failed ({group}[{i}]) for type '{elementType.Name}': {ex.Message}");
+                        continue;
+                    }
+
+                    rules.Add(ConvertRoutingRule(rule, group, doc));
+                }
+            }
+
+            return new RoutingPreferencesSnapshot(
+                PreferredJunctionType: (int)manager.PreferredJunctionType,
+                Rules: rules);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"RoutingPreferences read failed for type '{elementType.Name}': {ex.Message}");
+            return null;
+        }
+    }
+
+    private static RoutingRuleSnapshot ConvertRoutingRule(
+        RoutingPreferenceRule rule, RoutingPreferenceRuleGroupType group, Document doc)
+    {
+        string? partName = null;
+        try
+        {
+            if (rule.MEPPartId is not null && rule.MEPPartId != ElementId.InvalidElementId)
+            {
+                var element = doc.GetElement(rule.MEPPartId);
+                partName = element switch
+                {
+                    FamilySymbol symbol => $"{symbol.Family?.Name}:{symbol.Name}",
+                    _ => element?.Name,
+                };
+            }
+        }
+        catch
+        {
+            partName = null;
+        }
+
+        var criteria = new List<RoutingCriterionSnapshot>();
+        try
+        {
+            var criteriaCount = rule.NumberOfCriteria;
+            for (var i = 0; i < criteriaCount; i++)
+            {
+                var criterion = rule.GetCriterion(i);
+                switch (criterion)
+                {
+                    case PrimarySizeCriterion sizeCriterion:
+                        criteria.Add(new RoutingCriterionSnapshot(
+                            nameof(PrimarySizeCriterion),
+                            sizeCriterion.MinimumSize,
+                            sizeCriterion.MaximumSize));
+                        break;
+                    case not null:
+                        criteria.Add(new RoutingCriterionSnapshot(
+                            criterion.GetType().Name, 0, 0));
+                        break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Routing criteria read failed: {ex.Message}");
+        }
+
+        string description;
+        try
+        {
+            description = rule.Description ?? string.Empty;
+        }
+        catch
+        {
+            description = string.Empty;
+        }
+
+        return new RoutingRuleSnapshot(
+            GroupType: (int)group,
+            PartName: partName,
+            Description: description,
+            Criteria: criteria);
+    }
+
+    /// <summary>
+    /// Extract a <see cref="SystemFamilySnapshot"/> from a staged
+    /// mini-project (.rvt) during database actualization (ADR-056).
+    /// Type discovery mirrors the staging contract
+    /// (<c>SystemFamilyRevitOperations.CreateCleanProjectWithTypesAndInstances</c>):
+    /// placed instances are the domain truth for placed categories;
+    /// for Phase-2 categories (copied without placement) all types of
+    /// the category are taken — the caller (hash task) trims them to the
+    /// catalog's authoritative type list from <c>family_types</c>.
+    /// </summary>
+    public SystemFamilySnapshot ExtractSystemCategoryFromStagedProject(
+        Document stagedDoc, BuiltInCategory builtInCategory)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(stagedDoc);
+#else
+        if (stagedDoc is null) throw new ArgumentNullException(nameof(stagedDoc));
+#endif
+
+        using var _scope = SmartConLogger.BeginScope("SnapshotExtract",
+            ("Method", nameof(ExtractSystemCategoryFromStagedProject)),
+            ("Category", builtInCategory.ToString()));
+
+        var typeIds = new List<ElementId>();
+        var seenIds = new HashSet<long>();
+
+        foreach (var instance in new FilteredElementCollector(stagedDoc)
+            .OfCategory(builtInCategory)
+            .WhereElementIsNotElementType())
+        {
+            var typeId = instance.GetTypeId();
+            if (typeId is not null && typeId != ElementId.InvalidElementId && seenIds.Add(GetElementIdValue(typeId)))
+            {
+                typeIds.Add(typeId);
+            }
+        }
+
+        var fromPlacedInstances = typeIds.Count > 0;
+        if (!fromPlacedInstances)
+        {
+            foreach (var type in new FilteredElementCollector(stagedDoc)
+                .OfCategory(builtInCategory)
+                .WhereElementIsElementType())
+            {
+                if (seenIds.Add(GetElementIdValue(type.Id)))
+                {
+                    typeIds.Add(type.Id);
+                }
+            }
+        }
+
+        SmartConLogger.Info(
+            $"Staged system extraction: {builtInCategory}, {typeIds.Count} types " +
+            $"({(fromPlacedInstances ? "placed instances" : "all category types — trimmed by caller")})");
+
+        var types = new List<SystemTypeSnapshot>(typeIds.Count);
+        string categoryName = string.Empty;
+
+        foreach (var typeId in typeIds)
+        {
+            if (stagedDoc.GetElement(typeId) is not ElementType elementType)
+                continue;
+
+            if (string.IsNullOrEmpty(categoryName))
+            {
+                categoryName = elementType.Category?.Name ?? builtInCategory.ToString();
+            }
+
+            types.Add(ExtractSystemType(elementType, stagedDoc));
+        }
+
+        var sortedTypes = types
+            .OrderBy(t => t.Name, StringComparer.Ordinal)
+            .ToList();
+
+        return new SystemFamilySnapshot(
+            CategoryName: categoryName,
+            CategoryId: (int)builtInCategory,
+            Types: sortedTypes);
     }
 
     private static bool IsBlankValue(SystemParameterValue v)

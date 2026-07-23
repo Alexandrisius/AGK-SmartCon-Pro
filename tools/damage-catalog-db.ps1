@@ -66,7 +66,7 @@
     - НЕ запускай на БД, к которой сейчас подключён Revit.
     - System-семейства скрипт не трогает (миграция их тоже не обслуживает).
     - Терминальные маркеры хэша (-1/-2) скрипт не выставляет — миграция их
-      уважает и не ретраит (это семантика hash-v2, не backfill).
+      уважает и не ретраит (это семантика hash-v3, не backfill).
 
     СВЯЗАННОЕ
     ---------
@@ -265,7 +265,7 @@ try {
                              OR NOT EXISTS(SELECT 1 FROM family_assets a
                                             WHERE a.catalog_item_id = ci.id AND a.version_label = cv.version_label
                                               AND a.asset_type = 'Model3D' AND a.description LIKE 'auto-extracted-preview:%')
-                             OR (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1, -2))
+                             OR (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (3, -1, -2))
                             THEN 1 ELSE 0 END) AS anyPending
             FROM catalog_versions cv
             JOIN catalog_items ci ON ci.id = cv.catalog_item_id

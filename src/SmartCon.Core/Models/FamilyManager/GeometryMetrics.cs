@@ -25,6 +25,13 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// elements. 0 for families without reference planes.</param>
 /// <param name="DimensionCount">Number of <c>Dimension</c> elements
 /// in the family document. 0 for families without dimensions.</param>
+/// <param name="TotalSymbolicCurveLength">Summed curve length of all
+/// symbolic curves, internal units (feet). Catches 2D edits that keep
+/// the element count constant (ADR-056).</param>
+/// <param name="TotalDetailCurveLength">Summed length of detail
+/// curves.</param>
+/// <param name="TotalModelCurveLength">Summed length of model
+/// curves.</param>
 public sealed record GeometryMetrics(
     int TotalFormCount,
     IReadOnlyList<FormMetrics> Forms,
@@ -33,7 +40,10 @@ public sealed record GeometryMetrics(
     int ModelCurveCount = 0,
     int TextNoteCount = 0,
     int ReferencePlaneCount = 0,
-    int DimensionCount = 0);
+    int DimensionCount = 0,
+    double TotalSymbolicCurveLength = 0,
+    double TotalDetailCurveLength = 0,
+    double TotalModelCurveLength = 0);
 
 /// <summary>
 /// Metrics for a single <c>GenericForm</c> element inside a family
@@ -54,10 +64,32 @@ public sealed record GeometryMetrics(
 /// 0 if geometry could not be extracted.</param>
 /// <param name="SubcategoryName">Subcategory name assigned to the form,
 /// or <c>null</c> if the form uses the family category.</param>
+/// <param name="SurfaceArea">Total surface area of all faces across all
+/// solids, in internal units (square feet). 0 when geometry could not
+/// be extracted. Catches shape edits that preserve volume and face
+/// count (ADR-056).</param>
+/// <param name="Bounds">Form bounding box (view-independent), or
+/// <c>null</c> when unavailable. Catches translations/proportion edits
+/// that preserve volume (ADR-056).</param>
 public sealed record FormMetrics(
     string FormKind,
     bool IsSolid,
     double Volume,
     int FaceCount,
     int EdgeCount,
-    string? SubcategoryName);
+    string? SubcategoryName,
+    double SurfaceArea = 0,
+    BoundingBoxSnapshot? Bounds = null);
+
+/// <summary>
+/// Axis-aligned bounding box in internal units (feet). Hashed with
+/// 4-decimal rounding (1e-4 ft ≈ 0.03 mm) so microscopic regen noise
+/// does not shift the content hash.
+/// </summary>
+public sealed record BoundingBoxSnapshot(
+    double MinX,
+    double MinY,
+    double MinZ,
+    double MaxX,
+    double MaxY,
+    double MaxZ);

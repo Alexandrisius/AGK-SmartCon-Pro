@@ -31,7 +31,20 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Facts">Category-driven facts extracted per
 /// <see cref="FamilyFactRuleSet"/> (e.g. Part Type for fitting
 /// categories), or <c>null</c>/empty when the category has no rules.
-/// NOT part of the content hash.</param>
+/// Part of the content hash since FHV3 (ADR-056): for fitting
+/// categories the Part Type defines the family function ("Отвод" vs
+/// "Тройник" is different content).</param>
+/// <param name="Connectors">Connector elements of the family (ADR-056),
+/// pre-sorted by the extractor (Domain, Shape, SystemClassification,
+/// Origin) with <see cref="ConnectorSnapshot.LinkedIndex"/> computed
+/// against that order. <c>null</c>/empty for connector-less
+/// families.</param>
+/// <param name="BehaviorFlags">Family behavior flags
+/// (<see cref="FamilyBehaviorFlags"/>), or <c>null</c> when unreadable
+/// (ADR-056).</param>
+/// <param name="NonSharedNestedFamilyNames">Names of NON-shared nested
+/// families referenced by this family (ADR-056). Sorted by name.
+/// Shared nested names stay in <see cref="SharedNestedFamilyNames"/>.</param>
 public sealed record FamilySnapshot(
     string FamilyName,
     string Category,
@@ -40,7 +53,10 @@ public sealed record FamilySnapshot(
     GeometryMetrics Geometry,
     IReadOnlyList<string> SharedNestedFamilyNames,
     int? CategoryId = null,
-    IReadOnlyList<FamilyFact>? Facts = null);
+    IReadOnlyList<FamilyFact>? Facts = null,
+    IReadOnlyList<ConnectorSnapshot>? Connectors = null,
+    FamilyBehaviorFlags? BehaviorFlags = null,
+    IReadOnlyList<string>? NonSharedNestedFamilyNames = null);
 
 /// <summary>
 /// Schema-level parameter of a loadable family (from

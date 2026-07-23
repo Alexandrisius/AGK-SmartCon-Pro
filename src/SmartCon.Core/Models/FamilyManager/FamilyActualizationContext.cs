@@ -6,10 +6,13 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// was opened, and the extraction products from the SINGLE open session
 /// (snapshot + per-type geometry). Geometry is <c>null</c> when its
 /// extraction failed — tasks that need it fall back to their own pass.
+/// <see cref="SystemSnapshot"/> is set only on the system path
+/// (staged .rvt, ADR-056) — loadable groups carry <c>null</c>.
 /// </summary>
 public sealed record FamilyActualizationContext(
     ActualizationGroup Group,
     ActualizationVariant OpenedVariant,
     string AbsolutePath,
     FamilySnapshot Snapshot,
-    IReadOnlyList<FamilyGeometryPerType>? Geometry);
+    IReadOnlyList<FamilyGeometryPerType>? Geometry,
+    SystemFamilySnapshot? SystemSnapshot = null);

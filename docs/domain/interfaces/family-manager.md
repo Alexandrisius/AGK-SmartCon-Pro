@@ -1094,11 +1094,15 @@ public interface IFamilySnapshotExtractor
         Document projectDoc,
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory builtInCategory);
+    SystemFamilySnapshot ExtractSystemCategoryFromStagedProject(
+        Document stagedDoc,
+        BuiltInCategory builtInCategory);
 }
 ```
 
 - `ExtractFromFamilyDocument` — extracts a `FamilySnapshot` (parameters, types, values, geometry, shared nested names) from an open family document. The document must be a family document (`IsFamilyDocument == true`).
 - `ExtractFromProject` — extracts a `SystemFamilySnapshot` (category + types + parameter values) from an open project document.
+- `ExtractSystemCategoryFromStagedProject` (ADR-056) — extracts a `SystemFamilySnapshot` from a staged mini-project (.rvt) during database actualization. Type discovery: placed instances first (domain truth); when nothing is placed (Phase-2 categories) ALL types of the category are collected — the caller trims them to the catalog's authoritative type list (`family_types`).
 
 **Caller contract:** the active document may be the source project or a managed-storage mini-rvt (after `EditFamily` + `SaveAs`). The extracted hash is stable across both because it is based on in-memory content, not file bytes.
 
@@ -1189,7 +1193,7 @@ public interface ICatalogActualizationService
 Контракт одного «запроса на обновление» (задачи) движка актуализации (ADR-054, `docs/architecture/database-migrations.md`). Задачи обнаруживаются через DI (`IEnumerable<IDatabaseActualizationTask>`). CRITICAL задачи с pending > 0 поднимают баннер + красный badge и гейтят все write-операции; OPTIONAL — влияют только на видимость команды «Обновить базу» (Owner/BimMaster).
 
 **Файл:** `Services/Interfaces/IDatabaseActualizationTask.cs`
-**Реализации:** `HashFormatActualizationTask` (`hash-v2`, Order=10, critical), `AttributesActualizationTask` (`attributes-v1`, Order=20, optional), `GlbPreviewActualizationTask` (`glb-v1`, Order=30, optional) — `SmartCon.FamilyManager/Services/Actualization/`.
+**Реализации:** `HashFormatActualizationTask` (`hash-v3`, Order=10, critical, ADR-056), `AttributesActualizationTask` (`attributes-v1`, Order=20, optional), `GlbPreviewActualizationTask` (`glb-v1`, Order=30, optional) — `SmartCon.FamilyManager/Services/Actualization/`.
 
 ```csharp
 public interface IDatabaseActualizationTask

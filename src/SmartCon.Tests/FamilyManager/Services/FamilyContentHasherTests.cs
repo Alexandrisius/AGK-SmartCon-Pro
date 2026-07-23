@@ -57,11 +57,11 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_CategoryIdAndFacts_DoNotShiftHash()
+    public void ComputeForLoadable_CategoryIdAndFacts_ShiftHash()
     {
-        // ADR-055: CategoryId/Facts are display metadata appended to the
-        // snapshot — the FHV2 canonical string is built from explicit
-        // content fields only, so facts must never affect dedup identity.
+        // ADR-056 (FHV3): category ordinal and facts ARE content — the
+        // ordinal defines identity locale-independently, and the Part
+        // Type defines a fitting's function ("Отвод" vs "Тройник").
         var baseline = CreateLoadableSnapshot();
         var withFacts = baseline with
         {
@@ -74,7 +74,7 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash1);
         Assert.NotNull(hash2);
-        Assert.Equal(hash1!.HexString, hash2!.HexString);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
     }
 
     [Fact]
@@ -429,9 +429,11 @@ public class FamilyContentHasherTests
     {
         var snapshot1 = CreateSystemSnapshot(
             categoryName: "Трубы",
+            categoryId: -2008044,
             types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)])]);
         var snapshot2 = CreateSystemSnapshot(
             categoryName: "Воздуховоды",
+            categoryId: -2008001,
             types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)])]);
 
         var hash1 = _hasher.ComputeForSystem(snapshot1);
@@ -688,5 +690,508 @@ public class FamilyContentHasherTests
         Assert.NotNull(hashNoTypes);
         Assert.NotNull(hashWithDefault);
         Assert.NotEqual(hashNoTypes.HexString, hashWithDefault.HexString);
+    }
+
+    // ---------- FHV3 (ADR-056, Issue #159) ----------
+
+    [Fact]
+    public void ComputeForLoadable_SameOrdinalDifferentCategoryDisplayName_SameHash()
+    {
+        // Locale-invariance: the ordinal is the identity, the display
+        // name ("Pipe Fittings" / "Трубопроводные фитинги") is not hashed.
+        var en = CreateLoadableSnapshot(category: "Pipe Fittings") with { CategoryId = -2008049 };
+        var ru = CreateLoadableSnapshot(category: "Трубопроводные фитинги") with { CategoryId = -2008049 };
+
+        var hashEn = _hasher.ComputeForLoadable(en);
+        var hashRu = _hasher.ComputeForLoadable(ru);
+
+        Assert.NotNull(hashEn);
+        Assert.NotNull(hashRu);
+        Assert.Equal(hashEn!.HexString, hashRu!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_NullOrdinal_FallsBackToDisplayName()
+    {
+        var a = CreateLoadableSnapshot(category: "Pipe Fittings");
+        var b = CreateLoadableSnapshot(category: "Трубопроводные фитинги");
+
+        var hashA = _hasher.ComputeForLoadable(a);
+        var hashB = _hasher.ComputeForLoadable(b);
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.NotEqual(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PartTypeChange_ShiftsHash()
+    {
+        var elbow = CreateLoadableSnapshot() with
+        {
+            CategoryId = -2008049,
+            Facts = [new FamilyFact("part_type", "5", "Elbow")],
+        };
+        var tee = CreateLoadableSnapshot() with
+        {
+            CategoryId = -2008049,
+            Facts = [new FamilyFact("part_type", "6", "Tee")],
+        };
+
+        var hashElbow = _hasher.ComputeForLoadable(elbow);
+        var hashTee = _hasher.ComputeForLoadable(tee);
+
+        Assert.NotNull(hashElbow);
+        Assert.NotNull(hashTee);
+        Assert.NotEqual(hashElbow!.HexString, hashTee!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorSizeChange_ShiftsHash()
+    {
+        var small = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0, 0, 0, -1)],
+        };
+        var large = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.10, 0, 0, 0, -1)],
+        };
+
+        var hashSmall = _hasher.ComputeForLoadable(small);
+        var hashLarge = _hasher.ComputeForLoadable(large);
+
+        Assert.NotNull(hashSmall);
+        Assert.NotNull(hashLarge);
+        Assert.NotEqual(hashSmall!.HexString, hashLarge!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorSystemClassificationChange_ShiftsHash()
+    {
+        var coldWater = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0, 0, 0, -1)],
+        };
+        var hotWater = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 8, true, null, null, 0.05, 0, 0, 0, -1)],
+        };
+
+        var hashCold = _hasher.ComputeForLoadable(coldWater);
+        var hashHot = _hasher.ComputeForLoadable(hotWater);
+
+        Assert.NotNull(hashCold);
+        Assert.NotNull(hashHot);
+        Assert.NotEqual(hashCold!.HexString, hashHot!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorOriginChange_ShiftsHash()
+    {
+        var here = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 1.0, 0, 0, -1)],
+        };
+        var there = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 2.0, 0, 0, -1)],
+        };
+
+        var hashHere = _hasher.ComputeForLoadable(here);
+        var hashThere = _hasher.ComputeForLoadable(there);
+
+        Assert.NotNull(hashHere);
+        Assert.NotNull(hashThere);
+        Assert.NotEqual(hashHere!.HexString, hashThere!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorOriginWithinRounding_SameHash()
+    {
+        // 1e-4 ft rounding absorbs regen noise (ADR-056 §Risks).
+        var a = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0.12342, 0, 0, -1)],
+        };
+        var b = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0.12344, 0, 0, -1)],
+        };
+
+        var hashA = _hasher.ComputeForLoadable(a);
+        var hashB = _hasher.ComputeForLoadable(b);
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.Equal(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorLinkedIndexChange_ShiftsHash()
+    {
+        var unlinked = CreateLoadableSnapshot() with
+        {
+            Connectors =
+            [
+                new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0, 0, 0, -1),
+                new ConnectorSnapshot(2, 0, 7, false, null, null, 0.05, 1, 0, 0, -1),
+            ],
+        };
+        var linked = CreateLoadableSnapshot() with
+        {
+            Connectors =
+            [
+                new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0, 0, 0, 1),
+                new ConnectorSnapshot(2, 0, 7, false, null, null, 0.05, 1, 0, 0, 0),
+            ],
+        };
+
+        var hashUnlinked = _hasher.ComputeForLoadable(unlinked);
+        var hashLinked = _hasher.ComputeForLoadable(linked);
+
+        Assert.NotNull(hashUnlinked);
+        Assert.NotNull(hashLinked);
+        Assert.NotEqual(hashUnlinked!.HexString, hashLinked!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_BehaviorFlagsChange_ShiftsHash()
+    {
+        var shared = CreateLoadableSnapshot() with
+        {
+            BehaviorFlags = new FamilyBehaviorFlags(true, false, false, false),
+        };
+        var notShared = CreateLoadableSnapshot() with
+        {
+            BehaviorFlags = new FamilyBehaviorFlags(false, false, false, false),
+        };
+
+        var hashShared = _hasher.ComputeForLoadable(shared);
+        var hashNotShared = _hasher.ComputeForLoadable(notShared);
+
+        Assert.NotNull(hashShared);
+        Assert.NotNull(hashNotShared);
+        Assert.NotEqual(hashShared!.HexString, hashNotShared!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_BoundingBoxChange_SameVolume_ShiftsHash()
+    {
+        var still = new GeometryMetrics(1,
+        [
+            new FormMetrics("Extrusion", true, 1250.0, 6, 12, null,
+                SurfaceArea: 500.0,
+                Bounds: new BoundingBoxSnapshot(0, 0, 0, 10, 10, 12.5)),
+        ]);
+        var moved = new GeometryMetrics(1,
+        [
+            new FormMetrics("Extrusion", true, 1250.0, 6, 12, null,
+                SurfaceArea: 500.0,
+                Bounds: new BoundingBoxSnapshot(5, 0, 0, 15, 10, 12.5)),
+        ]);
+
+        var hashStill = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: still));
+        var hashMoved = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: moved));
+
+        Assert.NotNull(hashStill);
+        Assert.NotNull(hashMoved);
+        Assert.NotEqual(hashStill!.HexString, hashMoved!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_SurfaceAreaChange_ShiftsHash()
+    {
+        var a = new GeometryMetrics(1,
+        [
+            new FormMetrics("Extrusion", true, 1250.0, 6, 12, null, SurfaceArea: 500.0),
+        ]);
+        var b = new GeometryMetrics(1,
+        [
+            new FormMetrics("Extrusion", true, 1250.0, 6, 12, null, SurfaceArea: 600.0),
+        ]);
+
+        var hashA = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: a));
+        var hashB = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: b));
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.NotEqual(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_CurveLengthChange_ShiftsHash()
+    {
+        var short_ = new GeometryMetrics(0, [], SymbolicCurveCount: 2, TotalSymbolicCurveLength: 1.0);
+        var long_ = new GeometryMetrics(0, [], SymbolicCurveCount: 2, TotalSymbolicCurveLength: 2.0);
+
+        var hashShort = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: short_));
+        var hashLong = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: long_));
+
+        Assert.NotNull(hashShort);
+        Assert.NotNull(hashLong);
+        Assert.NotEqual(hashShort!.HexString, hashLong!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_NonSharedNestedChange_ShiftsHash()
+    {
+        var a = CreateLoadableSnapshot() with { NonSharedNestedFamilyNames = ["NestedA"] };
+        var b = CreateLoadableSnapshot() with { NonSharedNestedFamilyNames = ["NestedB"] };
+
+        var hashA = _hasher.ComputeForLoadable(a);
+        var hashB = _hasher.ComputeForLoadable(b);
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.NotEqual(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_SeparatorInContent_Escaped_NoFieldInjection()
+    {
+        // Without escaping, param name "A|Double" would inject an extra
+        // field and could collide with param "A" + storage "Double".
+        var injected = CreateLoadableSnapshot(
+            parameters: [new FamilyParameterInfo("A|Double", "Double", "G", false, false, null, false, false, null, null)]);
+        var plain = CreateLoadableSnapshot(
+            parameters: [new FamilyParameterInfo("A", "Double", "Double", false, false, null, false, false, null, null)]);
+
+        var canonicalInjected = FamilyContentHasher.BuildLoadableCanonicalString(injected);
+        var canonicalPlain = FamilyContentHasher.BuildLoadableCanonicalString(plain);
+
+        Assert.Contains("A%7CDouble", canonicalInjected);
+        Assert.NotEqual(canonicalInjected, canonicalPlain);
+    }
+
+    [Fact]
+    public void IsBlankValue_UserLiteralInvalid_StringStorage_IsNotBlank()
+    {
+        // The extractor emits "INVALID" only for ElementId storage — a
+        // user's literal "INVALID" text parameter is real content (v3).
+        Assert.False(FamilyContentHasher.IsBlankValue(true, "INVALID", "String"));
+        Assert.True(FamilyContentHasher.IsBlankValue(true, "INVALID", "ElementId"));
+        Assert.False(FamilyContentHasher.IsBlankValue(true, "UNSUPPORTED", "String"));
+        Assert.True(FamilyContentHasher.IsBlankValue(true, "UNSUPPORTED", "None"));
+        Assert.True(FamilyContentHasher.IsBlankValue(true, "READERROR", "String"));
+    }
+
+    [Fact]
+    public void ComputeForSystem_SameCategoryIdDifferentDisplayName_SameHash()
+    {
+        var ru = CreateSystemSnapshot(
+            categoryName: "Трубы",
+            categoryId: -2008044,
+            types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("D", "Double", true, "25", 25.0, null)])]);
+        var en = CreateSystemSnapshot(
+            categoryName: "Pipes",
+            categoryId: -2008044,
+            types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("D", "Double", true, "25", 25.0, null)])]);
+
+        var hashRu = _hasher.ComputeForSystem(ru);
+        var hashEn = _hasher.ComputeForSystem(en);
+
+        Assert.NotNull(hashRu);
+        Assert.NotNull(hashEn);
+        Assert.Equal(hashRu!.HexString, hashEn!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_CompoundLayerMaterialChange_ShiftsHash()
+    {
+        var brick = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(0, 1,
+                [
+                    new CompoundLayerSnapshot(1, 0.5, "Brick", false),
+                    new CompoundLayerSnapshot(5, 0.1, "Gypsum", false),
+                ])),
+        ]);
+        var concrete = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(0, 1,
+                [
+                    new CompoundLayerSnapshot(1, 0.5, "Concrete", false),
+                    new CompoundLayerSnapshot(5, 0.1, "Gypsum", false),
+                ])),
+        ]);
+
+        var hashBrick = _hasher.ComputeForSystem(brick);
+        var hashConcrete = _hasher.ComputeForSystem(concrete);
+
+        Assert.NotNull(hashBrick);
+        Assert.NotNull(hashConcrete);
+        Assert.NotEqual(hashBrick!.HexString, hashConcrete!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_CompoundLayerOrderChange_ShiftsHash()
+    {
+        var ab = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(0, 0,
+                [
+                    new CompoundLayerSnapshot(1, 0.5, "A", false),
+                    new CompoundLayerSnapshot(5, 0.1, "B", false),
+                ])),
+        ]);
+        var ba = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(0, 0,
+                [
+                    new CompoundLayerSnapshot(5, 0.1, "B", false),
+                    new CompoundLayerSnapshot(1, 0.5, "A", false),
+                ])),
+        ]);
+
+        var hashAb = _hasher.ComputeForSystem(ab);
+        var hashBa = _hasher.ComputeForSystem(ba);
+
+        Assert.NotNull(hashAb);
+        Assert.NotNull(hashBa);
+        Assert.NotEqual(hashAb!.HexString, hashBa!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_RoutingRulePartChange_ShiftsHash()
+    {
+        var elbowA = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(1, "ElbowA:Standard", "", []),
+                ])),
+        ]);
+        var elbowB = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(1, "ElbowB:Standard", "", []),
+                ])),
+        ]);
+
+        var hashA = _hasher.ComputeForSystem(elbowA);
+        var hashB = _hasher.ComputeForSystem(elbowB);
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.NotEqual(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_RoutingRuleOrderChange_ShiftsHash()
+    {
+        // First matching rule wins — order is content, never sorted.
+        var first = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(0, "SegA:Standard", "", []),
+                    new RoutingRuleSnapshot(0, "SegB:Standard", "", []),
+                ])),
+        ]);
+        var swapped = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(0, "SegB:Standard", "", []),
+                    new RoutingRuleSnapshot(0, "SegA:Standard", "", []),
+                ])),
+        ]);
+
+        var hashFirst = _hasher.ComputeForSystem(first);
+        var hashSwapped = _hasher.ComputeForSystem(swapped);
+
+        Assert.NotNull(hashFirst);
+        Assert.NotNull(hashSwapped);
+        Assert.NotEqual(hashFirst!.HexString, hashSwapped!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_RoutingCriterionChange_ShiftsHash()
+    {
+        var small = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(1, "Elbow:Std", "",
+                        [new RoutingCriterionSnapshot("PrimarySizeCriterion", 0.0, 0.1)]),
+                ])),
+        ]);
+        var large = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(1, "Elbow:Std", "",
+                        [new RoutingCriterionSnapshot("PrimarySizeCriterion", 0.0, 0.2)]),
+                ])),
+        ]);
+
+        var hashSmall = _hasher.ComputeForSystem(small);
+        var hashLarge = _hasher.ComputeForSystem(large);
+
+        Assert.NotNull(hashSmall);
+        Assert.NotNull(hashLarge);
+        Assert.NotEqual(hashSmall!.HexString, hashLarge!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_PreferredJunctionTypeChange_ShiftsHash()
+    {
+        var tee = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [], Routing: new RoutingPreferencesSnapshot(0, [])),
+        ]);
+        var tap = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [], Routing: new RoutingPreferencesSnapshot(1, [])),
+        ]);
+
+        var hashTee = _hasher.ComputeForSystem(tee);
+        var hashTap = _hasher.ComputeForSystem(tap);
+
+        Assert.NotNull(hashTee);
+        Assert.NotNull(hashTap);
+        Assert.NotEqual(hashTee!.HexString, hashTap!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_NullPartRule_DiffersFromNamedRule()
+    {
+        // InvalidElementId ("no part allowed") is real content — distinct
+        // from any named part.
+        var noPart = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(1, null, "", []),
+                ])),
+        ]);
+        var named = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(1, "Elbow:Std", "", []),
+                ])),
+        ]);
+
+        var hashNoPart = _hasher.ComputeForSystem(noPart);
+        var hashNamed = _hasher.ComputeForSystem(named);
+
+        Assert.NotNull(hashNoPart);
+        Assert.NotNull(hashNamed);
+        Assert.NotEqual(hashNoPart!.HexString, hashNamed!.HexString);
     }
 }

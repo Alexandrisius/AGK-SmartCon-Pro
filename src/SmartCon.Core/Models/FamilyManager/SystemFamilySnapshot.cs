@@ -25,9 +25,17 @@ public sealed record SystemFamilySnapshot(
 /// <param name="Name">Type name.</param>
 /// <param name="Values">Parameter values for this type, sorted by
 /// parameter name.</param>
+/// <param name="Structure">Compound structure (layer stack) for
+/// wall/floor/roof/ceiling types, or <c>null</c> when the type has none
+/// (ADR-056). Part of the content hash since FHV3.</param>
+/// <param name="Routing">Routing preferences for MEP curve types
+/// (pipe/duct/cable tray/conduit), or <c>null</c> for other types
+/// (ADR-056). Part of the content hash since FHV3.</param>
 public sealed record SystemTypeSnapshot(
     string Name,
-    IReadOnlyList<SystemParameterValue> Values);
+    IReadOnlyList<SystemParameterValue> Values,
+    CompoundStructureSnapshot? Structure = null,
+    RoutingPreferencesSnapshot? Routing = null);
 
 /// <summary>
 /// One parameter value on one system-family type. Same semantics as

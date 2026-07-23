@@ -7,17 +7,26 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v2</c>): recalculates stale
-/// (format v1 / NULL) content hashes to the rename-invariant format v2
-/// (Issue #126, ADR-049). Owns the <c>hash_format_version</c> marker
-/// semantics: NULL/1 pending, 2 current, -1/-2 terminal (unreadable /
-/// missing — never retried). System-family rows are re-flagged in the
-/// file-free pass (their v1 hashes are already rename-invariant).
-/// Deviates from the base template: <see cref="CountPendingAsync"/> adds
-/// an instant system-family count (system rows need no file open), and
-/// <see cref="HandleGroupFailureAsync"/> writes terminal markers instead
-/// of retrying. <see cref="DetectionSql"/> drives only the group-keys and
-/// newer-only queries — not the overridden count.
+/// CRITICAL actualization task (Id=<c>hash-v3</c>): recalculates stale
+/// (format v1 / v2 / NULL) content hashes to the FHV3 format
+/// (Issue #159, ADR-056). Owns the <c>hash_format_version</c> marker
+/// semantics: NULL/1/2 pending, 3 current, -1/-2 terminal (unreadable /
+/// missing — never retried).
+/// <para>
+/// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
+/// string changed structurally (ordinal category, STRUCT, ROUTING), so
+/// system rows need a full recomputation from the staged .rvt — the
+/// engine opens it like any other file. Detection therefore covers BOTH
+/// sources, and the base-class group counting is used unchanged.
+/// </para>
+/// <para>
+/// System snapshots extracted from the staged mini-project may contain
+/// template-default types of the default project (Phase-2 categories
+/// without placed instances). <see cref="ApplyAsync"/> trims the type
+/// list to the catalog's authoritative names from <c>family_types</c>
+/// (written at import from the real project) so the migration hash
+/// matches the import-time hash byte-for-byte.
+/// </para>
 /// </summary>
 internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTaskBase
 {
@@ -31,107 +40,30 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _contentHasher = contentHasher ?? throw new ArgumentNullException(nameof(contentHasher));
     }
 
-    public override string Id => "hash-v2";
+    public override string Id => "hash-v3";
     public override int Order => 10;
     public override bool IsCritical => true;
 
     protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-        WHERE ci.family_source = 'loadable'
-          AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1, -2))
+        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (3, -1, -2))
         """;
-
-    public override async Task<int> CountPendingAsync(int revitMajorVersion, CancellationToken ct = default)
-    {
-        using var connection = Database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-
-        // Loadable groups processable in the running Revit.
-        int loadable;
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = $"""
-                SELECT COUNT(*) FROM (
-                    SELECT cv.catalog_item_id, cv.version_label
-                    {DetectionSql}
-                      AND cv.revit_major_version <= @maxRevit
-                    GROUP BY cv.catalog_item_id, cv.version_label
-                )
-                """;
-            cmd.Parameters.Add(new SqliteParameter("@maxRevit", revitMajorVersion));
-            var obj = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-            loadable = obj is long l ? (int)l : 0;
-        }
-
-        int system;
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = """
-                SELECT COUNT(*)
-                FROM catalog_versions cv
-                JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-                WHERE ci.family_source = 'system'
-                  AND (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (2, -1, -2))
-                """;
-            var obj = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-            system = obj is long s ? (int)s : 0;
-        }
-
-        return loadable + system;
-    }
-
-    /// <summary>
-    /// System-family rows are re-flagged to format v2 instantly (their v1
-    /// canonical string never contained a name — the hashes are already
-    /// rename-invariant; recomputing them from the isolated .rvt would
-    /// risk a mismatch against project-extracted hashes).
-    /// </summary>
-    public override async Task<int> RunFileFreePassAsync(int revitMajorVersion, CancellationToken ct = default)
-    {
-        using var connection = Database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var tx = connection.BeginTransaction();
-        try
-        {
-            int versions;
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.Transaction = tx;
-                cmd.CommandText = """
-                    UPDATE catalog_versions SET hash_format_version = 2
-                    WHERE (hash_format_version IS NULL OR hash_format_version NOT IN (2, -1, -2))
-                      AND catalog_item_id IN (SELECT id FROM catalog_items WHERE family_source = 'system')
-                    """;
-                versions = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.Transaction = tx;
-                cmd.CommandText = """
-                    UPDATE catalog_items SET hash_format_version = 2
-                    WHERE family_source = 'system'
-                      AND (hash_format_version IS NULL OR hash_format_version NOT IN (2, -1, -2))
-                    """;
-                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-
-            tx.Commit();
-            if (versions > 0)
-                SmartConLogger.Info($"System rows re-flagged to hash format v2: {versions}");
-            return versions;
-        }
-        catch
-        {
-            tx.Rollback();
-            throw;
-        }
-    }
 
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
     {
-        var hash = _contentHasher.ComputeForLoadable(context.Snapshot)?.HexString;
+        string? hash;
+        if (context.SystemSnapshot is not null)
+        {
+            var trimmed = await TrimToCatalogTypeNamesAsync(context.SystemSnapshot, context.Group, ct)
+                .ConfigureAwait(false);
+            hash = _contentHasher.ComputeForSystem(trimmed)?.HexString;
+        }
+        else
+        {
+            hash = _contentHasher.ComputeForLoadable(context.Snapshot)?.HexString;
+        }
+
         if (hash is null)
         {
             SmartConLogger.Warn(
@@ -156,7 +88,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 2
+                    SET content_hash = @hash, hash_format_version = 3
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -169,7 +101,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 itemCmd.Transaction = tx;
                 itemCmd.CommandText = """
                     UPDATE catalog_items
-                    SET content_hash = @hash, hash_format_version = 2, updated_at_utc = @now
+                    SET content_hash = @hash, hash_format_version = 3, updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 itemCmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -196,6 +128,74 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
             ? FamilyContentHashFormat.RecalculationMissing
             : FamilyContentHashFormat.RecalculationSkipped;
         await WriteMarkerAsync(group.Variants, marker, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Trim the staged-project type list to the catalog's authoritative
+    /// type names (<c>family_types</c>, written at import from the real
+    /// project). The staged .rvt of a Phase-2 category contains template
+    /// defaults of the default project in addition to the copied types —
+    /// hashing them would diverge from the import-time hash. When the
+    /// catalog stores no type names for the group's versions (legacy
+    /// data), the extractor's result is kept as-is (best effort). When
+    /// names exist but match nothing (data drift), the full list is
+    /// hashed with a warning — a mismatching hash degrades to the safe
+    /// name-based dedup fallback instead of a terminal marker.
+    /// </summary>
+    private async Task<SystemFamilySnapshot> TrimToCatalogTypeNamesAsync(
+        SystemFamilySnapshot snapshot, ActualizationGroup group, CancellationToken ct)
+    {
+        var catalogNames = await LoadCatalogTypeNamesAsync(group, ct).ConfigureAwait(false);
+        if (catalogNames.Count == 0)
+        {
+            SmartConLogger.Debug(
+                $"No catalog type names for '{group.ItemName}' ({group.VersionLabel}) — " +
+                "hashing the staged type list as-is");
+            return snapshot;
+        }
+
+        var kept = snapshot.Types
+            .Where(t => catalogNames.Contains(t.Name))
+            .ToList();
+
+        if (kept.Count == snapshot.Types.Count)
+            return snapshot;
+
+        if (kept.Count == 0)
+        {
+            SmartConLogger.Warn(
+                $"Staged types of '{group.ItemName}' ({group.VersionLabel}) match none of the " +
+                $"{catalogNames.Count} catalog type names — hashing the full staged list. " +
+                $"[Action: при расхождении дедупликации переимпортируйте категорию из проекта]");
+            return snapshot;
+        }
+
+        SmartConLogger.Debug(
+            $"Trimmed staged types for '{group.ItemName}' ({group.VersionLabel}): " +
+            $"{snapshot.Types.Count} → {kept.Count} (catalog authoritative list)");
+        return snapshot with { Types = kept };
+    }
+
+    private async Task<HashSet<string>> LoadCatalogTypeNamesAsync(
+        ActualizationGroup group, CancellationToken ct)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        using var connection = Database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT DISTINCT type_name FROM family_types
+            WHERE catalog_item_id = @itemId
+              AND version_id IN ({VariantIdParams(cmd, group.Variants)})
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@itemId", group.CatalogItemId));
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            if (!reader.IsDBNull(0))
+                names.Add(reader.GetString(0));
+        }
+        return names;
     }
 
     private async Task WriteMarkerAsync(

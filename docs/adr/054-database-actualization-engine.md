@@ -111,7 +111,7 @@ RequiredRevitVersion = MAX over groups of MIN(variant revit) — минимал�
 
 | Задача | Order | Critical | Что делает |
 |---|---|---|---|
-| `hash-v2` | 10 | да | Хэши v2 (ADR-049/050): apply на все Revit-варианты + ресинк item; system re-flag в file-free pass; терминальные маркеры -1/-2 |
+| `hash-v2` | 10 | да | Хэши v2 (ADR-049/050): apply на все Revit-варианты + ресинк item; system re-flag в file-free pass; терминальные маркеры -1/-2. **Заменена `hash-v3` (ADR-056, 2026-07-23): детект v1/v2/NULL→v3, system — полный пересчёт из staged .rvt, file-free pass упразднён** |
 | `attributes-v1` | 20 | нет | Типы + значения + shared nested + счётчики (active label; чинит #151/#152/#153) |
 | `glb-v1` | 30 | нет | Auto-extracted 3D GLB превью (active label) |
 

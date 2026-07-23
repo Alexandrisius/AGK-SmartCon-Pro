@@ -1835,150 +1835,6 @@ Pure logic, ноль зависимостей от Revit API. Unit-тесты в
 
 ---
 
-## FamilyContentHash
-
-Semantic content fingerprint of a family. Stable across SaveAs, rename, Revit upgrade. Changes when any parameter, type, value, geometry or formula changes. v2.0.0 dedup core.
-
-**Файл:** Models/FamilyManager/FamilyContentHash.cs
-
-`csharp
-public sealed record FamilyContentHash(
-    string HexString,
-    int FormatVersion,
-    string SourceKind);
-
-public static class FamilyContentHashFormat
-{
-    public const int CurrentVersion = 1;
-}
-`
-
-- HexString — SHA-256 hex string (uppercase, no dashes).
-- FormatVersion — algorithm version, bumped when canonical-string format changes so old hashes do not produce false duplicate matches against new ones.
-- SourceKind — "loadable" or "system". Used to enforce cross-source separation (system hashes never match loadable hashes and vice versa).
-- FamilyContentHashFormat.CurrentVersion — current format version (= 1). Old rows with a lower FormatVersion will not produce false duplicate matches against newly computed hashes.
-
----
-
-## FamilySnapshot
-
-Structured snapshot of a loadable family (.rfa) used to compute a FamilyContentHash. Extracted in-memory from an open family document — never from file bytes — so it is stable across SaveAs, rename, and Revit upgrade.
-
-**Файл:** Models/FamilyManager/FamilySnapshot.cs
-
-`csharp
-public sealed record FamilySnapshot(
-    string FamilyName,
-    string Category,
-    IReadOnlyList<FamilyParameterInfo> Parameters,
-    IReadOnlyList<FamilyTypeSnapshot> Types,
-    GeometryMetrics Geometry,
-    IReadOnlyList<string> SharedNestedFamilyNames);
-
-public sealed record FamilyParameterInfo(
-    string Name,
-    string StorageType,
-    string ParameterGroup,
-    bool IsInstance,
-    bool IsShared,
-    string? Formula,
-    bool IsDeterminedByFormula,
-    bool IsReporting,
-    string? SharedParamGuid,
-    string? BuiltInParameterId);
-
-public sealed record FamilyTypeSnapshot(
-    string Name,
-    IReadOnlyList<FamilyParameterValue> Values);
-
-public sealed record FamilyParameterValue(
-    string ParameterName,
-    string StorageType,
-    bool HasValue,
-    string? ValueText,
-    double? ValueNumber,
-    string? ResolvedElementName,
-    string? ValueDisplay = null,
-    string? SpecTypeId = null,
-    string? UnitTypeId = null);
-`
-
-- FamilyName — from FamilyManager or family document title.
-- Category — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
-- CategoryId — BuiltInCategory ordinal of the family category (ADR-055), or null when unreadable. NOT part of the content hash.
-- Facts — category-driven facts extracted per FamilyFactRuleSet (e.g. Part Type for fitting categories; ADR-055). NOT part of the content hash.
-- Parameters — all schema-level parameters, sorted by name. Includes SharedParamGuid for shared params and BuiltInParameterId enum name for built-ins (null for user/shared).
-- Types — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values. UI never shows the literal — `FamilyTypeSnapshot.ResolveDisplayName(typeName, familyName)` substitutes the family name (catalog tree, properties tabs, batch import tooltip).
-- Geometry — aggregated GeometryMetrics from all GenericForm elements.
-- SharedNestedFamilyNames — names of shared nested families (ADR-034), sorted.
-- FamilyParameterValue.HasValue distinguishes "no value" (alse) from "value is zero" (	rue, ValueNumber=0) — hash treats them differently.
-
----
-
-## SystemFamilySnapshot
-
-Structured snapshot of a system family (category + types) inside a project (.rvt). Used to compute a FamilyContentHash for system families. Extracted in-memory from the active project document.
-
-**Файл:** Models/FamilyManager/SystemFamilySnapshot.cs
-
-`csharp
-public sealed record SystemFamilySnapshot(
-    string CategoryName,
-    int CategoryId,
-    IReadOnlyList<SystemTypeSnapshot> Types);
-
-public sealed record SystemTypeSnapshot(
-    string Name,
-    IReadOnlyList<SystemParameterValue> Values);
-
-public sealed record SystemParameterValue(
-    string ParameterName,
-    string StorageType,
-    bool HasValue,
-    string? ValueText,
-    double? ValueNumber,
-    string? ResolvedElementName,
-    string? ValueDisplay = null,
-    string? SpecTypeId = null,
-    string? UnitTypeId = null);
-`
-
-- CategoryName — display name (e.g. "Трубы", "Воздуховоды").
-- CategoryId — numeric BuiltInCategory ordinal carried as int so Core does not depend on Autodesk.Revit.DB (I-09).
-- Types — selected system types with values, sorted by type name.
-- SystemParameterValue — same semantics as FamilyParameterValue — distinguishes "no value" from "zero".
-
-**v2.0.0 hash stability:** the hasher skips blank values (HasValue=false, empty string, INVALID, UNSUPPORTED, READERROR) so the empty ADSK_Завод-изготовитель parameter does not contribute to the hash. The hasher also skips the auto-generated Код IfcGUID parameter (different per .rvt save).
-
----
-
-## GeometryMetrics
-
-Aggregated geometry metrics for a loadable family document. Used as part of the content fingerprint so that adding/removing a form, or changing an extrusion depth, shifts the hash.
-
-**Файл:** Models/FamilyManager/GeometryMetrics.cs
-
-`csharp
-public sealed record GeometryMetrics(
-    int TotalFormCount,
-    IReadOnlyList<FormMetrics> Forms);
-
-public sealed record FormMetrics(
-    string FormKind,
-    bool IsSolid,
-    double Volume,
-    int FaceCount,
-    int EdgeCount,
-    string? SubcategoryName);
-`
-
-- TotalFormCount — number of GenericForm elements (extrusions, sweeps, revolutions, blends, free-form).
-- Forms — per-form metrics sorted by (FormKind, IsSolid, Volume) for deterministic output.
-- Volume — total volume of all solids in Revit internal units (cubic feet), 6-decimal precision so a 1 mm change shifts the value.
-- FaceCount / EdgeCount — totals across all solids, or 0 if geometry could not be extracted (known bug for shared nested families).
-- FormKind — "Extrusion", "Sweep", "Revolution", "Blend", "SweptBlend", or "GenericForm" for free-form.
-
----
 
 ## ContentHashMatch
 
@@ -2107,16 +1963,18 @@ public sealed record FamilyContentHash(
 
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public const int RecalculationSkipped = -1;
+    public const int RecalculationMissing = -2;
 }
 ```
 
 - `HexString` — SHA-256 hex string (uppercase, no dashes).
 - `FormatVersion` — algorithm version, bumped when canonical-string format changes so old hashes do not produce false duplicate matches against newly computed hashes.
 - `SourceKind` — `"loadable"` or `"system"`. Used to enforce cross-source separation (system hashes never match loadable hashes and vice versa).
-- `FamilyContentHashFormat.CurrentVersion` — **= 2 (Issue #126, rename-invariant)**. История: v1 — loadable canonical string включал имя семейства (`FHV1|LOADABLE|{name}|...`), переименованные файлы давали другой хэш; v2 — имя исключено (`FHV2|LOADABLE|{cat}|...`). System canonical string не изменилась (`FHV1|SYSTEM|...` — имени никогда не было), system-строки мигрируются дешёвым UPDATE флага без пересчёта.
+- `FamilyContentHashFormat.CurrentVersion` — **= 3 (Issue #159, ADR-056)**. История: v1 — loadable canonical string включал имя семейства (`FHV1|LOADABLE|{name}|...`), переименованные файлы давали другой хэш; v2 — имя исключено (`FHV2|LOADABLE|{cat}|...`), system-строки мигрированы дешёвым UPDATE флага; v3 — категория стала локале-инвариантным ordinal, добавлены секции FACTS/FLAGS/CONN (loadable) и STRUCT/ROUTING (system), геометрия расширена (bbox/surface/длины кривых), значения экранируются; обе source мигрируются полным пересчётом из файла (задача `hash-v3`).
 - `FamilyContentHashFormat.RecalculationSkipped` — sentinel `-1`: миграция помечает версии, чей файл безвозвратно нечитаем; исключены из pending-числа и никогда не ретраятся.
+- `FamilyContentHashFormat.RecalculationMissing` — sentinel `-2`: managed-файл отсутствует на диске; исключён из pending-числа (purge/restore — решение пользователя).
 
 ---
 
@@ -2251,8 +2109,11 @@ public sealed record FamilyActualizationContext(
     ActualizationVariant OpenedVariant,
     string AbsolutePath,
     FamilySnapshot Snapshot,
-    IReadOnlyList<FamilyGeometryPerType>? Geometry);
+    IReadOnlyList<FamilyGeometryPerType>? Geometry,
+    SystemFamilySnapshot? SystemSnapshot = null);
 ```
+
+- `SystemSnapshot` (ADR-056) — заполнен только на system-пути (staged `.rvt`); у loadable-групп `null`.
 
 ---
 
@@ -2315,10 +2176,12 @@ public sealed record FamilyMigrationExtractResult(
     bool Success,
     FamilySnapshot? LoadableSnapshot,
     string? ErrorMessage,
-    IReadOnlyList<FamilyGeometryPerType>? Geometry = null);
+    IReadOnlyList<FamilyGeometryPerType>? Geometry = null,
+    SystemFamilySnapshot? SystemSnapshot = null);
 ```
 
 - `Geometry` (ADR-054) — per-type геометрия из той же open-сессии (catalog backfill); `null`, если геометрия не запрашивалась или упала (caller делает fallback на отдельный проход).
+- `SystemSnapshot` (ADR-056) — системный snapshot из staged `.rvt` на system-пути (типы + параметры + STRUCT + ROUTING); на loadable-пути `null`.
 
 ---
 
@@ -2337,7 +2200,10 @@ public sealed record FamilySnapshot(
     GeometryMetrics Geometry,
     IReadOnlyList<string> SharedNestedFamilyNames,
     int? CategoryId = null,
-    IReadOnlyList<FamilyFact>? Facts = null);
+    IReadOnlyList<FamilyFact>? Facts = null,
+    IReadOnlyList<ConnectorSnapshot>? Connectors = null,
+    FamilyBehaviorFlags? BehaviorFlags = null,
+    IReadOnlyList<string>? NonSharedNestedFamilyNames = null);
 
 public sealed record FamilyParameterInfo(
     string Name,
@@ -2368,7 +2234,12 @@ public sealed record FamilyParameterValue(
 ```
 
 - `FamilyName` — from `FamilyManager` or family document title.
-- `Category` — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
+- `Category` — display name (e.g. "Pipe Fittings"). NOT hashed since FHV3 — the ordinal is (ADR-056).
+- `CategoryId` — `BuiltInCategory` ordinal (ADR-055). Since FHV3 (ADR-056) it IS the hashed category identity — locale-invariant (RU/EN Revit produce the same hash); the display name is only a fallback when the ordinal is unknown.
+- `Facts` — category-driven facts (Part Type; ADR-055). Part of the content hash since FHV3 (ADR-056): for fittings the Part Type defines the family function.
+- `Connectors` — connector elements of the family (ADR-056), pre-sorted by the extractor with `LinkedIndex` computed against that order. Part of the content hash since FHV3.
+- `BehaviorFlags` — Shared/WorkPlaneBased/AlwaysVertical/CutWithVoids from `OwnerFamily` built-in parameters (ADR-056). Part of the content hash since FHV3.
+- `NonSharedNestedFamilyNames` — names of NON-shared nested families (ADR-056), sorted. Part of the content hash since FHV3.
 - `Parameters` — all schema-level parameters, sorted by name. Includes `SharedParamGuid` for shared params and `BuiltInParameterId` enum name for built-ins (null for user/shared).
 - `Types` — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values. UI never shows the literal — `FamilyTypeSnapshot.ResolveDisplayName(typeName, familyName)` substitutes the family name (catalog tree, properties tabs, batch import tooltip).
 - `Geometry` — aggregated `GeometryMetrics` from all `GenericForm` elements.
@@ -2392,7 +2263,9 @@ public sealed record SystemFamilySnapshot(
 
 public sealed record SystemTypeSnapshot(
     string Name,
-    IReadOnlyList<SystemParameterValue> Values);
+    IReadOnlyList<SystemParameterValue> Values,
+    CompoundStructureSnapshot? Structure = null,
+    RoutingPreferencesSnapshot? Routing = null);
 
 public sealed record SystemParameterValue(
     string ParameterName,
@@ -2406,12 +2279,14 @@ public sealed record SystemParameterValue(
     string? UnitTypeId = null);
 ```
 
-- `CategoryName` — display name (e.g. "Трубы", "Воздуховоды").
-- `CategoryId` — numeric `BuiltInCategory` ordinal carried as `int` so Core does not depend on `Autodesk.Revit.DB` (I-09).
+- `CategoryName` — display name (e.g. "Трубы", "Воздуховоды"). NOT hashed since FHV3 (ADR-056) — locale-dependent.
+- `CategoryId` — numeric `BuiltInCategory` ordinal carried as `int` so Core does not depend on `Autodesk.Revit.DB` (I-09). The hashed category identity (FHV3).
 - `Types` — selected system types with values, sorted by type name.
+- `SystemTypeSnapshot.Structure` — compound structure (layer stack) for wall/floor/roof/ceiling types, `null` otherwise. Part of the content hash since FHV3 (ADR-056).
+- `SystemTypeSnapshot.Routing` — routing preferences for MEP curve types (pipe/duct/cable tray/conduit), `null` otherwise. Part of the content hash since FHV3 (ADR-056).
 - `SystemParameterValue` — same semantics as `FamilyParameterValue` — distinguishes "no value" from "zero".
 
-**v2.0.0 hash stability:** the hasher skips blank values (`HasValue=false`, empty string, `INVALID`, `UNSUPPORTED`, `READERROR`) so the empty `ADSK_Завод-изготовитель` parameter does not contribute to the hash. The hasher also skips the auto-generated `Код IfcGUID` parameter (different per `.rvt` save).
+**v2.0.0 hash stability:** the hasher skips blank values (`HasValue=false`, empty string, storage-scoped `INVALID`/`UNSUPPORTED`, `READERROR` — v3 narrows the first two by storage type so a user's literal text no longer collides, ADR-056) so the empty `ADSK_Завод-изготовитель` parameter does not contribute to the hash. The hasher also skips the auto-generated `Код IfcGUID` parameter (different per `.rvt` save).
 
 ---
 
@@ -2424,7 +2299,16 @@ Aggregated geometry metrics for a loadable family document. Used as part of the 
 ```csharp
 public sealed record GeometryMetrics(
     int TotalFormCount,
-    IReadOnlyList<FormMetrics> Forms);
+    IReadOnlyList<FormMetrics> Forms,
+    int SymbolicCurveCount = 0,
+    int DetailCurveCount = 0,
+    int ModelCurveCount = 0,
+    int TextNoteCount = 0,
+    int ReferencePlaneCount = 0,
+    int DimensionCount = 0,
+    double TotalSymbolicCurveLength = 0,
+    double TotalDetailCurveLength = 0,
+    double TotalModelCurveLength = 0);
 
 public sealed record FormMetrics(
     string FormKind,
@@ -2432,14 +2316,118 @@ public sealed record FormMetrics(
     double Volume,
     int FaceCount,
     int EdgeCount,
-    string? SubcategoryName);
+    string? SubcategoryName,
+    double SurfaceArea = 0,
+    BoundingBoxSnapshot? Bounds = null);
+
+public sealed record BoundingBoxSnapshot(
+    double MinX, double MinY, double MinZ,
+    double MaxX, double MaxY, double MaxZ);
 ```
 
 - `TotalFormCount` — number of `GenericForm` elements (extrusions, sweeps, revolutions, blends, free-form).
 - `Forms` — per-form metrics sorted by `(FormKind, IsSolid, Volume)` for deterministic output.
 - `Volume` — total volume of all solids in Revit internal units (cubic feet), 6-decimal precision so a 1 mm change shifts the value.
 - `FaceCount` / `EdgeCount` — totals across all solids, or 0 if geometry could not be extracted (known bug for shared nested families).
+- `SurfaceArea` — summed face area (square feet), catches shape edits that preserve volume and face count (ADR-056).
+- `Bounds` — view-independent bounding box, catches translations/proportion edits that preserve volume (ADR-056); hashed with 1e-4 ft rounding.
 - `FormKind` — `"Extrusion"`, `"Sweep"`, `"Revolution"`, `"Blend"`, `"SweptBlend"`, or `"GenericForm"` for free-form.
+- `TotalSymbolicCurveLength` / `TotalDetailCurveLength` / `TotalModelCurveLength` — summed 2D curve lengths (feet), catch redraws that keep element counts constant (ADR-056).
+
+---
+
+## ConnectorSnapshot (ADR-056)
+
+Snapshot of a single `ConnectorElement` inside a family document — domain, profile, sizes, system classification, origin and intra-family linkage. Connectors carry MEP identity that parameters do not (changing a connector's system classification from ХВС to ГВС leaves every parameter untouched). All enum values are raw ordinals (I-09, same rule as ADR-055 facts). Part of the content hash since FHV3 (Issue #159).
+
+**Файл:** `Models/FamilyManager/ConnectorSnapshot.cs`
+
+```csharp
+public sealed record ConnectorSnapshot(
+    int Domain,
+    int Shape,
+    int SystemClassification,
+    bool IsPrimary,
+    double? Width,
+    double? Height,
+    double? Radius,
+    double OriginX,
+    double OriginY,
+    double OriginZ,
+    int LinkedIndex);
+```
+
+- `Domain` / `Shape` / `SystemClassification` — ordinals of `Domain`, `ConnectorProfileType`, `MEPSystemClassification`.
+- `Width` / `Height` / `Radius` — connector sizes in feet; `null` when not applicable to the profile (e.g. radius on rectangular).
+- `OriginX/Y/Z` — family-local origin in feet; hashed with 1e-4 ft rounding to absorb regen noise.
+- `LinkedIndex` — index of the linked connector in the same sorted list (`-1` when unlinked) — captures intra-family connection topology.
+
+---
+
+## FamilyBehaviorFlags (ADR-056)
+
+Behavior flags of a loadable family, read from built-in parameters on the `Family` element — invisible to `FamilyManager.GetParameters()`. `null` per flag = parameter absent in this Revit version/template. Part of the content hash since FHV3 (Issue #159).
+
+**Файл:** `Models/FamilyManager/FamilyBehaviorFlags.cs`
+
+```csharp
+public sealed record FamilyBehaviorFlags(
+    bool? IsShared,
+    bool? IsWorkPlaneBased,
+    bool? IsAlwaysVertical,
+    bool? AllowsCutWithVoids);
+```
+
+---
+
+## CompoundStructureSnapshot / CompoundLayerSnapshot (ADR-056)
+
+Layer stack of a system host type (Basic walls, floors, roofs, ceilings). Not a parameter — changing a layer material/thickness leaves every type parameter untouched. `null` on the type = no compound structure (stacked/curtain walls, non-host categories). Layer order is content (never sorted). Part of the content hash since FHV3 (Issue #159).
+
+**Файл:** `Models/FamilyManager/CompoundStructureSnapshot.cs`
+
+```csharp
+public sealed record CompoundStructureSnapshot(
+    int ExteriorShellLayerCount,
+    int InteriorShellLayerCount,
+    IReadOnlyList<CompoundLayerSnapshot> Layers);
+
+public sealed record CompoundLayerSnapshot(
+    int Function,
+    double Width,
+    string? MaterialName,
+    bool IsVariable);
+```
+
+- `Function` — `MaterialFunctionAssignment` ordinal.
+- `MaterialName` — resolved material name (`null` = "By Category"); names are document content, not UI-localized.
+
+---
+
+## RoutingPreferencesSnapshot / RoutingRuleSnapshot / RoutingCriterionSnapshot (ADR-056)
+
+Routing preferences of a MEP curve type (PipeType, DuctType, CableTrayType, ConduitType — all inherit `MEPCurveType.RoutingPreferenceManager`). Not parameters — editing routing rules leaves every type parameter untouched. `null` on the type = not a MEP curve type. Rule order is content (first matching rule wins — never sorted). Part of the content hash since FHV3 (Issue #159).
+
+**Файл:** `Models/FamilyManager/RoutingPreferencesSnapshot.cs`
+
+```csharp
+public sealed record RoutingPreferencesSnapshot(
+    int PreferredJunctionType,
+    IReadOnlyList<RoutingRuleSnapshot> Rules);
+
+public sealed record RoutingRuleSnapshot(
+    int GroupType,
+    string? PartName,
+    string Description,
+    IReadOnlyList<RoutingCriterionSnapshot> Criteria);
+
+public sealed record RoutingCriterionSnapshot(
+    string CriterionType,
+    double MinimumSize,
+    double MaximumSize);
+```
+
+- `PartName` — resolved part name: `"{Family}:{Type}"` for fitting symbols, element name for segments; `null` when the rule references `InvalidElementId` ("no part allowed" — real content).
 
 ---
 
@@ -2529,14 +2517,17 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 }
 `
 
-**Canonical string layout:**
-- FHV1|LOADABLE|{name}|{cat}|PARAMS|...|TYPES|...|GEOM|...|NESTED|... (loadable)
-- FHV1|SYSTEM|{catName}|{catId}|TYPES|... (system)
+**Canonical string layout (FHV3, ADR-056):**
+- `FHV3|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|GEOM(+surface,bbox)|GEOM2D(+lengths)|NESTED(+NONSHARED)|FACTS|FLAGS|CONN|...` (loadable)
+- `FHV3|SYSTEM|{catId}|TYPES|{typeName}|{params}|STRUCT|...|ROUTING|...` (system)
 
-**v2.0.0 stability rules:**
-- Blank values excluded (IsBlankValue(hasValue, text)): HasValue=false, empty string, INVALID (no element), UNSUPPORTED, READERROR. Numeric zero is NOT blank.
+**v3 rules:**
+- Категория — локале-инвариантный ordinal (display name — только fallback при unknown ordinal).
+- Все строковые значения экранируются (`%` → `%25`, `|` → `%7C`) — инъекция полей невозможна.
+- Коннекторные координаты и bounding box округляются до 1e-4 ft.
+- Blank values excluded (`IsBlankValue(hasValue, text, storageType)`): HasValue=false, empty string, `INVALID` (только ElementId storage), `UNSUPPORTED` (только неизвестные storage), `READERROR`. Numeric zero is NOT blank. Пользовательская строка "INVALID"/"UNSUPPORTED" в текстовом параметре — контент, участвует в хэше.
 - Auto-generated parameters excluded (IsAutoGeneratedParameter(name)): anything containing IfcGUID or IFC GUID (case-insensitive). Revit regenerates these on every .rvt save — including them would break cross-document stability.
-- 10 unit tests in src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs cover blank-value exclusion, INVALID exclusion, numeric zero significance, IFC GUID exclusion, loadable-family blank values, parameter/type/geometry/SharedNested independence, and cross-source prefix separation.
+- Тесты: `src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs` — blank-value, ноль, IfcGUID, порядок, cross-source, плюс FHV3-набор: ordinal-категория (locale-invariance), PartType, коннекторы (размер/система/Origin/rounding/linked), behavior-флаги, bbox/surface, длины кривых, non-shared nested, экранирование, слои (материал/порядок), routing (part/порядок/критерий/junction/null-part).
 
 ---
 

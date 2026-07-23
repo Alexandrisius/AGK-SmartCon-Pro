@@ -7,7 +7,11 @@ namespace SmartCon.Tests.FamilyManager.Models;
 /// <summary>
 /// Tests for <see cref="PartTypeLabelMap"/> (ADR-055): localized labels for
 /// stored Part Type ordinals with fallback semantics for unknown keys.
+/// Serialized with other <see cref="LocalizationService.CurrentLanguage"/>
+/// mutators — the language is a process-wide global (xUnit implicit
+/// collection, same name as ProjectBaseRulesEditorViewModelTests uses).
 /// </summary>
+[Collection("Localization")]
 public sealed class PartTypeLabelMapTests
 {
     [Theory]

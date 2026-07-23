@@ -88,7 +88,7 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
             // (levels, views, materials, curtain mullions) is excluded by
             // construction, no heuristics.
             string? categoryName = null;
-            int? categoryId = null;
+            BuiltInCategory? detectedCategory = null;
             foreach (var entry in SystemCategoryRegistry.Entries)
             {
                 var instance = new FilteredElementCollector(doc)
@@ -98,7 +98,7 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
                 if (instance?.Category is not null)
                 {
                     categoryName = instance.Category.Name;
-                    categoryId = (int)entry.Category;
+                    detectedCategory = entry.Category;
                     break;
                 }
             }
@@ -106,7 +106,7 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
             // Phase-2 registry categories are copied WITHOUT placement
             // (PlacementHandler = null → placed=0, e.g. floors/roofs/stairs) —
             // fall back to the copied types through the same whitelist.
-            if (categoryName is null)
+            if (detectedCategory is null)
             {
                 foreach (var entry in SystemCategoryRegistry.Entries)
                 {
@@ -117,7 +117,7 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
                     if (type?.Category is not null)
                     {
                         categoryName = type.Category.Name;
-                        categoryId = (int)entry.Category;
+                        detectedCategory = entry.Category;
                         break;
                     }
                 }
@@ -126,15 +126,34 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
             // No staged instances/types = an empty mini-project (degenerate
             // but terminal): report an empty category so the caller writes
             // its "known missing" marker instead of retrying forever.
-            var snapshot = new FamilySnapshot(
+            if (detectedCategory is null)
+            {
+                var emptyStub = new FamilySnapshot(
+                    FamilyName: System.IO.Path.GetFileNameWithoutExtension(fileName),
+                    Category: string.Empty,
+                    Parameters: [],
+                    Types: [],
+                    Geometry: new GeometryMetrics(0, []),
+                    SharedNestedFamilyNames: [],
+                    CategoryId: null);
+                return FamilyMigrationExtractResult.Ok(emptyStub);
+            }
+
+            // ADR-056: full system snapshot (types + parameters + compound
+            // structure + routing preferences) so the hash-v3 task can
+            // recompute FHV3 system hashes from the staged project.
+            var systemSnapshot = _snapshotExtractor
+                .ExtractSystemCategoryFromStagedProject(doc, detectedCategory.Value);
+
+            var stub = new FamilySnapshot(
                 FamilyName: System.IO.Path.GetFileNameWithoutExtension(fileName),
                 Category: categoryName ?? string.Empty,
                 Parameters: [],
                 Types: [],
                 Geometry: new GeometryMetrics(0, []),
                 SharedNestedFamilyNames: [],
-                CategoryId: categoryId);
-            return FamilyMigrationExtractResult.Ok(snapshot);
+                CategoryId: (int)detectedCategory.Value);
+            return FamilyMigrationExtractResult.OkSystem(stub, systemSnapshot);
         }
         catch (Exception ex)
         {

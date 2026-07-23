@@ -46,7 +46,7 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 
 | Задача | Order | Critical | Что делает |
 |---|---|---|---|
-| `HashFormatActualizationTask` (`hash-v2`) | 10 | да | Хэши v2: apply на все Revit-варианты + ресинк item; system re-flag в file-free pass; терминальные маркеры -1/-2 |
+| `HashFormatActualizationTask` (`hash-v3`) | 10 | да | Хэши FHV3 (ADR-056): apply на все Revit-варианты + ресинк item; system-группы — полный пересчёт из staged `.rvt` с trim типов до `family_types` (file-free pass невозможен — канон изменился структурно); терминальные маркеры -1/-2 |
 | `AttributesActualizationTask` (`attributes-v1`) | 20 | нет | Типы + значения + shared nested + счётчики `types_count`/`parameters_count` (active label; чинит #151/#152/#153) |
 | `GlbPreviewActualizationTask` (`glb-v1`) | 30 | нет | Auto-extracted 3D GLB превью (active label). Терминальный маркер #157 (V23): семейство без извлекаемой 3D-геометрии (2D/символьные) получает `catalog_versions.glb_state = -1` от пайплайна — детект гаснет, иначе вечный pending |
 | `RevitCategoryActualizationTask` (`revit-category-v1`) | 40 | нет | Backfill `catalog_items.revit_category` для loadable+system (active label; system `.rvt` — category-only extraction `ExtractSystemCategoryAsync`) |
@@ -56,7 +56,7 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 
 | | Critical задача | Optional задача |
 |---|---|---|
-| Когда | Без артефакта запись в базу плодит мусор (дедуп по хэшам v2) | Артефакт косметический (атрибуты, 3D-превью) |
+| Когда | Без артефакта запись в базу плодит мусор (дедуп по хэшам) | Артефакт косметический (атрибуты, 3D-превью) |
 | UX | Жёлтый баннер + красная точка + read-only гейт write-операций | Ничего своего — только видимость команды (Owner/BimMaster) |
 
 ## UX (единый)
@@ -181,7 +181,8 @@ resume после отмены, purge-контекст, сводка.
   решения и отклонённые альтернативы
 - [ADR-050](../adr/050-hash-recalculation-migration.md) — историческая запись hash-миграции
   (механика маркеров/purge; фреймворк superseded ADR-054)
-- [ADR-049](../adr/049-content-hash-v2-rename-invariant.md) — формат хэша
+- [ADR-049](../adr/049-content-hash-v2-rename-invariant.md) — формат хэша v2 (rename-invariant)
+- [ADR-056](../adr/056-content-hash-v3.md) — формат хэша v3 (FHV3) + задача `hash-v3`
 - [ADR-048](../adr/048-batch-import-modeless-progress.md) — modeless прогресс-диалоги
 - `docs/invariants.md` — I-14 (SQLite), I-01 (ExternalEvent), I-03 (транзакции)
 - `tools/damage-catalog-db.ps1` — ручной тест: «состаривает» тестовую БД по критериям
