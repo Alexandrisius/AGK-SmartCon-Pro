@@ -529,6 +529,8 @@ public sealed class RevitLookupTableService : ILookupTableService
 
                 var connectorRadii = new Dictionary<int, double>();
                 var queryParamRadii = new List<double>();
+                var sizeQueryParamNames = new List<string>();
+                var sizeQueryParamValuesMm = new List<double>();
                 foreach (var colIdx in sizeColumnIndices)
                 {
                     var col = columns[colIdx];
@@ -539,22 +541,12 @@ public sealed class RevitLookupTableService : ILookupTableService
                     queryParamRadii.Add(rFt);
                     foreach (var ci in col.ConnectorIndices)
                         connectorRadii[ci] = rFt;
+                    sizeQueryParamNames.Add(col.ParameterName);
+                    sizeQueryParamValuesMm.Add(val);
                 }
 
                 if (connectorRadii.Count == 0)
                     connectorRadii[targetConnectorIndex] = targetRadiusFt;
-
-                var sizeQueryParamNames = new List<string>();
-                var sizeQueryParamValuesMm = new List<double>();
-                foreach (var colIdx in sizeColumnIndices)
-                {
-                    var col = columns[colIdx];
-                    if (col.CsvColIndex >= cols.Length) continue;
-                    var cv = cols[col.CsvColIndex].Trim().Trim('"');
-                    if (!LookupTableCsvParser.TryParseRevitValue(cv, out double qval)) continue;
-                    sizeQueryParamNames.Add(col.ParameterName);
-                    sizeQueryParamValuesMm.Add(qval);
-                }
 
                 var nonSizeValues = new Dictionary<string, string>();
                 foreach (var colIdx in nonSizeColumnIndices)

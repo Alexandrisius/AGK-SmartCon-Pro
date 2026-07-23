@@ -37,8 +37,9 @@ internal static class FamilyParameterAnalyzer
                                     bool handFlipped = false,
                                     bool facingFlipped = false)
     {
-        using var _scope = SmartConLogger.BeginScope("FPA",
-            ("Method", "AnalyzeConnectorRadiusParam"));
+        // NOTE: no BeginScope here — this analyzer is called in hot loops over family
+        // parameters (~1.5k calls per operation) and the scope markers produced
+        // thousands of INF lines (log audit 2026-07). Caller scopes provide context.
         // 1. Найти ConnectorElement по ближайшему origin (аналогично RevitFamilyConnectorService)
         SmartConLogger.Debug($"  targetOriginGlobal=({targetOriginGlobal.X:F4}, {targetOriginGlobal.Y:F4}, {targetOriginGlobal.Z:F4})");
 

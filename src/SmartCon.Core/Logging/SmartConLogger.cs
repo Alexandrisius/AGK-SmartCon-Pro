@@ -38,6 +38,8 @@ public static class SmartConLogger
 
     private const long MaxLogSizeBytes = 5 * 1024 * 1024;
     private const int MaxBakFiles = 3;
+    private const int WritesPerRotateCheck = 1000;
+    private static int _writesSinceRotateCheck;
 
     // Default min level is decided at type initialisation. The DEBUG
     // symbol is set by the C# compiler for every Debug.* configuration
@@ -234,12 +236,18 @@ public static class SmartConLogger
     /// with <c>[OpId=… Op=…]</c> and the supplied <paramref name="properties"/>.
     /// Dispose the returned <see cref="IDisposable"/> to close the scope
     /// and emit the elapsed-time footer.
+    /// The === START === marker is emitted only at Debug level: a scope placed
+    /// inside a hot loop would otherwise flood the log in Release as well
+    /// (log audit 2026-07: 370k INF lines from one parser scope). Scope
+    /// prefixes on individual lines are unaffected — OpId correlation still
+    /// works in Release.
     /// </summary>
     public static IDisposable BeginScope(string operation, params (string Key, object? Value)[] properties)
     {
         var opId = Guid.NewGuid().ToString("N")[..8];
         var scope = new LogScope(operation, properties, opId);
-        WriteMain("INF", $"{scope.FormatPrefix()} === START ===");
+        if (MinLevel <= LogLevel.Debug)
+            WriteMain("INF", $"{scope.FormatPrefix()} === START ===");
         return LogScopeProvider.Push(scope);
     }
 
@@ -332,6 +340,15 @@ public static class SmartConLogger
             {
                 _mainWriterField ??= CreateWriter(LogPath);
                 _mainWriterField.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  [{level}]  {prefix}{message}");
+
+                // In-session rotation guard: LogSessionStart rotates only between
+                // commands, so a single long session could grow the file without
+                // bounds (74 MB observed). Check size every N writes — cheap.
+                if (++_writesSinceRotateCheck >= WritesPerRotateCheck)
+                {
+                    _writesSinceRotateCheck = 0;
+                    RotateLogIfNeeded();
+                }
             }
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SmartConLogger] Write failed: {ex.Message}"); }
