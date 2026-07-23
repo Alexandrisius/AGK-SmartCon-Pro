@@ -39,6 +39,7 @@ internal static class FamilyCatalogSql
             published_by TEXT,
             family_source TEXT NOT NULL DEFAULT 'loadable',
             revit_category TEXT,
+            revit_category_id INTEGER,
             content_hash TEXT,
             hash_format_version INTEGER,
             created_at_utc TEXT NOT NULL,
@@ -376,11 +377,46 @@ internal static class FamilyCatalogSql
         {CreateFamilyDataImportRuns};
         {CreateExtractedAttributeValues};
         {CreateDbUsers};
-        {CreateFamilyNestedSharedFamilies}
+        {CreateFamilyNestedSharedFamilies};
+        {CreateFamilyFacts}
         """;
 
     public const string MigrateV9AddLoadedVersionLabel = """
         ALTER TABLE project_usage ADD COLUMN loaded_version_label TEXT
+        """;
+
+    /// <summary>
+    /// V22 (ADR-055): adds <c>revit_category_id INTEGER</c> to
+    /// <c>catalog_items</c> — the <c>BuiltInCategory</c> ordinal used by the
+    /// family-facts rule registry (<c>FamilyFactRuleSet</c>) for detection
+    /// and UI label lookup. The display name in <c>revit_category</c> is
+    /// locale-fragile and stays display-only.
+    /// </summary>
+    public const string MigrateV22AddRevitCategoryIdColumn = """
+        ALTER TABLE catalog_items ADD COLUMN revit_category_id INTEGER
+        """;
+
+    /// <summary>
+    /// V22 (ADR-055): category-driven facts extracted from the family file
+    /// (e.g. Part Type for fitting categories). One row per
+    /// (catalog_item, fact). <c>value_key</c> is the stable machine value
+    /// (enum ordinal string; empty string = evaluated-but-absent sentinel),
+    /// <c>value_display</c> the extraction-time human fallback. Facts are
+    /// item-level metadata and never participate in dedup.
+    /// </summary>
+    public const string CreateFamilyFacts = """
+        CREATE TABLE IF NOT EXISTS family_facts (
+            catalog_item_id TEXT NOT NULL,
+            fact_key TEXT NOT NULL,
+            value_key TEXT NOT NULL,
+            value_display TEXT NOT NULL,
+            PRIMARY KEY (catalog_item_id, fact_key),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateFamilyFactsIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_facts_key ON family_facts (fact_key, value_key)
         """;
 
     public const string MigrateV10AddFamilyTypesNameIndex = """

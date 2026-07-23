@@ -39,7 +39,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         var familyName = familyDoc.Title;
         if (familyName.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
             familyName = familyName[..^4];
-        var category = familyDoc.OwnerFamily?.FamilyCategory?.Name ?? string.Empty;
+        var familyCategory = familyDoc.OwnerFamily?.FamilyCategory;
+        var category = familyCategory?.Name ?? string.Empty;
+        var categoryId = GetCategoryOrdinal(familyCategory);
+        var facts = ExtractFacts(familyDoc, categoryId);
 
         var parameters = ExtractParameters(fm);
         var types = ExtractTypes(fm, familyDoc);
@@ -49,7 +52,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         SmartConLogger.Info(
             $"Family snapshot: '{familyName}', {parameters.Count} params, " +
             $"{types.Count} types, {geometry.TotalFormCount} forms, " +
-            $"{sharedNested.Count} shared nested");
+            $"{sharedNested.Count} shared nested" +
+            $"{(facts.Count > 0 ? $", {facts.Count} facts" : string.Empty)}");
 
         return new FamilySnapshot(
             FamilyName: familyName,
@@ -57,7 +61,9 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             Parameters: parameters,
             Types: types,
             Geometry: geometry,
-            SharedNestedFamilyNames: sharedNested);
+            SharedNestedFamilyNames: sharedNested,
+            CategoryId: categoryId,
+            Facts: facts.Count > 0 ? facts : null);
     }
 
     public IReadOnlyList<FamilyGeometryPerType> ExtractGeometryPerType(
@@ -275,6 +281,93 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             CategoryName: categoryName,
             CategoryId: categoryId,
             Types: sortedTypes);
+    }
+
+    /// <summary>
+    /// BuiltInCategory ordinal of the family category, or <c>null</c> when
+    /// the category is unavailable. ADR-055 (family facts).
+    /// </summary>
+    private static int? GetCategoryOrdinal(Category? familyCategory)
+    {
+        var id = familyCategory?.Id;
+        if (id is null) return null;
+#if REVIT2024_OR_GREATER
+        return (int)id.Value;
+#else
+        return id.IntegerValue;
+#endif
+    }
+
+    /// <summary>
+    /// Category-driven facts per <see cref="FamilyFactRuleSet"/> (ADR-055).
+    /// Every matched rule produces exactly one <see cref="FamilyFact"/> —
+    /// a read-but-absent parameter becomes the documented empty-string
+    /// sentinel so the actualization task's detection clears and the UI
+    /// hides the row. Read failures are swallowed into the sentinel as
+    /// well: facts are cosmetic metadata and must never break a snapshot.
+    /// </summary>
+    private static List<FamilyFact> ExtractFacts(Document familyDoc, int? categoryId)
+    {
+        var result = new List<FamilyFact>();
+        if (categoryId is null) return result;
+
+        var rules = FamilyFactRuleSet.GetRulesForCategory(categoryId.Value);
+        if (rules.Count == 0) return result;
+
+        foreach (var rule in rules)
+        {
+            result.Add(ReadFact(familyDoc, rule));
+        }
+        return result;
+    }
+
+    private static FamilyFact ReadFact(Document familyDoc, FamilyFactRule rule)
+    {
+        // Sentinel: the fact was evaluated but the source parameter is
+        // absent/unset in this family — detection clears, UI hides.
+        var sentinel = new FamilyFact(rule.FactKey, string.Empty, string.Empty);
+
+        try
+        {
+            var param = familyDoc.OwnerFamily?.get_Parameter((BuiltInParameter)rule.ParameterId);
+            if (param is null || !param.HasValue)
+            {
+                SmartConLogger.Debug(
+                    $"ExtractFacts: '{rule.FactKey}' parameter unavailable in '{familyDoc.Title}' — sentinel written");
+                return sentinel;
+            }
+
+            switch (param.StorageType)
+            {
+                case StorageType.Integer:
+                    var intVal = param.AsInteger();
+                    // Part Type reads as a raw int; the enum member name is
+                    // the stable human fallback (AsValueString would return
+                    // the bare number for this parameter).
+                    var display = rule.FactKey == FamilyFactRuleSet.PartTypeFactKey
+                        ? ((PartType)intVal).ToString()
+                        : intVal.ToString(CultureInfo.InvariantCulture);
+                    return new FamilyFact(
+                        rule.FactKey,
+                        intVal.ToString(CultureInfo.InvariantCulture),
+                        display);
+
+                case StorageType.String:
+                    var strVal = param.AsString();
+                    return string.IsNullOrEmpty(strVal)
+                        ? sentinel
+                        : new FamilyFact(rule.FactKey, strVal, strVal);
+
+                default:
+                    return sentinel;
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"ExtractFacts: read of '{rule.FactKey}' failed in '{familyDoc.Title}': {ex.Message}");
+            return sentinel;
+        }
     }
 
     private static List<FamilyParameterInfo> ExtractParameters(

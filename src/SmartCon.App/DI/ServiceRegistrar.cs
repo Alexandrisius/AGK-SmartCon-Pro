@@ -177,6 +177,8 @@ public static class ServiceRegistrar
         services.AddSingleton<ICategoryRepository>(sp => sp.GetRequiredService<LocalCategoryRepository>());
         services.AddSingleton<LocalFamilyTypeRepository>();
         services.AddSingleton<IFamilyTypeRepository>(sp => sp.GetRequiredService<LocalFamilyTypeRepository>());
+        services.AddSingleton<LocalFamilyFactRepository>();
+        services.AddSingleton<IFamilyFactRepository>(sp => sp.GetRequiredService<LocalFamilyFactRepository>());
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
         // v2.0.0: precomputer allocates the canonical
         // (CatalogItemId, VersionLabel, ManagedPath) triple for a given
@@ -247,6 +249,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.AttributesActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.GlbPreviewActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.RevitCategoryActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.FamilyFactsActualizationTask>();
         services.AddSingleton<ICatalogActualizationService, SmartCon.FamilyManager.Services.Actualization.CatalogActualizationService>();
         services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 

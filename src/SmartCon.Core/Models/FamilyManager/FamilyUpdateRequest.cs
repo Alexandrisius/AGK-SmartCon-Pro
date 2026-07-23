@@ -22,4 +22,6 @@ public sealed record FamilyUpdateRequest(
     int? HashFormatVersion = null,
     string? PublishedBy = null,
     IReadOnlyList<FamilyGeometryPerType>? PreextractedGeometry = null,
-    string? RevitCategory = null);
+    string? RevitCategory = null,
+    int? RevitCategoryId = null,
+    IReadOnlyList<FamilyFact>? Facts = null);

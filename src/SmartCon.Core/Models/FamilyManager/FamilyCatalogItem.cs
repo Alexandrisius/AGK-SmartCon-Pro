@@ -19,4 +19,5 @@ public sealed record FamilyCatalogItem(
     string? ContentHash = null,
     int? HashFormatVersion = null,
     int? ActiveRevitMajorVersion = null,
-    int? MinRevitMajorVersion = null);
+    int? MinRevitMajorVersion = null,
+    int? RevitCategoryId = null);

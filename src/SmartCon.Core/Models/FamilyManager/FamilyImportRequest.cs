@@ -62,4 +62,6 @@ public sealed record FamilyImportRequest(
     string? ContentHash = null,
     int? HashFormatVersion = null,
     string? PublishedBy = null,
-    IReadOnlyList<FamilyGeometryPerType>? PreextractedGeometry = null);
+    IReadOnlyList<FamilyGeometryPerType>? PreextractedGeometry = null,
+    int? RevitCategoryId = null,
+    IReadOnlyList<FamilyFact>? Facts = null);

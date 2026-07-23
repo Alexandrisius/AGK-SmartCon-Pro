@@ -88,6 +88,7 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
             // (levels, views, materials, curtain mullions) is excluded by
             // construction, no heuristics.
             string? categoryName = null;
+            int? categoryId = null;
             foreach (var entry in SystemCategoryRegistry.Entries)
             {
                 var instance = new FilteredElementCollector(doc)
@@ -97,6 +98,7 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
                 if (instance?.Category is not null)
                 {
                     categoryName = instance.Category.Name;
+                    categoryId = (int)entry.Category;
                     break;
                 }
             }
@@ -115,6 +117,7 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
                     if (type?.Category is not null)
                     {
                         categoryName = type.Category.Name;
+                        categoryId = (int)entry.Category;
                         break;
                     }
                 }
@@ -129,7 +132,8 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
                 Parameters: [],
                 Types: [],
                 Geometry: new GeometryMetrics(0, []),
-                SharedNestedFamilyNames: []);
+                SharedNestedFamilyNames: [],
+                CategoryId: categoryId);
             return FamilyMigrationExtractResult.Ok(snapshot);
         }
         catch (Exception ex)

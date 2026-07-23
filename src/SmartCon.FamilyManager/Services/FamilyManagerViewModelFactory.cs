@@ -31,6 +31,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IDatabaseUpdateStateService _updateState;
     private readonly ISharedParameterFileParser _sharedParameterFileParser;
     private readonly IFamilyManagerUserSettingsRepository _userSettingsRepository;
+    private readonly IFamilyFactRepository _factRepository;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -56,7 +57,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IAvatarCropService avatarCropService,
         IDatabaseUpdateStateService updateState,
         ISharedParameterFileParser sharedParameterFileParser,
-        IFamilyManagerUserSettingsRepository userSettingsRepository)
+        IFamilyManagerUserSettingsRepository userSettingsRepository,
+        IFamilyFactRepository factRepository)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -82,6 +84,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _updateState = updateState;
         _sharedParameterFileParser = sharedParameterFileParser;
         _userSettingsRepository = userSettingsRepository;
+        _factRepository = factRepository;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -98,7 +101,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             versionLabel, createdAtText, updatedAtText, revitCategory,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
-            _geometryPipeline, _fileResolver, _avatarCropService, _updateState)
+            _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository)
         { IsReadOnly = isReadOnly };
     }
 

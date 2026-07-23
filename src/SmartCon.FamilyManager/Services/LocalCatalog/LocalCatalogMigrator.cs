@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 21)
+        if (initialVersion < 22)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v21");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v22");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -75,6 +75,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 19, MigrateV19Async, ct);
         await RunMigrationAsync(connection, 20, MigrateV20Async, ct);
         await RunMigrationAsync(connection, 21, MigrateV21Async, ct);
+        await RunMigrationAsync(connection, 22, MigrateV22Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -938,6 +939,59 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// V22 (ADR-055): family-facts subsystem — adds
+    /// <c>catalog_items.revit_category_id INTEGER</c> (BuiltInCategory
+    /// ordinal for rule-registry matching) and the <c>family_facts</c>
+    /// table (one row per catalog item + fact). Additive only; the rows
+    /// are backfilled by the <c>family-facts-v1</c> actualization task.
+    /// </summary>
+    private static async Task MigrateV22Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 22) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "catalog_items", "revit_category_id", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV22AddRevitCategoryIdColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (!await TableExistsAsync(connection, "family_facts", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.CreateFamilyFacts;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.Transaction = tx;
+                idxCmd.CommandText = FamilyCatalogSql.CreateFamilyFactsIndexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '22' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v22: added revit_category_id column and family_facts table (family-facts subsystem, ADR-055)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1027,6 +1081,26 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN revit_category TEXT";
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "revit_category_id", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV22AddRevitCategoryIdColumn;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "family_facts", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.CreateFamilyFacts;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using (var factsIdxCmd = connection.CreateCommand())
+        {
+            factsIdxCmd.CommandText = FamilyCatalogSql.CreateFamilyFactsIndexes;
+            await factsIdxCmd.ExecuteNonQueryAsync(ct);
         }
 
         if (!await ColumnExistsAsync(connection, "family_types", "type_unique_id", ct))

@@ -22,13 +22,25 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <c>GenericForm</c> elements.</param>
 /// <param name="SharedNestedFamilyNames">Names of shared nested
 /// families referenced by this family (ADR-034). Sorted by name.</param>
+/// <param name="CategoryId">The <c>BuiltInCategory</c> ordinal of the
+/// family category (e.g. -2008049 for Pipe Fittings), or <c>null</c> when
+/// the category could not be determined. Optional trailing member (ADR-055)
+/// — pre-facts call sites keep compiling unchanged. NOT part of the
+/// content hash: FamilyContentHasher builds its canonical string from
+/// explicit fields only.</param>
+/// <param name="Facts">Category-driven facts extracted per
+/// <see cref="FamilyFactRuleSet"/> (e.g. Part Type for fitting
+/// categories), or <c>null</c>/empty when the category has no rules.
+/// NOT part of the content hash.</param>
 public sealed record FamilySnapshot(
     string FamilyName,
     string Category,
     IReadOnlyList<FamilyParameterInfo> Parameters,
     IReadOnlyList<FamilyTypeSnapshot> Types,
     GeometryMetrics Geometry,
-    IReadOnlyList<string> SharedNestedFamilyNames);
+    IReadOnlyList<string> SharedNestedFamilyNames,
+    int? CategoryId = null,
+    IReadOnlyList<FamilyFact>? Facts = null);
 
 /// <summary>
 /// Schema-level parameter of a loadable family (from

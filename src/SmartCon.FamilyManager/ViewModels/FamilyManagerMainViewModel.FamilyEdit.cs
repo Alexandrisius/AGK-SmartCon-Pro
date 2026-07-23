@@ -533,7 +533,7 @@ public sealed partial class FamilyManagerMainViewModel
                 TargetCategoryName: resolvedCategoryName,
                 FamilySource: "loadable",
                 TypeCount: importItem.TypeCount,
-                RevitCategory: null,
+                RevitCategory: importItem.RevitCategory,
                 OriginalSourcePath: prepared.SourcePath,
                 SourceTypes: null,
                 Source: null,
@@ -573,7 +573,7 @@ public sealed partial class FamilyManagerMainViewModel
                 Description: null,
                 CategoryId: resolvedCategoryId,
                 FamilySource: "loadable",
-                RevitCategory: null,
+                RevitCategory: importItem.RevitCategory,
                 FileName: displayName,
                 OriginalSourcePath: prepared.SourcePath,
                 PrecomputedCatalogItemId: resolvedCatalogItemId,
@@ -582,7 +582,9 @@ public sealed partial class FamilyManagerMainViewModel
                 ContentHash: importItem.ContentHash,
                 HashFormatVersion: importItem.HashFormatVersion,
                 PublishedBy: _revitContext.GetUsername(),
-                PreextractedGeometry: importItem.GeometryPerType);
+                PreextractedGeometry: importItem.GeometryPerType,
+                RevitCategoryId: importItem.LoadableSnapshot?.CategoryId ?? importItem.SystemSnapshot?.CategoryId,
+                Facts: importItem.LoadableSnapshot?.Facts);
 
             importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
         }

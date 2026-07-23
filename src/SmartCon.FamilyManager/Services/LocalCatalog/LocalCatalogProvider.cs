@@ -445,6 +445,7 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         var categoryId = TryGetString(reader, "category_id");
         var familySource = TryGetString(reader, "family_source") ?? "loadable";
         var revitCategory = TryGetString(reader, "revit_category");
+        var revitCategoryId = TryGetInt(reader, "revit_category_id");
         var contentHash = TryGetString(reader, "content_hash");
         int? hashFormatVersion = TryGetInt(reader, "hash_format_version");
 
@@ -477,7 +478,8 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             ContentHash: contentHash,
             HashFormatVersion: hashFormatVersion,
             ActiveRevitMajorVersion: TryGetInt(reader, "active_revit_major_version"),
-            MinRevitMajorVersion: TryGetInt(reader, "min_revit_major_version"));
+            MinRevitMajorVersion: TryGetInt(reader, "min_revit_major_version"),
+            RevitCategoryId: revitCategoryId);
     }
 
     private static FamilyCatalogVersion ReadCatalogVersion(SqliteDataReader reader) => new(

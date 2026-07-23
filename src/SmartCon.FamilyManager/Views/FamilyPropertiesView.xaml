@@ -208,6 +208,21 @@
                     <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="16,0,0,0">
                         <Run Text="{loc:Loc FM_Props_RevitCategory}"/>: <Run Text="{Binding RevitCategoryDisplay, Mode=OneWay}"/>
                     </TextBlock>
+                    <ItemsControl ItemsSource="{Binding FactRows, Mode=OneWay}"
+                                  Visibility="{Binding HasFactRows, Converter={StaticResource BoolToVisibility}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="16,0,0,0">
+                                    <Run Text="{Binding Label, Mode=OneWay}"/>: <Run Text="{Binding Value, Mode=OneWay}"/>
+                                </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </StackPanel>
         </Grid>

@@ -204,6 +204,7 @@ public static partial class LocalizationService
         ru["FM_BatchImport_MakeActive"] = "Сделать активной"; en["FM_BatchImport_MakeActive"] = "Make Active";
         ru["FM_Props_Version"] = "Версия"; en["FM_Props_Version"] = "Version";
         ru["FM_Props_RevitCategory"] = "Категория Revit"; en["FM_Props_RevitCategory"] = "Revit Category";
+        ru["FM_Fact_PartType"] = "Тип детали"; en["FM_Fact_PartType"] = "Part Type";
         ru["FM_Props_Created"] = "Создано"; en["FM_Props_Created"] = "Created";
         ru["FM_Props_Updated"] = "Обновлено"; en["FM_Props_Updated"] = "Updated";
         ru["FM_Props_NoAvatar"] = "Нет изображения"; en["FM_Props_NoAvatar"] = "No image";
