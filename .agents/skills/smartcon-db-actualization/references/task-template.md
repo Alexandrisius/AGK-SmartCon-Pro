@@ -30,7 +30,7 @@ internal sealed class MyFeatureActualizationTask : SqlDetectionActualizationTask
     }
 
     public override string Id => "my-feature-v1";
-    public override int Order => 50;                // после revit-category-v1 (40), шаг 10
+    public override int Order => 60;                // после family-facts-v1 (50), шаг 10
     public override bool IsCritical => false;       // реши по таблице в SKILL.md!
 
     // Детект: FROM/JOIN/WHERE фрагмент по «пустоте колонок».

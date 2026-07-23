@@ -65,3 +65,4 @@
 | [052](052-pipe-length-displacement-absorption.md) | PipeConnect — гашение смещения сети длиной трубы на её собственном уровне (PipeLengthAbsorber, min 100 мм, поэлементная симметрия +/−) | accepted | 2026-07-19 |
 | [053](053-dn-transition-compensation.md) | PipeConnect — DN-компенсация по уровням: TRANSITION→REDUCER→RESIZE, гейтинг AdjustRelatedFamilyConnectors (Issue #146) | accepted | 2026-07-20 |
 | [054](054-database-actualization-engine.md) | Database Actualization Engine — единый сервис актуализации БД: задачи (hash/attributes/glb), один open на семью, два уровня critical/optional, один диалог (#151/#152/#153); superseded ADR-050 фреймворк | accepted | 2026-07-21 |
+| [055](055-family-facts-subsystem.md) | Family Facts — category-driven факты семейства (Part Type первым): реестр правил в Core, EAV-таблица V22, registry-driven детект `family-facts-v1`, локализация значений через PartTypeLabelMap | accepted | 2026-07-23 |

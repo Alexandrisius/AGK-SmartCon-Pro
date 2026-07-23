@@ -716,6 +716,22 @@ public interface IFamilyTypeRepository
 
 ---
 
+## IFamilyFactRepository (ADR-055)
+
+Чтение подсистемы family facts для окна свойств: ординал Revit-категории итема (`catalog_items.revit_category_id`) + извлечённые факты (`family_facts`, schema V22) одним вызовом. Запись идёт через import-пути (`LocalFamilyImportService`) и задачу `family-facts-v1` — репозиторий читает.
+
+**Файл:** `IFamilyFactRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFactRepository.cs`
+
+```csharp
+public interface IFamilyFactRepository
+{
+    Task<FamilyFactsData> GetForItemAsync(string catalogItemId, CancellationToken ct = default);
+}
+```
+
+---
+
 ## ICategoryRepository
 
 CRUD для дерева категорий каталога семейств.
