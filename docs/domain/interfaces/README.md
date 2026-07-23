@@ -12,7 +12,7 @@ module: interfaces-index
 |---|---|---|
 | [`pipeconnect.md`](pipeconnect.md) | IRevitContext, ITransactionService, ITransformService, IFittingMapper, IAlignmentService, IFittingChainResolver | `SmartCon.Core/Services/Interfaces/` (root) |
 | [`project-management.md`](project-management.md) | IShareProjectService, IModelPurgeService, IFileNameParser, IViewRepository | `SmartCon.Core/Services/Interfaces/` (root) |
-| [`family-manager.md`](family-manager.md) | IFamilyCatalogProvider, IFamilyImportService, IFamilyLoadService, IFamilyAssetService, IAttributeDefinitionRepository | `SmartCon.Core/Services/Interfaces/` (root) |
+| [`family-manager/`](family-manager/README.md) | IFamilyCatalogProvider, IFamilyImportService, IFamilyLoadService и др. (10 тематических файлов) | `SmartCon.Core/Services/Interfaces/` (root) |
 | [`family-manager-rbac.md`](family-manager-rbac.md) | IDbUserRepository, IDbAccessControlService, IUserIdentityService | `SmartCon.Core/Services/Interfaces/` (root) |
 | [`family-manager-loadable.md`](family-manager-loadable.md) | ILoadableFamilyScanner, ILoadableFamilyTypeResolver, ILoadableFamilyImportOrchestrator (Phase 22) | `SmartCon.Core/Services/Interfaces/` (root) |
 | [`family-manager-system.md`](family-manager-system.md) | ISystemFamilyRevitOperations, ISystemFamilyIsolationProjectService, ISystemFamilyAttributeExtractor | `SmartCon.Core/Services/Interfaces/` (root) |

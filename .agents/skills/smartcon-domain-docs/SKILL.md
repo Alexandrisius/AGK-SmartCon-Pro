@@ -1,6 +1,6 @@
 ---
 name: smartcon-domain-docs
-description: Conventions for SmartCon domain documentation in docs/domain/. Use when adding a new domain class or interface to SmartCon.Core, when updating existing model/interface docs, when running or interpreting the validate-docs.ps1 validator, when reorganizing docs/domain/ structure, or when the user references the domain documentation validator. Covers the docs/domain/{models,interfaces}/ layout, the per-module .md file split, the frontmatter convention, the validator's classification logic, and known orphan sources (nested types, cross-assembly types, sub-headings).
+description: Conventions for SmartCon domain documentation in docs/domain/. Use when adding a new domain class or interface to SmartCon.Core, when updating existing model/interface docs, when running or interpreting the validate-docs.ps1 validator, when reorganizing docs/domain/ structure, when a docs file approaches the 1000-line split threshold, or when the user references the domain documentation validator. Covers the docs/domain/{models,interfaces}/ layout, the per-module .md file split, module subfolders for large modules (models/<module>/<topic>.md), the frontmatter convention, the validator's classification logic, and known orphan sources (nested types, cross-assembly types, sub-headings).
 ---
 
 # SmartCon Domain Documentation Conventions
@@ -22,13 +22,24 @@ Activate this skill when:
 
 ```
 docs/domain/
-├── README.md                       # index + rules
+├── README.md                       # index + rules (incl. split rule)
 ├── glossary.md                     # term dictionary (unchanged)
 ├── models/
 │   ├── README.md                   # index of model files by module
 │   ├── pipeconnect.md              # Core PipeConnect models
 │   ├── project-management.md
-│   ├── family-manager.md
+│   ├── family-manager/             # large module -> subfolder (10 topic files)
+│   │   ├── README.md               # topic index
+│   │   ├── catalog.md
+│   │   ├── attributes.md
+│   │   ├── import.md
+│   │   ├── load-placement.md
+│   │   ├── type-catalog.md
+│   │   ├── stale-detection.md
+│   │   ├── content-hash.md
+│   │   ├── actualization.md
+│   │   ├── geometry.md
+│   │   └── family-facts.md
 │   ├── family-manager-rbac.md
 │   ├── family-manager-loadable.md
 │   ├── system-families.md
@@ -40,7 +51,18 @@ docs/domain/
     ├── README.md
     ├── pipeconnect.md
     ├── project-management.md
-    ├── family-manager.md
+    ├── family-manager/             # large module -> subfolder (10 topic files)
+    │   ├── README.md
+    │   ├── catalog.md
+    │   ├── import.md
+    │   ├── documents-assets.md
+    │   ├── load-placement.md
+    │   ├── database.md
+    │   ├── ui-dialogs.md
+    │   ├── attributes.md
+    │   ├── stale-detection.md
+    │   ├── extraction.md
+    │   └── actualization.md
     ├── family-manager-rbac.md
     ├── family-manager-loadable.md
     ├── family-manager-system.md
@@ -50,6 +72,27 @@ docs/domain/
 ```
 
 **Rule of thumb:** file split mirrors the code's directory structure. If you add a new top-level subfolder under `Core/`, create a matching `models/<subfolder>.md` or `interfaces/<subfolder>.md` file.
+
+## Split rule for large modules (1000-line threshold)
+
+A documentation file **must not exceed 1000 lines**. The validator prints a `[WARN]` for every oversized file. When a module file approaches the threshold:
+
+1. Create a subfolder `models/<module>/` (or `interfaces/<module>/`).
+2. Split content into **topic files** (`catalog.md`, `import.md`, `stale-detection.md`, ...).
+   One file = one coherent topic; target 100-600 lines per file.
+3. Create `README.md` inside the subfolder with a topic-file index table.
+   (`README.md` is excluded from heading parsing at any nesting level.)
+4. Every topic file keeps the **same `module:` frontmatter** as the original file
+   (e.g. all files under `models/family-manager/` use `module: family-manager`).
+5. Topic files use H1 for the title (`# Модели FamilyManager — Импорт`) and `## TypeName`
+   for types as usual. **Never** use `##` for topic-group headers — the validator
+   treats every H2-H4 as a type name.
+6. Delete the original `<module>.md` and update references in
+   `models/README.md` (or `interfaces/README.md`) and other docs.
+7. Run the validator → expect `PASSED` with no new warnings.
+
+Worked example: `models/family-manager/` (2026-07) — one 2768-line file split into
+10 topic files of 86-583 lines; interfaces mirror split into 10 files of 90-251 lines.
 
 ## File format
 
@@ -141,7 +184,7 @@ powershell -ExecutionPolicy Bypass -File tools\validate-docs.ps1
 
 ### What it parses
 
-For each `.md` file in `docs/domain/{models,interfaces}/` (excluding `README.md`):
+For each `.md` file under `docs/domain/{models,interfaces}/` (**recursively**, including module subfolders; `README.md` excluded at any level):
 1. Splits by frontmatter (YAML between `---` markers) to extract `module:`
 2. Walks lines, using a state machine to track `inFence` (skip content inside ` ``` `)
 3. On heading `^(#{2,4})\s+(.+)$` extracts the text
@@ -150,7 +193,13 @@ For each `.md` file in `docs/domain/{models,interfaces}/` (excluding `README.md`
    - Strips trailing tags: `*(Phase N)*`, `*(System Families)*`, etc.
    - Takes first part if split by `/`
    - Skips generic headers (see list above)
-5. Classifies by parent directory of the .md file (models/ vs interfaces/)
+5. Classifies by the **first path segment** under `docs/domain/` (`models` vs `interfaces`) — so files inside `models/family-manager/` still count as `models`
+
+### File size check (informational, not errors)
+
+After orphan detection, the validator prints `[WARN]` for every parsed `.md` file
+exceeding **1000 lines**. Such files must be split into a module subfolder
+(see "Split rule for large modules"). This warning never fails the build.
 
 ### Orphan warnings (informational, not errors)
 
@@ -171,12 +220,18 @@ The validator prints `[WARN]` for documented types that don't exist in Core. The
 1. Create the `.cs` file in the right `SmartCon.Core/` subdirectory.
 2. Identify the **module** (which subdir it lives in: `Models/PipeConnect` → `pipeconnect`; `Services/FamilyManager` → `family-manager`; `Common` → `cross-cutting`; etc.).
 3. Identify whether the validator classifies it as **model** (default) or **interface** (if `I*` + primary type is `interface`).
-4. Open or create the right `docs/domain/{models,interfaces}/<module>.md`.
+4. Open or create the right doc file:
+   - Small module → flat `docs/domain/{models,interfaces}/<module>.md`
+   - Large module with subfolder (e.g. `family-manager`) → pick the matching **topic file**
+     inside `docs/domain/{models,interfaces}/<module>/<topic>.md`. If no topic fits,
+     add a new topic file AND register it in the subfolder's `README.md` index.
+   - New module → create `<module>.md` (flat) and add a row to `docs/domain/{models,interfaces}/README.md`.
 5. Add a `## TypeName` section with:
    - One-paragraph description (Russian is fine, English is fine, be consistent with neighbors)
    - `**Файл:** \`Path/To/TypeName.cs\``
    - The full C# signature in a code fence (records, classes, enums)
-6. Add a row to `docs/domain/{models,interfaces}/README.md` (if it's a new module).
+6. Check the file size: if the file now exceeds ~900 lines, apply the
+   "Split rule for large modules" instead of letting it cross 1000.
 7. Run the validator: `powershell -File tools\validate-docs.ps1` → expect `PASSED`.
 
 ### Decision: models/ or interfaces/?
@@ -232,6 +287,11 @@ If the validator classifies a file as the wrong side (model vs interface), check
 # Should pass with 0 ERROR and 0 structural errors
 powershell -File tools\validate-docs.ps1
 
+# Expected output characteristics:
+# - "[2/4]" scans 30+ .md files (recursive, incl. models/family-manager/ and interfaces/family-manager/)
+# - Documented name counts match Core type counts (models + interfaces)
+# - No oversized-file warnings (all parsed files <= 1000 lines)
+
 # Allowable warnings (all are "expected" per the table above):
 # - SmartCon.Revit/ types
 # - SmartCon.FamilyManager/ types
@@ -241,11 +301,13 @@ powershell -File tools\validate-docs.ps1
 # Should never show:
 # - A type from SmartCon.Core that's missing a heading
 # - A heading name that doesn't match any .cs file in Core (unless it's a known orphan)
+# - An oversized-file warning (means someone let a file grow past 1000 lines without splitting)
 ```
 
 ## Related files
 
 - `tools/validate-docs.ps1` — the validator (PowerShell 5.1 compatible, no external deps)
+- `docs/domain/README.md` — SSOT for the split rule (also mirrored in this skill)
 - `build-and-deploy.bat:23-29` — calls validator at step `[0/10]`, **warning-only** (does NOT block deploy)
 - `.github/PULL_REQUEST_TEMPLATE.md:24-26` — PR checklist mentions docs/domain/<module>.md
 - `AGENTS.md:222-224` — rule "new domain class → update docs/domain/models/<module>.md"

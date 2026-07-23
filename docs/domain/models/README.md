@@ -15,7 +15,7 @@ module: models-index
 |---|---|---|
 | [`pipeconnect.md`](pipeconnect.md) | Модели флагманского модуля PipeConnect: ConnectorProxy, PipeConnectionSession, Fitting*, Chain* | `SmartCon.Core/Models/` (root) |
 | [`project-management.md`](project-management.md) | Share Project, FileNameTemplate, FieldDefinition, PurgeOptions | `SmartCon.Core/Models/` (root) |
-| [`family-manager.md`](family-manager.md) | Каталог семейств, атрибуты, импорт, батч-операции, метаданные | `SmartCon.Core/Models/FamilyManager/` |
+| [`family-manager/`](family-manager/README.md) | Каталог семейств, атрибуты, импорт, батч-операции, метаданные (10 тематических файлов) | `SmartCon.Core/Models/FamilyManager/` |
 | [`family-manager-rbac.md`](family-manager-rbac.md) | RBAC: DbUser, UserIdentity, DbAccessDeniedException | `SmartCon.Core/Models/FamilyManager/Rbac/` |
 | [`family-manager-loadable.md`](family-manager-loadable.md) | Loadable Family Import (Phase 22): LoadableFamilyInfo, SelectedElementsAnalysis | `SmartCon.Core/Models/FamilyManager/` |
 | [`system-families.md`](system-families.md) | System Families Import: CategoryAnalysis, SelectedSystemType, SystemFamilyImportResult | `SmartCon.Core/Models/FamilyManager/SystemFamilies/` |

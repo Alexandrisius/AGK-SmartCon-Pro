@@ -96,8 +96,8 @@ ExtensibleStorage остаётся паттерном существующих �
 
 ## Ключевые интерфейсы и модели
 
-- Доменные модели: `docs/domain/models/family-manager.md`
-- Интерфейсы: `docs/domain/interfaces/family-manager.md`
+- Доменные модели: `docs/domain/models/family-manager/` (индекс: [README](../domain/models/family-manager/README.md))
+- Интерфейсы: `docs/domain/interfaces/family-manager/` (индекс: [README](../domain/interfaces/family-manager/README.md))
 - Глоссарий: `docs/domain/glossary.md`
 
 ## Связанные документы
@@ -107,5 +107,5 @@ ExtensibleStorage остаётся паттерном существующих �
 - [ADR-030](../adr/030-phase-24-stale-detection-v2.md) — Stale Detection v2 + ES exception
 - [ADR-033](../adr/033-bakein-type-catalog.md) — Type Catalog Bake-in
 - [ADR-041](../adr/041-active-version-management.md) — Active Version Management
-- [docs/domain/models/family-manager.md](../domain/models/family-manager.md)
-- [docs/domain/interfaces/family-manager.md](../domain/interfaces/family-manager.md)
+- [docs/domain/models/family-manager/](../domain/models/family-manager/README.md)
+- [docs/domain/interfaces/family-manager/](../domain/interfaces/family-manager/README.md)

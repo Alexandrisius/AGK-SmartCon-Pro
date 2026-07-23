@@ -1,0 +1,198 @@
+---
+module: family-manager
+---
+# Модели FamilyManager — Stale Detection
+
+> Часть документации модуля FamilyManager. Индекс и навигация: [README.md](README.md).
+> Источник истины: `src/SmartCon.Core/Models/FamilyManager/*.cs`.
+
+## FamilyVersion
+
+Per-family version marker, хранимый в ExtensibleStorage (Schema `SmartCon.FamilyVersion.v1`, ADR-030). Содержит ID записи каталога, метку загруженной версии, время загрузки в проект и версию Revit, которой загружали. `CurrentSchemaVersion` — номер текущей схемы payload (используется при будущих миграциях). `Empty` — sentinel для «маркер не прочитан».
+
+**Файл:** `FamilyVersion.cs`
+
+```csharp
+public sealed record FamilyVersion(
+    int SchemaVersion,
+    string CatalogItemId,
+    string VersionLabel,
+    DateTimeOffset LoadedAtUtc,
+    int SourceRevitVersion)
+{
+    public const int CurrentSchemaVersion = 1;
+
+    public static FamilyVersion Empty { get; } =
+        new(0, string.Empty, string.Empty, DateTimeOffset.MinValue, 0);
+}
+```
+
+---
+
+## StaleCheckResult
+
+Результат проверки актуальности одного семейства (Issue #69, ADR-030). Содержит enum `StaleReason` (причина, по которой семейство считается устаревшим: `NoEntityStorage` для семейств без ES-маркера, `VersionMismatch`, `RevitVersionMismatch`, `NotInCatalog`) и record `StaleCheckResult` с версиями из каталога и из ES.
+
+**Файл:** `StaleCheckResult.cs`
+
+```csharp
+public enum StaleReason
+{
+    None = 0,
+    NoEntityStorage = 1,
+    VersionMismatch = 2,
+    RevitVersionMismatch = 3,
+    NotInCatalog = 4
+}
+
+public sealed record StaleCheckResult(
+    string CatalogItemId,
+    string FamilyName,
+    string? CurrentVersionLabel,
+    string? LoadedVersionLabel,
+    bool IsStale,
+    StaleReason Reason);
+```
+
+---
+
+## StaleUpdateRequest
+
+Параметры операции обновления устаревших семейств (одиночного или пакетного). `OverwriteParameterValues` пробрасывается в `FamilyLoadOptions.OverwriteParameterValues`. `Recursive` зарезервирован для будущего использования (сейчас всегда `true`).
+
+**Файл:** `StaleUpdateRequest.cs`
+
+```csharp
+public sealed record StaleUpdateRequest(
+    IReadOnlyList<string> CatalogItemIds,
+    bool OverwriteParameterValues,
+    bool Recursive = true);
+```
+
+---
+
+## StaleBatchUpdateResult
+
+Агрегированный результат пакетного обновления (record `StaleBatchUpdateResult` со счётчиками и списком failed ID для retry) и payload прогресса (record `StaleBatchUpdateProgress`) для `IProgress<>` callback.
+
+**Файл:** `StaleBatchUpdateResult.cs`
+
+```csharp
+public sealed record StaleBatchUpdateResult(
+    int TotalRequested,
+    int SuccessCount,
+    int FailedCount,
+    IReadOnlyList<string> FailedCatalogItemIds);
+
+public sealed record StaleBatchUpdateProgress(
+    int Completed,
+    int Total,
+    string CurrentFamilyName);
+```
+
+---
+
+## FamilyStaleSnapshot
+
+Сессионный снимок результатов проверки актуальности (ADR-030, D-06). Заполняется `IStaleDetector` и инвалидируется при Load/Update/Edit и смене БД. Используется VM для обновления индикаторов категорий без повторного чтения ES. `Empty` — sentinel для «снимок ещё не построен».
+
+**Файл:** `FamilyStaleSnapshot.cs`
+
+```csharp
+public sealed record FamilyStaleSnapshot(
+    IReadOnlyDictionary<string, StaleCheckResult> Results,
+    DateTimeOffset CheckedAtUtc)
+{
+    public static FamilyStaleSnapshot Empty { get; } =
+        new(new Dictionary<string, StaleCheckResult>(), DateTimeOffset.MinValue);
+}
+```
+
+---
+
+## CategoryStaleStats
+
+Per-category roll-up статистика для stale detection (ADR-030 Phase 24). Возвращается из `IStaleCategoryAggregator.AggregateByCategory` и маппится на `CategoryNodeViewModel.HasStale` / `StaleCount`.
+
+**Файл:** `CategoryStaleStats.cs` (в `SmartCon.Core/Services/Interfaces/`, рядом с `IStaleCategoryAggregator`)
+
+```csharp
+public sealed record CategoryStaleStats(bool HasStale, int StaleCount)
+{
+    public static CategoryStaleStats Empty { get; } = new(false, 0);
+}
+```
+
+**Семантика:**
+- `HasStale = true` если любое catalog item, привязанное к этой категории (с recursive parent expansion), stale.
+- `StaleCount` — количество stale items **напрямую** в этой категории (не считая подкатегории — это encoded в `HasStale` родителя).
+- `Empty` — дефолт для категории без stale items (используется в `AggregateByCategory`).
+
+---
+
+## StaleSnapshotLogic
+
+Pure static helper для merge / prune snapshot (ADR-030 Phase 24, fix-merge-snapshot bug). Вынесен в Core чтобы unit-тесты могли проверить логику merge без поднятия Revit API.
+
+**Файл:** `StaleSnapshotLogic.cs` (в `SmartCon.Core/Services/Interfaces/`)
+
+```csharp
+public static class StaleSnapshotLogic
+{
+    public static FamilyStaleSnapshot MergeInto(
+        FamilyStaleSnapshot? existing,
+        IReadOnlyList<StaleCheckResult> newResults,
+        DateTimeOffset now);
+
+    public static FamilyStaleSnapshot RemoveFrom(
+        FamilyStaleSnapshot? existing,
+        IReadOnlyCollection<string> catalogItemIds,
+        DateTimeOffset now);
+}
+```
+
+**Семантика (исправляет баг «Проверить на одной папке теряет stale на другой»):**
+
+- `MergeInto`: **добавляет/перезаписывает** entries из `newResults` в существующий snapshot. Entries для **других** catalog item IDs (других категорий) сохраняются. Это значит что `CheckCategory(catA)` затем `CheckCategory(catB)` сохраняет stale маркеры обеих категорий.
+- `RemoveFrom`: **удаляет** entries по `catalogItemIds`. Возвращает тот же snapshot instance если ничего не удалено (zero-allocation). Используется после успешного Update — stale маркер удаляется, остальные сохраняются.
+- Both methods **не мутируют** входной snapshot — создаётся новый `FamilyStaleSnapshot`.
+
+---
+
+## LoadableMarkerLogic
+
+Issue #84 / Phase 24 (ADR-030): pure static helper, который после успешного импорта loadable-семейства из активного проекта в каталог (через «Импорт активного файла» / «Импорт выделенных») переписывает `SmartCon_FamilyVersion_v1` ExtensibleStorage маркер на Family-элементе в активном проекте. Без этого шага следующий «Проверить» сразу помечает каждое свеже-импортированное loadable как `StaleReason.NoEntityStorage`, хотя это семейство в проекте и есть авторитетный источник vN+1 для новой строки каталога.
+
+**Файл:** `LoadableMarkerLogic.cs` (в `SmartCon.Core/Services/Interfaces/`)
+
+```csharp
+public static class LoadableMarkerLogic
+{
+    public static Task<MarkerWriteSummary> WriteMarkersForImportedLoadablesAsync(
+        IReadOnlyList<FamilyBatchImportItem> loadableItems,
+        IReadOnlyList<LoadableFamilyAttributeTask> attributeTasks,
+        IFamilyVersionWriter versionWriter,
+        int targetRevit,
+        CancellationToken ct);
+
+    public sealed record MarkerWriteSummary(
+        int SuccessCount,
+        int SkippedCount,
+        int FailedCount,
+        int Total);
+}
+```
+
+**Семантика:**
+
+- Для каждого `LoadableFamilyAttributeTask` (успешно импортированное loadable) ищет соответствующий `FamilyBatchImportItem` по `PrecomputedCatalogItemId` и вызывает `IFamilyVersionWriter.WriteVersionMarkerAsync(catalogItemId, item.FileName, item.PrecomputedVersionLabel, targetRevit, ct)`. Версия маркера = та же, что попала в каталог (`v1` для нового, `vN+1` для ре-импорта).
+- Само содержимое `Family` в проекте **не меняется** — меняется только метаданные маркера.
+- Per-family try/catch: исключение на одном семействе **не прерывает** батч — пишется `Warn` с `[Action: ...]` и счётчик `FailedCount++`. Каталог уже принял запись, откатывать импорт нельзя.
+- `SkippedCount` растёт если `task.CatalogItemId` пуст или не нашлось matching batch item (теоретический edge case, в orchestrator'е такого не бывает).
+- System families (`FamilySource == "system"`) **не появляются** на входе — `ProcessProjectImportAsync` фильтрует их upstream. По дизайну (ADR-030 §Out of Scope) у них нет in-project `Family` элемента в смысле Revit API (`OST_PipeCurves` и т.п. — это `MEPCurve` / `Wall`).
+- Aggregate `MarkerWriteSummary`: `SuccessCount + SkippedCount + FailedCount == Total`.
+
+**Используется в:**
+- `FamilyManagerMainViewModel.FamilyEdit.cs:WriteVersionMarkersForImportedLoadablesAsync` — тонкая обёртка, делегирующая в этот helper. Вызывается из `ProcessProjectImportAsync` после `LoadableFamilyImportOrchestrator.ImportAndPersistTypesAsync` и перед `_staleDetector.InvalidateCache()`.
+
+**Pure logic** — никакого Revit API в сигнатуре (только `IFamilyVersionWriter`). Позволяет unit-тестировать через hand-written fake `IFamilyVersionWriter` без поднятия Revit (`src/SmartCon.Tests/FamilyManager/Stale/LoadableMarkerLogicTests.cs` — 8 тестов на empty batch / single / multiple / no-match skip / full failure / partial failure isolation / targetRevit passthrough / null-args throws).
