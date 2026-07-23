@@ -227,6 +227,7 @@ Before committing WPF-related code, verify:
 - [ ] `e.OriginalSource as DependencyObject` always null-checked before use
 - [ ] UseWindowsForms ambiguity resolved via `using` aliases
 - [ ] Every `MenuItem` inside a `ContextMenu` that has a bound `CommandParameter` carries `behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"` (see BUG-009)
+- [ ] `SingletonResources` never sits as a sibling of other resources in an implicit `<Window.Resources>` — always explicit `<ResourceDictionary>` + `MergedDictionaries` (see BUG-010)
 
 ---
 
@@ -299,3 +300,79 @@ The `OnMenuItemUnloaded` was over-engineering for a non-existent problem: `Depen
 - Commit `8ffe965` — regression introduction (Type Catalog bake-in feature accidentally broke BUG-009 workaround)
 - Commit `c7e8927` — original BUG-009 fix (the working baseline)
 - `https://stackoverflow.com/questions/6780159` — `DependencyPropertyDescriptor` static `EventHandlerList` accumulation behaviour
+
+---
+
+## BUG-010: Dialog silently never opens in net8, crashes Revit in net48 — XamlDuplicateMemberException "Resources already set"
+
+**Symptom:** A WPF dialog simply does not appear when invoked (net8, Revit 2025-2026 — the click "does nothing"), and the same code path **crashes Revit** in net48 (Revit 2019-2024). The command method starts (visible in `smartcon.log` scope `=== START ===`), then dies. On net8 the exception surfaces in `Dispatcher.UnhandledException` (logged, process survives); on net48 the unhandled exception takes down the host process.
+
+**Diagnostic shape in `smartcon.log`:**
+
+```text
+[ERR] [Dispatcher.UnhandledException] XamlParseException: Свойство "Resources" уже задано для "ConfirmationDialogView".
+ ---> XamlDuplicateMemberException: Свойство "Resources" уже задано для "ConfirmationDialogView".
+   в SmartCon.FamilyManager.Views.ConfirmationDialogView.InitializeComponent()
+   в FamilyManagerDialogService.ShowConfirmation(...)
+```
+
+Real case (Issue #154, 2026-07-22): the «Удалить из каталога» context-menu command never showed its confirmation dialog in Revit 2025 and hard-crashed Revit 2023.
+
+**Root cause:** the dialog's XAML put `<ui:SingletonResources/>` as a **sibling of other resources inside an implicit `<Window.Resources>`**:
+
+```xml
+<!-- BROKEN — two children, no explicit ResourceDictionary -->
+<Window.Resources>
+    <ui:SingletonResources/>
+    <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+</Window.Resources>
+```
+
+`SingletonResources` is itself a `ResourceDictionary` subclass. In the implicit-collection form (multiple children, no explicit `<ResourceDictionary>` wrapper) the XAML compiler emits BAML that assigns the `Resources` property twice → `XamlDuplicateMemberException` at `LoadBaml` time. Microsoft Learn: implicit `<Window.Resources>` is equivalent to the explicit form **only when there are no merged dictionaries**; a merged dictionary is legal solely inside `ResourceDictionary.MergedDictionaries` of an explicit `<ResourceDictionary>`.
+
+**Why it slipped through:** the XAML compiles cleanly — the failure is runtime-only at `LoadBaml`. And because the failing call (`_dialogService.ShowConfirmation`) stood **before** the `try` block in the command, the exception escaped into `Dispatcher.UnhandledException` instead of being logged with context.
+
+**Fix — canonical pattern (already used by `DatabaseUpdateProgressView`, `ProfileView`, `FamilyBatchImportView`):**
+
+```xml
+<controls:DialogWindowBase.Resources>
+    <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <ui:SingletonResources/>
+        </ResourceDictionary.MergedDictionaries>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </ResourceDictionary>
+</controls:DialogWindowBase.Resources>
+```
+
+**Allowed alternatives:**
+
+```xml
+<!-- OK: SingletonResources is the ONLY child (implicit dictionary has one element) -->
+<Window.Resources>
+    <ui:SingletonResources/>
+</Window.Resources>
+
+<!-- OK: resources nested INSIDE SingletonResources (they become its own items) -->
+<Window.Resources>
+    <ui:SingletonResources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </ui:SingletonResources>
+</Window.Resources>
+```
+
+**Audit recipe (PowerShell, run from repo root):** finds every XAML where a self-closed `<ui:SingletonResources/>` is followed by another element inside the same implicit resources block.
+
+```powershell
+Get-ChildItem -Recurse -Filter "*.xaml" src/ | Where-Object { $_.FullName -notmatch '\\(obj|bin)\\' } | ForEach-Object {
+    $c = Get-Content $_.FullName -Raw
+    if ($c -match '(?s)<Window\.Resources>\s*<ui:SingletonResources\s*/>\s*<(?!/)') { Write-Output "BROKEN: $($_.FullName)" }
+}
+```
+
+Repeat the check with `<UserControl\.Resources>` and `<controls:DialogWindowBase\.Resources>` in the regex if new root elements appear.
+
+**References:**
+- Issue #154: https://github.com/Alexandrisius/AGK-SmartCon-Pro/issues/154 — delete-family confirmation dialog crash
+- Microsoft Learn — ResourceDictionary: implicit collection usage is invalid once a merged dictionary is involved
+- StackOverflow 72673068 — "'Resources' property has already been set" — same class of error

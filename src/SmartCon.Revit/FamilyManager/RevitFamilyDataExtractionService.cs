@@ -74,6 +74,8 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                 false, [], null, "OpenDocumentFile returned null", GetMajorVersion(), Array.Empty<string>());
         }
 
+        ParameterUnitDiagnostics.LogDocumentUnits(doc, "ManagedFile");
+
         try
         {
             if (!doc.IsFamilyDocument)
@@ -200,7 +202,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
 
                 foreach (var paramName in parametersToExtract)
                 {
-                    var value = ExtractValueForParameter(familyType, paramName, paramMap);
+                    var value = ExtractValueForParameter(familyType, paramName, paramMap, familyDoc);
                     values.Add(value);
                 }
 
@@ -239,7 +241,7 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                     var values = new List<FamilyExtractionValueResult>();
                     foreach (var paramName in parametersToExtract)
                     {
-                        var value = ExtractValueForParameter(tempType, paramName, paramMap);
+                        var value = ExtractValueForParameter(tempType, paramName, paramMap, familyDoc);
                         values.Add(value);
                     }
 
@@ -262,7 +264,8 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
 
     private static FamilyExtractionValueResult ExtractValueForParameter(
         FamilyType familyType, string parameterName,
-        Dictionary<string, FamilyParameter> paramMap)
+        Dictionary<string, FamilyParameter> paramMap,
+        Document familyDoc)
     {
         if (!paramMap.TryGetValue(parameterName, out var param))
         {
@@ -301,7 +304,11 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                     var dblVal = familyType.AsDouble(param);
                     valueNumber = dblVal;
                     valueRaw = FormattableString.Invariant($"{dblVal}");
-                    valueText = familyType.AsValueString(param);
+                    valueText = dblVal.HasValue
+                        ? Compatibility.RevitUnitsCompat.FormatDisplayValue(familyDoc, param, dblVal.Value)
+                            ?? Core.Services.Implementation.UnitSymbolFixup.Correct(familyType.AsValueString(param))
+                        : Core.Services.Implementation.UnitSymbolFixup.Correct(familyType.AsValueString(param));
+                    ParameterUnitDiagnostics.LogFamilyTypeDouble(familyType, param, parameterName, dblVal, "ManagedFile");
                     break;
                 case StorageType.Integer:
                     var intVal = familyType.AsInteger(param);

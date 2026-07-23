@@ -130,6 +130,7 @@ public static class ServiceRegistrar
             presenter.Register<MappingEditorViewModel>(vm => new MappingEditorView(vm));
             presenter.Register<PipeConnectEditorViewModel>(vm => new PipeConnectEditorView(vm));
             presenter.Register<ShareSettingsViewModel>(vm => new ShareSettingsView(vm));
+            presenter.Register<ShareResultViewModel>(vm => new ShareResultView(vm));
             presenter.Register<ExportNameDialogViewModel>(vm => new ExportNameDialog(vm));
             presenter.Register<PmParseRuleViewModel>(vm => new PmParseRuleView(vm));
             presenter.Register<PmFieldLibraryViewModel>(vm => new PmFieldLibraryView(vm));
@@ -139,9 +140,11 @@ public static class ServiceRegistrar
             presenter.Register<FamilyPropertiesViewModel>(vm => new FamilyPropertiesView(vm));
             presenter.Register<CropAvatarViewModel>(vm => new CropAvatarView(vm));
             presenter.Register<AttributeLibraryViewModel>(vm => new AttributeLibraryView(vm));
+            presenter.Register<SharedParameterPickerViewModel>(vm => new SharedParameterPickerView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
-            presenter.Register<HashRecalculationProgressViewModel>(vm => new HashRecalculationProgressView(vm));
+            presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
+            presenter.Register<DatabaseUpdateProgressViewModel>(vm => new DatabaseUpdateProgressView(vm));
             presenter.Register<FmProjectBaseRulesEditorViewModel>(vm => new FmProjectBaseRulesEditorView(vm));
             presenter.Register<FmParseRuleViewModel>(vm => new FmParseRuleView(vm));
             presenter.Register<FmFieldLibraryViewModel>(vm => new FmFieldLibraryView(vm));
@@ -174,6 +177,8 @@ public static class ServiceRegistrar
         services.AddSingleton<ICategoryRepository>(sp => sp.GetRequiredService<LocalCategoryRepository>());
         services.AddSingleton<LocalFamilyTypeRepository>();
         services.AddSingleton<IFamilyTypeRepository>(sp => sp.GetRequiredService<LocalFamilyTypeRepository>());
+        services.AddSingleton<LocalFamilyFactRepository>();
+        services.AddSingleton<IFamilyFactRepository>(sp => sp.GetRequiredService<LocalFamilyFactRepository>());
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
         // v2.0.0: precomputer allocates the canonical
         // (CatalogItemId, VersionLabel, ManagedPath) triple for a given
@@ -187,6 +192,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyAssetService, LocalFamilyAssetService>();
         services.AddSingleton<IAvatarCropService, WpfAvatarCropService>();
         services.AddSingleton<IAttributePresetService, LocalAttributePresetService>();
+        services.AddSingleton<ISharedParameterFileParser, SharedParameterFileParser>();
+        services.AddSingleton<IFamilyManagerUserSettingsRepository, JsonFamilyManagerUserSettingsRepository>();
         services.AddSingleton<LocalAttributeDefinitionRepository>();
         services.AddSingleton<IAttributeDefinitionRepository>(sp => sp.GetRequiredService<LocalAttributeDefinitionRepository>());
         services.AddSingleton<LocalCategoryAttributeBindingService>();
@@ -232,14 +239,18 @@ public static class ServiceRegistrar
 
         // --- FamilyManager Hash Recalculation Migration (Issue #126) ---
         services.AddSingleton<IFamilyMigrationExtractor, SmartCon.Revit.FamilyManager.RevitFamilyMigrationExtractor>();
-        services.AddSingleton<ICatalogHashRecalculationService, SmartCon.FamilyManager.Services.LocalCatalog.CatalogHashRecalculationService>();
 
-        // --- Database migrations (docs/architecture/database-migrations.md) ---
-        // Register every IDatabaseMigration here; the coordinator aggregates
-        // them and the main VM drives badge state + "Update database" + the
-        // load-into-project gate automatically.
-        services.AddSingleton<IDatabaseMigration, SmartCon.FamilyManager.Services.Migrations.HashRecalculationMigration>();
-        services.AddSingleton<DatabaseMigrationCoordinator>();
+        // --- Database actualization engine (ADR-054, docs/architecture/database-migrations.md) ---
+        // THE single "update database" service: unions task detections,
+        // opens each pending family file once, applies pending tasks.
+        // New extraction-time features = one new IDatabaseActualizationTask
+        // class registered below — engine/dialog/gate/resume/purge are free.
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.HashFormatActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.AttributesActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.GlbPreviewActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.RevitCategoryActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.FamilyFactsActualizationTask>();
+        services.AddSingleton<ICatalogActualizationService, SmartCon.FamilyManager.Services.Actualization.CatalogActualizationService>();
         services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 
         // --- FamilyManager 3D Geometry Preview (ADR-042 / Issue #92) ---

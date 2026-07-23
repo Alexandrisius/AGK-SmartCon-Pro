@@ -6,6 +6,7 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:hx="http://helix-toolkit.org/wpf/SharpDX"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         mc:Ignorable="hx"
@@ -131,29 +132,32 @@
                 <TextBlock Text="{loc:Loc FM_Tags}" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
                 <Border BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
-                        CornerRadius="4" Padding="4,3"
+                        CornerRadius="4" Padding="4,2" MinHeight="26"
                         Background="{DynamicResource SurfaceBrush}" Margin="0,0,0,8">
-                        <StackPanel Orientation="Horizontal">
+                        <WrapPanel Orientation="Horizontal">
                             <ItemsControl ItemsSource="{Binding Tags}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal"/>
+                                        <WrapPanel Orientation="Horizontal"/>
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border CornerRadius="11"
+                                        <Border CornerRadius="10" Height="20"
+                                                VerticalAlignment="Center"
                                                 Background="{DynamicResource HoverAltSurfaceBrush}"
                                                 BorderBrush="{DynamicResource BorderAltBrush}"
                                                 BorderThickness="1"
-                                                Margin="0,0,4,0" Padding="8,2">
+                                                Margin="0,0,4,0" Padding="8,0">
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding}" VerticalAlignment="Center" FontSize="12"/>
+                                                <TextBlock Text="{Binding}" VerticalAlignment="Center" FontSize="11"/>
                                                 <Button Content="&#xD7;"
                                                         Command="{Binding DataContext.RemoveTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                         CommandParameter="{Binding}"
-                                                        Padding="2,0" Margin="6,0,0,0" FontSize="13"
-                                                        Height="16" Width="16"
+                                                        Padding="0" Margin="5,0,0,0" FontSize="11"
+                                                        Height="14" Width="14"
+                                                        VerticalAlignment="Center"
+                                                        HorizontalContentAlignment="Center"
                                                         Style="{DynamicResource GhostButton}"
                                                         Visibility="{Binding DataContext.IsReadOnly, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"/>
                                             </StackPanel>
@@ -166,9 +170,10 @@
                                      Text="{Binding TagInput, UpdateSourceTrigger=PropertyChanged}"
                                      IsReadOnly="{Binding IsReadOnly}"
                                      BorderThickness="0" Background="Transparent"
-                                     Padding="2,2" MinWidth="100"
+                                     Padding="2,0" MinWidth="100" Height="20"
                                      VerticalAlignment="Center"
-                                     PreviewKeyDown="TagInputBox_PreviewKeyDown">
+                                     VerticalContentAlignment="Center"
+                                     PreviewTextInput="TagInputBox_PreviewTextInput">
                                 <TextBox.InputBindings>
                                     <KeyBinding Key="Enter"
                                                 Command="{Binding AddTagCommand}"
@@ -193,12 +198,32 @@
                                     </ListBox>
                                 </Border>
                             </Popup>
-                        </StackPanel>
+                        </WrapPanel>
                     </Border>
 
-                <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11">
-                    <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
-                </TextBlock>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11">
+                        <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="16,0,0,0">
+                        <Run Text="{loc:Loc FM_Props_RevitCategory}"/>: <Run Text="{Binding RevitCategoryDisplay, Mode=OneWay}"/>
+                    </TextBlock>
+                    <ItemsControl ItemsSource="{Binding FactRows, Mode=OneWay}"
+                                  Visibility="{Binding HasFactRows, Converter={StaticResource BoolToVisibility}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="16,0,0,0">
+                                    <Run Text="{Binding Label, Mode=OneWay}"/>: <Run Text="{Binding Value, Mode=OneWay}"/>
+                                </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </StackPanel>
         </Grid>
 
@@ -433,8 +458,9 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Toolbar: type selector. -->
-                    <Grid Visibility="{Binding HasAttributeData, Converter={StaticResource BoolToVisibility}}"
+                    <!-- Toolbar: type selector (hidden for a single '<default>'
+                         or virtual type — nothing meaningful to choose). -->
+                    <Grid Visibility="{Binding ShowTypeSelector, Converter={StaticResource BoolToVisibility}}"
                           Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -523,15 +549,17 @@
                                          ItemContainerStyle="{DynamicResource CompactListBoxItem}"
                                          VirtualizingPanel.IsVirtualizing="True"
                                          VirtualizingPanel.VirtualizationMode="Recycling"
+                                         Grid.IsSharedSizeScope="True"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto">
                                     <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="150"/>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AttrName"
+                                                                  MinWidth="40" MaxWidth="280"/>
                                                 <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="22"/>
                                             </Grid.ColumnDefinitions>
 
                                             <TextBlock Grid.Column="0" Text="{Binding AttributeName}"
@@ -554,24 +582,50 @@
                                                       ToolTip="{Binding Value}"
                                                       VerticalAlignment="Center"/>
 
-                                            <Border Grid.Column="2" Padding="6,2" CornerRadius="3"
-                                                    Margin="8,0,0,0" VerticalAlignment="Center">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="{DynamicResource SuccessBrush}"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsFound}" Value="False">
-                                                                <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Border.Style>
-                                                <TextBlock Text="{Binding Status}"
-                                                           Foreground="White" FontSize="10"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           ToolTip="{Binding StatusDetail}"
-                                                           VerticalAlignment="Center"/>
-                                            </Border>
+                                            <Grid Grid.Column="2" VerticalAlignment="Center" Margin="6,0,0,0"
+                                                  ToolTipService.InitialShowDelay="200">
+                                                <Grid.ToolTip>
+                                                    <ToolTip>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding Status}" FontWeight="SemiBold"/>
+                                                            <TextBlock Text="{Binding StatusDetail}" MaxWidth="320"
+                                                                       TextWrapping="Wrap" FontSize="11"/>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Grid.ToolTip>
+                                                <iconPacks:PackIconMaterial Kind="Check"
+                                                                            Foreground="{DynamicResource SuccessBrush}"
+                                                                            Width="14" Height="14"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center">
+                                                    <iconPacks:PackIconMaterial.Style>
+                                                        <Style TargetType="iconPacks:PackIconMaterial">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsFound}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </iconPacks:PackIconMaterial.Style>
+                                                </iconPacks:PackIconMaterial>
+                                                <iconPacks:PackIconMaterial Kind="Close"
+                                                                            Foreground="{DynamicResource DangerBrush}"
+                                                                            Width="14" Height="14"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center">
+                                                    <iconPacks:PackIconMaterial.Style>
+                                                        <Style TargetType="iconPacks:PackIconMaterial">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsFound}" Value="False">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </iconPacks:PackIconMaterial.Style>
+                                                </iconPacks:PackIconMaterial>
+                                            </Grid>
                                         </Grid>
                                     </DataTemplate>
                                     </ListBox.ItemTemplate>
@@ -798,11 +852,9 @@
                                                     Width="60" MinWidth="50">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding TypesCountDisplay}"
-                                                   TextAlignment="Center"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center">
-                                            <TextBlock.ToolTip>
+                                        <Grid Background="Transparent"
+                                              ToolTipService.IsEnabled="{Binding HasTypeNames}">
+                                            <Grid.ToolTip>
                                                 <ToolTip MaxHeight="340" Padding="6,4"
                                                          Background="{DynamicResource SurfaceBrush}"
                                                          BorderBrush="{DynamicResource BorderAltBrush}"
@@ -828,8 +880,12 @@
                                                         </ItemsControl>
                                                     </ScrollViewer>
                                                 </ToolTip>
-                                            </TextBlock.ToolTip>
-                                        </TextBlock>
+                                            </Grid.ToolTip>
+                                            <TextBlock Text="{Binding TypesCountDisplay}"
+                                                       TextAlignment="Center"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

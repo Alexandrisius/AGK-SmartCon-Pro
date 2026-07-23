@@ -221,6 +221,8 @@ public static class FamilyAssetTypeExtensions
 
 Логическая запись каталога семейств — основная сущность, к которой привязаны версии и файлы.
 
+`ActiveRevitMajorVersion` — Revit-версия файла активной версии (`current_version_label`); заполняется только в `SearchAsync` (скалярный подзапрос `MIN(revit_major_version)` по активной метке), в остальных выборках `null`. `MinRevitMajorVersion` — минимальная Revit-версия среди всех версий айтема; используется деревом каталога для индикации недоступности (замок + серый текст) и tooltip-подсказки «есть совместимая версия».
+
 **Файл:** `FamilyCatalogItem.cs`
 
 ```csharp
@@ -237,7 +239,34 @@ public sealed record FamilyCatalogItem(
     IReadOnlyList<string> Tags,
     string? PublishedBy,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string FamilySource = "loadable",
+    string? RevitCategory = null,
+    string? ContentHash = null,
+    int? HashFormatVersion = null,
+    int? ActiveRevitMajorVersion = null,
+    int? MinRevitMajorVersion = null,
+    int? RevitCategoryId = null);
+```
+
+`RevitCategoryId` (ADR-055, schema V22) — ординал BuiltInCategory для матчинга правил `FamilyFactRuleSet`; `null` у pre-V22 строк до актуализации. Display-текст остаётся в `RevitCategory` (локалезависим).
+
+---
+
+## FamilyUnavailableReason
+
+Причина, по которой семейство недоступно для загрузки в текущий документ Revit. Управляет замком и серым текстом в дереве каталога, а также текстом tooltip (причина + способ восстановления доступа).
+
+**Файл:** `FamilyUnavailableReason.cs`
+
+```csharp
+public enum FamilyUnavailableReason
+{
+    None = 0,
+    Deprecated = 1,
+    RevitVersion = 2,
+    DeprecatedAndRevitVersion = 3,
+}
 ```
 
 ---
@@ -431,6 +460,59 @@ public sealed record EffectiveCategoryAttribute(
     bool IsInherited,
     string? SourceCategoryId);
 ```
+
+---
+
+## SharedParameterEntry
+
+Одна запись параметра, распарсенная из файла общих параметров Revit (ФОП, .txt).
+Чистый data carrier — парсер живёт в Core и не трогает Revit API.
+Группа ФОП переносится только как отображаемое имя (`GroupName`) и не импортируется
+в пользовательские группы атрибутов.
+
+**Файл:** `SharedParameterEntry.cs`
+
+```csharp
+public sealed record SharedParameterEntry(
+    Guid ParameterGuid,
+    string Name,
+    string DataType,
+    string? DataCategory,
+    string? GroupName,
+    string? Description);
+```
+
+---
+
+## FamilyManagerUserSettings
+
+Пользовательские настройки FamilyManager уровня машины (не привязаны к конкретной базе).
+Хранятся в `%APPDATA%\SmartCon\FamilyManager\user-settings.json`. Сейчас — кэш пути к ФОП.
+
+**Файл:** `FamilyManagerUserSettings.cs`
+
+```csharp
+public sealed record FamilyManagerUserSettings(string? SharedParametersFilePath);
+```
+
+---
+
+## SharedParameterFileParser
+
+Реализация `ISharedParameterFileParser` — pure C# парсер ФОП (.txt): tab-delimited строки,
+порядок колонок из заголовков `*GROUP`/`*PARAM` с фиксированным fallback,
+BOM-детекция кодировки (UTF-8/UTF-16 LE/BE). Бросает `InvalidDataException`,
+если секция `*PARAM` отсутствует.
+
+**Файл:** `SmartCon.Core/Services/Implementation/SharedParameterFileParser.cs`
+
+---
+
+## JsonFamilyManagerUserSettingsRepository
+
+JSON-репозиторий для `FamilyManagerUserSettings`. Файл: `%APPDATA%\SmartCon\FamilyManager\user-settings.json`.
+
+**Файл:** `SmartCon.Core/Services/Implementation/JsonFamilyManagerUserSettingsRepository.cs`
 
 ---
 
@@ -1141,6 +1223,31 @@ trim'ит, lower-case'ит, и резолвит в canonical key:
 
 ---
 
+## UnitSymbolFixup
+
+Pure C# коррекция известных ошибок русской локализации Autodesk в символах
+единиц, которые Revit возвращает из `AsValueString` / `UnitFormatUtils.Format`.
+RU-таблица символов Revit рендерит единицу давления бар как «бары», но по
+ГОСТ 8.417 «бар» несклоняем — корректное отображение «16 бар». Правила —
+замены хвостового токена (ordinal), неизвестные строки проходят без изменений.
+Вынесено в Core для unit-тестирования без Revit API; применяется в
+`RevitUnitsCompat.FormatDisplayValue` и в fallback-точках `AsValueString`.
+
+**Файл:** `Services/Implementation/UnitSymbolFixup.cs`
+
+```csharp
+public static class UnitSymbolFixup
+{
+    public static string? Correct(string? formatted);
+}
+```
+
+9 unit-тестов в `UnitSymbolFixupTests.cs` покрывают замену «бары»→«бар»,
+no-op для корректных/английских/прочих символов, null/empty и не-хвостовые
+позиции.
+
+---
+
 ## FamilyMetadataExtractionResult
 
 Результат извлечения метаданных из `.rfa`. MVP — только файловые метаданные (имя, размер, хеш).
@@ -1790,13 +1897,18 @@ public sealed record FamilyParameterValue(
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);
 `
 
 - FamilyName — from FamilyManager or family document title.
 - Category — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
+- CategoryId — BuiltInCategory ordinal of the family category (ADR-055), or null when unreadable. NOT part of the content hash.
+- Facts — category-driven facts extracted per FamilyFactRuleSet (e.g. Part Type for fitting categories; ADR-055). NOT part of the content hash.
 - Parameters — all schema-level parameters, sorted by name. Includes SharedParamGuid for shared params and BuiltInParameterId enum name for built-ins (null for user/shared).
-- Types — all family types with their values. Unnamed types skipped.
+- Types — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values. UI never shows the literal — `FamilyTypeSnapshot.ResolveDisplayName(typeName, familyName)` substitutes the family name (catalog tree, properties tabs, batch import tooltip).
 - Geometry — aggregated GeometryMetrics from all GenericForm elements.
 - SharedNestedFamilyNames — names of shared nested families (ADR-034), sorted.
 - FamilyParameterValue.HasValue distinguishes "no value" (alse) from "value is zero" (	rue, ValueNumber=0) — hash treats them differently.
@@ -1825,7 +1937,10 @@ public sealed record SystemParameterValue(
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);
 `
 
 - CategoryName — display name (e.g. "Трубы", "Воздуховоды").
@@ -2005,14 +2120,55 @@ public static class FamilyContentHashFormat
 
 ---
 
-## CatalogHashRecalculationProgress
+## DatabasePendingBreakdown
 
-Прогресс миграции пересчёта хэшей (Issue #126), репортится раз в обработанный файл.
+Разбивка pending-записей актуализации по уровням и открываемости (ADR-054 §3a). `Critical`/`Optional` — processable группы; `NewerOnlyCritical` — группы, требующие Revit новее запущенного (гейтят как processable critical — база read-only до идеальной миграции); `NewerOnlyOptional` — только янтарный индикатор; `NewerOnlyCriticalRequiredRevitVersion` — минимальный Revit для обновления всех newer-only critical групп за один раз.
 
-**Файл:** `Models/FamilyManager/CatalogHashRecalculationProgress.cs`
+**Файл:** `Models/FamilyManager/DatabasePendingBreakdown.cs`
 
 ```csharp
-public sealed record CatalogHashRecalculationProgress(
+public sealed record DatabasePendingBreakdown(
+    int Critical,
+    int Optional,
+    int NewerOnlyCritical,
+    int NewerOnlyOptional,
+    int NewerOnlyCriticalRequiredRevitVersion,
+    int NewerOnlyOptionalRequiredRevitVersion)
+{
+    public static DatabasePendingBreakdown Empty { get; }
+    public int TotalProcessable => Critical + Optional;
+    public int TotalCritical => Critical + NewerOnlyCritical;   // условие гейта
+}
+```
+
+- `NewerOnlyCriticalRequiredRevitVersion` — минимальный Revit для обновления всех newer-only critical групп за раз (тексты баннера/гейта).
+- `NewerOnlyOptionalRequiredRevitVersion` — то же для optional групп (тултип янтарной точки).
+
+---
+
+## NewerOnlyPendingInfo
+
+Newer-Revit-only pending одной задачи актуализации (ADR-054 §3a): число групп, чьи файловые варианты ВСЕ новее запущенного Revit, и минимальный Revit, в котором они все становятся processable за один проход (`MAX` по группам от `MIN(вариант Revit)` — группа открываема, когда запущенный Revit ≥ её самого старого варианта).
+
+**Файл:** `Models/FamilyManager/NewerOnlyPendingInfo.cs`
+
+```csharp
+public sealed record NewerOnlyPendingInfo(int Count, int RequiredRevitVersion)
+{
+    public static NewerOnlyPendingInfo None { get; }
+}
+```
+
+---
+
+## DatabaseMigrationProgress
+
+Item-прогресс одной задачи/движка актуализации (ADR-054) — общая форма для всех задач; единый диалог обновления рисует её напрямую. Репортится раз в обработанный файл.
+
+**Файл:** `Models/FamilyManager/DatabaseMigrationProgress.cs`
+
+```csharp
+public sealed record DatabaseMigrationProgress(
     int Current,
     int Total,
     string CurrentFileName);
@@ -2020,28 +2176,99 @@ public sealed record CatalogHashRecalculationProgress(
 
 ---
 
-## CatalogHashRecalculationResult
+## DatabaseMigrationResult
 
-Результат миграции пересчёта хэшей (Issue #126).
+Нормализованный исход прогона одной миграции БД (ADR-054). Каждая миграция маппит свой внутренний результат в эту форму, чтобы единый диалог показал общую сводку.
 
-**Файл:** `Models/FamilyManager/CatalogHashRecalculationResult.cs`
+**Файл:** `Models/FamilyManager/DatabaseMigrationResult.cs`
 
 ```csharp
-public sealed record CatalogHashRecalculationResult(
+public sealed record DatabaseMigrationResult(
     int UpdatedCount,
-    int SystemRelabeledCount,
     int NewerRevitCount,
     IReadOnlyList<HashRecalculationMissingFile> MissingFiles,
     IReadOnlyList<HashRecalculationFailedFile> FailedFiles,
-    bool WasCancelled);
+    bool WasCancelled)
+{
+    public static DatabaseMigrationResult Cancelled { get; }
+}
 ```
 
-- `UpdatedCount` — версий пересчитано в v2 (все Revit-варианты обработанного label).
-- `SystemRelabeledCount` — system-версии, мигрированные дешёвым UPDATE флага (их v1-хэши уже rename-invariant).
-- `NewerRevitCount` — версии, оставленные pending: все их файловые варианты сохранены в Revit НОВЕЕ запущенного; будут предложены снова при открытии каталога в новом Revit.
-- `MissingFiles` — файлы не найдены; НЕ изменены (пользователь решает: purge или оставить).
-- `FailedFiles` — файлы нечитаемы; помечены `hash_format_version = -1` (никогда не ретраятся).
-- `WasCancelled` — пользователь прервал; закоммиченные пачки сохранены, остаток будет предложен при следующем показе диалога.
+- `UpdatedCount` — успешно обработанные записи.
+- `NewerRevitCount` — записи, оставленные pending: файловые варианты требуют Revit новее запущенного.
+- `MissingFiles` — managed-файлы не найдены на диске.
+- `FailedFiles` — файлы открылись, но извлечение упало.
+- `WasCancelled` — прервано пользователем; закоммиченные пачки сохранены.
+
+---
+
+## ActualizationVariant
+
+Одна Revit-вариация version label каталога (ADR-054, движок актуализации). Контент идентичен между вариантами одного label — движок открывает ОДИН вариант, задачи применяют результат ко ВСЕМ.
+
+**Файл:** `Models/FamilyManager/ActualizationVariant.cs`
+
+```csharp
+public sealed record ActualizationVariant(
+    string VersionId,
+    string FileId,
+    int RevitMajorVersion,
+    string RelativePath,
+    string FileName);
+```
+
+---
+
+## ActualizationGroup
+
+Рабочая единица движка актуализации (ADR-054): группа `(catalog_item, version_label)` со ВСЕМИ её Revit-вариантами. `Key` (`catalogItemId|versionLabel`) — общий с задачами ключ детекции.
+
+**Файл:** `Models/FamilyManager/ActualizationGroup.cs`
+
+```csharp
+public sealed record ActualizationGroup(
+    string CatalogItemId,
+    string ItemName,
+    string VersionLabel,
+    bool IsActiveLabel,
+    IReadOnlyList<ActualizationVariant> Variants)
+{
+    public string Key => CatalogItemId + "|" + VersionLabel;
+}
+```
+
+---
+
+## FamilyActualizationContext
+
+Всё, что нужно задаче актуализации для записи своих артефактов по ОДНОЙ группе (ADR-054): группа, открытый вариант и продукты ЕДИНОЙ сессии открытия (snapshot + per-type геометрия; `Geometry` = `null` при её сбое — задачи делают fallback).
+
+**Файл:** `Models/FamilyManager/FamilyActualizationContext.cs`
+
+```csharp
+public sealed record FamilyActualizationContext(
+    ActualizationGroup Group,
+    ActualizationVariant OpenedVariant,
+    string AbsolutePath,
+    FamilySnapshot Snapshot,
+    IReadOnlyList<FamilyGeometryPerType>? Geometry);
+```
+
+---
+
+## ActualizationFailureKind
+
+Причина, по которой группа не смогла быть извлечена (ADR-054). Задача решает по виду сбоя, как пометить свой критерий (hash пишет терминальные -2/-1; attributes/glb остаются pending и ретраятся).
+
+**Файл:** `Models/FamilyManager/ActualizationFailureKind.cs`
+
+```csharp
+public enum ActualizationFailureKind
+{
+    MissingFile,       // managed-файл не найден на диске
+    ExtractionFailed,  // файл есть, но open/extract упал (повреждён, ошибка Revit)
+}
+```
 
 ---
 
@@ -2087,8 +2314,11 @@ public sealed record HashRecalculationFailedFile(
 public sealed record FamilyMigrationExtractResult(
     bool Success,
     FamilySnapshot? LoadableSnapshot,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    IReadOnlyList<FamilyGeometryPerType>? Geometry = null);
 ```
+
+- `Geometry` (ADR-054) — per-type геометрия из той же open-сессии (catalog backfill); `null`, если геометрия не запрашивалась или упала (caller делает fallback на отдельный проход).
 
 ---
 
@@ -2105,7 +2335,9 @@ public sealed record FamilySnapshot(
     IReadOnlyList<FamilyParameterInfo> Parameters,
     IReadOnlyList<FamilyTypeSnapshot> Types,
     GeometryMetrics Geometry,
-    IReadOnlyList<string> SharedNestedFamilyNames);
+    IReadOnlyList<string> SharedNestedFamilyNames,
+    int? CategoryId = null,
+    IReadOnlyList<FamilyFact>? Facts = null);
 
 public sealed record FamilyParameterInfo(
     string Name,
@@ -2129,16 +2361,20 @@ public sealed record FamilyParameterValue(
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);
 ```
 
 - `FamilyName` — from `FamilyManager` or family document title.
 - `Category` — display name (e.g. "Pipe Fittings"). Changes to it shift the hash.
 - `Parameters` — all schema-level parameters, sorted by name. Includes `SharedParamGuid` for shared params and `BuiltInParameterId` enum name for built-ins (null for user/shared).
-- `Types` — all family types with their values. Unnamed types skipped.
+- `Types` — all family types with their values. The unnamed default type is extracted under the hash-stable synthetic name `<default>` so families without user-created types keep their attribute values. UI never shows the literal — `FamilyTypeSnapshot.ResolveDisplayName(typeName, familyName)` substitutes the family name (catalog tree, properties tabs, batch import tooltip).
 - `Geometry` — aggregated `GeometryMetrics` from all `GenericForm` elements.
 - `SharedNestedFamilyNames` — names of shared nested families (ADR-034), sorted.
 - `FamilyParameterValue.HasValue` distinguishes "no value" (`false`) from "value is zero" (`true`, `ValueNumber=0`) — hash treats them differently.
+- `FamilyParameterValue.ValueDisplay` — human-readable value formatted per the owning document's unit settings with the unit symbol (e.g. "300 мм", "16 бар"); `null` when not applicable. NOT part of the content hash — display metadata only. `SpecTypeId`/`UnitTypeId` carry the Forge TypeId strings (legacy enum names on R19-R20) and are likewise excluded from the hash.
 
 ---
 
@@ -2164,7 +2400,10 @@ public sealed record SystemParameterValue(
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);
 ```
 
 - `CategoryName` — display name (e.g. "Трубы", "Воздуховоды").
@@ -2298,28 +2537,6 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 - Blank values excluded (IsBlankValue(hasValue, text)): HasValue=false, empty string, INVALID (no element), UNSUPPORTED, READERROR. Numeric zero is NOT blank.
 - Auto-generated parameters excluded (IsAutoGeneratedParameter(name)): anything containing IfcGUID or IFC GUID (case-insensitive). Revit regenerates these on every .rvt save — including them would break cross-document stability.
 - 10 unit tests in src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs cover blank-value exclusion, INVALID exclusion, numeric zero significance, IFC GUID exclusion, loadable-family blank values, parameter/type/geometry/SharedNested independence, and cross-source prefix separation.
-
----
-
-## DatabaseMigrationCoordinator
-
-Pure-C# агрегатор всех зарегистрированных `IDatabaseMigration` (паттерн `docs/architecture/database-migrations.md`, Issue #126). Используется `FamilyManagerMainViewModel` для молчаливой проверки pending (badge state) и для запуска миграций командой «Обновить базу данных». Без Revit API — юнит-тестируется с fake-миграциями.
-
-**Файл:** `Services/Implementation/DatabaseMigrationCoordinator.cs`
-
-```csharp
-public sealed class DatabaseMigrationCoordinator
-{
-    public DatabaseMigrationCoordinator(IEnumerable<IDatabaseMigration> migrations);
-    public Task<int> CountTotalPendingAsync(int revitMajorVersion, CancellationToken ct = default);
-    public Task RunPendingAsync(int revitMajorVersion, CancellationToken ct = default);
-}
-```
-
-- Сортировка по `IDatabaseMigration.Order` (ascending) при построении — порядок регистрации в DI не важен.
-- `CountTotalPendingAsync` суммирует pending всех миграций; сломанная миграция даёт вклад 0 + Warn (одна ошибка не прячет остальные).
-- `RunPendingAsync` перед каждым запуском перепроверяет pending (skip при 0), уважает CancellationToken между миграциями; сбой перепроверки одной миграции не прерывает остальные.
-- 8 unit-тестов: `src/SmartCon.Tests/Core/Services/DatabaseMigrationCoordinatorTests.cs`.
 
 ---
 
@@ -2477,3 +2694,84 @@ public sealed record FamilyBatchImportExecutionResult(
     int ErrorCount,
     bool WasStopped);
 ```
+
+---
+
+## FamilyFact / FamilyFactsData (ADR-055)
+
+Один machine-readable «факт» о catalog item, извлечённый из файла при импорте/актуализации по правилам `FamilyFactRuleSet`. Item-level метаданные — в content hash НЕ входят.
+
+**Файл:** `Models/FamilyManager/FamilyFact.cs`
+
+```csharp
+public sealed record FamilyFact(
+    string FactKey,
+    string ValueKey,
+    string ValueDisplay);
+
+public sealed record FamilyFactsData(
+    int? RevitCategoryId,
+    IReadOnlyList<FamilyFact> Facts);
+```
+
+- `FactKey` — стабильный машинный ключ факта (`"part_type"`).
+- `ValueKey` — стабильное машинное значение (ординал enum строкой, напр. `"5"` = Elbow; для будущего расширенного поиска). Пустая строка — sentinel «факт вычислен, но параметр в семействе отсутствует»: детект миграции гаснет, UI скрывает строку.
+- `ValueDisplay` — человекочитаемый fallback на момент извлечения (имя члена enum, напр. `"Elbow"`). UI предпочитает `PartTypeLabelMap` (следует за языком UI), fallback — на это поле.
+- `FamilyFactsData` — read-модель окна свойств: ординал категории (`catalog_items.revit_category_id`; `null` = pre-V22 строка, не актуализирована) + все факты итема.
+
+---
+
+## FamilyFactRule (ADR-055)
+
+Правило «для категории X извлекай built-in параметр P и храни под ключом K» (nested в `FamilyFactRuleSet.cs`).
+
+**Файл:** `Models/FamilyManager/FamilyFactRuleSet.cs`
+
+```csharp
+public sealed record FamilyFactRule(
+    int CategoryId,
+    string FactKey,
+    string LabelKey,
+    int ParameterId);
+```
+
+- `CategoryId`/`ParameterId` — сырые int-ординалы BuiltInCategory/BuiltInParameter, НЕ enum: Core грузится тестами без RevitAPI (I-09, Nice3point runtime-excluded). Ординалы верифицированы по revitapidocs 2025/2026.
+
+---
+
+## FamilyFactRuleSet (ADR-055)
+
+Статический реестр `FamilyFactRule`. Единая точка расширения подсистемы фактов: реестр управляет извлечением (SmartCon.Revit), детектом миграции (`family-facts-v1` генерирует SQL из реестра) и UI (label по `LabelKey`). Новый category-driven атрибут = одна строка в `Rules` — без DDL, новой задачи и правок UI.
+
+**Файл:** `Models/FamilyManager/FamilyFactRuleSet.cs`
+
+```csharp
+public static class FamilyFactRuleSet
+{
+    public const string PartTypeFactKey = "part_type";
+    public const string PartTypeLabelKey = "FM_Fact_PartType";
+    public static IReadOnlyList<FamilyFactRule> Rules { get; }
+    public static IReadOnlyCollection<int> CategoryIdsWithRules { get; }
+    public static IReadOnlyList<FamilyFactRule> GetRulesForCategory(int categoryId);
+    public static FamilyFactRule? FindRule(int categoryId, string factKey);
+}
+```
+
+- Текущий scope: `part_type` для 4 MEP фитинговых категорий (OST_PipeFitting=-2008049, OST_DuctFitting=-2008010, OST_CableTrayFitting=-2008126, OST_ConduitFitting=-2008128; FAMILY_CONTENT_PART_TYPE=-1114206). Арматура (accessories) исключена продуктовым решением.
+
+---
+
+## PartTypeLabelMap (ADR-055)
+
+Локализованные подписи значений Part Type: ординал → RU/EN по текущему языку UI (`LocalizationService.CurrentLanguage`). **RU-строки дословно повторяют официальную русскую локализацию Revit** (help.autodesk.com/cloudhelp/2023/RUS, таблицы GUID-54F9DD0A / GUID-4DA88E95 — «Мультипорт», «Соединение», «Механическое сочленение» и т.д.) — свои переводы не выдумываем. Неизвестные/будущие ординалы → `null` (caller fallback'ит на `FamilyFact.ValueDisplay`). Значения — по enum PartType Revit 2025 API.
+
+**Файл:** `Models/FamilyManager/PartTypeLabelMap.cs`
+
+```csharp
+public static class PartTypeLabelMap
+{
+    public static string? TryGetLabel(string valueKey);
+    public static string? TryGetLabel(int ordinal);
+}
+```
+

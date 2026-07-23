@@ -50,8 +50,27 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     private readonly IFamilyBatchImportExecutor? _executor;
     private readonly string? _categoryId;
     private readonly string? _publishedByUser;
+    /// <summary>
+    /// Dispatcher for marshalling background name-change recomputes back to
+    /// the UI thread (ADR-031/ADR-036). Production passes the shared
+    /// <see cref="IDispatcher"/> from FamilyManagerServices; the default
+    /// inline fallback executes directly (unit tests, where no UI thread
+    /// with a message pump exists).
+    /// </summary>
+    private readonly IDispatcher _dispatcher;
     private bool _disposed;
     private bool _batchApplying;
+
+    private sealed class InlineDispatcher : IDispatcher
+    {
+        public bool CheckAccess() => true;
+        public void Invoke(Action action) => action();
+        public Task InvokeAsync(Action action, CancellationToken ct = default)
+        {
+            action();
+            return Task.CompletedTask;
+        }
+    }
 
     /// <summary>
     /// v2.0.0 hotfix: debouncer for the per-row name change handler. The
@@ -85,7 +104,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         IFamilyImportPrecomputer? importPrecomputer = null,
         IContentHashDedupService? dedupService = null,
         IFamilyBatchImportExecutor? executor = null,
-        string? publishedByUser = null)
+        string? publishedByUser = null,
+        IDispatcher? dispatcher = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
@@ -95,6 +115,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         _executor = executor;
         _categoryId = defaultCategoryId;
         _publishedByUser = publishedByUser;
+        _dispatcher = dispatcher ?? new InlineDispatcher();
         InitializeExecutionState();
 
         foreach (var item in items)
@@ -365,15 +386,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     if (token.IsCancellationRequested) return;
                 }
 
-                var dispatcher = System.Windows.Application.Current?.Dispatcher;
-                if (dispatcher is not null && !dispatcher.CheckAccess())
-                {
-                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName, newAutoProvenance));
-                }
-                else
-                {
-                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName, newAutoProvenance);
-                }
+                _dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel, newIsCrossNameDuplicate, newMatchedItemName, newAutoProvenance));
             }
             catch (OperationCanceledException)
             {

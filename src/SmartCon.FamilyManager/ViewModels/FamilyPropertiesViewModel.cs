@@ -31,6 +31,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IAvatarCropService _avatarCropService;
     private readonly IDatabaseUpdateStateService _updateState;
+    private readonly IFamilyFactRepository _factRepository;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -43,6 +44,12 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [ObservableProperty] private ContentStatus _contentStatus;
     [ObservableProperty] private StatusOption? _selectedStatus;
     [ObservableProperty] private string? _versionLabel;
+    [ObservableProperty] private string? _revitCategory;
+    [ObservableProperty] private ObservableCollection<FamilyFactDisplayRow> _factRows = [];
+    [ObservableProperty] private bool _hasFactRows;
+
+    public string RevitCategoryDisplay =>
+        string.IsNullOrWhiteSpace(RevitCategory) ? "—" : RevitCategory!;
 
     partial void OnVersionLabelChanged(string? value)
     {
@@ -85,6 +92,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     [ObservableProperty] private int _attributesFoundCount;
     [ObservableProperty] private int _attributesMissingCount;
     [ObservableProperty] private bool _hasTypes;
+    [ObservableProperty] private bool _showTypeSelector;
     [ObservableProperty] private bool _isReadOnly;
 
     partial void OnSelectedAttributeGroupChanged(string? value)
@@ -219,6 +227,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         string? versionLabel,
         string? createdAtText,
         string? updatedAtText,
+        string? revitCategory,
         IWritableFamilyCatalogProvider writableProvider,
         IFamilyCatalogProvider catalogProvider,
         ICategoryRepository categoryRepository,
@@ -235,7 +244,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IFamilyGeometryPipeline geometryPipeline,
         IFamilyFileResolver fileResolver,
         IAvatarCropService avatarCropService,
-        IDatabaseUpdateStateService updateState)
+        IDatabaseUpdateStateService updateState,
+        IFamilyFactRepository factRepository)
     {
         SmartConLogger.Info($"FamilyPropertiesViewModel ctor: start for itemId={catalogItemId} name='{name}'");
         _catalogItemId = catalogItemId;
@@ -256,6 +266,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _fileResolver = fileResolver;
         _avatarCropService = avatarCropService;
         _updateState = updateState;
+        _factRepository = factRepository;
 
         Name = name;
         Description = description;
@@ -270,6 +281,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         VersionLabel = versionLabel;
         CreatedAtText = createdAtText;
         UpdatedAtText = updatedAtText;
+        RevitCategory = revitCategory;
 
         _originalName = name;
         _originalDescription = description;
@@ -292,10 +304,52 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
             await LoadAttributesDataAsync(ct);
             await LoadVersionsAsync(ct);
             await LoadAvailableTagsAsync(ct);
+            await LoadFactsAsync(ct);
         }
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Loads the category-driven fact rows of the header (ADR-055): the
+    /// item's Revit category ordinal selects the rules from
+    /// <see cref="FamilyFactRuleSet"/>; each rule with a non-empty stored
+    /// fact becomes one "Label: Value" row. Evaluated-but-absent facts
+    /// (empty <see cref="FamilyFact.ValueKey"/> sentinel) and pre-V22
+    /// items (null category id) hide the block entirely.
+    /// </summary>
+    internal async Task LoadFactsAsync(CancellationToken ct)
+    {
+        try
+        {
+            var data = await _factRepository.GetForItemAsync(_catalogItemId, ct).ConfigureAwait(true);
+
+            FactRows.Clear();
+            if (data.RevitCategoryId is int categoryId)
+            {
+                foreach (var rule in FamilyFactRuleSet.GetRulesForCategory(categoryId))
+                {
+                    var fact = data.Facts.FirstOrDefault(f =>
+                        string.Equals(f.FactKey, rule.FactKey, StringComparison.Ordinal));
+                    if (fact is null || fact.ValueKey.Length == 0)
+                        continue;
+
+                    var label = LanguageManager.GetString(rule.LabelKey) ?? rule.FactKey;
+                    var value = rule.FactKey == FamilyFactRuleSet.PartTypeFactKey
+                        ? PartTypeLabelMap.TryGetLabel(fact.ValueKey) ?? fact.ValueDisplay
+                        : fact.ValueDisplay;
+                    FactRows.Add(new FamilyFactDisplayRow(label, value));
+                }
+            }
+            HasFactRows = FactRows.Count > 0;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"LoadFactsAsync failed: {ex.Message} [Action: закройте и откройте properties снова; факты семейства будут скрыты]");
+            FactRows = [];
+            HasFactRows = false;
         }
     }
 
@@ -375,7 +429,11 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
             var types = await _typeRepository.GetTypesForItemAsync(_catalogItemId, ct);
             AvailableTypes = new ObservableCollection<FamilyTypeSelectorItem>(
-                types.Select(t => new FamilyTypeSelectorItem { TypeId = t.Id, TypeName = t.Name }));
+                types.Select(t => new FamilyTypeSelectorItem
+                {
+                    TypeId = t.Id,
+                    TypeName = FamilyTypeSnapshot.ResolveDisplayName(t.Name, Name)
+                }));
             HasTypes = AvailableTypes.Count > 0;
 
             if (!HasTypes)
@@ -383,6 +441,15 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                 AvailableTypes.Add(new FamilyTypeSelectorItem { TypeId = null, TypeName = Name });
                 HasTypes = true;
             }
+
+            // Show the selector only when there is something meaningful to
+            // choose or to read: 2+ types, OR a single user-created (named)
+            // type. A single '<default>' type or the virtual family-name
+            // entry carries no extra information — hide the selector then,
+            // mirroring the 3D viewer which drops the phantom type.
+            ShowTypeSelector = types.Count > 1
+                || (types.Count == 1
+                    && types[0].Name != Core.Models.FamilyManager.FamilyTypeSnapshot.DefaultTypeName);
 
             var allValues = await _valueRepository.GetValuesForItemAsync(_catalogItemId, run.VersionId, ct);
             _allValues = allValues;

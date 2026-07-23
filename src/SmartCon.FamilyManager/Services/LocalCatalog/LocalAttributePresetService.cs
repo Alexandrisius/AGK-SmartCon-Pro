@@ -21,7 +21,7 @@ internal sealed class LocalAttributePresetService : IAttributePresetService
     private async Task EnsureMigratedAsync(CancellationToken ct)
     {
         var currentPath = _database.GetDatabaseRoot();
-        if (_migratedDbPath == currentPath) return;
+        if (string.Equals(_migratedDbPath, currentPath, StringComparison.OrdinalIgnoreCase)) return;
         await _migrator.MigrateAsync(ct).ConfigureAwait(false);
         _migratedDbPath = currentPath;
     }

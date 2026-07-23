@@ -29,6 +29,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IAvatarCropService _avatarCropService;
     private readonly IDatabaseUpdateStateService _updateState;
+    private readonly ISharedParameterFileParser _sharedParameterFileParser;
+    private readonly IFamilyManagerUserSettingsRepository _userSettingsRepository;
+    private readonly IFamilyFactRepository _factRepository;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -52,7 +55,10 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyGeometryPipeline geometryPipeline,
         IFamilyFileResolver fileResolver,
         IAvatarCropService avatarCropService,
-        IDatabaseUpdateStateService updateState)
+        IDatabaseUpdateStateService updateState,
+        ISharedParameterFileParser sharedParameterFileParser,
+        IFamilyManagerUserSettingsRepository userSettingsRepository,
+        IFamilyFactRepository factRepository)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -76,6 +82,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _fileResolver = fileResolver;
         _avatarCropService = avatarCropService;
         _updateState = updateState;
+        _sharedParameterFileParser = sharedParameterFileParser;
+        _userSettingsRepository = userSettingsRepository;
+        _factRepository = factRepository;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -83,15 +92,16 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? versionLabel,
         string? createdAtText, string? updatedAtText,
+        string? revitCategory = null,
         bool isReadOnly = false)
     {
         return new FamilyPropertiesViewModel(
             catalogItemId, name, description,
             categoryId, categoryPath, tags, contentStatus,
-            versionLabel, createdAtText, updatedAtText,
+            versionLabel, createdAtText, updatedAtText, revitCategory,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
-            _geometryPipeline, _fileResolver, _avatarCropService, _updateState)
+            _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository)
         { IsReadOnly = isReadOnly };
     }
 
@@ -104,7 +114,13 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()
     {
         return new AttributeLibraryViewModel(
-            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository, _metadataMediator);
+            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository, _metadataMediator, this);
+    }
+
+    public SharedParameterPickerViewModel CreateSharedParameterPickerViewModel(IEnumerable<string> existingNames)
+    {
+        return new SharedParameterPickerViewModel(
+            _sharedParameterFileParser, _userSettingsRepository, _dialogService, existingNames);
     }
 
     public CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true)

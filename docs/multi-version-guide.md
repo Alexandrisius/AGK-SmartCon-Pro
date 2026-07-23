@@ -274,3 +274,30 @@ dotnet build src/SmartCon.Updater/SmartCon.Updater.csproj -c Debug -f net8.0 →
 | Вызывать Revit API из WPF-потока | I-01 |
 | Использовать XAML-файлы для локализации | Программное создание ResourceDictionary (net48 mscorlib vs net8 System.Runtime) |
 | Использовать `DynamicResource` в `DataGridColumn.Header` | DataGridColumn не в visual tree, не работает без Application.Current |
+
+---
+
+## Правило 11: API, изменённый внутри диапазона конфигурации — только cached reflection
+
+Одна конфигурация покрывает **несколько** версий Revit (R19 = 2019–2020, R21 = 2021–2023). Если Autodesk **добавил или удалил** API внутри такого диапазона, единого compile-time вызова не существует:
+
+- `#if` не помогает — символ один на всю конфигурацию.
+- Прямой вызов удалённого метода на net48 **отравляет JIT вызывающего метода целиком**: `MissingMethodException` пробрасывается в caller мимо внутренних `try/catch` (тело метода с вызовом никогда не начинает выполняться).
+
+**Решение** (прецедент — `RevitUnitsCompat.GetSpecTypeId`, Issue #153):
+
+```csharp
+private static readonly System.Reflection.MethodInfo? NewApiMethod =
+    typeof(SomeRevitType).GetMethod("NewApi", System.Type.EmptyTypes);
+private static readonly System.Reflection.MethodInfo? OldApiMethod =
+    typeof(SomeRevitType).GetMethod("OldApi", System.Type.EmptyTypes);
+
+// Приоритет — новому API; fallback — старому. Оба резолвятся из metadata
+// без JIT-отравы, т.к. прямых ссылок на отсутствующие методы нет.
+```
+
+**Чеклист перед использованием Revit API в R19/R21:**
+
+1. Проверить по revitapidocs «Since:» и changelog deprecated/removed — живёт ли метод во **всем** диапазоне конфигурации.
+2. Если нет — cached reflection по шаблону выше, поля `static readonly` (резолв один раз).
+3. `MethodInfo.Invoke` оборачивает целевые исключения в `TargetInvocationException` — ловить общий `catch`.

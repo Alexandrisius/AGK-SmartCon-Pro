@@ -13,18 +13,34 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Parameters">All family parameters (schema level),
 /// sorted by name for deterministic output.</param>
 /// <param name="Types">All family types with their parameter values,
-/// sorted by type name. Unnamed types are skipped.</param>
+/// sorted by type name. An unnamed default type is extracted only when
+/// the family has no user-created types — under the hash-stable
+/// synthetic name <see cref="FamilyTypeSnapshot.DefaultTypeName"/>;
+/// otherwise it is skipped as a phantom duplicate of the current
+/// type.</param>
 /// <param name="Geometry">Aggregated geometry metrics from all
 /// <c>GenericForm</c> elements.</param>
 /// <param name="SharedNestedFamilyNames">Names of shared nested
 /// families referenced by this family (ADR-034). Sorted by name.</param>
+/// <param name="CategoryId">The <c>BuiltInCategory</c> ordinal of the
+/// family category (e.g. -2008049 for Pipe Fittings), or <c>null</c> when
+/// the category could not be determined. Optional trailing member (ADR-055)
+/// — pre-facts call sites keep compiling unchanged. NOT part of the
+/// content hash: FamilyContentHasher builds its canonical string from
+/// explicit fields only.</param>
+/// <param name="Facts">Category-driven facts extracted per
+/// <see cref="FamilyFactRuleSet"/> (e.g. Part Type for fitting
+/// categories), or <c>null</c>/empty when the category has no rules.
+/// NOT part of the content hash.</param>
 public sealed record FamilySnapshot(
     string FamilyName,
     string Category,
     IReadOnlyList<FamilyParameterInfo> Parameters,
     IReadOnlyList<FamilyTypeSnapshot> Types,
     GeometryMetrics Geometry,
-    IReadOnlyList<string> SharedNestedFamilyNames);
+    IReadOnlyList<string> SharedNestedFamilyNames,
+    int? CategoryId = null,
+    IReadOnlyList<FamilyFact>? Facts = null);
 
 /// <summary>
 /// Schema-level parameter of a loadable family (from
@@ -74,7 +90,28 @@ public sealed record FamilyParameterInfo(
 public sealed record FamilyTypeSnapshot(
     string Name,
     IReadOnlyList<FamilyParameterValue> Values,
-    string? UniqueId = null);
+    string? UniqueId = null)
+{
+    /// <summary>
+    /// Synthetic hash-stable name for the unnamed default family type.
+    /// Used only when the family has no user-created (named) types at all —
+    /// renaming the file must not shift the content hash, and the type name
+    /// participates in the canonical string (<see cref="FamilyContentHasher"/>).
+    /// UI layers must display the family name instead of this literal.
+    /// </summary>
+    public const string DefaultTypeName = "<default>";
+
+    /// <summary>
+    /// Single display rule for <see cref="DefaultTypeName"/>: the unnamed
+    /// default type is always shown to the user under the family name,
+    /// never as the raw synthetic literal. Every UI surface (catalog tree,
+    /// properties tabs, batch import tooltip) must resolve through this
+    /// method instead of comparing against <see cref="DefaultTypeName"/>
+    /// inline.
+    /// </summary>
+    public static string ResolveDisplayName(string typeName, string familyName) =>
+        typeName == DefaultTypeName ? familyName : typeName;
+}
 
 /// <summary>
 /// One parameter value on one family type. Distinguishes "no value"
@@ -95,10 +132,26 @@ public sealed record FamilyTypeSnapshot(
 /// <param name="ResolvedElementName">For <c>ElementId</c> storage types,
 /// the resolved element name (e.g. material name); <c>null</c> if the
 /// id is invalid or the storage type is not <c>ElementId</c>.</param>
+/// <param name="ValueDisplay">Human-readable value formatted per the
+/// owning document's unit settings with the unit symbol appended
+/// (e.g. "300 мм", "16 бар"); <c>null</c> when formatting is not
+/// applicable (non-measurable specs, non-Double storage types).
+/// NOT part of the content hash — display metadata only.</param>
+/// <param name="SpecTypeId">Forge spec identifier of the parameter
+/// (e.g. <c>autodesk.spec.aec:length-2.0.0</c>), or the legacy
+/// <c>ParameterType</c> enum name on R19-R20; <c>null</c> when unknown.
+/// NOT part of the content hash.</param>
+/// <param name="UnitTypeId">Display unit identifier of the parameter in
+/// the owning document (e.g. <c>autodesk.unit.unit:millimeters-1.0.1</c>),
+/// or the legacy <c>DisplayUnitType</c> enum name on R19-R20;
+/// <c>null</c> when unknown. NOT part of the content hash.</param>
 public sealed record FamilyParameterValue(
     string ParameterName,
     string StorageType,
     bool HasValue,
     string? ValueText,
     double? ValueNumber,
-    string? ResolvedElementName);
+    string? ResolvedElementName,
+    string? ValueDisplay = null,
+    string? SpecTypeId = null,
+    string? UnitTypeId = null);

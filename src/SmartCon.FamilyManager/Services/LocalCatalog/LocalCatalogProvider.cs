@@ -216,7 +216,13 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         var limitOffsetParams = LocalCatalogQueryBuilder.BuildLimitOffsetParameters(query);
 
         var sql = $"""
-            SELECT ci.* FROM catalog_items ci
+            SELECT ci.*,
+                (SELECT MIN(cv.revit_major_version) FROM catalog_versions cv
+                 WHERE cv.catalog_item_id = ci.id
+                   AND cv.version_label = ci.current_version_label) AS active_revit_major_version,
+                (SELECT MIN(cv2.revit_major_version) FROM catalog_versions cv2
+                 WHERE cv2.catalog_item_id = ci.id) AS min_revit_major_version
+            FROM catalog_items ci
             {whereSql}
             {orderBy}
             LIMIT @limit OFFSET @offset
@@ -263,7 +269,11 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
                     old.CreatedAtUtc,
                     old.UpdatedAtUtc,
                     old.FamilySource,
-                    old.RevitCategory);
+                    old.RevitCategory,
+                    old.ContentHash,
+                    old.HashFormatVersion,
+                    old.ActiveRevitMajorVersion,
+                    old.MinRevitMajorVersion);
             }
         }
 
@@ -435,6 +445,7 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         var categoryId = TryGetString(reader, "category_id");
         var familySource = TryGetString(reader, "family_source") ?? "loadable";
         var revitCategory = TryGetString(reader, "revit_category");
+        var revitCategoryId = TryGetInt(reader, "revit_category_id");
         var contentHash = TryGetString(reader, "content_hash");
         int? hashFormatVersion = TryGetInt(reader, "hash_format_version");
 
@@ -465,7 +476,10 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             FamilySource: familySource,
             RevitCategory: revitCategory,
             ContentHash: contentHash,
-            HashFormatVersion: hashFormatVersion);
+            HashFormatVersion: hashFormatVersion,
+            ActiveRevitMajorVersion: TryGetInt(reader, "active_revit_major_version"),
+            MinRevitMajorVersion: TryGetInt(reader, "min_revit_major_version"),
+            RevitCategoryId: revitCategoryId);
     }
 
     private static FamilyCatalogVersion ReadCatalogVersion(SqliteDataReader reader) => new(

@@ -17,7 +17,13 @@ internal static class LocalCatalogQueryBuilder
             foreach (var token in tokens)
             {
                 var paramName = $"@search_{paramIndex++}";
-                conditions.Add($"ci.normalized_name LIKE {paramName}");
+                conditions.Add($"""
+                    (ci.normalized_name LIKE {paramName}
+                     OR EXISTS (
+                         SELECT 1 FROM catalog_tags ct
+                         WHERE ct.catalog_item_id = ci.id AND ct.normalized_tag LIKE {paramName}
+                     ))
+                    """);
                 parameters.Add(new SqliteParameter(paramName, $"%{token}%"));
             }
         }

@@ -401,8 +401,7 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
     /// <summary>
     /// v2.0.0: <see cref="IFamilyImportService.GetNextVersionLabelAsync"/>
     /// must read the last version from the catalog and increment by one.
-    /// Called by the VM in BuildSystemFamilyBatchRowVirtualAsync /
-    /// BuildLoadableFamilyBatchRowVirtualAsync.
+    /// Called by the VM in MapPreparedItemsToBatchItemsAsync.
     /// </summary>
     [Fact]
     public async Task GetNextVersionLabelAsync_ReturnsV1ForNewAndIncrementsForExisting()
@@ -748,5 +747,69 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         var fileAfter = await _fixture.GetProvider().GetFileAsync(versions[0].FileId);
         Assert.NotNull(fileAfter);
         Assert.Equal("Truby.rvt", fileAfter!.FileName);
+    }
+
+    [Fact]
+    public async Task ImportFile_WithCategoryIdAndFacts_WritesThem()
+    {
+        // ADR-055: forward-fill at INSERT — the request carries the
+        // extraction products (category ordinal + facts) and the import
+        // persists them into catalog_items.revit_category_id / family_facts.
+        var path = _fixture.CreateFakeRfaFile("FittingFamily.rfa");
+        var request = new FamilyImportRequest(
+            path, 2025, null, null, null,
+            RevitCategoryId: -2008049,
+            Facts: [new FamilyFact("part_type", "5", "Elbow")]);
+
+        var result = await _importService.ImportFileAsync(request);
+
+        Assert.True(result.Success);
+        var factRepo = new LocalFamilyFactRepository(_fixture.GetDatabase());
+        var data = await factRepo.GetForItemAsync(result.CatalogItemId!);
+        Assert.Equal(-2008049, data.RevitCategoryId);
+        var fact = Assert.Single(data.Facts);
+        Assert.Equal("part_type", fact.FactKey);
+        Assert.Equal("5", fact.ValueKey);
+        Assert.Equal("Elbow", fact.ValueDisplay);
+    }
+
+    [Fact]
+    public async Task ImportFile_WithoutFacts_LeavesNullCategoryIdForActualization()
+    {
+        // Legacy path (no snapshot in the request): the columns stay
+        // empty so the family-facts-v1 task detects the item as pending.
+        var path = _fixture.CreateFakeRfaFile("PlainFamily.rfa");
+        var result = await _importService.ImportFileAsync(
+            new FamilyImportRequest(path, 2025, null, null, null));
+
+        Assert.True(result.Success);
+        var factRepo = new LocalFamilyFactRepository(_fixture.GetDatabase());
+        var data = await factRepo.GetForItemAsync(result.CatalogItemId!);
+        Assert.Null(data.RevitCategoryId);
+        Assert.Empty(data.Facts);
+    }
+
+    [Fact]
+    public async Task ImportFile_ReImportNewVersion_SelfHealsCategoryIdAndReplacesFacts()
+    {
+        // First import without facts (legacy), re-import with them: the
+        // COALESCE self-heal fills revit_category_id and the facts replace.
+        var path = _fixture.CreateFakeRfaFile("HealingFamily.rfa");
+        var first = await _importService.ImportFileAsync(
+            new FamilyImportRequest(path, 2025, null, null, null));
+        Assert.True(first.Success);
+
+        var second = await _importService.ImportFileAsync(new FamilyImportRequest(
+            path, 2025, null, null, null,
+            RevitCategoryId: -2008049,
+            Facts: [new FamilyFact("part_type", "6", "Tee")]));
+
+        Assert.True(second.Success);
+        Assert.Equal(first.CatalogItemId, second.CatalogItemId);
+        var factRepo = new LocalFamilyFactRepository(_fixture.GetDatabase());
+        var data = await factRepo.GetForItemAsync(first.CatalogItemId!);
+        Assert.Equal(-2008049, data.RevitCategoryId);
+        var fact = Assert.Single(data.Facts);
+        Assert.Equal("6", fact.ValueKey);
     }
 }

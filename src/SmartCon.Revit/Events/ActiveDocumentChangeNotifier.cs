@@ -153,7 +153,7 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
             return;
         }
 
-        if (_lastNotifiedPath == doc.PathName)
+        if (string.Equals(_lastNotifiedPath, doc.PathName, StringComparison.OrdinalIgnoreCase))
         {
             SmartConLogger.Debug($"Saved document path '{System.IO.Path.GetFileName(doc.PathName)}' already notified — ignoring duplicate");
             return;

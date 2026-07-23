@@ -23,6 +23,7 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <converters:StaleCountToTooltipConverter x:Key="StaleCountToTooltipConverter"/>
             <converters:StaleReasonToTooltipConverter x:Key="StaleReasonToTooltipConverter"/>
+            <converters:UnavailableReasonToTooltipConverter x:Key="UnavailableReasonToTooltipConverter"/>
             <converters:TotalItemCountToTooltipConverter x:Key="TotalItemCountToTooltipConverter"/>
             <converters:SearchHighlightConverter x:Key="SearchHighlight"/>
 
@@ -512,12 +513,7 @@
                               Margin="0,0,0,0">
                     <ToggleButton.Style>
                         <Style BasedOn="{StaticResource SecondaryToggleButton}" TargetType="ToggleButton">
-                            <Setter Property="ToolTip" Value="{loc:Loc FM_PBase_DatabaseTools}"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsDatabaseUpdateRequired}" Value="True">
-                                    <Setter Property="ToolTip" Value="{loc:Loc FM_PBase_UpdateDatabaseBadgeTooltip}"/>
-                                </DataTrigger>
-                            </Style.Triggers>
+                            <Setter Property="ToolTip" Value="{Binding DatabaseUpdateBadgeTooltip}"/>
                         </Style>
                     </ToggleButton.Style>
                     <Viewbox Width="14" Height="14" Stretch="Uniform">
@@ -541,11 +537,21 @@
                 </ToggleButton>
                 <Border Width="6" Height="6"
                         CornerRadius="3"
-                        Background="{DynamicResource DangerBrush}"
                         HorizontalAlignment="Right" VerticalAlignment="Top"
                         Margin="0,2,2,0"
                         IsHitTestVisible="False"
-                        Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}"/>
+                        Visibility="{Binding HasDatabaseUpdateIndicator, Converter={StaticResource BoolToVis}}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{DynamicResource WarningBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDatabaseUpdateRequired}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
             </Grid>
 
             <Popup x:Name="DbToolsPopup"
@@ -569,7 +575,7 @@
                                 BorderThickness="0"
                                 Cursor="Hand"
                                 ToolTip="{loc:Loc FM_PBase_UpdateDatabaseTooltip}"
-                                Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding HasAnyDatabaseUpdate, Converter={StaticResource BoolToVis}}">
                             <i:Interaction.Triggers>
                                 <i:EventTrigger EventName="Click">
                                     <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
@@ -658,7 +664,7 @@
                                             VerticalAlignment="Center"
                                             Foreground="{DynamicResource WarningBrush}"/>
                 <TextBlock Grid.Column="1"
-                           Text="{loc:Loc FM_DbUpdate_BannerText}"
+                           Text="{Binding DatabaseUpdateBannerText}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center"
                            Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -669,7 +675,8 @@
                         MinWidth="80"
                         Height="24"
                         Padding="10,0"
-                        Margin="10,0,0,0"/>
+                        Margin="10,0,0,0"
+                        Visibility="{Binding HasProcessableCriticalPending, Converter={StaticResource BoolToVis}}"/>
             </Grid>
         </Border>
 
@@ -978,7 +985,7 @@
                 </HierarchicalDataTemplate>
 
                 <HierarchicalDataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}"
-                                             ItemsSource="{Binding Children}">
+                                               ItemsSource="{Binding Children}">
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
                             <StackPanel.ToolTip>
@@ -990,8 +997,32 @@
                                     </ToolTip.ContentTemplate>
                                 </ToolTip>
                             </StackPanel.ToolTip>
-                            <ContentControl VerticalAlignment="Center"
-                                            Foreground="{DynamicResource TextPrimaryBrush}">
+                            <Viewbox Width="12" Height="12" Margin="0,0,4,0"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding IsUnavailable, Converter={StaticResource BoolToVis}}">
+                                <Viewbox.ToolTip>
+                                    <MultiBinding Converter="{StaticResource UnavailableReasonToTooltipConverter}">
+                                        <Binding Path="UnavailableReason"/>
+                                        <Binding Path="RequiredRevitVersion"/>
+                                        <Binding Path="CurrentRevitVersion"/>
+                                        <Binding Path="HasCompatibleVersion"/>
+                                    </MultiBinding>
+                                </Viewbox.ToolTip>
+                                <iconPacks:PackIconMaterial Kind="Lock"
+                                                            Width="24" Height="24"
+                                                            Foreground="{DynamicResource TextMutedBrush}"/>
+                            </Viewbox>
+                            <ContentControl VerticalAlignment="Center">
+                                <ContentControl.Style>
+                                    <Style TargetType="ContentControl">
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsUnavailable}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ContentControl.Style>
                                 <ContentControl.Content>
                                     <MultiBinding Converter="{StaticResource SearchHighlight}">
                                         <Binding Path="DisplayName"/>
@@ -1005,6 +1036,37 @@
                                        FontSize="10"
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
+
+                            <ItemsControl ItemsSource="{Binding MatchedTags}"
+                                          VerticalAlignment="Center"
+                                          Visibility="{Binding HasMatchedTags, Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="8" Height="16"
+                                                VerticalAlignment="Center"
+                                                Background="{DynamicResource HoverAltSurfaceBrush}"
+                                                BorderBrush="{DynamicResource BorderAltBrush}"
+                                                BorderThickness="1"
+                                                Margin="4,0,0,0" Padding="6,0">
+                                            <ContentControl VerticalAlignment="Center"
+                                                            FontSize="10"
+                                                            Foreground="{DynamicResource TextSecondaryBrush}">
+                                                <ContentControl.Content>
+                                                    <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                                        <Binding Path=""/>
+                                                        <Binding Path="DataContext.SearchText" RelativeSource="{RelativeSource AncestorType=TreeView}"/>
+                                                    </MultiBinding>
+                                                </ContentControl.Content>
+                                            </ContentControl>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
 
                             <TextBlock Text="{loc:Loc FM_Stale}"
                                        Foreground="{DynamicResource WarningBrush}"
@@ -1020,6 +1082,15 @@
                 <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
                     <Grid HorizontalAlignment="Stretch">
                         <ContentControl VerticalAlignment="Center">
+                            <ContentControl.Style>
+                                <Style TargetType="ContentControl">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsUnavailable}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ContentControl.Style>
                             <ContentControl.Content>
                                 <MultiBinding Converter="{StaticResource SearchHighlight}">
                                     <Binding Path="DisplayName"/>

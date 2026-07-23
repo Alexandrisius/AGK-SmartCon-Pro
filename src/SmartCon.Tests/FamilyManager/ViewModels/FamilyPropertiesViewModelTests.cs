@@ -12,15 +12,21 @@ namespace SmartCon.Tests.FamilyManager.ViewModels;
 
 public sealed class FamilyPropertiesViewModelTests
 {
-    private static (FamilyPropertiesViewModel vm, Mock<IFamilyAssetService> assetService, Mock<IFamilyGeometryPipeline> geometryPipeline) MakeVm()
+    private static (FamilyPropertiesViewModel vm, Mock<IFamilyAssetService> assetService, Mock<IFamilyGeometryPipeline> geometryPipeline) MakeVm(
+        FamilyFactsData? factsData = null)
     {
         var assetService = new Mock<IFamilyAssetService>();
         var geometryPipeline = new Mock<IFamilyGeometryPipeline>();
         var fileResolver = new Mock<IFamilyFileResolver>();
+        var factRepository = new Mock<IFamilyFactRepository>();
 
         assetService
             .Setup(x => x.GetAssetsAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FamilyAsset>());
+
+        factRepository
+            .Setup(x => x.GetForItemAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(factsData ?? new FamilyFactsData(null, []));
 
         var vm = new FamilyPropertiesViewModel(
             catalogItemId: "catalog-1",
@@ -33,6 +39,7 @@ public sealed class FamilyPropertiesViewModelTests
             versionLabel: "v1",
             createdAtText: null,
             updatedAtText: null,
+            revitCategory: null,
             writableProvider: new Mock<IWritableFamilyCatalogProvider>().Object,
             catalogProvider: new Mock<IFamilyCatalogProvider>().Object,
             categoryRepository: new Mock<ICategoryRepository>().Object,
@@ -49,7 +56,8 @@ public sealed class FamilyPropertiesViewModelTests
             geometryPipeline: geometryPipeline.Object,
             fileResolver: fileResolver.Object,
             avatarCropService: new Mock<IAvatarCropService>().Object,
-            updateState: new TestDoubles.FakeDatabaseUpdateStateService());
+            updateState: new TestDoubles.FakeDatabaseUpdateStateService(),
+            factRepository: factRepository.Object);
 
         return (vm, assetService, geometryPipeline);
     }
@@ -249,5 +257,69 @@ public sealed class FamilyPropertiesViewModelTests
         assetService.Verify(
             x => x.ResolveAssetPathAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task LoadFactsAsync_RuleCategoryWithFact_AddsLocalizedRow()
+    {
+        var (vm, _, _) = MakeVm(new FamilyFactsData(
+            -2008049, // OST_PipeFitting
+            [new FamilyFact("part_type", "5", "Elbow")]));
+
+        await vm.LoadFactsAsync(CancellationToken.None);
+
+        var row = Assert.Single(vm.FactRows);
+        Assert.Equal("Тип детали", row.Label);
+        Assert.Equal("Отвод", row.Value);
+        Assert.True(vm.HasFactRows);
+    }
+
+    [Fact]
+    public async Task LoadFactsAsync_UndefinedPartType_ShowsUndefinedLabel()
+    {
+        var (vm, _, _) = MakeVm(new FamilyFactsData(
+            -2008049,
+            [new FamilyFact("part_type", "-1", "Undefined")]));
+
+        await vm.LoadFactsAsync(CancellationToken.None);
+
+        var row = Assert.Single(vm.FactRows);
+        Assert.Equal("Не определён", row.Value);
+        Assert.True(vm.HasFactRows);
+    }
+
+    [Fact]
+    public async Task LoadFactsAsync_SentinelFact_HidesBlock()
+    {
+        var (vm, _, _) = MakeVm(new FamilyFactsData(
+            -2008049,
+            [new FamilyFact("part_type", "", "")]));
+
+        await vm.LoadFactsAsync(CancellationToken.None);
+
+        Assert.Empty(vm.FactRows);
+        Assert.False(vm.HasFactRows);
+    }
+
+    [Fact]
+    public async Task LoadFactsAsync_NullCategoryId_HidesBlock()
+    {
+        var (vm, _, _) = MakeVm(new FamilyFactsData(null, []));
+
+        await vm.LoadFactsAsync(CancellationToken.None);
+
+        Assert.Empty(vm.FactRows);
+        Assert.False(vm.HasFactRows);
+    }
+
+    [Fact]
+    public async Task LoadFactsAsync_CategoryWithoutRules_HidesBlock()
+    {
+        var (vm, _, _) = MakeVm(new FamilyFactsData(-2008044, [])); // OST_PipeCurves
+
+        await vm.LoadFactsAsync(CancellationToken.None);
+
+        Assert.Empty(vm.FactRows);
+        Assert.False(vm.HasFactRows);
     }
 }

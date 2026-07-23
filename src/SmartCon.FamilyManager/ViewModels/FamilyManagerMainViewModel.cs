@@ -127,6 +127,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
     [NotifyCanExecuteChangedFor(nameof(DropFamilyCommand))]
+    [NotifyPropertyChangedFor(nameof(HasAnyDatabaseUpdate))]
+    [NotifyPropertyChangedFor(nameof(HasProcessableCriticalPending))]
+    [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
     private bool _canEdit;
 
     [ObservableProperty]
@@ -369,7 +372,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     {
         var currentPath = _cachedProjectPath;
         if (_loadedFamilyNamesCache is not null &&
-            _loadedFamilyNamesCacheProjectPath == currentPath)
+            string.Equals(_loadedFamilyNamesCacheProjectPath, currentPath, StringComparison.OrdinalIgnoreCase))
         {
             return _loadedFamilyNamesCache;
         }
@@ -465,6 +468,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 UpdatedAtUtc = leaf.UpdatedAtUtc,
                 Tags = leaf.Tags,
                 Description = leaf.Description,
+                RevitCategory = leaf.RevitCategory,
+                ActiveRevitMajorVersion = leaf.ActiveRevitMajorVersion,
+                MinRevitMajorVersion = leaf.MinRevitMajorVersion,
             };
         }
         else if (value is FamilyTypeNodeViewModel typeNode)
@@ -484,6 +490,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     UpdatedAtUtc = parentLeaf.UpdatedAtUtc,
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
+                    RevitCategory = parentLeaf.RevitCategory,
+                    ActiveRevitMajorVersion = parentLeaf.ActiveRevitMajorVersion,
+                    MinRevitMajorVersion = parentLeaf.MinRevitMajorVersion,
                 };
             }
             else
@@ -501,10 +510,17 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         ImportFileToCategoryCommand.NotifyCanExecuteChanged();
     }
 
+    private bool IsSelectedItemRevitIncompatible()
+        => SelectedItem is not null
+            && SelectedItem.ActiveRevitMajorVersion.HasValue
+            && CurrentRevitVersion > 0
+            && SelectedItem.ActiveRevitMajorVersion.Value > CurrentRevitVersion;
+
     private void RefreshCanLoadToProject()
     {
         CanLoadToProject = SelectedItem is not null
             && SelectedItem.ContentStatus == ContentStatus.Active
+            && !IsSelectedItemRevitIncompatible()
             && _accessControl.CanLoadToProject
             && _activeBaseCompatibleWithCurrentDoc;
         LoadToProjectCommand.NotifyCanExecuteChanged();
@@ -519,6 +535,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             if (parent is FamilyLeafNodeViewModel parentLeaf)
             {
                 CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active
+                    && !parentLeaf.IsRevitIncompatible
                     && _accessControl.CanLoadToProject
                     && _activeBaseCompatibleWithCurrentDoc;
             }
@@ -601,7 +618,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     {
                         leaf.Children.Add(new FamilyTypeNodeViewModel(
                             t.CatalogItemId, t.Name, isVirtual: false,
-                            familySource: leaf.FamilySource, uniqueId: t.UniqueId));
+                            familySource: leaf.FamilySource, uniqueId: t.UniqueId,
+                            displayName: FamilyTypeSnapshot.ResolveDisplayName(t.Name, leaf.DisplayName),
+                            isUnavailable: leaf.IsUnavailable));
                     }
                 }
 
@@ -609,7 +628,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 {
                     leaf.Children.Add(new FamilyTypeNodeViewModel(
                         leaf.CatalogItemId, leaf.DisplayName, isVirtual: true,
-                        familySource: leaf.FamilySource));
+                        familySource: leaf.FamilySource, isUnavailable: leaf.IsUnavailable));
                 }
 
                 if (expandedFamilyIds.Contains(leaf.CatalogItemId))
@@ -666,7 +685,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 {
                     GetLoadedFamilyNamesCached();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug($"GetLoadedFamilyNamesCached failed during refresh (ignored, cache stays stale): {ex.Message}");
+                }
             });
 
             IsLoading = true;

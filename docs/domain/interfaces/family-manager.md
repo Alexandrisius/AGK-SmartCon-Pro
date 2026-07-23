@@ -245,8 +245,26 @@ public interface IFamilyLoadService
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
         IReadOnlyList<string>? nestedSharedNames = null,
         CancellationToken ct = default);
+
+    Task<FamilyLoadResult> ReloadFamilyPreservingLoadedTypesAsync(
+        FamilyResolvedFile file, bool overwriteParameterValues,
+        Action<string>? onStatusMessage = null,
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        IReadOnlyList<string>? nestedSharedNames = null,
+        CancellationToken ct = default);
 }
 ```
+
+`ReloadFamilyPreservingLoadedTypesAsync` (Issue #101): перезагружает семейство,
+сохраняя набор уже загруженных в проект типов (per-type `LoadFamilySymbol` внутри
+одной `TransactionGroup`-сессии через `ITransactionService.BeginGroupSession` — I-03).
+Параметр `nestedSharedNames` (добавлен вместе с аудит-харденингом): вызывающие,
+которые блокируют метод синхронно внутри ExternalEvent-callback
+(`StaleFamilyUpdater`, `.GetAwaiter().GetResult()`), **обязаны** предварительно
+резолвить и передать список — это убирает единственный асинхронный (SQLite) await
+из метода и гарантирует синхронное завершение на Revit main thread
+(латентный deadlock: async-методы Microsoft.Data.Sqlite завершаются синхронно,
+но контракт на это не полагается).
 
 `onSharedDecision` вызывается один раз для каждого конфликтующего shared nested
 (когда Revit сообщает `OnSharedFamilyFound`). Должен блокировать вызывающий поток
@@ -698,6 +716,22 @@ public interface IFamilyTypeRepository
 
 ---
 
+## IFamilyFactRepository (ADR-055)
+
+Чтение подсистемы family facts для окна свойств: ординал Revit-категории итема (`catalog_items.revit_category_id`) + извлечённые факты (`family_facts`, schema V22) одним вызовом. Запись идёт через import-пути (`LocalFamilyImportService`) и задачу `family-facts-v1` — репозиторий читает.
+
+**Файл:** `IFamilyFactRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyFactRepository.cs`
+
+```csharp
+public interface IFamilyFactRepository
+{
+    Task<FamilyFactsData> GetForItemAsync(string catalogItemId, CancellationToken ct = default);
+}
+```
+
+---
+
 ## ICategoryRepository
 
 CRUD для дерева категорий каталога семейств.
@@ -748,6 +782,43 @@ public interface ICategoryAttributeBindingService
     Task<IReadOnlyList<CategoryAttributeBinding>> GetBindingsForAttributeAsync(string attributeId, CancellationToken ct = default);
     Task DeleteBindingsForAttributeAsync(string attributeId, CancellationToken ct = default);
     Task<IReadOnlyDictionary<string, int>> GetBindingCountsAsync(IEnumerable<string> attributeIds, CancellationToken ct = default);
+}
+```
+
+---
+
+## ISharedParameterFileParser
+
+Парсер файла общих параметров Revit (ФОП, .txt) без Revit API. Tab-delimited формат,
+секции `*META` / `*GROUP` / `*PARAM`; порядок колонок берётся из заголовков секций
+с фиксированным fallback. Кодировка определяется по BOM (UTF-8/UTF-16) с fallback UTF-8.
+
+**Файл:** `ISharedParameterFileParser.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/SharedParameterFileParser.cs`
+
+```csharp
+public interface ISharedParameterFileParser
+{
+    IReadOnlyList<SharedParameterEntry> ParseFile(string filePath);
+    IReadOnlyList<SharedParameterEntry> ParseContent(string content);
+}
+```
+
+---
+
+## IFamilyManagerUserSettingsRepository
+
+Хранение пользовательских настроек FamilyManager уровня машины (JSON-файл).
+Используется для кэширования пути к файлу общих параметров (ФОП).
+
+**Файл:** `IFamilyManagerUserSettingsRepository.cs`
+**Реализация:** `SmartCon.Core/Services/Implementation/JsonFamilyManagerUserSettingsRepository.cs`
+
+```csharp
+public interface IFamilyManagerUserSettingsRepository
+{
+    FamilyManagerUserSettings Load();
+    void Save(FamilyManagerUserSettings settings);
 }
 ```
 
@@ -1083,40 +1154,71 @@ public interface IContentHashDedupService
 
 ---
 
-## ICatalogHashRecalculationService
+## ICatalogActualizationService
 
-Одноразовая, инициируемая пользователем data-repair операция: пересчёт всех устаревших (v1/NULL) content-хэшей каталога в rename-invariant формат v2 (Issue #126). Намеренно НЕ часть `LocalCatalogMigrator` — пересчёт требует открытия каждого managed-файла в Revit (долго, нужен Revit main thread, cancellable, с прогрессом); мигратор схемы остаётся чистым DDL.
+**Единый** сервис актуализации БД (ADR-054): движок, который union'ит детекты всех зарегистрированных `IDatabaseActualizationTask`, открывает каждую pending-семью ровно один раз (snapshot + геометрия в одной сессии через `IFamilyMigrationExtractor.ExtractLoadableWithGeometryAsync`; staged system `.rvt` — category-only через `ExtractSystemCategoryAsync`, диспатч по расширению managed-файла) и применяет только pending-задачи. Группы грузятся для `family_source IN ('loadable','system')` — system-группы инертны для задач с loadable-scope детектом. Новые extraction-time фичи = новый класс-задача — движок, диалог, гейт, resume и purge бесплатны.
 
-**Файл:** `Services/Interfaces/ICatalogHashRecalculationService.cs`
-**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/CatalogHashRecalculationService.cs`
+**Файл:** `Services/Interfaces/ICatalogActualizationService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Actualization/CatalogActualizationService.cs`
 
 ```csharp
-public interface ICatalogHashRecalculationService
+public interface ICatalogActualizationService
 {
-    Task<int> CountPendingAsync(int currentRevitMajorVersion, CancellationToken ct = default);
-    Task<CatalogHashRecalculationResult> RecalculateAsync(
-        int currentRevitMajorVersion,
-        IProgress<CatalogHashRecalculationProgress>? progress,
+    Task<DatabasePendingBreakdown> CountPendingBreakdownAsync(
+        int revitMajorVersion, CancellationToken ct = default);
+    Task<DatabaseMigrationResult> RunAllPendingAsync(
+        int revitMajorVersion,
+        IProgress<DatabaseMigrationProgress>? progress,
         CancellationToken ct = default);
-    Task<(int DeletedItems, int DeletedVersions)> PurgeMissingAsync(
+    Task<(int DeletedItems, int DeletedVersions, int FailedDirectories)> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
         CancellationToken ct = default);
 }
 ```
 
-Семантика `hash_format_version`: `NULL/1` — pending; `2` — текущий формат; `-1` (`RecalculationSkipped`) — безвозвратно пропущено (нечитаемый файл), исключено из pending навсегда.
+Алгоритм `RunAllPendingAsync`:
+1. File-free passes задач (работа без файлов, напр. system re-flag хэша).
+2. Детекты задач → union ключей `catalogItemId|versionLabel`; группы загружаются одним запросом, openable-вариант — наивысший `revit_major_version` ≤ запущенного Revit; newer-only группы — счётчик в сводке.
+3. По группе: файл не найден → missing + `HandleGroupFailureAsync(MissingFile)` задач; не прочитался → failed + `HandleGroupFailureAsync(ExtractionFailed)`; иначе один open → `ApplyAsync` pending-задач по `Order` (сбой одной задачи не мешает остальным — её артефакт остаётся pending).
+4. `PurgeMissingAsync` — по подтверждению пользователя удаляет записи о недоступных файлах: versions (FK CASCADE чистит types/attributes/nested), file records, items без версий; если удалённая версия была активной — active переключается на новейшую оставшуюся с ресинком хэша и имени.
 
-Алгоритм:
-1. System-строки мигрируются мгновенным UPDATE флага — их v1 canonical string никогда не содержал имени, хэши уже rename-invariant; пересчёт из isolated .rvt рисковал бы рассинхроном с project-extracted хэшами.
-2. Loadable-версии группируются по `(catalog_item_id, version_label)`; открывается ОДИН файл на группу (наивысший `revit_major_version` ≤ запущенного Revit) — контент идентичен между Revit-вариантами, хэш применяется ко ВСЕМ вариантам группы (включая варианты новее запущенного Revit).
-3. Файлы открываются по одному (open → extract → close); документы НЕ держатся открытыми (нет фазы SaveAs, в отличие от batch import). Коммиты SQLite пачками по 10 файлов в одной транзакции (I-14: DELETE journal + busy_timeout, без WAL — БД может лежать на SMB).
-4. `PurgeMissingAsync` — по явному подтверждению пользователя удаляет записи о недоступных файлах: versions (FK CASCADE чистит types/attributes/nested), file records, items без версий; если удалённая версия была активной — active переключается на новейшую оставшуюся с ресинком хэша и имени.
+---
+
+## IDatabaseActualizationTask
+
+Контракт одного «запроса на обновление» (задачи) движка актуализации (ADR-054, `docs/architecture/database-migrations.md`). Задачи обнаруживаются через DI (`IEnumerable<IDatabaseActualizationTask>`). CRITICAL задачи с pending > 0 поднимают баннер + красный badge и гейтят все write-операции; OPTIONAL — влияют только на видимость команды «Обновить базу» (Owner/BimMaster).
+
+**Файл:** `Services/Interfaces/IDatabaseActualizationTask.cs`
+**Реализации:** `HashFormatActualizationTask` (`hash-v2`, Order=10, critical), `AttributesActualizationTask` (`attributes-v1`, Order=20, optional), `GlbPreviewActualizationTask` (`glb-v1`, Order=30, optional) — `SmartCon.FamilyManager/Services/Actualization/`.
+
+```csharp
+public interface IDatabaseActualizationTask
+{
+    string Id { get; }
+    int Order { get; }
+    bool IsCritical { get; }
+    Task<int> CountPendingAsync(int revitMajorVersion, CancellationToken ct = default);
+    Task<NewerOnlyPendingInfo> GetNewerOnlyPendingAsync(int revitMajorVersion, CancellationToken ct = default);
+    Task<IReadOnlyCollection<string>> LoadPendingGroupKeysAsync(int revitMajorVersion, CancellationToken ct = default);
+    Task<int> RunFileFreePassAsync(int revitMajorVersion, CancellationToken ct = default);
+    Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default);
+    Task HandleGroupFailureAsync(ActualizationGroup group, ActualizationFailureKind kind, CancellationToken ct = default);
+}
+```
+
+- `CountPendingAsync` — дешёвый SQL COUNT processable групп (фильтр Revit) для badge/меню; без побочных эффектов.
+- `GetNewerOnlyPendingAsync` (ADR-054 §3a) — pending-группы БЕЗ единого openable-варианта + минимальный Revit, в котором они все обновятся за раз (`RequiredRevitVersion` = MAX over groups of MIN(variant revit)); openability считается по ВСЕМ вариантам группы (apply идёт на все). CRITICAL newer-only гейтит (база read-only до идеальной миграции), OPTIONAL — только янтарный индикатор.
+- `LoadPendingGroupKeysAsync` — ключи `itemId|versionLabel` ВСЕХ pending-групп (любой Revit — движок классифицирует openability).
+- `RunFileFreePassAsync` — мгновенная работа без файлов (0 для большинства; у hash — system re-flag).
+- `ApplyAsync` — записывает своё из готового `FamilyActualizationContext` (snapshot+geometry из одного open'а); идемпотентен; короткие транзакции (I-14); записанный артефакт обязан погасить свой детект (возобновляемость).
+- `HandleGroupFailureAsync` — задача сама решает семантику терминальных маркеров (hash: -2 missing / -1 unreadable; attributes/glb: no-op → ретрай при следующем запуске).
+- Scope (active-only vs все версии, system vs loadable) — собственность детекта задачи.
 
 ---
 
 ## IFamilyMigrationExtractor
 
-Revit-bound граница миграции пересчёта (Issue #126): открывает ОДИН managed family-файл на Revit main thread, извлекает snapshot, закрывает документ. Реализация в SmartCon.Revit маршалит через `IFamilyManagerAwaitableEvent`; вызывающий `ICatalogHashRecalculationService` остаётся pure C# и юнит-тестируемым с fake-экстрактором.
+Revit-bound граница движка актуализации (ADR-054): открывает ОДИН managed family-файл на Revit main thread, извлекает snapshot (+ per-type геометрию), закрывает документ. Реализация в SmartCon.Revit маршалит через `IFamilyManagerAwaitableEvent`; вызывающий `ICatalogActualizationService` остаётся pure C# и юнит-тестируемым с fake-экстрактором.
 
 **Файл:** `Services/Interfaces/IFamilyMigrationExtractor.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyMigrationExtractor.cs`
@@ -1127,34 +1229,19 @@ public interface IFamilyMigrationExtractor
     Task<FamilyMigrationExtractResult> ExtractLoadableAsync(
         string absolutePath,
         CancellationToken ct = default);
+    Task<FamilyMigrationExtractResult> ExtractLoadableWithGeometryAsync(
+        string absolutePath,
+        CancellationToken ct = default);
+    Task<FamilyMigrationExtractResult> ExtractSystemCategoryAsync(
+        string absolutePath,
+        CancellationToken ct = default);
 }
 ```
 
 - Открывает `.rfa` через `OpenDocumentFile`, извлекает `FamilySnapshot`, закрывает без сохранения. Не бросает через границу — ошибки в результате.
+- `ExtractLoadableWithGeometryAsync` (ADR-054) — та же open→extract→close сессия плюс per-type геометрия (`FamilyMigrationExtractResult.Geometry`): файл открывается ровно один раз. Ошибка геометрии НЕ роняет результат — snapshot остаётся валидным, `Geometry` = `null` (caller делает fallback на отдельный проход геометрии).
+- `ExtractSystemCategoryAsync` — для staged system `.rvt` (проектный документ): извлекает ТОЛЬКО display name Revit-категории. Детект идёт через `SystemCategoryRegistry` — канонический whitelist системных категорий продукта (тот же, что у `AnalyzeActiveProject`): сначала по размещённым инстансам (доменная истина мини-проекта — типоразмерами в БД становится только выставленное на виде), fallback — по скопированным типам для Phase-2 категорий, которые копируются без размещения (`placed=0`: перекрытия/крыши/лестницы/...). Дефолтный контент чистого проекта (уровни, виды, материалы, импосты) исключён конструктивно — его нет в реестре. Ничего не найдено → Ok с пустой категорией (задача пишет терминальный `''` маркер, без вечного retry). Возвращает минимальный `FamilySnapshot` — единая форма контекста движка. Движок диспатчит по расширению managed-файла (`.rvt` → system, `.rfa` → loadable).
 - После каждого Close — `IUiFreezeRecoveryService.Nudge(" ")` (workaround #96: DockablePane freeze после циклов OpenDocumentFile+Close, REVIT-236376/237190).
-
----
-
-## IDatabaseMigration
-
-Контракт одной миграции базы каталога — переиспользуемый паттерн «обновления базы» (`docs/architecture/database-migrations.md`, введён в Issue #126). Реализации обнаруживаются через DI (`IEnumerable<IDatabaseMigration>`), агрегируются `DatabaseMigrationCoordinator`; VM выставляет badge + команду «Обновить базу данных» и блокирует загрузку в проект, пока хотя бы одна миграция имеет pending > 0.
-
-**Файл:** `Services/Interfaces/IDatabaseMigration.cs`
-**Реализации:** `SmartCon.FamilyManager/Services/Migrations/HashRecalculationMigration.cs` (Id=`hash-v2`, Order=10) — регистрируются в `ServiceRegistrar` (секция «Database migrations»).
-
-```csharp
-public interface IDatabaseMigration
-{
-    string Id { get; }
-    int Order { get; }
-    Task<int> CountPendingAsync(int revitMajorVersion, CancellationToken ct = default);
-    Task RunAsync(int revitMajorVersion, CancellationToken ct = default);
-}
-```
-
-- `CountPendingAsync` — дешёвый SQL COUNT по маркерной колонке, без побочных эффектов: вызывается на каждом переключении базы.
-- `RunAsync` — обязан быть возобновляемым: прерывание/крах → следующий запуск продолжает с места остановки (маркер на запись + chunked commits; I-14: DELETE journal, без WAL).
-- `Order` — порядок выполнения при нескольких pending (ascending; schema-critical раньше data repair).
 
 ---
 
@@ -1170,6 +1257,10 @@ public interface IDatabaseUpdateStateService
 {
     bool IsUpdateRequired { get; }
     int PendingCount { get; }
+    int OptionalPendingCount { get; }
+    int NewerOnlyCriticalCount { get; }
+    int NewerOnlyRequiredRevitVersion { get; }
+    int NewerOnlyPendingCount { get; }
     bool IsRunning { get; }
     event EventHandler? StateChanged;
     Task RefreshAsync(int revitMajorVersion, CancellationToken ct = default);
@@ -1179,9 +1270,12 @@ public interface IDatabaseUpdateStateService
 }
 ```
 
-- `RefreshAsync` — пересчёт через `DatabaseMigrationCoordinator` (SQL COUNT); `Reset` — при отсутствии активной БД.
-- `EnsureUpToDateAsync` — gate: true сразу при чистой базе; иначе диалог с объяснением → «Да» запускает миграции, «Нет» — операция отменена.
-- `UpdateAsync` — безусловный запуск (команда «Обновить базу данных»); ошибки логируются, закоммиченные пачки сохраняются.
+- `RefreshAsync` — пересчёт через движок `ICatalogActualizationService` (`DatabasePendingBreakdown`); `Reset` — при отсутствии активной БД.
+- `IsUpdateRequired` (ADR-054 §3a) — ЛЮБОЙ critical pending: processable (`PendingCount`) ИЛИ newer-only (`NewerOnlyCriticalCount`) — база read-only до идеальной миграции.
+- `EnsureUpToDateAsync` — gate: read-only роль (Engineer) → styled info «обновление выполнит Owner/BIM-мастер» (без оффера — запись бы упала); processable critical → диалог «Обновить сейчас?»; только newer-critical → предупреждение с `NewerOnlyRequiredRevitVersion` (оффера нет — здесь не починить).
+- `UpdateAsync` — ЕДИНЫЙ прогон движка через единый диалог (команда «Обновить базу», ADR-054); ошибки логируются, закоммиченные записи сохраняются.
+- `OptionalPendingCount` (ADR-054) — processable pending OPTIONAL задач; влияет только на видимость команды «Обновить базу», никогда не гейтит write-операции.
+- `NewerOnlyPendingCount` (ADR-054 §3a) — OPTIONAL newer-only записи; только янтарный индикатор, база остаётся рабочей.
 
 ---
 

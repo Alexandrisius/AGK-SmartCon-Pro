@@ -23,6 +23,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private readonly IStaleDetector _staleDetector;
     private readonly IClock _clock;
     private readonly IWindowFocusService? _windowFocusService;
+    private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
 
     public event Action? PlacementCompleted;
     public event Action<string>? PlacementFailed;
@@ -40,7 +41,8 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         IFamilyVersionStore versionStore,
         IStaleDetector staleDetector,
         IClock clock,
-        IWindowFocusService? windowFocusService = null)
+        IWindowFocusService? windowFocusService = null,
+        ISharedNestedFamilyRepository? nestedSharedRepository = null)
     {
         _revitUIContext = revitUIContext;
         _searchService = searchService;
@@ -52,6 +54,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         _staleDetector = staleDetector;
         _clock = clock;
         _windowFocusService = windowFocusService;
+        _nestedSharedRepository = nestedSharedRepository;
     }
 
     public void StartPlacementDrag(FamilyPlacementDragData data)
@@ -73,7 +76,8 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
                 OnPlacementFailed,
                 OnPlacementSucceeded,
                 OnPlacementStatusMessage,
-                OnSharedFamilyDecisionRequested);
+                OnSharedFamilyDecisionRequested,
+                _nestedSharedRepository);
 
             UIApplication.DoDragDrop(data, handler);
         }

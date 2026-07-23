@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Forms;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.Services;
 
@@ -110,6 +111,20 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
         return view.ShowDialog() == true;
     }
 
+    /// <inheritdoc/>
+    public void ShowInfo(string title, string message)
+    {
+        var vm = new ViewModels.ConfirmationDialogViewModel
+        {
+            Title = title,
+            Message = message,
+            IsOkOnly = true,
+            YesText = LanguageManager.GetString(StringLocalization.Keys.Btn_OK) ?? "OK",
+        };
+        var view = new Views.ConfirmationDialogView(vm);
+        view.ShowDialog();
+    }
+
     public global::SmartCon.Core.Services.Interfaces.DialogResult ShowYesNoCancel(string title, string message)
     {
         var result = System.Windows.MessageBox.Show(message, title, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
@@ -153,6 +168,20 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
+    public string? ShowOpenTextFileDialog(string title, string? initialDirectory = null)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog();
+        dialog.Title = title;
+        dialog.Filter = "Shared parameters (*.txt)|*.txt|All files (*.*)|*.*";
+        dialog.CheckFileExists = true;
+        dialog.CheckPathExists = true;
+        if (!string.IsNullOrWhiteSpace(initialDirectory))
+            dialog.InitialDirectory = initialDirectory;
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    public bool? ShowSharedParameterPicker(object viewModel) => _presenter.ShowDialog(viewModel);
+
     public string? ShowSaveJsonDialog(string title, string? defaultFileName = null)
     {
         var dialog = new Microsoft.Win32.SaveFileDialog();
@@ -190,7 +219,7 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public void ShowModelessBatchImportDialog(object viewModel) => _presenter.ShowModeless(viewModel);
 
     /// <inheritdoc/>
-    public void ShowHashRecalculationProgressDialog(object viewModel) => _presenter.ShowModeless(viewModel);
+    public void ShowDatabaseUpdateProgressDialog(object viewModel) => _presenter.ShowModeless(viewModel);
 
     /// <inheritdoc/>
     public bool? ShowAvatarCropper(object viewModel) => _presenter.ShowDialog(viewModel);

@@ -132,7 +132,7 @@ public sealed partial class FamilyManagerMainViewModel
                     FamilySource: p.FamilySource,
                     TypeCount: SnapshotExtractionMapper.ResolveTypeCount(
                         p.LoadableSnapshot, p.SystemSnapshot, p.SourceTypes),
-                    RevitCategory: null,
+                    RevitCategory: p.LoadableSnapshot?.Category,
                     OriginalSourcePath: null,
                     SourceTypes: p.SourceTypes,
                     Source: p.Source,
@@ -175,7 +175,8 @@ public sealed partial class FamilyManagerMainViewModel
                 importPrecomputer: _importPrecomputer,
                 dedupService: _dedupService,
                 executor: executor,
-                publishedByUser: _revitContext.GetUsername());
+                publishedByUser: _revitContext.GetUsername(),
+                dispatcher: _dispatcher);
 
             _dialogService.ShowModelessBatchImportDialog(vm);
             await vm.DialogCompletion;
@@ -210,6 +211,9 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error(
+                $"ImportFilesAsync failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace} " +
+                "[Action: check smartcon.log for the failing family; prepared documents will be closed]");
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
             StatusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}",
@@ -287,6 +291,8 @@ public sealed partial class FamilyManagerMainViewModel
             }
             catch (Exception ex)
             {
+                SmartConLogger.Error(
+                    $"ImportSelectedElementsAsync (pick elements) failed: {ex.GetType().Name}: {ex.Message}");
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Ошибка импорта: {0}",
                     ex.Message);
@@ -466,7 +472,7 @@ public sealed partial class FamilyManagerMainViewModel
                 FamilySource: p.FamilySource,
                 TypeCount: SnapshotExtractionMapper.ResolveTypeCount(
                     p.LoadableSnapshot, p.SystemSnapshot, p.SourceTypes),
-                RevitCategory: null,
+                RevitCategory: p.SystemSnapshot?.CategoryName ?? p.LoadableSnapshot?.Category,
                 OriginalSourcePath: null,
                 SourceTypes: p.SourceTypes,
                 Source: p.Source,
@@ -490,165 +496,5 @@ public sealed partial class FamilyManagerMainViewModel
         }
 
         return result;
-    }
-
-    private async Task<FamilyBatchImportItem?> BuildSystemFamilyBatchRowVirtualAsync(
-        string displayName,
-        IReadOnlyList<FamilySourceTypeInfo> coreTypes,
-        FamilyImportSource source,
-        string placeholderPath,
-        CancellationToken ct,
-        IReadOnlyDictionary<string, CategoryNode>? categoriesById = null)
-    {
-        // v2.0.0: virtual batch row. No managed file is on disk yet, so
-        // we cannot read its Revit version — the orchestrator writes the
-        // .rvt AFTER the dialog confirms, then determines the version.
-        // We use CurrentRevitVersion as a reasonable default for the
-        // preview column (the user sees the version of Revit they're
-        // running, which matches the version of the .rvt we will write).
-        var revitVersion = CurrentRevitVersion;
-
-        var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(displayName);
-        var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, ct).ConfigureAwait(false);
-
-        FamilyBatchImportStatus status;
-        string? existingId = null;
-        string? existingVersionLabel = null;
-        string? targetCategoryId = null;
-        string? targetCategoryName = null;
-
-        if (existingByName is not null)
-        {
-            status = FamilyBatchImportStatus.Existing;
-            existingId = existingByName.Id;
-            existingVersionLabel = existingByName.CurrentVersionLabel;
-            targetCategoryId = existingByName.CategoryId;
-            targetCategoryName = existingByName.CategoryPath;
-        }
-        else
-        {
-            status = FamilyBatchImportStatus.New;
-        }
-
-        if (targetCategoryId is not null && categoriesById is not null
-            && categoriesById.TryGetValue(targetCategoryId, out var cat) && cat is not null)
-        {
-            targetCategoryName = cat.FullPath ?? cat.Name;
-        }
-
-        // v2.0.0: precompute the canonical (catalogItemId, versionLabel,
-        // managedRfaPath) triple through the precomputer — the SAME
-        // service the dialog rename handler uses, so the initial build
-        // and the post-rename re-derivation agree on every value (id +
-        // version + path all move together, never piecemeal). The
-        // precomputer itself re-runs FindByNormalizedNameAsync, so we
-        // pay one extra read here; the trade-off is worth it for the
-        // invariant guarantee.
-        var precomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(displayName, ".rvt", null, ct)
-            .ConfigureAwait(false);
-
-        SmartConLogger.Info(
-            $"[FMImport.BuildSystem] displayName='{displayName}', " +
-            $"existingByName={(existingByName?.Id ?? "<null>")}, " +
-            $"precomputedCatalogItemId='{precomputed?.CatalogItemId ?? "<null>"}', " +
-            $"precomputedVersionLabel='{precomputed?.VersionLabel ?? "<null>"}', " +
-            $"precomputedManagedPath='{precomputed?.ManagedPath ?? "<null>"}'");
-
-        return new FamilyBatchImportItem(
-            FilePath: placeholderPath,
-            FileName: displayName,
-            RevitMajorVersion: revitVersion,
-            Status: status,
-            ExistingCatalogItemId: existingId,
-            ExistingVersionLabel: existingVersionLabel,
-            TargetCategoryId: targetCategoryId,
-            TargetCategoryName: targetCategoryName,
-            FamilySource: "system",
-            TypeCount: coreTypes.Count,
-            RevitCategory: displayName,
-            SourceTypes: coreTypes,
-            Source: source,
-            PrecomputedCatalogItemId: precomputed?.CatalogItemId,
-            PrecomputedVersionLabel: precomputed?.VersionLabel,
-            PrecomputedManagedPath: precomputed?.ManagedPath,
-            ExistingCategoryId: targetCategoryId,
-            ExistingCategoryPath: targetCategoryName);
-    }
-
-    private async Task<FamilyBatchImportItem?> BuildLoadableFamilyBatchRowVirtualAsync(
-        LoadableFamilyInfo loadable,
-        FamilyImportSource source,
-        string placeholderPath,
-        CancellationToken ct,
-        IReadOnlyDictionary<string, CategoryNode>? categoriesById = null)
-    {
-        // v2.0.0: virtual batch row. No managed .rfa is on disk yet, so
-        // the orchestrator's post-dialog flow will allocate the path,
-        // call EditFamily + SaveAs into managed storage, and determine
-        // the actual Revit version from the resulting file. For the
-        // preview column we use the running Revit's version, which
-        // matches the version of the .rfa we will produce.
-        var revitVersion = CurrentRevitVersion;
-
-        var normalizedName = Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(loadable.FamilyName);
-        var existingByName = await _catalogProvider.FindByNormalizedNameAsync(normalizedName, ct).ConfigureAwait(false);
-
-        SmartConLogger.Debug(
-            $"file='{loadable.FamilyName}' normalized='{normalizedName}' " +
-            $"byName={(existingByName is null ? "null" : $"Id={existingByName.Id} CatId={existingByName.CategoryId ?? "<null>"} CatPath={existingByName.CategoryPath ?? "<null>"}")}");
-
-        FamilyBatchImportStatus status;
-        string? existingId = null;
-        string? existingVersionLabel = null;
-        string? targetCategoryId = null;
-        string? targetCategoryName = null;
-
-        if (existingByName is not null)
-        {
-            status = FamilyBatchImportStatus.Existing;
-            existingId = existingByName.Id;
-            existingVersionLabel = existingByName.CurrentVersionLabel;
-            targetCategoryId = existingByName.CategoryId;
-            targetCategoryName = existingByName.CategoryPath;
-        }
-        else
-        {
-            status = FamilyBatchImportStatus.New;
-        }
-
-        if (targetCategoryId is not null && categoriesById is not null
-            && categoriesById.TryGetValue(targetCategoryId, out var cat) && cat is not null)
-        {
-            targetCategoryName = cat.FullPath ?? cat.Name;
-        }
-
-        // v2.0.0: same rationale as BuildSystemFamilyBatchRowVirtualAsync
-        // — go through the precomputer so the initial build and the
-        // post-rename re-derivation cannot drift apart.
-        var precomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(loadable.FamilyName, ".rfa", null, ct)
-            .ConfigureAwait(false);
-
-        return new FamilyBatchImportItem(
-            FilePath: placeholderPath,
-            FileName: loadable.FamilyName,
-            RevitMajorVersion: revitVersion,
-            Status: status,
-            ExistingCatalogItemId: existingId,
-            ExistingVersionLabel: existingVersionLabel,
-            TargetCategoryId: targetCategoryId,
-            TargetCategoryName: targetCategoryName,
-            FamilySource: "loadable",
-            TypeCount: loadable.TypeCount,
-            RevitCategory: loadable.CategoryName,
-            OriginalSourcePath: null,
-            SourceTypes: null,
-            Source: source,
-            PrecomputedCatalogItemId: precomputed?.CatalogItemId,
-            PrecomputedVersionLabel: precomputed?.VersionLabel,
-            PrecomputedManagedPath: precomputed?.ManagedPath,
-            ExistingCategoryId: targetCategoryId,
-            ExistingCategoryPath: targetCategoryName);
     }
 }

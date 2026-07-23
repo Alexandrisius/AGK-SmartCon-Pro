@@ -43,7 +43,7 @@ public sealed partial class PipeConnectEditorViewModel
                 doc, primary.FamilyName, primary.SymbolName, alignTarget.Origin);
             if (insertedId is null)
             {
-                SmartConLogger.Warn("InsertFitting returned null");
+                SmartConLogger.Warn("InsertFitting returned null [Action: проверьте, что семейство фитинга загружено в проект и mapping указывает на существующий тип]");
                 return;
             }
 
@@ -360,7 +360,8 @@ public sealed partial class PipeConnectEditorViewModel
                 else
                 {
                     SmartConLogger.Warn("Reducer needed but no reducer families found in mapping " +
-                        $"for pair fitConn2_CTC={fitConn2ForCheck.ConnectionTypeCode.Value} ↔ dyn_CTC={_activeDynamic.ConnectionTypeCode.Value}");
+                        $"for pair fitConn2_CTC={fitConn2ForCheck.ConnectionTypeCode.Value} ↔ dyn_CTC={_activeDynamic.ConnectionTypeCode.Value} " +
+                        "[Action: добавьте семейство редуктора в mapping (Настройки → Правила)]");
                     _needsPrimaryReducer = true;
                     IsReducerVisible = true;
                 }

@@ -344,6 +344,7 @@ workaround'ов с указанием Issue, файла, платформы и �
 | `revit-api-best-practice` | Работа с Revit API, ExternalEvent, Threading, MVVM+Revit |
 | `revit-wpf-compat` | WPF-диалоги, Dispatcher, `Application.Current`, net48/net8 совместимость |
 | `smartcon-logging` | **ВСЕГДА** при работе с логами (чтение, добавление вызовов, миграция prefix→scope, аудит `smartcon.log`) |
+| `smartcon-db-actualization` | **ВСЕГДА** при добавлении миграции/актуализации старых `catalog.db` (critical/optional задача, `IDatabaseActualizationTask`, команда «Обновить базу», баннер/гейт/точка) |
 
 ## Частые ловушки (gotchas)
 

@@ -1,6 +1,6 @@
 ---
 name: revit-wpf-compat
-description: "Net48/net8 WPF compatibility rules for Revit plugins. Use when writing WPF code, creating dialogs, showing windows, using Dispatcher, accessing Application.Current, debugging net48-only crashes in Revit add-ins, when the WPF DockablePane freezes after a FireAndForget import (LMB dead, RMB unfreezes), OR when a ContextMenu MenuItem is greyed out in net48 but works in net8 — see §'dotnet/wpf#4078 — MenuItem CommandParameter ignored in net48' for the documented bug and the MenuItemCommandParameterRequery workaround."
+description: "Net48/net8 WPF compatibility rules for Revit plugins. Use when writing WPF code, creating dialogs, showing windows, using Dispatcher, accessing Application.Current, debugging net48-only crashes in Revit add-ins, when the WPF DockablePane freezes after a FireAndForget import (LMB dead, RMB unfreezes), when a ContextMenu MenuItem is greyed out in net48 but works in net8 — see §'dotnet/wpf#4078 — MenuItem CommandParameter ignored in net48', OR when a dialog silently never opens in net8 / crashes Revit in net48 with XamlParseException 'Resources already set' — see §'SingletonResources in Window.Resources (BUG-010)' for the mandatory MergedDictionaries pattern."
 ---
 
 # Revit WPF net48/net8 Compatibility
@@ -61,6 +61,38 @@ _progressView.Dispatcher.Invoke(...)
 ## Resource loading: SingletonResources works, but test both targets
 
 `SingletonResources` loads Generic.xaml via embedded resource — does NOT depend on `Application.Current`. WPF styles with `DynamicResource` resolve from window-level resources. Always test on both net48 and net8.
+
+## SingletonResources in Window.Resources (BUG-010)
+
+When a dialog needs `SingletonResources` **plus** any other resource (converters etc.), the implicit `<Window.Resources>` form crashes at runtime:
+
+```xml
+<!-- BROKEN — XamlDuplicateMemberException "Resources already set" at LoadBaml.
+     net8: dialog silently never opens; net48: Revit crashes. Compiles fine. -->
+<Window.Resources>
+    <ui:SingletonResources/>
+    <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+</Window.Resources>
+```
+
+`SingletonResources` is itself a `ResourceDictionary` — as a sibling of other resources in the implicit form, the compiler emits BAML that assigns `Resources` twice.
+
+**Mandatory pattern** (canonical in this repo: `DatabaseUpdateProgressView`, `ProfileView`, `FamilyBatchImportView`):
+
+```xml
+<controls:DialogWindowBase.Resources>
+    <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <ui:SingletonResources/>
+        </ResourceDictionary.MergedDictionaries>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </ResourceDictionary>
+</controls:DialogWindowBase.Resources>
+```
+
+Allowed: `SingletonResources` as the ONLY child of `<Window.Resources>`, or nesting the extra resources INSIDE `<ui:SingletonResources>…</ui:SingletonResources>`.
+
+Details + PowerShell audit recipe: [`references/known-bugs.md`](references/known-bugs.md) BUG-010. Real case: Issue #154 (delete-family dialog, 2026-07-22).
 
 ## Build: always build both targets
 
@@ -148,6 +180,6 @@ When WPF creates a `MenuItem` inside a freshly-shown `ContextMenu`, it sets the 
 
 ## References
 
-- `references/known-bugs.md` — detailed bug patterns with symptoms, root cause, and fixes (now includes BUG-009 for this issue)
+- `references/known-bugs.md` — detailed bug patterns with symptoms, root cause, and fixes (BUG-001..BUG-010, incl. MenuItem #4078 and SingletonResources/BUG-010)
 - `references/fireandforget-freeze-net48.md` — **`Application.Current?.Dispatcher` is also null in net48**; capture dispatcher in VM ctor; the freeze-after-import symptoms (LMB dead, RMB unfreezes, types don't appear). Decision in [`docs/adr/031-fireandforget-ui-marshalling.md`](../../docs/adr/031-fireandforget-ui-marshalling.md).
 - `smartcon-logging` skill, §"Debug.* configurations are NOT Debug" — the diagnostic `[DBG]` lines in this recipe only appear if the deployed DLL was actually built with the `DEBUG` symbol. In custom `Debug.Rxx` configurations that requires the `Directory.Build.props` block documented in that skill.

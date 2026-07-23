@@ -8,9 +8,14 @@ namespace SmartCon.Core.Services.Implementation;
 /// <summary>
 /// Default <see cref="IProjectBaseActivator"/>. Picks the most specific
 /// database for the currently active Revit document according to decision A2
-/// of #119: first project-scoped base whose binding matches becomes active,
-/// otherwise the first general base. If neither kind has any candidate, the
-/// active database is left untouched (the UI will then show a "project
+/// of #119: first project-scoped base whose binding matches becomes active.
+/// If no project base matches, the fallback to the first general base is
+/// applied ONLY when there is no active base or the active base is a
+/// project-scoped one that no longer matches (failed validation). When the
+/// user is already working on a general base, that manual selection is
+/// preserved — with several general bases the first one must NOT steal
+/// activation on every document switch. If neither kind has any candidate,
+/// the active database is left untouched (the UI will then show a "project
 /// mismatch" lock on the current project base).
 /// </summary>
 public sealed class ProjectBaseActivator : IProjectBaseActivator
@@ -61,6 +66,20 @@ public sealed class ProjectBaseActivator : IProjectBaseActivator
                 return conn.Id;
             }
             SmartConLogger.Debug($"Project base '{conn.Name}' did not match: {match.Reason ?? "no reason"}");
+        }
+
+        // No project base matched. Keep the user's manual selection when it
+        // is a general base: with multiple general bases, auto-switching to
+        // the FIRST general on every document activation destroys the user's
+        // choice (Issue: "каждый раз когда переключаюсь на любой проект
+        // выбирается первая общая база"). The fallback to the first general
+        // applies only when nothing is active or the active base is a
+        // project-scoped one whose binding failed validation for this file.
+        if (active is not null && active.Kind == BaseType.General)
+        {
+            SmartConLogger.Info(
+                $"No project base matched — keeping current general base '{active.Name}' (manual selection preserved)");
+            return active.Id;
         }
 
         var general = connections.FirstOrDefault(c => c.Kind == BaseType.General);

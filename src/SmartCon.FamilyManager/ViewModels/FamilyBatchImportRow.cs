@@ -31,8 +31,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     /// <summary>
     /// v2.0.0: precomputed canonical managed path the VM allocated up
-    /// front in <c>BuildSystemFamilyBatchRowVirtualAsync</c> /
-    /// <c>BuildLoadableFamilyBatchRowVirtualAsync</c>. The staging
+    /// front in <c>MapPreparedItemsToBatchItemsAsync</c>. The staging
     /// helper writes the staged file at this exact path (so the
     /// managed-path invariant
     /// <c>family_files.relative_path = "{dbRoot}/files/&lt;catalogItemId&gt;/&lt;versionLabel&gt;/&lt;name&gt;"</c>
@@ -162,6 +161,23 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     /// staged .rvt. <c>null</c> for loadable families.
     /// </summary>
     public SystemFamilySnapshot? SystemSnapshot { get; }
+
+    /// <summary>
+    /// Display-ready type names for the Types-column tooltip, resolved from
+    /// the same Prepare payloads that feed <see cref="TypeCount"/>
+    /// (<see cref="Services.SnapshotExtractionMapper.ResolveTypeNames"/>), so
+    /// the tooltip always matches the number in the column. The synthetic
+    /// "&lt;default&gt;" marker is shown under the current <see cref="FileName"/>
+    /// — renaming the row re-resolves the substitution.
+    /// Empty when Prepare failed or produced no snapshot.
+    /// </summary>
+    public IReadOnlyList<string> TypeNames =>
+        Services.SnapshotExtractionMapper.ResolveTypeNames(
+            LoadableSnapshot, SystemSnapshot, SourceTypes, FileName) ?? [];
+
+    /// <summary><c>true</c> when <see cref="TypeNames"/> is non-empty —
+    /// drives <c>ToolTipService.IsEnabled</c> on the Types cell.</summary>
+    public bool HasTypeNames => TypeNames.Count > 0;
 
     /// <summary>
     /// VM-owned selection state. Bound to <c>DataGridRow.IsSelected</c> in
@@ -294,6 +310,8 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AvailableActions))]
+    [NotifyPropertyChangedFor(nameof(TypeNames))]
+    [NotifyPropertyChangedFor(nameof(HasTypeNames))]
     private string _fileName = string.Empty;
 
     [ObservableProperty]

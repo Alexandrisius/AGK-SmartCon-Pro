@@ -137,4 +137,47 @@ public sealed class ProjectBaseActivatorTests
         Assert.Null(result);
         dbMock.Verify(m => m.SwitchDatabaseAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task ActivateForDocumentAsync_NoMatch_ActiveGeneral_KeepsManualSelection()
+    {
+        var binding = MakeBinding();
+        var projectConn = MakeConnection("project-1", BaseType.Project, binding);
+        var generalFirst = MakeConnection("general-1", BaseType.General);
+        var generalCurrent = MakeConnection("general-2", BaseType.General);
+        var dbMock = new Mock<IDatabaseManager>();
+        dbMock.Setup(m => m.ListConnections()).Returns(new List<DatabaseConnection> { projectConn, generalFirst, generalCurrent });
+        dbMock.Setup(m => m.GetActiveConnection()).Returns(generalCurrent);
+
+        var evalMock = new Mock<IProjectBaseBindingEvaluator>();
+        evalMock.Setup(e => e.Evaluate(binding, "OTHER-S1.rvt")).Returns(new ProjectBaseMatch(ProjectBaseMatchKind.Mismatch));
+
+        var activator = new ProjectBaseActivator(dbMock.Object, evalMock.Object);
+        var result = await activator.ActivateForDocumentAsync("OTHER-S1.rvt");
+
+        Assert.Equal(generalCurrent.Id, result);
+        dbMock.Verify(m => m.SwitchDatabaseAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ActivateForDocumentAsync_NoMatch_ActiveProjectMismatch_FallsBackToFirstGeneral()
+    {
+        var binding = MakeBinding();
+        var projectConn = MakeConnection("project-1", BaseType.Project, binding);
+        var generalFirst = MakeConnection("general-1", BaseType.General);
+        var generalSecond = MakeConnection("general-2", BaseType.General);
+        var dbMock = new Mock<IDatabaseManager>();
+        dbMock.Setup(m => m.ListConnections()).Returns(new List<DatabaseConnection> { projectConn, generalFirst, generalSecond });
+        dbMock.Setup(m => m.GetActiveConnection()).Returns(projectConn);
+        dbMock.Setup(m => m.SwitchDatabaseAsync(generalFirst.Id, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        var evalMock = new Mock<IProjectBaseBindingEvaluator>();
+        evalMock.Setup(e => e.Evaluate(binding, "OTHER-S1.rvt")).Returns(new ProjectBaseMatch(ProjectBaseMatchKind.Mismatch));
+
+        var activator = new ProjectBaseActivator(dbMock.Object, evalMock.Object);
+        var result = await activator.ActivateForDocumentAsync("OTHER-S1.rvt");
+
+        Assert.Equal(generalFirst.Id, result);
+        dbMock.Verify(m => m.SwitchDatabaseAsync(generalFirst.Id, It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

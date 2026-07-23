@@ -22,6 +22,15 @@ public sealed partial class FamilyPropertiesViewModel
     private string? _versionsStatusMessage;
 
     /// <summary>
+    /// Set when <see cref="MakeActiveAsync"/> committed a new active version to
+    /// the DB. The main panel watches this after the dialog closes (even on
+    /// Cancel) to rebuild the tree — the leaf's availability badge (lock icon)
+    /// depends on the active version's Revit major version, which may have
+    /// just changed.
+    /// </summary>
+    public bool ActiveVersionChanged { get; private set; }
+
+    /// <summary>
     /// Load all versions of the catalog item for display in the Versions tab.
     /// The active version (matching <c>catalog_items.current_version_label</c>)
     /// is marked with <see cref="FamilyVersionRow.IsActive"/> = true.
@@ -73,7 +82,9 @@ public sealed partial class FamilyPropertiesViewModel
                 {
                     var types = await _typeRepository.GetTypesForItemVersionAsync(
                         _catalogItemId, row.VersionId, ct).ConfigureAwait(true);
-                    row.SetTypeNames(types.Select(t => t.Name).ToList());
+                    row.SetTypeNames(types
+                        .Select(t => Core.Models.FamilyManager.FamilyTypeSnapshot.ResolveDisplayName(t.Name, Name))
+                        .ToList());
                 }
                 catch (Exception typeEx)
                 {
@@ -145,6 +156,7 @@ public sealed partial class FamilyPropertiesViewModel
 
             if (result.Success)
             {
+                ActiveVersionChanged = true;
                 // Refresh internal state: flip IsActive flags.
                 foreach (var row in Versions)
                 {

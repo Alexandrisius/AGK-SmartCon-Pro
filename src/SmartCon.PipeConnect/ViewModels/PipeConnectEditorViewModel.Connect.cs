@@ -111,7 +111,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             _groupSession?.RollBack();
         }
-        catch (Exception ex) { SmartConLogger.Warn($"RollBack error (ignored): {ex.Message}"); }
+        catch (Exception ex) { SmartConLogger.Warn($"RollBack error (ignored): {ex.Message} [Action: откат группы транзакций не удался — проверьте Undo-стек Revit вручную]"); }
         finally
         {
             _groupSession = null;

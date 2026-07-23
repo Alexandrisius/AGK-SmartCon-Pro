@@ -147,15 +147,12 @@ public static class FamilySizeFormatter
         if (duplicateBaseNames.Count == 0)
             return sorted;
 
-        var result = new List<FamilySizeOption>(sorted.Count);
-        for (int i = 0; i < sorted.Count; i++)
-        {
-            var opt = sorted[i];
-            if (!string.IsNullOrEmpty(opt.SymbolName) && duplicateBaseNames.Contains(opt.DisplayName))
-                result.Add(opt with { DisplayName = $"{opt.DisplayName} ({opt.SymbolName})" });
-            else
-                result.Add(opt);
-        }
-        return result;
+        // LINQ Select instead of a for loop with `with` — record `with`
+        // inside a loop body can freeze the STA thread (record-with-freeze.md).
+        return sorted
+            .Select(opt => !string.IsNullOrEmpty(opt.SymbolName) && duplicateBaseNames.Contains(opt.DisplayName)
+                ? opt with { DisplayName = $"{opt.DisplayName} ({opt.SymbolName})" }
+                : opt)
+            .ToList();
     }
 }

@@ -141,16 +141,20 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
     }
 
     /// <summary>
-    /// PreviewKeyDown for the tag input TextBox. Suppresses the comma key and
-    /// immediately commits the current text as a tag chip (Gmail/GitHub-style).
-    /// PreviewKeyDown is used (not KeyDown) because it fires BEFORE the character
-    /// is inserted into the text — e.Handled=true prevents the comma from appearing.
-    /// This is UI input plumbing (not business logic) — the actual tag validation
-    /// and collection update live in FamilyPropertiesViewModel.AddTagCommand.
+    /// PreviewTextInput for the tag input TextBox. Suppresses the comma character
+    /// and immediately commits the current text as a tag chip (Gmail/GitHub-style).
+    /// PreviewTextInput (not PreviewKeyDown) is used because Key.OemComma is a
+    /// physical key, not a character: on the Russian layout the same key produces
+    /// the letter 'б', so key-based detection swallowed 'б' and created a chip.
+    /// TextCompositionEventArgs.Text carries the layout-translated character, so
+    /// only a real ',' commits the tag. e.Handled=true prevents the comma from
+    /// appearing. Pasted commas never raise TextInput — they are split inside
+    /// FamilyPropertiesViewModel.AddTagCommand. This is UI input plumbing (not
+    /// business logic) — validation and collection update live in the ViewModel.
     /// </summary>
-    private void TagInputBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private void TagInputBox_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
     {
-        if (e.Key != System.Windows.Input.Key.OemComma) return;
+        if (e.Text != ",") return;
         if (DataContext is not FamilyPropertiesViewModel vm) return;
         e.Handled = true;
         if (!string.IsNullOrWhiteSpace(TagInputBox.Text))

@@ -18,6 +18,9 @@
                 <Setter Property="HorizontalAlignment" Value="Center"/>
                 <Setter Property="VerticalAlignment" Value="Center"/>
             </Style>
+            <Style x:Key="SingleClickEditCell" TargetType="DataGridCell" BasedOn="{StaticResource CompactDataGridCell}">
+                <Setter Property="behaviors:DataGridBehaviors.SingleClickEdit" Value="True"/>
+            </Style>
         </ui:SingletonResources>
     </Window.Resources>
 
@@ -45,9 +48,23 @@
                 <DataGridTextColumn x:Name="ColName"
                                     Binding="{Binding Name, UpdateSourceTrigger=LostFocus}" Width="*"
                                     ElementStyle="{StaticResource CenterCell}"/>
-                <DataGridTextColumn x:Name="ColGroup"
-                                    Binding="{Binding Group, UpdateSourceTrigger=LostFocus}" Width="120"
-                                    ElementStyle="{StaticResource CenterCell}"/>
+                <DataGridTemplateColumn x:Name="ColGroup" Width="140"
+                                        CellStyle="{StaticResource SingleClickEditCell}">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Group}" Style="{StaticResource CenterCell}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                    <DataGridTemplateColumn.CellEditingTemplate>
+                        <DataTemplate>
+                            <ComboBox ItemsSource="{Binding DataContext.AvailableGroups, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                      Text="{Binding Group, UpdateSourceTrigger=LostFocus}"
+                                      IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                                      behaviors:ComboBoxFilterBehavior.IsEnabled="True"
+                                      behaviors:ComboBoxFilterBehavior.FocusOnLoaded="True"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellEditingTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTemplateColumn x:Name="ColActive" Width="60">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -64,9 +81,11 @@
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0">
             <Button Content="{loc:Loc FM_AL_Add}" Command="{Binding AddAttributeCommand}"
-                    Style="{DynamicResource SecondaryButton}" Margin="0,0,4,0"/>
+                    Style="{DynamicResource SecondaryButton}" MinWidth="90" Margin="0,0,4,0"/>
             <Button Content="{loc:Loc FM_AL_Delete}" Command="{Binding DeleteCommand}"
-                    Style="{DynamicResource SecondaryButton}"/>
+                    Style="{DynamicResource SecondaryButton}" MinWidth="90"/>
+            <Button Content="{loc:Loc FM_AL_FromSharedParams}" Command="{Binding ImportFromSharedParametersCommand}"
+                    Style="{DynamicResource SecondaryButton}" MinWidth="90" Margin="4,0,0,0"/>
         </StackPanel>
 
         <TextBlock Grid.Row="2" Text="{Binding StatusMessage}"

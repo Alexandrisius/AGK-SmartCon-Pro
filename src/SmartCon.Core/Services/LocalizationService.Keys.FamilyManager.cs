@@ -4,7 +4,7 @@ public static partial class LocalizationService
 {
     private static void AddFamilyManagerKeys(Dictionary<string, string> ru, Dictionary<string, string> en)
     {
-        ru["FM_SearchPlaceholder"] = "Поиск семейств..."; en["FM_SearchPlaceholder"] = "Search families...";
+        ru["FM_SearchPlaceholder"] = "Поиск по имени или тегу..."; en["FM_SearchPlaceholder"] = "Search by name or tag...";
         ru["FM_Import"] = "Импорт"; en["FM_Import"] = "Import";
         ru["FM_ImportFile"] = "Импорт файла"; en["FM_ImportFile"] = "Import File";
         ru["FM_ImportFolder"] = "Импорт папки"; en["FM_ImportFolder"] = "Import Folder";
@@ -108,6 +108,10 @@ public static partial class LocalizationService
         ru["FM_StaleUpdateInProgress"] = "Обновление…"; en["FM_StaleUpdateInProgress"] = "Updating…";
         ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
         ru["FM_StaleCategoryTooltipMany"] = "{0} устаревших семейств"; en["FM_StaleCategoryTooltipMany"] = "{0} stale families";
+        ru["FM_UnavailableTooltipDeprecated"] = "Неактуальное семейство — загрузка в проект запрещена. Вернуть в работу: Свойства → Статус «Актуальное»."; en["FM_UnavailableTooltipDeprecated"] = "Family is deprecated — loading into the project is not allowed. To restore: Properties → Status 'Current'.";
+        ru["FM_UnavailableTooltipDeprecatedShort"] = "Неактуальное семейство — загрузка в проект запрещена."; en["FM_UnavailableTooltipDeprecatedShort"] = "Family is deprecated — loading into the project is not allowed.";
+        ru["FM_UnavailableTooltipRevitFix"] = "Сохранено в Revit {0} — нельзя загрузить в Revit {1}. Сделайте активной совместимую версию: Свойства → Версии."; en["FM_UnavailableTooltipRevitFix"] = "Saved in Revit {0} — cannot be loaded into Revit {1}. Make a compatible version active: Properties → Versions.";
+        ru["FM_UnavailableTooltipRevitNone"] = "Сохранено в Revit {0} — нельзя загрузить в Revit {1}. В каталоге нет версии, совместимой с Revit {1}."; en["FM_UnavailableTooltipRevitNone"] = "Saved in Revit {0} — cannot be loaded into Revit {1}. The catalog has no version compatible with Revit {1}.";
         ru["FM_UpdateSuccess"] = "Обновлено: {0} → {1}"; en["FM_UpdateSuccess"] = "Updated: {0} → {1}";
         ru["FM_UpdateIdentical"] = "Файл идентичен текущей версии: {0}"; en["FM_UpdateIdentical"] = "File is identical to current version: {0}";
         ru["FM_UpdateIdenticalCurrent"] = "Этот файл уже является текущей версией семейства"; en["FM_UpdateIdenticalCurrent"] = "This file is already the current version of this family";
@@ -199,6 +203,8 @@ public static partial class LocalizationService
         ru["FM_Warn_FilesNotDeleted_Body"] = "Версия удалена из базы, но файлы на диске остались (вероятно, заблокированы Revit или другим процессом). Путь: {0}"; en["FM_Warn_FilesNotDeleted_Body"] = "Version was deleted from the database but some files remain on disk (likely locked by Revit or another process). Path: {0}";
         ru["FM_BatchImport_MakeActive"] = "Сделать активной"; en["FM_BatchImport_MakeActive"] = "Make Active";
         ru["FM_Props_Version"] = "Версия"; en["FM_Props_Version"] = "Version";
+        ru["FM_Props_RevitCategory"] = "Категория Revit"; en["FM_Props_RevitCategory"] = "Revit Category";
+        ru["FM_Fact_PartType"] = "Тип детали"; en["FM_Fact_PartType"] = "Part Type";
         ru["FM_Props_Created"] = "Создано"; en["FM_Props_Created"] = "Created";
         ru["FM_Props_Updated"] = "Обновлено"; en["FM_Props_Updated"] = "Updated";
         ru["FM_Props_NoAvatar"] = "Нет изображения"; en["FM_Props_NoAvatar"] = "No image";
@@ -293,6 +299,27 @@ public static partial class LocalizationService
         ru["FM_AL_EnterGroup"] = "Имя группы:"; en["FM_AL_EnterGroup"] = "Group name:";
         ru["FM_AL_DeactivateTitle"] = "Деактивация атрибута"; en["FM_AL_DeactivateTitle"] = "Deactivate Attribute";
         ru["FM_AL_DeactivateMessage"] = "Атрибут используется в {0} категориях. При деактивации все привязки будут удалены. Продолжить?"; en["FM_AL_DeactivateMessage"] = "Attribute is used in {0} categories. Deactivating will remove all bindings. Continue?";
+        ru["FM_AL_FromSharedParams"] = "Из ФОП"; en["FM_AL_FromSharedParams"] = "From SP file";
+        ru["FM_AL_ImportedFromSP"] = "Добавлено из ФОП: {0}. Нажмите OK для сохранения."; en["FM_AL_ImportedFromSP"] = "Added from SP file: {0}. Click OK to save.";
+        ru["FM_CTE_NoGroups"] = "Нет групп"; en["FM_CTE_NoGroups"] = "No groups";
+
+        ru["FM_SP_Title"] = "Импорт из файла общих параметров"; en["FM_SP_Title"] = "Import from Shared Parameters";
+        ru["FM_SP_Browse"] = "Обзор…"; en["FM_SP_Browse"] = "Browse…";
+        ru["FM_SP_BrowseTitle"] = "Выберите файл общих параметров"; en["FM_SP_BrowseTitle"] = "Select shared parameters file";
+        ru["FM_SP_PathPlaceholder"] = "Путь к файлу общих параметров (.txt)"; en["FM_SP_PathPlaceholder"] = "Shared parameters file path (.txt)";
+        ru["FM_SP_Search"] = "Поиск параметров..."; en["FM_SP_Search"] = "Search parameters...";
+        ru["FM_SP_ColName"] = "Имя"; en["FM_SP_ColName"] = "Name";
+        ru["FM_SP_ColDescription"] = "Описание"; en["FM_SP_ColDescription"] = "Description";
+        ru["FM_SP_SelectAll"] = "Выбрать все"; en["FM_SP_SelectAll"] = "Select all";
+        ru["FM_SP_DeselectAll"] = "Снять все"; en["FM_SP_DeselectAll"] = "Clear all";
+        ru["FM_SP_Add"] = "Добавить"; en["FM_SP_Add"] = "Add";
+        ru["FM_SP_SelectedFormat"] = "Выбрано: {0} из {1}"; en["FM_SP_SelectedFormat"] = "Selected: {0} of {1}";
+        ru["FM_SP_AlreadyExists"] = "(уже есть)"; en["FM_SP_AlreadyExists"] = "(exists)";
+        ru["FM_SP_ParseError"] = "Не удалось прочитать файл общих параметров: {0}"; en["FM_SP_ParseError"] = "Failed to read shared parameters file: {0}";
+        ru["FM_SP_NoParams"] = "В файле не найдено параметров"; en["FM_SP_NoParams"] = "No parameters found in file";
+        ru["FM_SP_NothingSelected"] = "Не выбрано ни одного атрибута"; en["FM_SP_NothingSelected"] = "No attributes selected";
+        ru["FM_SP_CachedFileMissing"] = "Ранее выбранный файл не найден. Выберите файл заново."; en["FM_SP_CachedFileMissing"] = "Previously selected file was not found. Please browse again.";
+        ru["FM_SP_AllGroups"] = "Все группы"; en["FM_SP_AllGroups"] = "All groups";
 
         ru["FM_Profile"] = "Профиль"; en["FM_Profile"] = "Profile";
         ru["FM_ProfileTitle"] = "Профиль пользователя"; en["FM_ProfileTitle"] = "User Profile";
@@ -366,24 +393,28 @@ public static partial class LocalizationService
         ru["FM_CategoryProvenance_None"] = "Категория не назначена"; en["FM_CategoryProvenance_None"] = "No category assigned";
 
         // Hash Recalculation Migration (Issue #126)
-        ru["FM_HashRecalc_Title"] = "Обновление базы семейств"; en["FM_HashRecalc_Title"] = "Family Database Update";
         ru["FM_HashRecalc_LoadBlockedTitle"] = "Требуется обновление базы"; en["FM_HashRecalc_LoadBlockedTitle"] = "Database Update Required";
         ru["FM_HashRecalc_LoadBlockedBody"] = "Действие временно недоступно: база данных создана в старой версии SmartCon и требует обновления ({0} записей). До завершения обновления база работает в режиме просмотра.\n\nОбновить сейчас? Процесс можно прервать — он продолжится с места остановки."; en["FM_HashRecalc_LoadBlockedBody"] = "This action is temporarily unavailable: the database was created by an older SmartCon version and must be updated ({0} records). Until the update completes, the database is read-only.\n\nUpdate now? You can interrupt the process — it will resume from where it stopped.";
-        ru["FM_HashRecalc_Starting"] = "Подготовка..."; en["FM_HashRecalc_Starting"] = "Preparing...";
-        ru["FM_HashRecalc_ProgressFormat"] = "Обработка {0} из {1} — {2}"; en["FM_HashRecalc_ProgressFormat"] = "Processing {0} of {1} — {2}";
-        ru["FM_HashRecalc_Stopping"] = "Прерываю..."; en["FM_HashRecalc_Stopping"] = "Stopping...";
-        ru["FM_HashRecalc_SummaryUpdated"] = "Обновлено версий: {0} (системных помечено: {1})"; en["FM_HashRecalc_SummaryUpdated"] = "Versions updated: {0} (system flagged: {1})";
-        ru["FM_HashRecalc_SummaryFailed"] = "Не удалось прочитать (пропущены навсегда): {0}"; en["FM_HashRecalc_SummaryFailed"] = "Could not be read (permanently skipped): {0}";
-        ru["FM_HashRecalc_SummaryNewerRevit"] = "Требуют более новой версии Revit: {0}"; en["FM_HashRecalc_SummaryNewerRevit"] = "Require a newer Revit version: {0}";
-        ru["FM_HashRecalc_SummaryMissing"] = "Файлы не найдены на диске: {0}"; en["FM_HashRecalc_SummaryMissing"] = "Files not found on disk: {0}";
-        ru["FM_HashRecalc_SummaryCancelled"] = "Прервано пользователем — обновление продолжится при следующем запуске."; en["FM_HashRecalc_SummaryCancelled"] = "Interrupted by user — the update will resume on the next launch.";
-        ru["FM_HashRecalc_Cancel"] = "Прервать"; en["FM_HashRecalc_Cancel"] = "Interrupt";
-        ru["FM_HashRecalc_Close"] = "Закрыть"; en["FM_HashRecalc_Close"] = "Close";
+        ru["FM_HashRecalc_LoadBlockedBodyNewerRevit"] = "База данных требует обновления в Revit {0} или новее и работает в режиме просмотра. Откройте её в Revit {0}+ и выполните «Обновить базу» — тогда всё обновится за один раз."; en["FM_HashRecalc_LoadBlockedBodyNewerRevit"] = "The database must be updated in Revit {0} or newer and is read-only. Open it in Revit {0}+ and run \"Update database\" — everything will be updated in a single pass.";
+        ru["FM_HashRecalc_LoadBlockedBodyReadOnlyRole"] = "База данных требует обновления и работает в режиме просмотра. Обновление может выполнить пользователь с ролью Owner или BIM-мастер — обратитесь к нему."; en["FM_HashRecalc_LoadBlockedBodyReadOnlyRole"] = "The database must be updated and is read-only. Only a user with the Owner or BIM Master role can run the update — please contact them.";
         ru["FM_HashRecalc_PurgeButton"] = "Удалить записи недоступных ({0})"; en["FM_HashRecalc_PurgeButton"] = "Delete unavailable records ({0})";
         ru["FM_HashRecalc_PurgeConfirmTitle"] = "Удаление записей"; en["FM_HashRecalc_PurgeConfirmTitle"] = "Delete records";
         ru["FM_HashRecalc_PurgeConfirmBody"] = "Удалить из каталога {0} записей о недоступных файлах? Действие нельзя отменить."; en["FM_HashRecalc_PurgeConfirmBody"] = "Delete {0} records of unavailable files from the catalog? This action cannot be undone.";
         ru["FM_HashRecalc_PurgeResult"] = "Удалено семейств: {0}, версий: {1}."; en["FM_HashRecalc_PurgeResult"] = "Families deleted: {0}, versions: {1}.";
         ru["FM_HashRecalc_PurgeDirsFailed"] = "Папки на диске удалить не удалось (нет доступа): {0} — удалите их вручную."; en["FM_HashRecalc_PurgeDirsFailed"] = "Could not delete directories on disk (access denied): {0} — please remove them manually.";
+
+        // Unified Database Update Dialog (ADR-054)
+        ru["FM_DbUpdate_Title"] = "Обновление базы"; en["FM_DbUpdate_Title"] = "Database Update";
+        ru["FM_DbUpdate_Starting"] = "Подготовка..."; en["FM_DbUpdate_Starting"] = "Preparing...";
+        ru["FM_DbUpdate_ProgressFormat"] = "Обработка {0} из {1} — {2}"; en["FM_DbUpdate_ProgressFormat"] = "Processing {0} of {1} — {2}";
+        ru["FM_DbUpdate_Stopping"] = "Прерываю..."; en["FM_DbUpdate_Stopping"] = "Stopping...";
+        ru["FM_DbUpdate_SummaryUpdated"] = "Обновлено записей: {0}"; en["FM_DbUpdate_SummaryUpdated"] = "Records updated: {0}";
+        ru["FM_DbUpdate_SummaryFailed"] = "Не удалось обработать (будут предложены снова): {0}"; en["FM_DbUpdate_SummaryFailed"] = "Could not be processed (will be offered again): {0}";
+        ru["FM_DbUpdate_SummaryNewerRevit"] = "Требуют более новой версии Revit: {0}"; en["FM_DbUpdate_SummaryNewerRevit"] = "Require a newer Revit version: {0}";
+        ru["FM_DbUpdate_SummaryMissing"] = "Файлы не найдены на диске: {0}"; en["FM_DbUpdate_SummaryMissing"] = "Files not found on disk: {0}";
+        ru["FM_DbUpdate_SummaryCancelled"] = "Прервано пользователем — обновление продолжится при следующем запуске."; en["FM_DbUpdate_SummaryCancelled"] = "Interrupted by user — the update will resume on the next launch.";
+        ru["FM_DbUpdate_Cancel"] = "Прервать"; en["FM_DbUpdate_Cancel"] = "Interrupt";
+        ru["FM_DbUpdate_Close"] = "Закрыть"; en["FM_DbUpdate_Close"] = "Close";
 
         ru["FM_AttrStatus_Found"] = "Найдено"; en["FM_AttrStatus_Found"] = "Found";
         ru["FM_AttrStatus_MissingParameter"] = "Параметр не найден"; en["FM_AttrStatus_MissingParameter"] = "Parameter not found";
@@ -428,8 +459,8 @@ public static partial class LocalizationService
         ru["FM_LoadShared_Skip"] = "Пропущено: {0}";
         en["FM_LoadShared_Skip"] = "Skipped: {0}";
 
-        ru["FM_LoadShared_BatchProgress"] = "Общее вложенное {0} из {1}";
-        en["FM_LoadShared_BatchProgress"] = "Shared nested {0} of {1}";
+        ru["FM_LoadShared_BatchProgress"] = "Конфликт №{0} — в файле {1} общих вложенных, Revit спрашивает только об изменённых";
+        en["FM_LoadShared_BatchProgress"] = "Conflict #{0} — file has {1} shared nested families, Revit asks only for changed ones";
 
         ru["FM_LoadShared_SourceFromCatalog"] = "имя из каталога SmartCon";
         en["FM_LoadShared_SourceFromCatalog"] = "name from SmartCon catalog";
@@ -463,14 +494,22 @@ public static partial class LocalizationService
         en["FM_PBase_DeleteDatabase"] = "Delete database";
         ru["FM_PBase_DatabaseTools"] = "Инструменты базы";
         en["FM_PBase_DatabaseTools"] = "Database tools";
-        ru["FM_PBase_UpdateDatabase"] = "Обновить базу данных";
+        ru["FM_PBase_UpdateDatabase"] = "Обновить базу";
         en["FM_PBase_UpdateDatabase"] = "Update database";
-        ru["FM_PBase_UpdateDatabaseTooltip"] = "Пересчитать контрольные суммы семейств (база создана в старой версии SmartCon)";
-        en["FM_PBase_UpdateDatabaseTooltip"] = "Recalculate family checksums (database was created by an older SmartCon version)";
+        ru["FM_PBase_UpdateDatabaseTooltip"] = "Обновить базу до актуального состояния";
+        en["FM_PBase_UpdateDatabaseTooltip"] = "Update the database to the latest state";
         ru["FM_PBase_UpdateDatabaseBadgeTooltip"] = "Требуется обновление базы данных";
         en["FM_PBase_UpdateDatabaseBadgeTooltip"] = "Database update required";
+        ru["FM_PBase_OptionalBadgeTooltip"] = "Есть рекомендуемые обновления базы — доступно в текущей версии Revit.";
+        en["FM_PBase_OptionalBadgeTooltip"] = "Recommended database updates are available — can run in the current Revit version.";
+        ru["FM_PBase_OptionalBadgeTooltipNewerRevit"] = "Есть рекомендуемые обновления базы — требуется Revit {0} или новее.";
+        en["FM_PBase_OptionalBadgeTooltipNewerRevit"] = "Recommended database updates are available — Revit {0} or newer is required.";
         ru["FM_DbUpdate_BannerText"] = "База данных создана в старой версии SmartCon и работает в режиме просмотра. Обновите её, чтобы импортировать и изменять семейства.";
         en["FM_DbUpdate_BannerText"] = "The database was created by an older SmartCon version and is read-only. Update it to import and modify families.";
+        ru["FM_DbUpdate_BannerTextNewerRevit"] = "База данных требует обновления в Revit {0} или новее и работает в режиме просмотра. Откройте её в Revit {0}+ и выполните «Обновить базу» — тогда всё обновится за один раз.";
+        en["FM_DbUpdate_BannerTextNewerRevit"] = "The database must be updated in Revit {0} or newer and is read-only. Open it in Revit {0}+ and run \"Update database\" — everything will be updated in a single pass.";
+        ru["FM_DbUpdate_BannerTextReadOnlyRole"] = "База данных требует обновления и работает в режиме просмотра. Обновление может выполнить пользователь с ролью Owner или BIM-мастер — обратитесь к нему.";
+        en["FM_DbUpdate_BannerTextReadOnlyRole"] = "The database must be updated and is read-only. Only a user with the Owner or BIM Master role can run the update — please contact them.";
         ru["FM_DbUpdate_BannerButton"] = "Обновить";
         en["FM_DbUpdate_BannerButton"] = "Update";
         ru["FM_PBase_Title"] = "Привязка базы проекта к имени файла";

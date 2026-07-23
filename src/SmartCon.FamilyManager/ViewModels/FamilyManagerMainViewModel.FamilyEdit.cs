@@ -59,6 +59,7 @@ public sealed partial class FamilyManagerMainViewModel
                 SelectedItem.VersionLabel,
                 null,
                 updatedAt,
+                SelectedItem.RevitCategory,
                 isReadOnly: !CanEdit);
             SmartConLogger.Info("OpenProperties: VM created, calling InitializeCommand...");
 
@@ -89,7 +90,11 @@ public sealed partial class FamilyManagerMainViewModel
         {
             var result = _dialogService.ShowProperties(vm);
             SmartConLogger.Info($"OpenProperties: ShowProperties returned result={result}");
-            if (result != true) return;
+
+            // MakeActive on the Versions tab commits to the DB immediately —
+            // even a Cancelled dialog may have changed the active version's
+            // Revit major version, which drives the tree's availability badge.
+            if (result != true && !vm.ActiveVersionChanged) return;
 
             await LoadTreeAsync();
             ExpandAndSelectItem(itemId);
@@ -307,7 +312,7 @@ public sealed partial class FamilyManagerMainViewModel
             FamilySource: "loadable",
             TypeCount: SnapshotExtractionMapper.ResolveTypeCount(
                 prepared.LoadableSnapshot, prepared.SystemSnapshot, prepared.SourceTypes),
-            RevitCategory: null,
+            RevitCategory: prepared.LoadableSnapshot?.Category,
             OriginalSourcePath: prepared.SourcePath,
             SourceTypes: null,
             Source: null,
@@ -335,7 +340,8 @@ public sealed partial class FamilyManagerMainViewModel
             _viewModelFactory,
             catalogProvider: _catalogProvider,
             importPrecomputer: _importPrecomputer,
-            dedupService: _dedupService);
+            dedupService: _dedupService,
+            dispatcher: _dispatcher);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -527,7 +533,7 @@ public sealed partial class FamilyManagerMainViewModel
                 TargetCategoryName: resolvedCategoryName,
                 FamilySource: "loadable",
                 TypeCount: importItem.TypeCount,
-                RevitCategory: null,
+                RevitCategory: importItem.RevitCategory,
                 OriginalSourcePath: prepared.SourcePath,
                 SourceTypes: null,
                 Source: null,
@@ -567,7 +573,7 @@ public sealed partial class FamilyManagerMainViewModel
                 Description: null,
                 CategoryId: resolvedCategoryId,
                 FamilySource: "loadable",
-                RevitCategory: null,
+                RevitCategory: importItem.RevitCategory,
                 FileName: displayName,
                 OriginalSourcePath: prepared.SourcePath,
                 PrecomputedCatalogItemId: resolvedCatalogItemId,
@@ -576,7 +582,9 @@ public sealed partial class FamilyManagerMainViewModel
                 ContentHash: importItem.ContentHash,
                 HashFormatVersion: importItem.HashFormatVersion,
                 PublishedBy: _revitContext.GetUsername(),
-                PreextractedGeometry: importItem.GeometryPerType);
+                PreextractedGeometry: importItem.GeometryPerType,
+                RevitCategoryId: importItem.LoadableSnapshot?.CategoryId ?? importItem.SystemSnapshot?.CategoryId,
+                Facts: importItem.LoadableSnapshot?.Facts);
 
             importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
         }
@@ -824,7 +832,8 @@ public sealed partial class FamilyManagerMainViewModel
             importPrecomputer: _importPrecomputer,
             dedupService: _dedupService,
             executor: executor,
-            publishedByUser: _revitContext.GetUsername());
+            publishedByUser: _revitContext.GetUsername(),
+            dispatcher: _dispatcher);
 
         _dialogService.ShowModelessBatchImportDialog(vm);
         await vm.DialogCompletion;

@@ -1,4 +1,4 @@
-using SmartCon.Core.Services.Implementation;
+using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.Migrations;
 using SmartCon.Tests.TestDoubles;
@@ -8,24 +8,79 @@ namespace SmartCon.Tests.FamilyManager.Services;
 
 /// <summary>
 /// Tests for <see cref="DatabaseUpdateStateService"/> (database-migrations
-/// pattern, Issue #126): state mapping, StateChanged emission, the write-op
-/// gate (decline/confirm), and the unconditional update flow. Coordinator is
-/// real with fake migrations; the dialog service is a hand-written fake.
+/// pattern, Issue #126; actualization engine — ADR-054): state mapping,
+/// StateChanged emission, the write-op gate (decline/confirm), and the
+/// unified update flow. The engine is a hand-written fake; the dialog fake
+/// auto-closes the unified update dialog on the summary screen.
 /// </summary>
 public sealed class DatabaseUpdateStateServiceTests
 {
-    private static (DatabaseUpdateStateService sut, FakeFamilyManagerDialogService dialogs) CreateSut(
-        params FakeDatabaseMigration[] migrations)
+    private sealed class FakeCatalogActualizationService : ICatalogActualizationService
     {
-        var coordinator = new DatabaseMigrationCoordinator(migrations);
+        public DatabasePendingBreakdown Breakdown { get; set; } = DatabasePendingBreakdown.Empty;
+        public DatabaseMigrationResult RunResult { get; set; } = new(
+            0, 0,
+            Array.Empty<HashRecalculationMissingFile>(),
+            Array.Empty<HashRecalculationFailedFile>(),
+            WasCancelled: false);
+        public Exception? RunException { get; set; }
+        public int RunCalls { get; private set; }
+
+        /// <summary>Breakdown returned after a run (default: empty — a completed run clears everything).</summary>
+        public DatabasePendingBreakdown? AfterRunBreakdown { get; set; }
+
+        public Task<DatabasePendingBreakdown> CountPendingBreakdownAsync(
+            int revitMajorVersion, CancellationToken ct = default)
+            => Task.FromResult(Breakdown);
+
+        public Task<DatabaseMigrationResult> RunAllPendingAsync(
+            int revitMajorVersion,
+            IProgress<DatabaseMigrationProgress>? progress,
+            CancellationToken ct = default)
+        {
+            RunCalls++;
+            if (RunException is not null) throw RunException;
+            // A completed run clears everything — the real engine leaves no
+            // pending records behind, and the state service re-reads the
+            // breakdown after the run.
+            Breakdown = AfterRunBreakdown ?? DatabasePendingBreakdown.Empty;
+            return Task.FromResult(RunResult);
+        }
+
+        public Task<(int DeletedItems, int DeletedVersions, int FailedDirectories)> PurgeMissingAsync(
+            IReadOnlyList<HashRecalculationMissingFile> missing, CancellationToken ct = default)
+            => throw new NotImplementedException();
+    }
+
+    private sealed class FakeAccessControl : IDbAccessControlService
+    {
+        public bool CanEdit { get; set; } = true;
+        public bool CanImport => CanEdit;
+        public bool CanManageUsers => false;
+        public bool CanLoadToProject => true;
+        public bool IsOwner => false;
+        public bool IsBanned => false;
+        public Task<SmartCon.Core.Models.FamilyManager.DbUserRole> GetCurrentUserRoleAsync(CancellationToken ct = default)
+            => Task.FromResult(CanEdit ? SmartCon.Core.Models.FamilyManager.DbUserRole.Owner : SmartCon.Core.Models.FamilyManager.DbUserRole.Engineer);
+        public Task<SmartCon.Core.Models.FamilyManager.DbUser> GetCurrentUserAsync(CancellationToken ct = default)
+            => throw new NotImplementedException();
+        public Task RefreshCurrentUserAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public void InvalidateCache() { }
+    }
+
+    private static (DatabaseUpdateStateService sut, FakeFamilyManagerDialogService dialogs, FakeCatalogActualizationService engine, FakeAccessControl access) CreateSut(
+        DatabasePendingBreakdown? breakdown = null)
+    {
+        var engine = new FakeCatalogActualizationService { Breakdown = breakdown ?? DatabasePendingBreakdown.Empty };
         var dialogs = new FakeFamilyManagerDialogService();
-        return (new DatabaseUpdateStateService(coordinator, dialogs), dialogs);
+        var access = new FakeAccessControl();
+        return (new DatabaseUpdateStateService(engine, dialogs, access), dialogs, engine, access);
     }
 
     [Fact]
     public async Task RefreshAsync_PendingMigration_SetsStateAndRaises()
     {
-        var (sut, _) = CreateSut(new FakeDatabaseMigration("a", order: 1, 3));
+        var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(3, 5, 0, 0, 0, 0));
         var raised = 0;
         sut.StateChanged += (_, _) => raised++;
 
@@ -33,13 +88,14 @@ public sealed class DatabaseUpdateStateServiceTests
 
         Assert.True(sut.IsUpdateRequired);
         Assert.Equal(3, sut.PendingCount);
+        Assert.Equal(5, sut.OptionalPendingCount);
         Assert.Equal(1, raised);
     }
 
     [Fact]
     public async Task RefreshAsync_NoPending_KeepsStateClear_NoEvent()
     {
-        var (sut, _) = CreateSut(new FakeDatabaseMigration("a", order: 1, 0));
+        var (sut, _, _, _) = CreateSut();
         var raised = 0;
         sut.StateChanged += (_, _) => raised++;
 
@@ -47,13 +103,69 @@ public sealed class DatabaseUpdateStateServiceTests
 
         Assert.False(sut.IsUpdateRequired);
         Assert.Equal(0, sut.PendingCount);
+        Assert.Equal(0, sut.OptionalPendingCount);
         Assert.Equal(0, raised);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_NewerOnlyPending_SetsCount_WithoutGating()
+    {
+        // OPTIONAL newer-only records: NO banner, NO gate — just the amber
+        // indicator count (ADR-054 §3a).
+        var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(0, 0, 0, 5, 0, 2025));
+        await sut.RefreshAsync(2025);
+
+        Assert.False(sut.IsUpdateRequired);
+        Assert.Equal(0, sut.PendingCount);
+        Assert.Equal(0, sut.OptionalPendingCount);
+        Assert.Equal(5, sut.NewerOnlyPendingCount);
+    }
+
+    [Fact]
+    public async Task EnsureUpToDateAsync_OnlyNewerCriticalPending_GatesWithWarning_NoUpdateOffer()
+    {
+        // CRITICAL newer-only (ADR-054 §3a): the database stays read-only
+        // until perfectly updated — but no immediate update is offered
+        // (nothing is fixable in the running Revit).
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(0, 0, 1, 0, 2026, 0));
+        await sut.RefreshAsync(2025);
+        Assert.True(sut.IsUpdateRequired);
+        Assert.Equal(0, sut.PendingCount);
+        Assert.Equal(1, sut.NewerOnlyCriticalCount);
+        Assert.Equal(2026, sut.NewerOnlyRequiredRevitVersion);
+
+        var proceed = await sut.EnsureUpToDateAsync();
+
+        Assert.False(proceed);
+        Assert.Equal(1, dialogs.InfoCalls);
+        Assert.Contains("2026", dialogs.LastInfoMessage);
+        Assert.Equal(0, dialogs.WarningCalls);
+        Assert.Equal(0, dialogs.ConfirmationCalls);
+        Assert.Equal(0, engine.RunCalls);
+    }
+
+    [Fact]
+    public async Task EnsureUpToDateAsync_AfterProcessableUpdate_NewerCriticalRemains_StillGated()
+    {
+        // Full gate (ADR-054 §3a): after fixing the processable part, the
+        // newer-only critical remainder keeps the database read-only.
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(2, 0, 1, 0, 2026, 0));
+        engine.AfterRunBreakdown = new DatabasePendingBreakdown(0, 0, 1, 0, 2026, 0);
+        await sut.RefreshAsync(2025);
+        dialogs.ConfirmationAnswer = true;
+
+        var proceed = await sut.EnsureUpToDateAsync();
+
+        Assert.False(proceed);
+        Assert.Equal(1, engine.RunCalls);
+        Assert.True(sut.IsUpdateRequired);
+        Assert.Equal(1, sut.NewerOnlyCriticalCount);
     }
 
     [Fact]
     public async Task Reset_AfterPending_ClearsStateAndRaises()
     {
-        var (sut, _) = CreateSut(new FakeDatabaseMigration("a", order: 1, 2));
+        var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(2, 1, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         var raised = 0;
         sut.StateChanged += (_, _) => raised++;
@@ -62,13 +174,14 @@ public sealed class DatabaseUpdateStateServiceTests
 
         Assert.False(sut.IsUpdateRequired);
         Assert.Equal(0, sut.PendingCount);
+        Assert.Equal(0, sut.OptionalPendingCount);
         Assert.Equal(1, raised);
     }
 
     [Fact]
     public async Task EnsureUpToDateAsync_NotRequired_ReturnsTrueWithoutDialog()
     {
-        var (sut, dialogs) = CreateSut(new FakeDatabaseMigration("a", order: 1, 0));
+        var (sut, dialogs, _, _) = CreateSut();
         await sut.RefreshAsync(2025);
 
         var proceed = await sut.EnsureUpToDateAsync();
@@ -78,10 +191,9 @@ public sealed class DatabaseUpdateStateServiceTests
     }
 
     [Fact]
-    public async Task EnsureUpToDateAsync_Declined_ReturnsFalse_MigrationNotRun()
+    public async Task EnsureUpToDateAsync_Declined_ReturnsFalse_EngineNotRun()
     {
-        var migration = new FakeDatabaseMigration("a", order: 1, 2);
-        var (sut, dialogs) = CreateSut(migration);
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         dialogs.ConfirmationAnswer = false;
 
@@ -89,15 +201,14 @@ public sealed class DatabaseUpdateStateServiceTests
 
         Assert.False(proceed);
         Assert.Equal(1, dialogs.ConfirmationCalls);
-        Assert.Equal(0, migration.RunCalls);
+        Assert.Equal(0, engine.RunCalls);
         Assert.True(sut.IsUpdateRequired);
     }
 
     [Fact]
-    public async Task EnsureUpToDateAsync_Confirmed_RunsMigration_ClearsState_ReturnsTrue()
+    public async Task EnsureUpToDateAsync_Confirmed_RunsEngine_ClearsState_ReturnsTrue()
     {
-        var migration = new FakeDatabaseMigration("a", order: 1, 2);
-        var (sut, dialogs) = CreateSut(migration);
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         dialogs.ConfirmationAnswer = true;
 
@@ -105,32 +216,60 @@ public sealed class DatabaseUpdateStateServiceTests
 
         Assert.True(proceed);
         Assert.Equal(1, dialogs.ConfirmationCalls);
-        Assert.Equal(1, migration.RunCalls);
+        Assert.Equal(1, engine.RunCalls);
         Assert.False(sut.IsUpdateRequired);
         Assert.Equal(0, sut.PendingCount);
     }
 
     [Fact]
-    public async Task UpdateAsync_RunsPendingMigrations_RefreshesState()
+    public async Task EnsureUpToDateAsync_ReadOnlyRole_GatesWithRoleText_NoOffer_NoRun()
     {
-        var a = new FakeDatabaseMigration("a", order: 1, 1);
-        var b = new FakeDatabaseMigration("b", order: 2, 4);
-        var (sut, _) = CreateSut(a, b);
+        // Engineer (read-only): the update physically cannot write — no
+        // "update now" offer, just the styled info pointing at Owner/BimMaster.
+        var (sut, dialogs, engine, access) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
+        access.CanEdit = false;
+        await sut.RefreshAsync(2025);
+        dialogs.ConfirmationAnswer = true;
+
+        var proceed = await sut.EnsureUpToDateAsync();
+
+        Assert.False(proceed);
+        Assert.Equal(1, dialogs.InfoCalls);
+        Assert.Equal(0, dialogs.ConfirmationCalls);
+        Assert.Equal(0, engine.RunCalls);
+        Assert.True(sut.IsUpdateRequired);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RunsEngine_RefreshesState()
+    {
+        var (sut, _, engine, _) = CreateSut(new DatabasePendingBreakdown(1, 4, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         Assert.True(sut.IsUpdateRequired);
 
         await sut.UpdateAsync();
 
-        Assert.Equal(1, a.RunCalls);
-        Assert.Equal(1, b.RunCalls);
+        Assert.Equal(1, engine.RunCalls);
         Assert.False(sut.IsUpdateRequired);
         Assert.False(sut.IsRunning);
     }
 
     [Fact]
+    public async Task UpdateAsync_NothingPending_DoesNotShowDialog()
+    {
+        var (sut, dialogs, engine, _) = CreateSut();
+        await sut.RefreshAsync(2025);
+
+        await sut.UpdateAsync();
+
+        Assert.Equal(0, engine.RunCalls);
+        Assert.Empty(dialogs.ShownDatabaseUpdateDialogs);
+    }
+
+    [Fact]
     public async Task UpdateAsync_EmitsRunningTransitionEvents()
     {
-        var (sut, _) = CreateSut(new FakeDatabaseMigration("a", order: 1, 1));
+        var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(1, 0, 0, 0, 0, 0));
         await sut.RefreshAsync(2025);
         var raised = 0;
         sut.StateChanged += (_, _) => raised++;
@@ -145,13 +284,10 @@ public sealed class DatabaseUpdateStateServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_MigrationThrows_IsRunningResetAndNotified()
+    public async Task UpdateAsync_EngineThrows_IsRunningResetAndNotified()
     {
-        var broken = new FakeDatabaseMigration("broken", order: 1, 1)
-        {
-            RunException = new InvalidOperationException("migration blew up")
-        };
-        var (sut, _) = CreateSut(broken);
+        var (sut, _, engine, _) = CreateSut(new DatabasePendingBreakdown(1, 0, 0, 0, 0, 0));
+        engine.RunException = new InvalidOperationException("engine blew up");
         await sut.RefreshAsync(2025);
         var notifications = new List<bool>();
         sut.StateChanged += (_, _) => notifications.Add(sut.IsRunning);
@@ -159,7 +295,7 @@ public sealed class DatabaseUpdateStateServiceTests
         await sut.UpdateAsync();
 
         // The UI must not get stuck at IsRunning=true (dead Update button)
-        // even when the migration flow fails.
+        // even when the update flow fails.
         Assert.False(sut.IsRunning);
         Assert.Contains(false, notifications);
         Assert.True(notifications.Count >= 2, $"expected >= 2 StateChanged events, got {notifications.Count}");

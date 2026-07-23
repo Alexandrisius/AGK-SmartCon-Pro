@@ -950,7 +950,7 @@ public sealed class ChainOperationHandler(
                 $"({snapshot.CurveStart.X:F4},{snapshot.CurveStart.Y:F4},{snapshot.CurveStart.Z:F4}) → " +
                 $"({snapshot.CurveEnd.X:F4},{snapshot.CurveEnd.Y:F4},{snapshot.CurveEnd.Z:F4})");
             try { lc.Curve = Line.CreateBound(snapshot.CurveStart, snapshot.CurveEnd); }
-            catch (Exception exCurve) { SmartConLogger.Warn($"   c. MEPCurve: Line.CreateBound failed: {exCurve.Message}"); }
+            catch (Exception exCurve) { SmartConLogger.Warn($"   c. MEPCurve: Line.CreateBound failed: {exCurve.Message} [Action: откат цепочки частичен — проверьте геометрию трубы/гибкой трубы вручную]"); }
         }
         else if (snapshot.FirstConnectorOrigin is not null)
         {
@@ -1099,7 +1099,7 @@ public sealed class ChainOperationHandler(
                     connRecord.NeighborElementId, connRecord.NeighborConnectorIndex);
                 SmartConLogger.Debug($"   d. ConnectTo OK");
             }
-            catch (Exception exConn) { SmartConLogger.Warn($"   d. ConnectTo FAILED: {exConn.Message}"); }
+            catch (Exception exConn) { SmartConLogger.Warn($"   d. ConnectTo FAILED: {exConn.Message} [Action: элементы цепочки не соединены — проверьте расстояние и размеры коннекторов]"); }
         }
     }
 

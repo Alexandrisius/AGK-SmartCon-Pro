@@ -23,7 +23,7 @@ internal sealed class LocalFamilyAssetService : IFamilyAssetService
     private async Task EnsureMigratedAsync(CancellationToken ct)
     {
         var currentPath = _database.GetDatabaseRoot();
-        if (_migratedDbPath == currentPath) return;
+        if (string.Equals(_migratedDbPath, currentPath, StringComparison.OrdinalIgnoreCase)) return;
         await _migrator.MigrateAsync(ct);
         _migratedDbPath = currentPath;
     }

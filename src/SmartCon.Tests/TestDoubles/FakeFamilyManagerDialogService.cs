@@ -28,7 +28,22 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
     public string? ShowImportDialog(string title, string? initialDirectory = null) => throw new NotImplementedException();
     public string[]? ShowImportFilesDialog(string title, string? initialDirectory = null) => throw new NotImplementedException();
     public string? ShowFolderBrowserDialog(string title, string? initialDirectory = null) => throw new NotImplementedException();
-    public void ShowWarning(string title, string message) => throw new NotImplementedException();
+
+    public int WarningCalls { get; private set; }
+    public string? LastWarningMessage { get; private set; }
+    public void ShowWarning(string title, string message)
+    {
+        WarningCalls++;
+        LastWarningMessage = message;
+    }
+
+    public int InfoCalls { get; private set; }
+    public string? LastInfoMessage { get; private set; }
+    public void ShowInfo(string title, string message)
+    {
+        InfoCalls++;
+        LastInfoMessage = message;
+    }
     public void ShowError(string title, string message) => throw new NotImplementedException();
     public string? ShowInputDialog(string title, string prompt, string defaultText = "") => throw new NotImplementedException();
     public DialogResult ShowYesNoCancel(string title, string message) => throw new NotImplementedException();
@@ -39,6 +54,19 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
     public bool? ShowAllowedValues(object viewModel) => throw new NotImplementedException();
     public string? ShowCategoryPicker(object viewModel) => throw new NotImplementedException();
     public string? ShowOpenJsonDialog(string title, string? initialDirectory = null) => throw new NotImplementedException();
+    public string? ShowOpenTextFileDialog(string title, string? initialDirectory = null) => throw new NotImplementedException();
+
+    /// <summary>
+    /// Configurable handler for the shared-parameter picker dialog. When set,
+    /// it receives the picker view model (pre-select items and return the
+    /// dialog result). When null, the call throws — accidental usage fails loudly.
+    /// </summary>
+    public Func<object, bool?>? SharedParameterPickerHandler { get; set; }
+
+    public bool? ShowSharedParameterPicker(object viewModel)
+        => SharedParameterPickerHandler is null
+            ? throw new NotImplementedException()
+            : SharedParameterPickerHandler(viewModel);
     public string? ShowSaveJsonDialog(string title, string? defaultFileName = null) => throw new NotImplementedException();
     public bool? ShowProperties(object viewModel) => throw new NotImplementedException();
     public string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null) => throw new NotImplementedException();
@@ -47,7 +75,29 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
     public bool? ShowProfile(object viewModel) => throw new NotImplementedException();
     public bool? ShowBatchImportDialog(object viewModel) => throw new NotImplementedException();
     public void ShowModelessBatchImportDialog(object viewModel) => throw new NotImplementedException();
-    public void ShowHashRecalculationProgressDialog(object viewModel) => throw new NotImplementedException();
+    public void ShowDatabaseUpdateProgressDialog(object viewModel)
+    {
+        ShownDatabaseUpdateDialogs.Add(viewModel);
+        if (!AutoCloseDatabaseUpdateDialog) return;
+        // Auto-close the unified update dialog when it reaches the summary
+        // screen — DatabaseUpdateStateService awaits DialogCompletion.
+        if (viewModel is SmartCon.FamilyManager.ViewModels.DatabaseUpdateProgressViewModel vm)
+        {
+            vm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SmartCon.FamilyManager.ViewModels.DatabaseUpdateProgressViewModel.IsSummaryVisible)
+                    && vm.IsSummaryVisible && vm.CloseCommand.CanExecute(null))
+                    vm.CloseCommand.Execute(null);
+            };
+        }
+    }
+
+    /// <summary>Unified update dialogs shown during the test.</summary>
+    public List<object> ShownDatabaseUpdateDialogs { get; } = new();
+
+    /// <summary>When true (default), the unified update dialog is closed
+    /// automatically on the summary screen.</summary>
+    public bool AutoCloseDatabaseUpdateDialog { get; set; } = true;
     public bool? ShowAvatarCropper(object viewModel) => throw new NotImplementedException();
     public SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request) => throw new NotImplementedException();
 }

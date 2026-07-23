@@ -30,12 +30,21 @@ namespace SmartCon.Core.Threading;
 ///   <item><term>❌ DANGEROUS</term><description><c>IFamilyLoadService.LoadFamilySymbolAsync</c> — internally calls <c>doc.LoadFamilySymbol</c>. <b>Use</b> <c>.GetAwaiter().GetResult()</c> directly (no Task.Run).</description></item>
 /// </list>
 ///
-/// <para><b>For sync-on-sync wrappers (Task.FromResult):</b> if the
-/// underlying method is a sync wrapper that just returns
-/// <c>Task.FromResult(...)</c> with no real <c>await</c>, you can call
-/// <c>.GetAwaiter().GetResult()</c> directly without <c>Task.Run</c> —
-/// there is no continuation to deadlock, the call just blocks the
-/// current thread for a few milliseconds. Example: <c>IFamilyLoadService.LoadFamilyAsync</c>.</para>
+/// <para><b>For sync-blocking callers of IFamilyLoadService:</b>
+/// <c>IDropHandler.Execute</c> and the Stale Update ExternalEvent callback
+/// call <c>LoadFamilyAsync</c>/<c>LoadFamilySymbolAsync</c>/
+/// <c>ReloadFamilyPreservingLoadedTypesAsync</c> via
+/// <c>.GetAwaiter().GetResult()</c> directly (never via AsyncBridge — these
+/// methods call Revit API internally). This is only safe when every await
+/// inside completes synchronously: today the single SQLite await
+/// (<c>ISharedNestedFamilyRepository.GetNamesForCurrentVersionAsync</c>)
+/// completes synchronously because Microsoft.Data.Sqlite has no true async
+/// I/O (MS docs "Async limitations"). To not rely on that contract,
+/// sync-blocking callers MUST pre-resolve nested names (via
+/// <c>AsyncBridge.RunSync</c> on the repository — pure SQLite, SAFE) and
+/// pass them through the <c>nestedSharedNames</c> parameter, which removes
+/// the async gap entirely. See FamilyPlacementDropHandler and
+/// StaleFamilyUpdater for the reference pattern.</para>
 ///
 /// <para><b>How it works:</b></para>
 /// <code>

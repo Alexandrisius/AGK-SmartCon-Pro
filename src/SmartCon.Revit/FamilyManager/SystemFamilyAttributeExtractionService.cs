@@ -5,6 +5,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Context;
+using SmartCon.Revit.Util;
 
 namespace SmartCon.Revit.FamilyManager;
 
@@ -39,6 +40,8 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             {
                 return new FamilyExtractionResult(false, [], null, "Document is a family, not a project", revitMajorVersion);
             }
+
+            ParameterUnitDiagnostics.LogDocumentUnits(rvtDoc, "SystemRvt");
 
             return ExtractTypeParametersFromProject(rvtDoc, typeNames, revitMajorVersion);
         }
@@ -104,7 +107,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 continue;
             }
 
-            var values = ExtractTypeParameters(elementType);
+            var values = ExtractTypeParameters(elementType, projectDoc);
 
             types.Add(new FamilyExtractionTypeValues(typeName, 0, values));
         }
@@ -129,7 +132,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
         return new FamilyExtractionResult(true, sorted, null, null, revitMajorVersion);
     }
 
-    private static List<FamilyExtractionValueResult> ExtractTypeParameters(ElementType elementType)
+    private static List<FamilyExtractionValueResult> ExtractTypeParameters(ElementType elementType, Document unitsSource)
     {
         var result = new List<FamilyExtractionValueResult>();
 
@@ -151,7 +154,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             try
             {
                 value = param.HasValue
-                    ? ReadValue(param)
+                    ? ReadValue(param, unitsSource)
                     : new FamilyExtractionValueResult(
                         parameterName, scope, param.StorageType.ToString(),
                         null, null, null, null,
@@ -171,7 +174,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
         return result;
     }
 
-    private static FamilyExtractionValueResult ReadValue(Parameter param)
+    private static FamilyExtractionValueResult ReadValue(Parameter param, Document unitsSource)
     {
         const AttributeScope scope = AttributeScope.Type;
         var storageType = param.StorageType.ToString();
@@ -190,7 +193,9 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 var dbl = param.AsDouble();
                 valueNumber = dbl;
                 valueRaw = FormattableString.Invariant($"{dbl}");
-                valueText = param.AsValueString();
+                valueText = Compatibility.RevitUnitsCompat.FormatDisplayValue(unitsSource, param, dbl)
+                    ?? Core.Services.Implementation.UnitSymbolFixup.Correct(param.AsValueString());
+                ParameterUnitDiagnostics.LogParameterDouble(param, param.Definition?.Name ?? "?", dbl, "SystemRvt");
                 break;
             case StorageType.Integer:
                 var intVal = param.AsInteger();

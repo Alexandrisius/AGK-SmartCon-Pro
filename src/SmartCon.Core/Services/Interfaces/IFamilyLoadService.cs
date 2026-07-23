@@ -96,11 +96,22 @@ public interface IFamilyLoadService
     /// параметры" mode), existing parameter values are preserved.</param>
     /// <param name="onStatusMessage">Optional status callback (see LoadFamilyAsync).</param>
     /// <param name="onSharedDecision">Optional shared-nested decision callback (see LoadFamilyAsync).</param>
+    /// <param name="nestedSharedNames">
+    /// Optional pre-resolved shared nested family names (see LoadFamilyAsync).
+    /// Callers that block synchronously on this method inside an ExternalEvent
+    /// callback (e.g. Stale Update via <c>.GetAwaiter().GetResult()</c>) MUST
+    /// pre-resolve and pass this list: it removes the only asynchronous
+    /// (SQLite) await from the method, guaranteeing the whole call completes
+    /// synchronously on the Revit main thread. When null, the service
+    /// resolves the list from the catalog DB itself (safe only for true
+    /// async callers).
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     Task<FamilyLoadResult> ReloadFamilyPreservingLoadedTypesAsync(
         FamilyResolvedFile file,
         bool overwriteParameterValues,
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        IReadOnlyList<string>? nestedSharedNames = null,
         CancellationToken ct = default);
 }

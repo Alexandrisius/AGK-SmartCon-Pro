@@ -54,6 +54,31 @@ public sealed class LocalCatalogQueryBuilderTests
     }
 
     [Fact]
+    public void BuildWhereClause_SearchText_MatchesNameOrTag()
+    {
+        var query = MakeQuery(searchText: "pipe");
+
+        var (sql, parameters) = LocalCatalogQueryBuilder.BuildWhereClause(query);
+
+        Assert.Contains("OR EXISTS", sql);
+        Assert.Contains("catalog_tags", sql);
+        Assert.Contains("ct.normalized_tag LIKE", sql);
+        Assert.Single(parameters);
+    }
+
+    [Fact]
+    public void BuildWhereClause_SearchText_MultipleTokens_AndAcrossTokensOrWithinToken()
+    {
+        var query = MakeQuery(searchText: "pipe steel");
+
+        var (sql, parameters) = LocalCatalogQueryBuilder.BuildWhereClause(query);
+
+        Assert.Equal(2, parameters.Count);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(sql, "OR EXISTS").Count);
+        Assert.Contains(") AND (", sql);
+    }
+
+    [Fact]
     public void BuildWhereClause_CategoryFilter_AddsRecursiveSubtreeCondition()
     {
         var query = MakeQuery(categoryFilter: "cat-1");
@@ -168,8 +193,9 @@ public sealed class LocalCatalogQueryBuilderTests
 
         var (sql, _) = LocalCatalogQueryBuilder.BuildWhereClause(query);
 
-        var andCount = sql.Split("AND").Length - 1;
-        Assert.Equal(1, andCount);
+        Assert.Contains("ci.normalized_name LIKE", sql);
+        Assert.Contains("ci.content_status =", sql);
+        Assert.Contains(" AND ci.content_status", sql);
     }
 
     [Fact]

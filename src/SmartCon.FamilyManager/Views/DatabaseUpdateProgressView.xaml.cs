@@ -3,9 +3,9 @@ using SmartCon.UI.Controls;
 
 namespace SmartCon.FamilyManager.Views;
 
-public partial class HashRecalculationProgressView : DialogWindowBase
+public partial class DatabaseUpdateProgressView : DialogWindowBase
 {
-    public HashRecalculationProgressView(HashRecalculationProgressViewModel viewModel)
+    public DatabaseUpdateProgressView(DatabaseUpdateProgressViewModel viewModel)
     {
         InitializeComponent();
         DataContext = viewModel;

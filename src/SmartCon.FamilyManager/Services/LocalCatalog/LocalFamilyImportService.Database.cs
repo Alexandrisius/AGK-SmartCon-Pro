@@ -113,8 +113,8 @@ internal sealed partial class LocalFamilyImportService
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, category_id, manufacturer, content_status, current_version_label, published_by, family_source, revit_category, content_hash, hash_format_version, created_at_utc, updated_at_utc)
-            VALUES (@id, @name, @normalizedName, @description, @categoryName, @categoryId, @manufacturer, @status, @versionLabel, @publishedBy, @familySource, @revitCategory, @contentHash, @hashFmt, @createdAtUtc, @updatedAtUtc)
+            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, category_id, manufacturer, content_status, current_version_label, published_by, family_source, revit_category, revit_category_id, content_hash, hash_format_version, created_at_utc, updated_at_utc)
+            VALUES (@id, @name, @normalizedName, @description, @categoryName, @categoryId, @manufacturer, @status, @versionLabel, @publishedBy, @familySource, @revitCategory, @revitCategoryId, @contentHash, @hashFmt, @createdAtUtc, @updatedAtUtc)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", id));
         cmd.Parameters.Add(new SqliteParameter("@name", displayName));
@@ -128,6 +128,7 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@publishedBy", DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@familySource", request.FamilySource));
         cmd.Parameters.Add(new SqliteParameter("@revitCategory", request.RevitCategory ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@revitCategoryId", request.RevitCategoryId ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@contentHash", request.ContentHash ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@hashFmt", request.HashFormatVersion ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@createdAtUtc", now.ToString("o")));
@@ -137,7 +138,8 @@ internal sealed partial class LocalFamilyImportService
 
     private static async Task UpdateCatalogItemWithNameAsync(SqliteConnection connection, string id,
         string newName, string normalizedName, string versionLabel, DateTimeOffset now, CancellationToken ct,
-        string? contentHash = null, int? hashFormatVersion = null)
+        string? contentHash = null, int? hashFormatVersion = null, string? revitCategory = null,
+        int? revitCategoryId = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -145,6 +147,8 @@ internal sealed partial class LocalFamilyImportService
             SET name = @name, normalized_name = @normalizedName, current_version_label = @versionLabel,
                 content_hash = COALESCE(@contentHash, content_hash),
                 hash_format_version = COALESCE(@hashFmt, hash_format_version),
+                revit_category = COALESCE(revit_category, @revitCategory),
+                revit_category_id = COALESCE(revit_category_id, @revitCategoryId),
                 updated_at_utc = @updatedAtUtc
             WHERE id = @id
             """;
@@ -154,6 +158,8 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
         cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@revitCategory", revitCategory ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@revitCategoryId", revitCategoryId ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -176,7 +182,8 @@ internal sealed partial class LocalFamilyImportService
 
     private static async Task UpdateCatalogItemVersionAsync(SqliteConnection connection, string id,
         string versionLabel, DateTimeOffset now, CancellationToken ct,
-        string? contentHash = null, int? hashFormatVersion = null)
+        string? contentHash = null, int? hashFormatVersion = null, string? revitCategory = null,
+        int? revitCategoryId = null)
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -184,6 +191,8 @@ internal sealed partial class LocalFamilyImportService
             SET current_version_label = @versionLabel,
                 content_hash = COALESCE(@contentHash, content_hash),
                 hash_format_version = COALESCE(@hashFmt, hash_format_version),
+                revit_category = COALESCE(revit_category, @revitCategory),
+                revit_category_id = COALESCE(revit_category_id, @revitCategoryId),
                 updated_at_utc = @updatedAtUtc
             WHERE id = @id
             """;
@@ -191,8 +200,43 @@ internal sealed partial class LocalFamilyImportService
         cmd.Parameters.Add(new SqliteParameter("@versionLabel", versionLabel));
         cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@revitCategory", revitCategory ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@revitCategoryId", revitCategoryId ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", now.ToString("o")));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Replaces the item's category-driven facts (ADR-055): DELETE + INSERT
+    /// inside the caller's transaction. Called only when the import actually
+    /// extracted facts (<paramref name="facts"/> non-null) — a null list
+    /// means "no snapshot available" (folder import, legacy callers) and
+    /// leaves existing rows for the actualization task.
+    /// </summary>
+    private static async Task ReplaceFamilyFactsAsync(
+        SqliteConnection connection, string catalogItemId,
+        IReadOnlyList<FamilyFact> facts, CancellationToken ct)
+    {
+        using (var deleteCmd = connection.CreateCommand())
+        {
+            deleteCmd.CommandText = "DELETE FROM family_facts WHERE catalog_item_id = @itemId";
+            deleteCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            await deleteCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        foreach (var fact in facts)
+        {
+            using var insertCmd = connection.CreateCommand();
+            insertCmd.CommandText = """
+                INSERT INTO family_facts (catalog_item_id, fact_key, value_key, value_display)
+                VALUES (@itemId, @factKey, @valueKey, @valueDisplay)
+                """;
+            insertCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            insertCmd.Parameters.Add(new SqliteParameter("@factKey", fact.FactKey));
+            insertCmd.Parameters.Add(new SqliteParameter("@valueKey", fact.ValueKey));
+            insertCmd.Parameters.Add(new SqliteParameter("@valueDisplay", fact.ValueDisplay));
+            await insertCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
     }
 
     private static async Task InsertVersionAsync(SqliteConnection connection, string versionId,
@@ -432,7 +476,17 @@ internal sealed partial class LocalFamilyImportService
             // catalog item reflects the new content for stale detection.
             var normalizedNewName = FamilyNameNormalizer.Normalize(item.FileName);
             await UpdateCatalogItemWithNameAsync(connection, item.ExistingCatalogItemId!, item.FileName, normalizedNewName, currentVersion.VersionLabel, now, ct,
-                item.ContentHash, item.HashFormatVersion);
+                item.ContentHash, item.HashFormatVersion, item.RevitCategory,
+                item.LoadableSnapshot?.CategoryId ?? item.SystemSnapshot?.CategoryId);
+
+            // ADR-055: an overwrite re-extracted the snapshot — refresh the
+            // facts too (the family may have changed Part Type). Skip when
+            // no snapshot survived the dialog (legacy path).
+            var overwriteFacts = item.LoadableSnapshot?.Facts;
+            if (overwriteFacts is not null)
+            {
+                await ReplaceFamilyFactsAsync(connection, item.ExistingCatalogItemId!, overwriteFacts, ct);
+            }
 
             // Update category_id + category_name if the user picked one.
             if (!string.IsNullOrEmpty(item.TargetCategoryId))

@@ -7,7 +7,7 @@ using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.ProjectManagement.ViewModels;
 
-public sealed partial class FieldLibraryViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class FieldLibraryViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel
 {
     private readonly IDialogPresenter _dialogPresenter;
 
@@ -38,6 +38,11 @@ public sealed partial class FieldLibraryViewModel : ObservableObject, IObservabl
     {
         LocalizationService.LanguageChanged -= OnLanguageChanged;
     }
+
+    // X / Alt+F4 path: Ok/Cancel unsubscribe explicitly, but closing the
+    // window directly skips them — unsubscribe here so the static
+    // LocalizationService.LanguageChanged event does not root this VM.
+    public void ConfirmClose(CloseConfirmationArgs args) => Unsubscribe();
 
     [RelayCommand]
     private void AddField()

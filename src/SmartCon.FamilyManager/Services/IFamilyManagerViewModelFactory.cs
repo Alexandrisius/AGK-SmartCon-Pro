@@ -14,10 +14,12 @@ public interface IFamilyManagerViewModelFactory
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? versionLabel,
         string? createdAtText, string? updatedAtText,
+        string? revitCategory = null,
         bool isReadOnly = false);
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
     AttributeLibraryViewModel CreateAttributeLibraryViewModel();
+    SharedParameterPickerViewModel CreateSharedParameterPickerViewModel(IEnumerable<string> existingNames);
     CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
     ProfileViewModel CreateProfileViewModel();
     ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "");

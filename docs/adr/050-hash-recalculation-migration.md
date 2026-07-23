@@ -1,8 +1,13 @@
 # ADR-050: Hash Recalculation Migration — user-initiated data repair с прогресс-диалогом
 
 **Date:** 2026-07-17  
-**Status:** accepted  
+**Status:** superseded by [ADR-054](054-database-actualization-engine.md) (фреймворк миграций заменён движком актуализации; механика hash-задачи — маркеры, purge, system re-flag — сохранена и описана там)  
 **Related:** Issue #126, ADR-048 (modeless progress pattern), ADR-049 (hash v2), I-14 (SQLite thread safety), #95/#96 (WPF render workarounds)
+
+> **Примечание (2026-07-21):** этот документ — историческая запись первой data-миграции.
+> Актуальный фреймворк актуализации БД (задачи, единый движок, единый диалог) — ADR-054.
+> §2 (маркеры `hash_format_version`), §3 (system re-flag), §6 (обработка проблемных файлов)
+> остаются действующей механикой задачи `hash-v2`.
 
 ## Context
 

@@ -41,8 +41,8 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
             FROM catalog_items ci
             INNER JOIN catalog_versions cv ON cv.catalog_item_id = ci.id AND cv.version_label = ci.current_version_label
             INNER JOIN family_files ff ON ff.id = cv.file_id
-            WHERE ci.id = @itemId
-            ORDER BY ABS(cv.revit_major_version - @targetRevit) ASC, cv.revit_major_version DESC
+            WHERE ci.id = @itemId AND cv.revit_major_version <= @targetRevit
+            ORDER BY cv.revit_major_version DESC
             LIMIT 1
             """;
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
@@ -51,7 +51,7 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            SmartConLogger.Info("No version found for targetRevitVersion");
+            SmartConLogger.Info("No compatible version found (all file versions are newer than target Revit)");
             return new FamilyResolvedFile("", catalogItemId, null, null);
         }
 

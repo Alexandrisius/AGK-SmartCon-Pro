@@ -1,6 +1,7 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using SmartCon.Core.Logging;
 #if NET8_0_OR_GREATER
 using CommandBase = Nice3point.Revit.Toolkit.External.ExternalCommand;
 #else
@@ -40,6 +41,7 @@ public sealed class FamilyManagerCommand : CommandBase
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"FamilyManagerCommand (toggle dockable pane) failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             message = ex.Message;
             return Result.Failed;
         }
