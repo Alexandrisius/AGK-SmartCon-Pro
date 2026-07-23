@@ -48,12 +48,29 @@ public static partial class LocalizationService
         en["Tx_FitDynamicToFitting"] = "PipeConnect — Fit dynamic to fitting";
         ru["Tx_AlignAfterSize"] = "PipeConnect — Выравнивание после размера";
         en["Tx_AlignAfterSize"] = "PipeConnect — Alignment after size";
-        ru["Tx_ChainLevel"] = "Цепочка: уровень {0}";
-        en["Tx_ChainLevel"] = "Chain: level {0}";
-        ru["Tx_ChainRollback"] = "Цепочка: откат уровня {0}";
-        en["Tx_ChainRollback"] = "Chain: rollback level {0}";
         ru["Tx_ChainSeal"] = "Цепочка: финальное переподключение";
         en["Tx_ChainSeal"] = "Chain: final reconnect";
+        ru["Tx_ChainUnseal"] = "Цепочка: отмена компенсации";
+        en["Tx_ChainUnseal"] = "Chain: unseal";
+        ru["Tx_ChainElement"] = "Цепочка: элемент {0}";
+        en["Tx_ChainElement"] = "Chain: element {0}";
+        ru["Tx_ChainRollbackElement"] = "Цепочка: откат элемента {0}";
+        en["Tx_ChainRollbackElement"] = "Chain: rollback element {0}";
+        ru["Tx_CleanupOldFitting"] = "PipeConnect — Удаление фитинга/перехода точки";
+        en["Tx_CleanupOldFitting"] = "PipeConnect — Delete point fitting/reducer";
+
+        ru["Status_AttachingElement"] = "Присоединение элемента {0} из {1}…";
+        en["Status_AttachingElement"] = "Attaching element {0} of {1}…";
+        ru["Status_ElementAttached"] = "Элемент {0} из {1} присоединён";
+        en["Status_ElementAttached"] = "Element {0} of {1} attached";
+        ru["Status_ElementAttachedIdle"] = "Элемент {0} из {1} присоединён без изменений";
+        en["Status_ElementAttachedIdle"] = "Element {0} of {1} attached unchanged";
+        ru["Status_RollingBackElement"] = "Откат элемента {0}…";
+        en["Status_RollingBackElement"] = "Rolling back element {0}…";
+        ru["Status_ElementDetached"] = "Элемент {0} отсоединён";
+        en["Status_ElementDetached"] = "Element {0} detached";
+        ru["Status_ElementsConnected"] = "Подключено элементов: {0}";
+        en["Status_ElementsConnected"] = "{0} element(s) connected";
 
         ru["Status_Rotated"] = "Повернуто на {0}°";
         en["Status_Rotated"] = "Rotated by {0}°";
@@ -105,22 +122,34 @@ public static partial class LocalizationService
         en["Status_FamilyNotFoundInProject"] = "Family '{0}' not found in project";
         ru["Status_InsertingFittingAction"] = "Вставка фитинга…";
         en["Status_InsertingFittingAction"] = "Inserting fitting…";
-        ru["Status_AttachingLevel"] = "Присоединение уровня {0}…";
-        en["Status_AttachingLevel"] = "Attaching level {0}…";
-        ru["Status_LevelAttached"] = "Уровень {0} присоединён";
-        en["Status_LevelAttached"] = "Level {0} attached";
-        ru["Status_RollbackLevel"] = "Откат уровня {0}…";
-        en["Status_RollbackLevel"] = "Rolling back level {0}…";
-        ru["Status_LevelDetached"] = "Уровень {0} отсоединён";
-        en["Status_LevelDetached"] = "Level {0} detached";
         ru["Status_ConnectingNetwork"] = "Подключение всей сети…";
         en["Status_ConnectingNetwork"] = "Connecting entire network…";
-        ru["Status_LevelsConnected"] = "Подключено {0} уровней";
-        en["Status_LevelsConnected"] = "{0} levels connected";
-        ru["Status_LevelsSkipped"] = "Уровень {0} (пропущено без изменений: {1})";
-        en["Status_LevelsSkipped"] = "Level {0} ({1} idle level(s) skipped)";
-        ru["Status_ChainSealed"] = "Сеть скомпенсирована на уровне {0} — дальнейшие уровни не требуются";
-        en["Status_ChainSealed"] = "Network fully compensated at level {0} — no further levels needed";
+        ru["Status_ChainSealed"] = "Вся сеть подключена автоматически (компенсировано на уровне {0}) — обход не требуется";
+        en["Status_ChainSealed"] = "Entire network connected automatically (compensated at level {0}) — no traversal needed";
+
+        ru["Status_ConnectPostponedChain"] = "Соединение отложено — подключите оставшиеся элементы сети (+ или «Подключить всё»)";
+        en["Status_ConnectPostponedChain"] = "Connect postponed — attach the remaining network elements (+ or \"Connect all\")";
+
+        ru["Dialog_UnconnectedChain_Title"] = "PipeConnect — неподключённые элементы сети";
+        en["Dialog_UnconnectedChain_Title"] = "PipeConnect — unconnected network elements";
+        ru["Dialog_UnconnectedChain_Instruction"] = "Часть сети осталась отсоединённой";
+        en["Dialog_UnconnectedChain_Instruction"] = "Part of the network is still detached";
+        ru["Dialog_UnconnectedChain_Message"] =
+            "Подключено элементов: {0} из {1}.\n\n" +
+            "Элементы, которые вы переместили, оторваны от остальной сети. " +
+            "Если соединить сейчас, они так и останутся отсоединёнными — это приведёт к разрыву сети в модели.";
+        en["Dialog_UnconnectedChain_Message"] =
+            "Elements attached: {0} of {1}.\n\n" +
+            "The elements you moved are detached from the rest of the network. " +
+            "If you connect now, they will stay detached — this will break the network in the model.";
+        ru["Dialog_UnconnectedChain_ConnectAll"] = "Подключить всё и соединить";
+        en["Dialog_UnconnectedChain_ConnectAll"] = "Attach all and connect";
+        ru["Dialog_UnconnectedChain_ConnectAllHint"] = "Присоединить все оставшиеся элементы сети, затем завершить соединение";
+        en["Dialog_UnconnectedChain_ConnectAllHint"] = "Attach all remaining network elements, then finish the connection";
+        ru["Dialog_UnconnectedChain_ConnectAsIs"] = "Соединить как есть";
+        en["Dialog_UnconnectedChain_ConnectAsIs"] = "Connect as-is";
+        ru["Dialog_UnconnectedChain_ConnectAsIsHint"] = "Завершить соединение — остальная сеть останется отсоединённой";
+        en["Dialog_UnconnectedChain_ConnectAsIsHint"] = "Finish the connection — the rest of the network stays detached";
 
         ru["Pick_FirstElement"] = "PipeConnect: выберите ПЕРВЫЙ элемент (будет присоединён)";
         en["Pick_FirstElement"] = "PipeConnect: select FIRST element (to be connected)";
@@ -146,6 +175,8 @@ public static partial class LocalizationService
         en["Error_ChangeSize"] = "Size change error: {0}";
         ru["Error_Insert"] = "Ошибка вставки: {0}";
         en["Error_Insert"] = "Insert error: {0}";
+        ru["Error_AttachElement"] = "Не удалось присоединить элемент {0} — он возвращён в исходное состояние. Проверьте его и повторите.";
+        en["Error_AttachElement"] = "Failed to attach element {0} — it was restored to its original state. Check it and retry.";
         ru["Error_Chain"] = "Ошибка цепочки: {0}";
         en["Error_Chain"] = "Chain error: {0}";
         ru["Error_Rollback"] = "Ошибка отката: {0}";

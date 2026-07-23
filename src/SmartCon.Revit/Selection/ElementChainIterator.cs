@@ -75,8 +75,26 @@ public sealed class ElementChainIterator : IElementChainIterator
                     {
                         if (refConn.Owner is null) continue;
                         var neighborId = refConn.Owner.Id;
+                        if (comparer.Equals(neighborId, elemId)) continue;
                         if (stopAtElements is not null && stopAtElements.Contains(neighborId)) continue;
-                        if (visited.Contains(neighborId)) continue;
+
+                        if (visited.Contains(neighborId))
+                        {
+                            // Cross-edge (network loop): the neighbor was already
+                            // discovered via another branch, so no tree edge is
+                            // added (FindEdgeToParent/adjacency/seal must not see
+                            // it). But the PHYSICAL connection is still recorded
+                            // in originalConnections — otherwise attach would
+                            // tear it in DisconnectElementConnections and no one
+                            // would ever restore it (bug: pipe left detached
+                            // from a tee after compensation).
+                            builder.SaveConnection(elemId, new ConnectionRecord(
+                                elemId, conn.Id, neighborId, refConn.Id));
+                            builder.SaveConnection(neighborId, new ConnectionRecord(
+                                neighborId, refConn.Id, elemId, conn.Id));
+                            SmartConLogger.Debug($"  cross-edge (loop): {elemId.GetValue()}:{conn.Id} ↔ {neighborId.GetValue()}:{refConn.Id} — recorded, not traversed");
+                            continue;
+                        }
 
                         visited.Add(neighborId);
                         nextLevelIds.Add(neighborId);

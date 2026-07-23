@@ -285,8 +285,10 @@ public sealed class ConnectExecutor
                 });
 
                 const double eps = 1e-6;
-                var dynId = context.Session.DynamicConnector.OwnerElementId;
-                var dynConnIdx = context.Session.DynamicConnector.ConnectorIndex;
+                // Element-wise chain mode: the dynamic being fitted is the ACTIVE
+                // connection point's dynamic, not necessarily the session root.
+                var dynId = currentDynamic?.OwnerElementId ?? context.Session.DynamicConnector.OwnerElementId;
+                var dynConnIdx = currentDynamic?.ConnectorIndex ?? context.Session.DynamicConnector.ConnectorIndex;
                 double actualDynRadius = currentDynamic?.Radius ?? currentDynRadius;
                 if (adjustDynamicToFit && System.Math.Abs(achievedDynRadius - actualDynRadius) > eps)
                 {
@@ -497,7 +499,8 @@ public sealed class ConnectExecutor
         var posErr = VectorUtils.DistanceTo(conn.OriginVec3, targetOrigin);
         if (posErr > positionEpsFt)
         {
-            SmartConLogger.Warn($"offset by {posErr * FeetToMm:F2} mm — correcting");
+            SmartConLogger.Warn($"offset by {posErr * FeetToMm:F2} mm — correcting " +
+                $"[Action: проверьте итоговое положение элемента после соединения]");
             _transformSvc.MoveElement(doc, elementId, targetOrigin - conn.OriginVec3);
             doc.Regenerate();
         }
@@ -508,7 +511,8 @@ public sealed class ConnectExecutor
         double err = System.Math.Abs(conn.Radius - target.Radius);
         SmartConLogger.Debug($"{label} R={conn.Radius * FeetToMm:F2}mm, target R={target.Radius * FeetToMm:F2}mm, Δ={err * FeetToMm:F2}mm");
         if (err > radiusEps)
-            SmartConLogger.Warn($"MISMATCH: {label} radius mismatch (Δ={err * FeetToMm:F2}mm)");
+            SmartConLogger.Warn($"MISMATCH: {label} radius mismatch (Δ={err * FeetToMm:F2}mm) " +
+                $"[Action: проверьте размеры коннекторов после соединения — при необходимости добавьте переходник]");
     }
 
     private void CorrectDynamicPosition(
@@ -518,7 +522,8 @@ public sealed class ConnectExecutor
         var posErr = VectorUtils.DistanceTo(dynFresh.OriginVec3, target.OriginVec3);
         if (posErr > positionEpsFt)
         {
-            SmartConLogger.Warn($"dynamic offset by {posErr * FeetToMm:F2} mm — correcting");
+            SmartConLogger.Warn($"dynamic offset by {posErr * FeetToMm:F2} mm — correcting " +
+                $"[Action: проверьте итоговое положение элемента после соединения]");
             PipeAbsorptionApplier.MoveOrAbsorb(
                 doc, _transformSvc, dynFresh.OwnerElementId, dynFresh.OriginVec3,
                 target.OriginVec3 - dynFresh.OriginVec3);
@@ -619,7 +624,8 @@ public sealed class ConnectExecutor
             {
                 if (userManuallyChangedSize)
                 {
-                    SmartConLogger.Warn($"User changed size manually, fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — reducer needed");
+                    SmartConLogger.Warn($"User changed size manually, fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — reducer needed " +
+                        $"[Action: будет вставлен переходник между фитингом и dynamic-элементом]");
                     needsPrimaryReducer = true;
                 }
                 else
@@ -629,7 +635,8 @@ public sealed class ConnectExecutor
                     // могла создать комбинацию DN, отсутствующую в таблице, и сломать семейство.
                     double targetRadius = planTargetRadius ?? fc2.Radius;
                     SmartConLogger.Warn($"Mismatch fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — trying to adjust dynamic " +
-                        $"(target={targetRadius * FeetToMm:F2}mm{(planTargetRadius is null ? "" : ", from session plan")})");
+                        $"(target={targetRadius * FeetToMm:F2}mm{(planTargetRadius is null ? "" : ", from session plan")}) " +
+                        $"[Action: если корректировка не удастся, будет вставлен переходник]");
                     bool fixed1 = _paramResolver.TrySetConnectorRadius(
                         doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, targetRadius);
                     doc.Regenerate();
@@ -796,7 +803,8 @@ public sealed class ConnectExecutor
                 // с constraints остальных коннекторов), а не «сырой» радиус static.
                 double targetRadius = context.Session.ParamTargetRadius ?? staticConn.Radius;
                 SmartConLogger.Warn($"Direct: mismatch Δ={rErr * FeetToMm:F2}mm — trying to adjust dynamic " +
-                    $"(target={targetRadius * FeetToMm:F2}mm{(context.Session.ParamTargetRadius is null ? "" : ", from session plan")})");
+                    $"(target={targetRadius * FeetToMm:F2}mm{(context.Session.ParamTargetRadius is null ? "" : ", from session plan")}) " +
+                    $"[Action: если корректировка не удастся, будет вставлен переходник]");
                 bool fixed2 = _paramResolver.TrySetConnectorRadius(
                     doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, targetRadius);
                 doc.Regenerate();
@@ -824,7 +832,8 @@ public sealed class ConnectExecutor
                 }
                 else
                 {
-                    SmartConLogger.Warn("TrySetConnectorRadius returned false — reducer needed");
+                    SmartConLogger.Warn("TrySetConnectorRadius returned false — reducer needed " +
+                        "[Action: будет вставлен переходник; если его нет в mapping, добавьте семейство (Настройки → Правила)]");
                     needsPrimaryReducer = true;
                 }
             }

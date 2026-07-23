@@ -79,7 +79,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     [ObservableProperty] private bool _isReducerVisible;
     public ObservableCollection<FittingCardItem> AvailableReducers { get; } = [];
 
-    [ObservableProperty] private int _rotationAngleDeg = 15;
+    [ObservableProperty] private int _rotationAngleDeg = 45;
     [ObservableProperty] private FamilySizeOption? _selectedDynamicSize;
     [ObservableProperty] private bool _hasSizeOptions;
 
@@ -135,6 +135,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         _cycleService = new ConnectorCycleService(connSvc, alignmentSvc, paramResolver, _ctcManager);
         _activeDynamic = ctx.DynamicConnector;
         _chainGraph = ctx.ChainGraph;
+        _elementQueue = _chainGraph?.GetElementQueue();
+        _attachedElementIds.Add(ctx.DynamicConnector.OwnerElementId.GetValue());
 
         var (fittings, reducers) = FittingCardBuilder.Build(
             ctx.ProposedFittings,
@@ -163,7 +165,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         using var _scope = SmartConLogger.BeginScope("Editor",
             ("Method", "RefreshAutoSelectSize"));
         var newAuto = _sizeLoader.RefreshAutoSelect(
-            _doc, _ctx.DynamicConnector, _activeDynamic!, AvailableDynamicSizes);
+            _doc, _activeDynamic ?? _ctx.DynamicConnector, _activeDynamic!, AvailableDynamicSizes);
 
         if (newAuto is not null && AvailableDynamicSizes.Count > 0)
         {
@@ -185,6 +187,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         try
         {
+            _activeParentConnector = _ctx.StaticConnector;
             _activeDynamic = _initHandler.DisconnectAndAlign(_doc, _ctx, _groupSession)
                 ?? _ctx.DynamicConnector;
 
@@ -202,9 +205,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 InitLegacyFlow();
             }
 
-            TrySealChainIfQuiet();
-
             RefreshAutoSelectSize();
+            UpdateDynamicInfoPanel();
+            TrySealAtCurrentBoundary();
             SmartConLogger.Info("DONE");
         }
         catch (Exception ex)
@@ -289,7 +292,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         if (plan.Links.Count < 2)
         {
-            SmartConLogger.Warn("ReducerFitting plan has < 2 links — falling back to legacy flow");
+            SmartConLogger.Warn("ReducerFitting plan has < 2 links — falling back to legacy flow " +
+                "[Action: если соединение собрано не так, как ожидалось, сообщите разработчикам — план цепочки фитингов некорректен]");
             InitLegacyFlow();
             return;
         }
@@ -300,7 +304,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         if (reducerLink.Type != FittingChainNodeType.Reducer ||
             fittingLink.Type != FittingChainNodeType.Fitting)
         {
-            SmartConLogger.Warn("ReducerFitting plan has unexpected link types — falling back to legacy flow");
+            SmartConLogger.Warn("ReducerFitting plan has unexpected link types — falling back to legacy flow " +
+                "[Action: если соединение собрано не так, как ожидалось, сообщите разработчикам — типы звеньев плана некорректны]");
             InitLegacyFlow();
             return;
         }
@@ -335,7 +340,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         if (insertedReducerId is null)
         {
-            SmartConLogger.Warn("ReducerFitting: reducer insertion failed — falling back");
+            SmartConLogger.Warn("ReducerFitting: reducer insertion failed — falling back " +
+                "[Action: проверьте, что семейство переходника загружено в проект и mapping указывает на существующий тип]");
             InitLegacyFlow();
             return;
         }
@@ -403,10 +409,10 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         SmartConLogger.Info($"ReducerFitting: DONE reducer={_primaryReducerId?.GetValue()}, fitting={_currentFittingId?.GetValue()}");
     }
 
-    [RelayCommand(CanExecute = nameof(CanOperate))]
+    [RelayCommand(CanExecute = nameof(CanEditOperations))]
     private void RotateLeft() => ExecuteRotate(+RotationAngleDeg);
 
-    [RelayCommand(CanExecute = nameof(CanOperate))]
+    [RelayCommand(CanExecute = nameof(CanEditOperations))]
     private void RotateRight() => ExecuteRotate(-RotationAngleDeg);
 
     private void ExecuteRotate(int angleDeg)
@@ -414,18 +420,27 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         using var _scope = SmartConLogger.BeginScope("Editor",
             ("Method", "ExecuteRotate"),
             ("Angle", angleDeg));
+        if (_activeDynamic is null) return;
+
         IsBusy = true;
         try
         {
+            UnsealIfSealed("поворот");
+
             _rotationHandler.ExecuteRotation(
-                _doc, _groupSession!, _ctx, _activeDynamic,
-                _currentFittingId, _primaryReducerId, _chainGraph,
-                _snapshotStore, ChainDepth, angleDeg);
+                _doc, _groupSession!, _activeDynamic, ActiveUpstreamConnector,
+                _currentFittingId, _primaryReducerId, angleDeg);
+
+            _activeDynamic = _ctcManager.RefreshWithCtcOverride(
+                _doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                ?? _activeDynamic;
+            UpdateDynamicInfoPanel();
+
             StatusMessage = string.Format(LocalizationService.GetString("Status_Rotated"), angleDeg);
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"Failed: {ex.Message}");
+            SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Rotate"), ex.Message);
         }
         finally
@@ -449,12 +464,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         try
         {
+            UnsealIfSealed("смена размера");
+
             var result = _sizeHandler.ChangeSize(
                 _doc, _groupSession!, _ctx, SelectedDynamicSize,
-                _activeDynamic!, _currentFittingId, _primaryReducerId);
+                _activeDynamic!, ActiveUpstreamConnector, _currentFittingId, _primaryReducerId);
 
             _activeDynamic = result.ActiveDynamic;
             _userManuallyChangedSize = result.UserManuallyChangedSize;
+            UpdateDynamicInfoPanel();
 
             StatusMessage = string.Format(LocalizationService.GetString("Status_SizeChangedTo"), SelectedDynamicSize.DisplayName);
 
@@ -474,7 +492,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 SmartConLogger.Info($"Auto-update reducer (id={_primaryReducerId})");
                 var reducerUpstream = (_currentFittingId is not null && _activeFittingConn2 is not null)
                     ? _activeFittingConn2
-                    : _ctx.StaticConnector;
+                    : ActiveUpstreamConnector;
                 var newReducerConn2 = SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false, reducerUpstream);
                 if (newReducerConn2 is not null && _activeDynamic is not null)
                 {
@@ -512,7 +530,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"Error: {ex.Message}");
+            SmartConLogger.Error($"Error: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_ChangeSize"), ex.Message);
         }
         finally

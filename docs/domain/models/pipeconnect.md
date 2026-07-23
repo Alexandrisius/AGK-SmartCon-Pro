@@ -340,6 +340,43 @@ public sealed class NetworkSnapshotStore { ... }
 
 ---
 
+## ChainQueueEntry
+
+Одна запись поэлементной очереди цепи (element-wise chain mode): элемент и BFS-уровень,
+на котором он был обнаружен. Уровень нужен для поиска родительского ребра
+(родитель всегда на уровне −1) и для детекции границы уровня при раннем
+«запечатывании» цепи (ADR-052). Очередь строится `ConnectionGraph.GetElementQueue()`:
+индекс 0 = root dynamic, далее элементы уровней 1..N в порядке обнаружения —
+родитель любого элемента всегда имеет меньший индекс, поэтому цепь подключается
+строго по одному элементу.
+
+**Файл:** `SmartCon.Core/Models/ChainQueueEntry.cs`
+
+```csharp
+public readonly record struct ChainQueueEntry(ElementId ElementId, int Level);
+```
+
+---
+
+## UnconnectedChainChoice
+
+Выбор пользователя в диалоге «неподключённые элементы сети», который показывается
+при нажатии «Соединить», когда часть цепи ещё не присоединена (элементы оторваны
+от своей сети). Возвращается `IDialogService.ShowUnconnectedChainWarning`.
+
+**Файл:** `SmartCon.Core/Models/UnconnectedChainChoice.cs`
+
+```csharp
+public enum UnconnectedChainChoice
+{
+    ConnectAll,    // присоединить все оставшиеся элементы, затем завершить соединение
+    ConnectAsIs,   // соединить как есть — остальная сеть останется отсоединённой
+    GoBack,        // вернуться в редактор без соединения
+}
+```
+
+---
+
 ## LookupColumnConstraint
 
 Ограничение колонки LookupTable для multi-column поиска.

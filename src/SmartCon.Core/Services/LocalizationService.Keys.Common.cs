@@ -118,6 +118,8 @@ public static partial class LocalizationService
         en["Label_Size"] = "Size:";
         ru["Label_Network"] = "Сеть:";
         en["Label_Network"] = "Network:";
+        ru["Label_CurrentElement"] = "Текущий элемент:";
+        en["Label_CurrentElement"] = "Current element:";
         ru["Label_Updates"] = "Обновления";
         en["Label_Updates"] = "Updates";
         ru["Label_AvailableFamilies"] = "Доступные семейства:";

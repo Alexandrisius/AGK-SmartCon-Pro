@@ -31,6 +31,8 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="10"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="10"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="8"/>
                 <RowDefinition Height="Auto"/>
@@ -44,8 +46,25 @@
                        Style="{DynamicResource HeadingText}"
                        HorizontalAlignment="Center"/>
 
+            <!-- Текущий элемент (динамик) -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource SurfaceBrush}" CornerRadius="4"
+                    BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                    Padding="10,4">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc Label_CurrentElement}"
+                               FontSize="10"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding DynamicElementTitle}"
+                               FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               TextWrapping="Wrap"
+                               ToolTip="{Binding DynamicElementTitle}"/>
+                </StackPanel>
+            </Border>
+
             <!-- Поворот -->
-            <Grid Grid.Row="2" HorizontalAlignment="Center">
+            <Grid Grid.Row="4" HorizontalAlignment="Center">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="10"/>
@@ -83,7 +102,7 @@
             </Grid>
 
             <!-- Изменить соединение -->
-            <Button Grid.Row="4"
+            <Button Grid.Row="6"
                     Height="28"
                     Padding="16,3"
                     HorizontalAlignment="Center"
@@ -94,7 +113,7 @@
             </Button>
 
             <!-- Размер dynamic -->
-            <StackPanel Grid.Row="6">
+            <StackPanel Grid.Row="8">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -127,7 +146,7 @@
             </StackPanel>
 
             <!-- Фитинг -->
-            <Grid Grid.Row="8">
+            <Grid Grid.Row="10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="4"/>
@@ -157,7 +176,7 @@
             </Grid>
 
             <!-- Переходник (reducer) -->
-            <Grid Grid.Row="9" Margin="0,2,0,0"
+            <Grid Grid.Row="11" Margin="0,2,0,0"
                   Visibility="{Binding IsReducerVisible, Converter={StaticResource BoolToVisibility}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -188,7 +207,7 @@
             </Grid>
 
             <!-- Глубина цепочки -->
-            <Grid Grid.Row="11" Margin="0,2,0,0"
+            <Grid Grid.Row="13" Margin="0,2,0,0"
                   Visibility="{Binding HasChain, Converter={StaticResource BoolToVisibility}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -218,7 +237,7 @@
             </Grid>
 
             <!-- Статус -->
-            <Border Grid.Row="12"
+            <Border Grid.Row="14"
                     Style="{DynamicResource StatusBarBorder}"
                     Margin="0,8,0,0">
                 <TextBlock Text="{Binding StatusMessage}"
@@ -227,7 +246,7 @@
             </Border>
 
             <!-- Нижняя панель -->
-            <Grid Grid.Row="13" Margin="0,10,0,0">
+            <Grid Grid.Row="15" Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>

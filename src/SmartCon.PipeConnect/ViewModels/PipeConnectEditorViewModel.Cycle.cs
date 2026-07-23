@@ -17,19 +17,25 @@ public sealed partial class PipeConnectEditorViewModel
     private void CycleConnector()
     {
         using var _scope = SmartConLogger.BeginScope("EditorCycle",
-            ("Method", "CycleConnector"));
+            ("Method", "CycleConnector"),
+            ("DynId", _activeDynamic?.OwnerElementId.GetValue() ?? -1));
         if (_cycleService.State.Count <= 1) return;
 
         var target = _cycleService.State.FindNext();
         if (target is null) return;
+
+        SmartConLogger.Info($"Cycling connector on element {target.OwnerElementId.GetValue()}: " +
+            $"{_activeDynamic?.ConnectorIndex} → {target.ConnectorIndex}");
 
         IsBusy = true;
         StatusMessage = LocalizationService.GetString("Status_SwitchingConnector");
 
         try
         {
+            UnsealIfSealed("смена коннектора");
+
             var previousActive = _activeDynamic;
-            var alignTarget = _activeFittingConn2 ?? _ctx.StaticConnector;
+            var alignTarget = _activeFittingConn2 ?? ActiveUpstreamConnector;
             var savedChainDepth = ChainDepth;
 
             RollbackChainLevels();
@@ -57,13 +63,14 @@ public sealed partial class PipeConnectEditorViewModel
 
             ReevaluateAfterCycle();
             RefreshCycleSnapshot();
+            SaveActivePointState();
 
             StatusMessage = LocalizationService.GetString("Status_ConnectorChanged");
             CycleConnectorCommand.NotifyCanExecuteChanged();
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"Failed: {ex.Message}");
+            SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
@@ -72,22 +79,32 @@ public sealed partial class PipeConnectEditorViewModel
         }
     }
 
-    private bool CanCycleConnector() => IsSessionActive && !IsBusy && _cycleService.State.Count > 1;
+    /// <summary>
+    /// Connector cycling is available only for the ROOT connection point
+    /// (ChainDepth == 0): the root dynamic is not physically connected yet
+    /// (final ConnectTo happens in Connect), so re-alignment is safe.
+    /// A chain element at depth N is already connected to its parent — cycling
+    /// its connector would require a disconnect→align→reconnect cycle and would
+    /// invalidate the immutable graph edge, so it is intentionally not offered.
+    /// </summary>
+    private bool CanCycleConnector() => IsSessionActive && !IsBusy && ChainDepth == 0 && _cycleService.State.Count > 1;
 
     private void RollbackChainLevels()
     {
         using var _scope = SmartConLogger.BeginScope("EditorCycle",
             ("Method", "RollbackChainLevels"));
-        if (ChainDepth <= 0 || _chainGraph is null) return;
+        if (ChainDepth <= 0 || _chainGraph is null || _elementQueue is null) return;
 
-        SmartConLogger.Info($"Rolling back {ChainDepth} chain levels before alignment");
+        SmartConLogger.Info($"Rolling back {ChainDepth} chain element(s) before alignment");
 
         try
         {
             while (ChainDepth > 0)
             {
-                _chainOpHandler.DecrementLevel(
-                    _doc, _groupSession!, _chainGraph, _snapshotStore, ChainDepth);
+                var entry = _elementQueue[ChainDepth];
+                _chainOpHandler.DetachSingleElement(
+                    _doc, _groupSession!, _chainGraph, _snapshotStore, entry);
+                _attachedElementIds.Remove(entry.ElementId.GetValue());
                 ChainDepth--;
             }
         }
@@ -102,25 +119,36 @@ public sealed partial class PipeConnectEditorViewModel
 
     private void RestoreChainLevels(int targetDepth)
     {
-        if (targetDepth <= 0 || _chainGraph is null) return;
+        if (targetDepth <= 0 || _chainGraph is null || _elementQueue is null) return;
 
-        SmartConLogger.Info($"Restoring {targetDepth} chain levels after cancel");
+        SmartConLogger.Info($"Restoring {targetDepth} chain element(s) after cancel");
 
         try
         {
             for (int i = 0; i < targetDepth; i++)
             {
-                int nextLevel = ChainDepth + 1;
-                if (nextLevel >= _chainGraph.Levels.Count) break;
+                int nextIndex = ChainDepth + 1;
+                if (nextIndex >= _elementQueue.Count) break;
 
-                _chainOpHandler.IncrementLevel(
-                    _doc, _groupSession!, _chainGraph, _snapshotStore, _warmedElementIds, nextLevel);
-                ChainDepth = nextLevel;
+                var entry = _elementQueue[nextIndex];
+                var result = _chainOpHandler.AttachSingleElement(
+                    _doc, _groupSession!, _chainGraph, _snapshotStore, _warmedElementIds, entry,
+                    _attachedElementIds);
+
+                if (result.Edge is null)
+                {
+                    SmartConLogger.Warn($"RestoreChainLevels: element {entry.ElementId.GetValue()} could not be re-attached — stopping restore. " +
+                        $"[Action: проверьте целостность цепочки элементов и подключите остаток вручную кнопкой «+»]");
+                    break;
+                }
+
+                _attachedElementIds.Add(entry.ElementId.GetValue());
+                ChainDepth = nextIndex;
             }
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"Error (ignored): {ex.Message} [Action: восстановление уровней цепочки прервано — проверьте целостность цепочки элементов]");
+            SmartConLogger.Warn($"Error (ignored): {ex.Message} [Action: восстановление элементов цепочки прервано — проверьте целостность цепочки элементов]");
         }
 
         _chainDisabledByCycle = false;
@@ -368,7 +396,8 @@ public sealed partial class PipeConnectEditorViewModel
             else
             {
                 IsReducerVisible = true;
-                SmartConLogger.Warn("Reducer needed but no reducer families found");
+                SmartConLogger.Warn("Reducer needed but no reducer families found " +
+                    "[Action: добавьте семейство переходника в mapping (Настройки → Правила)]");
             }
         }
         else

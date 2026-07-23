@@ -74,6 +74,22 @@ public sealed class ConnectionGraph
             }
         }
     }
+
+    /// <summary>
+    /// Flattened element queue in BFS discovery order: index 0 = root dynamic,
+    /// then level-1 elements in discovery order, then level-2, and so on.
+    /// Because levels are emitted in ascending order, every element's parent
+    /// always appears earlier in the queue — the chain can be attached strictly
+    /// one element at a time (element-wise chain mode).
+    /// </summary>
+    public IReadOnlyList<ChainQueueEntry> GetElementQueue()
+    {
+        var queue = new List<ChainQueueEntry>(_nodes.Count);
+        for (int level = 0; level < _levels.Count; level++)
+            foreach (var id in _levels[level])
+                queue.Add(new ChainQueueEntry(id, level));
+        return queue;
+    }
 }
 
 /// <summary>

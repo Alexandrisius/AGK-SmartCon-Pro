@@ -24,6 +24,14 @@ public sealed partial class PipeConnectEditorViewModel
     {
         using var _scope = SmartConLogger.BeginScope("EditorConnect",
             ("Method", "Connect"));
+
+        if (!ConfirmConnectWithUnconnectedChain())
+            return;
+
+        // Final validation and ConnectTo always run on the ROOT connection point
+        // (static ↔ root dynamic) regardless of where the user stopped in the queue.
+        SwitchToPoint(0);
+
         IsBusy = true;
         StatusMessage = LocalizationService.GetString("Status_Validating");
 
@@ -122,6 +130,51 @@ public sealed partial class PipeConnectEditorViewModel
     }
 
     private bool CanOperate() => IsSessionActive && !IsBusy;
+
+    /// <summary>
+    /// Editing operations (rotate / resize / insert / reflect / cycle) stay available
+    /// even when the chain is sealed (ADR-052): the seal is a transparent traversal
+    /// optimization and is torn down automatically (UnsealIfSealed) before any edit.
+    /// </summary>
+    private bool CanEditOperations() => IsSessionActive && !IsBusy;
+
+    private bool ConfirmConnectWithUnconnectedChain()
+    {
+        if (!HasUnconnectedChainElements)
+            return true;
+
+        var choice = _dialogSvc.ShowUnconnectedChainWarning(
+            ConnectedChainElementCount, TotalChainElementCount);
+
+        switch (choice)
+        {
+            case UnconnectedChainChoice.GoBack:
+                SmartConLogger.Info("Connect postponed by user — unconnected chain elements remain");
+                StatusMessage = LocalizationService.GetString("Status_ConnectPostponedChain");
+                return false;
+
+            case UnconnectedChainChoice.ConnectAsIs:
+                SmartConLogger.Warn($"User confirmed connect as-is: {ConnectedChainElementCount}/{TotalChainElementCount} chain elements attached, " +
+                    $"the rest stays detached. [Action: убедитесь, что пользователь осознаёт разрыв сети — при жалобах на оторванную сеть проверьте эту запись]");
+                return true;
+
+            case UnconnectedChainChoice.ConnectAll:
+                SmartConLogger.Info("User chose to attach all chain elements before connect");
+                ConnectAllChain();
+                if (HasUnconnectedChainElements)
+                {
+                    SmartConLogger.Warn("ConnectAllChain did not attach every element — Connect aborted, editor stays open. " +
+                        "[Action: проверьте статусную строку на ошибку обхода цепи и повторите]");
+                    return false;
+                }
+                return true;
+
+            default:
+                SmartConLogger.Warn($"Unexpected dialog choice '{choice}' — Connect aborted. " +
+                    $"[Action: сообщите разработчикам — неизвестное значение UnconnectedChainChoice]");
+                return false;
+        }
+    }
     private bool CanInsertFitting() => IsSessionActive && !IsBusy && SelectedFitting is not null;
     private bool CanInsertReducer() => IsSessionActive && !IsBusy && SelectedReducer is not null && _primaryReducerId is null;
     private bool CanReflectFittingCtc() => IsSessionActive && !IsBusy && _currentFittingId is not null;
@@ -132,11 +185,13 @@ public sealed partial class PipeConnectEditorViewModel
         RotateLeftCommand.NotifyCanExecuteChanged();
         RotateRightCommand.NotifyCanExecuteChanged();
         CycleConnectorCommand.NotifyCanExecuteChanged();
+        ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
         InsertReducerCommand.NotifyCanExecuteChanged();
         ReflectFittingCtcCommand.NotifyCanExecuteChanged();
         ReflectReducerCtcCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
+        ConnectAllChainCommand.NotifyCanExecuteChanged();
         IncrementChainDepthCommand.NotifyCanExecuteChanged();
         DecrementChainDepthCommand.NotifyCanExecuteChanged();
     }
@@ -146,11 +201,13 @@ public sealed partial class PipeConnectEditorViewModel
         RotateLeftCommand.NotifyCanExecuteChanged();
         RotateRightCommand.NotifyCanExecuteChanged();
         CycleConnectorCommand.NotifyCanExecuteChanged();
+        ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
         InsertReducerCommand.NotifyCanExecuteChanged();
         ReflectFittingCtcCommand.NotifyCanExecuteChanged();
         ReflectReducerCtcCommand.NotifyCanExecuteChanged();
         ConnectCommand.NotifyCanExecuteChanged();
+        ConnectAllChainCommand.NotifyCanExecuteChanged();
         IncrementChainDepthCommand.NotifyCanExecuteChanged();
         DecrementChainDepthCommand.NotifyCanExecuteChanged();
     }
@@ -177,14 +234,17 @@ public sealed partial class PipeConnectEditorViewModel
     }
 
     private List<ConnectorProxy> GetFreeConnectorsSnapshot()
+        => GetFreeConnectorsSnapshot(_ctx.DynamicConnector.OwnerElementId);
+
+    private List<ConnectorProxy> GetFreeConnectorsSnapshot(ElementId elementId)
     {
         try
         {
-            return _connSvc.GetAllFreeConnectors(_doc, _ctx.DynamicConnector.OwnerElementId).ToList();
+            return _connSvc.GetAllFreeConnectors(_doc, elementId).ToList();
         }
         catch (Exception ex)
         {
-            SmartConLogger.Info($"Error (ignored): {ex.Message}");
+            SmartConLogger.Info($"GetFreeConnectors failed (ignored): {ex.Message}");
             return [];
         }
     }
@@ -221,7 +281,8 @@ public sealed partial class PipeConnectEditorViewModel
                 doc.Regenerate();
             }
             else
-                SmartConLogger.Warn("Reducer not found in mapping — connecting directly");
+                SmartConLogger.Warn("Reducer not found in mapping — connecting directly " +
+                    "[Action: добавьте семейство переходника в mapping (Настройки → Правила), если требуется переход диаметров]");
         });
 
         if (_primaryReducerId is not null)
@@ -236,7 +297,8 @@ public sealed partial class PipeConnectEditorViewModel
         var fitConn2 = _activeFittingConn2;
         if (fitConn2 is null)
         {
-            SmartConLogger.Warn("fittingConn2 is null — cannot insert reducer after fitting");
+            SmartConLogger.Warn("fittingConn2 is null — cannot insert reducer after fitting " +
+                "[Action: переустановите фитинг кнопкой «Примерить», затем повторите вставку переходника]");
             return;
         }
 
@@ -282,7 +344,8 @@ public sealed partial class PipeConnectEditorViewModel
                 doc.Regenerate();
             }
             else
-                SmartConLogger.Warn("Reducer not found in mapping — connecting without reducer");
+                SmartConLogger.Warn("Reducer not found in mapping — connecting without reducer " +
+                    "[Action: добавьте семейство переходника в mapping (Настройки → Правила), если требуется переход диаметров]");
         });
 
         if (_primaryReducerId is not null)
