@@ -34,7 +34,6 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     [ObservableProperty] private string _attributeFilterText = string.Empty;
     [ObservableProperty] private string? _selectedGroupFilter;
     [ObservableProperty] private ObservableCollection<string> _availableGroups = [];
-    [ObservableProperty] private bool _hasGroupFilters;
     [ObservableProperty] private string _selectedCategoryPath = string.Empty;
     [ObservableProperty] private bool _hasSelectedCategory;
     [ObservableProperty] private bool _hasUnsavedChanges;
@@ -84,7 +83,6 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             SelectedCategoryPath = string.Empty;
             AttributeItems = [];
             AvailableGroups = [];
-            HasGroupFilters = false;
             _allAttributeItems = [];
         }
     }
@@ -224,7 +222,6 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             allGroups.AddRange(groups);
 
             AvailableGroups = new ObservableCollection<string>(allGroups);
-            HasGroupFilters = groups.Count > 0;
             SelectedGroupFilter = allGroupsLabel;
             AttributeFilterText = string.Empty;
             ApplyAttributeFilter();

@@ -662,7 +662,6 @@ public static class StringLocalization
         public const string FM_AL_DeactivateMessage = "FM_AL_DeactivateMessage";
         public const string FM_AL_FromSharedParams = "FM_AL_FromSharedParams";
         public const string FM_AL_ImportedFromSP = "FM_AL_ImportedFromSP";
-        public const string FM_CTE_NoGroups = "FM_CTE_NoGroups";
         public const string FM_SP_Title = "FM_SP_Title";
         public const string FM_SP_Browse = "FM_SP_Browse";
         public const string FM_SP_BrowseTitle = "FM_SP_BrowseTitle";

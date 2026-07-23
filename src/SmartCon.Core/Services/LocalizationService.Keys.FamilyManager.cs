@@ -301,7 +301,6 @@ public static partial class LocalizationService
         ru["FM_AL_DeactivateMessage"] = "Атрибут используется в {0} категориях. При деактивации все привязки будут удалены. Продолжить?"; en["FM_AL_DeactivateMessage"] = "Attribute is used in {0} categories. Deactivating will remove all bindings. Continue?";
         ru["FM_AL_FromSharedParams"] = "Из ФОП"; en["FM_AL_FromSharedParams"] = "From SP file";
         ru["FM_AL_ImportedFromSP"] = "Добавлено из ФОП: {0}. Нажмите OK для сохранения."; en["FM_AL_ImportedFromSP"] = "Added from SP file: {0}. Click OK to save.";
-        ru["FM_CTE_NoGroups"] = "Нет групп"; en["FM_CTE_NoGroups"] = "No groups";
 
         ru["FM_SP_Title"] = "Импорт из файла общих параметров"; en["FM_SP_Title"] = "Import from Shared Parameters";
         ru["FM_SP_Browse"] = "Обзор…"; en["FM_SP_Browse"] = "Browse…";

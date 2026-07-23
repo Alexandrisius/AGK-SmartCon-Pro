@@ -55,7 +55,7 @@ public sealed class CategoryTreeEditorGroupFilterTests : IDisposable
     }
 
     [Fact]
-    public async Task CategoryWithGroupedAttributes_HasGroupFiltersTrue()
+    public async Task CategoryWithGroupedAttributes_AvailableGroupsContainsAllLabelAndGroup()
     {
         var category = await _categoryRepository.AddAsync("Pipes", null, 0);
         await _attributeRepository.CreateAsync("Width", "Dimensions");
@@ -69,12 +69,12 @@ public sealed class CategoryTreeEditorGroupFilterTests : IDisposable
         vm.SelectedNode = node;
         await WaitForAttributesLoaded(vm);
 
-        Assert.True(vm.HasGroupFilters);
         Assert.Equal(2, vm.AvailableGroups.Count);
+        Assert.Contains("Dimensions", vm.AvailableGroups);
     }
 
     [Fact]
-    public async Task CategoryWithOnlyUngroupedAttributes_HasGroupFiltersFalse()
+    public async Task CategoryWithOnlyUngroupedAttributes_AvailableGroupsContainsOnlyAllLabel()
     {
         var category = await _categoryRepository.AddAsync("Pipes", null, 0);
         await _attributeRepository.CreateAsync("Note", null);
@@ -87,19 +87,16 @@ public sealed class CategoryTreeEditorGroupFilterTests : IDisposable
         vm.SelectedNode = node;
         await WaitForAttributesLoaded(vm);
 
-        Assert.False(vm.HasGroupFilters);
         Assert.Single(vm.AvailableGroups);
+        Assert.Equal(vm.SelectedGroupFilter, vm.AvailableGroups[0]);
     }
 
     [Fact]
-    public async Task NoCategorySelected_HasGroupFiltersFalse()
+    public void NoCategorySelected_AvailableGroupsEmpty()
     {
-        await _attributeRepository.CreateAsync("Width", "Dimensions");
-
         var vm = CreateVm();
-        await vm.InitializeAsync();
 
-        Assert.False(vm.HasGroupFilters);
+        Assert.Empty(vm.AvailableGroups);
     }
 
     private static CategoryNodeViewModel? FindNode(CategoryTreeEditorViewModel vm, string categoryId)

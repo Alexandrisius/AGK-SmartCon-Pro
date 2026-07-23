@@ -226,13 +226,7 @@
                         <Grid Grid.Column="0" MinWidth="140" Margin="0,0,8,0">
                             <ComboBox ItemsSource="{Binding AvailableGroups}"
                                       SelectedItem="{Binding SelectedGroupFilter}"
-                                      Style="{DynamicResource CompactComboBox}"
-                                      Visibility="{Binding HasGroupFilters, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock Text="{loc:Loc FM_CTE_NoGroups}"
-                                       FontStyle="Italic"
-                                       Foreground="{DynamicResource TextMutedBrush}"
-                                       VerticalAlignment="Center"
-                                       Visibility="{Binding HasGroupFilters, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+                                      Style="{DynamicResource CompactComboBox}"/>
                         </Grid>
 
                         <Grid Grid.Column="1">
