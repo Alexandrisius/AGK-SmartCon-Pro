@@ -26,7 +26,8 @@ internal static class CatalogSeedHelper
         bool createFileOnDisk = true,
         string familySource = "loadable",
         string? currentLabel = null,
-        string? revitCategory = null)
+        string? revitCategory = null,
+        int? revitCategoryId = null)
     {
         var itemId = Guid.NewGuid().ToString("N");
         var versionId = Guid.NewGuid().ToString();
@@ -66,8 +67,8 @@ internal static class CatalogSeedHelper
             cmd.Transaction = tx;
             cmd.CommandText = """
                 INSERT INTO catalog_items (id, name, normalized_name, current_version_label,
-                                           family_source, revit_category, hash_format_version, created_at_utc, updated_at_utc)
-                VALUES (@id, @name, @norm, @currentLabel, @source, @revitCategory, @fmt, @t, @t)
+                                           family_source, revit_category, revit_category_id, hash_format_version, created_at_utc, updated_at_utc)
+                VALUES (@id, @name, @norm, @currentLabel, @source, @revitCategory, @revitCategoryId, @fmt, @t, @t)
                 """;
             cmd.Parameters.Add(new SqliteParameter("@id", itemId));
             cmd.Parameters.Add(new SqliteParameter("@name", name));
@@ -75,6 +76,7 @@ internal static class CatalogSeedHelper
             cmd.Parameters.Add(new SqliteParameter("@currentLabel", currentLabel));
             cmd.Parameters.Add(new SqliteParameter("@source", familySource));
             cmd.Parameters.Add(new SqliteParameter("@revitCategory", (object?)revitCategory ?? DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@revitCategoryId", (object?)revitCategoryId ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@fmt", (object?)hashFormatVersion ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
             await cmd.ExecuteNonQueryAsync();
@@ -256,6 +258,54 @@ internal static class CatalogSeedHelper
             reader.IsDBNull(1) ? null : reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetInt32(2),
             reader.IsDBNull(3) ? null : reader.GetInt32(3));
+    }
+
+    /// <summary>Seeds one family_facts row (ADR-055).</summary>
+    public static async Task SeedFactAsync(
+        TempCatalogFixture fixture, string itemId,
+        string factKey, string valueKey, string valueDisplay)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO family_facts (catalog_item_id, fact_key, value_key, value_display)
+            VALUES (@itemId, @factKey, @valueKey, @valueDisplay)
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@itemId", itemId));
+        cmd.Parameters.Add(new SqliteParameter("@factKey", factKey));
+        cmd.Parameters.Add(new SqliteParameter("@valueKey", valueKey));
+        cmd.Parameters.Add(new SqliteParameter("@valueDisplay", valueDisplay));
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Reads (revit_category_id, facts) of an item for assertions.</summary>
+    public static async Task<(int? CategoryId, List<(string Key, string ValueKey, string ValueDisplay)> Facts)>
+        ReadFactsAsync(TempCatalogFixture fixture, string itemId)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+
+        int? categoryId = null;
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT revit_category_id FROM catalog_items WHERE id = @id";
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            var result = await cmd.ExecuteScalarAsync();
+            if (result is long l) categoryId = (int)l;
+        }
+
+        var facts = new List<(string, string, string)>();
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT fact_key, value_key, value_display FROM family_facts WHERE catalog_item_id = @id ORDER BY fact_key";
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                facts.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        }
+
+        return (categoryId, facts);
     }
 
     public static FamilySnapshot CreateSnapshot()

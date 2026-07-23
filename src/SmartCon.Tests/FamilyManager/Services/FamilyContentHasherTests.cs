@@ -57,6 +57,27 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
+    public void ComputeForLoadable_CategoryIdAndFacts_DoNotShiftHash()
+    {
+        // ADR-055: CategoryId/Facts are display metadata appended to the
+        // snapshot — the FHV2 canonical string is built from explicit
+        // content fields only, so facts must never affect dedup identity.
+        var baseline = CreateLoadableSnapshot();
+        var withFacts = baseline with
+        {
+            CategoryId = -2008049,
+            Facts = [new FamilyFact("part_type", "5", "Elbow")],
+        };
+
+        var hash1 = _hasher.ComputeForLoadable(baseline);
+        var hash2 = _hasher.ComputeForLoadable(withFacts);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
     public void ComputeForLoadable_SameContent_DifferentNames_SameHash()
     {
         // Issue #126: hash format v2 is rename-invariant — the family name
