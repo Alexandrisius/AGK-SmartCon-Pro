@@ -34,6 +34,11 @@ public sealed class PipeConnectRotationHandler(
     /// <param name="fittingId">Fitting of the active connection point, if any.</param>
     /// <param name="reducerId">Reducer of the active connection point, if any.</param>
     /// <param name="angleDeg">Rotation angle in degrees (positive = counterclockwise).</param>
+    /// <param name="rigidSubtreeIds">
+    /// Lock-network mode with a sealed chain: the whole sealed remainder rotates
+    /// together with the dynamic as one rigid body (its connections survive a
+    /// common-axis rotation). Null in normal mode.
+    /// </param>
     public void ExecuteRotation(
         Document doc,
         ITransactionGroupSession groupSession,
@@ -41,7 +46,8 @@ public sealed class PipeConnectRotationHandler(
         ConnectorProxy rotationAxisConnector,
         ElementId? fittingId,
         ElementId? reducerId,
-        int angleDeg)
+        int angleDeg,
+        IReadOnlyList<ElementId>? rigidSubtreeIds = null)
     {
         var dynId = activeDynamic.OwnerElementId;
         using var _scope = SmartConLogger.BeginScope("Rotate",
@@ -61,6 +67,11 @@ public sealed class PipeConnectRotationHandler(
                 idsToRotate.Add(fittingId);
             if (reducerId is not null)
                 idsToRotate.Add(reducerId);
+            if (rigidSubtreeIds is not null)
+            {
+                SmartConLogger.Info($"Rigid subtree rotation: {rigidSubtreeIds.Count} sealed element(s) rotate as one body");
+                idsToRotate.AddRange(rigidSubtreeIds);
+            }
 
             // Elements still attached to OTHER connectors of the dynamic rotate with it
             // (rigid-body semantics — matches Revit UI behaviour).
@@ -101,8 +112,11 @@ public sealed class PipeConnectRotationHandler(
                     axisDir, elemBasisY, axisOrigin);
                 if (globalYSnap is not null)
                 {
-                    SmartConLogger.Debug("GlobalYSnap applied");
-                    transformSvc.RotateElement(d, dynId,
+                    // Snap applies to the WHOLE rotation set (dynamic + fitting/reducer
+                    // + rigid subtree): snapping the dynamic alone would tear its
+                    // connections to the rest of the body.
+                    SmartConLogger.Debug($"GlobalYSnap applied to {idsToRotate.Count} element(s)");
+                    transformSvc.RotateElements(d, idsToRotate,
                         axisOrigin, globalYSnap.Axis, globalYSnap.AngleRadians);
                 }
                 else

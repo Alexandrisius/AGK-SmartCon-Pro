@@ -133,7 +133,7 @@ public sealed partial class PipeConnectEditorViewModel
                 var entry = _elementQueue[nextIndex];
                 var result = _chainOpHandler.AttachSingleElement(
                     _doc, _groupSession!, _chainGraph, _snapshotStore, _warmedElementIds, entry,
-                    _attachedElementIds);
+                    _attachedElementIds, LockNetwork);
 
                 if (result.Edge is null)
                 {

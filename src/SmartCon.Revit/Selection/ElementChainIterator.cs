@@ -100,6 +100,8 @@ public sealed class ElementChainIterator : IElementChainIterator
                         nextLevelIds.Add(neighborId);
                         builder.AddNode(neighborId);
                         builder.AddElementAtLevel(bfsLevel, neighborId);
+                        if (doc.GetElement(neighborId) is MEPCurve or FlexPipe)
+                            builder.MarkMepCurve(neighborId);
                         builder.AddEdge(new ConnectionEdge(
                             elemId, conn.Id, neighborId, refConn.Id));
 

@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
+using SmartCon.PipeConnect.Services;
 
 namespace SmartCon.PipeConnect.ViewModels;
 
@@ -71,12 +72,29 @@ public sealed partial class PipeConnectEditorViewModel
             || _elementQueue[ChainDepth + 1].Level > _elementQueue[ChainDepth].Level);
 
     /// <summary>
+    /// True while ConnectAllChain runs the element-wise traversal. In bulk mode the
+    /// expensive per-element dynamic switch (size reload via lookup tables, fitting
+    /// re-evaluation, cycle state) is deferred to a single switch at the end —
+    /// otherwise every attached element triggers a heavy LoadInitialSizes call and
+    /// a 50-element ConnectAll stalls Revit for minutes.
+    /// </summary>
+    private bool _isBulkTraversal;
+
+    /// <summary>
     /// Boundary edges connected by the active seal (ADR-052). Stored so the seal
     /// can be torn down (UnsealIfSealed) when the user edits the tail element or
     /// rolls the queue back — a seal is a transparent traversal optimization,
     /// never a lock on editing.
     /// </summary>
     private IReadOnlyList<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>? _sealedEdges;
+
+    /// <summary>
+    /// User's "Блокировать" toggle: when on, ConnectAll skips the quiet-seal and
+    /// the deeper-radius check — the whole network is moved strictly as-is with
+    /// no size compensation (rigid move fast path still applies).
+    /// </summary>
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty]
+    private bool _lockNetwork;
 
     /// <summary>
     /// Try to seal the remaining chain at the current boundary (ADR-052): when the
@@ -109,6 +127,53 @@ public sealed partial class PipeConnectEditorViewModel
     }
 
     /// <summary>
+    /// Rigid-move fast path for ConnectAll: the whole remainder is translated as
+    /// one body instead of per-element processing. Handles three outcomes:
+    /// Connected / ConnectedViaReducer (chain becomes sealed) and Gapped (reducer
+    /// missing — network placed with a 100 mm gap, warning dialog shown, chain
+    /// stays unsealed so Connect warns about the detached remainder).
+    /// </summary>
+    private bool TryRigidMoveRemainderChain()
+    {
+        if (_chainGraph is null || _elementQueue is null || _groupSession is null || !IsSessionActive)
+            return false;
+        if (!IsAtLevelBoundary)
+            return false;
+
+        int bfsLevel = _elementQueue[ChainDepth].Level;
+        var outcome = _chainOpHandler.TryRigidMoveRemainder(
+            _doc, _groupSession, _chainGraph, bfsLevel, LockNetwork, out var edges);
+
+        switch (outcome)
+        {
+            case ChainOperationHandler.RigidMoveOutcome.NotApplicable:
+                return false;
+
+            case ChainOperationHandler.RigidMoveOutcome.Gapped:
+                SmartConLogger.Warn("RigidMove: network placed with 100 mm gap (reducer missing), NOT connected " +
+                    "[Action: вставьте переход в месте зазора вручную или добавьте его в маппинг]");
+                StatusMessage = LocalizationService.GetString("Status_NetworkGapped");
+                _dialogSvc.ShowWarning(
+                    LocalizationService.GetString("Dialog_GapNetwork_Title"),
+                    LocalizationService.GetString("Dialog_GapNetwork_Message"));
+                UpdateChainUI();
+                return true;
+
+            default: // Connected / ConnectedViaReducer
+                _chainSealed = true;
+                _sealedEdges = edges;
+                UpdateChainUI();
+                SmartConLogger.Info($"RigidMove: chain completed ({outcome}), " +
+                    $"{_elementQueue.Count - 1 - ChainDepth} element(s) moved as one body");
+                StatusMessage = outcome == ChainOperationHandler.RigidMoveOutcome.ConnectedViaReducer
+                    ? LocalizationService.GetString("Status_NetworkMovedReducer")
+                    : string.Format(LocalizationService.GetString("Status_NetworkMoved"),
+                        _elementQueue.Count - 1 - ChainDepth);
+                return true;
+        }
+    }
+
+    /// <summary>
     /// Tear down an active seal before an operation that would invalidate it:
     /// rotation/resize/fitting/cycle of the tail element or a queue rollback.
     /// The sealed boundary edges are disconnected again (the network returns to
@@ -130,6 +195,20 @@ public sealed partial class PipeConnectEditorViewModel
                     {
                         try
                         {
+                            // Edges whose "child" is not part of the chain graph are
+                            // elements we inserted (e.g. the rigid-move reducer) —
+                            // delete them entirely instead of just disconnecting,
+                            // otherwise unseal would leave an orphan in the model.
+                            if (_chainGraph is not null
+                                && !_chainGraph.Nodes.Contains(childId, ElementIdEqualityComparer.Instance))
+                            {
+                                SmartConLogger.Info($"Unseal: deleting inserted element id={childId.GetValue()}");
+                                DisconnectAllConnectorsOf(doc, childId);
+                                _fittingInsertSvc.DeleteElement(doc, childId);
+                                _virtualCtcStore.RemoveForElement(childId);
+                                continue;
+                            }
+
                             _connSvc.DisconnectAllFromConnector(doc, childId, childConnIdx);
                         }
                         catch (Exception ex)
@@ -174,7 +253,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             var result = _chainOpHandler.AttachSingleElement(
                 _doc, _groupSession!, _chainGraph, _snapshotStore, _warmedElementIds, entry,
-                _attachedElementIds);
+                _attachedElementIds, LockNetwork);
 
             if (result.Edge is null)
             {
@@ -194,7 +273,9 @@ public sealed partial class PipeConnectEditorViewModel
             ChainDepth = nextIndex;
             _attachedElementIds.Add(entry.ElementId.GetValue());
 
-            OnChainElementAttached(result);
+            // Bulk mode (ConnectAll): defer the expensive dynamic switch to the end.
+            if (!_isBulkTraversal)
+                OnChainElementAttached(result);
 
             // Early seal (ADR-052): quiet remainder is reconnected in one
             // transaction — the user never walks idle elements manually.
@@ -219,6 +300,25 @@ public sealed partial class PipeConnectEditorViewModel
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Single dynamic switch after a bulk (ConnectAll) traversal: the active
+    /// dynamic becomes the queue tail once, with one size/fitting reload —
+    /// instead of a heavy reload per attached element.
+    /// </summary>
+    private void FinalizeBulkDynamicSwitch()
+    {
+        if (ChainDepth <= 0 || _elementQueue is null) return;
+
+        SaveActivePointState();
+        _activePointIndex = ChainDepth;
+        LoadPointState(ChainDepth);
+        RefreshActiveDynamicForCurrentPoint();
+        RefreshAfterDynamicSwitch();
+
+        SmartConLogger.Info($"Bulk traversal finished: active dynamic → element {_activeDynamic?.OwnerElementId.GetValue()} " +
+            $"(queue {ChainDepth}/{TotalChainElementCount})");
     }
 
     private bool CanIncrementChain()
@@ -302,16 +402,33 @@ public sealed partial class PipeConnectEditorViewModel
 
         try
         {
-            // Fast path (ADR-052): the whole remaining network is already quiet —
-            // reconnect it in one transaction instead of churning element-by-element.
-            if (TrySealAtCurrentBoundary())
+            // Fast path 1 (ADR-052): quiet remainder — reconnect in one transaction.
+            // Skipped when the user locked the network ("Блокировать"): even a
+            // quiet network is then moved strictly as-is.
+            if (!LockNetwork && TrySealAtCurrentBoundary())
+                return;
+
+            // Fast path 2: rigid move — the whole remainder is translated as one
+            // body (one MoveElements call) and the boundary is reconnected, with
+            // a reducer on DN mismatch or a 100 mm gap when the reducer is missing.
+            if (TryRigidMoveRemainderChain())
                 return;
 
             int targetIndex = _elementQueue.Count - 1;
 
-            var result = ChainTraversalRunner.Run(
-                ChainDepth, targetIndex, MaxChainElements,
-                () => TryIncrementChainDepth(out _) ? ChainDepth : (int?)null);
+            ChainTraversalResult result;
+            _isBulkTraversal = true;
+            try
+            {
+                result = ChainTraversalRunner.Run(
+                    ChainDepth, targetIndex, MaxChainElements,
+                    () => TryIncrementChainDepth(out _) ? ChainDepth : (int?)null);
+            }
+            finally
+            {
+                _isBulkTraversal = false;
+                FinalizeBulkDynamicSwitch();
+            }
 
             if (_chainSealed)
             {

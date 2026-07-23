@@ -425,11 +425,44 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         IsBusy = true;
         try
         {
-            UnsealIfSealed("поворот");
+            // Lock-network mode with a sealed chain: the whole sealed remainder
+            // rotates together with the active dynamic as one rigid body — the
+            // seal stays intact (common-axis rotation preserves connections).
+            IReadOnlyList<ElementId>? rigidSubtreeIds = null;
+            if (LockNetwork && _chainSealed && _elementQueue is not null && _chainGraph is not null)
+            {
+                var subtree = new List<ElementId>();
+                for (int i = ChainDepth + 1; i < _elementQueue.Count; i++)
+                    subtree.Add(_elementQueue[i].ElementId);
+
+                // Inserted elements of the seal (e.g. rigid-move reducer) are not
+                // graph nodes — rotate them with the body as well.
+                if (_sealedEdges is not null)
+                {
+                    foreach (var (_, _, childId, _) in _sealedEdges)
+                    {
+                        if (!_chainGraph.Nodes.Contains(childId, ElementIdEqualityComparer.Instance))
+                            subtree.Add(childId);
+                    }
+                }
+
+                if (subtree.Count > 0)
+                    rigidSubtreeIds = subtree;
+            }
+            else
+            {
+                UnsealIfSealed("поворот");
+            }
 
             _rotationHandler.ExecuteRotation(
                 _doc, _groupSession!, _activeDynamic, ActiveUpstreamConnector,
-                _currentFittingId, _primaryReducerId, angleDeg);
+                _currentFittingId, _primaryReducerId, angleDeg, rigidSubtreeIds);
+
+            // After a rigid-body rotation the attached part did not rotate —
+            // loop edges crossing the boundary may have drifted; restore them.
+            if (rigidSubtreeIds is not null && _chainGraph is not null && _elementQueue is not null)
+                _chainOpHandler.RestoreCrossEdgesAfterRigidRotation(
+                    _doc, _groupSession!, _chainGraph, _elementQueue[ChainDepth].Level);
 
             _activeDynamic = _ctcManager.RefreshWithCtcOverride(
                 _doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)

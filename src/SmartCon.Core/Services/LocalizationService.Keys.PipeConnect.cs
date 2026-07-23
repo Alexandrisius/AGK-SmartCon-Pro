@@ -52,6 +52,27 @@ public static partial class LocalizationService
         en["Tx_ChainSeal"] = "Chain: final reconnect";
         ru["Tx_ChainUnseal"] = "Цепочка: отмена компенсации";
         en["Tx_ChainUnseal"] = "Chain: unseal";
+        ru["Tx_ChainRigidMove"] = "Цепочка: жёсткий перенос сети";
+        en["Tx_ChainRigidMove"] = "Chain: rigid network move";
+        ru["Tx_RestoreCrossEdges"] = "Цепочка: восстановление петель";
+        en["Tx_RestoreCrossEdges"] = "Chain: restore loop edges";
+
+        ru["Status_NetworkMoved"] = "Сеть перемещена целиком ({0} элементов одним переносом)";
+        en["Status_NetworkMoved"] = "Network moved as one body ({0} elements in a single move)";
+        ru["Status_NetworkMovedReducer"] = "Сеть перемещена целиком и подключена через переход";
+        en["Status_NetworkMovedReducer"] = "Network moved as one body and connected via a reducer";
+        ru["Status_NetworkGapped"] = "Сеть выставлена с зазором 100 мм — нужен переход (см. диалог)";
+        en["Status_NetworkGapped"] = "Network placed with a 100 mm gap — transition required (see dialog)";
+        ru["Dialog_GapNetwork_Title"] = "PipeConnect — требуется переход";
+        en["Dialog_GapNetwork_Title"] = "PipeConnect — transition required";
+        ru["Dialog_GapNetwork_Message"] =
+            "Диаметр сети не совпадает с подключаемым элементом, а подходящий переход не найден в маппинге.\n\n" +
+            "Сеть НЕ подключена: она выставлена с зазором 100 мм по оси коннектора — " +
+            "вставьте переход вручную в месте зазора или добавьте семейство перехода в маппинг (Настройки → Правила).";
+        en["Dialog_GapNetwork_Message"] =
+            "The network diameter does not match the connected element, and no suitable transition was found in the mapping.\n\n" +
+            "The network is NOT connected: it was placed with a 100 mm gap along the connector axis — " +
+            "insert a transition manually at the gap, or add a transition family to the mapping (Settings → Rules).";
         ru["Tx_ChainElement"] = "Цепочка: элемент {0}";
         en["Tx_ChainElement"] = "Chain: element {0}";
         ru["Tx_ChainRollbackElement"] = "Цепочка: откат элемента {0}";

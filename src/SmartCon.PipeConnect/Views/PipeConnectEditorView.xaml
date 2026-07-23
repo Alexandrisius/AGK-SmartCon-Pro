@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{loc:Loc Title_EditorSetup}"
-        Width="480" Height="Auto" MinHeight="280"
+        Width="540" Height="Auto" MinHeight="280"
         SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStartupLocation="Manual"
@@ -50,15 +50,21 @@
             <Border Grid.Row="2"
                     Background="{DynamicResource SurfaceBrush}" CornerRadius="4"
                     BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
-                    Padding="10,4">
+                    Padding="10,4"
+                    Height="52">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc Label_CurrentElement}"
                                FontSize="10"
                                Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <!-- Fixed two-line height: the banner must not resize when the
+                         dynamic element name changes, otherwise the +/− buttons
+                         jump and the user has to re-aim every click -->
                     <TextBlock Text="{Binding DynamicElementTitle}"
                                FontSize="12" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextPrimaryBrush}"
                                TextWrapping="Wrap"
+                               TextTrimming="CharacterEllipsis"
+                               Height="30"
                                ToolTip="{Binding DynamicElementTitle}"/>
                 </StackPanel>
             </Border>
@@ -216,6 +222,8 @@
                     <ColumnDefinition Width="4"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="12"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{loc:Loc Label_Network}"
@@ -230,10 +238,17 @@
                          ToolTip="{loc:Loc Tip_ChainIncrement}"/>
                 <Button Grid.Column="6"
                         Content="{loc:Loc Btn_ConnectAll}" Height="28"
-                        Padding="10,0"
+                        Padding="14,0"
                         Command="{Binding ConnectAllChainCommand}"
                         Style="{DynamicResource PrimaryButton}"
                         ToolTip="{loc:Loc Tip_ConnectAll}"/>
+                <CheckBox Grid.Column="8"
+                          IsChecked="{Binding LockNetwork}"
+                          VerticalAlignment="Center"
+                          ToolTip="{loc:Loc Tip_LockNetwork}">
+                    <TextBlock Text="{loc:Loc Label_LockNetwork}" FontSize="12"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </CheckBox>
             </Grid>
 
             <!-- Статус -->
