@@ -10,7 +10,6 @@ using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Compatibility;
 using SmartCon.Revit.Extensions;
-using RevitTransform = Autodesk.Revit.DB.Transform;
 using SmartCon.Core;
 using SmartCon.Core.Compatibility;
 
@@ -141,8 +140,6 @@ public sealed class RevitLookupTableService : ILookupTableService
             return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
         }
 
-        var instanceTransform = instance.GetTransform();
-
         var currentRadii = new Dictionary<int, double>();
         foreach (Connector c in cm.Connectors)
         {
@@ -178,11 +175,15 @@ public sealed class RevitLookupTableService : ILookupTableService
             {
                 var connector = cm.FindByIndex(connIdx);
                 if (connector is null) continue;
-                var targetOriginGlobal = connector.CoordinateSystem.Origin;
+                var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, connector);
+                if (binding is null)
+                {
+                    SmartConLogger.Debug($"    conn[{connIdx}]: no size binding (not found)");
+                    continue;
+                }
                 var (directName, rootName, formula, _, isDiameter) =
                     FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                        familyDoc, instanceTransform, targetOriginGlobal,
-                        instance.HandFlipped, instance.FacingFlipped);
+                        familyDoc, binding.Value.ParamName, binding.Value.IsDiameter);
                 var searchParam = rootName ?? directName;
                 if (searchParam is not null)
                 {
@@ -709,21 +710,21 @@ public sealed class RevitLookupTableService : ILookupTableService
             return null;
         }
 
-        var targetOriginGlobal = connector.CoordinateSystem.Origin;
-        var instanceTransform = instance.GetTransform();
-        SmartConLogger.Debug($"  connector[{connectorIndex}] origin=({targetOriginGlobal.X:F4}, {targetOriginGlobal.Y:F4}, {targetOriginGlobal.Z:F4})");
+        var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, connector);
+        if (binding is null)
+        {
+            SmartConLogger.Debug("  no size binding → return null");
+            return null;
+        }
 
         return EditFamilySession.Run<LookupContext?>(doc, instance, familyDoc =>
-            BuildLookupContextFromFamily(familyDoc, instanceTransform, targetOriginGlobal,
-                instance.HandFlipped, instance.FacingFlipped));
+            BuildLookupContextFromFamily(familyDoc, binding.Value.ParamName, binding.Value.IsDiameter));
     }
 
     private static LookupContext? BuildLookupContextFromFamily(
         Document familyDoc,
-        RevitTransform instanceTransform,
-        XYZ targetOriginGlobal,
-        bool handFlipped = false,
-        bool facingFlipped = false)
+        string paramName,
+        bool isDiameterBound)
     {
         SmartConLogger.DebugSection("BuildLookupContextFromFamily");
 
@@ -755,8 +756,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         SmartConLogger.Debug("  → FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam...");
         var (directName, rootName, formula, isInstance, isDiameter) =
             FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                familyDoc, instanceTransform, targetOriginGlobal,
-                handFlipped, facingFlipped);
+                familyDoc, paramName, isDiameterBound);
 
         SmartConLogger.Debug($"  FPA result: directName='{directName}', rootName='{rootName}', formula='{formula}', isInstance={isInstance}, isDiameter={isDiameter}");
 

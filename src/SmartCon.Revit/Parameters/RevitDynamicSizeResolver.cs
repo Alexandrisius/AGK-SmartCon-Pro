@@ -207,13 +207,16 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             return [];
         }
 
-        var targetOrigin = connector.CoordinateSystem.Origin;
-        var instanceTransform = instance.GetTransform();
+        var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(instance.Document, connector);
+        if (binding is null)
+        {
+            SmartConLogger.Debug("  no size binding → return []");
+            return [];
+        }
 
         var (directName, rootName, formula, _, isDiameter) =
             FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                familyDoc, instanceTransform, targetOrigin,
-                instance.HandFlipped, instance.FacingFlipped);
+                familyDoc, binding.Value.ParamName, binding.Value.IsDiameter);
 
         SmartConLogger.Debug($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}', isDiameter={isDiameter}");
 
@@ -416,18 +419,17 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                 familyDoc =>
                 {
                     var cm = instance.MEPModel?.ConnectorManager;
-                    var instanceTransform = instance.GetTransform();
                     var connectorParamMap = new Dictionary<int, string>();
                     if (cm is not null)
                     {
                         foreach (Connector c in cm.Connectors)
                         {
                             if (c.ConnectorType == ConnectorType.Curve) continue;
-                            var targetOriginGlobal = c.CoordinateSystem.Origin;
+                            var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, c);
+                            if (binding is null) continue;
                             var (directName, rootName, _, _, _) =
                                 FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                                    familyDoc, instanceTransform, targetOriginGlobal,
-                                    instance.HandFlipped, instance.FacingFlipped);
+                                    familyDoc, binding.Value.ParamName, binding.Value.IsDiameter);
                             var searchParam = rootName ?? directName;
                             if (searchParam is not null)
                                 connectorParamMap[(int)c.Id] = searchParam;

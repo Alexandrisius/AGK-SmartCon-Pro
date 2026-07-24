@@ -69,44 +69,15 @@ public sealed class RevitParameterResolver : IParameterResolver
 
         SmartConLogger.Debug($"  connector[{connectorIndex}] found, Radius={connector.GetRadiusSafe():F6} ft ({connector.GetRadiusSafe() * FeetToMm:F2} mm)");
 
-        var mepInfo = connector.GetMEPConnectorInfo() as MEPFamilyConnectorInfo;
-        if (mepInfo is null)
+        var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, connector);
+        if (binding is null)
         {
-            SmartConLogger.Debug("  GetMEPConnectorInfo()=null (not MEPFamilyConnectorInfo) → return []");
+            SmartConLogger.Debug("  no size binding (not a family connector or no RADIUS/DIAMETER association) → return []");
             return [];
         }
 
-        SmartConLogger.Debug("  MEPFamilyConnectorInfo obtained");
-
-        var radiusParamId = mepInfo.GetAssociateFamilyParameterId(new ElementId(BuiltInParameter.CONNECTOR_RADIUS));
-        var diamParamId = mepInfo.GetAssociateFamilyParameterId(new ElementId(BuiltInParameter.CONNECTOR_DIAMETER));
-
-        SmartConLogger.Debug($"  GetAssociateFamilyParameterId: CONNECTOR_RADIUS → id={radiusParamId.GetValue()}, CONNECTOR_DIAMETER → id={diamParamId.GetValue()}");
-
-        bool useRadius = radiusParamId.GetValue() > 0;
-        bool useDiameter = !useRadius && diamParamId.GetValue() > 0;
-
-        if (!useRadius && !useDiameter)
-        {
-            SmartConLogger.Debug("  WARNING: no bound parameter to CONNECTOR_RADIUS/DIAMETER → return []");
-            SmartConLogger.Warn($"elementId={elementId.GetValue()}: no CONNECTOR_RADIUS or CONNECTOR_DIAMETER binding");
-            return [];
-        }
-
-        var activeParamId = useRadius ? radiusParamId : diamParamId;
-        bool isDiameter = useDiameter;
-        SmartConLogger.Debug($"  Using: {(useRadius ? "CONNECTOR_RADIUS" : "CONNECTOR_DIAMETER")}, activeParamId={activeParamId.GetValue()}, isDiameter={isDiameter}");
-
-        var familyParamElem = doc.GetElement(activeParamId);
-        var paramName = familyParamElem?.Name;
-        SmartConLogger.Debug($"  ParameterElement.Name='{paramName}' (elementType={familyParamElem?.GetType().Name})");
-
-        if (string.IsNullOrEmpty(paramName))
-        {
-            SmartConLogger.Debug("  WARNING: failed to get parameter name from ParameterElement → return []");
-            SmartConLogger.Warn($"elementId={elementId.GetValue()}: parameter name is empty");
-            return [];
-        }
+        var paramName = binding.Value.ParamName;
+        bool isDiameter = binding.Value.IsDiameter;
 
         var instParam = element.LookupParameter(paramName);
         bool isInstance = instParam is not null;
@@ -136,8 +107,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             {
                 var (directName, rootName, formula, _, _) =
                     FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                        familyDoc, instance.GetTransform(), connector.CoordinateSystem.Origin,
-                        instance.HandFlipped, instance.FacingFlipped);
+                        familyDoc, paramName, isDiameter);
 
                 SmartConLogger.Debug($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}'");
 

@@ -1,177 +1,54 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
-using SmartCon.Core;
-using SmartCon.Core.Compatibility;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Math.FormulaEngine.Solver;
-using SmartCon.Revit.Extensions;
-using RevitTransform = Autodesk.Revit.DB.Transform;
 
 namespace SmartCon.Revit.Parameters;
 
 /// <summary>
-/// Вспомогательный класс для анализа FamilyParameter управляющего CONNECTOR_RADIUS.
-/// Используется RevitParameterResolver и RevitLookupTableService (исключает дублирование EditFamily).
+/// Вспомогательный класс для анализа FamilyParameter, управляющего размером коннектора.
+/// Используется RevitParameterResolver, RevitLookupTableService и RevitDynamicSizeResolver.
 /// Вызывающий отвечает за открытие/закрытие familyDoc.
+///
+/// Имя связанного параметра (paramName) и isDiameter определяются в ПРОЕКТЕ через
+/// <see cref="ConnectorSizeBindingResolver"/> (MEPFamilyConnectorInfo) — поиск
+/// ConnectorElement по геометрии удалён: он ломался, когда экземплярные параметры
+/// (угол отвода, DN) отличались от шаблона семейства (issue #161).
 /// </summary>
 internal static class FamilyParameterAnalyzer
 {
     /// <summary>
-    /// Анализирует FamilyDocument и определяет:
-    ///  — какой FamilyParameter непосредственно связан с CONNECTOR_RADIUS у указанного коннектора,
-    ///  — есть ли у него формула и корневой параметр.
-    ///
-    /// Коннектор в семействе ищется по ближайшему origin (instanceTransform + targetOriginGlobal).
+    /// Анализирует FamilyDocument для параметра с именем <paramref name="paramName"/>:
+    /// есть ли у него формула и корневой (query) параметр для записи.
     /// familyDoc НЕ закрывается здесь — закрывает вызывающий.
     /// </summary>
     /// <returns>
     /// Кортеж (DirectParamName, RootParamName, Formula, IsInstance, IsDiameter) или
-    /// default если параметр не найден. IsDiameter=true означает что FP управляет
-    /// CONNECTOR_DIAMETER (а не CONNECTOR_RADIUS) → таблица хранит диаметры.
+    /// default если параметр не найден. IsInstance — от корневого параметра при наличии
+    /// формулы (запись идёт в root), иначе от прямого. IsDiameter пробрасывается из
+    /// проектной привязки (CONNECTOR_DIAMETER → таблица хранит диаметры).
     /// </returns>
     internal static (string? DirectParamName, string? RootParamName,
                      string? Formula, bool IsInstance, bool IsDiameter)
-        AnalyzeConnectorRadiusParam(Document familyDoc,
-                                    RevitTransform instanceTransform,
-                                    XYZ targetOriginGlobal,
-                                    bool handFlipped = false,
-                                    bool facingFlipped = false)
+        AnalyzeConnectorRadiusParam(Document familyDoc, string paramName, bool isDiameter)
     {
         // NOTE: no BeginScope here — this analyzer is called in hot loops over family
         // parameters (~1.5k calls per operation) and the scope markers produced
         // thousands of INF lines (log audit 2026-07). Caller scopes provide context.
-        // 1. Найти ConnectorElement по ближайшему origin (аналогично RevitFamilyConnectorService)
-        SmartConLogger.Debug($"  targetOriginGlobal=({targetOriginGlobal.X:F4}, {targetOriginGlobal.Y:F4}, {targetOriginGlobal.Z:F4})");
-
-        var connElems = new FilteredElementCollector(familyDoc)
-            .OfCategory(BuiltInCategory.OST_ConnectorElem)
-            .WhereElementIsNotElementType()
-            .Cast<ConnectorElement>()
-            .ToList();
-
-        SmartConLogger.Debug($"  ConnectorElement in family: {connElems.Count}");
-
-        if (connElems.Count == 0)
-        {
-            SmartConLogger.Debug("  No ConnectorElement → return default");
-            return default;
-        }
-
-        // Score-based алгоритм (аналог RevitFamilyConnectorService):
-        // Score=2.0  → точное совпадение позиции (distLocal<0.001 ft)
-        // Score≈1.0  → совпадение направления (параметрическое семейство другого размера)
-        // Score<0.99 → нет совпадения
-        var targetOriginLocal = instanceTransform.Inverse.OfPoint(targetOriginGlobal);
-
-        // GetTransform() НЕ учитывает HandFlipped/FacingFlipped.
-        // Компенсируем flip для корректного сравнения с CE.Origin (unflipped family space).
-        if (handFlipped)
-            targetOriginLocal = new XYZ(-targetOriginLocal.X, targetOriginLocal.Y, targetOriginLocal.Z);
-        if (facingFlipped)
-            targetOriginLocal = new XYZ(targetOriginLocal.X, -targetOriginLocal.Y, targetOriginLocal.Z);
-        if (handFlipped || facingFlipped)
-            SmartConLogger.Debug($"  flip-corrected targetOriginLocal=({targetOriginLocal.X:F4}, {targetOriginLocal.Y:F4}, {targetOriginLocal.Z:F4})");
-        var targetLen = targetOriginLocal.GetLength();
-        var targetDir = targetLen > 1e-6 ? targetOriginLocal.Divide(targetLen) : null;
-
-        ConnectorElement? targetConnElem = null;
-        double bestScore = double.MinValue;
-
-        foreach (var ce in connElems)
-        {
-            var globalOrigin = instanceTransform.OfPoint(ce.Origin);
-            var distLocal = (ce.Origin - targetOriginLocal).GetLength();
-            double score;
-            if (distLocal < Tolerance.ConnectorPositionMatch)
-            {
-                score = ConnectorMatchScore.ExactPosition;
-            }
-            else if (targetDir is not null && ce.Origin.GetLength() > 1e-6)
-            {
-                score = ce.Origin.Normalize().DotProduct(targetDir);
-            }
-            else
-            {
-                score = -distLocal;
-            }
-            SmartConLogger.Debug($"  ConnElem id={ce.Id.GetValue()}: localOrigin=({ce.Origin.X:F4},{ce.Origin.Y:F4},{ce.Origin.Z:F4}), globalOrigin=({globalOrigin.X:F4},{globalOrigin.Y:F4},{globalOrigin.Z:F4}), distLocal={distLocal:F4} score={score:F4}");
-            if (score > bestScore) { bestScore = score; targetConnElem = ce; }
-        }
-
-        SmartConLogger.Debug($"  Best ConnectorElement: id={targetConnElem?.Id.GetValue()}, bestScore={bestScore:F4} (min {ConnectorMatchScore.DirectionThreshold})");
-
-        if (targetConnElem is null || bestScore < ConnectorMatchScore.DirectionThreshold)
-        {
-            SmartConLogger.Debug($"  WARNING: connector not found or score too low ({bestScore:F4} < {ConnectorMatchScore.DirectionThreshold}) → return default");
-            SmartConLogger.Warn($"Target connector not found or score too low ({bestScore:F4})");
-            return default;
-        }
-
-        // 2. Получить Parameter CONNECTOR_RADIUS на ConnectorElement
-        var radiusParam = targetConnElem.get_Parameter(BuiltInParameter.CONNECTOR_RADIUS);
-        if (radiusParam is null)
-        {
-            SmartConLogger.Debug($"  WARNING: CONNECTOR_RADIUS param not found on ConnectorElement id={targetConnElem.Id.GetValue()} → return default");
-            return default;
-        }
-
-        SmartConLogger.Debug($"  CONNECTOR_RADIUS: Id={radiusParam.Id.GetValue()}, Value={radiusParam.AsDouble():F6} ft");
-
-        // Также принимаем CONNECTOR_DIAMETER — FamilyParameter 'DN' обычно управляет диаметром
-        var diamParam = targetConnElem.get_Parameter(BuiltInParameter.CONNECTOR_DIAMETER);
-        SmartConLogger.Debug($"  CONNECTOR_DIAMETER: Id={diamParam?.Id.GetValue().ToString() ?? "null"}, Value={diamParam?.AsDouble():F6} ft");
-
-        // 3. Найти FamilyParameter чьи AssociatedParameters включают radiusParam/diamParam на targetConnElem
         var fm = familyDoc.FamilyManager;
-        FamilyParameter? directFp = null;
-        bool foundViaDiameter = false;
-
-        SmartConLogger.Debug($"  Iterating FamilyParameter (count: {fm.Parameters.Size}) to find AssociatedParameters:");
-
-        foreach (FamilyParameter fp in fm.Parameters)
+        if (fm is null)
         {
-            try
-            {
-                // AssociatedParameters возвращает параметры elements в семействе,
-                // ассоциированные с этим FamilyParameter
-                var assocParams = fp.AssociatedParameters;
-                int assocCount = 0;
-                try { assocCount = assocParams.Size; } catch { /* Intentional: COM ParameterSet may be corrupted */ }
-
-                if (assocCount > 0)
-                    SmartConLogger.Debug($"    FP '{fp.Definition?.Name}': formula='{fp.Formula}', isInstance={fp.IsInstance}, associatedCount={assocCount}");
-
-                foreach (Parameter assoc in assocParams)
-                {
-                    bool idMatch = assoc.Id == radiusParam.Id
-                                   || (diamParam is not null && assoc.Id == diamParam.Id);
-                    bool elemMatch = assoc.Element?.Id == targetConnElem.Id;
-
-                    if (assocCount > 0)
-                        SmartConLogger.Debug($"      assoc.Id={assoc.Id.GetValue()}, radiusParam.Id={radiusParam.Id.GetValue()}, diamParam.Id={diamParam?.Id.GetValue().ToString() ?? "null"}, idMatch={idMatch} | assoc.Element.Id={assoc.Element?.Id.GetValue()}, targetConn.Id={targetConnElem.Id.GetValue()}, elemMatch={elemMatch}");
-
-                    if (idMatch && elemMatch)
-                    {
-                        directFp = fp;
-                        foundViaDiameter = (diamParam is not null && assoc.Id == diamParam.Id);
-                        SmartConLogger.Debug($"      ✓ FOUND! directFp='{fp.Definition?.Name}', foundViaDiameter={foundViaDiameter}");
-                        break;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Debug($"    FP '{fp.Definition?.Name}': AssociatedParameters EXCEPTION: {ex.GetType().Name}: {ex.Message}");
-                SmartConLogger.Warn($"AssociatedParameters error for '{fp.Definition?.Name}': {ex.Message}");
-            }
-
-            if (directFp is not null) break;
+            SmartConLogger.Debug("  FamilyManager=null → return default");
+            return default;
         }
 
+        var directFp = FindFamilyParameter(fm, paramName);
         if (directFp is null)
         {
-            SmartConLogger.Debug("  WARNING: FamilyParameter for CONNECTOR_RADIUS/DIAMETER not found in AssociatedParameters → return default");
-            SmartConLogger.Warn("No FamilyParameter found for CONNECTOR_RADIUS/DIAMETER");
+            SmartConLogger.Debug($"  FamilyParameter '{paramName}' not found in family → return default");
+            SmartConLogger.Warn($"FamilyParameter '{paramName}' not found in '{familyDoc.Title}' " +
+                $"[Action: проверьте, что параметр существует в семействе и привязан к размеру коннектора]");
             return default;
         }
 
@@ -187,14 +64,14 @@ internal static class FamilyParameterAnalyzer
 
         SmartConLogger.Debug($"  directParam='{directName}', isInstance={directIsInst}, formula='{formula}'");
 
-        // 4. Нет формулы → прямой параметр
+        // Нет формулы → прямой параметр
         if (string.IsNullOrWhiteSpace(formula))
         {
-            SmartConLogger.Debug($"  → No formula → return ('{directName}', null, null, {directIsInst}, isDiameter={foundViaDiameter})");
-            return (directName, null, null, directIsInst, foundViaDiameter);
+            SmartConLogger.Debug($"  → No formula → return ('{directName}', null, null, {directIsInst}, isDiameter={isDiameter})");
+            return (directName, null, null, directIsInst, isDiameter);
         }
 
-        // 5. Есть формула → найти корневой параметр
+        // Есть формула → найти корневой параметр
 
         // 5a. Если формула содержит size_lookup → корневой параметр = первый query-параметр.
         //     Без этого generic search ниже выбирает BP_LookupTable (имя таблицы, longest-first)
@@ -231,7 +108,6 @@ internal static class FamilyParameterAnalyzer
         //     которые ExtractVariables ошибочно разбивал на отдельные токены.
         if (rootParamName is null)
         {
-
             var candidates = new List<(string Name, FamilyParameter Fp)>();
             foreach (FamilyParameter candidate in fm.Parameters)
             {
@@ -255,16 +131,13 @@ internal static class FamilyParameterAnalyzer
 
             if (rootParamName is null)
                 SmartConLogger.Debug("    → rootParam not found");
+        }
 
-        } // end if (rootParamName is null) — generic fallback block
-
-        SmartConLogger.Debug($"  → return ('{directName}', '{rootParamName}', '{formula}', {rootIsInst}, isDiameter={foundViaDiameter})");
-        return (directName, rootParamName, formula, rootIsInst, foundViaDiameter);
+        SmartConLogger.Debug($"  → return ('{directName}', '{rootParamName}', '{formula}', {rootIsInst}, isDiameter={isDiameter})");
+        return (directName, rootParamName, formula, rootIsInst, isDiameter);
     }
 
-  // ── Вспомогательные ───────────────────────────────────────────────────
-
-  private static FamilyParameter? FindFamilyParameter(Autodesk.Revit.DB.FamilyManager fm, string name)
+    private static FamilyParameter? FindFamilyParameter(Autodesk.Revit.DB.FamilyManager fm, string name)
     {
         foreach (FamilyParameter fp in fm.Parameters)
         {
@@ -275,4 +148,3 @@ internal static class FamilyParameterAnalyzer
         return null;
     }
 }
-
