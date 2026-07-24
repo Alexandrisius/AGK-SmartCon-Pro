@@ -64,4 +64,13 @@ public sealed record ConnectorProxy
 
     /// <summary>BasisX as Vec3.</summary>
     public Vec3 BasisXVec3 => new(BasisX.X, BasisX.Y, BasisX.Z);
+
+    /// <summary>
+    /// BasisY as Vec3 — derived as BasisZ × BasisX (the connector coordinate
+    /// system is right-handed). This is the family's "height" direction at the
+    /// connector face (Tammik, connector orientation) — used by the upright
+    /// reset instead of FamilyInstance.GetTransform().BasisY, which ignores
+    /// FacingFlipped/HandFlipped and can be parallel to the rotation axis.
+    /// </summary>
+    public Vec3 BasisYVec3 => VectorUtils.CrossProduct(BasisZVec3, BasisXVec3);
 }

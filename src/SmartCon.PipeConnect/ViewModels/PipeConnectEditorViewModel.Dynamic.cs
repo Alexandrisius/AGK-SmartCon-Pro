@@ -2,6 +2,7 @@ using Autodesk.Revit.DB;
 using CommunityToolkit.Mvvm.ComponentModel;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.PipeConnect.Services;
@@ -55,6 +56,7 @@ public sealed partial class PipeConnectEditorViewModel
     private ConnectorProxy ActiveUpstreamConnector => _activeParentConnector ?? _ctx.StaticConnector;
 
     [ObservableProperty] private string _dynamicElementTitle = string.Empty;
+    [ObservableProperty] private string _zeroRotationHint = string.Empty;
 
     /// <summary>
     /// Hook invoked after a chain element has been attached (queue tail advanced,
@@ -348,6 +350,55 @@ public sealed partial class PipeConnectEditorViewModel
 
         var elem = _doc.GetElement(_activeDynamic.OwnerElementId);
         DynamicElementTitle = ResolveElementDisplayName(elem);
+        UpdateZeroRotationHint();
+    }
+
+    /// <summary>
+    /// Refresh the zero-rotation tooltip: which global axis the zeroing targets
+    /// and the current angle to it — so the user always knows what the button
+    /// will do before pressing it.
+    /// </summary>
+    private void UpdateZeroRotationHint()
+    {
+        try
+        {
+            double angleDeg = ComputeCurrentAngleToReferenceDeg();
+            ZeroRotationHint = string.Format(
+                LocalizationService.GetString("Tip_ZeroRotation_Dynamic"),
+                GetReferenceAxisName(),
+                (int)System.Math.Round(angleDeg));
+        }
+        catch
+        {
+            ZeroRotationHint = string.Empty;
+        }
+    }
+
+    /// <summary>Name of the upright reference axis (Z = world up, Y/X = horizontal grid fallback).</summary>
+    private string GetReferenceAxisName()
+    {
+        var axis = ConnectorAligner.SelectUprightReference(ActiveUpstreamConnector.BasisZVec3);
+        if (axis == SmartCon.Core.Math.Vec3.BasisX) return "X";
+        if (axis == SmartCon.Core.Math.Vec3.BasisZ) return "Z";
+        return "Y";
+    }
+
+    /// <summary>Current angle (degrees) of the free connector's BasisY to the upright reference projection.</summary>
+    private double ComputeCurrentAngleToReferenceDeg()
+    {
+        if (_activeDynamic is null) return 0;
+
+        var parent = ActiveUpstreamConnector;
+        var axisNorm = SmartCon.Core.Math.VectorUtils.Normalize(parent.BasisZVec3);
+        var referenceAxis = ConnectorAligner.SelectUprightReference(axisNorm);
+        var by = _activeDynamic.BasisYVec3;
+
+        var projTarget = referenceAxis - axisNorm * SmartCon.Core.Math.VectorUtils.DotProduct(referenceAxis, axisNorm);
+        var projCurrent = by - axisNorm * SmartCon.Core.Math.VectorUtils.DotProduct(by, axisNorm);
+        if (projTarget.LengthSquared < 1e-12 || projCurrent.LengthSquared < 1e-12)
+            return 0;
+
+        return SmartCon.Core.Math.VectorUtils.AngleBetween(projCurrent, projTarget) * 180.0 / System.Math.PI;
     }
 
     private static string ResolveElementDisplayName(Element? elem)
@@ -362,5 +413,42 @@ public sealed partial class PipeConnectEditorViewModel
             return $"{familyName}: {symbolName}";
         }
         return elem?.Name ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Diagnostic: log the active dynamic's final orientation after a rotation —
+    /// angle of the free connector's BasisX to the parent's BasisX in the
+    /// connector plane, and angle of its BasisY to the upright reference
+    /// projection (world up). Makes orientation drift measurable in the log
+    /// instead of relying on visual checks.
+    /// </summary>
+    private void LogFinalRotationAngles()
+    {
+        try
+        {
+            if (_activeDynamic is null) return;
+
+            var parent = ActiveUpstreamConnector;
+            var axisNorm = SmartCon.Core.Math.VectorUtils.Normalize(parent.BasisZVec3);
+            var bx = _activeDynamic.BasisXVec3;
+            var by = _activeDynamic.BasisYVec3;
+
+            double angleToParent = SmartCon.Core.Math.VectorUtils.AngleBetweenInPlane(
+                bx, parent.BasisXVec3, axisNorm) * 180.0 / System.Math.PI;
+
+            var referenceAxis = ConnectorAligner.SelectUprightReference(axisNorm);
+            var projBy = by - axisNorm * SmartCon.Core.Math.VectorUtils.DotProduct(by, axisNorm);
+            var projRef = referenceAxis - axisNorm * SmartCon.Core.Math.VectorUtils.DotProduct(referenceAxis, axisNorm);
+            double angleToUp = projBy.LengthSquared < 1e-12 || projRef.LengthSquared < 1e-12
+                ? 0
+                : SmartCon.Core.Math.VectorUtils.AngleBetween(projBy, projRef) * 180.0 / System.Math.PI;
+
+            SmartConLogger.Info($"Rotate final: elem={_activeDynamic.OwnerElementId.GetValue()}, " +
+                $"BasisX→parent={angleToParent:F2}°, BasisY→up={angleToUp:F2}°");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"LogFinalRotationAngles failed (ignored): {ex.Message}");
+        }
     }
 }

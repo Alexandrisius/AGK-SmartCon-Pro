@@ -107,16 +107,24 @@
                          ToolTip="{loc:Loc Tip_RotateCW}"/>
             </Grid>
 
-            <!-- Изменить соединение -->
-            <Button Grid.Row="6"
-                    Height="28"
-                    Padding="16,3"
-                    HorizontalAlignment="Center"
-                    Command="{Binding CycleConnectorCommand}"
-                    ToolTip="{loc:Loc Tip_ChangeConnection}"
-                    Style="{DynamicResource PrimaryButton}">
-                <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ChangeConnection}"/>
-            </Button>
+            <!-- Изменить соединение / Сбросить угол поворота -->
+            <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button Height="28"
+                        Padding="16,3"
+                        Command="{Binding CycleConnectorCommand}"
+                        ToolTip="{loc:Loc Tip_ChangeConnection}"
+                        Style="{DynamicResource PrimaryButton}">
+                    <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ChangeConnection}"/>
+                </Button>
+                <Button Height="28"
+                        Padding="16,3"
+                        Margin="10,0,0,0"
+                        Command="{Binding ZeroRotationCommand}"
+                        ToolTip="{Binding ZeroRotationHint}"
+                        Style="{DynamicResource PrimaryButton}">
+                    <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ResetRotation}"/>
+                </Button>
+            </StackPanel>
 
             <!-- Размер dynamic -->
             <StackPanel Grid.Row="8">

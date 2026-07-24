@@ -1852,6 +1852,25 @@ public sealed class ChainOperationHandler(
             transformSvc.RotateElement(doc, elemId, origin, rotAxis, signedAngle);
             doc.Regenerate();
         }
+
+        // Restore verification: residual error between the restored basis and the
+        // snapshot — catches cumulative drift from repeated rollback/attach cycles
+        // (sign noise at ~180° in the signed-angle branch above).
+        currentT = fi.GetTransform();
+        var finBX = new Vec3(currentT.BasisX.X, currentT.BasisX.Y, currentT.BasisX.Z);
+        var finBZ = new Vec3(currentT.BasisZ.X, currentT.BasisZ.Y, currentT.BasisZ.Z);
+        double errBX = VectorUtils.AngleBetween(finBX, snapBX) * 180.0 / System.Math.PI;
+        double errBZ = VectorUtils.AngleBetween(finBZ, snapBZ) * 180.0 / System.Math.PI;
+        if (errBX > 0.1 || errBZ > 0.1)
+        {
+            SmartConLogger.Warn($"   c. FI: restore rotation residual for {elemId.GetValue()}: " +
+                $"errBX={errBX:F3}°, errBZ={errBZ:F3}° (angleBX was {angleBX * 180.0 / System.Math.PI:F2}°) " +
+                $"[Action: сообщите разработчикам — накопление ошибки восстановления вращения]");
+        }
+        else
+        {
+            SmartConLogger.Debug($"   c. FI: restore rotation residual: errBX={errBX:F3}°, errBZ={errBZ:F3}°");
+        }
     }
 
     private void ReconnectSnapshotConnections(

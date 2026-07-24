@@ -31,6 +31,8 @@ public static partial class LocalizationService
         en["Btn_OK"] = "OK";
         ru["Btn_ChangeConnection"] = "Изменить соединение";
         en["Btn_ChangeConnection"] = "Change connection";
+        ru["Btn_ResetRotation"] = "Сбросить угол";
+        en["Btn_ResetRotation"] = "Reset angle";
         ru["Btn_ConnectAll"] = "Подключить всё";
         en["Btn_ConnectAll"] = "Connect all";
         ru["Btn_AddFamily"] = "▶▶ Добавить";
@@ -79,6 +81,10 @@ public static partial class LocalizationService
         en["Tip_RotationAngle"] = "Rotation angle in degrees";
         ru["Tip_RotateCW"] = "Повернуть по часовой стрелке";
         en["Tip_RotateCW"] = "Rotate clockwise";
+        ru["Tip_ZeroRotation"] = "Сбросить угол: ось Y коннектора — по мировой вертикали (для вертикальных осей — по сетке плана)";
+        en["Tip_ZeroRotation"] = "Reset angle: connector Y axis to world up (plan grid for vertical axes)";
+        ru["Tip_ZeroRotation_Dynamic"] = "Сбросить угол (референс {0}) • отклонение {1}°";
+        en["Tip_ZeroRotation_Dynamic"] = "Reset angle (reference {0}) • deviation {1}°";
         ru["Tip_AvailableSizes"] = "Доступные типоразмеры динамического семейства";
         en["Tip_AvailableSizes"] = "Available dynamic family sizes";
         ru["Tip_ChangeSize"] = "Изменить размер динамического семейства";

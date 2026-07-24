@@ -184,6 +184,7 @@ public sealed partial class PipeConnectEditorViewModel
     {
         RotateLeftCommand.NotifyCanExecuteChanged();
         RotateRightCommand.NotifyCanExecuteChanged();
+        ZeroRotationCommand.NotifyCanExecuteChanged();
         CycleConnectorCommand.NotifyCanExecuteChanged();
         ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();
@@ -200,6 +201,7 @@ public sealed partial class PipeConnectEditorViewModel
     {
         RotateLeftCommand.NotifyCanExecuteChanged();
         RotateRightCommand.NotifyCanExecuteChanged();
+        ZeroRotationCommand.NotifyCanExecuteChanged();
         CycleConnectorCommand.NotifyCanExecuteChanged();
         ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
         InsertFittingCommand.NotifyCanExecuteChanged();

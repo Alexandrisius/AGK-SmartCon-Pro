@@ -77,6 +77,8 @@ public static partial class LocalizationService
         en["Tx_ChainElement"] = "Chain: element {0}";
         ru["Tx_ChainRollbackElement"] = "Цепочка: откат элемента {0}";
         en["Tx_ChainRollbackElement"] = "Chain: rollback element {0}";
+        ru["Tx_ZeroRotation"] = "PipeConnect — Сброс угла";
+        en["Tx_ZeroRotation"] = "PipeConnect — Reset angle";
         ru["Tx_CleanupOldFitting"] = "PipeConnect — Удаление фитинга/перехода точки";
         en["Tx_CleanupOldFitting"] = "PipeConnect — Delete point fitting/reducer";
 
@@ -95,6 +97,10 @@ public static partial class LocalizationService
 
         ru["Status_Rotated"] = "Повернуто на {0}°";
         en["Status_Rotated"] = "Rotated by {0}°";
+        ru["Status_RotationZeroed"] = "Угол сброшен";
+        en["Status_RotationZeroed"] = "Angle reset";
+        ru["Status_RotationAlreadyZero"] = "Угол уже сброшен (референс {0})";
+        en["Status_RotationAlreadyZero"] = "Angle already reset (reference {0})";
         ru["Status_Initializing"] = "Инициализация…";
         en["Status_Initializing"] = "Initializing…";
         ru["Status_InsertingFitting"] = "Установка фитинга…";

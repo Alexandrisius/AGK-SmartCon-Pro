@@ -415,6 +415,70 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     [RelayCommand(CanExecute = nameof(CanEditOperations))]
     private void RotateRight() => ExecuteRotate(-RotationAngleDeg);
 
+    /// <summary>
+    /// Set the active dynamic upright: rotate it (with its point fitting/reducer)
+    /// around the parent connector axis so the FREE connector's BasisY — the
+    /// family's "height" direction — lands exactly on the projection of world up
+    /// (global +Z) onto the connector plane. Falls back to the horizontal grid
+    /// (Y/X) for vertical axes. Connector BasisY is used instead of the family
+    /// transform basis: it always lies in the rotation plane (never degenerates)
+    /// and reflects flips — this is what makes the reset work for every family.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanEditOperations))]
+    private void ZeroRotation()
+    {
+        using var _scope = SmartConLogger.BeginScope("Editor",
+            ("Method", "ZeroRotation"));
+        if (_activeDynamic is null) return;
+
+        IsBusy = true;
+        try
+        {
+            UnsealIfSealed("установка вертикально");
+
+            bool applied = false;
+            _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_ZeroRotation"), doc =>
+            {
+                var dyn = RefreshConnectorSafe(_activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                          ?? _activeDynamic;
+                var axis = ActiveUpstreamConnector;
+
+                var upright = ConnectorAligner.ComputeUprightRotation(axis.BasisZVec3, dyn.BasisYVec3);
+                if (upright is null) return;
+
+                var idsToRotate = new List<ElementId> { _activeDynamic.OwnerElementId };
+                if (_currentFittingId is not null) idsToRotate.Add(_currentFittingId);
+                if (_primaryReducerId is not null) idsToRotate.Add(_primaryReducerId);
+
+                _transformSvc.RotateElements(doc, idsToRotate, axis.OriginVec3, upright.Axis, upright.AngleRadians);
+                doc.Regenerate();
+                applied = true;
+
+                SmartConLogger.Info($"ZeroRotation applied: {upright.AngleRadians * 180.0 / System.Math.PI:F2}° " +
+                    $"around axis owner={axis.OwnerElementId.GetValue()}");
+            });
+
+            _activeDynamic = _ctcManager.RefreshWithCtcOverride(
+                _doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                ?? _activeDynamic;
+            UpdateDynamicInfoPanel();
+            LogFinalRotationAngles();
+
+            StatusMessage = applied
+                ? LocalizationService.GetString("Status_RotationZeroed")
+                : string.Format(LocalizationService.GetString("Status_RotationAlreadyZero"), GetReferenceAxisName());
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
+            StatusMessage = string.Format(LocalizationService.GetString("Error_Rotate"), ex.Message);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private void ExecuteRotate(int angleDeg)
     {
         using var _scope = SmartConLogger.BeginScope("Editor",
@@ -468,6 +532,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 _doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
                 ?? _activeDynamic;
             UpdateDynamicInfoPanel();
+            LogFinalRotationAngles();
 
             StatusMessage = string.Format(LocalizationService.GetString("Status_Rotated"), angleDeg);
         }
