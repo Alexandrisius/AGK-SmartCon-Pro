@@ -108,23 +108,27 @@
             </Grid>
 
             <!-- Изменить соединение / Сбросить угол поворота -->
-            <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Center">
-                <Button Height="28"
+            <Grid Grid.Row="6" HorizontalAlignment="Center" Width="360">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Height="28"
                         Padding="16,3"
                         Command="{Binding CycleConnectorCommand}"
                         ToolTip="{loc:Loc Tip_ChangeConnection}"
                         Style="{DynamicResource PrimaryButton}">
                     <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ChangeConnection}"/>
                 </Button>
-                <Button Height="28"
+                <Button Grid.Column="2" Height="28"
                         Padding="16,3"
-                        Margin="10,0,0,0"
                         Command="{Binding ZeroRotationCommand}"
                         ToolTip="{Binding ZeroRotationHint}"
                         Style="{DynamicResource PrimaryButton}">
                     <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ResetRotation}"/>
                 </Button>
-            </StackPanel>
+            </Grid>
 
             <!-- Размер dynamic -->
             <StackPanel Grid.Row="8">

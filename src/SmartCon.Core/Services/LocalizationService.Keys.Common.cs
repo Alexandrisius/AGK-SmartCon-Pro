@@ -31,8 +31,8 @@ public static partial class LocalizationService
         en["Btn_OK"] = "OK";
         ru["Btn_ChangeConnection"] = "Изменить соединение";
         en["Btn_ChangeConnection"] = "Change connection";
-        ru["Btn_ResetRotation"] = "Сбросить угол";
-        en["Btn_ResetRotation"] = "Reset angle";
+        ru["Btn_ResetRotation"] = "Сбросить угол поворота";
+        en["Btn_ResetRotation"] = "Reset rotation angle";
         ru["Btn_ConnectAll"] = "Подключить всё";
         en["Btn_ConnectAll"] = "Connect all";
         ru["Btn_AddFamily"] = "▶▶ Добавить";
