@@ -107,6 +107,19 @@
   |   |   UnsealIfSealed: граница seal разрывается в транзакции, редактирование
   |   |   продолжается в обычном поэлементном режиме — seal прозрачен и обратим
   |
+  |-- "Блокировать" (LockNetwork, чек-бокс, issue #165) -->
+  |   |-- Мгновенный эффект. OFF→ON: RollbackChainLevels → UnsealIfSealed →
+  |   |   откат absorb root-трубы (исходная LocationCurve/FlexPoints из
+  |   |   InitAlignmentOutcome) + rigid MoveElement на AlignResult.InitialOffset.
+  |   |   Труба целиком перемещается к static, сеть остаётся на месте оторванной —
+  |   |   подключение «+» поэлементно (rigid as-is: без absorb, без resize) или
+  |   |   «Подключить всё» (rigid fast path). Seal при «+» заблокирован.
+  |   |   Откат absorb применим только пока root не тронут с Init (проверка
+  |   |   позиции коннектора у static); иначе — только unseal.
+  |   |-- ON→OFF: RollbackChainLevels → UnsealIfSealed → MoveElement(−offset) →
+  |   |   absorb повторно (геометрия как после Init) → TrySealAtCurrentBoundary.
+  |   |-- Дефолт (чек-бокс off при старте): absorb + seal без изменений (ADR-052)
+  |
   |-- "Соединить" -->
   |   |-- Если есть неподключённые элементы цепи --> диалог (UnconnectedChainChoice):
   |   |   «Подключить всё» → ConnectAll → продолжить; «Соединить как есть» → продолжить

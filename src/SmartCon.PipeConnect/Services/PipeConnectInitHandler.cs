@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
@@ -12,6 +13,33 @@ using static SmartCon.Core.Units;
 namespace SmartCon.PipeConnect.Services;
 
 /// <summary>
+/// Outcome of the initial disconnect+align: the refreshed active dynamic plus
+/// absorb undo data when the root dynamic is a pipe whose alignment was absorbed
+/// into its own geometry (ADR-052 addendum). The undo data lets the "Блокировать"
+/// toggle revert the absorb and apply the rigid move instead (issue #165).
+/// </summary>
+public sealed record InitAlignmentOutcome
+{
+    /// <summary>Refreshed active dynamic connector after align (null on failure).</summary>
+    public ConnectorProxy? ActiveDynamic { get; init; }
+
+    /// <summary>Whether the initial offset was absorbed into the pipe geometry (not a rigid move).</summary>
+    public bool AbsorbApplied { get; init; }
+
+    /// <summary>Location curve endpoint 0 BEFORE absorb (straight pipe only).</summary>
+    public XYZ? PipeStart { get; init; }
+
+    /// <summary>Location curve endpoint 1 BEFORE absorb (straight pipe only).</summary>
+    public XYZ? PipeEnd { get; init; }
+
+    /// <summary>Point path BEFORE absorb (flex pipe only).</summary>
+    public IReadOnlyList<XYZ>? FlexPoints { get; init; }
+
+    /// <summary>Alignment offset the pipe followed (== AlignResult.InitialOffset).</summary>
+    public Vec3 RigidOffset { get; init; }
+}
+
+/// <summary>
 /// Handles initialization for PipeConnect sessions: disconnect, alignment, and sizing adjustments.
 /// </summary>
 public sealed class PipeConnectInitHandler(
@@ -20,7 +48,7 @@ public sealed class PipeConnectInitHandler(
     IParameterResolver paramResolver,
     FittingCtcManager ctcManager)
 {
-    public ConnectorProxy? DisconnectAndAlign(
+    public InitAlignmentOutcome DisconnectAndAlign(
         Document doc,
         PipeConnectSessionContext ctx,
         ITransactionGroupSession groupSession)
@@ -30,9 +58,19 @@ public sealed class PipeConnectInitHandler(
             ("DynId", ctx.DynamicConnector.OwnerElementId.GetValue()));
 
         DisconnectDynamic(groupSession, ctx);
-        AlignDynamic(groupSession, ctx);
-        return ctcManager.RefreshWithCtcOverride(
+        var align = AlignDynamic(groupSession, ctx);
+        var activeDynamic = ctcManager.RefreshWithCtcOverride(
             doc, ctx.DynamicConnector.OwnerElementId, ctx.DynamicConnector.ConnectorIndex);
+
+        return new InitAlignmentOutcome
+        {
+            ActiveDynamic = activeDynamic,
+            AbsorbApplied = align.AbsorbApplied,
+            PipeStart = align.PipeStart,
+            PipeEnd = align.PipeEnd,
+            FlexPoints = align.FlexPoints,
+            RigidOffset = ctx.AlignResult.InitialOffset,
+        };
     }
 
     public ConnectorProxy? RunDirectConnectSizing(
@@ -111,7 +149,9 @@ public sealed class PipeConnectInitHandler(
         });
     }
 
-    private void AlignDynamic(
+    private sealed record AlignInfo(bool AbsorbApplied, XYZ? PipeStart, XYZ? PipeEnd, IReadOnlyList<XYZ>? FlexPoints);
+
+    private AlignInfo AlignDynamic(
         ITransactionGroupSession groupSession,
         PipeConnectSessionContext ctx)
     {
@@ -120,6 +160,10 @@ public sealed class PipeConnectInitHandler(
             ("DynId", ctx.DynamicConnector.OwnerElementId.GetValue()));
 
         var alignResult = ctx.AlignResult;
+        bool absorbApplied = false;
+        XYZ? pipeStart = null, pipeEnd = null;
+        IReadOnlyList<XYZ>? flexPoints = null;
+
         groupSession.RunInTransaction(LocalizationService.GetString("Tx_Align"), doc =>
         {
             var dynId = ctx.DynamicConnector.OwnerElementId;
@@ -133,12 +177,31 @@ public sealed class PipeConnectInitHandler(
                 // ADR-052 addendum: если динамик — прямая/гибкая труба и выравнивание
                 // чисто поступательное, меняем её геометрию (длину/путь) вместо
                 // жёсткого сдвига — дальний конец остаётся на сети, сеть не дёргается.
-                bool absorbed = alignResult.BasisZRotation is null
-                    && alignResult.BasisXSnap is null
+                bool pureTranslation = alignResult.BasisZRotation is null && alignResult.BasisXSnap is null;
+
+                // Snapshot the pipe geometry BEFORE absorb so the "Блокировать" toggle
+                // can revert it into a rigid move later (issue #165).
+                if (pureTranslation)
+                {
+                    var dynElem = doc.GetElement(dynId);
+                    if (dynElem is FlexPipe flex)
+                    {
+                        flexPoints = [.. flex.Points];
+                    }
+                    else if (dynElem is MEPCurve mc
+                        && mc.Location is LocationCurve lc
+                        && lc.Curve is Line line)
+                    {
+                        pipeStart = line.GetEndPoint(0);
+                        pipeEnd = line.GetEndPoint(1);
+                    }
+                }
+
+                absorbApplied = pureTranslation
                     && PipeAbsorptionApplier.TryApply(
                         doc, dynId, ctx.DynamicConnector.OriginVec3, alignResult.InitialOffset);
 
-                if (!absorbed)
+                if (!absorbApplied)
                 {
                     SmartConLogger.Info($"Align: Move offset=({alignResult.InitialOffset.X * FeetToMm:F2}," +
                         $"{alignResult.InitialOffset.Y * FeetToMm:F2},{alignResult.InitialOffset.Z * FeetToMm:F2})mm");
@@ -221,5 +284,7 @@ public sealed class PipeConnectInitHandler(
                     $"distToStatic={distToStatic * FeetToMm:F3}mm");
             }
         });
+
+        return new AlignInfo(absorbApplied, pipeStart, pipeEnd, flexPoints);
     }
 }

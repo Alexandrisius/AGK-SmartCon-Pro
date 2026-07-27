@@ -279,7 +279,10 @@ public sealed partial class PipeConnectEditorViewModel
 
             // Early seal (ADR-052): quiet remainder is reconnected in one
             // transaction — the user never walks idle elements manually.
-            TrySealAtCurrentBoundary();
+            // Skipped when the network is locked ("Блокировать", issue #165):
+            // the user attaches the remainder strictly element-by-element.
+            if (!LockNetwork)
+                TrySealAtCurrentBoundary();
 
             UpdateChainUI();
             if (!_chainSealed)

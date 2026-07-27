@@ -63,6 +63,66 @@ internal static class PipeAbsorptionApplier
         return false;
     }
 
+    /// <summary>
+    /// Revert a straight pipe's LocationCurve to the endpoints captured BEFORE
+    /// absorb (issue #165): the "Блокировать" toggle undoes the absorption so the
+    /// rigid move can be applied instead. Call with both connectors free
+    /// (after UnsealIfSealed) — the curve setter does not tear the network.
+    /// Returns false when the element is not a straight pipe or the set fails.
+    /// </summary>
+    public static bool RevertStraightPipe(Document doc, ElementId elemId, XYZ start, XYZ end)
+    {
+        var elem = doc.GetElement(elemId);
+        if (elem is not MEPCurve mc
+            || mc.Location is not LocationCurve lc
+            || lc.Curve is not Line)
+        {
+            return false;
+        }
+
+        try
+        {
+            lc.Curve = Line.CreateBound(start, end);
+            doc.Regenerate();
+            SmartConLogger.Debug($"    Revert absorb: pipe {elemId.GetValue()} " +
+                $"len={start.DistanceTo(end) * FeetToMm:F1}mm restored");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"    Revert absorb: set curve failed: {ex.Message} " +
+                $"[Action: проверьте длину трубы и соединения вокруг, подключите вручную]");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Revert a flex pipe's point path to the points captured BEFORE absorb
+    /// (issue #165). Returns false when the element is not a FlexPipe or the set fails.
+    /// </summary>
+    public static bool RevertFlexPipe(Document doc, ElementId elemId, IReadOnlyList<XYZ> points)
+    {
+        var elem = doc.GetElement(elemId);
+        if (elem is not FlexPipe flexPipe)
+            return false;
+
+        try
+        {
+            flexPipe.Points = [.. points];
+            doc.Regenerate();
+            SmartConLogger.Debug($"    Revert absorb: flexpipe {elemId.GetValue()}, points={points.Count}");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"    Revert absorb: flex points failed: {ex.Message} " +
+                $"[Action: проверьте форму гибкой трубы и соединения вокруг, подключите вручную]");
+            return false;
+        }
+
+        return true;
+    }
+
     private static bool TryAbsorbStraightPipe(
         Document doc,
         ElementId elemId,

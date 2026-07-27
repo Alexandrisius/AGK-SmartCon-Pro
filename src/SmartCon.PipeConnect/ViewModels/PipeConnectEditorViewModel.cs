@@ -56,6 +56,20 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     /// before use (I-05).
     /// </summary>
     private ConnectorProxy? _rootDynamicConnector;
+
+    /// <summary>
+    /// Root absorb undo data (issue #165): captured at Init when the root dynamic is
+    /// a pipe whose initial alignment was absorbed into its geometry (ADR-052).
+    /// The "Блокировать" toggle reverts the absorb and applies the rigid move instead.
+    /// </summary>
+    private bool _rootAbsorbApplied;
+    private XYZ? _rootPipeStart;
+    private XYZ? _rootPipeEnd;
+    private IReadOnlyList<XYZ>? _rootFlexPoints;
+    private Vec3 _rootRigidOffset;
+
+    /// <summary>True after the toggle replaced the root absorb with a rigid move.</summary>
+    private bool _rootRigidApplied;
     private FittingMappingRule? _activeFittingRule;
     private bool _isClosing;
     private bool _needsPrimaryReducer;
@@ -197,9 +211,14 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         try
         {
             _activeParentConnector = _ctx.StaticConnector;
-            _activeDynamic = _initHandler.DisconnectAndAlign(_doc, _ctx, _groupSession)
-                ?? _ctx.DynamicConnector;
+            var initOutcome = _initHandler.DisconnectAndAlign(_doc, _ctx, _groupSession);
+            _activeDynamic = initOutcome.ActiveDynamic ?? _ctx.DynamicConnector;
             _rootDynamicConnector = _activeDynamic;
+            _rootAbsorbApplied = initOutcome.AbsorbApplied;
+            _rootPipeStart = initOutcome.PipeStart;
+            _rootPipeEnd = initOutcome.PipeEnd;
+            _rootFlexPoints = initOutcome.FlexPoints;
+            _rootRigidOffset = initOutcome.RigidOffset;
 
             var conns = GetFreeConnectorsSnapshot();
             _cycleService.State.Initialize(conns, _activeDynamic ?? _ctx.DynamicConnector);

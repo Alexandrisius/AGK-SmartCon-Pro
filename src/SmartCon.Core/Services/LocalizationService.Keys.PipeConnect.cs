@@ -56,6 +56,10 @@ public static partial class LocalizationService
         en["Tx_ChainRigidMove"] = "Chain: rigid network move";
         ru["Tx_RestoreCrossEdges"] = "Цепочка: восстановление петель";
         en["Tx_RestoreCrossEdges"] = "Chain: restore loop edges";
+        ru["Tx_LockNetworkRigid"] = "Блокировать: жёсткое перемещение";
+        en["Tx_LockNetworkRigid"] = "Lock: rigid move";
+        ru["Tx_LockNetworkAbsorb"] = "Блокировать: компенсация длиной";
+        en["Tx_LockNetworkAbsorb"] = "Lock: length compensation";
 
         ru["Status_NetworkMoved"] = "Сеть перемещена целиком ({0} элементов одним переносом)";
         en["Status_NetworkMoved"] = "Network moved as one body ({0} elements in a single move)";
@@ -94,6 +98,10 @@ public static partial class LocalizationService
         en["Status_ElementDetached"] = "Element {0} detached";
         ru["Status_ElementsConnected"] = "Подключено элементов: {0}";
         en["Status_ElementsConnected"] = "{0} element(s) connected";
+        ru["Status_LockNetworkApplied"] = "Сеть заблокирована: жёсткий режим — подключайте «+» или «Подключить всё»";
+        en["Status_LockNetworkApplied"] = "Network locked: rigid mode — attach via «+» or «Connect all»";
+        ru["Status_LockNetworkReverted"] = "Блокировка снята: сеть компенсирована";
+        en["Status_LockNetworkReverted"] = "Lock released: network compensated";
 
         ru["Status_Rotated"] = "Повернуто на {0}°";
         en["Status_Rotated"] = "Rotated by {0}°";
