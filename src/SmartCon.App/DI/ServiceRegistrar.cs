@@ -85,6 +85,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IDialogService, PipeConnectDialogService>();
 
         // --- Parameter Resolution (Phase 4) ---
+        services.AddSingleton<FamilyFormulaCache>();
         services.AddSingleton<IParameterResolver, RevitParameterResolver>();
         services.AddSingleton<ILookupTableService, RevitLookupTableService>();
         services.AddSingleton<FamilySymbolSizeExtractor>();

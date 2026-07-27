@@ -17,7 +17,7 @@ using SmartCon.Core.Compatibility;
 using static SmartCon.Core.Units;
 namespace SmartCon.Revit.Parameters;
 
-public sealed class RevitLookupTableService : ILookupTableService
+public sealed class RevitLookupTableService(FamilyFormulaCache formulaCache) : ILookupTableService
 {
     public bool ConnectorRadiusExistsInTable(Document doc, ElementId elementId,
         int connectorIndex, double radiusInternalUnits,
@@ -157,114 +157,126 @@ public sealed class RevitLookupTableService : ILookupTableService
         }
         SmartConLogger.Debug($"  allConnectorIndices: [{string.Join(", ", allConnectorIndices)}]");
 
-        return EditFamilySession.Run<AllSizeRowsResult>(doc, instance, familyDoc =>
+        var family = instance.Symbol?.Family;
+        if (family is null)
         {
-            var fstm = FamilySizeTableManager.GetFamilySizeTableManager(familyDoc, familyDoc.OwnerFamily.Id);
-            if (fstm is null || fstm.NumberOfSizeTables == 0)
+            SmartConLogger.Debug("  family=null → return []");
+            return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
+        }
+
+        // Tables read directly from the PROJECT document (FamilySizeTableManager
+        // works there); formulas come from the cached snapshot — one EditFamily
+        // per family per session instead of one per call (phase 3, #161).
+        var fstm = FamilySizeTableManager.GetFamilySizeTableManager(doc, family.Id);
+        if (fstm is null || fstm.NumberOfSizeTables == 0)
+        {
+            SmartConLogger.Debug("  no size tables → return []");
+            return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
+        }
+
+        var snapshot = formulaCache.Get(doc, instance);
+        if (snapshot is null)
+        {
+            SmartConLogger.Debug("  formula snapshot unavailable (EditFamily forbidden) → return []");
+            return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
+        }
+        var paramSnapshot = snapshot.Parameters;
+        var formulaByName = snapshot.FormulaByName;
+
+        var connectorParamMap = new Dictionary<int, string>();
+        foreach (var connIdx in allConnectorIndices)
+        {
+            var connector = cm.FindByIndex(connIdx);
+            if (connector is null) continue;
+            var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, connector);
+            if (binding is null)
             {
-                SmartConLogger.Debug("  no size tables → return []");
-                return new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
+                SmartConLogger.Debug($"    conn[{connIdx}]: no size binding (not found)");
+                continue;
             }
-
-            var snapshot = FamilyParameterSnapshot.Build(familyDoc.FamilyManager);
-            var paramSnapshot = snapshot.Parameters;
-            var formulaByName = snapshot.FormulaByName;
-
-            var connectorParamMap = new Dictionary<int, string>();
-            foreach (var connIdx in allConnectorIndices)
+            var (directName, rootName, formula, _, isDiameter) =
+                FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
+                    snapshot, binding.Value.ParamName, binding.Value.IsDiameter);
+            var searchParam = rootName ?? directName;
+            if (searchParam is not null)
             {
-                var connector = cm.FindByIndex(connIdx);
-                if (connector is null) continue;
-                var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, connector);
-                if (binding is null)
-                {
-                    SmartConLogger.Debug($"    conn[{connIdx}]: no size binding (not found)");
-                    continue;
-                }
-                var (directName, rootName, formula, _, isDiameter) =
-                    FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                        familyDoc, binding.Value.ParamName, binding.Value.IsDiameter);
-                var searchParam = rootName ?? directName;
-                if (searchParam is not null)
-                {
-                    connectorParamMap[connIdx] = searchParam;
-                    SmartConLogger.Debug($"    conn[{connIdx}]: searchParam='{searchParam}', directName='{directName}', rootName='{rootName}'");
-                }
-                else
-                {
-                    SmartConLogger.Debug($"    conn[{connIdx}]: searchParam=NULL (not found)");
-                }
-            }
-            SmartConLogger.Debug($"  connectorParamMap: [{string.Join(", ", connectorParamMap.Select(kvp => $"conn[{kvp.Key}]='{kvp.Value}'"))}]");
-
-            var tableNames = fstm.GetAllSizeTableNames().ToList();
-
-            var perTableRows = new List<List<SizeTableRow>>();
-            foreach (var tableName in tableNames)
-            {
-                var tableRows = ExtractRowsFromTable(
-                    fstm, tableName, paramSnapshot, formulaByName,
-                    targetConnectorIndex, connectorParamMap,
-                    allConnectorIndices, currentRadii, constraints);
-                if (tableRows.Count > 0)
-                    perTableRows.Add(tableRows);
-            }
-
-            var allNonSizeParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var tableRows in perTableRows)
-                foreach (var row in tableRows)
-                    foreach (var key in row.NonSizeParameterValues.Keys)
-                        allNonSizeParams.Add(key);
-
-            if (allNonSizeParams.Count > 0)
-                SmartConLogger.Debug($"  allNonSizeParams (union from {perTableRows.Count} tables): [{string.Join(", ", allNonSizeParams)}]");
-
-            List<SizeTableRow> allRows;
-            var validDn = new HashSet<long>();
-
-            if (perTableRows.Count <= 1)
-            {
-                allRows = perTableRows.Count == 1 ? perTableRows[0] : [];
+                connectorParamMap[connIdx] = searchParam;
+                SmartConLogger.Debug($"    conn[{connIdx}]: searchParam='{searchParam}', directName='{directName}', rootName='{rootName}'");
             }
             else
             {
-                var dnSets = perTableRows.Select(rows =>
-                    new HashSet<long>(rows.Select(r => RoundDnToMicrons(r.TargetRadiusFt)))).ToList();
-
-                validDn = new HashSet<long>(dnSets[0]);
-                for (int i = 1; i < dnSets.Count; i++)
-                    validDn.IntersectWith(dnSets[i]);
-
-                SmartConLogger.Debug($"  {perTableRows.Count} tables, DN: [{string.Join(" ∩ ", dnSets.Select(s => s.Count))}] → {validDn.Count}");
-
-                var bestTable = perTableRows
-                    .OrderByDescending(t => t.Max(r => r.ConnectorRadiiFt.Count))
-                    .ThenByDescending(t => t.Count)
-                    .First();
-                allRows = bestTable
-                    .Where(r => validDn.Contains(RoundDnToMicrons(r.TargetRadiusFt)))
-                    .ToList();
+                SmartConLogger.Debug($"    conn[{connIdx}]: searchParam=NULL (not found)");
             }
+        }
+        SmartConLogger.Debug($"  connectorParamMap: [{string.Join(", ", connectorParamMap.Select(kvp => $"conn[{kvp.Key}]='{kvp.Value}'"))}]");
 
-            var distinct = DeduplicateRows(allRows);
+        var tableNames = fstm.GetAllSizeTableNames().ToList();
 
-            int maxConnCount = distinct.Count > 0 ? distinct.Max(r => r.ConnectorRadiiFt.Count) : 0;
-            if (maxConnCount > 0)
-                distinct = distinct.Where(r => r.ConnectorRadiiFt.Count == maxConnCount).ToList();
+        var perTableRows = new List<List<SizeTableRow>>();
+        foreach (var tableName in tableNames)
+        {
+            var tableRows = ExtractRowsFromTable(
+                fstm, tableName, paramSnapshot, formulaByName,
+                targetConnectorIndex, connectorParamMap,
+                allConnectorIndices, currentRadii, constraints);
+            if (tableRows.Count > 0)
+                perTableRows.Add(tableRows);
+        }
 
-            SmartConLogger.Debug($"  → {distinct.Count} unique configs");
+        var allNonSizeParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tableRows in perTableRows)
+            foreach (var row in tableRows)
+                foreach (var key in row.NonSizeParameterValues.Keys)
+                    allNonSizeParams.Add(key);
 
-            var readOnlyPerTableRows = perTableRows
-                .Select(t => (IReadOnlyList<SizeTableRow>)t.AsReadOnly())
-                .ToList()
-                .AsReadOnly();
+        if (allNonSizeParams.Count > 0)
+            SmartConLogger.Debug($"  allNonSizeParams (union from {perTableRows.Count} tables): [{string.Join(", ", allNonSizeParams)}]");
 
-            return new AllSizeRowsResult(
-                distinct.AsReadOnly(),
-                allNonSizeParams,
-                readOnlyPerTableRows,
-                validDn);
-        }) ?? new AllSizeRowsResult([], new HashSet<string>(), [], new HashSet<long>());
+        List<SizeTableRow> allRows;
+        var validDn = new HashSet<long>();
+
+        if (perTableRows.Count <= 1)
+        {
+            allRows = perTableRows.Count == 1 ? perTableRows[0] : [];
+        }
+        else
+        {
+            var dnSets = perTableRows.Select(rows =>
+                new HashSet<long>(rows.Select(r => RoundDnToMicrons(r.TargetRadiusFt)))).ToList();
+
+            validDn = new HashSet<long>(dnSets[0]);
+            for (int i = 1; i < dnSets.Count; i++)
+                validDn.IntersectWith(dnSets[i]);
+
+            SmartConLogger.Debug($"  {perTableRows.Count} tables, DN: [{string.Join(" ∩ ", dnSets.Select(s => s.Count))}] → {validDn.Count}");
+
+            var bestTable = perTableRows
+                .OrderByDescending(t => t.Max(r => r.ConnectorRadiiFt.Count))
+                .ThenByDescending(t => t.Count)
+                .First();
+            allRows = bestTable
+                .Where(r => validDn.Contains(RoundDnToMicrons(r.TargetRadiusFt)))
+                .ToList();
+        }
+
+        var distinct = DeduplicateRows(allRows);
+
+        int maxConnCount = distinct.Count > 0 ? distinct.Max(r => r.ConnectorRadiiFt.Count) : 0;
+        if (maxConnCount > 0)
+            distinct = distinct.Where(r => r.ConnectorRadiiFt.Count == maxConnCount).ToList();
+
+        SmartConLogger.Debug($"  → {distinct.Count} unique configs");
+
+        var readOnlyPerTableRows = perTableRows
+            .Select(t => (IReadOnlyList<SizeTableRow>)t.AsReadOnly())
+            .ToList()
+            .AsReadOnly();
+
+        return new AllSizeRowsResult(
+            distinct.AsReadOnly(),
+            allNonSizeParams,
+            readOnlyPerTableRows,
+            validDn);
     }
 
     private sealed record TableColumnInfo(
@@ -717,20 +729,14 @@ public sealed class RevitLookupTableService : ILookupTableService
             return null;
         }
 
-        return EditFamilySession.Run<LookupContext?>(doc, instance, familyDoc =>
-            BuildLookupContextFromFamily(familyDoc, binding.Value.ParamName, binding.Value.IsDiameter));
-    }
+        var family = instance.Symbol?.Family;
+        if (family is null)
+        {
+            SmartConLogger.Debug("  family=null → return null");
+            return null;
+        }
 
-    private static LookupContext? BuildLookupContextFromFamily(
-        Document familyDoc,
-        string paramName,
-        bool isDiameterBound)
-    {
-        SmartConLogger.DebugSection("BuildLookupContextFromFamily");
-
-        var fstm = FamilySizeTableManager.GetFamilySizeTableManager(
-            familyDoc, familyDoc.OwnerFamily.Id);
-
+        var fstm = FamilySizeTableManager.GetFamilySizeTableManager(doc, family.Id);
         if (fstm is null)
         {
             SmartConLogger.Debug("  FamilySizeTableManager=null → no tables in family");
@@ -748,7 +754,12 @@ public sealed class RevitLookupTableService : ILookupTableService
         var tableNames = fstm.GetAllSizeTableNames().ToList();
         SmartConLogger.Debug($"  Tables ({tableNames.Count}): [{string.Join(", ", tableNames)}]");
 
-        var snapshot = FamilyParameterSnapshot.Build(familyDoc.FamilyManager);
+        var snapshot = formulaCache.Get(doc, instance);
+        if (snapshot is null)
+        {
+            SmartConLogger.Debug("  formula snapshot unavailable (EditFamily forbidden) → return null");
+            return null;
+        }
         var paramSnapshot = snapshot.Parameters;
         var formulaByName = snapshot.FormulaByName;
         SmartConLogger.Debug($"  Pre-cached formulaByName: {formulaByName.Count} entries from {paramSnapshot.Count} parameters");
@@ -756,7 +767,7 @@ public sealed class RevitLookupTableService : ILookupTableService
         SmartConLogger.Debug("  → FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam...");
         var (directName, rootName, formula, isInstance, isDiameter) =
             FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                familyDoc, paramName, isDiameterBound);
+                snapshot, binding.Value.ParamName, binding.Value.IsDiameter);
 
         SmartConLogger.Debug($"  FPA result: directName='{directName}', rootName='{rootName}', formula='{formula}', isInstance={isInstance}, isDiameter={isDiameter}");
 

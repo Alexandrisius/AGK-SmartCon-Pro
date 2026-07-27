@@ -137,6 +137,109 @@ internal static class FamilyParameterAnalyzer
         return (directName, rootParamName, formula, rootIsInst, isDiameter);
     }
 
+    /// <summary>
+    /// Overload working on a pre-built <see cref="FamilyParameterSnapshot"/> —
+    /// no familyDoc needed (phase 3, #161). Identical semantics to the
+    /// familyDoc overload: (DirectParamName, RootParamName, Formula, IsInstance,
+    /// IsDiameter); IsInstance from the root parameter when a formula exists.
+    /// </summary>
+    internal static (string? DirectParamName, string? RootParamName,
+                     string? Formula, bool IsInstance, bool IsDiameter)
+        AnalyzeConnectorRadiusParam(FamilyParameterSnapshot snapshot, string paramName, bool isDiameter)
+    {
+        var (formula, directIsInst, found) = FindInSnapshot(snapshot, paramName);
+        if (!found)
+        {
+            SmartConLogger.Debug($"  FamilyParameter '{paramName}' not found in snapshot → return default");
+            SmartConLogger.Warn($"FamilyParameter '{paramName}' not found in family snapshot " +
+                $"[Action: проверьте, что параметр существует в семействе и привязан к размеру коннектора]");
+            return default;
+        }
+
+        SmartConLogger.Debug($"  directParam='{paramName}', isInstance={directIsInst}, formula='{formula}'");
+
+        if (string.IsNullOrWhiteSpace(formula))
+        {
+            SmartConLogger.Debug($"  → No formula → return ('{paramName}', null, null, {directIsInst}, isDiameter={isDiameter})");
+            return (paramName, null, null, directIsInst, isDiameter);
+        }
+
+        var formulaNonNull = formula!;
+
+        string? rootParamName = null;
+        bool rootIsInst = directIsInst;
+
+        try
+        {
+            var sizeLookup = FormulaSolver.ParseSizeLookupStatic(formulaNonNull);
+            if (sizeLookup is not null && sizeLookup.Value.QueryParameters.Count > 0)
+            {
+                var queryName = sizeLookup.Value.QueryParameters[0];
+                var (qFormula, qIsInst, qFound) = FindInSnapshot(snapshot, queryName);
+                if (qFound)
+                {
+                    rootParamName = queryName;
+                    rootIsInst = qIsInst;
+                    SmartConLogger.Debug($"    → rootParam from size_lookup query[0]: '{rootParamName}', isInstance={rootIsInst}");
+                }
+                else
+                {
+                    SmartConLogger.Debug($"    → size_lookup query[0]='{queryName}' but FamilyParameter not found, fallback to generic search");
+                }
+            }
+        }
+        catch
+        {
+            // Формула не парсится (спецсимволы и т.д.) → fallback на generic search
+        }
+
+        if (rootParamName is null)
+        {
+            var candidates = new List<string>();
+            foreach (var (name, _) in snapshot.Parameters)
+            {
+                if (!string.IsNullOrEmpty(name) &&
+                    !string.Equals(name, paramName, StringComparison.OrdinalIgnoreCase))
+                    candidates.Add(name!);
+            }
+            candidates.Sort((a, b) => b.Length.CompareTo(a.Length));
+
+            SmartConLogger.Debug($"  Searching rootParam in formula '{formulaNonNull}' (candidates: {candidates.Count}):");
+
+            foreach (var name in candidates)
+            {
+                if (!SmartCon.Core.Services.FormulaParamMatcher.ContainsParamReference(formulaNonNull, name)) continue;
+                rootParamName = name;
+                rootIsInst = snapshot.IsInstanceByName.TryGetValue(name, out bool nameInst) ? nameInst : directIsInst;
+                SmartConLogger.Debug($"    → rootParam='{rootParamName}', isInstance={rootIsInst}");
+                break;
+            }
+
+            if (rootParamName is null)
+                SmartConLogger.Debug("    → rootParam not found");
+        }
+
+        SmartConLogger.Debug($"  → return ('{paramName}', '{rootParamName}', '{formulaNonNull}', {rootIsInst}, isDiameter={isDiameter})");
+        return (paramName, rootParamName, formulaNonNull, rootIsInst, isDiameter);
+    }
+
+    /// <summary>Find parameter in snapshot (case-insensitive): (formula, isInstance, found).</summary>
+    private static (string? Formula, bool IsInstance, bool Found) FindInSnapshot(
+        FamilyParameterSnapshot snapshot, string name)
+    {
+        foreach (var (pName, pFormula) in snapshot.Parameters)
+        {
+            if (string.Equals(pName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                var isInst = pName is not null
+                    && snapshot.IsInstanceByName.TryGetValue(pName, out bool pInst)
+                    && pInst;
+                return (pFormula, isInst, true);
+            }
+        }
+        return (null, false, false);
+    }
+
     private static FamilyParameter? FindFamilyParameter(Autodesk.Revit.DB.FamilyManager fm, string name)
     {
         foreach (FamilyParameter fp in fm.Parameters)

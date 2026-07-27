@@ -13,7 +13,7 @@ using SmartCon.Core.Compatibility;
 using static SmartCon.Core.Units;
 namespace SmartCon.Revit.Parameters;
 
-public sealed class RevitParameterResolver : IParameterResolver
+public sealed class RevitParameterResolver(FamilyFormulaCache formulaCache) : IParameterResolver
 {
     private const double Epsilon = 1e-6;
 
@@ -103,29 +103,29 @@ public sealed class RevitParameterResolver : IParameterResolver
 
         if (isInstance && isReadOnly)
         {
-            var dep = EditFamilySession.Run<ParameterDependency?>(doc, instance, familyDoc =>
+            var snapshot = formulaCache.Get(doc, instance);
+            var (directName, rootName, formula, _, _) = snapshot is not null
+                ? FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(snapshot, paramName, isDiameter)
+                : default;
+
+            SmartConLogger.Debug($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}'");
+
+            ParameterDependency? dep = null;
+            if (directName is not null && formula is not null && rootName is not null)
             {
-                var (directName, rootName, formula, _, _) =
-                    FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                        familyDoc, paramName, isDiameter);
-
-                SmartConLogger.Debug($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}'");
-
-                if (directName is not null && formula is not null && rootName is not null)
-                {
-                    return new ParameterDependency(
-                        BuiltIn: null,
-                        SharedParamName: null,
-                        Formula: formula,
-                        IsInstance: true,
-                        DirectParamName: directName,
-                        RootParamName: rootName,
-                        IsDiameter: isDiameter);
-                }
-
+                dep = new ParameterDependency(
+                    BuiltIn: null,
+                    SharedParamName: null,
+                    Formula: formula,
+                    IsInstance: true,
+                    DirectParamName: directName,
+                    RootParamName: rootName,
+                    IsDiameter: isDiameter);
+            }
+            else
+            {
                 SmartConLogger.Debug("  FPA did not return full chain (directName/formula/rootName null)");
-                return null;
-            });
+            }
 
             if (dep is not null)
             {

@@ -23,12 +23,14 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
     private readonly ILookupTableService _lookupTableSvc;
     private readonly FamilySymbolSizeExtractor _sizeExtractor;
     private readonly ITransactionService _transactionService;
+    private readonly FamilyFormulaCache _formulaCache;
 
-    public RevitDynamicSizeResolver(ILookupTableService lookupTableSvc, FamilySymbolSizeExtractor sizeExtractor, ITransactionService transactionService)
+    public RevitDynamicSizeResolver(ILookupTableService lookupTableSvc, FamilySymbolSizeExtractor sizeExtractor, ITransactionService transactionService, FamilyFormulaCache formulaCache)
     {
         _lookupTableSvc = lookupTableSvc;
         _sizeExtractor = sizeExtractor;
         _transactionService = transactionService;
+        _formulaCache = formulaCache;
     }
 
     public IReadOnlyList<SizeOption> GetAvailableSizes(Document doc, ElementId elementId,
@@ -172,20 +174,26 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             return [];
         }
 
-        return EditFamilySession.Run(doc, element,
-            familyDoc => ExtractSizesFromFamily(familyDoc, element, connectorIndex, constraints))
+        return TryGetLookupTableSizesInProject(doc, element, connectorIndex, constraints)
             ?? [];
     }
 
-    private List<SizeOption> ExtractSizesFromFamily(Document familyDoc, FamilyInstance instance,
+    private List<SizeOption> TryGetLookupTableSizesInProject(Document doc, FamilyInstance instance,
         int connectorIndex,
         IReadOnlyList<LookupColumnConstraint>? constraints)
     {
-        SmartConLogger.DebugSection("RevitDynamicSizeResolver.ExtractSizesFromFamily");
+        SmartConLogger.DebugSection("RevitDynamicSizeResolver.TryGetLookupTableSizesInProject");
 
-        var fstm = FamilySizeTableManager.GetFamilySizeTableManager(
-            familyDoc, familyDoc.OwnerFamily.Id);
+        var family = instance.Symbol?.Family;
+        if (family is null)
+        {
+            SmartConLogger.Debug("  family=null → return []");
+            return [];
+        }
 
+        // Tables read directly from the PROJECT document; formulas from the
+        // cached snapshot — one EditFamily per family per session (phase 3, #161).
+        var fstm = FamilySizeTableManager.GetFamilySizeTableManager(doc, family.Id);
         if (fstm is null || fstm.NumberOfSizeTables == 0)
         {
             SmartConLogger.Debug("  FamilySizeTableManager=null or empty → return []");
@@ -194,7 +202,12 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         SmartConLogger.Debug($"  FamilySizeTableManager: {fstm.NumberOfSizeTables} tables");
 
-        var snapshot = FamilyParameterSnapshot.Build(familyDoc.FamilyManager);
+        var snapshot = _formulaCache.Get(doc, instance);
+        if (snapshot is null)
+        {
+            SmartConLogger.Debug("  formula snapshot unavailable (EditFamily forbidden) → return []");
+            return [];
+        }
         var paramSnapshot = snapshot.Parameters;
         var formulaByName = snapshot.FormulaByName;
         SmartConLogger.Debug($"  Pre-cached formulaByName: {formulaByName.Count} entries from {paramSnapshot.Count} parameters");
@@ -216,7 +229,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
 
         var (directName, rootName, formula, _, isDiameter) =
             FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                familyDoc, binding.Value.ParamName, binding.Value.IsDiameter);
+                snapshot, binding.Value.ParamName, binding.Value.IsDiameter);
 
         SmartConLogger.Debug($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}', isDiameter={isDiameter}");
 
@@ -414,29 +427,33 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         {
             SmartConLogger.Debug($"  LookupTable: {lookupRows.Count} configs");
 
-            var nonSizeTypeParams = EditFamilySession.Run<List<string>>(
-                doc, instance,
-                familyDoc =>
+            var nonSizeTypeParams = new List<string>();
+            var snapshot = _formulaCache.Get(doc, instance);
+            if (snapshot is not null)
+            {
+                var cm = instance.MEPModel?.ConnectorManager;
+                var connectorParamMap = new Dictionary<int, string>();
+                if (cm is not null)
                 {
-                    var cm = instance.MEPModel?.ConnectorManager;
-                    var connectorParamMap = new Dictionary<int, string>();
-                    if (cm is not null)
+                    foreach (Connector c in cm.Connectors)
                     {
-                        foreach (Connector c in cm.Connectors)
-                        {
-                            if (c.ConnectorType == ConnectorType.Curve) continue;
-                            var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, c);
-                            if (binding is null) continue;
-                            var (directName, rootName, _, _, _) =
-                                FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                                    familyDoc, binding.Value.ParamName, binding.Value.IsDiameter);
-                            var searchParam = rootName ?? directName;
-                            if (searchParam is not null)
-                                connectorParamMap[(int)c.Id] = searchParam;
-                        }
+                        if (c.ConnectorType == ConnectorType.Curve) continue;
+                        var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, c);
+                        if (binding is null) continue;
+                        var (directName, rootName, _, _, _) =
+                            FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
+                                snapshot, binding.Value.ParamName, binding.Value.IsDiameter);
+                        var searchParam = rootName ?? directName;
+                        if (searchParam is not null)
+                            connectorParamMap[(int)c.Id] = searchParam;
                     }
-                    return FindNonSizeTypeParameters(familyDoc, sizeResult.AllNonSizeParamNames, connectorParamMap);
-                }) ?? [];
+                }
+                nonSizeTypeParams = FindNonSizeTypeParameters(snapshot, sizeResult.AllNonSizeParamNames, connectorParamMap);
+            }
+            else
+            {
+                SmartConLogger.Debug("  formula snapshot unavailable (EditFamily forbidden) → nonSizeTypeParams=[]");
+            }
 
             Dictionary<int, List<string>> rowToSymbols;
 
@@ -613,7 +630,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
     }
 
     private static List<string> FindNonSizeTypeParameters(
-        Document familyDoc,
+        FamilyParameterSnapshot snapshot,
         IEnumerable<string> allNonSizeParamNames,
         Dictionary<int, string> connectorParamMap)
     {
@@ -621,8 +638,6 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             ?? new HashSet<string>(allNonSizeParamNames, StringComparer.OrdinalIgnoreCase);
         if (nonSizeParamNames.Count == 0) return [];
 
-        var fm = familyDoc.FamilyManager;
-        var snapshot = FamilyParameterSnapshot.Build(fm);
         var formulaByName = snapshot.FormulaByName;
 
         var leafParams = new List<string>();
@@ -631,18 +646,8 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             var leaf = FindLeafParameter(nsp, formulaByName);
             if (leaf is null) continue;
 
-            FamilyParameter? fp = null;
-            foreach (FamilyParameter p in fm.Parameters)
-            {
-                if (p.Definition is not null &&
-                    string.Equals(p.Definition.Name, leaf, StringComparison.OrdinalIgnoreCase))
-                {
-                    fp = p;
-                    break;
-                }
-            }
-
-            if (fp is not null && !fp.IsInstance)
+            bool found = snapshot.IsInstanceByName.TryGetValue(leaf, out bool isInstance);
+            if (found && !isInstance)
                 leafParams.Add(leaf);
         }
 
