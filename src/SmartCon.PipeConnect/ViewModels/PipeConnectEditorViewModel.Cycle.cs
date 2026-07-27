@@ -58,6 +58,11 @@ public sealed partial class PipeConnectEditorViewModel
             else
                 SmartConLogger.Info($"Connector {target.ConnectorIndex} is NOT chain connector — chain preserved");
 
+            // Cycling is root-only (CanCycleConnector requires ChainDepth == 0): the chosen
+            // connector becomes the root pair connector — Connect must use it, not the
+            // session-default one (issue: tee connected to the branch instead of the run).
+            _rootDynamicConnector = _activeDynamic ?? target;
+
             _activeChainPlan = null;
             UpdateChainUI();
 

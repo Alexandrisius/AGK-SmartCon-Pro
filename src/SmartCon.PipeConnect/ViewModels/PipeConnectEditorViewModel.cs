@@ -47,6 +47,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     // См. также TODO в ConnectExecutor.ExecuteConnectTo()
     private ConnectorProxy? _activeDynamic;
     private ConnectorProxy? _activeFittingConn2;
+
+    /// <summary>
+    /// Last root dynamic connector chosen by the user via CycleConnector (issue: root
+    /// point must follow the cycle selection, not the session-default connector).
+    /// Falls back to <see cref="PipeConnectSessionContext.DynamicConnector"/> when the
+    /// user never cycled. Used only for OwnerElementId/ConnectorIndex — always refresh
+    /// before use (I-05).
+    /// </summary>
+    private ConnectorProxy? _rootDynamicConnector;
     private FittingMappingRule? _activeFittingRule;
     private bool _isClosing;
     private bool _needsPrimaryReducer;
@@ -127,7 +136,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         var guessSvc = new CtcGuessService(connSvc, mappingRepo, _virtualCtcStore);
         var familyWriter = new CtcFamilyWriter(connSvc, familyConnSvc, _virtualCtcStore);
         _ctcManager = new FittingCtcManager(resolutionSvc, guessSvc, familyWriter);
-        _connectExecutor = new ConnectExecutor(connSvc, transformSvc, paramResolver, fittingInsertSvc, networkMover, mappingRepo, _ctcManager);
+        _connectExecutor = new ConnectExecutor(connSvc, transformSvc, alignmentSvc, paramResolver, fittingInsertSvc, networkMover, mappingRepo, _ctcManager);
         _initHandler = new PipeConnectInitHandler(connSvc, transformSvc, paramResolver, _ctcManager);
         _rotationHandler = rotationHandler;
         _sizeHandler = new PipeConnectSizeHandler(connSvc, transformSvc, paramResolver, _ctcManager);
@@ -190,6 +199,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
             _activeParentConnector = _ctx.StaticConnector;
             _activeDynamic = _initHandler.DisconnectAndAlign(_doc, _ctx, _groupSession)
                 ?? _ctx.DynamicConnector;
+            _rootDynamicConnector = _activeDynamic;
 
             var conns = GetFreeConnectorsSnapshot();
             _cycleService.State.Initialize(conns, _activeDynamic ?? _ctx.DynamicConnector);

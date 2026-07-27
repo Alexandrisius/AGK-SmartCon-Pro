@@ -46,6 +46,7 @@ public sealed class ConnectExecutor
 {
     private readonly IConnectorService _connSvc;
     private readonly ITransformService _transformSvc;
+    private readonly IAlignmentService _alignmentSvc;
     private readonly IParameterResolver _paramResolver;
     private readonly IFittingInsertService _fittingInsertSvc;
     private readonly INetworkMover _networkMover;
@@ -55,6 +56,7 @@ public sealed class ConnectExecutor
     public ConnectExecutor(
         IConnectorService connSvc,
         ITransformService transformSvc,
+        IAlignmentService alignmentSvc,
         IParameterResolver paramResolver,
         IFittingInsertService fittingInsertSvc,
         INetworkMover networkMover,
@@ -63,6 +65,7 @@ public sealed class ConnectExecutor
     {
         _connSvc = connSvc;
         _transformSvc = transformSvc;
+        _alignmentSvc = alignmentSvc;
         _paramResolver = paramResolver;
         _fittingInsertSvc = fittingInsertSvc;
         _networkMover = networkMover;
@@ -853,7 +856,27 @@ public sealed class ConnectExecutor
         double angleZD = VectorUtils.AngleBetween(staticConn.BasisZVec3, dynFresh.BasisZVec3);
         double antiErrD = System.Math.Abs(angleZD - System.Math.PI) * 180.0 / System.Math.PI;
         if (antiErrD > angleEpsDeg)
-            SmartConLogger.Warn($"WARNING: BasisZ not anti-parallel (dev. {antiErrD:F1}°) [Action: проверьте ориентацию коннекторов — возможно потребуется ручной поворот элемента]");
+        {
+            // ConnectTo on non-anti-parallel connectors makes Revit auto-orient the fitting
+            // to an unpredictable pose (tee jumped to the branch port on Connect). The method
+            // is ValidateAndFix — so fix: re-align dynamic to static (same alignment as the
+            // initial/cycle alignment) instead of only warning.
+            SmartConLogger.Warn($"BasisZ not anti-parallel (dev. {antiErrD:F1}°) — re-aligning dynamic to static before ConnectTo " +
+                $"[Action: элемент перевыравнен автоматически; проверьте итоговое положение и ориентацию коннекторов]");
+
+            var reAlign = ConnectorAligner.ComputeAlignment(
+                staticConn.OriginVec3, staticConn.BasisZVec3, staticConn.BasisXVec3,
+                dynFresh.OriginVec3, dynFresh.BasisZVec3, dynFresh.BasisXVec3);
+            _alignmentSvc.ApplyAlignment(doc, dynFresh.OwnerElementId, reAlign, dynFresh.ConnectorIndex);
+
+            dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
+            updatedDynamic = dynFresh;
+
+            double verifyAngle = VectorUtils.AngleBetween(staticConn.BasisZVec3, dynFresh.BasisZVec3);
+            double verifyDev = System.Math.Abs(verifyAngle - System.Math.PI) * 180.0 / System.Math.PI;
+            SmartConLogger.Info($"Re-align done: dev. now {verifyDev:F1}°, " +
+                $"dist={VectorUtils.DistanceTo(dynFresh.OriginVec3, staticConn.OriginVec3) * FeetToMm:F1}mm");
+        }
     }
 
     // ...

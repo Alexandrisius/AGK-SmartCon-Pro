@@ -56,6 +56,36 @@ public sealed record RotationStep(Vec3 Axis, double AngleRadians);
 
 **Файл:** `Math/ConnectorAligner.cs`
 
+## ConnectorOrdering
+
+Детерминированная геометрическая сортировка коннекторов (issue #163):
+`ConnectorSet` в Revit API перечисляет коннекторы в случайном порядке, меняющемся
+от вызова к вызову — потребители не должны на него полагаться.
+
+Порядок: **X asc** (слева-направо) → **Z desc** (сверху-вниз) → **Y asc** →
+tie-break по `Connector.Id` (делает порядок тотальным и воспроизводимым независимо
+от порядка входа). Оси сравниваются с толерансом `PositionTolerance` = 1e-6 ft.
+
+Ключ позиции поставляет вызывающий код. Чтобы порядок был стабилен, пока элемент
+перемещается/поворачивается (PipeConnectEditor реалайнит элемент на каждом цикле),
+ключ должен быть инвариантен к rigid transform — см. `ConnectorService`
+(SmartCon.Revit): `FamilyInstance` → семейно-локальные координаты
+(`GetTotalTransform().Inverse`), `MEPCurve` → проекция на ось `LocationCurve`.
+
+**Файл:** `Math/ConnectorOrdering.cs`
+
+```csharp
+public static class ConnectorOrdering
+{
+    public const double PositionTolerance = 1e-6;
+
+    public static IReadOnlyList<T> OrderByPosition<T>(
+        IEnumerable<T> items,
+        Func<T, Vec3> positionSelector,
+        Func<T, int> tieBreakerSelector);
+}
+```
+
 ## VectorUtils
 
 Базовые векторные операции с Vec3.

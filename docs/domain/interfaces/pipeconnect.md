@@ -304,8 +304,23 @@ public interface IConnectorService
     bool ConnectTo(Document doc,
         ElementId elementId1, int connectorIndex1,
         ElementId elementId2, int connectorIndex2);
+
+    /// Все свободные коннекторы элемента (без ConnectorType.Curve).
+    IReadOnlyList<ConnectorProxy> GetAllFreeConnectors(Document doc, ElementId elementId);
+
+    /// ВСЕ коннекторы элемента — свободные и подключённые (без ConnectorType.Curve).
+    IReadOnlyList<ConnectorProxy> GetAllConnectors(Document doc, ElementId elementId);
 }
 ```
+
+**Гарантия порядка (issue #163):** `GetAllFreeConnectors` / `GetAllConnectors`
+возвращают коннекторы в **детерминированном геометрическом порядке** —
+`ConnectorSet` в Revit API перечисляет коннекторы случайно и этот порядок не должен
+протекать к потребителям. Порядок: X asc → Z desc → Y asc, tie-break по
+`Connector.Id` (см. `ConnectorOrdering` в [models/math-utilities.md](../models/math-utilities.md)).
+Ключ сортировки инвариантен к перемещению/повороту элемента (семейно-локальные
+координаты для `FamilyInstance`, проекция на ось для `MEPCurve`), поэтому порядок
+стабилен между refresh-циклами, пока PipeConnectEditor реалайнит элемент.
 
 ---
 

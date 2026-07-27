@@ -129,9 +129,10 @@ public sealed partial class PipeConnectEditorViewModel
         if (pointIndex == 0)
         {
             _activeParentConnector = _ctx.StaticConnector;
+            var rootDyn = ResolveRootDynamicConnector();
             _activeDynamic = _ctcManager.RefreshWithCtcOverride(
-                _doc, _ctx.DynamicConnector.OwnerElementId, _ctx.DynamicConnector.ConnectorIndex)
-                ?? _ctx.DynamicConnector;
+                _doc, rootDyn.OwnerElementId, rootDyn.ConnectorIndex)
+                ?? rootDyn;
         }
         else
         {
@@ -144,6 +145,21 @@ public sealed partial class PipeConnectEditorViewModel
     }
 
     /// <summary>
+    /// Root dynamic connector for point 0: the last connector the user picked via
+    /// CycleConnector when it differs from the session default. Connect and root
+    /// re-activation must follow the cycle selection — otherwise the final ConnectTo
+    /// runs against the wrong connector (tee jumps to the branch port).
+    /// </summary>
+    private ConnectorProxy ResolveRootDynamicConnector()
+    {
+        var rootDyn = _rootDynamicConnector ?? _ctx.DynamicConnector;
+        if (rootDyn.ConnectorIndex != _ctx.DynamicConnector.ConnectorIndex)
+            SmartConLogger.Info($"Root dynamic follows cycle selection: connIdx={rootDyn.ConnectorIndex} " +
+                $"(session default={_ctx.DynamicConnector.ConnectorIndex})");
+        return rootDyn;
+    }
+
+    /// <summary>
     /// Resolve the active dynamic/parent connectors from the queue tail:
     /// index 0 → root pair (static ↔ dynamic), index N → parent edge of queue[N].
     /// </summary>
@@ -152,9 +168,10 @@ public sealed partial class PipeConnectEditorViewModel
         if (ChainDepth == 0 || _elementQueue is null || _chainGraph is null)
         {
             _activeParentConnector = _ctx.StaticConnector;
+            var rootDyn = ResolveRootDynamicConnector();
             _activeDynamic = _ctcManager.RefreshWithCtcOverride(
-                _doc, _ctx.DynamicConnector.OwnerElementId, _ctx.DynamicConnector.ConnectorIndex)
-                ?? _ctx.DynamicConnector;
+                _doc, rootDyn.OwnerElementId, rootDyn.ConnectorIndex)
+                ?? rootDyn;
             return;
         }
 

@@ -24,7 +24,10 @@ public sealed class ConnectorCycleState
     public int Count => _allConnectors.Count;
 
     /// <summary>Initialize the cycle with connectors and mark the active one as visited.</summary>
-    /// <param name="connectors">All connectors of the element.</param>
+    /// <param name="connectors">All connectors of the element, in deterministic
+    /// geometric order (IConnectorService guarantees it — see issue #163). The list
+    /// may change between refreshes when the element type is swapped (e.g. a manifold
+    /// with a variable port count) — new connectors take their sorted positions.</param>
     /// <param name="active">Currently active connector (starting point).</param>
     public void Initialize(List<ConnectorProxy> connectors, ConnectorProxy active)
     {
@@ -32,9 +35,13 @@ public sealed class ConnectorCycleState
         _visited.Clear();
         _position = 0;
 
-        _visited.Add(active.ConnectorIndex);
         int idx = connectors.FindIndex(c => c.ConnectorIndex == active.ConnectorIndex);
+        if (idx >= 0)
+            _visited.Add(active.ConnectorIndex);
         _position = (Math.Max(idx, 0) + 1) % Math.Max(1, connectors.Count);
+
+        SmartConLogger.Info($"Cycle initialized: order=[{string.Join(",", connectors.Select(c => c.ConnectorIndex))}], " +
+            $"active={active.ConnectorIndex}, count={connectors.Count}");
     }
 
     /// <summary>

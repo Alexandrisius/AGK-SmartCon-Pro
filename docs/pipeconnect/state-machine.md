@@ -73,6 +73,8 @@
   |-- "Повернуть" --> Transaction("Rotate"): активный динамик вокруг BasisZ
   |   родительского коннектора точки → refresh динамика → переоценка seal
   |-- "Изменить коннектор" --> выбрать другой free-коннектор (только root, ChainDepth==0)
+  |   |-- Перебор в детерминированном геометрическом порядке (ConnectorOrdering,
+  |   |   issue #163): X asc → Z desc → Y asc, инвариантен к поворотам элемента
   |   |-- RollbackChainLevels: ChainDepth → 0 ДО выравнивания (предотвращает поломку сети)
   |   |-- CycleAndAlign: реалайн к новому коннектору (S3) — пользователь ВИДИТ ориентацию
   |   |-- S6.1: Проверить CTC нового коннектора (CtcGuessService / VirtualCtcStore)
@@ -109,7 +111,12 @@
   |   |-- Если есть неподключённые элементы цепи --> диалог (UnconnectedChainChoice):
   |   |   «Подключить всё» → ConnectAll → продолжить; «Соединить как есть» → продолжить
   |   |   (Warn в лог); «Вернуться» → остаться в редакторе
-  |   |-- SwitchToPoint(0): финальная валидация и ConnectTo — для root-пары
+  |   |-- SwitchToPoint(0): финальная валидация и ConnectTo — для root-пары.
+  |   |   Root dynamic = последний коннектор, выбранный циклом (_rootDynamicConnector,
+  |   |   issue #164), а не session-default из контекста
+  |   |-- ValidateAndFixBeforeConnect: размеры, позиция; при отклонении BasisZ от
+  |   |   антипараллельности — re-align dynamic к static (issue #164), иначе Revit
+  |   |   auto-orient довернёт fitting при ConnectTo
   |   |-- Transaction("ConnectTo"): connector.ConnectTo() --> Commit
   |   |-- TransactionGroup.Assimilate() --> [Committed]
   |
