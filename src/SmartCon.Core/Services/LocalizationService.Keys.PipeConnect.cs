@@ -135,6 +135,12 @@ public static partial class LocalizationService
         en["Status_WritingCtc"] = "Writing connector types…";
         ru["Status_Connected"] = "Соединение выполнено";
         en["Status_Connected"] = "Connection completed";
+        ru["Status_InspectDone"] = "Вид отцентрирован на активном коннекторе";
+        en["Status_InspectDone"] = "View centered on the active connector";
+        ru["Status_InspectNoView"] = "Просмотр недоступен: активный вид не графический";
+        en["Status_InspectNoView"] = "Inspect unavailable: active view is not graphical";
+        ru["Status_InspectFailed"] = "Просмотр не выполнен";
+        en["Status_InspectFailed"] = "Inspect failed";
         ru["Status_ReducerSet"] = "Переходник: {0}";
         en["Status_ReducerSet"] = "Reducer: {0}";
         ru["Status_NoReducerData"] = "Нет данных о семействе переходника";

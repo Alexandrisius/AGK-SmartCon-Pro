@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Media;
+using SmartCon.Core.Models;
 using SmartCon.PipeConnect.Services;
 using SmartCon.PipeConnect.ViewModels;
 using SmartCon.UI;
@@ -7,14 +9,26 @@ using SmartCon.UI.Native;
 
 namespace SmartCon.PipeConnect.Views;
 
-public partial class PipeConnectEditorView : DialogWindowBase
+public partial class PipeConnectEditorView : DialogWindowBase, IEditorWindowBoundsAccessor
 {
     public PipeConnectEditorView(PipeConnectEditorViewModel viewModel)
     {
         InitializeComponent();
         DataContext = viewModel;
         BindCloseRequest(viewModel);
+        viewModel.WindowBoundsAccessor = this;
         PositionNearCursor();
+    }
+
+    public ScreenRect? GetWindowBoundsInPixels()
+    {
+        if (!IsVisible) return null;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        return new ScreenRect(
+            Left * dpi.DpiScaleX,
+            Top * dpi.DpiScaleY,
+            (Left + ActualWidth) * dpi.DpiScaleX,
+            (Top + ActualHeight) * dpi.DpiScaleY);
     }
 
     private void PositionNearCursor()

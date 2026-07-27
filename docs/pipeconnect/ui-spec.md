@@ -135,8 +135,14 @@ RollBack группы (Cancel).
 
 | Элемент | Тип | Binding | Описание |
 |---|---|---|---|
-| «Отмена» | Button | `CancelCommand` | TransactionGroup.RollBack(). Hotkey: Escape |
+| «−» | Button | `ZoomOutCommand` | Отдалить вид (×1/0.7) вокруг центра видимой зоны — без дрейфа за окном. IconButton |
+| «Просмотр» | Button | `InspectCommand` | Программный зум к активному коннектору динамика: `UIView.ZoomAndCenterRectangle` на `_activeDynamic.Origin`, радиус ~0.75 м. Без транзакций — допустимо в modal command context (ADR-043). Зум смещается так, чтобы точка не оказалась за окном редактора (`ViewZoomMath` + `IEditorWindowBoundsAccessor`, компенсация перекрытия окном). При смене активного динамика (работа с сетью) центрирует его коннектор. Стиль: SecondaryButton (белая) |
+| «+» | Button | `ZoomInCommand` | Приблизить вид (×0.7) вокруг центра видимой зоны. IconButton |
 | «Соединить» | Button | `ConnectCommand` | Диалог неподключённых (если нужно) → SwitchToPoint(0) → ValidateAndFix → ConnectTo + Assimilate(). Hotkey: Enter |
+| «Отмена» | Button | `CancelCommand` | TransactionGroup.RollBack(). Hotkey: Escape |
+
+Порядок в layout: блок зума слева (`−`, «Просмотр», `+`), справа «Соединить» (AccentButton), «Отмена».
+Статус-индикатор (точка + «Активно») удалён — состояние сессии видно по StatusMessage и доступности кнопок.
 
 ### Поведение при закрытии окна
 Закрытие крестиком [X] = «Отмена» (RollBack).

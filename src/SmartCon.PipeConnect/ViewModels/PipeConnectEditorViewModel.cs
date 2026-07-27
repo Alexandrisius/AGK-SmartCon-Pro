@@ -35,6 +35,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     private readonly PipeConnectSizeHandler _sizeHandler;
     private readonly DynamicSizeLoader _sizeLoader;
     private readonly ConnectorCycleService _cycleService;
+    private readonly IViewNavigationService _viewNavigation;
     private readonly PipeConnectSessionContext _ctx;
     private readonly VirtualCtcStore _virtualCtcStore;
 
@@ -129,7 +130,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         IFittingMapper fittingMapper,
         ChainOperationHandler chainOpHandler,
         PipeConnectRotationHandler rotationHandler,
-        DynamicSizeLoader sizeLoader)
+        DynamicSizeLoader sizeLoader,
+        IViewNavigationService viewNavigation)
     {
         _ctx = ctx;
         _doc = doc;
@@ -155,6 +157,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         _rotationHandler = rotationHandler;
         _sizeHandler = new PipeConnectSizeHandler(connSvc, transformSvc, paramResolver, _ctcManager);
         _sizeLoader = sizeLoader;
+        _viewNavigation = viewNavigation;
         _cycleService = new ConnectorCycleService(connSvc, alignmentSvc, paramResolver, _ctcManager);
         _activeDynamic = ctx.DynamicConnector;
         _chainGraph = ctx.ChainGraph;

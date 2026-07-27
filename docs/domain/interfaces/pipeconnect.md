@@ -615,3 +615,32 @@ public interface IRevitUIContext
     UIApplication GetUIApplication();
 }
 ```
+
+---
+
+## IViewNavigationService
+
+Программная навигация вида (зум/пан) без ввода пользователя. Используется блоком
+«Просмотр / ±» PipeConnectEditor: приближает активный коннектор динамического элемента,
+смещая зум так, чтобы точка не оказалась за модальным окном редактора.
+Вызовы UIView.Zoom* не стартуют транзакций — безопасно в modal command context (I-01a).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IViewNavigationService.cs`
+**Реализация:** `SmartCon.Revit/Navigation/RevitViewNavigationService.cs`
+**Математика:** `SmartCon.Core/Services/PipeConnect/ViewZoomMath.cs` (pure, тестируемая)
+
+```csharp
+public interface IViewNavigationService
+{
+    ZoomToPointResult ZoomToPoint(XYZ point, double radiusFeet, ScreenRect? occludingWindow);
+    ZoomToPointResult ZoomByFactor(double factor, ScreenRect? occludingWindow);
+}
+
+public enum ZoomToPointResult
+{
+    Success,
+    NoActiveGraphicalView,
+    UIViewNotFound,
+    DegenerateViewRect
+}
+```

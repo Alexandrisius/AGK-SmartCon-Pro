@@ -744,3 +744,58 @@ public sealed record PipeAdjustOp
     public required double AbsorbedLengthFt { get; init; }  // >0 укорочение, <0 удлинение, 0 трансляция
 }
 ```
+
+---
+
+## ScreenRect
+
+Прямоугольник в физических экранных пикселях (origin top-left, Y вниз).
+Описывает rect окна вида Revit (`UIView.GetWindowRectangle`) и экранные границы
+WPF-диалога — для компенсации перекрытия в кнопке «Обзор» (`OverviewZoomMath`).
+
+**Файл:** `SmartCon.Core/Models/ScreenRect.cs`
+
+```csharp
+public sealed record ScreenRect(double Left, double Top, double Right, double Bottom)
+{
+    public double Width { get; }
+    public double Height { get; }
+    public double CenterX { get; }
+    public double CenterY { get; }
+    public bool IntersectsWith(ScreenRect other);
+}
+```
+
+---
+
+## ViewZoomMath
+
+Pure-математика навигации вида PipeConnectEditor (кнопки «Просмотр» и ±, без Revit API, I-09).
+Вычисляет zoom-rect для `UIView.ZoomAndCenterRectangle` с компенсацией
+перекрытия вида модальным окном: видимая зона = max-area срез view rect
+минус rect окна (`ComputeVisibleRect`, fallback при зоне <150px), центр rect
+смещается от окна на экранное расстояние между центром view и центром видимой
+зоны. `Compute` — для кнопки «Просмотр» (целевая точка + радиус);
+`ComputeScaled` — для кнопок ± (масштабирование текущих corners, модельная
+точка в центре видимой зоны не дрейфует между шагами зума).
+Результат — `ViewZoomRect` в координатах плоскости вида
+(u вдоль RightDirection, v вдоль UpDirection).
+
+**Файл:** `SmartCon.Core/Services/PipeConnect/ViewZoomMath.cs`
+
+```csharp
+public static class ViewZoomMath
+{
+    public const double MinVisiblePx = 150;
+    public static ScreenRect ComputeVisibleRect(ScreenRect view, ScreenRect? occlusion);
+    public static ViewZoomRect? Compute(
+        double targetU, double targetV, double radiusModel,
+        ScreenRect view, ScreenRect? occlusion);
+    public static ViewZoomRect? ComputeScaled(
+        double currentU0, double currentV0, double currentU1, double currentV1,
+        double factor, ScreenRect view, ScreenRect? occlusion);
+}
+
+public sealed record ViewZoomRect(
+    double CenterU, double CenterV, double HalfWidth, double HalfHeight, bool UsedFallback);
+```
