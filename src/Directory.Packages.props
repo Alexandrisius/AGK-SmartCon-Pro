@@ -59,7 +59,7 @@
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
 
     <!-- CodePages encoding provider для Windows-1251 и других ANSI кодировок (не встроены в .NET Core) -->
-    <PackageVersion Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+    <PackageVersion Include="System.Text.Encoding.CodePages" Version="10.0.10" />
 
     <!-- Universal charset detector (Mozilla algorithm) для автоопределения кодировок Type Catalog -->
     <PackageVersion Include="UTF.Unknown" Version="2.6.0" />
