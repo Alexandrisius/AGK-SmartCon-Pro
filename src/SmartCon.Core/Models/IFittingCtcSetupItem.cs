@@ -20,9 +20,6 @@ public interface IFittingCtcSetupItem
     /// <summary>Nominal connector diameter in millimetres (display purposes).</summary>
     double DiameterMm { get; }
 
-    /// <summary>Pre-selected connector type (e.g. guessed from the mapping rule).</summary>
-    ConnectorTypeDefinition? PreSelectedType { get; }
-
     /// <summary>User-selected connector type. Mutable: bound to the setup dialog.</summary>
     ConnectorTypeDefinition? SelectedType { get; set; }
 

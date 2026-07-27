@@ -174,8 +174,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
             return [];
         }
 
-        return TryGetLookupTableSizesInProject(doc, element, connectorIndex, constraints)
-            ?? [];
+        return TryGetLookupTableSizesInProject(doc, element, connectorIndex, constraints);
     }
 
     private List<SizeOption> TryGetLookupTableSizesInProject(Document doc, FamilyInstance instance,
@@ -260,7 +259,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                     isQueryParam = sl is not null && sl.Value.QueryParameters
                         .Any(q => string.Equals(q, rootName, StringComparison.OrdinalIgnoreCase));
                 }
-                catch (Exception ex) { SmartConLogger.Warn($"size_lookup formula parse failed: {ex.GetType().Name}: {ex.Message}"); }
+                catch (Exception ex) { SmartConLogger.Warn($"size_lookup formula parse failed: {ex.GetType().Name}: {ex.Message} [Action: проверьте синтаксис формулы size_lookup в семействе — таблица может быть применена неточно]"); }
 
                 tableStoresDiameters = isQueryParam || isDiameter;
                 SmartConLogger.Debug($"  tableStoresDiameters={tableStoresDiameters} (SolveFor=null, isQueryParam={isQueryParam}, isDiameter={isDiameter})");
@@ -521,7 +520,7 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
                         $"Non-size type params detected ([{string.Join(", ", nonSizeTypeParams)}]) " +
                         $"but no CSV rows matched any FamilySymbol. Falling back to FamilySymbol enumeration " +
                         $"to prevent invalid DN × Symbol combinations. " +
-                        $"Check family parameter units and types.");
+                        $"[Action: проверьте единицы и типы параметров семейства — выпадающий список ограничен безопасным перечнем типов]");
 
                     var symbolConfigs = GetFamilySymbolConfigurations(doc, instance, targetConnectorIndex);
                     SmartConLogger.Debug($"  FamilySymbol safe fallback: {symbolConfigs.Count} configs");
@@ -843,7 +842,8 @@ public sealed class RevitDynamicSizeResolver : IDynamicSizeResolver
         {
             SmartConLogger.Warn(
                 $"Orphan symbols (no matching CSV row, excluded from dropdown): " +
-                $"[{string.Join(", ", orphans)}]");
+                $"[{string.Join(", ", orphans)}] " +
+                $"[Action: проверьте lookup-таблицу семейства — этим типам нет строки в CSV, при необходимости дополните таблицу]");
         }
 
         return mapping;

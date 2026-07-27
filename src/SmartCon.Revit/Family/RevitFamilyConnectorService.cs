@@ -36,7 +36,7 @@ public sealed class RevitFamilyConnectorService : IFamilyConnectorService
         if (element is MEPCurve or FlexPipe)
             return SetPipeTypeDescription(doc, element, typeDef);
 
-        SmartConLogger.Info("SetConnectorTypeCode: FamilyInstance — CTC фитингов идёт через VirtualCtcStore/CtcFamilyWriter, пропущено");
+        SmartConLogger.Info($"SetConnectorTypeCode: element is not MEPCurve/FlexPipe ({element.GetType().Name}) — CTC фитингов идёт через VirtualCtcStore/CtcFamilyWriter, пропущено");
         return false;
     }
 

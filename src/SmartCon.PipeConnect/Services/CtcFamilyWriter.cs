@@ -33,13 +33,15 @@ public sealed class CtcFamilyWriter(
         Document doc, FamilySymbol symbol, List<FittingCtcSetupItem> items,
         ElementId? projectElementId = null)
     {
-        using var _scope = SmartConLogger.BeginScope("CTC",
-            ("Method", "ApplyFittingCtcToFamily"),
-            ("FamilyName", symbol.Family.Name));
+        // NOTE: Measure instead of BeginScope — this method wraps EditFamily +
+        // LoadFamily (>1s of heavy inner work); a full scope would add Method/
+        // FamilyName prefixes (~50 chars) plus START/END banners to hundreds of
+        // inner log lines (gotcha C15). Point Info lines below carry the family name.
+        using var ms = SmartConLogger.Measure("CTC ApplyToFamily");
 
         if (doc.IsModifiable)
         {
-            SmartConLogger.Warn($"doc.IsModifiable=true, skipping write for '{symbol.Family.Name}'");
+            SmartConLogger.Warn($"doc.IsModifiable=true, skipping write for '{symbol.Family.Name}' [Action: вызовите запись CTC вне активной транзакции]");
             return;
         }
 
@@ -103,7 +105,7 @@ public sealed class CtcFamilyWriter(
 
                         if (orderMap.Count == 0)
                         {
-                            SmartConLogger.Warn("Order matching: 0 matches — positional fallback");
+                            SmartConLogger.Warn("Order matching: 0 matches — positional fallback [Action: проверьте CTC-маппинг коннекторов вручную после записи]");
                             orderMap = null;
                         }
                     }
@@ -198,7 +200,7 @@ public sealed class CtcFamilyWriter(
             {
                 var info = pc.GetMEPConnectorInfo();
                 if (info is null || !info.IsPrimary) continue;
-                int pcIdx = (int)pc.Id;
+                int pcIdx = pc.Id;
                 if (itemByConnIdx.TryGetValue(pcIdx, out var item) && usedConnIdx.Add(pcIdx))
                 {
                     result[primaryCeIdx] = item;
@@ -216,7 +218,7 @@ public sealed class CtcFamilyWriter(
             .OrderBy(t => t.ce.Id.GetValue())
             .ToList();
         var remainingPcs = projectConns
-            .Select(pc => (int)pc.Id)
+            .Select(pc => pc.Id)
             .Where(idx => !usedConnIdx.Contains(idx) && itemByConnIdx.ContainsKey(idx))
             .OrderBy(idx => idx)
             .ToList();

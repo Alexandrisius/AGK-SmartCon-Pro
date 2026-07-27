@@ -320,7 +320,7 @@ public sealed class RevitParameterResolver(FamilyFormulaCache formulaCache) : IP
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.GetValue()}: {ex.GetType().Name}: {ex.Message}");
-                SmartConLogger.Warn($"ChangeTypeId symbolId={symbolId.GetValue()} failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId symbolId={symbolId.GetValue()} failed: {ex.Message} [Action: тип пропущен, подбор продолжается по остальным — проверьте итоговый размер элемента]");
             }
         }
 
@@ -368,7 +368,7 @@ public sealed class RevitParameterResolver(FamilyFormulaCache formulaCache) : IP
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION ChangeTypeId nearest: {ex.Message}");
-                SmartConLogger.Warn($"ChangeTypeId nearest failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId nearest failed: {ex.Message} [Action: размер не изменён — проверьте типоразмер элемента вручную]");
             }
             return false;
         }
@@ -465,7 +465,7 @@ public sealed class RevitParameterResolver(FamilyFormulaCache formulaCache) : IP
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.GetValue()}: {ex.Message}");
-                SmartConLogger.Warn($"symbolId={symbolId.GetValue()}: {ex.Message}");
+                SmartConLogger.Warn($"symbolId={symbolId.GetValue()}: {ex.Message} [Action: тип пропущен, подбор продолжается по остальным — проверьте итоговый размер элемента]");
             }
         }
 
@@ -489,7 +489,7 @@ public sealed class RevitParameterResolver(FamilyFormulaCache formulaCache) : IP
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION applying winner: {ex.Message}");
-                SmartConLogger.Warn($"ChangeTypeId winner failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId winner failed: {ex.Message} [Action: размер не изменён — проверьте типоразмер элемента вручную]");
             }
         }
         else
