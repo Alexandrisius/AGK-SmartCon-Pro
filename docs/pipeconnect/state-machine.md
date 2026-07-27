@@ -107,17 +107,38 @@
   |   |   UnsealIfSealed: граница seal разрывается в транзакции, редактирование
   |   |   продолжается в обычном поэлементном режиме — seal прозрачен и обратим
   |
-  |-- "Блокировать" (LockNetwork, чек-бокс, issue #165) -->
-  |   |-- Мгновенный эффект. OFF→ON: RollbackChainLevels → UnsealIfSealed →
-  |   |   откат absorb root-трубы (исходная LocationCurve/FlexPoints из
-  |   |   InitAlignmentOutcome) + rigid MoveElement на AlignResult.InitialOffset.
-  |   |   Труба целиком перемещается к static, сеть остаётся на месте оторванной —
-  |   |   подключение «+» поэлементно (rigid as-is: без absorb, без resize) или
-  |   |   «Подключить всё» (rigid fast path). Seal при «+» заблокирован.
-  |   |   Откат absorb применим только пока root не тронут с Init (проверка
-  |   |   позиции коннектора у static); иначе — только unseal.
-  |   |-- ON→OFF: RollbackChainLevels → UnsealIfSealed → MoveElement(−offset) →
-  |   |   absorb повторно (геометрия как после Init) → TrySealAtCurrentBoundary.
+  |-- "Блокировать" (LockNetwork, чек-бокс в нижней панели рядом с «Соединить»,
+  |   виден всегда — и для одиночного dynamic; issues #165, #167) -->
+  |   |-- Единая модель: заморозка сети как есть — DN элементов и длины труб не
+  |   |   меняются; несовпадения DN решаются переходниками (reducer), а не мутацией.
+  |   |   Мгновенный эффект на ПОСЛЕДНЕЕ завершённое соединение — никогда на всю сеть.
+  |   |-- ChainDepth==0 (root) — унифицировано через ElementSnapshot:
+  |   |   |-- Baseline snapshot при Init ДО мутаций (absorb/resize/ChangeTypeId)
+  |   |   |-- Точка подключения root (upstream): static для Direct, fitting conn2
+  |   |   |   для FittingOnly (root стоит у фитинга — проверка «root не тронут»
+  |   |   |   и rigid align идут к upstream, иначе soft mode без reducer'а)
+  |   |   |-- ON: compensated snapshot → RestoreElementFromSnapshot(baseline)
+  |   |   |   (труба: исходная кривая+DN; FI: исходный символ+радиусы) →
+  |   |   |   rigid align к upstream (учитывает коннектор цикла #164) →
+  |   |   |   переподбор fitting под пару (static, baseline dyn) — иначе conn2
+  |   |   |   застревает на pre-lock размере и mismatch ложно триггернет reducer →
+  |   |   |   DN baseline≠upstream → reducer (fitting↔dyn при фитинге,
+  |   |   |   static↔dyn иначе) + rigid shift root к reducer.conn2
+  |   |   |   (_lockInsertedReducer)
+  |   |   |-- OFF: удалить toggle-reducer → RestoreElementFromSnapshot(compensated)
+  |   |   |   (absorb/подобранный DN обратно) → переподбор fitting обратно →
+  |   |   |   TrySealAtCurrentBoundary
+  |   |   |-- Baseline restore — только пока root не тронут с Init (позиция у
+  |   |   |   upstream); иначе мягкий режим (unseal + lock для будущих «+»)
+  |   |   |-- dynCtc для повторных align (второй align после вставки,
+  |   |   |   RealignAfterSizing) — ВСЕГДА effective CTC dyn-коннектора: с
+  |   |   |   dynCtc=0 срабатывает Strategy 1 (прямая) вместо Strategy 0 (cross)
+  |   |   |   и reducer переворачивается обратно (убывающая DN ломает семейство)
+  |   |-- ChainDepth==N>0: пере-подключение только queue[N] (Decrement+Increment
+  |   |   в режиме toggle). Attach lock: rigid, без resize; DN mismatch →
+  |   |   InsertReducerForMismatch (не найден → as-is + Warn)
+  |   |-- Будущие «+»: ON → rigid as-is (без absorb/resize, seal заблокирован,
+  |   |   reducer при mismatch); OFF → absorb + ранний seal
   |   |-- Дефолт (чек-бокс off при старте): absorb + seal без изменений (ADR-052)
   |
   |-- "Соединить" -->
@@ -127,6 +148,14 @@
   |   |-- SwitchToPoint(0): финальная валидация и ConnectTo — для root-пары.
   |   |   Root dynamic = последний коннектор, выбранный циклом (_rootDynamicConnector,
   |   |   issue #164), а не session-default из контекста
+  |   |-- CTC flush ДО валидации: запись CTC перезагружает семейство и может
+  |   |   сбросить instance-DN к типовому — коррекция размера должна идти после
+  |   |-- Ориентация reducer — штатная CTC-механика (как обычный коннект):
+  |   |   guess CTC (cross, по ближайшему к static коннектору) → AlignFittingToStatic
+  |   |   (иерархия CTC-стратегий 0-4) → SizeFitting по сторонам → ConnectTo;
+  |   |   не угадали сторону — кнопка «Отразить» (swap CTC → flip); flush при
+  |   |   Connect записывает CTC уже существующих элементов в семейство (reducer,
+  |   |   вставленный в этот же Connect, попадёт в запись при следующем коннекте)
   |   |-- ValidateAndFixBeforeConnect: размеры, позиция; при отклонении BasisZ от
   |   |   антипараллельности — re-align dynamic к static (issue #164), иначе Revit
   |   |   auto-orient довернёт fitting при ConnectTo

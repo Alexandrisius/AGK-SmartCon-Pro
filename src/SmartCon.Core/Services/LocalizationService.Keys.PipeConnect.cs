@@ -85,6 +85,8 @@ public static partial class LocalizationService
         en["Tx_ZeroRotation"] = "PipeConnect — Reset angle";
         ru["Tx_CleanupOldFitting"] = "PipeConnect — Удаление фитинга/перехода точки";
         en["Tx_CleanupOldFitting"] = "PipeConnect — Delete point fitting/reducer";
+        ru["Tx_CleanupOldReducer"] = "PipeConnect — Удаление переходника";
+        en["Tx_CleanupOldReducer"] = "PipeConnect — Delete reducer";
 
         ru["Status_AttachingElement"] = "Присоединение элемента {0} из {1}…";
         en["Status_AttachingElement"] = "Attaching element {0} of {1}…";
@@ -102,6 +104,12 @@ public static partial class LocalizationService
         en["Status_LockNetworkApplied"] = "Network locked: rigid mode — attach via «+» or «Connect all»";
         ru["Status_LockNetworkReverted"] = "Блокировка снята: сеть компенсирована";
         en["Status_LockNetworkReverted"] = "Lock released: network compensated";
+        ru["Status_LockNetworkAppliedTail"] = "Жёсткий режим применён к последнему соединению — остальная сеть сохранена";
+        en["Status_LockNetworkAppliedTail"] = "Rigid mode applied to the last connection — the rest of the network is preserved";
+        ru["Status_LockNetworkRevertedTail"] = "Компенсация восстановлена от последнего соединения — остальная сеть сохранена";
+        en["Status_LockNetworkRevertedTail"] = "Compensation restored from the last connection — the rest of the network is preserved";
+        ru["Status_LockReducerNotFound"] = "Переход не найден в маппинге — соединение напрямую (добавьте в Настройки → Правила)";
+        en["Status_LockReducerNotFound"] = "Reducer not found in the mapping — direct connection (add it in Settings → Rules)";
 
         ru["Status_Rotated"] = "Повернуто на {0}°";
         en["Status_Rotated"] = "Rotated by {0}°";
@@ -224,6 +232,8 @@ public static partial class LocalizationService
         en["Error_Rollback"] = "Rollback error: {0}";
         ru["Error_General"] = "Ошибка: {0}";
         en["Error_General"] = "Error: {0}";
+        ru["Error_ConnectRemovedElement"] = "Revit удалил элемент при соединении (коннекторы со-направлены — «её направление изменено и она не может существовать»). Операция отменена, изменения откачены — проверьте ориентацию и размеры коннекторов.";
+        en["Error_ConnectRemovedElement"] = "Revit removed an element during connect (co-directional connectors: \"its direction was changed and it can no longer exist\"). Operation cancelled and rolled back — check connector orientation and sizes.";
 
         ru["About_Version"] = "Версия {0}";
         en["About_Version"] = "Version {0}";

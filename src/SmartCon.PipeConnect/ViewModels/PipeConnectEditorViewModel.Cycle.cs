@@ -329,6 +329,7 @@ public sealed partial class PipeConnectEditorViewModel
             _primaryReducerId = null;
             _needsPrimaryReducer = false;
             IsReducerVisible = false;
+            _lockInsertedReducer = false;
         }
 
         var defaultFitting = SelectedFitting;

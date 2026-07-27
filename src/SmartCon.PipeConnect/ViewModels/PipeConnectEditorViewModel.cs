@@ -20,6 +20,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     private readonly Document _doc;
     private readonly IConnectorService _connSvc;
     private readonly ITransformService _transformSvc;
+    private readonly IAlignmentService _alignmentSvc;
     private readonly IFittingInsertService _fittingInsertSvc;
     private readonly IParameterResolver _paramResolver;
     private readonly IDynamicSizeResolver _sizeResolver;
@@ -59,18 +60,21 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     private ConnectorProxy? _rootDynamicConnector;
 
     /// <summary>
-    /// Root absorb undo data (issue #165): captured at Init when the root dynamic is
-    /// a pipe whose initial alignment was absorbed into its geometry (ADR-052).
-    /// The "Блокировать" toggle reverts the absorb and applies the rigid move instead.
+    /// Root baseline snapshot (issue #167): full root state (DN/symbol/curve/position)
+    /// captured at Init BEFORE any mutation (absorb, resize, ChangeTypeId). The
+    /// "Блокировать" toggle restores it via ChainOperationHandler.RestoreElementFromSnapshot.
     /// </summary>
-    private bool _rootAbsorbApplied;
-    private XYZ? _rootPipeStart;
-    private XYZ? _rootPipeEnd;
-    private IReadOnlyList<XYZ>? _rootFlexPoints;
-    private Vec3 _rootRigidOffset;
+    private ElementSnapshot? _rootBaselineSnapshot;
 
-    /// <summary>True after the toggle replaced the root absorb with a rigid move.</summary>
-    private bool _rootRigidApplied;
+    /// <summary>
+    /// Root compensated snapshot: root state as configured by the session flow
+    /// (absorb/подобранный DN), captured when the toggle goes ON — restored on OFF.
+    /// </summary>
+    private ElementSnapshot? _rootCompensatedSnapshot;
+
+    /// <summary>True when the primary reducer was inserted by the toggle itself
+    /// (removed again on OFF). Reducers from the session flow are left alone.</summary>
+    private bool _lockInsertedReducer;
     private FittingMappingRule? _activeFittingRule;
     private bool _isClosing;
     private bool _needsPrimaryReducer;
@@ -138,6 +142,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         _txService = txService;
         _connSvc = connSvc;
         _transformSvc = transformSvc;
+        _alignmentSvc = alignmentSvc;
         _fittingInsertSvc = fittingInsertSvc;
         _paramResolver = paramResolver;
         _sizeResolver = sizeResolver;
@@ -214,14 +219,11 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         try
         {
             _activeParentConnector = _ctx.StaticConnector;
-            var initOutcome = _initHandler.DisconnectAndAlign(_doc, _ctx, _groupSession);
-            _activeDynamic = initOutcome.ActiveDynamic ?? _ctx.DynamicConnector;
+            _rootBaselineSnapshot = _chainOpHandler.CaptureSnapshot(
+                _doc, _ctx.DynamicConnector.OwnerElementId, _chainGraph);
+            _activeDynamic = _initHandler.DisconnectAndAlign(_doc, _ctx, _groupSession)
+                ?? _ctx.DynamicConnector;
             _rootDynamicConnector = _activeDynamic;
-            _rootAbsorbApplied = initOutcome.AbsorbApplied;
-            _rootPipeStart = initOutcome.PipeStart;
-            _rootPipeEnd = initOutcome.PipeEnd;
-            _rootFlexPoints = initOutcome.FlexPoints;
-            _rootRigidOffset = initOutcome.RigidOffset;
 
             var conns = GetFreeConnectorsSnapshot();
             _cycleService.State.Initialize(conns, _activeDynamic ?? _ctx.DynamicConnector);
@@ -682,36 +684,45 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     {
         using var _scope = SmartConLogger.BeginScope("Editor",
             ("Method", "EnsureReducersForFittingPair"));
-        if (AvailableReducers.Count > 0) return;
 
-        var fitCtc = fitConn2.ConnectionTypeCode.IsDefined
-            ? fitConn2.ConnectionTypeCode
-            : new ConnectionTypeCode(0);
-        var dynCtc = dynamicConn.ConnectionTypeCode.IsDefined
-            ? dynamicConn.ConnectionTypeCode
-            : new ConnectionTypeCode(0);
+        if (AvailableReducers.Count > 0)
+        {
+            SmartConLogger.Debug($"AvailableReducers already populated (Count={AvailableReducers.Count}) — skip rebuild");
+            if (SelectedReducer is null)
+                SelectedReducer = AvailableReducers[0];
+            return;
+        }
 
-        if (!fitCtc.IsDefined || !dynCtc.IsDefined) return;
+        var fitCtc = fitConn2.ConnectionTypeCode;
+        var dynCtc = dynamicConn.ConnectionTypeCode;
 
-        var rules = _mappingRepo.GetMappingRules();
+        if (!fitCtc.IsDefined || !dynCtc.IsDefined)
+        {
+            SmartConLogger.Warn($"Cannot resolve reducer rule: fit CTC={fitCtc.Value}, dyn CTC={dynCtc.Value} (undefined) — reducer list stays empty " +
+                "[Action: задайте тип соединения для dynamic-элемента через мини-селектор типов, затем повторите]");
+            return;
+        }
+
+        // Тот же источник правил, что и у NetworkMover.InsertReducer (GetMappings):
+        // reducer вставляется по этому правилу — и список обязан строиться из него же,
+        // иначе ComboBox остаётся пустым при успешно вставленном reducer.
+        var rules = _fittingMapper.GetMappings(fitCtc, dynCtc);
 
         foreach (var rule in rules)
         {
             if (rule.ReducerFamilies.Count == 0) continue;
 
-            bool match = (rule.FromType.Value == fitCtc.Value && rule.ToType.Value == dynCtc.Value) ||
-                         (rule.FromType.Value == dynCtc.Value && rule.ToType.Value == fitCtc.Value);
+            SmartConLogger.Info($"Found reducer rule: From={rule.FromType.Value} To={rule.ToType.Value} ({rule.ReducerFamilies.Count} families)");
+            foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
+                AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
 
-            if (match)
-            {
-                SmartConLogger.Info($"Found reducer rule: From={rule.FromType.Value} To={rule.ToType.Value} ({rule.ReducerFamilies.Count} families)");
-                foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
-                    AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
-                return;
-            }
+            if (SelectedReducer is null && AvailableReducers.Count > 0)
+                SelectedReducer = AvailableReducers[0];
+            return;
         }
 
-        SmartConLogger.Info($"No reducer rule found for pair CTC {fitCtc.Value} ↔ {dynCtc.Value}");
+        SmartConLogger.Warn($"No reducer rule found for pair CTC {fitCtc.Value} ↔ {dynCtc.Value} — reducer list stays empty " +
+            "[Action: добавьте правило с семейством переходника в mapping (Настройки → Правила)]");
     }
 }
 

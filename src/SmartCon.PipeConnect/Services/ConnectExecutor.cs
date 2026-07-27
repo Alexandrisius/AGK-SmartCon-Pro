@@ -83,6 +83,8 @@ public sealed class ConnectExecutor
     /// <param name="primaryReducerId">Inserted reducer element, or null.</param>
     /// <param name="userManuallyChangedSize">Whether the user changed the size dropdown manually.</param>
     /// <param name="topology">Chain topology determining the validation branch.</param>
+    /// <param name="lockNetwork">"Блокировать" is on: the dynamic's DN is frozen —
+    /// a radius mismatch becomes a reducer request, never a resize (issue #167).</param>
     /// <returns>Validation result with updated dynamic connector and reducer flag.</returns>
     public ValidateResult ValidateAndFixBeforeConnect(
         ConnectOperationContext context,
@@ -90,7 +92,8 @@ public sealed class ConnectExecutor
         ElementId? currentFittingId,
         ElementId? primaryReducerId,
         bool userManuallyChangedSize,
-        ChainTopology topology = ChainTopology.Direct)
+        ChainTopology topology = ChainTopology.Direct,
+        bool lockNetwork = false)
     {
         using var _scope = SmartConLogger.BeginScope("Connect",
             ("Method", "ValidateAndFixBeforeConnect"),
@@ -139,7 +142,7 @@ public sealed class ConnectExecutor
             {
                 ValidateDirectBranch(doc, staticConn, ref dynFresh, ref updatedDynamic,
                     ref needsPrimaryReducer, context, positionEpsFt, radiusEps, angleEpsDeg,
-                    userManuallyChangedSize);
+                    userManuallyChangedSize, lockNetwork);
             }
 
             doc.Regenerate();
@@ -362,7 +365,12 @@ public sealed class ConnectExecutor
             context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_AlignAfterSize"), txDoc =>
             {
                 var ctcOvr = context.VirtualCtcStore.GetOverridesForElement(fittingId);
-                var dynCtc = _ctcManager.ResolveDynamicTypeFromRule(activeFittingRule, upstreamTarget.ConnectionTypeCode);
+                // Effective CTC dynamic: повторный align после sizing обязан использовать тот
+                // же dynCtc, что и align при вставке — иначе при dynCtc=0 срабатывает Strategy 1
+                // (прямая) вместо Strategy 0 (cross) и reducer переворачивается обратно (кейс #167).
+                var dynCtc = currentDynamic?.ConnectionTypeCode.IsDefined == true
+                    ? currentDynamic.ConnectionTypeCode
+                    : _ctcManager.ResolveDynamicTypeFromRule(activeFittingRule, upstreamTarget.ConnectionTypeCode);
 
                 newFitConn2 = _fittingInsertSvc.AlignFittingToStatic(
                     txDoc, fittingId, upstreamTarget, _transformSvc, _connSvc,
@@ -786,7 +794,8 @@ public sealed class ConnectExecutor
         double positionEpsFt,
         double radiusEps,
         double angleEpsDeg,
-        bool userManuallyChangedSize)
+        bool userManuallyChangedSize,
+        bool lockNetwork)
     {
         using var _scope = SmartConLogger.BeginScope("Validate",
             ("Method", "ValidateDirectBranch"));
@@ -795,9 +804,9 @@ public sealed class ConnectExecutor
         SmartConLogger.Debug($"direct: static R={staticConn.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={rErr * FeetToMm:F2}mm");
         if (rErr > radiusEps)
         {
-            if (userManuallyChangedSize)
+            if (lockNetwork || userManuallyChangedSize)
             {
-                SmartConLogger.Warn($"User manually changed size (Δ={rErr * FeetToMm:F2}mm) → reducer needed [Action: добавьте редуктор в mapping или верните размер динамического элемента]");
+                SmartConLogger.Warn($"{(lockNetwork ? "LockNetwork: DN frozen" : "User manually changed size")} (Δ={rErr * FeetToMm:F2}mm) → reducer needed [Action: добавьте редуктор в mapping или верните размер динамического элемента]");
                 needsPrimaryReducer = true;
             }
             else

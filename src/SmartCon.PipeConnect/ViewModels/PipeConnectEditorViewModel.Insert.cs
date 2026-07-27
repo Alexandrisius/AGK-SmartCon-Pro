@@ -350,7 +350,9 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (_activeFittingConn2 is not null && _activeDynamic is not null)
         {
-            var fitConn2ForCheck = _connSvc.RefreshConnector(
+            // RefreshWithCtcOverride: virtual CTC фитинга (Reflect/мини-селектор) учитывается —
+            // иначе EnsureReducersForFittingPair ищет правило по CTC=0 и список переходов пуст.
+            var fitConn2ForCheck = _ctcManager.RefreshWithCtcOverride(
                 _doc, _activeFittingConn2.OwnerElementId, _activeFittingConn2.ConnectorIndex)
                 ?? _activeFittingConn2;
             bool needsReducer = PipeConnectSizeHandler.DetectReducerNeededAfterFitting(

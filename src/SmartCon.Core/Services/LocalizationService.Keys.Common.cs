@@ -136,8 +136,8 @@ public static partial class LocalizationService
         en["Label_CurrentElement"] = "Current element:";
         ru["Label_LockNetwork"] = "Блокировать";
         en["Label_LockNetwork"] = "Lock";
-        ru["Tip_LockNetwork"] = "Переместить всю сеть как есть: без компенсации смещений и подбора размеров. При несовпадении диаметра — переход из маппинга, иначе зазор 100 мм";
-        en["Tip_LockNetwork"] = "Move the entire network as-is: no displacement compensation or size matching. On diameter mismatch — reducer from mapping, otherwise a 100 mm gap";
+        ru["Tip_LockNetwork"] = "Жёсткий режим: последнее соединение и дальнейшие подключения — без изменения диаметров и длин труб; при несовпадении диаметра — переходник из маппинга";
+        en["Tip_LockNetwork"] = "Rigid mode: the last connection and further attaches — never change diameters or pipe lengths; on diameter mismatch — reducer from the mapping";
         ru["Label_Updates"] = "Обновления";
         en["Label_Updates"] = "Updates";
         ru["Label_AvailableFamilies"] = "Доступные семейства:";

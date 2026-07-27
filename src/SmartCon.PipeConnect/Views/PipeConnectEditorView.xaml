@@ -254,13 +254,6 @@
                         Command="{Binding ConnectAllChainCommand}"
                         Style="{DynamicResource PrimaryButton}"
                         ToolTip="{loc:Loc Tip_ConnectAll}"/>
-                <CheckBox Grid.Column="8"
-                          IsChecked="{Binding LockNetwork}"
-                          VerticalAlignment="Center"
-                          ToolTip="{loc:Loc Tip_LockNetwork}">
-                    <TextBlock Text="{loc:Loc Label_LockNetwork}" FontSize="12"
-                               Foreground="{DynamicResource TextPrimaryBrush}"/>
-                </CheckBox>
             </Grid>
 
             <!-- Статус -->
@@ -279,6 +272,8 @@
                     <ColumnDefinition Width="6"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="6"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="12"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
@@ -308,7 +303,16 @@
                         Command="{Binding ZoomInCommand}"
                         ToolTip="{loc:Loc Tip_ZoomIn}"/>
 
-                <Button Grid.Column="6"
+                <CheckBox Grid.Column="6"
+                          IsChecked="{Binding LockNetwork}"
+                          IsEnabled="{Binding IsSessionActive}"
+                          VerticalAlignment="Center"
+                          ToolTip="{loc:Loc Tip_LockNetwork}">
+                    <TextBlock Text="{loc:Loc Label_LockNetwork}" FontSize="12"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </CheckBox>
+
+                <Button Grid.Column="8"
                         Content="{loc:Loc Btn_Connect}"
                         Width="80" Height="28"
                         Padding="0"
@@ -318,7 +322,7 @@
                         ToolTip="{loc:Loc Tip_Connect}"
                         Style="{DynamicResource AccentButton}"/>
 
-                <Button Grid.Column="8"
+                <Button Grid.Column="10"
                         Content="{loc:Loc Btn_Cancel}"
                         Width="80" Height="28"
                         Padding="0"

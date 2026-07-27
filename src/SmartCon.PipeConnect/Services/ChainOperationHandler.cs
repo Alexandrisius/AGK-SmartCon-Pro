@@ -754,8 +754,10 @@ public sealed class ChainOperationHandler(
             $"origin=({parentProxy.Origin.X:F4},{parentProxy.Origin.Y:F4},{parentProxy.Origin.Z:F4})");
 
         // LockNetwork ("Блокировать"): attach strictly as-is — no size adjustment
-        // (transition/reducer/resize) and no pipe-length absorption. The element
-        // is only rigidly aligned to its parent and reconnected.
+        // (transition/resize) and no pipe-length absorption. The element is only
+        // rigidly aligned to its parent and reconnected. A DN mismatch is resolved
+        // by a reducer from the mapping (the network DN is never changed — #167);
+        // only when no reducer is mapped do we fall back to a direct as-is join.
         ElementId? reducerId = null;
         bool sizeChanged = false;
         if (!lockNetwork)
@@ -769,9 +771,16 @@ public sealed class ChainOperationHandler(
             if (elemForDnCheck is not null
                 && System.Math.Abs(parentProxy.Radius - elemForDnCheck.Radius) > 1e-5)
             {
-                SmartConLogger.Warn($"Lock: DN mismatch on attach — parent DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)} " +
-                    $"↔ element DN{System.Math.Round(elemForDnCheck.Radius * 2.0 * FeetToMm)} will be connected directly (no reducer by design). " +
-                    $"[Action: если требуется переход — снимите «Блокировать» или добавьте переход вручную]");
+                SmartConLogger.Debug($"Lock: DN mismatch (parent DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)} " +
+                    $"↔ element DN{System.Math.Round(elemForDnCheck.Radius * 2.0 * FeetToMm)}) — trying reducer from mapping");
+                reducerId = InsertReducerForMismatch(doc, snapshotStore, elemId, parentProxy, elemForDnCheck);
+
+                if (reducerId is null)
+                {
+                    SmartConLogger.Warn($"Lock: DN mismatch on attach — parent DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)} " +
+                        $"↔ element DN{System.Math.Round(elemForDnCheck.Radius * 2.0 * FeetToMm)} will be connected directly (no reducer in mapping). " +
+                        $"[Action: добавьте переход в маппинг (Настройки → Правила) или вставьте его вручную]");
+                }
             }
         }
 
@@ -1579,7 +1588,13 @@ public sealed class ChainOperationHandler(
         }
     }
 
-    private void RestoreElementFromSnapshot(Document doc, ElementId elemId, ElementSnapshot snapshot)
+    /// <summary>
+    /// Restore an element's full state (size/symbol for pipes and family instances,
+    /// location curve or flex path, position and orientation) from a snapshot taken
+    /// by <see cref="CaptureSnapshot"/>. Does not restore connections — the caller
+    /// handles reconnects. Public for the "Блокировать" root baseline restore (#167).
+    /// </summary>
+    public void RestoreElementFromSnapshot(Document doc, ElementId elemId, ElementSnapshot snapshot)
     {
         var elem = doc.GetElement(elemId);
         SmartConLogger.Debug($"   c. Restoring: isMepCurve={snapshot.IsMepCurve}, " +
@@ -1630,7 +1645,7 @@ public sealed class ChainOperationHandler(
     }
 
     /// <summary>Capture a full snapshot of an element's state for rollback.</summary>
-    public ElementSnapshot CaptureSnapshot(Document doc, ElementId elemId, ConnectionGraph graph)
+    public ElementSnapshot CaptureSnapshot(Document doc, ElementId elemId, ConnectionGraph? graph)
     {
         var elem = doc.GetElement(elemId);
         bool isMepCurve = elem is MEPCurve;
@@ -1694,7 +1709,7 @@ public sealed class ChainOperationHandler(
             ConnectorRadius = connRadius,
             ConnectorRadii = connRadiiDict,
             FamilySymbolId = familySymbolId,
-            Connections = graph.GetOriginalConnections(elemId),
+            Connections = graph?.GetOriginalConnections(elemId) ?? [],
         };
     }
 

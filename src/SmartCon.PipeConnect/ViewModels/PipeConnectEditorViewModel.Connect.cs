@@ -41,9 +41,21 @@ public sealed partial class PipeConnectEditorViewModel
 
             var topology = _activeChainPlan?.Topology ?? ChainTopology.Direct;
 
+            // CTC flush BEFORE validation: writing CTC to the family reloads it and
+            // may reset instance DN parameters to the type values — the size fix in
+            // ValidateAndFixBeforeConnect must run after that reset (log evidence:
+            // DN15 corrected → CTC flush → DN reverted to DN65 → ConnectTo mismatch).
+            PromoteGuessedCtcToPendingWrites();
+
+            if (_virtualCtcStore.HasPendingWrites)
+            {
+                StatusMessage = LocalizationService.GetString("Status_WritingCtc");
+                FlushVirtualCtcToFamilies();
+            }
+
             var validateResult = _connectExecutor.ValidateAndFixBeforeConnect(
                 ctx, _activeDynamic, _currentFittingId, _primaryReducerId, _userManuallyChangedSize,
-                topology);
+                topology, LockNetwork);
             _activeDynamic = validateResult.ActiveDynamic ?? _activeDynamic;
             _needsPrimaryReducer = validateResult.NeedsPrimaryReducer;
 
@@ -65,17 +77,22 @@ public sealed partial class PipeConnectEditorViewModel
                 }
             }
 
-            PromoteGuessedCtcToPendingWrites();
-
-            if (_virtualCtcStore.HasPendingWrites)
-            {
-                StatusMessage = LocalizationService.GetString("Status_WritingCtc");
-                FlushVirtualCtcToFamilies();
-            }
-
             _connectExecutor.ExecuteConnectTo(
                 ctx, _activeDynamic, _currentFittingId, _primaryReducerId, _activeFittingRule,
                 topology);
+
+            // Revit может удалить элемент при ConnectTo (co-направленные коннекторы:
+            // «её направление изменено и она не может существовать»). Assimilate такого
+            // результата закоммитит потерю элемента под видом успеха — детектируем и
+            // откатываем всю группу (rollback восстановит удалённый элемент).
+            bool staticAlive = _doc.GetElement(_ctx.StaticConnector.OwnerElementId) is not null;
+            var dynId = (_rootDynamicConnector ?? _ctx.DynamicConnector).OwnerElementId;
+            bool dynAlive = _doc.GetElement(dynId) is not null;
+            if (!staticAlive || !dynAlive)
+            {
+                SmartConLogger.Error($"Revit removed element(s) during ConnectTo: staticAlive={staticAlive}, dynamicAlive={dynAlive}");
+                throw new InvalidOperationException(LocalizationService.GetString("Error_ConnectRemovedElement"));
+            }
 
             SmartConLogger.Info("All operations done, calling Assimilate");
             _groupSession!.Assimilate();
@@ -85,6 +102,24 @@ public sealed partial class PipeConnectEditorViewModel
         catch (Exception ex)
         {
             SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
+
+            // Группа обязана быть закрыта до выхода из ExternalEvent handler: открытая
+            // TransactionGroup провоцирует Revit-ошибку «A transaction or sub-transaction
+            // was opened but not closed» с откатом ВСЕХ изменений сессии (Tammik: Revit
+            // rolls back open groups on leaving the API context). Явный RollBack здесь
+            // восстанавливает элементы, удалённые Revit'ом при неудачном ConnectTo.
+            try
+            {
+                _groupSession?.RollBack();
+                if (_groupSession is not null)
+                    SmartConLogger.Info("Group 'PipeConnect' rolled back after failure — model restored to pre-session state");
+            }
+            catch (Exception rbEx)
+            {
+                SmartConLogger.Warn($"RollBack after failure error (ignored): {rbEx.Message} [Action: проверьте Undo-стек Revit вручную — состояние модели может быть частично изменено]");
+            }
+            _groupSession = null;
+
             StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message);
         }
         finally
@@ -263,7 +298,10 @@ public sealed partial class PipeConnectEditorViewModel
         _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertTransition"), doc =>
         {
             var dyn = _activeDynamic ?? _ctx.DynamicConnector;
-            var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+            // RefreshWithCtcOverride (не RefreshConnector): persistent CTC коннектора
+            // может отличаться от виртуального (mini-selector при старте сессии) —
+            // без override поиск правила идёт по устаревшему CTC и reducer не находится.
+            var dynR = RefreshWithCtcOverride(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
 
             _primaryReducerId = _networkMover.InsertReducer(
                 doc, _ctx.StaticConnector, dynR,
@@ -274,7 +312,13 @@ public sealed partial class PipeConnectEditorViewModel
                 var overrides = GuessCtcForReducer(_primaryReducerId);
                 SmartConLogger.Info($"Reducer inserted: id={_primaryReducerId.GetValue()}");
 
-                var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+                // Effective CTC dyn (virtual override мини-селектора): повторный align обязан
+                // использовать ТОТ ЖЕ dynCtc, что и первый (NetworkMover.InsertReducer) — иначе
+                // с dynCtc=0 срабатывает Strategy 1 (прямая) вместо Strategy 0 (cross) и reducer
+                // переворачивается обратно: убывающая DN-комбинация ломает семейство (кейс #167).
+                var dynCtc = dynR.ConnectionTypeCode.IsDefined
+                    ? dynR.ConnectionTypeCode
+                    : ResolveDynamicTypeFromRule(_activeFittingRule);
                 _fittingInsertSvc.AlignFittingToStatic(
                     doc, _primaryReducerId, _ctx.StaticConnector, _transformSvc, _connSvc,
                     dynamicTypeCode: dynCtc,
@@ -307,8 +351,11 @@ public sealed partial class PipeConnectEditorViewModel
         _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertTransition"), doc =>
         {
             var dyn = _activeDynamic ?? _ctx.DynamicConnector;
-            var dynR = _connSvc.RefreshConnector(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
-            var fitConn2Fresh = _connSvc.RefreshConnector(doc, fitConn2.OwnerElementId, fitConn2.ConnectorIndex)
+            // RefreshWithCtcOverride (не RefreshConnector): virtual CTC мини-селектора/
+            // Reflect иначе теряется, и правило ищется по CTC=0 — «rule 0↔0 not found»
+            // (кейс #167: reducer fitting↔dynamic не вставлялся при Lock).
+            var dynR = RefreshWithCtcOverride(doc, dyn.OwnerElementId, dyn.ConnectorIndex) ?? dyn;
+            var fitConn2Fresh = RefreshWithCtcOverride(doc, fitConn2.OwnerElementId, fitConn2.ConnectorIndex)
                 ?? fitConn2;
 
             _primaryReducerId = _networkMover.InsertReducer(
@@ -320,7 +367,10 @@ public sealed partial class PipeConnectEditorViewModel
                 var overrides = GuessCtcForReducer(_primaryReducerId);
                 SmartConLogger.Info($"Reducer (fitting→dynamic) inserted: id={_primaryReducerId.GetValue()}");
 
-                var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
+                // Effective CTC dyn — см. комментарий в InsertReducerBetweenStaticAndDynamic.
+                var dynCtc = dynR.ConnectionTypeCode.IsDefined
+                    ? dynR.ConnectionTypeCode
+                    : ResolveDynamicTypeFromRule(_activeFittingRule);
                 _fittingInsertSvc.AlignFittingToStatic(
                     doc, _primaryReducerId, fitConn2Fresh, _transformSvc, _connSvc,
                     dynamicTypeCode: dynCtc,
