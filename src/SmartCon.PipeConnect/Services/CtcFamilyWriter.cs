@@ -29,35 +29,6 @@ public sealed class CtcFamilyWriter(
                 (symbolName == "*" || string.Equals(s.Name, symbolName, StringComparison.OrdinalIgnoreCase)));
     }
 
-    public bool IsFittingCtcDefined(Document doc, FamilySymbol symbol)
-    {
-        Document? familyDoc = null;
-        try
-        {
-            familyDoc = doc.EditFamily(symbol.Family);
-            var connElems = new FilteredElementCollector(familyDoc)
-                .OfCategory(BuiltInCategory.OST_ConnectorElem)
-                .WhereElementIsNotElementType()
-                .Cast<ConnectorElement>()
-                .ToList();
-
-            if (connElems.Count < 2) return true;
-
-            foreach (var ce in connElems)
-            {
-                var desc = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION)?.AsString();
-                var ctc = ConnectionTypeCode.Parse(desc);
-                if (!ctc.IsDefined) return false;
-            }
-
-            return true;
-        }
-        finally
-        {
-            familyDoc?.Close(false);
-        }
-    }
-
     public void ApplyFittingCtcToFamily(
         Document doc, FamilySymbol symbol, List<FittingCtcSetupItem> items,
         ElementId? projectElementId = null)
@@ -324,34 +295,6 @@ public sealed class CtcFamilyWriter(
             return SetDrivingFamilyParameter(familyDoc.FamilyManager, ce, descParam, value);
 
         return false;
-    }
-
-    public static string GetConnectorParamName(ConnectorElement ce, Document familyDoc)
-    {
-        var radiusParam = ce.get_Parameter(BuiltInParameter.CONNECTOR_RADIUS);
-        var diamParam = ce.get_Parameter(BuiltInParameter.CONNECTOR_DIAMETER);
-
-        foreach (FamilyParameter fp in familyDoc.FamilyManager.GetParameters())
-        {
-            if (fp.AssociatedParameters.Size == 0) continue;
-            try
-            {
-                foreach (Parameter assoc in fp.AssociatedParameters)
-                {
-                    bool idMatch = (radiusParam is not null && assoc.Id == radiusParam.Id)
-                                || (diamParam is not null && assoc.Id == diamParam.Id);
-                    bool elemMatch = assoc.Element?.Id == ce.Id;
-
-                    if (idMatch && elemMatch)
-                        return fp.Definition?.Name ?? string.Empty;
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        return string.Empty;
     }
 
     private static bool SetDrivingFamilyParameter(

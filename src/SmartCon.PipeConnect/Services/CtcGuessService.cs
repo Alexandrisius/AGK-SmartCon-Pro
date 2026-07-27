@@ -2,10 +2,8 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
-using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.ViewModels;
-
 using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.Services;
@@ -162,76 +160,6 @@ public sealed class CtcGuessService(
                 using var _scope = SmartConLogger.BeginScope("CTC", ("ElementId", elementId.GetValue()), ("ConnectorIndex", kvp.Key));
                 SmartConLogger.Info($"Promoted guessed CTC {kvp.Value.Value} → pending write for {elementId.GetValue()}:{kvp.Key}");
             }
-        }
-    }
-
-    /// <summary>
-    /// Build CTC setup items by reading connector elements from the family document.
-    /// Pre-selects types based on the mapping rule and static CTC.
-    /// </summary>
-    public List<FittingCtcSetupItem> BuildConnectorItems(
-        Document doc, FamilySymbol symbol, IReadOnlyList<ConnectorTypeDefinition> types,
-        FittingMappingRule rule, ConnectionTypeCode staticCtc, bool crossConnect = false)
-    {
-        Document? familyDoc = null;
-        try
-        {
-            familyDoc = doc.EditFamily(symbol.Family);
-
-            var connElems = new FilteredElementCollector(familyDoc)
-                .OfCategory(BuiltInCategory.OST_ConnectorElem)
-                .WhereElementIsNotElementType()
-                .Cast<ConnectorElement>()
-                .ToList();
-
-            var items = new List<FittingCtcSetupItem>();
-
-            ConnectionTypeCode? preSelectForConnToStatic = null;
-            ConnectionTypeCode? preSelectForConnToDynamic = null;
-            if (rule.FromType.Value == staticCtc.Value)
-            {
-                preSelectForConnToStatic = crossConnect ? rule.ToType : rule.FromType;
-                preSelectForConnToDynamic = crossConnect ? rule.FromType : rule.ToType;
-            }
-            else if (rule.ToType.Value == staticCtc.Value)
-            {
-                preSelectForConnToStatic = crossConnect ? rule.FromType : rule.ToType;
-                preSelectForConnToDynamic = crossConnect ? rule.ToType : rule.FromType;
-            }
-
-            for (int i = 0; i < connElems.Count; i++)
-            {
-                var ce = connElems[i];
-                var desc = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION)?.AsString();
-                var currentCtc = ConnectionTypeCode.Parse(desc);
-
-                string paramName = CtcFamilyWriter.GetConnectorParamName(ce, familyDoc);
-                double diamMm = ce.Radius * 2.0 * FeetToMm;
-
-                ConnectorTypeDefinition? preSelect = null;
-                if (preSelectForConnToStatic.HasValue && preSelectForConnToDynamic.HasValue)
-                {
-                    var code = i == 0 ? preSelectForConnToStatic.Value : preSelectForConnToDynamic.Value;
-                    preSelect = types.FirstOrDefault(t => t.Code == code.Value);
-                }
-
-                items.Add(new FittingCtcSetupItem
-                {
-                    ConnectorIndex = i,
-                    ParameterName = paramName,
-                    DiameterMm = diamMm,
-                    SelectedType = currentCtc.IsDefined
-                        ? types.FirstOrDefault(t => t.Code == currentCtc.Value)
-                        : null,
-                    PreSelectedType = preSelect
-                });
-            }
-
-            return items;
-        }
-        finally
-        {
-            familyDoc?.Close(false);
         }
     }
 }
