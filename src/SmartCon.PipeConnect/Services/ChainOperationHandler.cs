@@ -14,9 +14,9 @@ namespace SmartCon.PipeConnect.Services;
 
 #pragma warning disable CS9113
 /// <summary>
-/// Handles increment/decrement of chain depth in the PipeConnect editor.
-/// IncrementLevel: disconnect, resize, align, and reconnect child elements.
-/// DecrementLevel: rollback to snapshot state, delete inserted reducers.
+/// Handles element-wise attach/detach of chain elements in the PipeConnect editor.
+/// AttachSingleElement: snapshot, disconnect, resize, align, reconnect one element.
+/// DetachSingleElement: rollback one element to its snapshot state, delete inserted reducers.
 /// </summary>
 public sealed class ChainOperationHandler(
     IConnectorService connSvc,
@@ -32,58 +32,86 @@ public sealed class ChainOperationHandler(
     public record struct ParentEdge(ElementId ParentId, int ParentConnIdx, int ElemConnIdx);
 
     /// <summary>
-    /// Process the next chain level: snapshot elements, disconnect, resize, align, reconnect.
-    /// Inserts reducers when radius adjustment fails.
+    /// Maximum connector gap (mm) for cross-edge restoration: beyond this the loop
+    /// did not close after alignment and ConnectTo could drag elements silently.
+    /// </summary>
+    private const double CrossEdgeMaxGapMm = 2.0;
+
+    /// <summary>Result of attaching a single chain element (element-wise chain mode).</summary>
+    /// <param name="DidWork">
+    /// True when the element actually changed (moved, rotated, resized, reducer
+    /// inserted, or absorbed by pipe length). False = idle element — only
+    /// disconnect/reconnect churn.
+    /// </param>
+    /// <param name="Edge">
+    /// The parent edge used for the reconnect (parent connector ↔ element connector),
+    /// or null when no parent edge was found and the element was skipped.
+    /// </param>
+    public readonly record struct SingleElementResult(bool DidWork, ParentEdge? Edge);
+
+    /// <summary>
+    /// Attach a single chain element (element-wise chain mode): snapshot, disconnect,
+    /// resize, align, reconnect to its parent. Inserts a reducer when radius
+    /// adjustment fails. The element's parent must already be attached — the
+    /// flattened queue order (see <see cref="ConnectionGraph.GetElementQueue"/>)
+    /// guarantees this.
     /// </summary>
     /// <param name="doc">Active Revit document.</param>
     /// <param name="groupSession">Active transaction group session.</param>
     /// <param name="graph">Chain graph with element levels.</param>
     /// <param name="snapshotStore">Store for element snapshots (for rollback).</param>
     /// <param name="warmedElementIds">Set of already-warmed element IDs.</param>
-    /// <param name="nextLevel">BFS level index to process.</param>
-    /// <returns>
-    /// True when at least one element of the level actually changed (moved, rotated,
-    /// resized, reducer inserted, or absorbed by pipe length). False = idle level —
-    /// only disconnect/reconnect churn; callers may auto-skip such levels.
-    /// </returns>
-    public bool IncrementLevel(
+    /// <param name="entry">Queue entry: element + its BFS level.</param>
+    /// <param name="attachedElementIds">
+    /// Element ids (numeric) already attached in this session (root + queue[1..current]).
+    /// Used to restore cross-edges (network loops): a loop connection to an already
+    /// attached neighbor is re-established right after the parent reconnect;
+    /// loop neighbors attached later restore the same edge from their own attach.
+    /// </param>
+    /// <param name="lockNetwork">
+    /// User's "Блокировать" toggle: attach the element strictly as-is — no size
+    /// adjustment (no transition/reducer/resize) and no pipe-length absorption.
+    /// The element is only aligned rigidly to its parent and reconnected.
+    /// </param>
+    public SingleElementResult AttachSingleElement(
         Document doc,
         ITransactionGroupSession groupSession,
         ConnectionGraph graph,
         NetworkSnapshotStore snapshotStore,
         HashSet<long> warmedElementIds,
-        int nextLevel)
+        ChainQueueEntry entry,
+        IReadOnlyCollection<long> attachedElementIds,
+        bool lockNetwork = false)
     {
         using var _scope = SmartConLogger.BeginScope("Chain+",
-            ("Method", "IncrementLevel"),
-            ("Level", nextLevel));
+            ("Method", "AttachSingleElement"),
+            ("ElementId", entry.ElementId.GetValue()),
+            ("Level", entry.Level),
+            ("Lock", lockNetwork));
 
-        var levelElements = graph.Levels[nextLevel];
+        var singleElement = new[] { entry.ElementId };
 
-        SmartConLogger.Debug($"═══ LEVEL {nextLevel} ═══ ({levelElements.Count} elements)");
+        WarmDepsForLevel(doc, singleElement, warmedElementIds);
+        SaveSnapshotForLevelElement(doc, entry.ElementId, graph, snapshotStore);
 
-        WarmDepsForLevel(doc, levelElements, warmedElementIds);
+        var transitionOptions = lockNetwork
+            ? new Dictionary<long, IReadOnlyList<FamilySizeOption>>()
+            : PrefetchTransitionOptions(doc, graph, entry.Level, singleElement);
 
-        foreach (var elemId in levelElements)
-            SaveSnapshotForLevelElement(doc, elemId, graph, snapshotStore);
-
-        var transitionOptions = PrefetchTransitionOptions(doc, graph, nextLevel, levelElements);
-
-        bool anyWork = false;
-        groupSession.RunInTransaction(string.Format(LocalizationService.GetString("Tx_ChainLevel"), nextLevel), doc =>
+        var result = new SingleElementResult(false, null);
+        groupSession.RunInTransaction(
+            string.Format(LocalizationService.GetString("Tx_ChainElement"), entry.ElementId.GetValue()), doc =>
         {
-            int elemIndex = 0;
-            foreach (var elemId in levelElements)
-            {
-                elemIndex++;
-                anyWork |= ProcessIncrementElement(doc, graph, snapshotStore, nextLevel, elemId, elemIndex, levelElements.Count, transitionOptions);
-            }
+            bool didWork = ProcessIncrementElement(
+                doc, graph, snapshotStore, entry.Level, entry.ElementId,
+                elemIndex: 1, levelCount: 1, transitionOptions, attachedElementIds, lockNetwork, out var edge);
 
+            result = new SingleElementResult(didWork, edge);
             doc.Regenerate();
         });
 
-        SmartConLogger.Debug($"═══ LEVEL {nextLevel} DONE ═══ (anyWork={anyWork})");
-        return anyWork;
+        SmartConLogger.Debug($"═══ ELEMENT {entry.ElementId.GetValue()} DONE ═══ (didWork={result.DidWork})");
+        return result;
     }
 
     /// <summary>
@@ -135,36 +163,32 @@ public sealed class ChainOperationHandler(
     }
 
     /// <summary>
-    /// Rollback a chain level: restore elements to their snapshot state,
-    /// delete inserted reducers, and reconnect original connections.
-    /// Per-level absorption (ADR-052) touches only the level's own elements,
-    /// so rollback restores exactly this level — symmetric with increment.
+    /// Detach a single chain element (element-wise chain mode): restore it to its
+    /// snapshot state, delete inserted reducers, and reconnect original connections.
+    /// Elements must be detached in strict LIFO order (queue tail first) so the
+    /// parent edge is still intact when a child is rolled back.
     /// </summary>
     /// <param name="doc">Active Revit document.</param>
     /// <param name="groupSession">Active transaction group session.</param>
     /// <param name="graph">Chain graph.</param>
     /// <param name="snapshotStore">Snapshot store with saved element states.</param>
-    /// <param name="currentDepth">BFS level to roll back.</param>
-    public void DecrementLevel(
+    /// <param name="entry">Queue entry: element + its BFS level.</param>
+    public void DetachSingleElement(
         Document doc,
         ITransactionGroupSession groupSession,
         ConnectionGraph graph,
         NetworkSnapshotStore snapshotStore,
-        int currentDepth)
+        ChainQueueEntry entry)
     {
         using var _scope = SmartConLogger.BeginScope("Chain-",
-            ("Method", "DecrementLevel"),
-            ("Level", currentDepth));
+            ("Method", "DetachSingleElement"),
+            ("ElementId", entry.ElementId.GetValue()),
+            ("Level", entry.Level));
 
-        var levelElements = graph.Levels[currentDepth];
-
-        SmartConLogger.Debug($"═══ ROLLBACK LEVEL {currentDepth} ═══ ({levelElements.Count} elements)");
-
-        groupSession.RunInTransaction(string.Format(LocalizationService.GetString("Tx_ChainRollback"), currentDepth), doc =>
+        groupSession.RunInTransaction(
+            string.Format(LocalizationService.GetString("Tx_ChainRollbackElement"), entry.ElementId.GetValue()), doc =>
         {
-            foreach (var elemId in levelElements)
-                RollbackElement(doc, graph, snapshotStore, currentDepth, elemId);
-
+            RollbackElement(doc, graph, snapshotStore, entry.Level, entry.ElementId);
             doc.Regenerate();
         });
     }
@@ -173,20 +197,44 @@ public sealed class ChainOperationHandler(
     /// Try to "seal" the chain early (ADR-052): when the displacement is already
     /// fully absorbed and the remaining downstream needs no resize work, the
     /// boundary edges (currentDepth → currentDepth+1) are reconnected and the
-    /// rest of the network is left completely untouched — no per-level churn.
+    /// rest of the network is left completely untouched — no per-element churn.
     /// Returns true when the chain is sealed (caller disables further increments).
     /// A level is "quiet" when every boundary child has zero alignment offset,
     /// no required rotation and a matching radius, and every deeper piping edge
     /// has matching radii (a resize deeper would require classic processing).
+    /// On partial ConnectTo failure every edge connected so far is disconnected
+    /// again inside the same transaction — a failed seal never leaves the
+    /// network half-sealed.
     /// </summary>
+    /// <param name="sealedEdges">
+    /// On success: the boundary edges connected by this seal (caller stores them
+    /// so the seal can be torn down later — see UnsealIfSealed in the editor VM).
+    /// Empty on failure.
+    /// </param>
     public bool TrySealQuietChain(
         Document doc,
         ITransactionGroupSession groupSession,
         ConnectionGraph graph,
-        int currentDepth)
+        int currentDepth,
+        out IReadOnlyList<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)> sealedEdges)
     {
+        sealedEdges = [];
         if (currentDepth + 1 >= graph.Levels.Count)
             return true;
+
+        // Per-call connector cache: quiet checks read every deeper edge once —
+        // without caching each RefreshConnector re-walks the ConnectorManager.
+        var proxyCache = new Dictionary<(long, int), ConnectorProxy?>();
+        ConnectorProxy? RefreshCached(ElementId id, int idx)
+        {
+            var key = (id.GetValue(), idx);
+            if (!proxyCache.TryGetValue(key, out var proxy))
+            {
+                proxy = connSvc.RefreshConnector(doc, id, idx);
+                proxyCache[key] = proxy;
+            }
+            return proxy;
+        }
 
         var levelOf = new Dictionary<long, int>();
         for (int level = 0; level < graph.Levels.Count; level++)
@@ -201,8 +249,8 @@ public sealed class ChainOperationHandler(
             if (edge is null)
                 return false;
 
-            var parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
-            var childProxy = connSvc.RefreshConnector(doc, childId, edge.Value.ElemConnIdx);
+            var parentProxy = RefreshCached(edge.Value.ParentId, edge.Value.ParentConnIdx);
+            var childProxy = RefreshCached(childId, edge.Value.ElemConnIdx);
             if (parentProxy is null || childProxy is null)
                 continue;
 
@@ -233,8 +281,8 @@ public sealed class ChainOperationHandler(
                 || toLevel <= currentDepth)
                 continue;
 
-            var fromProxy = connSvc.RefreshConnector(doc, edge.FromElementId, edge.FromConnectorIndex);
-            var toProxy = connSvc.RefreshConnector(doc, edge.ToElementId, edge.ToConnectorIndex);
+            var fromProxy = RefreshCached(edge.FromElementId, edge.FromConnectorIndex);
+            var toProxy = RefreshCached(edge.ToElementId, edge.ToConnectorIndex);
             if (fromProxy is null || toProxy is null)
                 continue;
 
@@ -251,26 +299,402 @@ public sealed class ChainOperationHandler(
             }
         }
 
+        bool allConnected = true;
+        var sealedCrossEdges = new List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>();
         groupSession.RunInTransaction(LocalizationService.GetString("Tx_ChainSeal"), doc =>
         {
+            var connected = new List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>();
             foreach (var (parentId, parentConnIdx, childId, childConnIdx) in boundaryEdges)
             {
                 try
                 {
                     connSvc.ConnectTo(doc, parentId, parentConnIdx, childId, childConnIdx);
+                    connected.Add((parentId, parentConnIdx, childId, childConnIdx));
                 }
                 catch (Exception exConn)
                 {
+                    allConnected = false;
                     SmartConLogger.Warn($"Seal: ConnectTo {parentId.GetValue()}↔{childId.GetValue()} " +
-                        $"failed: {exConn.Message} [Action: подключите границу сети вручную]");
+                        $"failed: {exConn.Message} [Action: граница будет подключена поэлементным обходом]");
+                    break;
                 }
+            }
+
+            if (!allConnected)
+            {
+                // Roll back the partially sealed boundary — a failed seal must
+                // never leave the network half-sealed (caller falls back to
+                // element-wise traversal with visible per-element errors).
+                foreach (var (_, _, childId, childConnIdx) in connected)
+                {
+                    try { connSvc.DisconnectAllFromConnector(doc, childId, childConnIdx); }
+                    catch (Exception exDisc)
+                    {
+                        SmartConLogger.Warn($"Seal rollback: DisconnectAllFromConnector {childId.GetValue()}:{childConnIdx} " +
+                            $"failed: {exDisc.Message} [Action: граница может остаться частично подключённой — проверьте соединения]");
+                    }
+                }
+                connected.Clear();
+            }
+            else
+            {
+                // Restore cross-edges (network loops) between the sealed boundary
+                // and the attached part: they were torn by the classic attach of
+                // the attached element, and the sealed child never passes through
+                // AttachSingleElement — without this the loop stays torn (bug:
+                // pipe left detached from a tee after seal compensation).
+                RestoreCrossEdgesForBoundary(doc, graph, currentDepth, levelOf, sealedCrossEdges);
             }
             doc.Regenerate();
         });
 
+        if (!allConnected)
+        {
+            SmartConLogger.Warn("Seal: some boundary edges failed — falling back to element-wise traversal " +
+                "[Action: продолжайте подключение кнопкой «+» или «Подключить всё» — сбойный элемент покажет ошибку]");
+            return false;
+        }
+
+        sealedEdges = boundaryEdges.Concat(sealedCrossEdges).ToList();
         SmartConLogger.Info($"Seal: chain sealed at level {currentDepth}, " +
-            $"boundary edges={boundaryEdges.Count}, deeper levels untouched");
+            $"boundary edges={boundaryEdges.Count}, cross-edges restored={sealedCrossEdges.Count}, deeper levels untouched");
         return true;
+    }
+
+    /// <summary>Outcome of a rigid remainder move attempt (ConnectAll fast path 2).</summary>
+    public enum RigidMoveOutcome
+    {
+        /// <summary>Preconditions not met — caller falls back to element-wise traversal.</summary>
+        NotApplicable,
+        /// <summary>Remainder moved as one body and boundary connected directly.</summary>
+        Connected,
+        /// <summary>Remainder moved as one body and boundary connected via an inserted reducer.</summary>
+        ConnectedViaReducer,
+        /// <summary>
+        /// Diameter mismatch and no reducer in mapping: the remainder was placed
+        /// with a 100 mm gap along the parent's BasisZ (visual marker for the
+        /// missing transition) and intentionally left NOT connected.
+        /// </summary>
+        Gapped,
+    }
+
+    /// <summary>
+    /// Maximum per-edge offset spread (mm) across a multi-element boundary for a
+    /// rigid move: all boundary children must need the SAME translation vector,
+    /// otherwise one MoveElements call cannot align every edge.
+    /// </summary>
+    private const double RigidMoveOffsetSpreadMm = 1.0;
+
+    /// <summary>Gap (mm) left along the parent's BasisZ when a reducer is needed but missing.</summary>
+    private const double ReducerMissingGapMm = 100.0;
+
+    /// <summary>
+    /// Rigid move fast path for ConnectAll: the whole remainder (levels &gt; currentDepth)
+    /// is translated with ONE MoveElements call (plus, when the network is locked,
+    /// ONE rigid rotation) and the boundary is reconnected — the "engineer drags a
+    /// whole node" case, no per-element churn even for 100k-element networks.
+    /// Applicability:
+    /// - every boundary edge needs the SAME offset (±1 mm);
+    /// - a required rotation is allowed ONLY when the network is locked and the
+    ///   boundary is single-element (the remainder is then rotated as one body);
+    /// - when NOT locked, a remainder containing linear elements (pipes/flex) is
+    ///   refused — displacement must be absorbed element-wise (ADR-052), not by
+    ///   dragging the whole network;
+    /// - when NOT locked, the deeper network must have consistent radii.
+    /// DN mismatch on a single-element boundary: insert a reducer from the mapping;
+    /// if none, place the network with a 100 mm gap and leave it disconnected
+    /// (<see cref="RigidMoveOutcome.Gapped"/>).
+    /// </summary>
+    /// <param name="lockNetwork">
+    /// User's "Блокировать" toggle: skip the pipe check and the deeper-radius check —
+    /// the network is moved (and rotated, if needed) strictly as one body.
+    /// </param>
+    public RigidMoveOutcome TryRigidMoveRemainder(
+        Document doc,
+        ITransactionGroupSession groupSession,
+        ConnectionGraph graph,
+        int currentDepth,
+        bool lockNetwork,
+        out IReadOnlyList<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)> sealedEdges)
+    {
+        using var _scope = SmartConLogger.BeginScope("Chain+",
+            ("Method", "TryRigidMoveRemainder"),
+            ("Level", currentDepth),
+            ("Lock", lockNetwork));
+
+        sealedEdges = [];
+        if (currentDepth + 1 >= graph.Levels.Count)
+            return RigidMoveOutcome.NotApplicable;
+
+        var proxyCache = new Dictionary<(long, int), ConnectorProxy?>();
+        ConnectorProxy? RefreshCached(ElementId id, int idx)
+        {
+            var key = (id.GetValue(), idx);
+            if (!proxyCache.TryGetValue(key, out var proxy))
+            {
+                proxy = connSvc.RefreshConnector(doc, id, idx);
+                proxyCache[key] = proxy;
+            }
+            return proxy;
+        }
+
+        var levelOf = new Dictionary<long, int>();
+        for (int level = 0; level < graph.Levels.Count; level++)
+            foreach (var id in graph.Levels[level])
+                levelOf[id.GetValue()] = level;
+
+        var boundaryEdges = new List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>();
+        ConnectorProxy? firstParentProxy = null;
+        ConnectorProxy? firstChildProxy = null;
+        AlignmentResult? firstAlign = null;
+        Vec3? moveOffset = null;
+        bool needsRotation = false;
+        bool radiusMismatch = false;
+
+        foreach (var childId in graph.Levels[currentDepth + 1])
+        {
+            var edge = FindEdgeToParent(childId, currentDepth + 1, graph);
+            if (edge is null)
+                return RigidMoveOutcome.NotApplicable;
+
+            var parentProxy = RefreshCached(edge.Value.ParentId, edge.Value.ParentConnIdx);
+            var childProxy = RefreshCached(childId, edge.Value.ElemConnIdx);
+            if (parentProxy is null || childProxy is null)
+                continue;
+
+            if (parentProxy.Domain != Domain.DomainPiping || childProxy.Domain != Domain.DomainPiping)
+                continue;
+
+            var alignResult = ConnectorAligner.ComputeAlignment(
+                parentProxy.OriginVec3, parentProxy.BasisZVec3, parentProxy.BasisXVec3,
+                childProxy.OriginVec3, childProxy.BasisZVec3, childProxy.BasisXVec3);
+
+            bool edgeNeedsRotation = alignResult.BasisZRotation is not null || alignResult.BasisXSnap is not null;
+
+            if (firstAlign is null)
+            {
+                firstAlign = alignResult;
+                moveOffset = alignResult.InitialOffset;
+                firstParentProxy = parentProxy;
+                firstChildProxy = childProxy;
+                needsRotation = edgeNeedsRotation;
+            }
+            else
+            {
+                if (VectorUtils.DistanceTo(alignResult.InitialOffset, moveOffset!.Value) * FeetToMm > RigidMoveOffsetSpreadMm)
+                {
+                    SmartConLogger.Debug($"RigidMove: boundary offsets differ → element-wise flow");
+                    return RigidMoveOutcome.NotApplicable;
+                }
+                // A multi-element boundary requiring rotation cannot be rigid-rotated as one body.
+                if (edgeNeedsRotation || needsRotation)
+                {
+                    SmartConLogger.Debug("RigidMove: multi-element boundary with rotation → element-wise flow");
+                    return RigidMoveOutcome.NotApplicable;
+                }
+            }
+
+            if (System.Math.Abs(parentProxy.Radius - childProxy.Radius) > 1e-5)
+                radiusMismatch = true;
+
+            boundaryEdges.Add((edge.Value.ParentId, edge.Value.ParentConnIdx, childId, edge.Value.ElemConnIdx));
+        }
+
+        if (boundaryEdges.Count == 0 || firstParentProxy is null || firstChildProxy is null)
+            return RigidMoveOutcome.NotApplicable;
+
+        // Rotation is a lock-only rigid operation: without the lock the element-wise
+        // flow handles it (and may absorb part of it through pipe lengths).
+        if (needsRotation && !lockNetwork)
+        {
+            SmartConLogger.Debug("RigidMove: rotation required but network not locked → element-wise flow");
+            return RigidMoveOutcome.NotApplicable;
+        }
+
+        if (radiusMismatch && boundaryEdges.Count > 1)
+            return RigidMoveOutcome.NotApplicable;
+
+        var remainderIds = new List<ElementId>();
+        for (int level = currentDepth + 1; level < graph.Levels.Count; level++)
+            remainderIds.AddRange(graph.Levels[level]);
+
+        // Not locked: a remainder with linear elements must be traversed element-wise
+        // so the displacement is absorbed by pipe lengths (ADR-052), not dragged.
+        if (!lockNetwork && remainderIds.Any(id => graph.ContainsMepCurve(id)))
+        {
+            SmartConLogger.Debug("RigidMove: remainder contains pipes/flex — element-wise compensation");
+            return RigidMoveOutcome.NotApplicable;
+        }
+
+        // Radius consistency of the deeper network (skipped when the user locked it).
+        if (!lockNetwork)
+        {
+            foreach (var edge in graph.Edges)
+            {
+                if (!levelOf.TryGetValue(edge.FromElementId.GetValue(), out int fromLevel)
+                    || !levelOf.TryGetValue(edge.ToElementId.GetValue(), out int toLevel)
+                    || fromLevel <= currentDepth
+                    || toLevel <= currentDepth)
+                    continue;
+
+                var fromProxy = RefreshCached(edge.FromElementId, edge.FromConnectorIndex);
+                var toProxy = RefreshCached(edge.ToElementId, edge.ToConnectorIndex);
+                if (fromProxy is null || toProxy is null)
+                    continue;
+
+                if (fromProxy.Domain != Domain.DomainPiping || toProxy.Domain != Domain.DomainPiping)
+                    continue;
+
+                if (System.Math.Abs(fromProxy.Radius - toProxy.Radius) > 1e-5)
+                {
+                    SmartConLogger.Debug($"RigidMove: radius mismatch at deeper edge " +
+                        $"{edge.FromElementId.GetValue()}↔{edge.ToElementId.GetValue()} → element-wise flow");
+                    return RigidMoveOutcome.NotApplicable;
+                }
+            }
+        }
+
+        var outcome = RigidMoveOutcome.Connected;
+        bool allConnected = true;
+        var sealedCrossEdges = new List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>();
+        var connectedEdges = new List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>();
+
+        groupSession.RunInTransaction(LocalizationService.GetString("Tx_ChainRigidMove"), doc =>
+        {
+            if (radiusMismatch)
+            {
+                // Boundary DN mismatch (e.g. root dynamic was resized): try a reducer
+                // from the mapping; without one, place the network with a 100 mm gap.
+                var freshParent = connSvc.RefreshConnector(doc, firstParentProxy.OwnerElementId, firstParentProxy.ConnectorIndex)
+                    ?? firstParentProxy;
+                var freshChild = connSvc.RefreshConnector(doc, firstChildProxy.OwnerElementId, firstChildProxy.ConnectorIndex)
+                    ?? firstChildProxy;
+
+                var reducerId = networkMover.InsertReducer(doc, freshParent, freshChild,
+                    directConnectRules: null);
+                if (reducerId is not null)
+                {
+                    var reducerConns = connSvc.GetAllFreeConnectors(doc, reducerId);
+                    var rConn1 = reducerConns
+                        .OrderBy(c => VectorUtils.DistanceTo(c.OriginVec3, freshParent.OriginVec3))
+                        .FirstOrDefault();
+                    var rConn2 = reducerConns.FirstOrDefault(c => c.ConnectorIndex != (rConn1?.ConnectorIndex ?? -1));
+
+                    if (rConn1 is not null && rConn2 is not null)
+                    {
+                        var (pId, pIdx, cId, cIdx) = boundaryEdges[0];
+
+                        // parent ↔ reducer.conn1 (InsertReducer only aligns — it never connects)
+                        connSvc.ConnectTo(doc, pId, pIdx, reducerId, rConn1.ConnectorIndex);
+
+                        var offset2 = rConn2.OriginVec3 - freshChild.OriginVec3;
+                        if (!VectorUtils.IsZero(offset2))
+                            transformSvc.MoveElements(doc, remainderIds, offset2);
+                        doc.Regenerate();
+
+                        // reducer.conn2 ↔ child
+                        connSvc.ConnectTo(doc, reducerId, rConn2.ConnectorIndex, cId, cIdx);
+
+                        connectedEdges.Add((pId, pIdx, reducerId, rConn1.ConnectorIndex));
+                        connectedEdges.Add((reducerId, rConn2.ConnectorIndex, cId, cIdx));
+                        outcome = RigidMoveOutcome.ConnectedViaReducer;
+                        SmartConLogger.Info($"RigidMove: boundary DN mismatch — reducer {reducerId.GetValue()} inserted " +
+                            $"(parent↔conn{rConn1.ConnectorIndex}, conn{rConn2.ConnectorIndex}↔child), remainder moved as one body");
+                    }
+                    else
+                    {
+                        allConnected = false;
+                        SmartConLogger.Warn("RigidMove: reducer has no free second connector — cannot connect. " +
+                            "[Action: проверьте семейство переходника и подключите границу вручную]");
+                    }
+                }
+                else
+                {
+                    // No reducer in mapping: place the network with a 100 mm gap
+                    // along the parent's BasisZ — a visual marker for the transition
+                    // the engineer must insert manually. NOT connected by design.
+                    var gapTarget = freshParent.OriginVec3 + freshParent.BasisZVec3 * (ReducerMissingGapMm * MmToFeet);
+                    var gapOffset = gapTarget - freshChild.OriginVec3;
+                    if (!VectorUtils.IsZero(gapOffset))
+                        transformSvc.MoveElements(doc, remainderIds, gapOffset);
+                    doc.Regenerate();
+                    outcome = RigidMoveOutcome.Gapped;
+                    SmartConLogger.Warn($"RigidMove: reducer not found in mapping — network placed with {ReducerMissingGapMm}mm gap, NOT connected. " +
+                        $"[Action: добавьте переход в маппинг (Настройки → Правила) или вставьте его вручную в месте зазора]");
+                }
+                return;
+            }
+
+            // Rigid rotate (lock only): rotate the whole remainder as one body by the
+            // boundary alignment, then recompute the translation from fresh proxies.
+            if (needsRotation && firstAlign is not null)
+            {
+                if (firstAlign.BasisZRotation is { } bz)
+                    transformSvc.RotateElements(doc, remainderIds, firstAlign.RotationCenter, bz.Axis, bz.AngleRadians);
+                if (firstAlign.BasisXSnap is { } bx)
+                    transformSvc.RotateElements(doc, remainderIds, firstAlign.RotationCenter, bx.Axis, bx.AngleRadians);
+                doc.Regenerate();
+
+                var childAfterRotation = connSvc.RefreshConnector(doc, firstChildProxy.OwnerElementId, firstChildProxy.ConnectorIndex);
+                if (childAfterRotation is not null)
+                    moveOffset = firstParentProxy.OriginVec3 - childAfterRotation.OriginVec3;
+            }
+
+            if (moveOffset is not null && !VectorUtils.IsZero(moveOffset.Value))
+                transformSvc.MoveElements(doc, remainderIds, moveOffset.Value);
+            doc.Regenerate();
+
+            var connected = new List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>();
+            foreach (var (parentId, parentConnIdx, childId, childConnIdx) in boundaryEdges)
+            {
+                try
+                {
+                    connSvc.ConnectTo(doc, parentId, parentConnIdx, childId, childConnIdx);
+                    connected.Add((parentId, parentConnIdx, childId, childConnIdx));
+                }
+                catch (Exception exConn)
+                {
+                    allConnected = false;
+                    SmartConLogger.Warn($"RigidMove: ConnectTo {parentId.GetValue()}↔{childId.GetValue()} " +
+                        $"failed: {exConn.Message} [Action: граница будет подключена поэлементным обходом]");
+                    break;
+                }
+            }
+
+            if (!allConnected)
+            {
+                // Roll back the partially connected boundary (same discipline as seal) —
+                // a failed rigid move must not leave busy connectors for the fallback.
+                foreach (var (_, _, childId, childConnIdx) in connected)
+                {
+                    try { connSvc.DisconnectAllFromConnector(doc, childId, childConnIdx); }
+                    catch (Exception exDisc)
+                    {
+                        SmartConLogger.Warn($"RigidMove rollback: disconnect {childId.GetValue()}:{childConnIdx} " +
+                            $"failed: {exDisc.Message} [Action: проверьте соединения границы вручную]");
+                    }
+                }
+            }
+            else
+            {
+                RestoreCrossEdgesForBoundary(doc, graph, currentDepth, levelOf, sealedCrossEdges);
+            }
+        });
+
+        if (!allConnected)
+        {
+            SmartConLogger.Warn("RigidMove: boundary connect failed after move — falling back to element-wise traversal " +
+                "[Action: продолжайте подключение кнопкой «+» — сбойный элемент покажет ошибку]");
+            return RigidMoveOutcome.NotApplicable;
+        }
+
+        if (outcome == RigidMoveOutcome.Connected)
+            connectedEdges = boundaryEdges.Concat(sealedCrossEdges).ToList();
+
+        sealedEdges = connectedEdges;
+        SmartConLogger.Info($"RigidMove: outcome={outcome}, remainder={remainderIds.Count} elements moved as one body, " +
+            $"boundary edges={boundaryEdges.Count}, cross-edges restored={sealedCrossEdges.Count}, rotated={needsRotation}");
+        return outcome;
     }
 
     private void SaveSnapshotForLevelElement(
@@ -295,7 +719,10 @@ public sealed class ChainOperationHandler(
         ElementId elemId,
         int elemIndex,
         int levelCount,
-        IReadOnlyDictionary<long, IReadOnlyList<FamilySizeOption>> transitionOptions)
+        IReadOnlyDictionary<long, IReadOnlyList<FamilySizeOption>> transitionOptions,
+        IReadOnlyCollection<long> attachedElementIds,
+        bool lockNetwork,
+        out ParentEdge? processedEdge)
     {
         LogIncrementElementHeader(doc, elemId, elemIndex, levelCount);
 
@@ -304,7 +731,9 @@ public sealed class ChainOperationHandler(
         var edge = FindEdgeToParent(elemId, nextLevel, graph);
         if (edge is null)
         {
-            SmartConLogger.Warn($"b. Edge to parent NOT FOUND → skip");
+            SmartConLogger.Warn($"b. Edge to parent NOT FOUND → element left disconnected " +
+                $"[Action: элемент отсоединён от сети — откатите его кнопкой «−» и проверьте граф соединений]");
+            processedEdge = null;
             return false;
         }
 
@@ -314,7 +743,9 @@ public sealed class ChainOperationHandler(
         var parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
         if (parentProxy is null)
         {
-            SmartConLogger.Warn($"parentProxy=NULL → skip");
+            SmartConLogger.Warn($"parentProxy=NULL → element left disconnected " +
+                $"[Action: элемент отсоединён от сети — откатите его кнопкой «−» и проверьте коннектор родителя]");
+            processedEdge = null;
             return false;
         }
 
@@ -322,9 +753,37 @@ public sealed class ChainOperationHandler(
             $"(DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)}) " +
             $"origin=({parentProxy.Origin.X:F4},{parentProxy.Origin.Y:F4},{parentProxy.Origin.Z:F4})");
 
-        var (reducerId, sizeChanged) = AdjustElementSize(doc, graph, snapshotStore, elemId, edge.Value, parentProxy, transitionOptions);
+        // LockNetwork ("Блокировать"): attach strictly as-is — no size adjustment
+        // (transition/resize) and no pipe-length absorption. The element is only
+        // rigidly aligned to its parent and reconnected. A DN mismatch is resolved
+        // by a reducer from the mapping (the network DN is never changed — #167);
+        // only when no reducer is mapped do we fall back to a direct as-is join.
+        ElementId? reducerId = null;
+        bool sizeChanged = false;
+        if (!lockNetwork)
+        {
+            (reducerId, sizeChanged) = AdjustElementSize(doc, graph, snapshotStore, elemId, edge.Value, parentProxy, transitionOptions);
+            parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
+        }
+        else
+        {
+            var elemForDnCheck = connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
+            if (elemForDnCheck is not null
+                && System.Math.Abs(parentProxy.Radius - elemForDnCheck.Radius) > 1e-5)
+            {
+                SmartConLogger.Debug($"Lock: DN mismatch (parent DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)} " +
+                    $"↔ element DN{System.Math.Round(elemForDnCheck.Radius * 2.0 * FeetToMm)}) — trying reducer from mapping");
+                reducerId = InsertReducerForMismatch(doc, snapshotStore, elemId, parentProxy, elemForDnCheck);
 
-        parentProxy = connSvc.RefreshConnector(doc, edge.Value.ParentId, edge.Value.ParentConnIdx);
+                if (reducerId is null)
+                {
+                    SmartConLogger.Warn($"Lock: DN mismatch on attach — parent DN{System.Math.Round(parentProxy.Radius * 2.0 * FeetToMm)} " +
+                        $"↔ element DN{System.Math.Round(elemForDnCheck.Radius * 2.0 * FeetToMm)} will be connected directly (no reducer in mapping). " +
+                        $"[Action: добавьте переход в маппинг (Настройки → Правила) или вставьте его вручную]");
+                }
+            }
+        }
+
         var elemProxyForAlign = connSvc.RefreshConnector(doc, elemId, edge.Value.ElemConnIdx);
         var alignTarget = ResolveAlignTarget(doc, reducerId, parentProxy);
 
@@ -341,12 +800,346 @@ public sealed class ChainOperationHandler(
                 || alignResult.BasisZRotation is not null
                 || alignResult.BasisXSnap is not null);
 
-        if (!TryAlignPipeByLength(doc, elemId, elemProxyForAlign, alignResult))
+        if (lockNetwork)
+            AlignElement(doc, elemId, elemProxyForAlign, alignResult);
+        else if (!TryAlignPipeByLength(doc, elemId, elemProxyForAlign, alignResult))
             AlignElement(doc, elemId, elemProxyForAlign, alignResult);
         ReconnectIncrementElement(doc, elemId, edge.Value, parentProxy, reducerId);
 
+        // processedEdge signals "element is physically reconnected to its parent" —
+        // callers rely on it to decide whether the queue depth may advance.
+        processedEdge = edge;
+
+        RestoreCrossEdgesToAttached(doc, graph, snapshotStore, elemId, edge.Value, attachedElementIds);
+
         SmartConLogger.Debug($"── Element {elemId.GetValue()} ready ──");
         return sizeChanged || reducerId is not null || alignmentChanged;
+    }
+
+    /// <summary>
+    /// Restore cross-edges (network loops) between the sealed remainder and the
+    /// attached part after a rigid-body rotation (lock-network mode): attached
+    /// part does not rotate, so loop edges crossing the boundary may drift apart.
+    /// Best-effort: only edges whose connectors still meet within the gap tolerance
+    /// are re-established; others are logged for manual review.
+    /// </summary>
+    public void RestoreCrossEdgesAfterRigidRotation(
+        Document doc,
+        ITransactionGroupSession groupSession,
+        ConnectionGraph graph,
+        int currentDepth)
+    {
+        if (currentDepth + 1 >= graph.Levels.Count)
+            return;
+
+        var levelOf = new Dictionary<long, int>();
+        for (int level = 0; level < graph.Levels.Count; level++)
+            foreach (var id in graph.Levels[level])
+                levelOf[id.GetValue()] = level;
+
+        var restored = new List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)>();
+        groupSession.RunInTransaction(LocalizationService.GetString("Tx_RestoreCrossEdges"), doc =>
+        {
+            RestoreCrossEdgesForBoundary(doc, graph, currentDepth, levelOf, restored);
+            doc.Regenerate();
+        });
+
+        if (restored.Count > 0)
+            SmartConLogger.Info($"Rigid rotation: {restored.Count} cross-edge(s) restored after body rotation");
+    }
+
+    /// <summary>Info about a reducer inserted while restoring a cross-edge (for tracking/cleanup).</summary>
+    private readonly record struct CrossEdgeReducerInfo(
+        ElementId FittingId, int FittingConnIdx, ElementId ReducerId, int ReducerConn2Idx);
+
+    /// <summary>
+    /// Restore one cross-edge (network loop) torn during attach. Both elements of
+    /// the loop are already fixed by their parents — the loop can only be closed
+    /// without moving them, so the strategies are, in order:
+    /// 1. direct ConnectTo when radii match and the gap is within tolerance;
+    /// 2. pipe-length absorption (ADR-052) when radii match but the gap is larger —
+    ///    the pipe in the pair changes its length to close the loop;
+    /// 3. reducer from the mapping on DN mismatch (cascade may give loop ends
+    ///    different DN when one branch went through reducer/transition, ADR-053):
+    ///    the reducer is attached to the fitting (fixed) side, the pipe absorbs
+    ///    the remaining gap to the reducer's free connector;
+    /// 4. otherwise — Warn with an actionable message (rare, manual fix needed).
+    /// </summary>
+    /// <param name="insertedReducer">
+    /// Set when strategy 3 inserted a reducer — the CALLER is responsible for
+    /// tracking it (snapshotStore.TrackReducer on attach, sealed edges on seal/rigid).
+    /// </param>
+    private bool TryRestoreCrossEdge(
+        Document doc,
+        ElementId thisId,
+        ConnectionRecord rec,
+        string logTag,
+        out CrossEdgeReducerInfo? insertedReducer)
+    {
+        insertedReducer = null;
+        var thisConn = connSvc.RefreshConnector(doc, thisId, rec.ThisConnectorIndex);
+        var neighborConn = connSvc.RefreshConnector(doc, rec.NeighborElementId, rec.NeighborConnectorIndex);
+        if (thisConn is null || neighborConn is null)
+        {
+            SmartConLogger.Debug($"  {logTag} cross-edge {thisId.GetValue()}↔{rec.NeighborElementId.GetValue()}: connector refresh failed — skip");
+            return false;
+        }
+
+        if (!thisConn.IsFree || !neighborConn.IsFree)
+        {
+            SmartConLogger.Debug($"  {logTag} cross-edge {thisId.GetValue()}:{rec.ThisConnectorIndex}↔{rec.NeighborElementId.GetValue()}:{rec.NeighborConnectorIndex}: " +
+                $"connector busy (this.Free={thisConn.IsFree}, neighbor.Free={neighborConn.IsFree}) — skip");
+            return false;
+        }
+
+        double gapMm = VectorUtils.DistanceTo(thisConn.OriginVec3, neighborConn.OriginVec3) * FeetToMm;
+        bool radiusMatch = System.Math.Abs(thisConn.Radius - neighborConn.Radius) <= 1e-5;
+
+        // ── 1+2: radii match → direct, or absorb the gap through the pipe in the pair ──
+        if (radiusMatch)
+        {
+            if (gapMm > CrossEdgeMaxGapMm
+                && !TryAbsorbCrossGap(doc, thisId, thisConn, rec.NeighborElementId, neighborConn, logTag))
+            {
+                SmartConLogger.Warn($"  {logTag} cross-edge {thisId.GetValue()}:{rec.ThisConnectorIndex} ↔ " +
+                    $"{rec.NeighborElementId.GetValue()}:{rec.NeighborConnectorIndex} not restored: connector gap {gapMm:F1}mm " +
+                    $"could not be absorbed (no pipe in pair or absorption failed). " +
+                    $"[Action: петля сети не замкнулась — соедините элементы вручную]");
+                return false;
+            }
+
+            return TryConnectCrossEdge(doc, thisId, rec.ThisConnectorIndex, rec.NeighborElementId, rec.NeighborConnectorIndex, logTag);
+        }
+
+        // ── 3: DN mismatch (cascade gave loop ends different DN) → reducer + absorb ──
+        bool thisIsPipe = doc.GetElement(thisId) is MEPCurve or FlexPipe;
+        bool neighborIsPipe = doc.GetElement(rec.NeighborElementId) is MEPCurve or FlexPipe;
+
+        if (!thisIsPipe && !neighborIsPipe)
+        {
+            SmartConLogger.Warn($"  {logTag} cross-edge {thisId.GetValue()}:{rec.ThisConnectorIndex} ↔ " +
+                $"{rec.NeighborElementId.GetValue()}:{rec.NeighborConnectorIndex} not restored: DN mismatch " +
+                $"(DN{System.Math.Round(thisConn.Radius * 2.0 * FeetToMm)} ↔ DN{System.Math.Round(neighborConn.Radius * 2.0 * FeetToMm)}) " +
+                $"and no pipe in pair to absorb the gap. " +
+                $"[Action: вставьте переход в месте петли вручную]");
+            return false;
+        }
+
+        // Reducer goes to the FIXED (non-pipe) side; the pipe absorbs the remaining gap.
+        var fittingId = thisIsPipe ? rec.NeighborElementId : thisId;
+        var fittingConn = thisIsPipe ? neighborConn : thisConn;
+        var pipeId = thisIsPipe ? thisId : rec.NeighborElementId;
+        var pipeConn = thisIsPipe ? thisConn : neighborConn;
+
+        var reducerId = networkMover.InsertReducer(doc, fittingConn, pipeConn);
+        if (reducerId is null)
+        {
+            SmartConLogger.Warn($"  {logTag} cross-edge {thisId.GetValue()}↔{rec.NeighborElementId.GetValue()}: " +
+                $"DN mismatch (DN{System.Math.Round(thisConn.Radius * 2.0 * FeetToMm)} ↔ DN{System.Math.Round(neighborConn.Radius * 2.0 * FeetToMm)}) " +
+                $"but reducer not found in mapping. [Action: добавьте переход в маппинг (Настройки → Правила) или вставьте его вручную в месте петли]");
+            return false;
+        }
+
+        var reducerConns = connSvc.GetAllFreeConnectors(doc, reducerId);
+        var reducerConn2 = reducerConns
+            .OrderByDescending(c => VectorUtils.DistanceTo(c.OriginVec3, fittingConn.OriginVec3))
+            .FirstOrDefault();
+        if (reducerConn2 is null)
+        {
+            SmartConLogger.Warn($"  {logTag} cross-edge: reducer {reducerId.GetValue()} has no free connector " +
+                $"[Action: проверьте семейство переходника и соедините петлю вручную]");
+            return false;
+        }
+
+        var pipeFresh = connSvc.RefreshConnector(doc, pipeId, pipeConn.ConnectorIndex) ?? pipeConn;
+        var absorbOffset = reducerConn2.OriginVec3 - pipeFresh.OriginVec3;
+        if (!VectorUtils.IsZero(absorbOffset)
+            && !PipeAbsorptionApplier.TryApply(doc, pipeId, pipeFresh.OriginVec3, absorbOffset))
+        {
+            SmartConLogger.Warn($"  {logTag} cross-edge: pipe {pipeId.GetValue()} failed to absorb " +
+                $"{VectorUtils.Length(absorbOffset) * FeetToMm:F1}mm to the reducer. " +
+                $"[Action: петля сети не замкнулась — соедините элементы вручную]");
+            DeleteOrphanedReducer(doc, reducerId, logTag);
+            return false;
+        }
+        doc.Regenerate();
+
+        try
+        {
+            connSvc.ConnectTo(doc, reducerId, reducerConn2.ConnectorIndex, pipeId, pipeConn.ConnectorIndex);
+            insertedReducer = new CrossEdgeReducerInfo(
+                fittingId, fittingConn.ConnectorIndex, reducerId, reducerConn2.ConnectorIndex);
+            SmartConLogger.Info($"  {logTag} cross-edge restored via reducer {reducerId.GetValue()}: " +
+                $"{fittingId.GetValue()} ↔ reducer ↔ {pipeId.GetValue()}:{pipeConn.ConnectorIndex}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"  {logTag} cross-edge ConnectTo reducer↔pipe failed: {ex.Message} " +
+                $"[Action: петля сети не замкнулась — проверьте соединение элементов вручную]");
+            DeleteOrphanedReducer(doc, reducerId, logTag);
+            return false;
+        }
+    }
+
+    /// <summary>Delete a reducer that was inserted but never connected (failed absorb/connect) — no orphans in the model.</summary>
+    private void DeleteOrphanedReducer(Document doc, ElementId reducerId, string logTag)
+    {
+        try
+        {
+            foreach (var conn in connSvc.GetAllConnectors(doc, reducerId))
+            {
+                if (!conn.IsFree)
+                    connSvc.DisconnectAllFromConnector(doc, reducerId, conn.ConnectorIndex);
+            }
+            fittingInsertSvc.DeleteElement(doc, reducerId);
+            SmartConLogger.Info($"  {logTag} orphaned reducer {reducerId.GetValue()} deleted after failed cross-edge restore");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"  {logTag} failed to delete orphaned reducer {reducerId.GetValue()}: {ex.Message} " +
+                $"[Action: удалите неиспользуемый переход из модели вручную]");
+        }
+    }
+
+    /// <summary>Absorb a cross-edge gap through the pipe in the pair (either side may be the pipe).</summary>
+    private bool TryAbsorbCrossGap(
+        Document doc,
+        ElementId thisId,
+        ConnectorProxy thisConn,
+        ElementId neighborId,
+        ConnectorProxy neighborConn,
+        string logTag)
+    {
+        ElementId pipeId;
+        ConnectorProxy pipeConn;
+        Vec3 offset;
+
+        if (doc.GetElement(thisId) is MEPCurve or FlexPipe)
+        {
+            pipeId = thisId;
+            pipeConn = thisConn;
+            offset = neighborConn.OriginVec3 - thisConn.OriginVec3;
+        }
+        else if (doc.GetElement(neighborId) is MEPCurve or FlexPipe)
+        {
+            pipeId = neighborId;
+            pipeConn = neighborConn;
+            offset = thisConn.OriginVec3 - neighborConn.OriginVec3;
+        }
+        else
+        {
+            return false;
+        }
+
+        bool absorbed = PipeAbsorptionApplier.TryApply(doc, pipeId, pipeConn.OriginVec3, offset);
+        if (absorbed)
+            SmartConLogger.Debug($"  {logTag} cross-edge: pipe {pipeId.GetValue()} absorbed {VectorUtils.Length(offset) * FeetToMm:F1}mm");
+        return absorbed;
+    }
+
+    private bool TryConnectCrossEdge(
+        Document doc,
+        ElementId thisId, int thisConnIdx,
+        ElementId neighborId, int neighborConnIdx,
+        string logTag)
+    {
+        try
+        {
+            connSvc.ConnectTo(doc, thisId, thisConnIdx, neighborId, neighborConnIdx);
+            SmartConLogger.Info($"  {logTag} cross-edge restored: {thisId.GetValue()}:{thisConnIdx} ↔ {neighborId.GetValue()}:{neighborConnIdx}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"  {logTag} cross-edge restore failed {thisId.GetValue()}:{thisConnIdx} ↔ " +
+                $"{neighborId.GetValue()}:{neighborConnIdx}: {ex.Message} " +
+                $"[Action: петля сети не замкнулась — проверьте соединение элементов вручную]");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Restore cross-edges (network loops) between ANY remainder element
+    /// (levels &gt; currentDepth) and the attached part (levels 0..currentDepth).
+    /// Called inside the seal/rigid transaction; successfully restored edges are
+    /// collected so the caller can report them as part of the seal (and unseal
+    /// them later together with the boundary).
+    /// </summary>
+    private void RestoreCrossEdgesForBoundary(
+        Document doc,
+        ConnectionGraph graph,
+        int currentDepth,
+        IReadOnlyDictionary<long, int> levelOf,
+        List<(ElementId ParentId, int ParentConnIdx, ElementId ChildId, int ChildConnIdx)> restoredEdges)
+    {
+        var comparer = ElementIdEqualityComparer.Instance;
+        for (int level = currentDepth + 1; level < graph.Levels.Count; level++)
+        {
+            foreach (var childId in graph.Levels[level])
+            {
+            foreach (var rec in graph.GetOriginalConnections(childId))
+            {
+                if (comparer.Equals(rec.NeighborElementId, childId))
+                    continue;
+
+                if (!levelOf.TryGetValue(rec.NeighborElementId.GetValue(), out int neighborLevel)
+                    || neighborLevel > currentDepth)
+                    continue;
+
+                if (TryRestoreCrossEdge(doc, childId, rec, "seal", out var reducerInfo))
+                {
+                    if (reducerInfo is { } ri)
+                    {
+                        // Reducer inserted on the loop — track it via the sealed edges
+                        // so UnsealIfSealed deletes it (it is not a graph node).
+                        restoredEdges.Add((ri.FittingId, ri.FittingConnIdx, ri.ReducerId, ri.ReducerConn2Idx));
+                    }
+                    else
+                    {
+                        restoredEdges.Add((childId, rec.ThisConnectorIndex, rec.NeighborElementId, rec.NeighborConnectorIndex));
+                    }
+                }
+            }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Restore cross-edges (network loops) torn by DisconnectElementConnections:
+    /// the original loop connection is re-established when the loop neighbor is
+    /// already attached. Loop neighbors attached later in the queue restore the
+    /// same edge from their own attach (symmetric coverage).
+    /// </summary>
+    private void RestoreCrossEdgesToAttached(
+        Document doc,
+        ConnectionGraph graph,
+        NetworkSnapshotStore snapshotStore,
+        ElementId elemId,
+        ParentEdge parentEdge,
+        IReadOnlyCollection<long> attachedElementIds)
+    {
+        var comparer = ElementIdEqualityComparer.Instance;
+        foreach (var rec in graph.GetOriginalConnections(elemId))
+        {
+            if (comparer.Equals(rec.NeighborElementId, elemId))
+                continue;
+
+            if (comparer.Equals(rec.NeighborElementId, parentEdge.ParentId)
+                && rec.ThisConnectorIndex == parentEdge.ElemConnIdx
+                && rec.NeighborConnectorIndex == parentEdge.ParentConnIdx)
+                continue;
+
+            if (!attachedElementIds.Contains(rec.NeighborElementId.GetValue()))
+                continue;
+
+            if (TryRestoreCrossEdge(doc, elemId, rec, "attach", out var reducerInfo)
+                && reducerInfo is { } ri)
+            {
+                // Reducer inserted on the loop — track it for rollback on detach.
+                snapshotStore.TrackReducer(elemId, ri.ReducerId);
+            }
+        }
     }
 
     private void LogIncrementElementHeader(Document doc, ElementId elemId, int elemIndex, int levelCount)
@@ -645,7 +1438,8 @@ public sealed class ChainOperationHandler(
         }
         else
         {
-            SmartConLogger.Warn($"    c.3 Reducer not found in mapping!");
+            SmartConLogger.Warn($"    c.3 Reducer not found in mapping! " +
+                $"[Action: добавьте семейство переходника в маппинг (Настройки → Правила) — иначе элементы с разными DN соединятся напрямую]");
         }
 
         return reducerId;
@@ -768,7 +1562,8 @@ public sealed class ChainOperationHandler(
         var snapshot = snapshotStore.Get(elemId);
         if (snapshot is null)
         {
-            SmartConLogger.Warn($"   c. Snapshot not found → skip");
+            SmartConLogger.Warn($"   c. Snapshot not found → skip restore " +
+                $"[Action: элемент останется в текущем состоянии — проверьте его положение и соединения вручную]");
             return;
         }
 
@@ -793,7 +1588,13 @@ public sealed class ChainOperationHandler(
         }
     }
 
-    private void RestoreElementFromSnapshot(Document doc, ElementId elemId, ElementSnapshot snapshot)
+    /// <summary>
+    /// Restore an element's full state (size/symbol for pipes and family instances,
+    /// location curve or flex path, position and orientation) from a snapshot taken
+    /// by <see cref="CaptureSnapshot"/>. Does not restore connections — the caller
+    /// handles reconnects. Public for the "Блокировать" root baseline restore (#167).
+    /// </summary>
+    public void RestoreElementFromSnapshot(Document doc, ElementId elemId, ElementSnapshot snapshot)
     {
         var elem = doc.GetElement(elemId);
         SmartConLogger.Debug($"   c. Restoring: isMepCurve={snapshot.IsMepCurve}, " +
@@ -807,8 +1608,8 @@ public sealed class ChainOperationHandler(
     }
 
     /// <summary>
-    /// Pre-warm parameter dependency cache for elements at the given level.
-    /// Avoids repeated cold cache lookups during IncrementLevel.
+    /// Pre-warm parameter dependency cache for the given elements.
+    /// Avoids repeated cold cache lookups during AttachSingleElement.
     /// </summary>
     public void WarmDepsForLevel(
         Document doc,
@@ -844,7 +1645,7 @@ public sealed class ChainOperationHandler(
     }
 
     /// <summary>Capture a full snapshot of an element's state for rollback.</summary>
-    public ElementSnapshot CaptureSnapshot(Document doc, ElementId elemId, ConnectionGraph graph)
+    public ElementSnapshot CaptureSnapshot(Document doc, ElementId elemId, ConnectionGraph? graph)
     {
         var elem = doc.GetElement(elemId);
         bool isMepCurve = elem is MEPCurve;
@@ -908,7 +1709,7 @@ public sealed class ChainOperationHandler(
             ConnectorRadius = connRadius,
             ConnectorRadii = connRadiiDict,
             FamilySymbolId = familySymbolId,
-            Connections = graph.GetOriginalConnections(elemId),
+            Connections = graph?.GetOriginalConnections(elemId) ?? [],
         };
     }
 
@@ -1066,6 +1867,25 @@ public sealed class ChainOperationHandler(
             transformSvc.RotateElement(doc, elemId, origin, rotAxis, signedAngle);
             doc.Regenerate();
         }
+
+        // Restore verification: residual error between the restored basis and the
+        // snapshot — catches cumulative drift from repeated rollback/attach cycles
+        // (sign noise at ~180° in the signed-angle branch above).
+        currentT = fi.GetTransform();
+        var finBX = new Vec3(currentT.BasisX.X, currentT.BasisX.Y, currentT.BasisX.Z);
+        var finBZ = new Vec3(currentT.BasisZ.X, currentT.BasisZ.Y, currentT.BasisZ.Z);
+        double errBX = VectorUtils.AngleBetween(finBX, snapBX) * 180.0 / System.Math.PI;
+        double errBZ = VectorUtils.AngleBetween(finBZ, snapBZ) * 180.0 / System.Math.PI;
+        if (errBX > 0.1 || errBZ > 0.1)
+        {
+            SmartConLogger.Warn($"   c. FI: restore rotation residual for {elemId.GetValue()}: " +
+                $"errBX={errBX:F3}°, errBZ={errBZ:F3}° (angleBX was {angleBX * 180.0 / System.Math.PI:F2}°) " +
+                $"[Action: сообщите разработчикам — накопление ошибки восстановления вращения]");
+        }
+        else
+        {
+            SmartConLogger.Debug($"   c. FI: restore rotation residual: errBX={errBX:F3}°, errBZ={errBZ:F3}°");
+        }
     }
 
     private void ReconnectSnapshotConnections(
@@ -1083,7 +1903,8 @@ public sealed class ChainOperationHandler(
             var neighborConn = connSvc.RefreshConnector(doc, neighborId, connRecord.NeighborConnectorIndex);
             if (neighborConn is null)
             {
-                SmartConLogger.Warn($"   d. neighborConn=null → skip");
+                SmartConLogger.Warn($"   d. neighborConn=null → skip " +
+                    $"[Action: исходное соединение не восстановлено — проверьте соединения элемента вручную]");
                 continue;
             }
             if (!neighborConn.IsFree)

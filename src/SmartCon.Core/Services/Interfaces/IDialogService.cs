@@ -56,6 +56,14 @@ public interface IDialogService
     bool ShowQuestion(string title, string message);
 
     /// <summary>
+    /// Shows a confirmation dialog when Connect is requested while part of the
+    /// network chain is still detached from the connected elements.
+    /// </summary>
+    /// <param name="connectedCount">Number of chain elements already attached.</param>
+    /// <param name="totalCount">Total number of chain elements in the network.</param>
+    UnconnectedChainChoice ShowUnconnectedChainWarning(int connectedCount, int totalCount);
+
+    /// <summary>
     /// Shows a folder browser dialog and returns the selected path,
     /// or <c>null</c> when the user cancels.
     /// </summary>

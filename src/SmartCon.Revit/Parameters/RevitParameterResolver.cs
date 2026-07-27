@@ -13,7 +13,7 @@ using SmartCon.Core.Compatibility;
 using static SmartCon.Core.Units;
 namespace SmartCon.Revit.Parameters;
 
-public sealed class RevitParameterResolver : IParameterResolver
+public sealed class RevitParameterResolver(FamilyFormulaCache formulaCache) : IParameterResolver
 {
     private const double Epsilon = 1e-6;
 
@@ -69,44 +69,15 @@ public sealed class RevitParameterResolver : IParameterResolver
 
         SmartConLogger.Debug($"  connector[{connectorIndex}] found, Radius={connector.GetRadiusSafe():F6} ft ({connector.GetRadiusSafe() * FeetToMm:F2} mm)");
 
-        var mepInfo = connector.GetMEPConnectorInfo() as MEPFamilyConnectorInfo;
-        if (mepInfo is null)
+        var binding = ConnectorSizeBindingResolver.TryGetSizeBinding(doc, connector);
+        if (binding is null)
         {
-            SmartConLogger.Debug("  GetMEPConnectorInfo()=null (not MEPFamilyConnectorInfo) → return []");
+            SmartConLogger.Debug("  no size binding (not a family connector or no RADIUS/DIAMETER association) → return []");
             return [];
         }
 
-        SmartConLogger.Debug("  MEPFamilyConnectorInfo obtained");
-
-        var radiusParamId = mepInfo.GetAssociateFamilyParameterId(new ElementId(BuiltInParameter.CONNECTOR_RADIUS));
-        var diamParamId = mepInfo.GetAssociateFamilyParameterId(new ElementId(BuiltInParameter.CONNECTOR_DIAMETER));
-
-        SmartConLogger.Debug($"  GetAssociateFamilyParameterId: CONNECTOR_RADIUS → id={radiusParamId.GetValue()}, CONNECTOR_DIAMETER → id={diamParamId.GetValue()}");
-
-        bool useRadius = radiusParamId.GetValue() > 0;
-        bool useDiameter = !useRadius && diamParamId.GetValue() > 0;
-
-        if (!useRadius && !useDiameter)
-        {
-            SmartConLogger.Debug("  WARNING: no bound parameter to CONNECTOR_RADIUS/DIAMETER → return []");
-            SmartConLogger.Warn($"elementId={elementId.GetValue()}: no CONNECTOR_RADIUS or CONNECTOR_DIAMETER binding");
-            return [];
-        }
-
-        var activeParamId = useRadius ? radiusParamId : diamParamId;
-        bool isDiameter = useDiameter;
-        SmartConLogger.Debug($"  Using: {(useRadius ? "CONNECTOR_RADIUS" : "CONNECTOR_DIAMETER")}, activeParamId={activeParamId.GetValue()}, isDiameter={isDiameter}");
-
-        var familyParamElem = doc.GetElement(activeParamId);
-        var paramName = familyParamElem?.Name;
-        SmartConLogger.Debug($"  ParameterElement.Name='{paramName}' (elementType={familyParamElem?.GetType().Name})");
-
-        if (string.IsNullOrEmpty(paramName))
-        {
-            SmartConLogger.Debug("  WARNING: failed to get parameter name from ParameterElement → return []");
-            SmartConLogger.Warn($"elementId={elementId.GetValue()}: parameter name is empty");
-            return [];
-        }
+        var paramName = binding.Value.ParamName;
+        bool isDiameter = binding.Value.IsDiameter;
 
         var instParam = element.LookupParameter(paramName);
         bool isInstance = instParam is not null;
@@ -132,30 +103,29 @@ public sealed class RevitParameterResolver : IParameterResolver
 
         if (isInstance && isReadOnly)
         {
-            var dep = EditFamilySession.Run<ParameterDependency?>(doc, instance, familyDoc =>
+            var snapshot = formulaCache.Get(doc, instance);
+            var (directName, rootName, formula, _, _) = snapshot is not null
+                ? FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(snapshot, paramName, isDiameter)
+                : default;
+
+            SmartConLogger.Debug($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}'");
+
+            ParameterDependency? dep = null;
+            if (directName is not null && formula is not null && rootName is not null)
             {
-                var (directName, rootName, formula, _, _) =
-                    FamilyParameterAnalyzer.AnalyzeConnectorRadiusParam(
-                        familyDoc, instance.GetTransform(), connector.CoordinateSystem.Origin,
-                        instance.HandFlipped, instance.FacingFlipped);
-
-                SmartConLogger.Debug($"  FPA: directName='{directName}', rootName='{rootName}', formula='{formula}'");
-
-                if (directName is not null && formula is not null && rootName is not null)
-                {
-                    return new ParameterDependency(
-                        BuiltIn: null,
-                        SharedParamName: null,
-                        Formula: formula,
-                        IsInstance: true,
-                        DirectParamName: directName,
-                        RootParamName: rootName,
-                        IsDiameter: isDiameter);
-                }
-
+                dep = new ParameterDependency(
+                    BuiltIn: null,
+                    SharedParamName: null,
+                    Formula: formula,
+                    IsInstance: true,
+                    DirectParamName: directName,
+                    RootParamName: rootName,
+                    IsDiameter: isDiameter);
+            }
+            else
+            {
                 SmartConLogger.Debug("  FPA did not return full chain (directName/formula/rootName null)");
-                return null;
-            });
+            }
 
             if (dep is not null)
             {
@@ -350,7 +320,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.GetValue()}: {ex.GetType().Name}: {ex.Message}");
-                SmartConLogger.Warn($"ChangeTypeId symbolId={symbolId.GetValue()} failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId symbolId={symbolId.GetValue()} failed: {ex.Message} [Action: тип пропущен, подбор продолжается по остальным — проверьте итоговый размер элемента]");
             }
         }
 
@@ -398,7 +368,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION ChangeTypeId nearest: {ex.Message}");
-                SmartConLogger.Warn($"ChangeTypeId nearest failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId nearest failed: {ex.Message} [Action: размер не изменён — проверьте типоразмер элемента вручную]");
             }
             return false;
         }
@@ -495,7 +465,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION for symbolId={symbolId.GetValue()}: {ex.Message}");
-                SmartConLogger.Warn($"symbolId={symbolId.GetValue()}: {ex.Message}");
+                SmartConLogger.Warn($"symbolId={symbolId.GetValue()}: {ex.Message} [Action: тип пропущен, подбор продолжается по остальным — проверьте итоговый размер элемента]");
             }
         }
 
@@ -519,7 +489,7 @@ public sealed class RevitParameterResolver : IParameterResolver
             catch (Exception ex)
             {
                 SmartConLogger.Debug($"  EXCEPTION applying winner: {ex.Message}");
-                SmartConLogger.Warn($"ChangeTypeId winner failed: {ex.Message}");
+                SmartConLogger.Warn($"ChangeTypeId winner failed: {ex.Message} [Action: размер не изменён — проверьте типоразмер элемента вручную]");
             }
         }
         else

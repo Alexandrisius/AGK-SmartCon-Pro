@@ -28,22 +28,35 @@ public sealed class PipeConnectSizeHandler(
     IParameterResolver paramResolver,
     FittingCtcManager ctcManager)
 {
+    /// <summary>
+    /// Change the size of the active dynamic element. In element-wise chain mode the
+    /// active dynamic may be any attached chain element, so the target element and
+    /// the upstream reference are taken from <paramref name="activeDynamic"/> /
+    /// <paramref name="upstreamConnector"/>, not from the session root pair.
+    /// </summary>
+    /// <param name="upstreamConnector">
+    /// Parent connector of the active connection point (its "local static") —
+    /// used for the position correction target and reducer detection reference radius.
+    /// </param>
     public SizeChangeResult ChangeSize(
         Document doc,
         ITransactionGroupSession groupSession,
         PipeConnectSessionContext ctx,
         FamilySizeOption selectedOption,
         ConnectorProxy activeDynamic,
+        ConnectorProxy upstreamConnector,
         ElementId? fittingId,
         ElementId? reducerId)
     {
         using var _scope = SmartConLogger.BeginScope("SizeHandler",
-            ("Method", "ChangeSize"));
+            ("Method", "ChangeSize"),
+            ("DynId", activeDynamic.OwnerElementId.GetValue()),
+            ("DynConnIdx", activeDynamic.ConnectorIndex));
         ConnectorProxy? updatedDynamic = activeDynamic;
         bool needsPrimaryReducer = false;
 
-        var dynId = ctx.DynamicConnector.OwnerElementId;
-        var dynIdx = ctx.DynamicConnector.ConnectorIndex;
+        var dynId = activeDynamic.OwnerElementId;
+        var dynIdx = activeDynamic.ConnectorIndex;
 
         groupSession.RunInTransaction(LocalizationService.GetString("Tx_ChangeSizeDynamic"), d =>
         {
@@ -87,7 +100,7 @@ public sealed class PipeConnectSizeHandler(
             var refreshed = connSvc.RefreshConnector(d, dynId, dynIdx);
             if (refreshed is not null)
             {
-                var correction = ctx.StaticConnector.OriginVec3 - refreshed.OriginVec3;
+                var correction = upstreamConnector.OriginVec3 - refreshed.OriginVec3;
                 if (!VectorUtils.IsZero(correction))
                 {
                     var distMm = VectorUtils.Length(correction) * FeetToMm;
@@ -113,7 +126,7 @@ public sealed class PipeConnectSizeHandler(
             }
         });
 
-        needsPrimaryReducer = DetectReducerNeeded(updatedDynamic, ctx, fittingId, reducerId);
+        needsPrimaryReducer = DetectReducerNeeded(updatedDynamic, upstreamConnector, fittingId, reducerId);
 
         return new SizeChangeResult(
             updatedDynamic,
@@ -123,7 +136,7 @@ public sealed class PipeConnectSizeHandler(
 
     internal static bool DetectReducerNeeded(
         ConnectorProxy? activeDynamic,
-        PipeConnectSessionContext ctx,
+        ConnectorProxy upstreamConnector,
         ElementId? fittingId,
         ElementId? reducerId)
     {
@@ -133,7 +146,7 @@ public sealed class PipeConnectSizeHandler(
         const double radiusEps = 1e-5;
         var dynRadius = activeDynamic.Radius;
 
-        double referenceRadius = ctx.StaticConnector.Radius;
+        double referenceRadius = upstreamConnector.Radius;
 
         if (fittingId is not null)
             return false;

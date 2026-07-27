@@ -22,9 +22,6 @@ public sealed partial class FittingCtcSetupItem : ObservableObject, IFittingCtcS
     public double DiameterMm { get; init; }
 
     /// <inheritdoc />
-    public ConnectorTypeDefinition? PreSelectedType { get; init; }
-
-    /// <inheritdoc />
     public string DisplayText => string.IsNullOrEmpty(ParameterName)
         ? $"Ø{DiameterMm:F0} мм"
         : $"{ParameterName} = Ø{DiameterMm:F0} мм";

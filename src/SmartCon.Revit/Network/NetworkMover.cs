@@ -64,7 +64,7 @@ public sealed class NetworkMover : INetworkMover
 
         if (reducerFamily is null)
         {
-            SmartConLogger.Warn($"Reducer not found in rule {parentCtc.Value}↔{childCtc.Value}");
+            SmartConLogger.Warn($"Reducer not found in rule {parentCtc.Value}↔{childCtc.Value} [Action: добавьте семейство перехода в mapping правил в настройках — соединение будет выполнено напрямую без перехода]");
             return null;
         }
 

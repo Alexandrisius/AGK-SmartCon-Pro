@@ -31,8 +31,12 @@ public static partial class LocalizationService
         en["Btn_OK"] = "OK";
         ru["Btn_ChangeConnection"] = "Изменить соединение";
         en["Btn_ChangeConnection"] = "Change connection";
+        ru["Btn_ResetRotation"] = "Сбросить угол поворота";
+        en["Btn_ResetRotation"] = "Reset rotation angle";
         ru["Btn_ConnectAll"] = "Подключить всё";
         en["Btn_ConnectAll"] = "Connect all";
+        ru["Btn_Inspect"] = "Просмотр";
+        en["Btn_Inspect"] = "Inspect";
         ru["Btn_AddFamily"] = "▶▶ Добавить";
         en["Btn_AddFamily"] = "▶▶ Add";
         ru["Btn_RemoveFamily"] = "◀◀ Убрать";
@@ -79,6 +83,10 @@ public static partial class LocalizationService
         en["Tip_RotationAngle"] = "Rotation angle in degrees";
         ru["Tip_RotateCW"] = "Повернуть по часовой стрелке";
         en["Tip_RotateCW"] = "Rotate clockwise";
+        ru["Tip_ZeroRotation"] = "Сбросить угол: ось Y коннектора — по мировой вертикали (для вертикальных осей — по сетке плана)";
+        en["Tip_ZeroRotation"] = "Reset angle: connector Y axis to world up (plan grid for vertical axes)";
+        ru["Tip_ZeroRotation_Dynamic"] = "Сбросить угол (референс {0}) • отклонение {1}°";
+        en["Tip_ZeroRotation_Dynamic"] = "Reset angle (reference {0}) • deviation {1}°";
         ru["Tip_AvailableSizes"] = "Доступные типоразмеры динамического семейства";
         en["Tip_AvailableSizes"] = "Available dynamic family sizes";
         ru["Tip_ChangeSize"] = "Изменить размер динамического семейства";
@@ -101,6 +109,12 @@ public static partial class LocalizationService
         en["Tip_ChainIncrement"] = "Connect next level";
         ru["Tip_ConnectAll"] = "Подключить все элементы сети сразу";
         en["Tip_ConnectAll"] = "Connect all network elements at once";
+        ru["Tip_Inspect"] = "Приблизить и отцентрировать активный коннектор (с учётом положения окна)";
+        en["Tip_Inspect"] = "Zoom to and center the active connector (window position aware)";
+        ru["Tip_ZoomIn"] = "Приблизить";
+        en["Tip_ZoomIn"] = "Zoom in";
+        ru["Tip_ZoomOut"] = "Отдалить";
+        en["Tip_ZoomOut"] = "Zoom out";
         ru["Tip_SelectFittingFamilies"] = "Нажмите для выбора семейств фитингов (недоступно при «Прямое» — используйте переходы сечения)";
         en["Tip_SelectFittingFamilies"] = "Click to select fitting families (unavailable for Direct — use cross-section transitions)";
         ru["Tip_SelectReducerFamilies"] = "Нажмите для выбора семейств переходников";
@@ -118,6 +132,12 @@ public static partial class LocalizationService
         en["Label_Size"] = "Size:";
         ru["Label_Network"] = "Сеть:";
         en["Label_Network"] = "Network:";
+        ru["Label_CurrentElement"] = "Текущий элемент:";
+        en["Label_CurrentElement"] = "Current element:";
+        ru["Label_LockNetwork"] = "Блокировать";
+        en["Label_LockNetwork"] = "Lock";
+        ru["Tip_LockNetwork"] = "Жёсткий режим: последнее соединение и дальнейшие подключения — без изменения диаметров и длин труб; при несовпадении диаметра — переходник из маппинга";
+        en["Tip_LockNetwork"] = "Rigid mode: the last connection and further attaches — never change diameters or pipe lengths; on diameter mismatch — reducer from the mapping";
         ru["Label_Updates"] = "Обновления";
         en["Label_Updates"] = "Updates";
         ru["Label_AvailableFamilies"] = "Доступные семейства:";
@@ -154,12 +174,6 @@ public static partial class LocalizationService
         ru["Col_Transitions"] = "Переходы сечения";
         en["Col_Transitions"] = "Cross-Section Transitions";
 
-        ru["Status_Active"] = "Активно";
-        en["Status_Active"] = "Active";
-        ru["Status_Processing"] = "Обработка…";
-        en["Status_Processing"] = "Processing…";
-        ru["Status_SessionEnded"] = "Сессия завершена";
-        en["Status_SessionEnded"] = "Session ended";
         ru["Msg_AssignCtc"] = "У фитинга не заданы типы коннекторов. Назначьте тип каждому коннектору:";
         en["Msg_AssignCtc"] = "Fitting has no connector types assigned. Assign a type to each connector:";
 

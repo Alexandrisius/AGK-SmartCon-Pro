@@ -23,6 +23,7 @@ using SmartCon.Revit.Family;
 using SmartCon.Revit.FamilyManager;
 using SmartCon.Revit.Fittings;
 using SmartCon.Revit.Network;
+using SmartCon.Revit.Navigation;
 using SmartCon.Revit.Parameters;
 using SmartCon.Revit.Selection;
 using SmartCon.Revit.Sharing;
@@ -85,6 +86,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IDialogService, PipeConnectDialogService>();
 
         // --- Parameter Resolution (Phase 4) ---
+        services.AddSingleton<FamilyFormulaCache>();
         services.AddSingleton<IParameterResolver, RevitParameterResolver>();
         services.AddSingleton<ILookupTableService, RevitLookupTableService>();
         services.AddSingleton<FamilySymbolSizeExtractor>();
@@ -101,6 +103,9 @@ public static class ServiceRegistrar
         // --- Chain (Phase 7) ---
         services.AddSingleton<IElementChainIterator, ElementChainIterator>();
         services.AddSingleton<INetworkMover, NetworkMover>();
+
+        // --- View Navigation (PipeConnectEditor "Просмотр" / zoom ± buttons) ---
+        services.AddSingleton<IViewNavigationService, RevitViewNavigationService>();
 
         // --- PipeConnect Helper Services (A-2: DI instead of new in ViewModel) ---
         services.AddSingleton<CtcResolutionService>();

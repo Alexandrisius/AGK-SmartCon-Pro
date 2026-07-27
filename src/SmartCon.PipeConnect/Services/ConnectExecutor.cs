@@ -46,6 +46,7 @@ public sealed class ConnectExecutor
 {
     private readonly IConnectorService _connSvc;
     private readonly ITransformService _transformSvc;
+    private readonly IAlignmentService _alignmentSvc;
     private readonly IParameterResolver _paramResolver;
     private readonly IFittingInsertService _fittingInsertSvc;
     private readonly INetworkMover _networkMover;
@@ -55,6 +56,7 @@ public sealed class ConnectExecutor
     public ConnectExecutor(
         IConnectorService connSvc,
         ITransformService transformSvc,
+        IAlignmentService alignmentSvc,
         IParameterResolver paramResolver,
         IFittingInsertService fittingInsertSvc,
         INetworkMover networkMover,
@@ -63,6 +65,7 @@ public sealed class ConnectExecutor
     {
         _connSvc = connSvc;
         _transformSvc = transformSvc;
+        _alignmentSvc = alignmentSvc;
         _paramResolver = paramResolver;
         _fittingInsertSvc = fittingInsertSvc;
         _networkMover = networkMover;
@@ -80,6 +83,8 @@ public sealed class ConnectExecutor
     /// <param name="primaryReducerId">Inserted reducer element, or null.</param>
     /// <param name="userManuallyChangedSize">Whether the user changed the size dropdown manually.</param>
     /// <param name="topology">Chain topology determining the validation branch.</param>
+    /// <param name="lockNetwork">"Блокировать" is on: the dynamic's DN is frozen —
+    /// a radius mismatch becomes a reducer request, never a resize (issue #167).</param>
     /// <returns>Validation result with updated dynamic connector and reducer flag.</returns>
     public ValidateResult ValidateAndFixBeforeConnect(
         ConnectOperationContext context,
@@ -87,7 +92,8 @@ public sealed class ConnectExecutor
         ElementId? currentFittingId,
         ElementId? primaryReducerId,
         bool userManuallyChangedSize,
-        ChainTopology topology = ChainTopology.Direct)
+        ChainTopology topology = ChainTopology.Direct,
+        bool lockNetwork = false)
     {
         using var _scope = SmartConLogger.BeginScope("Connect",
             ("Method", "ValidateAndFixBeforeConnect"),
@@ -136,7 +142,7 @@ public sealed class ConnectExecutor
             {
                 ValidateDirectBranch(doc, staticConn, ref dynFresh, ref updatedDynamic,
                     ref needsPrimaryReducer, context, positionEpsFt, radiusEps, angleEpsDeg,
-                    userManuallyChangedSize);
+                    userManuallyChangedSize, lockNetwork);
             }
 
             doc.Regenerate();
@@ -285,8 +291,10 @@ public sealed class ConnectExecutor
                 });
 
                 const double eps = 1e-6;
-                var dynId = context.Session.DynamicConnector.OwnerElementId;
-                var dynConnIdx = context.Session.DynamicConnector.ConnectorIndex;
+                // Element-wise chain mode: the dynamic being fitted is the ACTIVE
+                // connection point's dynamic, not necessarily the session root.
+                var dynId = currentDynamic?.OwnerElementId ?? context.Session.DynamicConnector.OwnerElementId;
+                var dynConnIdx = currentDynamic?.ConnectorIndex ?? context.Session.DynamicConnector.ConnectorIndex;
                 double actualDynRadius = currentDynamic?.Radius ?? currentDynRadius;
                 if (adjustDynamicToFit && System.Math.Abs(achievedDynRadius - actualDynRadius) > eps)
                 {
@@ -357,7 +365,12 @@ public sealed class ConnectExecutor
             context.GroupSession.RunInTransaction(LocalizationService.GetString("Tx_AlignAfterSize"), txDoc =>
             {
                 var ctcOvr = context.VirtualCtcStore.GetOverridesForElement(fittingId);
-                var dynCtc = _ctcManager.ResolveDynamicTypeFromRule(activeFittingRule, upstreamTarget.ConnectionTypeCode);
+                // Effective CTC dynamic: повторный align после sizing обязан использовать тот
+                // же dynCtc, что и align при вставке — иначе при dynCtc=0 срабатывает Strategy 1
+                // (прямая) вместо Strategy 0 (cross) и reducer переворачивается обратно (кейс #167).
+                var dynCtc = currentDynamic?.ConnectionTypeCode.IsDefined == true
+                    ? currentDynamic.ConnectionTypeCode
+                    : _ctcManager.ResolveDynamicTypeFromRule(activeFittingRule, upstreamTarget.ConnectionTypeCode);
 
                 newFitConn2 = _fittingInsertSvc.AlignFittingToStatic(
                     txDoc, fittingId, upstreamTarget, _transformSvc, _connSvc,
@@ -497,7 +510,8 @@ public sealed class ConnectExecutor
         var posErr = VectorUtils.DistanceTo(conn.OriginVec3, targetOrigin);
         if (posErr > positionEpsFt)
         {
-            SmartConLogger.Warn($"offset by {posErr * FeetToMm:F2} mm — correcting");
+            SmartConLogger.Warn($"offset by {posErr * FeetToMm:F2} mm — correcting " +
+                $"[Action: проверьте итоговое положение элемента после соединения]");
             _transformSvc.MoveElement(doc, elementId, targetOrigin - conn.OriginVec3);
             doc.Regenerate();
         }
@@ -508,7 +522,8 @@ public sealed class ConnectExecutor
         double err = System.Math.Abs(conn.Radius - target.Radius);
         SmartConLogger.Debug($"{label} R={conn.Radius * FeetToMm:F2}mm, target R={target.Radius * FeetToMm:F2}mm, Δ={err * FeetToMm:F2}mm");
         if (err > radiusEps)
-            SmartConLogger.Warn($"MISMATCH: {label} radius mismatch (Δ={err * FeetToMm:F2}mm)");
+            SmartConLogger.Warn($"MISMATCH: {label} radius mismatch (Δ={err * FeetToMm:F2}mm) " +
+                $"[Action: проверьте размеры коннекторов после соединения — при необходимости добавьте переходник]");
     }
 
     private void CorrectDynamicPosition(
@@ -518,7 +533,8 @@ public sealed class ConnectExecutor
         var posErr = VectorUtils.DistanceTo(dynFresh.OriginVec3, target.OriginVec3);
         if (posErr > positionEpsFt)
         {
-            SmartConLogger.Warn($"dynamic offset by {posErr * FeetToMm:F2} mm — correcting");
+            SmartConLogger.Warn($"dynamic offset by {posErr * FeetToMm:F2} mm — correcting " +
+                $"[Action: проверьте итоговое положение элемента после соединения]");
             PipeAbsorptionApplier.MoveOrAbsorb(
                 doc, _transformSvc, dynFresh.OwnerElementId, dynFresh.OriginVec3,
                 target.OriginVec3 - dynFresh.OriginVec3);
@@ -619,7 +635,8 @@ public sealed class ConnectExecutor
             {
                 if (userManuallyChangedSize)
                 {
-                    SmartConLogger.Warn($"User changed size manually, fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — reducer needed");
+                    SmartConLogger.Warn($"User changed size manually, fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — reducer needed " +
+                        $"[Action: будет вставлен переходник между фитингом и dynamic-элементом]");
                     needsPrimaryReducer = true;
                 }
                 else
@@ -629,7 +646,8 @@ public sealed class ConnectExecutor
                     // могла создать комбинацию DN, отсутствующую в таблице, и сломать семейство.
                     double targetRadius = planTargetRadius ?? fc2.Radius;
                     SmartConLogger.Warn($"Mismatch fc2↔dynamic Δ={r2Err * FeetToMm:F2}mm — trying to adjust dynamic " +
-                        $"(target={targetRadius * FeetToMm:F2}mm{(planTargetRadius is null ? "" : ", from session plan")})");
+                        $"(target={targetRadius * FeetToMm:F2}mm{(planTargetRadius is null ? "" : ", from session plan")}) " +
+                        $"[Action: если корректировка не удастся, будет вставлен переходник]");
                     bool fixed1 = _paramResolver.TrySetConnectorRadius(
                         doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, targetRadius);
                     doc.Regenerate();
@@ -776,7 +794,8 @@ public sealed class ConnectExecutor
         double positionEpsFt,
         double radiusEps,
         double angleEpsDeg,
-        bool userManuallyChangedSize)
+        bool userManuallyChangedSize,
+        bool lockNetwork)
     {
         using var _scope = SmartConLogger.BeginScope("Validate",
             ("Method", "ValidateDirectBranch"));
@@ -785,9 +804,9 @@ public sealed class ConnectExecutor
         SmartConLogger.Debug($"direct: static R={staticConn.Radius * FeetToMm:F2}mm, dyn R={dynFresh.Radius * FeetToMm:F2}mm, Δ={rErr * FeetToMm:F2}mm");
         if (rErr > radiusEps)
         {
-            if (userManuallyChangedSize)
+            if (lockNetwork || userManuallyChangedSize)
             {
-                SmartConLogger.Warn($"User manually changed size (Δ={rErr * FeetToMm:F2}mm) → reducer needed [Action: добавьте редуктор в mapping или верните размер динамического элемента]");
+                SmartConLogger.Warn($"{(lockNetwork ? "LockNetwork: DN frozen" : "User manually changed size")} (Δ={rErr * FeetToMm:F2}mm) → reducer needed [Action: добавьте редуктор в mapping или верните размер динамического элемента]");
                 needsPrimaryReducer = true;
             }
             else
@@ -796,7 +815,8 @@ public sealed class ConnectExecutor
                 // с constraints остальных коннекторов), а не «сырой» радиус static.
                 double targetRadius = context.Session.ParamTargetRadius ?? staticConn.Radius;
                 SmartConLogger.Warn($"Direct: mismatch Δ={rErr * FeetToMm:F2}mm — trying to adjust dynamic " +
-                    $"(target={targetRadius * FeetToMm:F2}mm{(context.Session.ParamTargetRadius is null ? "" : ", from session plan")})");
+                    $"(target={targetRadius * FeetToMm:F2}mm{(context.Session.ParamTargetRadius is null ? "" : ", from session plan")}) " +
+                    $"[Action: если корректировка не удастся, будет вставлен переходник]");
                 bool fixed2 = _paramResolver.TrySetConnectorRadius(
                     doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex, targetRadius);
                 doc.Regenerate();
@@ -824,7 +844,8 @@ public sealed class ConnectExecutor
                 }
                 else
                 {
-                    SmartConLogger.Warn("TrySetConnectorRadius returned false — reducer needed");
+                    SmartConLogger.Warn("TrySetConnectorRadius returned false — reducer needed " +
+                        "[Action: будет вставлен переходник; если его нет в mapping, добавьте семейство (Настройки → Правила)]");
                     needsPrimaryReducer = true;
                 }
             }
@@ -844,7 +865,27 @@ public sealed class ConnectExecutor
         double angleZD = VectorUtils.AngleBetween(staticConn.BasisZVec3, dynFresh.BasisZVec3);
         double antiErrD = System.Math.Abs(angleZD - System.Math.PI) * 180.0 / System.Math.PI;
         if (antiErrD > angleEpsDeg)
-            SmartConLogger.Warn($"WARNING: BasisZ not anti-parallel (dev. {antiErrD:F1}°) [Action: проверьте ориентацию коннекторов — возможно потребуется ручной поворот элемента]");
+        {
+            // ConnectTo on non-anti-parallel connectors makes Revit auto-orient the fitting
+            // to an unpredictable pose (tee jumped to the branch port on Connect). The method
+            // is ValidateAndFix — so fix: re-align dynamic to static (same alignment as the
+            // initial/cycle alignment) instead of only warning.
+            SmartConLogger.Warn($"BasisZ not anti-parallel (dev. {antiErrD:F1}°) — re-aligning dynamic to static before ConnectTo " +
+                $"[Action: элемент перевыравнен автоматически; проверьте итоговое положение и ориентацию коннекторов]");
+
+            var reAlign = ConnectorAligner.ComputeAlignment(
+                staticConn.OriginVec3, staticConn.BasisZVec3, staticConn.BasisXVec3,
+                dynFresh.OriginVec3, dynFresh.BasisZVec3, dynFresh.BasisXVec3);
+            _alignmentSvc.ApplyAlignment(doc, dynFresh.OwnerElementId, reAlign, dynFresh.ConnectorIndex);
+
+            dynFresh = _connSvc.RefreshConnector(doc, dynFresh.OwnerElementId, dynFresh.ConnectorIndex) ?? dynFresh;
+            updatedDynamic = dynFresh;
+
+            double verifyAngle = VectorUtils.AngleBetween(staticConn.BasisZVec3, dynFresh.BasisZVec3);
+            double verifyDev = System.Math.Abs(verifyAngle - System.Math.PI) * 180.0 / System.Math.PI;
+            SmartConLogger.Info($"Re-align done: dev. now {verifyDev:F1}°, " +
+                $"dist={VectorUtils.DistanceTo(dynFresh.OriginVec3, staticConn.OriginVec3) * FeetToMm:F1}mm");
+        }
     }
 
     // ...

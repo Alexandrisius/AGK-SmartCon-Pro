@@ -8,7 +8,7 @@ namespace SmartCon.Revit.Parameters;
 /// Must be built BEFORE calling FamilyParameterAnalyzer to avoid COM collection corruption
 /// when iterating AssociatedParameters.
 /// </summary>
-internal sealed class FamilyParameterSnapshot
+public sealed class FamilyParameterSnapshot
 {
     /// <summary>Ordered list of (Name, Formula) for all family parameters.</summary>
     public IReadOnlyList<(string? Name, string? Formula)> Parameters { get; }
@@ -16,12 +16,17 @@ internal sealed class FamilyParameterSnapshot
     /// <summary>Dictionary of parameter name → formula string (case-insensitive keys).</summary>
     public IReadOnlyDictionary<string, string> FormulaByName { get; }
 
+    /// <summary>Dictionary of parameter name → IsInstance flag (case-insensitive keys).</summary>
+    public IReadOnlyDictionary<string, bool> IsInstanceByName { get; }
+
     private FamilyParameterSnapshot(
         IReadOnlyList<(string? Name, string? Formula)> parameters,
-        IReadOnlyDictionary<string, string> formulaByName)
+        IReadOnlyDictionary<string, string> formulaByName,
+        IReadOnlyDictionary<string, bool> isInstanceByName)
     {
         Parameters = parameters;
         FormulaByName = formulaByName;
+        IsInstanceByName = isInstanceByName;
     }
 
     /// <summary>
@@ -32,6 +37,7 @@ internal sealed class FamilyParameterSnapshot
     {
         var paramList = new List<(string? Name, string? Formula)>();
         var formulaDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var isInstanceDict = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
         var currentType = fm.CurrentType;
 
@@ -42,6 +48,7 @@ internal sealed class FamilyParameterSnapshot
             paramList.Add((name, formula));
             if (name is not null)
             {
+                isInstanceDict.TryAdd(name, fp.IsInstance);
                 if (!string.IsNullOrEmpty(formula))
                 {
                     formulaDict.TryAdd(name, formula);
@@ -55,6 +62,6 @@ internal sealed class FamilyParameterSnapshot
             }
         }
 
-        return new FamilyParameterSnapshot(paramList, formulaDict);
+        return new FamilyParameterSnapshot(paramList, formulaDict, isInstanceDict);
     }
 }

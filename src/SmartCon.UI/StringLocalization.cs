@@ -60,6 +60,9 @@ public static class StringLocalization
         public const string Tip_SelectReducerFamilies = nameof(Tip_SelectReducerFamilies);
         public const string Tip_ChangeConnection = nameof(Tip_ChangeConnection);
         public const string Tip_Connect = nameof(Tip_Connect);
+        public const string Tip_Inspect = nameof(Tip_Inspect);
+        public const string Tip_ZoomIn = nameof(Tip_ZoomIn);
+        public const string Tip_ZoomOut = nameof(Tip_ZoomOut);
 
         public const string Label_Size = nameof(Label_Size);
         public const string Label_Network = nameof(Label_Network);
@@ -73,6 +76,7 @@ public static class StringLocalization
 
         public const string Btn_ChangeConnection = nameof(Btn_ChangeConnection);
         public const string Btn_ConnectAll = nameof(Btn_ConnectAll);
+        public const string Btn_Inspect = nameof(Btn_Inspect);
         public const string Btn_AddFamily = nameof(Btn_AddFamily);
         public const string Btn_RemoveFamily = nameof(Btn_RemoveFamily);
         public const string Btn_Up = nameof(Btn_Up);
@@ -93,9 +97,6 @@ public static class StringLocalization
         public const string Col_Fittings = nameof(Col_Fittings);
         public const string Col_Transitions = nameof(Col_Transitions);
 
-        public const string Status_Active = nameof(Status_Active);
-        public const string Status_Processing = nameof(Status_Processing);
-        public const string Status_SessionEnded = nameof(Status_SessionEnded);
         public const string Msg_AssignCtc = nameof(Msg_AssignCtc);
 
         public const string About_Author = nameof(About_Author);

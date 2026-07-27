@@ -2,6 +2,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.UI;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.ViewModels;
 
@@ -88,6 +89,36 @@ public sealed class PipeConnectDialogService(IDialogPresenter presenter) : IDial
     {
         var result = System.Windows.MessageBox.Show(message, title, System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
         return result == System.Windows.MessageBoxResult.Yes;
+    }
+
+    public UnconnectedChainChoice ShowUnconnectedChainWarning(int connectedCount, int totalCount)
+    {
+        var dialog = new Autodesk.Revit.UI.TaskDialog(
+            LocalizationService.GetString("Dialog_UnconnectedChain_Title"))
+        {
+            MainInstruction = LocalizationService.GetString("Dialog_UnconnectedChain_Instruction"),
+            MainContent = string.Format(
+                LocalizationService.GetString("Dialog_UnconnectedChain_Message"),
+                connectedCount, totalCount),
+            CommonButtons = Autodesk.Revit.UI.TaskDialogCommonButtons.Cancel,
+        };
+
+        dialog.AddCommandLink(
+            Autodesk.Revit.UI.TaskDialogCommandLinkId.CommandLink1,
+            LocalizationService.GetString("Dialog_UnconnectedChain_ConnectAll"),
+            LocalizationService.GetString("Dialog_UnconnectedChain_ConnectAllHint"));
+        dialog.AddCommandLink(
+            Autodesk.Revit.UI.TaskDialogCommandLinkId.CommandLink2,
+            LocalizationService.GetString("Dialog_UnconnectedChain_ConnectAsIs"),
+            LocalizationService.GetString("Dialog_UnconnectedChain_ConnectAsIsHint"));
+
+        var result = dialog.Show();
+        return result switch
+        {
+            Autodesk.Revit.UI.TaskDialogResult.CommandLink1 => UnconnectedChainChoice.ConnectAll,
+            Autodesk.Revit.UI.TaskDialogResult.CommandLink2 => UnconnectedChainChoice.ConnectAsIs,
+            _ => UnconnectedChainChoice.GoBack,
+        };
     }
 
     public string? ShowFolderBrowser(string description, string? selectedPath = null)

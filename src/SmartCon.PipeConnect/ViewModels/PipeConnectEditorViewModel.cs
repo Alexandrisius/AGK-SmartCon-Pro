@@ -20,6 +20,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     private readonly Document _doc;
     private readonly IConnectorService _connSvc;
     private readonly ITransformService _transformSvc;
+    private readonly IAlignmentService _alignmentSvc;
     private readonly IFittingInsertService _fittingInsertSvc;
     private readonly IParameterResolver _paramResolver;
     private readonly IDynamicSizeResolver _sizeResolver;
@@ -35,6 +36,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     private readonly PipeConnectSizeHandler _sizeHandler;
     private readonly DynamicSizeLoader _sizeLoader;
     private readonly ConnectorCycleService _cycleService;
+    private readonly IViewNavigationService _viewNavigation;
     private readonly PipeConnectSessionContext _ctx;
     private readonly VirtualCtcStore _virtualCtcStore;
 
@@ -47,6 +49,32 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     // См. также TODO в ConnectExecutor.ExecuteConnectTo()
     private ConnectorProxy? _activeDynamic;
     private ConnectorProxy? _activeFittingConn2;
+
+    /// <summary>
+    /// Last root dynamic connector chosen by the user via CycleConnector (issue: root
+    /// point must follow the cycle selection, not the session-default connector).
+    /// Falls back to <see cref="PipeConnectSessionContext.DynamicConnector"/> when the
+    /// user never cycled. Used only for OwnerElementId/ConnectorIndex — always refresh
+    /// before use (I-05).
+    /// </summary>
+    private ConnectorProxy? _rootDynamicConnector;
+
+    /// <summary>
+    /// Root baseline snapshot (issue #167): full root state (DN/symbol/curve/position)
+    /// captured at Init BEFORE any mutation (absorb, resize, ChangeTypeId). The
+    /// "Блокировать" toggle restores it via ChainOperationHandler.RestoreElementFromSnapshot.
+    /// </summary>
+    private ElementSnapshot? _rootBaselineSnapshot;
+
+    /// <summary>
+    /// Root compensated snapshot: root state as configured by the session flow
+    /// (absorb/подобранный DN), captured when the toggle goes ON — restored on OFF.
+    /// </summary>
+    private ElementSnapshot? _rootCompensatedSnapshot;
+
+    /// <summary>True when the primary reducer was inserted by the toggle itself
+    /// (removed again on OFF). Reducers from the session flow are left alone.</summary>
+    private bool _lockInsertedReducer;
     private FittingMappingRule? _activeFittingRule;
     private bool _isClosing;
     private bool _needsPrimaryReducer;
@@ -79,7 +107,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     [ObservableProperty] private bool _isReducerVisible;
     public ObservableCollection<FittingCardItem> AvailableReducers { get; } = [];
 
-    [ObservableProperty] private int _rotationAngleDeg = 15;
+    [ObservableProperty] private int _rotationAngleDeg = 45;
     [ObservableProperty] private FamilySizeOption? _selectedDynamicSize;
     [ObservableProperty] private bool _hasSizeOptions;
 
@@ -106,13 +134,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         IFittingMapper fittingMapper,
         ChainOperationHandler chainOpHandler,
         PipeConnectRotationHandler rotationHandler,
-        DynamicSizeLoader sizeLoader)
+        DynamicSizeLoader sizeLoader,
+        IViewNavigationService viewNavigation)
     {
         _ctx = ctx;
         _doc = doc;
         _txService = txService;
         _connSvc = connSvc;
         _transformSvc = transformSvc;
+        _alignmentSvc = alignmentSvc;
         _fittingInsertSvc = fittingInsertSvc;
         _paramResolver = paramResolver;
         _sizeResolver = sizeResolver;
@@ -127,14 +157,17 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         var guessSvc = new CtcGuessService(connSvc, mappingRepo, _virtualCtcStore);
         var familyWriter = new CtcFamilyWriter(connSvc, familyConnSvc, _virtualCtcStore);
         _ctcManager = new FittingCtcManager(resolutionSvc, guessSvc, familyWriter);
-        _connectExecutor = new ConnectExecutor(connSvc, transformSvc, paramResolver, fittingInsertSvc, networkMover, mappingRepo, _ctcManager);
+        _connectExecutor = new ConnectExecutor(connSvc, transformSvc, alignmentSvc, paramResolver, fittingInsertSvc, networkMover, mappingRepo, _ctcManager);
         _initHandler = new PipeConnectInitHandler(connSvc, transformSvc, paramResolver, _ctcManager);
         _rotationHandler = rotationHandler;
         _sizeHandler = new PipeConnectSizeHandler(connSvc, transformSvc, paramResolver, _ctcManager);
         _sizeLoader = sizeLoader;
+        _viewNavigation = viewNavigation;
         _cycleService = new ConnectorCycleService(connSvc, alignmentSvc, paramResolver, _ctcManager);
         _activeDynamic = ctx.DynamicConnector;
         _chainGraph = ctx.ChainGraph;
+        _elementQueue = _chainGraph?.GetElementQueue();
+        _attachedElementIds.Add(ctx.DynamicConnector.OwnerElementId.GetValue());
 
         var (fittings, reducers) = FittingCardBuilder.Build(
             ctx.ProposedFittings,
@@ -163,7 +196,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         using var _scope = SmartConLogger.BeginScope("Editor",
             ("Method", "RefreshAutoSelectSize"));
         var newAuto = _sizeLoader.RefreshAutoSelect(
-            _doc, _ctx.DynamicConnector, _activeDynamic!, AvailableDynamicSizes);
+            _doc, _activeDynamic ?? _ctx.DynamicConnector, _activeDynamic!, AvailableDynamicSizes);
 
         if (newAuto is not null && AvailableDynamicSizes.Count > 0)
         {
@@ -185,8 +218,12 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         try
         {
+            _activeParentConnector = _ctx.StaticConnector;
+            _rootBaselineSnapshot = _chainOpHandler.CaptureSnapshot(
+                _doc, _ctx.DynamicConnector.OwnerElementId, _chainGraph);
             _activeDynamic = _initHandler.DisconnectAndAlign(_doc, _ctx, _groupSession)
                 ?? _ctx.DynamicConnector;
+            _rootDynamicConnector = _activeDynamic;
 
             var conns = GetFreeConnectorsSnapshot();
             _cycleService.State.Initialize(conns, _activeDynamic ?? _ctx.DynamicConnector);
@@ -202,9 +239,9 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 InitLegacyFlow();
             }
 
-            TrySealChainIfQuiet();
-
             RefreshAutoSelectSize();
+            UpdateDynamicInfoPanel();
+            TrySealAtCurrentBoundary();
             SmartConLogger.Info("DONE");
         }
         catch (Exception ex)
@@ -289,7 +326,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         if (plan.Links.Count < 2)
         {
-            SmartConLogger.Warn("ReducerFitting plan has < 2 links — falling back to legacy flow");
+            SmartConLogger.Warn("ReducerFitting plan has < 2 links — falling back to legacy flow " +
+                "[Action: если соединение собрано не так, как ожидалось, сообщите разработчикам — план цепочки фитингов некорректен]");
             InitLegacyFlow();
             return;
         }
@@ -300,7 +338,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         if (reducerLink.Type != FittingChainNodeType.Reducer ||
             fittingLink.Type != FittingChainNodeType.Fitting)
         {
-            SmartConLogger.Warn("ReducerFitting plan has unexpected link types — falling back to legacy flow");
+            SmartConLogger.Warn("ReducerFitting plan has unexpected link types — falling back to legacy flow " +
+                "[Action: если соединение собрано не так, как ожидалось, сообщите разработчикам — типы звеньев плана некорректны]");
             InitLegacyFlow();
             return;
         }
@@ -335,7 +374,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         if (insertedReducerId is null)
         {
-            SmartConLogger.Warn("ReducerFitting: reducer insertion failed — falling back");
+            SmartConLogger.Warn("ReducerFitting: reducer insertion failed — falling back " +
+                "[Action: проверьте, что семейство переходника загружено в проект и mapping указывает на существующий тип]");
             InitLegacyFlow();
             return;
         }
@@ -403,29 +443,136 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         SmartConLogger.Info($"ReducerFitting: DONE reducer={_primaryReducerId?.GetValue()}, fitting={_currentFittingId?.GetValue()}");
     }
 
-    [RelayCommand(CanExecute = nameof(CanOperate))]
+    [RelayCommand(CanExecute = nameof(CanEditOperations))]
     private void RotateLeft() => ExecuteRotate(+RotationAngleDeg);
 
-    [RelayCommand(CanExecute = nameof(CanOperate))]
+    [RelayCommand(CanExecute = nameof(CanEditOperations))]
     private void RotateRight() => ExecuteRotate(-RotationAngleDeg);
+
+    /// <summary>
+    /// Set the active dynamic upright: rotate it (with its point fitting/reducer)
+    /// around the parent connector axis so the FREE connector's BasisY — the
+    /// family's "height" direction — lands exactly on the projection of world up
+    /// (global +Z) onto the connector plane. Falls back to the horizontal grid
+    /// (Y/X) for vertical axes. Connector BasisY is used instead of the family
+    /// transform basis: it always lies in the rotation plane (never degenerates)
+    /// and reflects flips — this is what makes the reset work for every family.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanEditOperations))]
+    private void ZeroRotation()
+    {
+        using var _scope = SmartConLogger.BeginScope("Editor",
+            ("Method", "ZeroRotation"));
+        if (_activeDynamic is null) return;
+
+        IsBusy = true;
+        try
+        {
+            UnsealIfSealed("установка вертикально");
+
+            bool applied = false;
+            _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_ZeroRotation"), doc =>
+            {
+                var dyn = RefreshConnectorSafe(_activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                          ?? _activeDynamic;
+                var axis = ActiveUpstreamConnector;
+
+                var upright = ConnectorAligner.ComputeUprightRotation(axis.BasisZVec3, dyn.BasisYVec3);
+                if (upright is null) return;
+
+                var idsToRotate = new List<ElementId> { _activeDynamic.OwnerElementId };
+                if (_currentFittingId is not null) idsToRotate.Add(_currentFittingId);
+                if (_primaryReducerId is not null) idsToRotate.Add(_primaryReducerId);
+
+                _transformSvc.RotateElements(doc, idsToRotate, axis.OriginVec3, upright.Axis, upright.AngleRadians);
+                doc.Regenerate();
+                applied = true;
+
+                SmartConLogger.Info($"ZeroRotation applied: {upright.AngleRadians * 180.0 / System.Math.PI:F2}° " +
+                    $"around axis owner={axis.OwnerElementId.GetValue()}");
+            });
+
+            _activeDynamic = _ctcManager.RefreshWithCtcOverride(
+                _doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                ?? _activeDynamic;
+            UpdateDynamicInfoPanel();
+            LogFinalRotationAngles();
+
+            StatusMessage = applied
+                ? LocalizationService.GetString("Status_RotationZeroed")
+                : string.Format(LocalizationService.GetString("Status_RotationAlreadyZero"), GetReferenceAxisName());
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
+            StatusMessage = string.Format(LocalizationService.GetString("Error_Rotate"), ex.Message);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
     private void ExecuteRotate(int angleDeg)
     {
         using var _scope = SmartConLogger.BeginScope("Editor",
             ("Method", "ExecuteRotate"),
             ("Angle", angleDeg));
+        if (_activeDynamic is null) return;
+
         IsBusy = true;
         try
         {
+            // Lock-network mode with a sealed chain: the whole sealed remainder
+            // rotates together with the active dynamic as one rigid body — the
+            // seal stays intact (common-axis rotation preserves connections).
+            IReadOnlyList<ElementId>? rigidSubtreeIds = null;
+            if (LockNetwork && _chainSealed && _elementQueue is not null && _chainGraph is not null)
+            {
+                var subtree = new List<ElementId>();
+                for (int i = ChainDepth + 1; i < _elementQueue.Count; i++)
+                    subtree.Add(_elementQueue[i].ElementId);
+
+                // Inserted elements of the seal (e.g. rigid-move reducer) are not
+                // graph nodes — rotate them with the body as well.
+                if (_sealedEdges is not null)
+                {
+                    foreach (var (_, _, childId, _) in _sealedEdges)
+                    {
+                        if (!_chainGraph.Nodes.Contains(childId, ElementIdEqualityComparer.Instance))
+                            subtree.Add(childId);
+                    }
+                }
+
+                if (subtree.Count > 0)
+                    rigidSubtreeIds = subtree;
+            }
+            else
+            {
+                UnsealIfSealed("поворот");
+            }
+
             _rotationHandler.ExecuteRotation(
-                _doc, _groupSession!, _ctx, _activeDynamic,
-                _currentFittingId, _primaryReducerId, _chainGraph,
-                _snapshotStore, ChainDepth, angleDeg);
+                _doc, _groupSession!, _activeDynamic, ActiveUpstreamConnector,
+                _currentFittingId, _primaryReducerId, angleDeg, rigidSubtreeIds);
+
+            // After a rigid-body rotation the attached part did not rotate —
+            // loop edges crossing the boundary may have drifted; restore them.
+            if (rigidSubtreeIds is not null && _chainGraph is not null && _elementQueue is not null)
+                _chainOpHandler.RestoreCrossEdgesAfterRigidRotation(
+                    _doc, _groupSession!, _chainGraph, _elementQueue[ChainDepth].Level);
+
+            _activeDynamic = _ctcManager.RefreshWithCtcOverride(
+                _doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
+                ?? _activeDynamic;
+            UpdateDynamicInfoPanel();
+            LogFinalRotationAngles();
+
             StatusMessage = string.Format(LocalizationService.GetString("Status_Rotated"), angleDeg);
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"Failed: {ex.Message}");
+            SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Rotate"), ex.Message);
         }
         finally
@@ -449,12 +596,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         try
         {
+            UnsealIfSealed("смена размера");
+
             var result = _sizeHandler.ChangeSize(
                 _doc, _groupSession!, _ctx, SelectedDynamicSize,
-                _activeDynamic!, _currentFittingId, _primaryReducerId);
+                _activeDynamic!, ActiveUpstreamConnector, _currentFittingId, _primaryReducerId);
 
             _activeDynamic = result.ActiveDynamic;
             _userManuallyChangedSize = result.UserManuallyChangedSize;
+            UpdateDynamicInfoPanel();
 
             StatusMessage = string.Format(LocalizationService.GetString("Status_SizeChangedTo"), SelectedDynamicSize.DisplayName);
 
@@ -474,7 +624,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
                 SmartConLogger.Info($"Auto-update reducer (id={_primaryReducerId})");
                 var reducerUpstream = (_currentFittingId is not null && _activeFittingConn2 is not null)
                     ? _activeFittingConn2
-                    : _ctx.StaticConnector;
+                    : ActiveUpstreamConnector;
                 var newReducerConn2 = SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false, reducerUpstream);
                 if (newReducerConn2 is not null && _activeDynamic is not null)
                 {
@@ -512,7 +662,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"Error: {ex.Message}");
+            SmartConLogger.Error($"Error: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_ChangeSize"), ex.Message);
         }
         finally
@@ -534,36 +684,45 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     {
         using var _scope = SmartConLogger.BeginScope("Editor",
             ("Method", "EnsureReducersForFittingPair"));
-        if (AvailableReducers.Count > 0) return;
 
-        var fitCtc = fitConn2.ConnectionTypeCode.IsDefined
-            ? fitConn2.ConnectionTypeCode
-            : new ConnectionTypeCode(0);
-        var dynCtc = dynamicConn.ConnectionTypeCode.IsDefined
-            ? dynamicConn.ConnectionTypeCode
-            : new ConnectionTypeCode(0);
+        if (AvailableReducers.Count > 0)
+        {
+            SmartConLogger.Debug($"AvailableReducers already populated (Count={AvailableReducers.Count}) — skip rebuild");
+            if (SelectedReducer is null)
+                SelectedReducer = AvailableReducers[0];
+            return;
+        }
 
-        if (!fitCtc.IsDefined || !dynCtc.IsDefined) return;
+        var fitCtc = fitConn2.ConnectionTypeCode;
+        var dynCtc = dynamicConn.ConnectionTypeCode;
 
-        var rules = _mappingRepo.GetMappingRules();
+        if (!fitCtc.IsDefined || !dynCtc.IsDefined)
+        {
+            SmartConLogger.Warn($"Cannot resolve reducer rule: fit CTC={fitCtc.Value}, dyn CTC={dynCtc.Value} (undefined) — reducer list stays empty " +
+                "[Action: задайте тип соединения для dynamic-элемента через мини-селектор типов, затем повторите]");
+            return;
+        }
+
+        // Тот же источник правил, что и у NetworkMover.InsertReducer (GetMappings):
+        // reducer вставляется по этому правилу — и список обязан строиться из него же,
+        // иначе ComboBox остаётся пустым при успешно вставленном reducer.
+        var rules = _fittingMapper.GetMappings(fitCtc, dynCtc);
 
         foreach (var rule in rules)
         {
             if (rule.ReducerFamilies.Count == 0) continue;
 
-            bool match = (rule.FromType.Value == fitCtc.Value && rule.ToType.Value == dynCtc.Value) ||
-                         (rule.FromType.Value == dynCtc.Value && rule.ToType.Value == fitCtc.Value);
+            SmartConLogger.Info($"Found reducer rule: From={rule.FromType.Value} To={rule.ToType.Value} ({rule.ReducerFamilies.Count} families)");
+            foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
+                AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
 
-            if (match)
-            {
-                SmartConLogger.Info($"Found reducer rule: From={rule.FromType.Value} To={rule.ToType.Value} ({rule.ReducerFamilies.Count} families)");
-                foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
-                    AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
-                return;
-            }
+            if (SelectedReducer is null && AvailableReducers.Count > 0)
+                SelectedReducer = AvailableReducers[0];
+            return;
         }
 
-        SmartConLogger.Info($"No reducer rule found for pair CTC {fitCtc.Value} ↔ {dynCtc.Value}");
+        SmartConLogger.Warn($"No reducer rule found for pair CTC {fitCtc.Value} ↔ {dynCtc.Value} — reducer list stays empty " +
+            "[Action: добавьте правило с семейством переходника в mapping (Настройки → Правила)]");
     }
 }
 

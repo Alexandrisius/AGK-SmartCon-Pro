@@ -109,8 +109,11 @@ internal static class LogScopeProvider
             // order without the "Op=Op" double-print. MeasureScope
             // writes its own richer footer (with elapsed) in Dispose
             // and pops the stack itself, so it never reaches this
-            // branch.
-            SmartConLogger.WriteMain("INF", $" === END ===");
+            // branch. Debug-level only (paired with the START marker in
+            // BeginScope) — otherwise a scope in a hot loop floods the
+            // log in Release too.
+            if (SmartConLogger.MinLevel <= LogLevel.Debug)
+                SmartConLogger.WriteMain("INF", $" === END ===");
         }
     }
 }

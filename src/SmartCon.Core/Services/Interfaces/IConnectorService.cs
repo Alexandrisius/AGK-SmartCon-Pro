@@ -37,12 +37,21 @@ public interface IConnectorService
     /// <summary>
     /// Get all free connectors of an element (excluding ConnectorType.Curve).
     /// Used for ComboBox connector selection in PipeConnectEditor (Phase 8).
+    /// <para>
+    /// The returned order is deterministic and geometric (X asc → Z desc → Y asc,
+    /// tie-break by Connector.Id) — ConnectorSet enumeration order is random and
+    /// must never leak to consumers (issue #163, see SmartCon.Core/Math/ConnectorOrdering.cs).
+    /// </para>
     /// </summary>
     IReadOnlyList<ConnectorProxy> GetAllFreeConnectors(Document doc, ElementId elementId);
 
     /// <summary>
     /// Get ALL connectors of an element (free AND connected), excluding ConnectorType.Curve.
     /// Used for pre-disconnecting the dynamic element.
+    /// <para>
+    /// The returned order is deterministic and geometric — same contract as
+    /// <see cref="GetAllFreeConnectors"/>.
+    /// </para>
     /// </summary>
     IReadOnlyList<ConnectorProxy> GetAllConnectors(Document doc, ElementId elementId);
 }

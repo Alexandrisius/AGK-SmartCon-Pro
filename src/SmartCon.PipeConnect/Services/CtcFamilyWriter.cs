@@ -7,13 +7,11 @@ using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Compatibility;
 using SmartCon.PipeConnect.ViewModels;
 
-using static SmartCon.Core.Units;
-
 namespace SmartCon.PipeConnect.Services;
 
 /// <summary>
 /// Writes CTC values to family connector descriptions via EditFamily + LoadFamily.
-/// Handles spatial matching of connector elements to project connectors.
+/// Connector matching is index/primary-based (no geometry — issue #161).
 /// </summary>
 public sealed class CtcFamilyWriter(
     IConnectorService connSvc,
@@ -31,46 +29,19 @@ public sealed class CtcFamilyWriter(
                 (symbolName == "*" || string.Equals(s.Name, symbolName, StringComparison.OrdinalIgnoreCase)));
     }
 
-    public bool IsFittingCtcDefined(Document doc, FamilySymbol symbol)
-    {
-        Document? familyDoc = null;
-        try
-        {
-            familyDoc = doc.EditFamily(symbol.Family);
-            var connElems = new FilteredElementCollector(familyDoc)
-                .OfCategory(BuiltInCategory.OST_ConnectorElem)
-                .WhereElementIsNotElementType()
-                .Cast<ConnectorElement>()
-                .ToList();
-
-            if (connElems.Count < 2) return true;
-
-            foreach (var ce in connElems)
-            {
-                var desc = ce.get_Parameter(BuiltInParameter.RBS_CONNECTOR_DESCRIPTION)?.AsString();
-                var ctc = ConnectionTypeCode.Parse(desc);
-                if (!ctc.IsDefined) return false;
-            }
-
-            return true;
-        }
-        finally
-        {
-            familyDoc?.Close(false);
-        }
-    }
-
     public void ApplyFittingCtcToFamily(
         Document doc, FamilySymbol symbol, List<FittingCtcSetupItem> items,
         ElementId? projectElementId = null)
     {
-        using var _scope = SmartConLogger.BeginScope("CTC",
-            ("Method", "ApplyFittingCtcToFamily"),
-            ("FamilyName", symbol.Family.Name));
+        // NOTE: Measure instead of BeginScope — this method wraps EditFamily +
+        // LoadFamily (>1s of heavy inner work); a full scope would add Method/
+        // FamilyName prefixes (~50 chars) plus START/END banners to hundreds of
+        // inner log lines (gotcha C15). Point Info lines below carry the family name.
+        using var ms = SmartConLogger.Measure("CTC ApplyToFamily");
 
         if (doc.IsModifiable)
         {
-            SmartConLogger.Warn($"doc.IsModifiable=true, skipping write for '{symbol.Family.Name}'");
+            SmartConLogger.Warn($"doc.IsModifiable=true, skipping write for '{symbol.Family.Name}' [Action: вызовите запись CTC вне активной транзакции]");
             return;
         }
 
@@ -87,9 +58,9 @@ public sealed class CtcFamilyWriter(
 
             List<FittingCtcSetupItem> orderedItems = items
                 .OrderBy(it => it.ConnectorIndex).ToList();
-            Dictionary<int, FittingCtcSetupItem>? spatialMap = null;
+            Dictionary<int, FittingCtcSetupItem>? connectorMap = null;
             if (projectElementId is not null && connElems.Count >= 2)
-                spatialMap = BuildSpatialCtcMap(doc, projectElementId, items, connElems);
+                connectorMap = BuildConnectorCtcMap(doc, projectElementId, items, connElems);
 
             bool anyWritten = false;
 
@@ -97,11 +68,11 @@ public sealed class CtcFamilyWriter(
                 using var familyTx = new Transaction(familyDoc, "SetFittingCtcDescriptions");
                 familyTx.Start();
 
-                if (spatialMap is not null)
+                if (connectorMap is not null)
                 {
                     for (int i = 0; i < connElems.Count; i++)
                     {
-                        if (!spatialMap.TryGetValue(i, out var item) || item.SelectedType is null) continue;
+                        if (!connectorMap.TryGetValue(i, out var item) || item.SelectedType is null) continue;
 
                         var ce = connElems[i];
                         anyWritten |= WriteCtcToConnector(familyDoc, ce, item.SelectedType!);
@@ -134,7 +105,7 @@ public sealed class CtcFamilyWriter(
 
                         if (orderMap.Count == 0)
                         {
-                            SmartConLogger.Warn("Order matching: 0 matches — positional fallback");
+                            SmartConLogger.Warn("Order matching: 0 matches — positional fallback [Action: проверьте CTC-маппинг коннекторов вручную после записи]");
                             orderMap = null;
                         }
                     }
@@ -174,7 +145,22 @@ public sealed class CtcFamilyWriter(
         }
     }
 
-    public Dictionary<int, FittingCtcSetupItem>? BuildSpatialCtcMap(
+    /// <summary>
+    /// Map family-doc ConnectorElements to project connectors WITHOUT geometry:
+    /// the origin-based spatial match broke whenever instance parameters (elbow
+    /// angle, DN) differed from the family template — a 45°-template elbow at
+    /// 90° wrote CTC to the wrong connector (issue #161).
+    /// Cascade:
+    /// 1. IsPrimary — the single primary connector of the family discipline
+    ///    (aectechtalk: one primary per discipline) anchors one pair; exact for
+    ///    2-connector fittings (elbows, valves, nipples, reducers).
+    /// 2. Index order — the connector index is serialized on ConnectorElement
+    ///    and only grows with creation order (Tammik, mep_connector_number), and
+    ///    ConnectorElement ElementIds are assigned in the same creation order,
+    ///    so sorting both sides aligns the same physical connectors.
+    /// Returns null (positional fallback) unless every item is matched.
+    /// </summary>
+    public Dictionary<int, FittingCtcSetupItem>? BuildConnectorCtcMap(
         Document doc,
         ElementId projectElementId,
         List<FittingCtcSetupItem> items,
@@ -183,45 +169,72 @@ public sealed class CtcFamilyWriter(
         var instance = doc.GetElement(projectElementId) as FamilyInstance;
         if (instance is null) return null;
 
-        var transform = instance.GetTotalTransform();
-        var projectConns = connSvc.GetAllConnectors(doc, projectElementId);
+        var cm = instance.MEPModel?.ConnectorManager;
+        if (cm is null) return null;
+
+        var projectConns = new List<Connector>();
+        foreach (Connector c in cm.Connectors)
+        {
+            if (c.ConnectorType == ConnectorType.Curve) continue;
+            if (c.Domain != Domain.DomainPiping) continue;
+            projectConns.Add(c);
+        }
 
         var itemByConnIdx = items
             .Where(it => it.ConnectorIndex >= 0)
             .ToDictionary(it => it.ConnectorIndex);
 
         var result = new Dictionary<int, FittingCtcSetupItem>();
-        var usedItems = new HashSet<int>();
+        var usedConnIdx = new HashSet<int>();
+        var usedCeIdx = new HashSet<int>();
 
+        // 1. IsPrimary anchor
+        int primaryCeIdx = -1;
         for (int i = 0; i < connElems.Count; i++)
         {
-            var ce = connElems[i];
-            var globalOrigin = transform.OfPoint(ce.Origin);
-
-            ConnectorProxy? nearest = null;
-            double minDist = double.MaxValue;
+            if (connElems[i].IsPrimary) { primaryCeIdx = i; break; }
+        }
+        if (primaryCeIdx >= 0)
+        {
             foreach (var pc in projectConns)
             {
-                var d = pc.Origin.DistanceTo(globalOrigin);
-                if (d < minDist)
+                var info = pc.GetMEPConnectorInfo();
+                if (info is null || !info.IsPrimary) continue;
+                int pcIdx = pc.Id;
+                if (itemByConnIdx.TryGetValue(pcIdx, out var item) && usedConnIdx.Add(pcIdx))
                 {
-                    minDist = d;
-                    nearest = pc;
+                    result[primaryCeIdx] = item;
+                    usedCeIdx.Add(primaryCeIdx);
+                    SmartConLogger.Info($"Primary match: connElem[{primaryCeIdx}](id={connElems[primaryCeIdx].Id.GetValue()}) ↔ project conn[{pcIdx}]");
                 }
+                break;
             }
+        }
 
-            if (nearest is not null
-                && itemByConnIdx.TryGetValue(nearest.ConnectorIndex, out var item)
-                && usedItems.Add(nearest.ConnectorIndex))
-            {
-                result[i] = item;
-                SmartConLogger.Info($"Spatial match: connElem[{i}](id={ce.Id.GetValue()}) ↔ project conn[{nearest.ConnectorIndex}] (dist={minDist * FeetToMm:F2}mm)");
-            }
+        // 2. Index-order match for the remainder
+        var remainingCes = connElems
+            .Select((ce, idx) => (ce, idx))
+            .Where(t => !usedCeIdx.Contains(t.idx))
+            .OrderBy(t => t.ce.Id.GetValue())
+            .ToList();
+        var remainingPcs = projectConns
+            .Select(pc => pc.Id)
+            .Where(idx => !usedConnIdx.Contains(idx) && itemByConnIdx.ContainsKey(idx))
+            .OrderBy(idx => idx)
+            .ToList();
+
+        for (int i = 0; i < remainingCes.Count && i < remainingPcs.Count; i++)
+        {
+            var (ce, ceIdx) = remainingCes[i];
+            int pcIdx = remainingPcs[i];
+            result[ceIdx] = itemByConnIdx[pcIdx];
+            usedConnIdx.Add(pcIdx);
+            SmartConLogger.Info($"Index-order match: connElem[{ceIdx}](id={ce.Id.GetValue()}) ↔ project conn[{pcIdx}]");
         }
 
         if (result.Count != items.Count)
         {
-            SmartConLogger.Warn($"Spatial matching: matched {result.Count}/{items.Count} items — fallback to positional [Action: проверьте CTC-маппинг коннекторов вручную после записи]");
+            SmartConLogger.Warn($"Connector matching: matched {result.Count}/{items.Count} items — fallback to positional [Action: проверьте CTC-маппинг коннекторов вручную после записи]");
             return null;
         }
 
@@ -284,34 +297,6 @@ public sealed class CtcFamilyWriter(
             return SetDrivingFamilyParameter(familyDoc.FamilyManager, ce, descParam, value);
 
         return false;
-    }
-
-    public static string GetConnectorParamName(ConnectorElement ce, Document familyDoc)
-    {
-        var radiusParam = ce.get_Parameter(BuiltInParameter.CONNECTOR_RADIUS);
-        var diamParam = ce.get_Parameter(BuiltInParameter.CONNECTOR_DIAMETER);
-
-        foreach (FamilyParameter fp in familyDoc.FamilyManager.GetParameters())
-        {
-            if (fp.AssociatedParameters.Size == 0) continue;
-            try
-            {
-                foreach (Parameter assoc in fp.AssociatedParameters)
-                {
-                    bool idMatch = (radiusParam is not null && assoc.Id == radiusParam.Id)
-                                || (diamParam is not null && assoc.Id == diamParam.Id);
-                    bool elemMatch = assoc.Element?.Id == ce.Id;
-
-                    if (idMatch && elemMatch)
-                        return fp.Definition?.Name ?? string.Empty;
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        return string.Empty;
     }
 
     private static bool SetDrivingFamilyParameter(
