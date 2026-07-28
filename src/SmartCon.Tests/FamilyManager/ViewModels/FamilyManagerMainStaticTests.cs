@@ -122,4 +122,65 @@ public sealed class FamilyManagerMainStaticTests
 
         Assert.Empty(ids);
     }
+
+    [Fact]
+    public void AttachTypesToNodes_DefaultMarker_CreatesVirtualNodeWithFamilyName()
+    {
+        // #172: the synthetic <default> row (hash stability, ADR-049) must surface
+        // in the tree as the v2.0.0 virtual node — family name + IsVirtual — so
+        // Place/DnD take LoadFamilyAsync instead of LoadFamilySymbol("<default>").
+        var leaf = MakeLeaf("a", "Опора корпусная приварная КП");
+        var batch = new Dictionary<string, IReadOnlyList<FamilyTypeDescriptor>>
+        {
+            ["a"] = [new FamilyTypeDescriptor("t1", "a", FamilyTypeSnapshot.DefaultTypeName, 0)],
+        };
+
+        FamilyManagerMainViewModel.AttachTypesToNodes(
+            new ObservableCollection<CatalogTreeNodeViewModel> { leaf },
+            batch,
+            new HashSet<string>());
+
+        var typeNode = Assert.IsType<FamilyTypeNodeViewModel>(Assert.Single(leaf.Children));
+        Assert.True(typeNode.IsVirtual);
+        Assert.Equal(leaf.DisplayName, typeNode.TypeName);
+        Assert.Equal(leaf.DisplayName, typeNode.DisplayName);
+        Assert.Null(typeNode.UniqueId);
+    }
+
+    [Fact]
+    public void AttachTypesToNodes_NamedType_CreatesNonVirtualNode()
+    {
+        var leaf = MakeLeaf("a", "Fam A");
+        var batch = new Dictionary<string, IReadOnlyList<FamilyTypeDescriptor>>
+        {
+            ["a"] = [new FamilyTypeDescriptor("t1", "a", "Ду 100", 0, UniqueId: "uid-1")],
+        };
+
+        FamilyManagerMainViewModel.AttachTypesToNodes(
+            new ObservableCollection<CatalogTreeNodeViewModel> { leaf },
+            batch,
+            new HashSet<string>());
+
+        var typeNode = Assert.IsType<FamilyTypeNodeViewModel>(Assert.Single(leaf.Children));
+        Assert.False(typeNode.IsVirtual);
+        Assert.Equal("Ду 100", typeNode.TypeName);
+        Assert.Equal("Ду 100", typeNode.DisplayName);
+        Assert.Equal("uid-1", typeNode.UniqueId);
+    }
+
+    [Fact]
+    public void AttachTypesToNodes_NoTypes_CreatesVirtualFallback()
+    {
+        var leaf = MakeLeaf("a", "Fam A");
+        var batch = new Dictionary<string, IReadOnlyList<FamilyTypeDescriptor>>();
+
+        FamilyManagerMainViewModel.AttachTypesToNodes(
+            new ObservableCollection<CatalogTreeNodeViewModel> { leaf },
+            batch,
+            new HashSet<string>());
+
+        var typeNode = Assert.IsType<FamilyTypeNodeViewModel>(Assert.Single(leaf.Children));
+        Assert.True(typeNode.IsVirtual);
+        Assert.Equal(leaf.DisplayName, typeNode.TypeName);
+    }
 }

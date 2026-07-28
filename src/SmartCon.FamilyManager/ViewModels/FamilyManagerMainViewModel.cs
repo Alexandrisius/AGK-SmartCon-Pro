@@ -616,7 +616,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         }
     }
 
-    private static void AttachTypesToNodes(ObservableCollection<CatalogTreeNodeViewModel> nodes, IReadOnlyDictionary<string, IReadOnlyList<FamilyTypeDescriptor>> batch, HashSet<string> expandedFamilyIds)
+    internal static void AttachTypesToNodes(ObservableCollection<CatalogTreeNodeViewModel> nodes, IReadOnlyDictionary<string, IReadOnlyList<FamilyTypeDescriptor>> batch, HashSet<string> expandedFamilyIds)
     {
         foreach (var node in nodes)
         {
@@ -626,6 +626,18 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 {
                     foreach (var t in types)
                     {
+                        // #172: the synthetic <default> row exists in family_types
+                        // only for content-hash and attribute stability (ADR-049/056).
+                        // In the tree it must behave like the v2.0.0 virtual node
+                        // (family name, IsVirtual) — otherwise Place/DnD would send
+                        // the raw "<default>" literal to LoadFamilySymbol and fail,
+                        // and the user would see the marker instead of the family name.
+                        if (t.Name == FamilyTypeSnapshot.DefaultTypeName)
+                        {
+                            AddVirtualTypeNode(leaf);
+                            continue;
+                        }
+
                         leaf.Children.Add(new FamilyTypeNodeViewModel(
                             t.CatalogItemId, t.Name, isVirtual: false,
                             familySource: leaf.FamilySource, uniqueId: t.UniqueId,
@@ -636,9 +648,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
                 if (leaf.Children.Count == 0)
                 {
-                    leaf.Children.Add(new FamilyTypeNodeViewModel(
-                        leaf.CatalogItemId, leaf.DisplayName, isVirtual: true,
-                        familySource: leaf.FamilySource, isUnavailable: leaf.IsUnavailable));
+                    AddVirtualTypeNode(leaf);
                 }
 
                 if (expandedFamilyIds.Contains(leaf.CatalogItemId))
@@ -646,6 +656,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             }
             AttachTypesToNodes(node.Children, batch, expandedFamilyIds);
         }
+    }
+
+    private static void AddVirtualTypeNode(FamilyLeafNodeViewModel leaf)
+    {
+        leaf.Children.Add(new FamilyTypeNodeViewModel(
+            leaf.CatalogItemId, leaf.DisplayName, isVirtual: true,
+            familySource: leaf.FamilySource, isUnavailable: leaf.IsUnavailable));
     }
 
     [RelayCommand(CanExecute = nameof(HasActiveDatabase))]
