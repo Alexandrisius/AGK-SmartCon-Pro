@@ -23,6 +23,7 @@ public interface IDatabaseManager
     Task<DatabaseConnection> CreateDatabaseAsync(string name, string path, CancellationToken ct = default);
     Task<DatabaseConnection> CreateProjectDatabaseAsync(string name, string path, ProjectBaseBinding binding, CancellationToken ct = default);
     Task<DatabaseConnection> ConfigureProjectBaseAsync(string connectionId, ProjectBaseBinding binding, CancellationToken ct = default);
+    Task<DatabaseConnection> ConvertToGeneralBaseAsync(string connectionId, CancellationToken ct = default);
     Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default);
     Task<bool> SwitchDatabaseAsync(string connectionId, CancellationToken ct = default);
     Task<bool> DisconnectDatabaseAsync(string connectionId, CancellationToken ct = default);
@@ -30,6 +31,22 @@ public interface IDatabaseManager
     event EventHandler<string>? ActiveDatabaseChanged;
 }
 ```
+
+Конвертация типов баз (#168, ADR-045 Update A3): `ConfigureProjectBaseAsync` переводит
+общую базу в проектную (или обновляет binding существующей проектной),
+`ConvertToGeneralBaseAsync` — обратную операцию: `Kind = General`, `ProjectBinding = null`,
+`database_meta.base_type = 0`, `project_binding_json = NULL` (шаблон удаляется безвозвратно).
+Обе операции идемпотентны, работают и для неактивной базы (запись идёт по пути целевой
+базы с последующим возвратом переключения на активную) и переживают
+disconnect/reconnect — источник истины `catalog.db.database_meta`. Порядок записи —
+сначала `catalog.db`, затем `registry.json` (самовосстановление при reconnect).
+`ConvertToGeneralBaseAsync` дополнительно нормализует General-соединение с
+осиротевшим `ProjectBinding`.
+
+Потокобезопасность (#171): все async-операции, мутирующие реестр, сериализованы
+operation-level `SemaphoreSlim` в `DatabaseManager` — конкурентные вызовы
+(автоактивация + команды UI) безопасны. Sync-читатели (`ListConnections`,
+`GetActiveConnection`) lock-free.
 
 ---
 

@@ -109,6 +109,60 @@ runtime-кешем.
 `FamilyManagerMainViewModel` слушает `ActiveDocumentPathChanged` и вызывает
 `IProjectBaseActivator.ActivateForDocumentAsync` с новым путём.
 
+## Update A3 — двусторонняя конвертация типов баз (2026-07-28, #168)
+
+Первоначально тип базы задавался только при создании: `ConfigureProjectBaseAsync`
+умел General→Project, но UI не давал вызвать его для общей базы, а обратного пути
+Project→General не существовало. Добавлены две команды в popup «Инструменты базы»:
+
+- **«Сделать проектной базой»** (General, Owner/BimMaster) — открывает
+  `ProjectBaseRulesEditorView` с пустым шаблоном, затем вызывает существующий
+  `ConfigureProjectBaseAsync`. Проектная база без шаблона бессмысленна (никогда
+  не матчится), поэтому шаблон обязателен.
+- **«Сделать общей базой»** (Project, Owner/BimMaster, Yes/No-подтверждение) —
+  новый `IDatabaseManager.ConvertToGeneralBaseAsync`.
+
+Видимость команд контекстная (`CanConvertSelectedToProject/General` +
+`BoolToVis`): отображается только применимая к выбранному типу базы команда,
+для роли Engineer обе скрыты — как у команды «Обновить базу» (ADR-054).
+
+Решения:
+
+- **Binding при Project→General очищается** (`registry.json: ProjectBinding = null`,
+  `database_meta.project_binding_json = NULL`). Альтернатива «сохранить шаблон на
+  будущее» отвергнута: общая база не должна хранить project-артефактов, а
+  `ConnectDatabaseAsync` подхватывал бы мёртвый JSON в `ProjectBinding`.
+- **Источник истины не меняется** — `database_meta` (Update A1): конвертация
+  переживает disconnect/reconnect, реестр остаётся runtime-кешем.
+- **RBAC — `CanEdit` (Owner/BimMaster)**: конвертация — write-операция уровня
+  редактирования, как импорт/обновление базы. Не Owner-only (это не деструктивное
+  удаление). Заодно закрыта дыра #169: `ConfigureProjectBaseCommand` получил
+  `CanEdit`-гейт и `RefreshCurrentUserAsync()` после cross-DB записи
+  (восстановление role-correct write access активной базы, I-14).
+- **Миграции не нужны**: колонки `base_type`/`project_binding_json` существуют с
+  v20/v21; конвертация — runtime UPDATE + `registry.json`, чистый JSON+SQLite без
+  Revit API (как `SwitchDatabaseAsync`). Гейт `EnsureUpToDateAsync` не применяется —
+  управление подключениями БД не гейтится (docs/architecture/database-migrations.md).
+- Обе операции идемпотентны и работают для неактивной базы через существующий
+  `UpdateTargetCachedBaseTypeAsync` (переключение пути с возвратом на активную).
+- **Порядок записи — сначала `catalog.db` (источник истины), затем `registry.json`
+  (runtime-кэш)**, как и в `CreateProjectDatabaseAsync`: при сбое UPDATE (SMB,
+  SQLITE_BUSY) оба хранилища консистентно остаются в старом состоянии; при сбое
+  записи реестра после успешного UPDATE состояние самовосстанавливается при
+  reconnect — БД побеждает. `ConfigureProjectBaseAsync` приведён к этому же
+  порядку (ранее писал реестр первым).
+- `ConvertToGeneralBaseAsync` — самовосстанавливающийся: General-соединение с
+  «осиротевшим» `ProjectBinding` (повреждённое состояние) нормализуется, а не
+  считается no-op.
+- **Сериализация реестра (#171)**: ручное тестирование этой фичи выявило, что
+  fire-and-forget автоактивация (Update A2) гоняет сама с собой и с командами
+  UI на `registry.json.tmp` — файл реестра повреждался и откатывался на `.bak`
+  с потерей свежих изменений. Все async-мутаторы `DatabaseManager` сериализованы
+  operation-level `SemaphoreSlim` (реентерабельность — через
+  `CreateDatabaseCoreAsync`). Sync-читатели (`ListConnections`) lock-free
+  намеренно (deadlock-risk на UI-потоке). Детерминированный стресс-тест:
+  `ConcurrentRegistryMutations_RegistryStaysValidAndConsistent`.
+
 ## Verification
 
 - Сборка R19/R21/R24/R25 — 0 warnings / 0 errors.

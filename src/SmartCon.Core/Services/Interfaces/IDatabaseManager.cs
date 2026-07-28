@@ -52,6 +52,23 @@ public interface IDatabaseManager
         ProjectBaseBinding binding,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Convert a project-scoped connection back to a general base (see #168).
+    /// The connection's <c>Kind</c> is set to <c>General</c> and its
+    /// <c>ProjectBinding</c> is cleared both in <c>registry.json</c> and in
+    /// the source-of-truth <c>catalog.db.database_meta</c>
+    /// (<c>base_type = 0</c>, <c>project_binding_json = NULL</c>), so the
+    /// conversion survives disconnect/reconnect (ADR-045 Update A1).
+    /// The base stops auto-activating on document name match.
+    /// Idempotent: calling this on an already-General connection without a
+    /// binding is a no-op that returns the connection unchanged; a General
+    /// connection with a leftover <c>ProjectBinding</c> (inconsistent state)
+    /// is normalized — the binding is cleared everywhere.
+    /// </summary>
+    Task<DatabaseConnection> ConvertToGeneralBaseAsync(
+        string connectionId,
+        CancellationToken ct = default);
+
     /// <summary>Register an existing database at the specified path.</summary>
     Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default);
 

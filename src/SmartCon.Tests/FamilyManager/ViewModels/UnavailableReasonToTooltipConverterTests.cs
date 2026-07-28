@@ -1,13 +1,31 @@
 using System.Globalization;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services;
 using SmartCon.UI.Converters;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.ViewModels;
 
-public sealed class UnavailableReasonToTooltipConverterTests
+/// <summary>
+/// Tests for <see cref="UnavailableReasonToTooltipConverter"/>. The converter
+/// reads localized strings through <see cref="LocalizationService.CurrentLanguage"/>,
+/// a process-wide global — so this class is serialized with the language
+/// mutators via the shared "Localization" collection and pins the language
+/// explicitly (see #170; convention documented in PartTypeLabelMapTests).
+/// </summary>
+[Collection("Localization")]
+public sealed class UnavailableReasonToTooltipConverterTests : IDisposable
 {
     private readonly UnavailableReasonToTooltipConverter _converter = new();
+    private readonly Language _originalLanguage;
+
+    public UnavailableReasonToTooltipConverterTests()
+    {
+        _originalLanguage = LocalizationService.CurrentLanguage;
+        LocalizationService.SetLanguage(Language.RU);
+    }
+
+    public void Dispose() => LocalizationService.SetLanguage(_originalLanguage);
 
     private object? Convert(FamilyUnavailableReason reason, object? required, object? current, bool hasCompatible)
         => _converter.Convert(

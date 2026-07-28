@@ -464,4 +464,153 @@ public sealed class DatabaseManagerTests
 
         Assert.Null(captured);
     }
+
+    [Fact]
+    public async Task ConvertToGeneralBaseAsync_UpdatesExistingProjectToGeneral()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate { Blocks = [new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }] },
+            []);
+        var conn = await fixture.Manager.CreateProjectDatabaseAsync("ProjectDB", dbPath, binding);
+        Assert.Equal(BaseType.Project, conn.Kind);
+
+        var updated = await fixture.Manager.ConvertToGeneralBaseAsync(conn.Id);
+
+        Assert.Equal(BaseType.General, updated.Kind);
+        Assert.Null(updated.ProjectBinding);
+        var listed = fixture.Manager.ListConnections().First(c => c.Id == conn.Id);
+        Assert.Equal(BaseType.General, listed.Kind);
+        Assert.Null(listed.ProjectBinding);
+
+        using var dbConn = fixture.Database.CreateConnection();
+        await dbConn.OpenAsync();
+        using var cmd = dbConn.CreateCommand();
+        cmd.CommandText = "SELECT base_type, project_binding_json FROM database_meta LIMIT 1";
+        using var reader = await cmd.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(0L, reader.GetInt64(0));
+        Assert.True(await reader.IsDBNullAsync(1));
+    }
+
+    [Fact]
+    public async Task ConvertToGeneralBaseAsync_ClearsCachedBaseTypeOnNonActiveDatabase()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var conn1 = await fixture.Manager.CreateDatabaseAsync("ActiveDB", dbPath);
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate { Blocks = [new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }] },
+            []);
+        var conn2 = await fixture.Manager.CreateProjectDatabaseAsync("TargetProjectDB", dbPath, binding);
+
+        await fixture.Manager.SwitchDatabaseAsync(conn1.Id);
+        Assert.Equal(conn1.Id, fixture.Manager.GetActiveConnection()!.Id);
+
+        await fixture.Manager.ConvertToGeneralBaseAsync(conn2.Id);
+
+        fixture.Database.SwitchToPath(conn2.Path);
+        using var dbConn = fixture.Database.CreateConnection();
+        await dbConn.OpenAsync();
+        using var cmd = dbConn.CreateCommand();
+        cmd.CommandText = "SELECT base_type, project_binding_json FROM database_meta LIMIT 1";
+        using var reader = await cmd.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(0L, reader.GetInt64(0));
+        Assert.True(await reader.IsDBNullAsync(1));
+
+        Assert.Equal(conn1.Id, fixture.Manager.GetActiveConnection()!.Id);
+    }
+
+    [Fact]
+    public async Task ConvertToGeneralBaseAsync_WhenAlreadyGeneral_NoOp()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var conn = await fixture.Manager.CreateDatabaseAsync("GeneralDB", dbPath);
+        Assert.Equal(BaseType.General, conn.Kind);
+
+        var updated = await fixture.Manager.ConvertToGeneralBaseAsync(conn.Id);
+
+        Assert.Equal(BaseType.General, updated.Kind);
+        Assert.Null(updated.ProjectBinding);
+        Assert.Equal(conn.Id, updated.Id);
+        var listed = fixture.Manager.ListConnections().First(c => c.Id == conn.Id);
+        Assert.Equal(BaseType.General, listed.Kind);
+    }
+
+    [Fact]
+    public async Task ConfigureProjectBaseAsync_UnknownConnection_Throws()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate { Blocks = [new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }] },
+            []);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Manager.ConfigureProjectBaseAsync("nonexistent", binding));
+    }
+
+    [Fact]
+    public async Task ConvertToGeneralBaseAsync_UnknownConnection_Throws()
+    {
+        using var fixture = new TempDbManagerFixture();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Manager.ConvertToGeneralBaseAsync("nonexistent"));
+    }
+
+    [Fact]
+    public async Task ConnectDatabaseAsync_AfterConvertToGeneral_RestoresGeneralKind()
+    {
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate { Blocks = [new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }] },
+            [new FieldDefinition { Name = "project", ValidationMode = ValidationMode.None }]);
+        var projectDb = await fixture.Manager.CreateProjectDatabaseAsync("ProjectDB", dbPath, binding);
+        Assert.Equal(BaseType.Project, projectDb.Kind);
+
+        await fixture.Manager.ConvertToGeneralBaseAsync(projectDb.Id);
+        await fixture.Manager.DisconnectDatabaseAsync(projectDb.Id);
+
+        var reconnected = await fixture.Manager.ConnectDatabaseAsync(projectDb.Path);
+
+        Assert.Equal(BaseType.General, reconnected.Kind);
+        Assert.Null(reconnected.ProjectBinding);
+    }
+
+    [Fact]
+    public async Task ConcurrentRegistryMutations_RegistryStaysValidAndConsistent()
+    {
+        // #171: pre-fix, concurrent SaveRegistryAsync calls collided on
+        // registry.json.tmp (IOException) and could corrupt registry.json.
+        // The operation-level lock must serialize every read-modify-write.
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var connA = await fixture.Manager.CreateDatabaseAsync("DB-A", dbPath);
+        var connB = await fixture.Manager.CreateDatabaseAsync("DB-B", dbPath);
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate { Blocks = [new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }] },
+            []);
+
+        var tasks = Enumerable.Range(0, 30).Select(i => (i % 3) switch
+        {
+            0 => (Task)fixture.Manager.SwitchDatabaseAsync(i % 2 == 0 ? connA.Id : connB.Id),
+            1 => fixture.Manager.ConfigureProjectBaseAsync(connB.Id, binding),
+            _ => fixture.Manager.ConvertToGeneralBaseAsync(connB.Id),
+        }).ToArray();
+
+        await Task.WhenAll(tasks);
+
+        var registryPath = Path.Combine(fixture.TempDir, "registry.json");
+        var json = await File.ReadAllTextAsync(registryPath);
+        Assert.False(string.IsNullOrWhiteSpace(json));
+        var connections = fixture.Manager.ListConnections();
+        Assert.Equal(2, connections.Count);
+        var active = fixture.Manager.GetActiveConnection();
+        Assert.NotNull(active);
+        Assert.Contains(connections, c => c.Id == active.Id);
+    }
 }

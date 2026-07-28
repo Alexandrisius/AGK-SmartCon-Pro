@@ -354,6 +354,16 @@ public static class StringLocalization
         public const string FM_PBase_ConnectDatabase = "FM_PBase_ConnectDatabase";
         public const string FM_PBase_DisconnectDatabase = "FM_PBase_DisconnectDatabase";
         public const string FM_PBase_ConfigureProjectBase = "FM_PBase_ConfigureProjectBase";
+        public const string FM_PBase_ConvertToProjectBase = "FM_PBase_ConvertToProjectBase";
+        public const string FM_PBase_ConvertToProjectBaseTitle = "FM_PBase_ConvertToProjectBaseTitle";
+        public const string FM_PBase_ConvertToGeneralBase = "FM_PBase_ConvertToGeneralBase";
+        public const string FM_PBase_ConvertToGeneralConfirmTitle = "FM_PBase_ConvertToGeneralConfirmTitle";
+        public const string FM_PBase_ConvertToGeneralConfirm = "FM_PBase_ConvertToGeneralConfirm";
+        public const string FM_PBase_ConvertedToProject = "FM_PBase_ConvertedToProject";
+        public const string FM_PBase_ConvertedToGeneral = "FM_PBase_ConvertedToGeneral";
+        public const string FM_PBase_ConvertErrorTitle = "FM_PBase_ConvertErrorTitle";
+        public const string FM_PBase_ConvertError = "FM_PBase_ConvertError";
+        public const string FM_PBase_BindingNotConfiguredConvert = "FM_PBase_BindingNotConfiguredConvert";
         public const string FM_PBase_DeleteDatabase = "FM_PBase_DeleteDatabase";
         public const string FM_PBase_DatabaseTools = "FM_PBase_DatabaseTools";
         public const string FM_PBase_UpdateDatabase = "FM_PBase_UpdateDatabase";

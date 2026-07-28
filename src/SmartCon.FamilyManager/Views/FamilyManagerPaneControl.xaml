@@ -610,6 +610,21 @@
                                 </i:EventTrigger>
                             </i:Interaction.Triggers>
                         </Button>
+                        <Button Content="{loc:Loc FM_PBase_ConvertToProjectBase}"
+                                Command="{Binding ConvertToProjectBaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Visibility="{Binding CanConvertSelectedToProject, Converter={StaticResource BoolToVis}}">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
                         <Button Content="{loc:Loc FM_PBase_ConfigureProjectBase}"
                                 Command="{Binding ConfigureProjectBaseCommand}"
                                 MinWidth="180"
@@ -618,6 +633,21 @@
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Cursor="Hand">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                        <Button Content="{loc:Loc FM_PBase_ConvertToGeneralBase}"
+                                Command="{Binding ConvertToGeneralBaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Visibility="{Binding CanConvertSelectedToGeneral, Converter={StaticResource BoolToVis}}">
                             <i:Interaction.Triggers>
                                 <i:EventTrigger EventName="Click">
                                     <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>

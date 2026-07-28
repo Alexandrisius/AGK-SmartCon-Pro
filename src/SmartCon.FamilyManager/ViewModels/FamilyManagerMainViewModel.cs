@@ -108,7 +108,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private bool _canPlaceType;
 
     [ObservableProperty] private ObservableCollection<DatabaseListItem> _connections = new();
-    [ObservableProperty] private DatabaseListItem? _selectedConnection;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanConvertSelectedToProject))]
+    [NotifyPropertyChangedFor(nameof(CanConvertSelectedToGeneral))]
+    [NotifyCanExecuteChangedFor(nameof(ConvertToProjectBaseCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConvertToGeneralBaseCommand))]
+    private DatabaseListItem? _selectedConnection;
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenProfileCommand))]
     private bool _hasActiveDatabase;
@@ -127,6 +132,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(DeleteFamilyCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartDragCommand))]
     [NotifyCanExecuteChangedFor(nameof(DropFamilyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConfigureProjectBaseCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConvertToProjectBaseCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConvertToGeneralBaseCommand))]
+    [NotifyPropertyChangedFor(nameof(CanConvertSelectedToProject))]
+    [NotifyPropertyChangedFor(nameof(CanConvertSelectedToGeneral))]
     [NotifyPropertyChangedFor(nameof(HasAnyDatabaseUpdate))]
     [NotifyPropertyChangedFor(nameof(HasProcessableCriticalPending))]
     [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
