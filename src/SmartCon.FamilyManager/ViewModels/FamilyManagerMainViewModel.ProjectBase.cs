@@ -69,14 +69,41 @@ public sealed partial class FamilyManagerMainViewModel
             statusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusNoDatabase) ?? "No database connected";
             SmartConLogger.Debug("RecomputeActiveBaseMatch: no active database");
         }
-        else if (string.IsNullOrEmpty(filePathNullable))
+        else if (filePathNullable is { Length: 0 })
         {
+            if (active.Kind == BaseType.Project)
+            {
+                // #174: unsaved document — a project base is unusable until
+                // the file gets a path (Save/SaveAs re-evaluates). Block
+                // loading instead of the permissive legacy default.
+                _activeBaseMatch = null;
+                _activeBaseCompatibleWithCurrentDoc = false;
+                statusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusProjectUnsaved)
+                    ?? "File not saved — project bases are unavailable. Save the file to activate a project base.";
+                SmartConLogger.Info($"RecomputeActiveBaseMatch: project base '{active.Name}' blocked — active document is unsaved");
+            }
+            else
+            {
+                _activeBaseMatch = null;
+                _activeBaseCompatibleWithCurrentDoc = true;
+                statusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusGeneral) ?? "General base: {0}",
+                    active.Name);
+                SmartConLogger.Debug($"RecomputeActiveBaseMatch: no active document path for base '{active.Name}'");
+            }
+        }
+        else if (filePathNullable is null)
+        {
+            // #174: null means "no document event received yet" (e.g. the
+            // Revit double-click startup race) — the context is UNKNOWN, not
+            // "unsaved". Keep the legacy permissive default; blocking here
+            // would false-gate a project base on a perfectly saved document.
             _activeBaseMatch = null;
-            _activeBaseCompatibleWithCurrentDoc = true; // permissive default for legacy behaviour (no active binding context)
+            _activeBaseCompatibleWithCurrentDoc = true;
             statusMessage = string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusGeneral) ?? "General base: {0}",
                 active.Name);
-            SmartConLogger.Debug($"RecomputeActiveBaseMatch: no active document path for base '{active.Name}'");
+            SmartConLogger.Debug($"RecomputeActiveBaseMatch: document path unknown (no event yet) for base '{active.Name}' — permissive");
         }
         else if (active.Kind == BaseType.General)
         {

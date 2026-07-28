@@ -20,7 +20,10 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
     [ObservableProperty]
     private string _currentFilePath = string.Empty;
 
-    public string CurrentProjectName => Path.GetFileNameWithoutExtension(CurrentFilePath);
+    public string CurrentProjectName =>
+        string.IsNullOrEmpty(CurrentFilePath)
+            ? LocalizationService.GetString("FM_PBase_UnsavedFilePlaceholder") ?? "(файл не сохранён)"
+            : Path.GetFileNameWithoutExtension(CurrentFilePath);
 
     [ObservableProperty]
     private string _previewCurrent = string.Empty;
@@ -301,6 +304,10 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
     {
         if (string.IsNullOrWhiteSpace(CurrentFilePath))
         {
+            // #174: unsaved document — nothing to validate against. Reset
+            // every block to the neutral "not evaluated" state instead of
+            // leaving the default green ✓ next to an empty file name.
+            ResetBlocksEvaluation();
             PreviewCurrent = string.Empty;
             PreviewParsed = string.Empty;
             HasValidationError = false;
@@ -313,6 +320,7 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
         var template = BuildTemplate();
         if (template.Blocks.Count == 0)
         {
+            ResetBlocksEvaluation();
             PreviewParsed = string.Empty;
             HasValidationError = false;
             ValidationMessage = string.Empty;
@@ -344,6 +352,16 @@ public sealed partial class ProjectBaseRulesEditorViewModel : ObservableObject, 
 
         PreviewParsed = string.Join(template.Blocks.Count > 1 ? ", " : "",
             Blocks.Select(b => $"{b.Field}={b.CurrentFieldValue}"));
+    }
+
+    private void ResetBlocksEvaluation()
+    {
+        foreach (var block in Blocks)
+        {
+            block.CurrentFieldValue = string.Empty;
+            block.IsValid = null;
+            block.ValidationError = null;
+        }
     }
 
     [RelayCommand]

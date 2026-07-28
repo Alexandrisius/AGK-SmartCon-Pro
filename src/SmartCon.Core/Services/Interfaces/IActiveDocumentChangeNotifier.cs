@@ -12,9 +12,11 @@ namespace SmartCon.Core.Services.Interfaces;
 public interface IActiveDocumentChangeNotifier
 {
     /// <summary>
-    /// Raised on a non-family, saved Revit document becoming active. The
-    /// argument is the new active file path (guaranteed non-empty per the
-    /// filter rules in <c>ActiveDocumentChangeNotifier</c>).
+    /// Raised on a non-family Revit document becoming active. The argument is
+    /// the new active file path, or an **empty** path when the active document
+    /// is unsaved (no <c>PathName</c>, #174) — subscribers must treat that as
+    /// "no file name to evaluate yet" (project bases are blocked until the
+    /// file is saved).
     /// </summary>
     event EventHandler<ActiveDocumentChangedEventArgs>? ActiveDocumentChanged;
 

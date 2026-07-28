@@ -32,6 +32,17 @@ public sealed partial class FamilyManagerMainViewModel
 
     private DatabaseListItem BuildListItem(DatabaseConnection connection, DatabaseConnection? active)
     {
+        // #174: positively unsaved document (empty path received) — every
+        // project base is blocked until the file is saved: show the lock
+        // (mismatch) icon, not the general one. A null path ("no event yet",
+        // startup race) is NOT unsaved and falls through to NotApplicable.
+        if (connection.Kind == BaseType.Project && _currentActiveDocumentPath is { Length: 0 })
+        {
+            var unsavedReason = LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusProjectUnsaved)
+                ?? "File not saved — project bases are unavailable. Save the file to activate a project base.";
+            return new DatabaseListItem(connection, ProjectBaseMatchKind.Mismatch, unsavedReason);
+        }
+
         if (connection.Kind != BaseType.Project || string.IsNullOrEmpty(_currentActiveDocumentPath))
         {
             using var _scope = SmartConLogger.BeginScope("FMVM",
@@ -83,7 +94,6 @@ public sealed partial class FamilyManagerMainViewModel
 
     partial void OnSelectedConnectionChanged(DatabaseListItem? value)
     {
-        ConfigureProjectBaseCommand.NotifyCanExecuteChanged();
         DeleteDatabaseCommand.NotifyCanExecuteChanged();
         if (value is null) return;
         if (_suppressConnectionChanged) return;
@@ -260,7 +270,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanConfigureProjectBase))]
+    [RelayCommand(CanExecute = nameof(CanConfigureSelectedProjectBase))]
     private async Task ConfigureProjectBaseAsync()
     {
         var selected = SelectedConnection;
@@ -303,7 +313,12 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    private bool CanConfigureProjectBase() =>
+    /// <summary>
+    /// Visibility + CanExecute for «Настроить правила проектной базы» — shown
+    /// only when the selected connection is a project base and the role can
+    /// edit (same contextual-visibility pattern as the convert commands).
+    /// </summary>
+    public bool CanConfigureSelectedProjectBase =>
         SelectedConnection is not null && SelectedConnection.Kind == BaseType.Project && CanEdit;
 
     [RelayCommand(CanExecute = nameof(CanConvertSelectedToProject))]

@@ -8,8 +8,26 @@ using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.ViewModels;
 
-public sealed class ProjectBaseRulesEditorViewModelTests
+/// <summary>
+/// Tests for <see cref="ProjectBaseRulesEditorViewModel"/>. Several asserts
+/// read localized strings via <see cref="LocalizationService.CurrentLanguage"/>
+/// (a process-wide global) — serialized with the language mutators through
+/// the shared "Localization" collection, language pinned to RU
+/// (convention from #170, same file as the EN-mutator classes below).
+/// </summary>
+[Collection("Localization")]
+public sealed class ProjectBaseRulesEditorViewModelTests : IDisposable
 {
+    private readonly Language _originalLanguage;
+
+    public ProjectBaseRulesEditorViewModelTests()
+    {
+        _originalLanguage = LocalizationService.CurrentLanguage;
+        LocalizationService.SetLanguage(Language.RU);
+    }
+
+    public void Dispose() => LocalizationService.SetLanguage(_originalLanguage);
+
     private static ProjectBaseRulesEditorViewModel CreateVm(
         ProjectBaseBinding? binding = null,
         IFileNameParser? parser = null,
@@ -36,6 +54,60 @@ public sealed class ProjectBaseRulesEditorViewModelTests
         var result = vm.BuildBinding();
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public void Ctor_UnsavedDocument_BlocksAreNotEvaluated()
+    {
+        // #174: with no saved file (empty path) the status column must NOT
+        // show the default green ✓ next to an empty file name — blocks stay
+        // in the neutral "not evaluated" state.
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate
+            {
+                Blocks =
+                [
+                    new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }
+                ]
+            },
+            [new FieldDefinition { Name = "project", ValidationMode = ValidationMode.None }]);
+
+        var vm = CreateVm(binding, currentDocumentPath: "");
+
+        var block = Assert.Single(vm.Blocks);
+        Assert.Null(block.IsValid);
+        Assert.Null(block.ValidationError);
+        Assert.Equal(string.Empty, block.CurrentFieldValue);
+        Assert.False(vm.HasValidationError);
+        Assert.Equal("(файл не сохранён)", vm.CurrentProjectName);
+    }
+
+    [Fact]
+    public void Ctor_SavedDocument_ValidatesBlocks()
+    {
+        var binding = new ProjectBaseBinding(
+            new FileNameTemplate
+            {
+                Blocks =
+                [
+                    new() { Index = 0, Field = "project", ParseRule = ParseRule.DefaultDelimiter("-", 1) }
+                ]
+            },
+            [new FieldDefinition { Name = "project", ValidationMode = ValidationMode.None }]);
+
+        var parserMock = new Mock<IFileNameParser>();
+        parserMock.Setup(p => p.ParseBlocks(It.IsAny<string>(), It.IsAny<FileNameTemplate>()))
+            .Returns(new Dictionary<string, string> { ["project"] = "S1" });
+        parserMock.Setup(p => p.ValidateDetailed(It.IsAny<string>(), It.IsAny<FileNameTemplate>(), It.IsAny<List<FieldDefinition>>()))
+            .Returns(new ValidationResult(true, string.Empty, [new BlockValidation(0, "project", "S1", true, null)]));
+
+        var vm = CreateVm(binding, parser: parserMock.Object, currentDocumentPath: @"C:\Projects\PRJ-S1.rvt");
+
+        var block = Assert.Single(vm.Blocks);
+        Assert.True(block.IsValid);
+        Assert.Equal("S1", block.CurrentFieldValue);
+        Assert.False(vm.HasValidationError);
+        Assert.Equal("PRJ-S1", vm.CurrentProjectName);
     }
 
     [Fact]

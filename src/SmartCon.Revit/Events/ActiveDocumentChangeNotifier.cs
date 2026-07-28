@@ -13,8 +13,10 @@ namespace SmartCon.Revit.Events;
 /// #119 — recommended by Jeremy Tammik since it fires on both DocumentOpened
 /// and cross-document tab switches) and to <c>ControlledApplication.DocumentSaved</c>
 /// / <c>DocumentSavedAs</c> (Issue #128). Forwards the active file path to
-/// subscribers after filtering out unsaved / detached / family documents and
-/// failed / cancelled / non-active save operations.
+/// subscribers, filtering out family documents and failed / cancelled /
+/// non-active save operations. Unsaved documents (empty <c>PathName</c>) are
+/// notified with an **empty path** so subscribers can block project bases
+/// until the file is saved (#174).
 /// </summary>
 /// <remarks>
 /// The notifier is registered in <c>ServiceRegistrar</c> as a singleton. Its
@@ -94,16 +96,26 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
             return;
         }
 
-        if (string.IsNullOrEmpty(currentDoc.PathName))
-        {
-            SmartConLogger.Debug("Active document has empty PathName (unsaved/detached) — ignoring per #119 A4");
-            return;
-        }
-
         var previous = e.PreviousActiveView?.Document;
         if (previous is not null && previous.Equals(currentDoc))
         {
             SmartConLogger.Debug("Previous and current document are the same (intra-project view switch) — ignoring");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(currentDoc.PathName))
+        {
+            // #174: an unsaved document (empty PathName, e.g. "Проект1") cannot
+            // match any project base. Do NOT ignore it — that would keep the
+            // previous document's project base active on a stale path. Notify
+            // with an empty path instead so subscribers block project bases
+            // and fall back to a general base until the file is saved.
+            SmartConLogger.Debug("Active document has empty PathName (unsaved/detached) — notifying with empty path");
+            // #174: reset so the first Save/SaveAs of this document always
+            // fires — even when it reuses the path of the previously
+            // notified document (dedup must not swallow that legitimate Save).
+            _lastNotifiedPath = null;
+            ActiveDocumentChanged?.Invoke(this, new ActiveDocumentChangedEventArgs(string.Empty));
             return;
         }
 

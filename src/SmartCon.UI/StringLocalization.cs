@@ -365,6 +365,8 @@ public static class StringLocalization
         public const string FM_PBase_ConvertErrorTitle = "FM_PBase_ConvertErrorTitle";
         public const string FM_PBase_ConvertError = "FM_PBase_ConvertError";
         public const string FM_PBase_BindingNotConfiguredConvert = "FM_PBase_BindingNotConfiguredConvert";
+        public const string FM_PBase_StatusProjectUnsaved = "FM_PBase_StatusProjectUnsaved";
+        public const string FM_PBase_UnsavedFilePlaceholder = "FM_PBase_UnsavedFilePlaceholder";
         public const string FM_PBase_DeleteDatabase = "FM_PBase_DeleteDatabase";
         public const string FM_PBase_DatabaseTools = "FM_PBase_DatabaseTools";
         public const string FM_PBase_UpdateDatabase = "FM_PBase_UpdateDatabase";

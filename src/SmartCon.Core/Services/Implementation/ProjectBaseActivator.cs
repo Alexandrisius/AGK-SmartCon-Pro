@@ -35,12 +35,6 @@ public sealed class ProjectBaseActivator : IProjectBaseActivator
             ("Method", nameof(ActivateForDocumentAsync)),
             ("FilePath", System.IO.Path.GetFileName(currentFilePath)));
 
-        if (string.IsNullOrEmpty(currentFilePath))
-        {
-            SmartConLogger.Debug("Empty file path — skipping activation");
-            return null;
-        }
-
         var connections = _dbManager.ListConnections();
         if (connections.Count == 0)
         {
@@ -50,22 +44,32 @@ public sealed class ProjectBaseActivator : IProjectBaseActivator
 
         var active = _dbManager.GetActiveConnection();
 
-        foreach (var conn in connections)
+        if (string.IsNullOrEmpty(currentFilePath))
         {
-            if (conn.Kind != BaseType.Project) continue;
-            if (conn.ProjectBinding is null) continue;
-
-            var match = _evaluator.Evaluate(conn.ProjectBinding, currentFilePath);
-            if (match.Kind == ProjectBaseMatchKind.Match)
+            // #174: an unsaved document has no path and can match nothing —
+            // skip project matching and fall through to the general fallback
+            // instead of leaving a stale project base active.
+            SmartConLogger.Info("Active document has no file path (unsaved) — project bases blocked, falling back to general");
+        }
+        else
+        {
+            foreach (var conn in connections)
             {
-                SmartConLogger.Info($"Project base '{conn.Name}' matches the active document");
-                if (active is null || active.Id != conn.Id)
+                if (conn.Kind != BaseType.Project) continue;
+                if (conn.ProjectBinding is null) continue;
+
+                var match = _evaluator.Evaluate(conn.ProjectBinding, currentFilePath);
+                if (match.Kind == ProjectBaseMatchKind.Match)
                 {
-                    await _dbManager.SwitchDatabaseAsync(conn.Id, ct);
+                    SmartConLogger.Info($"Project base '{conn.Name}' matches the active document");
+                    if (active is null || active.Id != conn.Id)
+                    {
+                        await _dbManager.SwitchDatabaseAsync(conn.Id, ct);
+                    }
+                    return conn.Id;
                 }
-                return conn.Id;
+                SmartConLogger.Debug($"Project base '{conn.Name}' did not match: {match.Reason ?? "no reason"}");
             }
-            SmartConLogger.Debug($"Project base '{conn.Name}' did not match: {match.Reason ?? "no reason"}");
         }
 
         // No project base matched. Keep the user's manual selection when it

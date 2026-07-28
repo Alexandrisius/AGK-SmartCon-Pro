@@ -18,8 +18,13 @@ public sealed partial class FileNameBlockItem : ObservableObject
     [ObservableProperty]
     private string _currentFieldValue = string.Empty;
 
+    /// <summary>
+    /// Validation state of this block against the current file name.
+    /// <c>null</c> = not evaluated yet (no saved file to validate against) —
+    /// the status column shows a neutral dash instead of a misleading ✓.
+    /// </summary>
     [ObservableProperty]
-    private bool _isValid = true;
+    private bool? _isValid;
 
     [ObservableProperty]
     private string? _validationError;

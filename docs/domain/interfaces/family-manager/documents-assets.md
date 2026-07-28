@@ -129,10 +129,11 @@ public sealed record ActiveDocumentChangedEventArgs(string FilePath);
 public sealed record ActiveDocumentPathChangedEventArgs(string FilePath, ActiveDocumentPathChangeReason Reason);
 ```
 
-- `ActiveDocumentChanged` — сработал `ViewActivated` для несемейного, сохранённого документа (путь гарантированно не пустой).
+- `ActiveDocumentChanged` — сработал `ViewActivated` для несемейного документа; аргумент — путь активного файла **или пустая строка для несохранённого документа** (#174: «имени для оценки ещё нет», проектные базы блокируются до сохранения).
 - `ActiveDocumentPathChanged` — у активного документа изменился путь, пока он остаётся активным: первое сохранение нового проекта (`SavedAs`) или переименование через `SaveAs` (`SavedAs`), а также редкий случай сохранения без смены пути (`Saved`).
 
 Подписчики (`FamilyManagerMainViewModel`) получают путь активного документа и
-запускают `IProjectBaseActivator.ActivateForDocumentAsync`. Фильтрация unsaved/detached/family
-документов, неактивных документов и отменённых/неудавшихся сохранений выполняется в реализации,
-чтобы Core оставался чистым от Revit API. См. Issue #128.
+запускают `IProjectBaseActivator.ActivateForDocumentAsync`. Фильтрация family
+документов, intra-document переключений видов, неактивных документов и
+отменённых/неудавшихся сохранений выполняется в реализации,
+чтобы Core оставался чистым от Revit API. См. Issue #128 и #174.

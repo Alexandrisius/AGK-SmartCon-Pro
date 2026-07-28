@@ -100,9 +100,13 @@
                                 <TextBlock FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
-                                            <Setter Property="Text" Value="{loc:Loc FM_PBase_ValidField}"/>
-                                            <Setter Property="Foreground" Value="Green"/>
+                                            <Setter Property="Text" Value="—"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
                                             <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsValid}" Value="True">
+                                                    <Setter Property="Text" Value="{loc:Loc FM_PBase_ValidField}"/>
+                                                    <Setter Property="Foreground" Value="Green"/>
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsValid}" Value="False">
                                                     <Setter Property="Text" Value="{loc:Loc FM_PBase_InvalidField}"/>
                                                     <Setter Property="Foreground" Value="Red"/>

@@ -113,6 +113,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanConvertSelectedToProject))]
     [NotifyPropertyChangedFor(nameof(CanConvertSelectedToGeneral))]
+    [NotifyPropertyChangedFor(nameof(CanConfigureSelectedProjectBase))]
+    [NotifyCanExecuteChangedFor(nameof(ConfigureProjectBaseCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConvertToProjectBaseCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConvertToGeneralBaseCommand))]
     private DatabaseListItem? _selectedConnection;
@@ -139,6 +141,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(ConvertToGeneralBaseCommand))]
     [NotifyPropertyChangedFor(nameof(CanConvertSelectedToProject))]
     [NotifyPropertyChangedFor(nameof(CanConvertSelectedToGeneral))]
+    [NotifyPropertyChangedFor(nameof(CanConfigureSelectedProjectBase))]
     [NotifyPropertyChangedFor(nameof(HasAnyDatabaseUpdate))]
     [NotifyPropertyChangedFor(nameof(HasProcessableCriticalPending))]
     [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]

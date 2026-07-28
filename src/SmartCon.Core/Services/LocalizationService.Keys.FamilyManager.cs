@@ -509,6 +509,10 @@ public static partial class LocalizationService
         en["FM_PBase_ConvertError"] = "Error converting database: {0}";
         ru["FM_PBase_BindingNotConfiguredConvert"] = "Привязка к проекту не настроена. Нельзя преобразовать базу в проектную.";
         en["FM_PBase_BindingNotConfiguredConvert"] = "Project binding is not configured. Cannot convert to project base.";
+        ru["FM_PBase_StatusProjectUnsaved"] = "Файл не сохранён — проектные базы недоступны. Сохраните файл, чтобы активировать базу проекта.";
+        en["FM_PBase_StatusProjectUnsaved"] = "File not saved — project bases are unavailable. Save the file to activate a project base.";
+        ru["FM_PBase_UnsavedFilePlaceholder"] = "(файл не сохранён)";
+        en["FM_PBase_UnsavedFilePlaceholder"] = "(file not saved)";
         ru["FM_PBase_DeleteDatabase"] = "Удалить базу";
         en["FM_PBase_DeleteDatabase"] = "Delete database";
         ru["FM_PBase_DatabaseTools"] = "Инструменты базы";
