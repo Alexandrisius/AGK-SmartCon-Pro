@@ -67,6 +67,14 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 |---|---|---|
 | [`family-manager/README.md`](family-manager/README.md) | Индекс модуля, архитектура, таблицы БД, миграции, фазы | При любой работе с FamilyManager |
 
+### FloorHeating (модуль тёплого пола, в разработке)
+
+| Документ | Описание | Когда загружать |
+|---|---|---|
+| [`floorheating/product-brief.md`](floorheating/product-brief.md) | Что строим и зачем (изменчивый) | При уточнении scope |
+| [`floorheating/kernel-spec.md`](floorheating/kernel-spec.md) | Математическая спецификация ядра (стабильная) | При любой работе с ядром |
+| [`floorheating/KNOWLEDGE-CAPSULE.md`](floorheating/KNOWLEDGE-CAPSULE.md) | Архив уроков 3 попыток (read-only) | Перед архитектурными решениями |
+
 ### Правила и решения
 
 | Документ | Описание | Когда загружать |
