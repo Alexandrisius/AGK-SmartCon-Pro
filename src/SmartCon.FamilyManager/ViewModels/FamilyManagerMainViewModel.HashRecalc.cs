@@ -23,6 +23,7 @@ public sealed partial class FamilyManagerMainViewModel
     [NotifyPropertyChangedFor(nameof(DatabaseUpdateBannerText))]
     [NotifyPropertyChangedFor(nameof(HasDatabaseUpdateIndicator))]
     [NotifyPropertyChangedFor(nameof(DatabaseUpdateBadgeTooltip))]
+    [NotifyPropertyChangedFor(nameof(ShowDatabaseUpdateBanner))]
     private bool _isDatabaseUpdateRequired;
 
     [ObservableProperty]
@@ -69,8 +70,11 @@ public sealed partial class FamilyManagerMainViewModel
     /// (processable or newer-only — the gate holds until perfectly
     /// updated), amber when only non-blocking OPTIONAL records remain
     /// (recommended, not required — processable here or newer-only).
+    /// Suppressed while the plugin-compatibility gate (ADR-058) is active:
+    /// this plugin cannot act on the pending state anyway.
     /// </summary>
-    public bool HasDatabaseUpdateIndicator => IsDatabaseUpdateRequired || HasOptionalPendingIndicator;
+    public bool HasDatabaseUpdateIndicator =>
+        (IsDatabaseUpdateRequired || HasOptionalPendingIndicator) && !IsDatabaseNewerThanPlugin;
 
     /// <summary>
     /// True when ANY optional (non-blocking) pending exists — processable
@@ -191,6 +195,22 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (!HasActiveDatabase)
         {
+            _updateState.Reset();
+            return;
+        }
+
+        // ADR-058 (#173): re-read the gate marker here as well — this method
+        // can run before RefreshAccessAndLoadTreeAsync after a database
+        // switch (fire-and-forget ordering in OnActiveDatabaseChanged), and
+        // checking the gate against the PREVIOUS database's marker would
+        // lose the update gate of the new one (review N1).
+        await _compatibility.RefreshAsync();
+        IsDatabaseNewerThanPlugin = _compatibility.IsDatabaseNewerThanPlugin;
+
+        if (_compatibility.IsDatabaseNewerThanPlugin)
+        {
+            // ADR-058 (#173): the compat gate supersedes the actualization
+            // state — this plugin cannot run the update anyway.
             _updateState.Reset();
             return;
         }

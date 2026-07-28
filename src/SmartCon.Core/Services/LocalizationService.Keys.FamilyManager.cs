@@ -531,6 +531,12 @@ public static partial class LocalizationService
         en["FM_DbUpdate_BannerTextReadOnlyRole"] = "The database must be updated and is read-only. Only a user with the Owner or BIM Master role can run the update — please contact them.";
         ru["FM_DbUpdate_BannerButton"] = "Обновить";
         en["FM_DbUpdate_BannerButton"] = "Update";
+        ru["FM_PluginGate_BannerText"] = "База данных обновлена до более новой версии SmartCon ({0}). Текущая версия приложения устарела: просмотр и загрузка семейств в проект доступны, но изменение базы недоступно. Обновите приложение, чтобы снять ограничение.";
+        en["FM_PluginGate_BannerText"] = "This database was upgraded by a newer SmartCon ({0}). Your app version is outdated: browsing and loading families into the project are available, but modifying the database is not. Update the app to lift the restriction.";
+        ru["FM_PluginGate_UpdateAppButton"] = "Обновить приложение";
+        en["FM_PluginGate_UpdateAppButton"] = "Update app";
+        ru["FM_HashRecalc_LoadBlockedBodyTeamNote"] = "Обратите внимание: после обновления пользователи со старыми версиями SmartCon не смогут редактировать эту базу (просмотр и загрузка в проект останутся доступны). Убедитесь, что команда обновилась.";
+        en["FM_HashRecalc_LoadBlockedBodyTeamNote"] = "Note: after the update, users on older SmartCon versions will not be able to edit this database (browsing and loading into the project remain available). Make sure the team has updated.";
         ru["FM_PBase_Title"] = "Привязка базы проекта к имени файла";
         en["FM_PBase_Title"] = "Project Base Binding Rules";
         ru["FM_PBase_ProjectNameLabel"] = "Проект:";

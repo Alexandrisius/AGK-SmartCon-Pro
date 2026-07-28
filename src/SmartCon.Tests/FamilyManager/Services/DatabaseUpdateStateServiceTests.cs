@@ -58,6 +58,7 @@ public sealed class DatabaseUpdateStateServiceTests
         public bool CanImport => CanEdit;
         public bool CanManageUsers => false;
         public bool CanLoadToProject => true;
+        public bool IsEditorRole => CanEdit;
         public bool IsOwner => false;
         public bool IsBanned => false;
         public Task<SmartCon.Core.Models.FamilyManager.DbUserRole> GetCurrentUserRoleAsync(CancellationToken ct = default)
@@ -219,6 +220,22 @@ public sealed class DatabaseUpdateStateServiceTests
         Assert.Equal(1, engine.RunCalls);
         Assert.False(sut.IsUpdateRequired);
         Assert.Equal(0, sut.PendingCount);
+    }
+
+    [Fact]
+    public async Task EnsureUpToDateAsync_ProcessablePending_DialogCarriesTeamImpactNote()
+    {
+        // ADR-058 (#173): the upgrader must make an INFORMED choice — the
+        // confirmation tells them that users on older SmartCon versions lose
+        // edit access to the shared database after the update.
+        var (sut, dialogs, _, _) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
+        await sut.RefreshAsync(2025);
+
+        await sut.EnsureUpToDateAsync();
+
+        Assert.Equal(1, dialogs.ConfirmationCalls);
+        Assert.NotNull(dialogs.LastConfirmationMessage);
+        Assert.Contains("не смогут редактировать", dialogs.LastConfirmationMessage);
     }
 
     [Fact]

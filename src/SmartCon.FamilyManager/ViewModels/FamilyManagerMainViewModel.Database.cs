@@ -541,4 +541,13 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     private bool CanManageUsersCheck() => CanManageUsers;
+
+    /// <summary>
+    /// ADR-058 (#173): the plugin-compatibility banner's
+    /// "Обновить приложение" button — routes to the existing About dialog
+    /// (update channel, changelog, update check) instead of duplicating
+    /// update logic here.
+    /// </summary>
+    [RelayCommand]
+    private void OpenAbout() => _aboutDialogService.ShowAbout();
 }

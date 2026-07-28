@@ -46,11 +46,19 @@ public interface IDbAccessControlService
     bool CanEdit { get; }
     bool CanManageUsers { get; }
     bool CanLoadToProject { get; }
+    bool IsEditorRole { get; }
     bool IsOwner { get; }
     bool IsBanned { get; }
     Task RefreshCurrentUserAsync(CancellationToken ct = default);
 }
 ```
+
+`CanImport`/`CanEdit`/`CanManageUsers` AND'ят гейт совместимости (ADR-058): на базе,
+обновлённой более новым плагином, все write-возможности выключены для любой роли.
+`IsEditorRole` — ролевой флаг «Owner/BimMaster и не забанен» БЕЗ compat-AND'а:
+нужен UI, адресованному только пишущим ролям (compat-баннер для Инженера
+бессмыслен — он и так read-only). `CanLoadToProject` compat-гейтом не трогается
+(ярусная модель: загрузка в проект не пишет в каталог).
 
 ---
 

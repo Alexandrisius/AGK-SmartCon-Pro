@@ -188,13 +188,17 @@ internal sealed class DatabaseManager : IDatabaseManager
             {
                 using var metaCmd = dbConn.CreateCommand();
                 metaCmd.CommandText = """
-                    INSERT INTO database_meta (id, name, description, created_at_utc, schema_version)
-                    VALUES (@id, @name, @description, @createdAtUtc, 2)
+                    INSERT INTO database_meta (id, name, description, created_at_utc, schema_version, min_plugin_version)
+                    VALUES (@id, @name, @description, @createdAtUtc, 2, @minPluginVersion)
                     """;
                 metaCmd.Parameters.Add(new SqliteParameter("@id", id));
                 metaCmd.Parameters.Add(new SqliteParameter("@name", name.Trim()));
                 metaCmd.Parameters.Add(new SqliteParameter("@description", DBNull.Value));
                 metaCmd.Parameters.Add(new SqliteParameter("@createdAtUtc", DateTimeOffset.UtcNow.ToString("o")));
+                // ADR-058 (#173): a freshly created database is written in the
+                // current breaking format from the start (e.g. FHV3 hashes), so
+                // it carries the compatibility floor immediately.
+                metaCmd.Parameters.Add(new SqliteParameter("@minPluginVersion", DbCompatibility.CurrentMinPluginVersion));
                 await metaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 using var ownerCmd = dbConn.CreateCommand();

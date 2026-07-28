@@ -10,12 +10,17 @@ namespace SmartCon.Tests.FamilyManager.Services;
 public sealed class DbAccessControlServiceTests
 {
     private static (DbAccessControlService service, Mock<IDbUserRepository> repoMock, Mock<IUserIdentityService> identityMock, LocalCatalogDatabase database) MakeService()
+        => MakeService(isDatabaseNewerThanPlugin: false);
+
+    private static (DbAccessControlService service, Mock<IDbUserRepository> repoMock, Mock<IUserIdentityService> identityMock, LocalCatalogDatabase database) MakeService(bool isDatabaseNewerThanPlugin)
     {
         var repoMock = new Mock<IDbUserRepository>();
         var identityMock = new Mock<IUserIdentityService>();
         identityMock.Setup(s => s.GetCurrentUser()).Returns(new UserIdentity("user1", "Test User", "PC", "user1"));
         var database = new LocalCatalogDatabase();
-        var service = new DbAccessControlService(repoMock.Object, identityMock.Object, database);
+        var compatMock = new Mock<IDatabaseCompatibilityService>();
+        compatMock.SetupGet(c => c.IsDatabaseNewerThanPlugin).Returns(isDatabaseNewerThanPlugin);
+        var service = new DbAccessControlService(repoMock.Object, identityMock.Object, database, compatMock.Object);
         return (service, repoMock, identityMock, database);
     }
 
@@ -176,6 +181,104 @@ public sealed class DbAccessControlServiceTests
 
         using var connection = database.CreateConnection();
         Assert.DoesNotContain("Mode=ReadOnly", connection.ConnectionString);
+    }
+
+    [Fact]
+    public async Task Refresh_OwnerRole_WhenDatabaseNewerThanPlugin_ConnectionsBecomeReadOnly()
+    {
+        // ADR-058 (#173): the compat gate ANDs into write access — even an
+        // Owner gets read-only connections to a database upgraded by a
+        // newer plugin.
+        var (service, repoMock, _, database) = MakeService(isDatabaseNewerThanPlugin: true);
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Owner));
+
+        using var connection = database.CreateConnection();
+        Assert.Contains("Mode=ReadOnly", connection.ConnectionString);
+    }
+
+    [Fact]
+    public async Task CanImport_Owner_WhenDatabaseNewerThanPlugin_ReturnsFalse()
+    {
+        var (service, repoMock, _, _) = MakeService(isDatabaseNewerThanPlugin: true);
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Owner));
+
+        Assert.False(service.CanImport);
+    }
+
+    [Fact]
+    public async Task CanEdit_Owner_WhenDatabaseNewerThanPlugin_ReturnsFalse()
+    {
+        var (service, repoMock, _, _) = MakeService(isDatabaseNewerThanPlugin: true);
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Owner));
+
+        Assert.False(service.CanEdit);
+    }
+
+    [Fact]
+    public async Task CanManageUsers_Owner_WhenDatabaseNewerThanPlugin_ReturnsFalse()
+    {
+        var (service, repoMock, _, _) = MakeService(isDatabaseNewerThanPlugin: true);
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Owner));
+
+        Assert.False(service.CanManageUsers);
+    }
+
+    [Fact]
+    public async Task CanLoadToProject_Owner_WhenDatabaseNewerThanPlugin_StaysTrue()
+    {
+        // ADR-058 tiered model (#173): loading families into the project
+        // never writes the catalog — allowed on a compat-gated database.
+        var (service, repoMock, _, _) = MakeService(isDatabaseNewerThanPlugin: true);
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Owner));
+
+        Assert.True(service.CanLoadToProject);
+    }
+
+    [Fact]
+    public async Task IsEditorRole_Owner_ReturnsTrue()
+    {
+        var (service, repoMock, _, _) = MakeService();
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Owner));
+
+        Assert.True(service.IsEditorRole);
+    }
+
+    [Fact]
+    public async Task IsEditorRole_BimMaster_ReturnsTrue()
+    {
+        var (service, repoMock, _, _) = MakeService();
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.BimMaster));
+
+        Assert.True(service.IsEditorRole);
+    }
+
+    [Fact]
+    public async Task IsEditorRole_Engineer_ReturnsFalse()
+    {
+        var (service, repoMock, _, _) = MakeService();
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Engineer));
+
+        Assert.False(service.IsEditorRole);
+    }
+
+    [Fact]
+    public async Task IsEditorRole_BannedOwner_ReturnsFalse()
+    {
+        var (service, repoMock, _, _) = MakeService();
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Owner, DbUserStatus.Banned));
+
+        Assert.False(service.IsEditorRole);
+    }
+
+    [Fact]
+    public async Task IsEditorRole_Owner_WhenDatabaseNewerThanPlugin_StaysTrue()
+    {
+        // ADR-058 (#173): IsEditorRole is the role-only flag (no compat AND) —
+        // the compat banner uses it to target write-capable roles only.
+        var (service, repoMock, _, _) = MakeService(isDatabaseNewerThanPlugin: true);
+        await RefreshWithUser(service, repoMock, MakeUser(DbUserRole.Owner));
+
+        Assert.True(service.IsEditorRole);
     }
 
     [Fact]

@@ -233,7 +233,12 @@ public static class ServiceRegistrar
         services.AddSingleton<IActiveDocumentClassifier, ActiveDocumentClassifier>();
         services.AddSingleton<IUserIdentityService, RevitUserIdentityService>();
         services.AddSingleton<IDbUserRepository, LocalDbUserRepository>();
+        // ADR-058 (#173): DbAccessControlService consumes the compat gate
+        // (ctor injection) — logical dependency, registration order is
+        // irrelevant to MS DI.
+        services.AddSingleton<IDatabaseCompatibilityService, SmartCon.FamilyManager.Services.DatabaseCompatibilityService>();
         services.AddSingleton<IDbAccessControlService, DbAccessControlService>();
+        services.AddSingleton<IAboutDialogService, SmartCon.App.Services.AboutDialogService>();
         services.AddSingleton<IFamilyManagerDialogService, FamilyManagerDialogService>();
 
         // --- FamilyManager Content Hash Dedup (Phase 27 / Issue #88) ---

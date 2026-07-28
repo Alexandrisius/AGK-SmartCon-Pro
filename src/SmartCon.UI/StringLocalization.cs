@@ -284,6 +284,7 @@ public static class StringLocalization
         public const string FM_HashRecalc_LoadBlockedBody = "FM_HashRecalc_LoadBlockedBody";
         public const string FM_HashRecalc_LoadBlockedBodyNewerRevit = "FM_HashRecalc_LoadBlockedBodyNewerRevit";
         public const string FM_HashRecalc_LoadBlockedBodyReadOnlyRole = "FM_HashRecalc_LoadBlockedBodyReadOnlyRole";
+        public const string FM_HashRecalc_LoadBlockedBodyTeamNote = "FM_HashRecalc_LoadBlockedBodyTeamNote";
         public const string FM_HashRecalc_PurgeButton = "FM_HashRecalc_PurgeButton";
         public const string FM_HashRecalc_PurgeConfirmTitle = "FM_HashRecalc_PurgeConfirmTitle";
         public const string FM_HashRecalc_PurgeConfirmBody = "FM_HashRecalc_PurgeConfirmBody";
@@ -375,6 +376,8 @@ public static class StringLocalization
         public const string FM_DbUpdate_BannerTextNewerRevit = "FM_DbUpdate_BannerTextNewerRevit";
         public const string FM_DbUpdate_BannerTextReadOnlyRole = "FM_DbUpdate_BannerTextReadOnlyRole";
         public const string FM_DbUpdate_BannerButton = "FM_DbUpdate_BannerButton";
+        public const string FM_PluginGate_BannerText = "FM_PluginGate_BannerText";
+        public const string FM_PluginGate_UpdateAppButton = "FM_PluginGate_UpdateAppButton";
         public const string FM_PBase_Title = "FM_PBase_Title";
         public const string FM_PBase_ProjectNameLabel = "FM_PBase_ProjectNameLabel";
         public const string FM_PBase_UseCurrentFile = "FM_PBase_UseCurrentFile";

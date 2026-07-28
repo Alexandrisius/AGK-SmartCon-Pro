@@ -100,7 +100,10 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
             string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_LoadBlockedBody)
                     ?? "Действие временно недоступно: база данных создана в старой версии SmartCon и требует обновления ({0} записей). До завершения обновления база работает в режиме просмотра.\n\nОбновить сейчас?",
-                PendingCount));
+                PendingCount)
+            + "\n\n"
+            + (LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_LoadBlockedBodyTeamNote)
+                ?? "Обратите внимание: после обновления пользователи со старыми версиями SmartCon не смогут редактировать эту базу (просмотр и загрузка в проект останутся доступны). Убедитесь, что команда обновилась."));
         if (!confirmed)
         {
             SmartConLogger.Info("DbMigration: write op gated — database update declined by user");

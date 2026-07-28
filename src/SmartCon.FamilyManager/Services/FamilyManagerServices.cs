@@ -114,4 +114,17 @@ public sealed record FamilyManagerServices(
     /// switch and maps it onto the badge/banner UI; write commands across
     /// the module gate through it (read-only database while pending).
     /// </summary>
-    IDatabaseUpdateStateService UpdateState);
+    IDatabaseUpdateStateService UpdateState,
+    /// <summary>
+    /// ADR-058 (#173): plugin↔database forward-compatibility gate. Refreshed
+    /// on connect/switch/init BEFORE the RBAC role resolution (the access
+    /// service ANDs <see cref="IDatabaseCompatibilityService.IsDatabaseNewerThanPlugin"/>
+    /// into every write-access decision).
+    /// </summary>
+    IDatabaseCompatibilityService CompatibilityService,
+    /// <summary>
+    /// ADR-058 (#173): opens the About dialog (update channel, changelog,
+    /// update check) from the plugin-compatibility banner's
+    /// "Обновить приложение" button.
+    /// </summary>
+    IAboutDialogService AboutDialogService);

@@ -1,0 +1,22 @@
+namespace SmartCon.Core.Models.FamilyManager;
+
+/// <summary>
+/// Forward-compatibility constants for the FamilyManager catalog database
+/// (ADR-058, #173).
+/// </summary>
+public static class DbCompatibility
+{
+    /// <summary>
+    /// The oldest SmartCon version that can safely WRITE to a database
+    /// carrying the current breaking data format. Bumped only by changes
+    /// that make older plugins harmful to the catalog (e.g. a new
+    /// content-hash format: their dedup would silently create duplicates).
+    /// Every bump MUST ship with a schema migration backfilling
+    /// <c>database_meta.min_plugin_version</c> from the data marker that
+    /// proves the breaking change was applied (see migration V24 for the
+    /// FHV3 precedent: <c>hash_format_version = 3</c>).
+    /// Non-breaking releases (additive columns, optional artifacts) do NOT
+    /// bump this floor.
+    /// </summary>
+    public const string CurrentMinPluginVersion = "2.0.1-beta.5";
+}

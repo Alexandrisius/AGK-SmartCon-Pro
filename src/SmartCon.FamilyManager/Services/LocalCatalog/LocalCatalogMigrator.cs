@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 23)
+        if (initialVersion < 24)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v23");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v24");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -77,6 +77,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 21, MigrateV21Async, ct);
         await RunMigrationAsync(connection, 22, MigrateV22Async, ct);
         await RunMigrationAsync(connection, 23, MigrateV23Async, ct);
+        await RunMigrationAsync(connection, 24, MigrateV24Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1030,6 +1031,56 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// V24 (ADR-058, #173): adds <c>database_meta.min_plugin_version</c> —
+    /// the forward-compatibility floor — and retro-gates databases already
+    /// actualized to FHV3 (<c>hash_format_version = 3</c>) to
+    /// <c>2.0.1-beta.5</c>, the first FHV3-capable release.
+    /// </summary>
+    private static async Task MigrateV24Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 24) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await ColumnExistsAsync(connection, "database_meta", "min_plugin_version", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV24AddMinPluginVersionColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using (var backfillCmd = connection.CreateCommand())
+            {
+                backfillCmd.Transaction = tx;
+                backfillCmd.CommandText = FamilyCatalogSql.MigrateV24BackfillMinPluginVersion;
+                var gated = await backfillCmd.ExecuteNonQueryAsync(ct);
+                if (gated > 0)
+                {
+                    SmartConLogger.Info(
+                        "Migration v24: database carries FHV3 hashes — min_plugin_version set to 2.0.1-beta.5 " +
+                        "(older plugins will connect read-only, ADR-058)");
+                }
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '24' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v24: added min_plugin_version column to database_meta (plugin forward-compatibility gate, ADR-058, #173)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1104,6 +1155,13 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = FamilyCatalogSql.MigrateV20AddBaseTypeColumn;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "database_meta", "min_plugin_version", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV24AddMinPluginVersionColumn;
             await cmd.ExecuteNonQueryAsync(ct);
         }
 

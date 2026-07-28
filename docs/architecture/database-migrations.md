@@ -14,6 +14,7 @@ ADR-054.
 |---|---|
 | Новая таблица/колонка с безопасным дефолтом | Schema migration в `LocalCatalogMigrator` при подключении (CREATE/ALTER IF NOT EXISTS) — мгновенно, без UI |
 | Данные надо извлечь/пересчитать из managed-файлов (нужен Revit API, долго) | **`IDatabaseActualizationTask`** — этот паттерн |
+| **Breaking-изменение данных** (старый плагин станет вреден для базы — напр. новый формат хэша) | bump `DbCompatibility.CurrentMinPluginVersion` + schema migration с backfill `database_meta.min_plugin_version` из маркера в данных (прецедент V24/FHV3). Гейт — [ADR-058](../adr/058-plugin-database-forward-compatibility-gate.md) |
 
 ## Ключевая идея
 

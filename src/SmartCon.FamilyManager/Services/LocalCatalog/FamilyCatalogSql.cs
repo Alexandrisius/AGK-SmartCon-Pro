@@ -858,4 +858,24 @@ internal static class FamilyCatalogSql
     public const string MigrateV23AddGlbStateColumn = """
         ALTER TABLE catalog_versions ADD COLUMN glb_state INTEGER
         """;
+
+    /// <summary>
+    /// V24 (ADR-058, #173): adds <c>min_plugin_version TEXT</c> to
+    /// <c>database_meta</c> — the forward-compatibility gate. NULL means
+    /// "no floor" (legacy database, any plugin may write).
+    /// </summary>
+    public const string MigrateV24AddMinPluginVersionColumn = """
+        ALTER TABLE database_meta ADD COLUMN min_plugin_version TEXT
+        """;
+
+    /// <summary>
+    /// V24 (ADR-058, #173): retro-gates databases that were already
+    /// actualized to the FHV3 content-hash format (breaking for FHV2-era
+    /// plugins — their dedup cannot see v3 hashes and would silently import
+    /// duplicates). The marker proves the breaking change was applied.
+    /// </summary>
+    public const string MigrateV24BackfillMinPluginVersion = """
+        UPDATE database_meta SET min_plugin_version = '2.0.1-beta.5'
+        WHERE EXISTS (SELECT 1 FROM catalog_versions WHERE hash_format_version = 3)
+        """;
 }

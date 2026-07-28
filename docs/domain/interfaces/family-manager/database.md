@@ -50,6 +50,49 @@ operation-level `SemaphoreSlim` в `DatabaseManager` — конкурентны�
 
 ---
 
+## IDatabaseCompatibilityService
+
+Гейт forward-совместимости плагин↔база (ADR-058, #173): сравнивает
+`database_meta.min_plugin_version` активной базы с версией плагина и
+сигналит, когда база обновлена более новым SmartCon (breaking-формат —
+напр. FHV3-хэши). `DbAccessControlService` AND'ит флаг в `SetWriteAccess`
+(read-only для устаревшего плагина), VM показывает баннер с кнопкой
+«Обновить приложение». Fail-open: отсутствующий/битый маркер не блокирует.
+
+**Файл:** `IDatabaseCompatibilityService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/DatabaseCompatibilityService.cs`
+
+```csharp
+public interface IDatabaseCompatibilityService
+{
+    bool IsDatabaseNewerThanPlugin { get; }
+    string? DatabaseMinPluginVersion { get; }
+    Task RefreshAsync(CancellationToken ct = default);
+    void Reset();
+}
+```
+
+---
+
+## IAboutDialogService
+
+Открывает существующее окно About (версия, канал обновления, changelog,
+проверка обновлений) из feature-модулей, не нарушая dependency-rule
+(FamilyManager не знает про PipeConnect/App). Введён для кнопки
+«Обновить приложение» баннера ADR-058.
+
+**Файл:** `IAboutDialogService.cs`
+**Реализация:** `SmartCon.App/Services/AboutDialogService.cs`
+
+```csharp
+public interface IAboutDialogService
+{
+    void ShowAbout();
+}
+```
+
+---
+
 ## IRegistryMigrator
 
 Мигратор `registry.json` FamilyManager между версиями схемы. Каждая версия —

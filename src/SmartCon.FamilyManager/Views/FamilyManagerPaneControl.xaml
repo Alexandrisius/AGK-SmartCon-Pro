@@ -681,32 +681,81 @@
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource WarningBrush}"
                 BorderThickness="1"
-                Visibility="{Binding IsDatabaseUpdateRequired, Converter={StaticResource BoolToVis}}">
+                Visibility="{Binding ShowDatabaseUpdateBanner, Converter={StaticResource BoolToVis}}">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <iconPacks:PackIconMaterial Kind="AlertOutline"
-                                            Width="16" Height="16"
-                                            Margin="0,0,8,0"
-                                            VerticalAlignment="Center"
-                                            Foreground="{DynamicResource WarningBrush}"/>
-                <TextBlock Grid.Column="1"
-                           Text="{Binding DatabaseUpdateBannerText}"
-                           TextWrapping="Wrap"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextPrimaryBrush}"/>
-                <Button Grid.Column="2"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <iconPacks:PackIconMaterial Kind="AlertOutline"
+                                                Width="16" Height="16"
+                                                Margin="0,0,8,0"
+                                                VerticalAlignment="Top"
+                                                Foreground="{DynamicResource WarningBrush}"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding DatabaseUpdateBannerText}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </Grid>
+                <Button Grid.Row="1"
                         Content="{loc:Loc FM_DbUpdate_BannerButton}"
                         Command="{Binding UpdateDatabaseCommand}"
                         Style="{DynamicResource PrimaryButton}"
                         MinWidth="80"
                         Height="24"
                         Padding="10,0"
-                        Margin="10,0,0,0"
+                        Margin="0,6,0,0"
+                        HorizontalAlignment="Right"
                         Visibility="{Binding HasProcessableCriticalPending, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </Border>
+
+        <!-- Row 2 (shared): plugin-compatibility banner — the database was upgraded by a newer SmartCon (ADR-058, #173).
+             Mutually exclusive with the DB-update banner above (ShowDatabaseUpdateBanner is false while the gate is active). -->
+        <Border Grid.Row="2"
+                Margin="0,0,0,8"
+                Padding="10,6"
+                CornerRadius="6"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource WarningBrush}"
+                BorderThickness="1"
+                Visibility="{Binding ShowPluginGateBanner, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <iconPacks:PackIconMaterial Kind="AlertOutline"
+                                                Width="16" Height="16"
+                                                Margin="0,0,8,0"
+                                                VerticalAlignment="Top"
+                                                Foreground="{DynamicResource WarningBrush}"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding PluginGateBannerText}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </Grid>
+                <Button Grid.Row="1"
+                        Content="{loc:Loc FM_PluginGate_UpdateAppButton}"
+                        Command="{Binding OpenAboutCommand}"
+                        Style="{DynamicResource PrimaryButton}"
+                        MinWidth="80"
+                        Height="24"
+                        Padding="10,0"
+                        Margin="0,6,0,0"
+                        HorizontalAlignment="Right"/>
             </Grid>
         </Border>
 

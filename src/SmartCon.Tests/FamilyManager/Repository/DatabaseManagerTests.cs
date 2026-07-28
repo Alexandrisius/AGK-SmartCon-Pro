@@ -80,6 +80,25 @@ public sealed class DatabaseManagerTests
     }
 
     [Fact]
+    public async Task CreateDatabaseAsync_WritesMinPluginVersionFloor()
+    {
+        // ADR-058 (#173): a freshly created database carries the current
+        // breaking-format floor from the start (it is written with FHV3
+        // hashes), so older plugins connect to it read-only.
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+
+        await fixture.Manager.CreateDatabaseAsync("TestDB", dbPath);
+
+        using var dbConn = fixture.Database.CreateConnection();
+        await dbConn.OpenAsync();
+        using var cmd = dbConn.CreateCommand();
+        cmd.CommandText = "SELECT min_plugin_version FROM database_meta LIMIT 1";
+        var value = (string?)(await cmd.ExecuteScalarAsync());
+        Assert.Equal(DbCompatibility.CurrentMinPluginVersion, value);
+    }
+
+    [Fact]
     public async Task CreateDatabaseAsync_SetsAsActive()
     {
         using var fixture = new TempDbManagerFixture();

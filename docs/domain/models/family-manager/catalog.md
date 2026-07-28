@@ -145,6 +145,29 @@ public sealed record DatabaseConnectionRegistry(
 
 ---
 
+## DbCompatibility
+
+Константы forward-совместимости каталога (ADR-058, #173): минимальная версия
+плагина, способная безопасно писать в базу с текущим breaking-форматом данных.
+
+**Файл:** `DbCompatibility.cs`
+
+```csharp
+public static class DbCompatibility
+{
+    public const string CurrentMinPluginVersion = "2.0.1-beta.5";
+}
+```
+
+`CurrentMinPluginVersion` — floor-версия, записываемая в
+`database_meta.min_plugin_version` новых баз (`CreateDatabaseAsync`) и
+backfill'ом миграций (прецедент V24: базы с FHV3-хэшами). Bump только при
+breaking-изменении данных, делающем старый плагин вредным для базы (его дедуп
+молча плодит дубликаты); аддитивные изменения floor не поднимают. Сравнение
+с версией плагина — через `IDatabaseCompatibilityService` + `SemVersion`.
+
+---
+
 ## ContentStatus
 
 Статус опубликованного контента в каталоге. FM — Published-зона, всё импортированное = опубликовано.

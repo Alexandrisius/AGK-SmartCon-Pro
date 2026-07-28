@@ -70,6 +70,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IDatabaseUpdateStateService _updateState;
     private readonly IProjectBaseActivator _projectBaseActivator;
     private readonly IProjectBaseBindingEvaluator _projectBaseEvaluator;
+    private readonly IDatabaseCompatibilityService _compatibility;
+    private readonly IAboutDialogService _aboutDialogService;
 
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
@@ -146,6 +148,32 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(DeleteDatabaseCommand))]
     private bool _canManageUsers;
 
+    // ADR-058 (#173): the active database was upgraded by a newer SmartCon —
+    // show the plugin-update banner and hide the DB-update banner/badge
+    // (this plugin cannot act on them anyway).
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PluginGateBannerText))]
+    [NotifyPropertyChangedFor(nameof(ShowDatabaseUpdateBanner))]
+    [NotifyPropertyChangedFor(nameof(HasDatabaseUpdateIndicator))]
+    [NotifyPropertyChangedFor(nameof(ShowPluginGateBanner))]
+    private bool _isDatabaseNewerThanPlugin;
+
+    // ADR-058 (#173): the compat banner targets write-capable roles only —
+    // for an Engineer the gate changes nothing (the role is read-only by
+    // definition), so the banner would be meaningless noise.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPluginGateBanner))]
+    private bool _isEditorRole;
+
+    public bool ShowPluginGateBanner => IsDatabaseNewerThanPlugin && IsEditorRole;
+
+    public string PluginGateBannerText => string.Format(
+        LanguageManager.GetString(StringLocalization.Keys.FM_PluginGate_BannerText)
+            ?? "База данных обновлена до более новой версии SmartCon ({0}). Текущая версия приложения устарела: просмотр и загрузка семейств в проект доступны, но изменение базы недоступно. Обновите приложение, чтобы снять ограничение.",
+        _compatibility.DatabaseMinPluginVersion);
+
+    public bool ShowDatabaseUpdateBanner => IsDatabaseUpdateRequired && !IsDatabaseNewerThanPlugin;
+
     public FamilyManagerMainViewModel(FamilyManagerServices services)
     {
         Guard.ThrowIfNull(services);
@@ -204,6 +232,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _updateState = services.UpdateState;
         _projectBaseActivator = services.ProjectBaseActivator;
         _projectBaseEvaluator = services.ProjectBaseEvaluator;
+        _compatibility = services.CompatibilityService;
+        _aboutDialogService = services.AboutDialogService;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();
@@ -343,6 +373,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
         if (!HasActiveDatabase)
         {
+            _compatibility.Reset();
+            IsDatabaseNewerThanPlugin = false;
+            IsEditorRole = false;
             StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StatusNoDatabase) ?? "No database connected";
             TreeNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
             CanImport = false;
@@ -350,6 +383,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             CanManageUsers = false;
             return;
         }
+
+        // ADR-058 (#173): refresh the compat gate BEFORE the role resolution —
+        // ApplyWriteAccess ANDs IsDatabaseNewerThanPlugin into write access.
+        await _compatibility.RefreshAsync();
+        IsDatabaseNewerThanPlugin = _compatibility.IsDatabaseNewerThanPlugin;
 
         _accessControl.InvalidateCache();
 
@@ -363,6 +401,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             CanImport = false;
             CanEdit = false;
             CanManageUsers = false;
+            IsEditorRole = false;
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
                 string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));
@@ -401,9 +440,13 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
 
     private void UpdateAccessProperties()
     {
+        // Write capabilities come pre-gated from the service: CanImport/
+        // CanEdit/CanManageUsers already AND the plugin-compat gate (ADR-058,
+        // central enforcement point in DbAccessControlService).
         CanImport = _accessControl.CanImport;
         CanEdit = _accessControl.CanEdit;
         CanManageUsers = _accessControl.CanManageUsers;
+        IsEditorRole = _accessControl.IsEditorRole;
     }
 
     partial void OnSearchTextChanged(string value)
@@ -753,6 +796,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             CanImport = false;
             CanEdit = false;
             CanManageUsers = false;
+            IsEditorRole = false;
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_AccessDenied) ?? "Access Denied",
                 string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_AccessDeniedMessage) ?? "The owner of \"{0}\" has restricted your access.", ex.DbName));

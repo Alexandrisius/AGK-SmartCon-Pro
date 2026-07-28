@@ -68,7 +68,117 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("23", version);
+        Assert.Equal("24", version);
+    }
+
+    [Fact]
+    public async Task Migrate_V24_AddsMinPluginVersionColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('database_meta') WHERE name='min_plugin_version'";
+        var count = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.Equal(1L, count);
+    }
+
+    [Fact]
+    public async Task Migrate_V24_BackfillsMinPluginVersion_WhenFhv3HashesPresent()
+    {
+        // ADR-058 (#173): a database that already carries FHV3 hashes must be
+        // retro-gated to the first FHV3-capable plugin release. Simulate the
+        // pre-V24 state (rewind pattern from Migrate_FromV13_DropsSha256Columns).
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedVersionWithHashFormatAsync(fixture, itemId, hashFormatVersion: 3);
+
+        await RewindToV23Async(fixture);
+        await fixture.MigrateAsync();
+
+        Assert.Equal(
+            SmartCon.Core.Models.FamilyManager.DbCompatibility.CurrentMinPluginVersion,
+            await ReadMinPluginVersionAsync(fixture));
+    }
+
+    [Fact]
+    public async Task Migrate_V24_LeavesMinPluginVersionNull_WhenNoFhv3Hashes()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedVersionWithHashFormatAsync(fixture, itemId, hashFormatVersion: 2);
+
+        await RewindToV23Async(fixture);
+        await fixture.MigrateAsync();
+
+        Assert.Null(await ReadMinPluginVersionAsync(fixture));
+    }
+
+    private static async Task SeedVersionWithHashFormatAsync(TempCatalogFixture fixture, string catalogItemId, int hashFormatVersion)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+
+        var fileId = Guid.NewGuid().ToString();
+        using (var fileCmd = conn.CreateCommand())
+        {
+            fileCmd.CommandText = """
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES (@id, 'files/x.rfa', 'x.rfa', 2025, '2026-07-28T00:00:00Z')
+                """;
+            fileCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", fileId));
+            await fileCmd.ExecuteNonQueryAsync();
+        }
+
+        using (var metaCmd = conn.CreateCommand())
+        {
+            metaCmd.CommandText = """
+                INSERT INTO database_meta (id, name, created_at_utc, schema_version)
+                VALUES ('db1', 'Test DB', '2026-07-28T00:00:00Z', 2)
+                """;
+            await metaCmd.ExecuteNonQueryAsync();
+        }
+
+        using var versionCmd = conn.CreateCommand();
+        versionCmd.CommandText = """
+            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, content_hash, hash_format_version, published_at_utc)
+            VALUES (@id, @itemId, @fileId, 'v1', 2025, 'ABCD', @fmt, '2026-07-28T00:00:00Z')
+            """;
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", Guid.NewGuid().ToString()));
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@itemId", catalogItemId));
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@fileId", fileId));
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@fmt", hashFormatVersion));
+        await versionCmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task RewindToV23Async(TempCatalogFixture fixture)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+
+        using (var drop = conn.CreateCommand())
+        {
+            drop.CommandText = "ALTER TABLE database_meta DROP COLUMN min_plugin_version";
+            await drop.ExecuteNonQueryAsync();
+        }
+
+        using var rewind = conn.CreateCommand();
+        rewind.CommandText = "UPDATE schema_info SET value = '23' WHERE key='schema_version'";
+        await rewind.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string?> ReadMinPluginVersionAsync(TempCatalogFixture fixture)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT min_plugin_version FROM database_meta LIMIT 1";
+        var value = await cmd.ExecuteScalarAsync();
+        return value is null or DBNull ? null : (string?)value;
     }
 
     [Fact]
@@ -118,7 +228,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("23", version);
+        Assert.Equal("24", version);
 
         using var tableCmd = verify.CreateCommand();
         tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_nested_shared_families'";
@@ -189,7 +299,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("23", version);
+        Assert.Equal("24", version);
 
         using var cmd = verify.CreateCommand();
         cmd.CommandText = "PRAGMA table_info(database_meta)";
@@ -222,7 +332,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("23", version);
+        Assert.Equal("24", version);
 
         using var cmd = verify.CreateCommand();
         cmd.CommandText = "PRAGMA table_info(database_meta)";
@@ -285,7 +395,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("23", version);
+        Assert.Equal("24", version);
     }
 
     [Fact]
@@ -554,7 +664,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("23", version);
+        Assert.Equal("24", version);
 
         foreach (var (table, column) in new[]
         {
@@ -672,7 +782,7 @@ public sealed class LocalCatalogMigratorTests
 
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-        Assert.Equal("23", (string?)await versionCmd.ExecuteScalarAsync());
+        Assert.Equal("24", (string?)await versionCmd.ExecuteScalarAsync());
 
         // Orphans are gone from both rebuilt tables.
         foreach (var (table, ghostId) in new[]
