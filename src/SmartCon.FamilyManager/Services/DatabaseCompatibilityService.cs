@@ -11,16 +11,51 @@ namespace SmartCon.FamilyManager.Services;
 /// database and compares it against the running plugin version
 /// (ADR-058, #173). Fail-open by design: a missing/unreadable marker must
 /// never lock users out — only a positively newer floor gates the database.
+///
+/// Developer escape hatch (ADR-058 §5): DEBUG builds keep the gate OFF by
+/// default so the developer-owner is never locked out of his own databases
+/// (a local build's version is the stable <c>Version.txt</c> one, older
+/// than any beta floor). The environment variable
+/// <c>SMARTCON_FM_COMPAT_GATE</c> flips the behavior in both directions:
+/// <c>force</c> re-enables the gate in a DEBUG build (gate testing),
+/// <c>disable</c> suppresses it even in RELEASE (support emergency hatch).
 /// </summary>
 public sealed class DatabaseCompatibilityService : IDatabaseCompatibilityService
 {
+    internal const string GateOverrideEnvVar = "SMARTCON_FM_COMPAT_GATE";
+
+    internal enum OverrideMode
+    {
+        Default,
+        Force,
+        Disable,
+    }
+
     private readonly LocalCatalogDatabase _database;
     private readonly IUpdateService _updateService;
+    private readonly OverrideMode _override;
 
     public DatabaseCompatibilityService(LocalCatalogDatabase database, IUpdateService updateService)
+        : this(database, updateService, ReadOverrideFromEnvironment())
+    {
+    }
+
+    internal DatabaseCompatibilityService(LocalCatalogDatabase database, IUpdateService updateService, OverrideMode gateOverride)
     {
         _database = database;
         _updateService = updateService;
+        _override = gateOverride;
+
+        if (!IsGateEffectivelyEnabled())
+        {
+            SmartConLogger.Info(_override == OverrideMode.Disable
+                ? $"DbCompat: compat gate suppressed via {GateOverrideEnvVar}=disable"
+                : $"DbCompat: compat gate off (DEBUG build default) — set {GateOverrideEnvVar}=force to enable it");
+        }
+        else if (_override == OverrideMode.Force)
+        {
+            SmartConLogger.Info($"DbCompat: compat gate force-enabled via {GateOverrideEnvVar}=force");
+        }
     }
 
     public bool IsDatabaseNewerThanPlugin { get; private set; }
@@ -33,7 +68,26 @@ public sealed class DatabaseCompatibilityService : IDatabaseCompatibilityService
             ("Method", nameof(RefreshAsync)));
 
         DatabaseMinPluginVersion = await ReadMinPluginVersionAsync(ct).ConfigureAwait(false);
-        IsDatabaseNewerThanPlugin = EvaluateGate(DatabaseMinPluginVersion);
+        var rawGate = EvaluateGate(DatabaseMinPluginVersion);
+
+        if (rawGate && !IsGateEffectivelyEnabled())
+        {
+            IsDatabaseNewerThanPlugin = false;
+            if (_override == OverrideMode.Disable)
+            {
+                SmartConLogger.Warn(
+                    $"DbCompat: database requires SmartCon >= {DatabaseMinPluginVersion} but the compat gate is suppressed via {GateOverrideEnvVar}=disable — writes are NOT blocked. " +
+                    $"[Action: remove {GateOverrideEnvVar} to restore the gate]");
+            }
+            else
+            {
+                SmartConLogger.Debug(
+                    $"DbCompat: database requires SmartCon >= {DatabaseMinPluginVersion} — gate off (DEBUG default), writes allowed");
+            }
+            return;
+        }
+
+        IsDatabaseNewerThanPlugin = rawGate;
 
         SmartConLogger.Info(IsDatabaseNewerThanPlugin
             ? $"Database requires SmartCon >= {DatabaseMinPluginVersion}; current plugin is older — connecting read-only"
@@ -44,6 +98,28 @@ public sealed class DatabaseCompatibilityService : IDatabaseCompatibilityService
     {
         DatabaseMinPluginVersion = null;
         IsDatabaseNewerThanPlugin = false;
+    }
+
+    private bool IsGateEffectivelyEnabled() => _override switch
+    {
+        OverrideMode.Force => true,
+        OverrideMode.Disable => false,
+#if DEBUG
+        _ => false,
+#else
+        _ => true,
+#endif
+    };
+
+    private static OverrideMode ReadOverrideFromEnvironment()
+    {
+        var raw = Environment.GetEnvironmentVariable(GateOverrideEnvVar);
+        return raw?.Trim().ToLowerInvariant() switch
+        {
+            "force" or "1" or "true" => OverrideMode.Force,
+            "disable" or "0" or "false" => OverrideMode.Disable,
+            _ => OverrideMode.Default,
+        };
     }
 
     private async Task<string?> ReadMinPluginVersionAsync(CancellationToken ct)
