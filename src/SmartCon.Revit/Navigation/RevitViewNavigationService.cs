@@ -76,6 +76,35 @@ public sealed class RevitViewNavigationService : IViewNavigationService
         return ZoomToPointResult.Success;
     }
 
+    public ZoomToPointResult ZoomByFactorToPoint(double factor, XYZ point, ScreenRect? occludingWindow)
+    {
+        using var _scope = SmartConLogger.BeginScope("Nav",
+            ("Method", nameof(ZoomByFactorToPoint)),
+            ("Factor", factor.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)));
+
+        if (!TryGetViewFrame(out var uidoc, out var view, out var uiView, out var viewPx, out var result))
+            return result;
+
+        var frame = GetViewPlaneFrame(view!, uiView!);
+        var u0 = frame.Corner0.DotProduct(frame.Right);
+        var v0 = frame.Corner0.DotProduct(frame.Up);
+        var u1 = frame.Corner1.DotProduct(frame.Right);
+        var v1 = frame.Corner1.DotProduct(frame.Up);
+        var targetU = point.DotProduct(frame.Right);
+        var targetV = point.DotProduct(frame.Up);
+
+        var zoom = ViewZoomMath.ComputeScaledToPoint(u0, v0, u1, v1, factor, targetU, targetV, viewPx, occludingWindow);
+        if (zoom is null)
+        {
+            SmartConLogger.Warn($"Degenerate view/corners rect [Action: разверните окно Revit и повторите зум]");
+            return ZoomToPointResult.DegenerateViewRect;
+        }
+
+        ApplyZoom(uidoc!, uiView!, frame, zoom);
+        SmartConLogger.Info($"Zoom x{factor:F2} to point, view '{view!.Name}' fallback={zoom.UsedFallback}");
+        return ZoomToPointResult.Success;
+    }
+
     private bool TryGetViewFrame(
         out UIDocument? uidoc, out View? view, out UIView? uiView,
         out ScreenRect viewPx, out ZoomToPointResult result)

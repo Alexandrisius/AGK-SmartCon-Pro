@@ -27,6 +27,17 @@ public interface IViewNavigationService
     /// (non-occluded) zone, so repeated zooming does not drift behind the dialog.
     /// </summary>
     ZoomToPointResult ZoomByFactor(double factor, ScreenRect? occludingWindow);
+
+    /// <summary>
+    /// Scale the current zoom by <paramref name="factor"/> (accumulates like
+    /// <see cref="ZoomByFactor"/>) AND re-center on <paramref name="point"/> in a
+    /// single zoom operation — the zoom ± buttons use this so they always track the
+    /// active connector without resetting the zoom level or double-zoom flicker.
+    /// </summary>
+    /// <param name="factor">&lt;1 zooms in, &gt;1 zooms out (relative to current zoom).</param>
+    /// <param name="point">Target point in world coordinates (internal units, I-02).</param>
+    /// <param name="occludingWindow">Screen-pixel bounds of the dialog covering the view, or null.</param>
+    ZoomToPointResult ZoomByFactorToPoint(double factor, XYZ point, ScreenRect? occludingWindow);
 }
 
 public enum ZoomToPointResult

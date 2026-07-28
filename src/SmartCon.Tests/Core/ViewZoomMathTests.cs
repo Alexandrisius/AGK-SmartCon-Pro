@@ -238,4 +238,62 @@ public sealed class ViewZoomMathTests
         // And the rect center converges toward that point as the zoom grows.
         Assert.True(System.Math.Abs(second.CenterU - (-4.0)) < System.Math.Abs(first.CenterU - (-4.0)));
     }
+
+    // --- ComputeScaledToPoint (zoom ± tracking the active connector) ---
+
+    [Fact]
+    public void ScaledToPoint_NoOcclusion_CentersOnTargetKeepsScale()
+    {
+        // Current corners 20×10 centered at (100, 100); target at origin; factor 0.5.
+        var zoom = ViewZoomMath.ComputeScaledToPoint(90, 95, 110, 105, 0.5, 0, 0, View, null);
+
+        Assert.NotNull(zoom);
+        Assert.Equal(0, zoom.CenterU, 9);
+        Assert.Equal(0, zoom.CenterV, 9);
+        Assert.Equal(5, zoom.HalfWidth, 9);    // 20 * 0.5 / 2 — scale from CURRENT corners
+        Assert.Equal(2.5, zoom.HalfHeight, 9);
+    }
+
+    [Fact]
+    public void ScaledToPoint_RepeatedZoomIn_AccumulatesScale()
+    {
+        // Two consecutive zoom-ins on the SAME target must shrink the rect each time
+        // (unlike ZoomToPoint which resets to a fixed radius).
+        var first = ViewZoomMath.ComputeScaledToPoint(-10, -5, 10, 5, 0.5, 3, 1, View, null);
+        Assert.NotNull(first);
+
+        var second = ViewZoomMath.ComputeScaledToPoint(
+            first.CenterU - first.HalfWidth, first.CenterV - first.HalfHeight,
+            first.CenterU + first.HalfWidth, first.CenterV + first.HalfHeight,
+            0.5, 3, 1, View, null);
+
+        Assert.NotNull(second);
+        Assert.Equal(first.HalfWidth / 2.0, second.HalfWidth, 9);
+        Assert.Equal(3, second.CenterU, 9);
+        Assert.Equal(1, second.CenterV, 9);
+    }
+
+    [Fact]
+    public void ScaledToPoint_OcclusionRight_TargetLandsAtVisibleZoneCenter()
+    {
+        // Dialog covers the right 40% (600..1000) → visible-zone center is 200px left
+        // of the view center; the target must land there: target = center - dPx*scaleNew.
+        var occlusion = new ScreenRect(600, 0, 1000, 500);
+
+        var zoom = ViewZoomMath.ComputeScaledToPoint(-10, -5, 10, 5, 0.5, 7, 2, View, occlusion);
+
+        Assert.NotNull(zoom);
+        var scaleNew = zoom.HalfWidth * 2.0 / 1000.0;
+        double visiblePointU = zoom.CenterU - 200.0 * scaleNew;
+        Assert.Equal(7, visiblePointU, 9);
+        Assert.Equal(5, zoom.HalfWidth, 9);   // 20 * 0.5 / 2
+    }
+
+    [Fact]
+    public void ScaledToPoint_DegenerateInput_ReturnsNull()
+    {
+        Assert.Null(ViewZoomMath.ComputeScaledToPoint(0, 0, 0, 5, 0.5, 0, 0, View, null));  // zero width corners
+        Assert.Null(ViewZoomMath.ComputeScaledToPoint(0, 0, 10, 5, 0, 0, 0, View, null));   // zero factor
+        Assert.Null(ViewZoomMath.ComputeScaledToPoint(0, 0, 10, 5, 0.5, 0, 0, new ScreenRect(0, 0, 0, 0), null));
+    }
 }

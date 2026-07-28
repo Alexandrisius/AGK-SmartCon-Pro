@@ -136,6 +136,40 @@ public static class ViewZoomMath
         return new ViewZoomRect(centerU, centerV, w * factor / 2.0, h * factor / 2.0, usedFallback);
     }
 
+    /// <summary>
+    /// Computes the zoom rectangle for the zoom ± buttons when the active connector
+    /// changed: scales the CURRENT view rectangle by <paramref name="factor"/>
+    /// (same accumulation as <see cref="ComputeScaled"/>) but re-centers on
+    /// <paramref name="targetU"/>/<paramref name="targetV"/> so the target lands at
+    /// the visible-zone center — one ZoomAndCenterRectangle call, no double zoom.
+    /// </summary>
+    public static ViewZoomRect? ComputeScaledToPoint(
+        double currentU0, double currentV0, double currentU1, double currentV1,
+        double factor, double targetU, double targetV,
+        ScreenRect view, ScreenRect? occlusion)
+    {
+        var w = currentU1 - currentU0;
+        var h = currentV1 - currentV0;
+        if (view.Width <= 0 || view.Height <= 0 || w <= 0 || h <= 0 || factor <= 0)
+            return null;
+
+        var visible = ComputeVisibleRect(view, occlusion);
+        var usedFallback = IsFallback(view, occlusion, visible);
+
+        var dPxX = view.CenterX - visible.CenterX;
+        var dPxY = view.CenterY - visible.CenterY;
+
+        // The rect center is offset AWAY from the dialog by dPx at the NEW scale,
+        // exactly like Compute() — so the target lands at the visible-zone center.
+        var scaleNewX = w * factor / view.Width;
+        var scaleNewY = h * factor / view.Height;
+
+        var centerU = targetU + dPxX * scaleNewX;
+        var centerV = targetV - dPxY * scaleNewY;
+
+        return new ViewZoomRect(centerU, centerV, w * factor / 2.0, h * factor / 2.0, usedFallback);
+    }
+
     private static bool IsFallback(ScreenRect view, ScreenRect? occlusion, ScreenRect visible)
         => occlusion is not null && view.IntersectsWith(occlusion)
             && visible.Left == view.Left && visible.Top == view.Top

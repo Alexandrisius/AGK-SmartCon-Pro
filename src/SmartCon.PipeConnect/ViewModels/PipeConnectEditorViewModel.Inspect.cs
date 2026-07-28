@@ -46,9 +46,16 @@ public sealed partial class PipeConnectEditorViewModel
     [RelayCommand(CanExecute = nameof(CanOperate))]
     private void ZoomOut() => ZoomByFactorSilent(ZoomOutFactor);
 
+    /// <summary>
+    /// Zoom ± around the ACTIVE dynamic connector: re-centers on it AND scales the
+    /// current zoom in one operation (no zoom-level reset, no double-zoom flicker).
+    /// </summary>
     private void ZoomByFactorSilent(double factor)
     {
-        var result = _viewNavigation.ZoomByFactor(factor, WindowBoundsAccessor?.GetWindowBoundsInPixels());
+        if (_activeDynamic is null) return;
+
+        var result = _viewNavigation.ZoomByFactorToPoint(
+            factor, _activeDynamic.Origin, WindowBoundsAccessor?.GetWindowBoundsInPixels());
         if (result != ZoomToPointResult.Success)
             StatusMessage = ToInspectStatus(result);
     }
