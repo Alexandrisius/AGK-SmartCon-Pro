@@ -42,6 +42,14 @@ public sealed class RevitFamilyHealthChecker : IFamilyHealthChecker
         var issues = new List<FamilyHealthIssue>();
         CollectDocumentWarnings(familyDoc, issues);
 
+        if (!familyDoc.IsFamilyDocument)
+        {
+            SmartConLogger.Warn(
+                $"'{familyDoc.Title}' is not a family document — type-level health check skipped " +
+                "[Action: verify the document is a valid family file]");
+            return FamilyHealthReport.FromIssues(issues);
+        }
+
         var familyManager = familyDoc.FamilyManager;
         if (familyManager is null)
         {
