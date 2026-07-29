@@ -88,12 +88,17 @@ public sealed class RevitModelPurgeService : IModelPurgeService
                 .Select(vp => vp.ViewId)
                 .ToHashSet();
 
+            // ViewSheet/ViewSchedule наследуются от View — общий свип обязан
+            // уважать флаги категорий, иначе PurgeSheets=false/PurgeSchedules=false
+            // не сохраняют листы и ведомости (Issue #176).
             var viewsToDelete = new FilteredElementCollector(purgeDoc)
                 .OfClass(typeof(View))
                 .Cast<View>()
                 .Where(v => !v.IsTemplate)
                 .Where(v => !keepViewNames.Contains(v.Name))
                 .Where(v => !viewports.Contains(v.Id))
+                .Where(v => options.PurgeSheets || v is not ViewSheet)
+                .Where(v => options.PurgeSchedules || v is not ViewSchedule)
                 .Select(v => v.Id)
                 .ToList();
             pass2Ids.AddRange(viewsToDelete);
