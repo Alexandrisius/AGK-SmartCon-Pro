@@ -57,7 +57,8 @@ public sealed class FamilyPropertiesViewModelTests
             fileResolver: fileResolver.Object,
             avatarCropService: new Mock<IAvatarCropService>().Object,
             updateState: new TestDoubles.FakeDatabaseUpdateStateService(),
-            factRepository: factRepository.Object);
+            factRepository: factRepository.Object,
+            categoryChangeGate: new Mock<ICategoryChangeGateService>().Object);
 
         return (vm, assetService, geometryPipeline);
     }

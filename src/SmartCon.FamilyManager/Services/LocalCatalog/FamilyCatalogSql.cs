@@ -219,6 +219,26 @@ internal static class FamilyCatalogSql
         )
         """;
 
+    public const string CreateCategoryValidationRules = """
+        CREATE TABLE IF NOT EXISTS category_validation_rules (
+            id TEXT PRIMARY KEY,
+            binding_id TEXT NOT NULL,
+            operator TEXT NOT NULL,
+            value_text TEXT,
+            value_number REAL,
+            min_value REAL,
+            max_value REAL,
+            unit_type_id TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (binding_id) REFERENCES category_attribute_bindings(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateCategoryValidationRulesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_validation_rules_binding ON category_validation_rules (binding_id)
+        """;
+
     public const string CreateFamilyDataImportRuns = """
         CREATE TABLE IF NOT EXISTS family_data_import_runs (
             id TEXT PRIMARY KEY,
@@ -375,6 +395,7 @@ internal static class FamilyCatalogSql
         {CreateAttributePresetParameters};
         {CreateAttributeDefinitions};
         {CreateCategoryAttributeBindings};
+        {CreateCategoryValidationRules};
         {CreateFamilyDataImportRuns};
         {CreateExtractedAttributeValues};
         {CreateDbUsers};

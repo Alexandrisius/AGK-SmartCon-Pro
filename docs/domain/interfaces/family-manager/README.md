@@ -20,6 +20,7 @@ module: family-manager-interfaces-index
 | [`stale-detection.md`](stale-detection.md) | Stale Detection v2: `IFamilyVersionStore`, `IStaleDetector`, `IStaleFamilyUpdater`, `IStaleCategoryAggregator` |
 | [`extraction.md`](extraction.md) | Снапшоты, хеширование, геометрия: `IFamilySnapshotExtractor`, `IFamilyContentHasher`, `IContentHashDedupService`, `IFamilyGeometryExtractor`, `IGlbWriter`, `IFamilyGeometryPipeline` |
 | [`actualization.md`](actualization.md) | Актуализация БД (ADR-054): `ICatalogActualizationService`, `IDatabaseActualizationTask`, `IFamilyMigrationExtractor`, `IDatabaseUpdateStateService` |
+| [`validation.md`](validation.md) | Import Validation Gate (ADR-059): `IValidationRuleRepository`, `IFamilyValidationEngine`, `IFamilyHealthChecker`, `IFamilyImportValidationService`, `ICategoryChangeGateService` |
 
 ## См. также
 

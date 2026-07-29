@@ -15,9 +15,10 @@ public sealed class LocalCatalogQueryBuilderTests
         int offset = 0,
         int limit = 50,
         bool includeUncategorized = false,
-        IReadOnlyList<string>? categoryIdsFilter = null) =>
+        IReadOnlyList<string>? categoryIdsFilter = null,
+        bool excludeUncategorized = false) =>
         new(searchText, categoryFilter, statusFilter, tags, sort, offset, limit,
-            includeUncategorized, categoryIdsFilter);
+            includeUncategorized, categoryIdsFilter, excludeUncategorized);
 
     [Fact]
     public void BuildWhereClause_NoFilters_ReturnsEmptyWhere()
@@ -207,6 +208,28 @@ public sealed class LocalCatalogQueryBuilderTests
 
         Assert.Contains("(ci.category_id IS NULL OR ci.category_id = '')", sql);
         Assert.Empty(parameters);
+    }
+
+    [Fact]
+    public void BuildWhereClause_ExcludeUncategorized_AddsNotNullCondition()
+    {
+        var query = MakeQuery(excludeUncategorized: true);
+
+        var (sql, parameters) = LocalCatalogQueryBuilder.BuildWhereClause(query);
+
+        Assert.Contains("(ci.category_id IS NOT NULL AND ci.category_id != '')", sql);
+        Assert.Empty(parameters);
+    }
+
+    [Fact]
+    public void BuildWhereClause_ExcludeUncategorized_WithSearch_BothConditionsPresent()
+    {
+        var query = MakeQuery(searchText: "elbow", excludeUncategorized: true);
+
+        var (sql, _) = LocalCatalogQueryBuilder.BuildWhereClause(query);
+
+        Assert.Contains("normalized_name LIKE", sql);
+        Assert.Contains("(ci.category_id IS NOT NULL AND ci.category_id != '')", sql);
     }
 
     [Fact]

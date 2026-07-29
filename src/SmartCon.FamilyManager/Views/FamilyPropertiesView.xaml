@@ -7,6 +7,7 @@
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:fmModels="clr-namespace:SmartCon.Core.Models.FamilyManager;assembly=SmartCon.Core"
         xmlns:hx="http://helix-toolkit.org/wpf/SharpDX"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         mc:Ignorable="hx"
@@ -593,8 +594,8 @@
                                                         </StackPanel>
                                                     </ToolTip>
                                                 </Grid.ToolTip>
-                                                <iconPacks:PackIconMaterial Kind="Check"
-                                                                            Foreground="{DynamicResource SuccessBrush}"
+                                                <iconPacks:PackIconMaterial Kind="CheckCircleOutline"
+                                                                            Foreground="#4CAF50"
                                                                             Width="14" Height="14"
                                                                             HorizontalAlignment="Center"
                                                                             VerticalAlignment="Center">
@@ -602,15 +603,15 @@
                                                         <Style TargetType="iconPacks:PackIconMaterial">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
                                                             <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsFound}" Value="True">
+                                                                <DataTrigger Binding="{Binding OriginalStatus}" Value="{x:Static fmModels:AttributeValueStatus.Found}">
                                                                     <Setter Property="Visibility" Value="Visible"/>
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
                                                     </iconPacks:PackIconMaterial.Style>
                                                 </iconPacks:PackIconMaterial>
-                                                <iconPacks:PackIconMaterial Kind="Close"
-                                                                            Foreground="{DynamicResource DangerBrush}"
+                                                <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
+                                                                            Foreground="#FB8C00"
                                                                             Width="14" Height="14"
                                                                             HorizontalAlignment="Center"
                                                                             VerticalAlignment="Center">
@@ -618,7 +619,45 @@
                                                         <Style TargetType="iconPacks:PackIconMaterial">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
                                                             <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsFound}" Value="False">
+                                                                <DataTrigger Binding="{Binding OriginalStatus}" Value="{x:Static fmModels:AttributeValueStatus.EmptyValue}">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </iconPacks:PackIconMaterial.Style>
+                                                </iconPacks:PackIconMaterial>
+                                                <iconPacks:PackIconMaterial Kind="MinusCircleOutline"
+                                                                            Foreground="#9E9E9E"
+                                                                            Width="14" Height="14"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center">
+                                                    <iconPacks:PackIconMaterial.Style>
+                                                        <Style TargetType="iconPacks:PackIconMaterial">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding OriginalStatus}" Value="{x:Static fmModels:AttributeValueStatus.MissingParameter}">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding OriginalStatus}" Value="{x:Static fmModels:AttributeValueStatus.NotInFamily}">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </iconPacks:PackIconMaterial.Style>
+                                                </iconPacks:PackIconMaterial>
+                                                <iconPacks:PackIconMaterial Kind="CloseCircleOutline"
+                                                                            Foreground="#F44336"
+                                                                            Width="14" Height="14"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center">
+                                                    <iconPacks:PackIconMaterial.Style>
+                                                        <Style TargetType="iconPacks:PackIconMaterial">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding OriginalStatus}" Value="{x:Static fmModels:AttributeValueStatus.ReadError}">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding OriginalStatus}" Value="{x:Static fmModels:AttributeValueStatus.UnsupportedStorageType}">
                                                                     <Setter Property="Visibility" Value="Visible"/>
                                                                 </DataTrigger>
                                                             </Style.Triggers>

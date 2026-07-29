@@ -40,7 +40,11 @@ public sealed partial class FamilyManagerMainViewModel
                 Tags: null,
                 Sort: FamilyCatalogSort.NameAsc,
                 Offset: 0,
-                Limit: int.MaxValue);
+                Limit: int.MaxValue,
+                // Import Validation Gate: the "Без категории" quarantine
+                // zone is hidden from read-only roles (Engineer) — only
+                // editors see and distribute quarantined families.
+                ExcludeUncategorized: !_accessControl.IsEditorRole);
 
             stageSw.Restart();
             var results = await _catalogProvider.SearchAsync(query, ct);
@@ -110,6 +114,11 @@ public sealed partial class FamilyManagerMainViewModel
 
             var uncategorized = results.Where(r => string.IsNullOrEmpty(r.CategoryId)).ToList();
             var noCatLabel = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
+            // Import Validation Gate: quarantine zone — the node exists
+            // only for editor roles; read-only roles neither see the node
+            // nor receive uncategorized rows (query filter above).
+            if (_accessControl.IsEditorRole)
+            {
             _noCategoryNode = new CategoryNodeViewModel(
                 categoryId: "__no_category__",
                 name: noCatLabel,
@@ -158,6 +167,11 @@ public sealed partial class FamilyManagerMainViewModel
             }
             _noCategoryNode.AttachCollapseTracking();
             rootNodes.Add(_noCategoryNode);
+            }
+            else
+            {
+                _noCategoryNode = null;
+            }
 
             stageSw.Restart();
             try

@@ -8,7 +8,7 @@ public sealed class MetadataExportPackage
     public string Format { get; init; } = "smartcon.familymanager.metadata-package";
 
     [JsonPropertyName("version")]
-    public int Version { get; init; } = 2;
+    public int Version { get; init; } = 3;
 
     [JsonPropertyName("exportedAtUtc")]
     public DateTimeOffset ExportedAtUtc { get; init; } = DateTimeOffset.UtcNow;
@@ -66,6 +66,35 @@ public sealed class MetadataExportBinding
 
     [JsonPropertyName("sortOrder")]
     public int SortOrder { get; init; }
+
+    [JsonPropertyName("isEnabled")]
+    public bool IsEnabled { get; init; } = true;
+
+    /// <summary>
+    /// Import Validation Gate (package v3): validation rules attached to
+    /// this binding. Empty for v2 packages — they import rule-free.
+    /// Unknown rule operators are skipped on import (forward-compat).
+    /// </summary>
+    [JsonPropertyName("validationRules")]
+    public List<MetadataExportValidationRule> ValidationRules { get; init; } = [];
+}
+
+public sealed class MetadataExportValidationRule
+{
+    [JsonPropertyName("operator")]
+    public string Operator { get; init; } = string.Empty;
+
+    [JsonPropertyName("valueText")]
+    public string? ValueText { get; init; }
+
+    [JsonPropertyName("valueNumber")]
+    public double? ValueNumber { get; init; }
+
+    [JsonPropertyName("minValue")]
+    public double? MinValue { get; init; }
+
+    [JsonPropertyName("maxValue")]
+    public double? MaxValue { get; init; }
 
     [JsonPropertyName("isEnabled")]
     public bool IsEnabled { get; init; } = true;

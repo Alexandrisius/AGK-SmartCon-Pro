@@ -32,6 +32,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly ISharedParameterFileParser _sharedParameterFileParser;
     private readonly IFamilyManagerUserSettingsRepository _userSettingsRepository;
     private readonly IFamilyFactRepository _factRepository;
+    private readonly IValidationRuleRepository _ruleRepository;
+    private readonly ICategoryChangeGateService _categoryChangeGate;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -58,7 +60,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IDatabaseUpdateStateService updateState,
         ISharedParameterFileParser sharedParameterFileParser,
         IFamilyManagerUserSettingsRepository userSettingsRepository,
-        IFamilyFactRepository factRepository)
+        IFamilyFactRepository factRepository,
+        IValidationRuleRepository ruleRepository,
+        ICategoryChangeGateService categoryChangeGate)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -85,6 +89,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _sharedParameterFileParser = sharedParameterFileParser;
         _userSettingsRepository = userSettingsRepository;
         _factRepository = factRepository;
+        _ruleRepository = ruleRepository;
+        _categoryChangeGate = categoryChangeGate;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -101,14 +107,14 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             versionLabel, createdAtText, updatedAtText, revitCategory,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
-            _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository)
+            _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository, _categoryChangeGate)
         { IsReadOnly = isReadOnly };
     }
 
     public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
     {
         return new CategoryTreeEditorViewModel(
-            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this);
+            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this, _ruleRepository);
     }
 
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()
@@ -131,6 +137,22 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public ProfileViewModel CreateProfileViewModel()
     {
         return new ProfileViewModel(_userRepo, _accessControl, _identityService, _dialogService);
+    }
+
+    public ValidationReportViewModel CreateValidationReportViewModel(
+        string familyName,
+        string categoryPath,
+        FamilyHealthReport? healthReport,
+        FamilyValidationReport? validationReport,
+        int validationRulesCount)
+    {
+        return new ValidationReportViewModel(familyName, categoryPath, healthReport, validationReport, validationRulesCount);
+    }
+
+    public ValidationRulesEditorViewModel CreateValidationRulesEditorViewModel(
+        string bindingId, string attributeName, string categoryPath)
+    {
+        return new ValidationRulesEditorViewModel(bindingId, attributeName, categoryPath, _ruleRepository);
     }
 
     public ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "")

@@ -6,6 +6,7 @@
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         Title="{loc:Loc FM_CTE_CategoriesAndAttrs}"
         Width="850" Height="580" MinWidth="700" MinHeight="450"
@@ -252,6 +253,19 @@
                                     <Border Padding="8,6"
                                             Background="Transparent"
                                             CornerRadius="4">
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="{loc:Loc FM_CTE_ValidationRules}"
+                                                          Command="{Binding OpenValidationRulesCommand}"
+                                                          IsEnabled="{Binding CanEditRules}">
+                                                    <MenuItem.Icon>
+                                                        <iconPacks:PackIconMaterial Kind="ShieldCheckOutline"
+                                                                                    Width="14" Height="14"
+                                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
                                         <Border.Style>
                                             <Style TargetType="Border">
                                                 <Style.Triggers>
@@ -265,6 +279,7 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
 
@@ -287,12 +302,31 @@
                                                 </CheckBox.Style>
                                             </CheckBox>
 
-                                            <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                                       VerticalAlignment="Center"
-                                                       FontSize="12"
-                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                                <iconPacks:PackIconMaterial Kind="ShieldCheck"
+                                                                            Foreground="#4CAF50"
+                                                                            Width="13" Height="13"
+                                                                            Margin="6,0,0,0"
+                                                                            VerticalAlignment="Center"
+                                                                            ToolTip="{Binding RulesTooltip}">
+                                                    <iconPacks:PackIconMaterial.Style>
+                                                        <Style TargetType="iconPacks:PackIconMaterial">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasRules}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </iconPacks:PackIconMaterial.Style>
+                                                </iconPacks:PackIconMaterial>
+                                            </StackPanel>
 
-                                            <TextBlock Grid.Column="2" Text="{Binding Group}"
+                                            <TextBlock Grid.Column="3" Text="{Binding Group}"
                                                        Margin="8,0,0,0" VerticalAlignment="Center"
                                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
                                         </Grid>

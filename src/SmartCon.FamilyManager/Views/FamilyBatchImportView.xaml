@@ -121,58 +121,156 @@
                     <DataGridTemplateColumn Width="36" MinWidth="36">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <Grid ToolTip="{Binding ImportErrorMessage}">
-                                    <iconPacks:PackIconMaterial Kind="Check"
-                                                                Foreground="#4CAF50"
-                                                                Width="16" Height="16"
-                                                                HorizontalAlignment="Center"
-                                                                VerticalAlignment="Center">
-                                        <iconPacks:PackIconMaterial.Style>
-                                            <Style TargetType="iconPacks:PackIconMaterial">
+                                <Grid>
+                                    <!-- Import gate status (pre-import, ImportRowState == Pending): clickable, opens the validation report -->
+                                    <Button Command="{Binding OpenValidationReportCommand}"
+                                            ToolTip="{Binding GateTooltip}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Cursor="Hand">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource FlatIconButton}">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ImportRowState}"
-                                                                 Value="{x:Static fmModels:FamilyBatchImportRowState.Success}">
+                                                    <DataTrigger Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Pending}">
                                                         <Setter Property="Visibility" Value="Visible"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </iconPacks:PackIconMaterial.Style>
-                                    </iconPacks:PackIconMaterial>
-                                    <iconPacks:PackIconMaterial Kind="Close"
-                                                                Foreground="#F44336"
-                                                                Width="16" Height="16"
-                                                                HorizontalAlignment="Center"
-                                                                VerticalAlignment="Center">
-                                        <iconPacks:PackIconMaterial.Style>
-                                            <Style TargetType="iconPacks:PackIconMaterial">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ImportRowState}"
-                                                                 Value="{x:Static fmModels:FamilyBatchImportRowState.Error}">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </iconPacks:PackIconMaterial.Style>
-                                    </iconPacks:PackIconMaterial>
-                                    <iconPacks:PackIconMaterial Kind="TimerSand"
-                                                                Foreground="#2196F3"
-                                                                Width="16" Height="16"
-                                                                HorizontalAlignment="Center"
-                                                                VerticalAlignment="Center">
-                                        <iconPacks:PackIconMaterial.Style>
-                                            <Style TargetType="iconPacks:PackIconMaterial">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ImportRowState}"
-                                                                 Value="{x:Static fmModels:FamilyBatchImportRowState.Running}">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </iconPacks:PackIconMaterial.Style>
-                                    </iconPacks:PackIconMaterial>
+                                        </Button.Style>
+                                        <Grid>
+                                            <iconPacks:PackIconMaterial Kind="CheckCircleOutline"
+                                                                        Foreground="#4CAF50"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.NotChecked}">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.Passed}">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <iconPacks:PackIconMaterial Kind="TimerSand"
+                                                                        Foreground="#2196F3"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.Checking}">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
+                                                                        Foreground="#FB8C00"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.Warning}">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <iconPacks:PackIconMaterial Kind="CloseCircleOutline"
+                                                                        Foreground="#F44336"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.Failed}">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                        </Grid>
+                                    </Button>
+                                    <!-- Import progress/result icons (during and after the import) -->
+                                    <Grid ToolTip="{Binding ImportErrorMessage}">
+                                        <iconPacks:PackIconMaterial Kind="Check"
+                                                                    Foreground="#4CAF50"
+                                                                    Width="16" Height="16"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ImportRowState}"
+                                                                     Value="{x:Static fmModels:FamilyBatchImportRowState.Success}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                        <iconPacks:PackIconMaterial Kind="Close"
+                                                                    Foreground="#F44336"
+                                                                    Width="16" Height="16"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ImportRowState}"
+                                                                     Value="{x:Static fmModels:FamilyBatchImportRowState.Error}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                        <iconPacks:PackIconMaterial Kind="TimerSand"
+                                                                    Foreground="#2196F3"
+                                                                    Width="16" Height="16"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ImportRowState}"
+                                                                     Value="{x:Static fmModels:FamilyBatchImportRowState.Running}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                        <iconPacks:PackIconMaterial Kind="MinusCircleOutline"
+                                                                    Foreground="#9E9E9E"
+                                                                    Width="16" Height="16"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ImportRowState}"
+                                                                     Value="{x:Static fmModels:FamilyBatchImportRowState.Skipped}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                    </Grid>
                                 </Grid>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>

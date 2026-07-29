@@ -178,6 +178,24 @@ public sealed partial class FamilyBatchImportViewModel
             }
         }
 
+        // Import Validation Gate: an in-flight revalidation (category was
+        // changed just before pressing Import) must complete first —
+        // otherwise the import snapshots a stale gate verdict.
+        var pendingValidation = _pendingValidation;
+        if (pendingValidation is not null)
+        {
+            try
+            {
+                await pendingValidation;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                SmartConLogger.Warn(
+                    $"BatchImport: gate revalidation failed while awaiting before import: {ex.Message} " +
+                    $"[Action: импорт продолжится с текущими данными строк]");
+            }
+        }
+
         var items = GetResultItems();
         if (!string.IsNullOrEmpty(_publishedByUser))
         {

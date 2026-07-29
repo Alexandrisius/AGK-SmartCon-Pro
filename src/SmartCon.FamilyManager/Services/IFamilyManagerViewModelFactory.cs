@@ -23,4 +23,12 @@ public interface IFamilyManagerViewModelFactory
     CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
     ProfileViewModel CreateProfileViewModel();
     ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "");
+    ValidationReportViewModel CreateValidationReportViewModel(
+        string familyName,
+        string categoryPath,
+        FamilyHealthReport? healthReport,
+        FamilyValidationReport? validationReport,
+        int validationRulesCount);
+    ValidationRulesEditorViewModel CreateValidationRulesEditorViewModel(
+        string bindingId, string attributeName, string categoryPath);
 }

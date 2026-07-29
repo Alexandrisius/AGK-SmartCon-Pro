@@ -38,7 +38,8 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     private CategoryTreeEditorViewModel CreateVm() =>
-        new(_categoryRepository, _dialogMock.Object, _attributeRepository, _bindingService, _mediator, _factoryMock.Object);
+        new(_categoryRepository, _dialogMock.Object, _attributeRepository, _bindingService, _mediator, _factoryMock.Object,
+            new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator()));
 
     [Fact]
     public async Task OkAsync_ReimportExistingCategory_DoesNotCreateDuplicate()
@@ -378,6 +379,121 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
             "_pendingBindingImports",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         return (List<MetadataExportBinding>?)field!.GetValue(vm);
+    }
+
+    [Fact]
+    public async Task OkAsync_BindingWithValidationRules_RulesImported()
+    {
+        var vm = CreateVm();
+        var jsonPath = CreateTempJson(new MetadataExportPackage
+        {
+            Categories = { new() { Name = "HVAC" } },
+            Attributes = { new() { Name = "Pressure" } },
+            Bindings =
+            {
+                new()
+                {
+                    CategoryPath = "HVAC",
+                    AttributeName = "Pressure",
+                    SortOrder = 0,
+                    IsEnabled = true,
+                    ValidationRules =
+                    {
+                        new() { Operator = "HasValue", IsEnabled = true },
+                        new() { Operator = "Between", MinValue = 15.0, MaxValue = 100.0, IsEnabled = true },
+                    }
+                }
+            }
+        });
+
+        _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
+        await vm.ImportFromJsonCommand.ExecuteAsync(null);
+        await vm.OkCommand.ExecuteAsync(null);
+
+        var cats = await _categoryRepository.GetAllAsync();
+        var cat = Assert.Single(cats);
+        var bindings = await _bindingService.GetDirectBindingsAsync(cat.Id);
+        var binding = Assert.Single(bindings);
+
+        var ruleRepo = new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator());
+        var rules = await ruleRepo.GetRulesForBindingAsync(binding.Id);
+        Assert.Equal(2, rules.Count);
+        Assert.Contains(rules, r => r.Operator == SmartCon.Core.Models.FamilyManager.ValidationRuleOperator.HasValue);
+        Assert.Contains(rules, r =>
+            r.Operator == SmartCon.Core.Models.FamilyManager.ValidationRuleOperator.Between
+            && r.MinValue == 15.0 && r.MaxValue == 100.0);
+    }
+
+    [Fact]
+    public async Task OkAsync_ExistingBinding_RulesNotOverwritten()
+    {
+        var cat = await _categoryRepository.AddAsync("HVAC", null, 0);
+        var attr = await _attributeRepository.CreateAsync("Pressure", null);
+        var existing = await _bindingService.CreateBindingAsync(cat.Id, attr.Id, 0);
+        var ruleRepo = new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator());
+        await ruleRepo.CreateRuleAsync(new SmartCon.Core.Models.FamilyManager.ValidationRule(
+            string.Empty, existing.Id, SmartCon.Core.Models.FamilyManager.ValidationRuleOperator.IsEmpty,
+            null, null, null, null, null, 0, true));
+
+        var vm = CreateVm();
+        var jsonPath = CreateTempJson(new MetadataExportPackage
+        {
+            Categories = { new() { Name = "HVAC" } },
+            Attributes = { new() { Name = "Pressure" } },
+            Bindings =
+            {
+                new()
+                {
+                    CategoryPath = "HVAC",
+                    AttributeName = "Pressure",
+                    ValidationRules = { new() { Operator = "HasValue" } }
+                }
+            }
+        });
+
+        _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
+        await vm.ImportFromJsonCommand.ExecuteAsync(null);
+        await vm.OkCommand.ExecuteAsync(null);
+
+        var rules = await ruleRepo.GetRulesForBindingAsync(existing.Id);
+        var rule = Assert.Single(rules);
+        Assert.Equal(SmartCon.Core.Models.FamilyManager.ValidationRuleOperator.IsEmpty, rule.Operator);
+    }
+
+    [Fact]
+    public async Task OkAsync_UnknownRuleOperator_RuleSkipped_BindingImported()
+    {
+        var vm = CreateVm();
+        var jsonPath = CreateTempJson(new MetadataExportPackage
+        {
+            Categories = { new() { Name = "HVAC" } },
+            Attributes = { new() { Name = "Pressure" } },
+            Bindings =
+            {
+                new()
+                {
+                    CategoryPath = "HVAC",
+                    AttributeName = "Pressure",
+                    ValidationRules =
+                    {
+                        new() { Operator = "FutureOperatorV99" },
+                        new() { Operator = "HasValue" },
+                    }
+                }
+            }
+        });
+
+        _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
+        await vm.ImportFromJsonCommand.ExecuteAsync(null);
+        await vm.OkCommand.ExecuteAsync(null);
+
+        var cats = await _categoryRepository.GetAllAsync();
+        var bindings = await _bindingService.GetDirectBindingsAsync(cats[0].Id);
+        var ruleRepo = new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator());
+        var rules = await ruleRepo.GetRulesForBindingAsync(bindings[0].Id);
+
+        var rule = Assert.Single(rules);
+        Assert.Equal(SmartCon.Core.Models.FamilyManager.ValidationRuleOperator.HasValue, rule.Operator);
     }
 
     private static string CreateTempJson(MetadataExportPackage package)

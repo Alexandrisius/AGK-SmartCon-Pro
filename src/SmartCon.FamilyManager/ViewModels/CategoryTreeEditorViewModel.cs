@@ -22,6 +22,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     private readonly ICategoryAttributeBindingService _bindingService;
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
+    private readonly IValidationRuleRepository _ruleRepository;
     private List<AttributeListItemViewModel> _allAttributeItems = [];
     private readonly Dictionary<string, bool> _bindingChanges = new();
     private readonly List<CategoryNodeViewModel> _pendingCategoryDeletions = [];
@@ -48,7 +49,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         IAttributeDefinitionRepository attributeDefRepository,
         ICategoryAttributeBindingService bindingService,
         IFamilyManagerMetadataMediator metadataMediator,
-        IFamilyManagerViewModelFactory viewModelFactory)
+        IFamilyManagerViewModelFactory viewModelFactory,
+        IValidationRuleRepository ruleRepository)
     {
         _categoryRepository = categoryRepository;
         _dialogService = dialogService;
@@ -56,6 +58,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         _bindingService = bindingService;
         _metadataMediator = metadataMediator;
         _viewModelFactory = viewModelFactory;
+        _ruleRepository = ruleRepository;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -202,13 +205,17 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                     OriginalIsBound = effective is not null,
                     IsInherited = effective?.IsInherited ?? false,
                     SourceCategoryName = sourceName,
-                    BindingId = binding?.Id,
+                    // Direct binding first; for inherited attributes the
+                    // effective row carries the PARENT's binding id —
+                    // rules edit targets that parent binding.
+                    BindingId = binding?.Id ?? effective?.BindingId,
                     IsEnabled = effective?.IsEnabled ?? true,
                     Parent = this
                 });
             }
 
             _allAttributeItems = items;
+            await LoadRuleCountsAsync(items);
 
             var groups = allDefs
                 .Where(d => d.IsActive && d.Group is not null)
@@ -229,6 +236,71 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         catch (Exception ex)
         {
             SmartConLogger.Warn($"LoadAttributesForCategoryAsync failed: {ex.Message} [Action: закройте и откройте editor; проверьте БД каталога]");
+        }
+    }
+
+    /// <summary>
+    /// Import Validation Gate: loads per-binding rule counts for the
+    /// shield badges. Failures degrade to no badges (badges are
+    /// informational — the editor must still open).
+    /// </summary>
+    private async Task LoadRuleCountsAsync(List<AttributeListItemViewModel> items)
+    {
+        try
+        {
+            var bindingIds = items
+                .Where(i => i.BindingId is not null)
+                .Select(i => i.BindingId!)
+                .ToList();
+            if (bindingIds.Count == 0) return;
+
+            var counts = await _ruleRepository.GetRuleCountsForBindingsAsync(bindingIds);
+            foreach (var item in items)
+            {
+                if (item.BindingId is not null && counts.TryGetValue(item.BindingId, out var count))
+                {
+                    item.RuleCount = count;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"LoadRuleCountsAsync failed: {ex.Message} [Action: значки правил не отображены; проверьте БД каталога]");
+        }
+    }
+
+    /// <summary>
+    /// Import Validation Gate: opens the rules editor for the attribute's
+    /// binding (own or inherited-from-parent). Refreshes the badge count
+    /// afterwards.
+    /// </summary>
+    internal async Task OpenValidationRulesEditorAsync(AttributeListItemViewModel item)
+    {
+        if (item.BindingId is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var vm = _viewModelFactory.CreateValidationRulesEditorViewModel(
+                item.BindingId, item.Name, SelectedCategoryPath);
+            await vm.InitializeAsync();
+            var saved = _dialogService.ShowValidationRulesEditor(vm);
+
+            if (saved == true)
+            {
+                // Same semantics as LoadRuleCountsAsync: the badge counts
+                // ALL rules of the binding (a disabled rule still exists).
+                var rules = await _ruleRepository.GetRulesForBindingAsync(item.BindingId);
+                item.RuleCount = rules.Count;
+                _metadataMediator.RaiseMetadataChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"OpenValidationRulesEditorAsync failed for '{item.Name}': {ex.Message}");
         }
     }
 
@@ -420,6 +492,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     {
         var bindingsImported = 0;
         var bindingsSkipped = 0;
+        var rulesImported = 0;
+        var rulesSkipped = 0;
         var warnings = new List<string>();
 
         var allCategories = await _categoryRepository.GetAllAsync();
@@ -449,19 +523,47 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             var existingBindings = await _bindingService.GetDirectBindingsAsync(category.Id);
             if (existingBindings.Any(b => b.AttributeId == attribute.Id))
             {
+                // Existing binding keeps its own rules — the package does
+                // not silently overwrite them.
                 bindingsSkipped++;
+                rulesSkipped += binding.ValidationRules.Count;
                 continue;
             }
 
-            await _bindingService.CreateBindingAsync(category.Id, attribute.Id, binding.SortOrder);
+            var created = await _bindingService.CreateBindingAsync(category.Id, attribute.Id, binding.SortOrder);
             bindingsImported++;
+
+            foreach (var exportedRule in binding.ValidationRules)
+            {
+                if (!Enum.TryParse<ValidationRuleOperator>(exportedRule.Operator, out var ruleOperator))
+                {
+                    warnings.Add($"Rule skipped: unknown operator '{exportedRule.Operator}' for '{binding.AttributeName}'.");
+                    rulesSkipped++;
+                    continue;
+                }
+
+                await _ruleRepository.CreateRuleAsync(new ValidationRule(
+                    string.Empty,
+                    created.Id,
+                    ruleOperator,
+                    exportedRule.ValueText,
+                    exportedRule.ValueNumber,
+                    exportedRule.MinValue,
+                    exportedRule.MaxValue,
+                    UnitTypeId: null,
+                    SortOrder: 0,
+                    exportedRule.IsEnabled));
+                rulesImported++;
+            }
         }
 
-        if (bindingsImported > 0 || bindingsSkipped > 0 || warnings.Count > 0)
+        if (bindingsImported > 0 || bindingsSkipped > 0 || rulesImported > 0 || warnings.Count > 0)
         {
             var parts = new List<string>();
             if (bindingsImported > 0) parts.Add($"bindings: {bindingsImported}");
+            if (rulesImported > 0) parts.Add($"rules: {rulesImported}");
             if (bindingsSkipped > 0) parts.Add($"bindings skipped: {bindingsSkipped}");
+            if (rulesSkipped > 0) parts.Add($"rules skipped: {rulesSkipped}");
             if (warnings.Count > 0)
             {
                 var preview = warnings.Count <= 3

@@ -127,4 +127,16 @@ public sealed record FamilyManagerServices(
     /// update check) from the plugin-compatibility banner's
     /// "Обновить приложение" button.
     /// </summary>
-    IAboutDialogService AboutDialogService);
+    IAboutDialogService AboutDialogService,
+    /// <summary>
+    /// Import Validation Gate: resolves effective validation rules per
+    /// category and evaluates batch-row snapshots (no .rfa re-open).
+    /// Consumed by the batch import dialog's revalidation flow.
+    /// </summary>
+    IFamilyImportValidationService ValidationService,
+    /// <summary>
+    /// Import Validation Gate for category change inside the catalog
+    /// (DnD in the tree, category picker in properties): blocks moves
+    /// into rule-protected categories when the family fails the rules.
+    /// </summary>
+    ICategoryChangeGateService CategoryChangeGate);

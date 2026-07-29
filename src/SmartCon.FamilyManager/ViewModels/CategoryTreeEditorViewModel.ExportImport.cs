@@ -87,12 +87,25 @@ public sealed partial class CategoryTreeEditorViewModel
 
                 if (attrName is null) continue;
 
+                // Import Validation Gate (package v3): rules travel inside
+                // their binding — the package stays self-contained.
+                var rules = await _ruleRepository.GetRulesForBindingAsync(binding.Id, ct);
+
                 bindings.Add(new MetadataExportBinding
                 {
                     CategoryPath = catPath,
                     AttributeName = attrName,
                     SortOrder = binding.SortOrder,
-                    IsEnabled = binding.IsEnabled
+                    IsEnabled = binding.IsEnabled,
+                    ValidationRules = rules.Select(r => new MetadataExportValidationRule
+                    {
+                        Operator = r.Operator.ToString(),
+                        ValueText = r.ValueText,
+                        ValueNumber = r.ValueNumber,
+                        MinValue = r.MinValue,
+                        MaxValue = r.MaxValue,
+                        IsEnabled = r.IsEnabled,
+                    }).ToList()
                 });
             }
         }

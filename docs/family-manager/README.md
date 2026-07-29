@@ -65,8 +65,9 @@ ExtensibleStorage остаётся паттерном существующих �
 | 30 | Avatar Crop | [ADR-047](../adr/047-avatar-crop-derived-file.md) | 2026-07-16 | Issue #131: диалог кадрирования, производный `avatar.png` 560×420, единое превью 280×210 для свойств и tooltip, инвалидация при смене primary |
 | 32 | Content Hash v2 + Migration | [ADR-049](../adr/049-content-hash-v2-rename-invariant.md), [ADR-050](../adr/050-hash-recalculation-migration.md) | 2026-07-17 | Issue #126: rename-invariant дедуп (hash-first), cross-name ⚠, миграция хэшей v1→v2 с прогресс-диалогом, breaking 3.0.0 (без DDL-миграции) |
 | 33 | Content Hash v3 | [ADR-056](../adr/056-content-hash-v3.md) | 2026-07-23 | Issue #159: FHV3 — PartType/факты, коннекторы, behavior-флаги, bbox+surface геометрия, CompoundStructure, RoutingPreferences, локале-инвариантная категория (ordinal), экранирование; критическая задача `hash-v3` заменила `hash-v2` |
+| 34 | Import Validation Gate | [ADR-059](../adr/059-import-validation-gate.md) | 2026-07-29 | Health-check .rfa без диалогов Revit (silent rollback, UC-1/UC-2) + правила на binding'ах категорий (12 операторов, display-units-first), единый жёсткий гейт (импорт/новая версия/DnD/свойства), редактор правил в окне категорий, карантин «Без категории» для read-only ролей, metadata-пакет v3 |
 
-## Миграции SQLite V1..V24
+## Миграции SQLite V1..V25
 
 | V | Изменение | Связанный ADR |
 |---|---|---|
@@ -94,6 +95,7 @@ ExtensibleStorage остаётся паттерном существующих �
 | 22 | `revit_category_id` в `catalog_items` + таблица `family_facts` (family-facts подсистема) | ADR-055 |
 | 23 | `glb_state` в `catalog_versions` — терминальный маркер «нет 3D-геометрии» для glb-v1 | #157 |
 | 24 | `min_plugin_version` в `database_meta` — гейт forward-совместимости + ретро-гейт FHV3-баз на 2.0.1-beta.5 | ADR-058 |
+| 25 | `category_validation_rules` — правила валидации на binding'ах категорий (FK CASCADE), Import Validation Gate | ADR-059 |
 
 ## Ключевые интерфейсы и модели
 

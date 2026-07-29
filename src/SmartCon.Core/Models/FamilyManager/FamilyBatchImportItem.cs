@@ -111,7 +111,8 @@ public sealed record FamilyBatchImportItem(
     bool IsCrossNameDuplicate = false,
     string? MatchedItemName = null,
     string? ExistingCategoryId = null,
-    string? ExistingCategoryPath = null)
+    string? ExistingCategoryPath = null,
+    FamilyHealthReport? HealthReport = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

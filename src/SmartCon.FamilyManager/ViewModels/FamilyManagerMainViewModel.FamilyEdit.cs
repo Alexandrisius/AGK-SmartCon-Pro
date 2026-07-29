@@ -327,7 +327,8 @@ public sealed partial class FamilyManagerMainViewModel
             IsCrossNameDuplicate: prepared.IsCrossNameDuplicate,
             MatchedItemName: prepared.MatchedItemName,
             ExistingCategoryId: existingCategoryId,
-            ExistingCategoryPath: existingCategoryName)
+            ExistingCategoryPath: existingCategoryName,
+            HealthReport: prepared.HealthReport)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -341,7 +342,8 @@ public sealed partial class FamilyManagerMainViewModel
             catalogProvider: _catalogProvider,
             importPrecomputer: _importPrecomputer,
             dedupService: _dedupService,
-            dispatcher: _dispatcher);
+            dispatcher: _dispatcher,
+            validationService: _validationService);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -833,7 +835,8 @@ public sealed partial class FamilyManagerMainViewModel
             dedupService: _dedupService,
             executor: executor,
             publishedByUser: _revitContext.GetUsername(),
-            dispatcher: _dispatcher);
+            dispatcher: _dispatcher,
+            validationService: _validationService);
 
         _dialogService.ShowModelessBatchImportDialog(vm);
         await vm.DialogCompletion;
@@ -1015,6 +1018,15 @@ public sealed partial class FamilyManagerMainViewModel
         var categoryId = target.CategoryId == "__no_category__"
             ? null
             : target.CategoryId;
+
+        // Import Validation Gate: a rule-protected category accepts the
+        // family only when it passes the rules (checked from persisted
+        // extraction — no .rfa re-open). Blocked = dialog shown, move aborted.
+        if (!await _categoryChangeGate.EnsureFamilyPassesAsync(
+                leaf.CatalogItemId, leaf.DisplayName, categoryId, target.FullPath))
+        {
+            return;
+        }
 
         await MoveFamilyToCategoryAsync(leaf.CatalogItemId, categoryId);
     }

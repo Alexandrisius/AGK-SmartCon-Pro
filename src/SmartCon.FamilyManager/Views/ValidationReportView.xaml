@@ -1,0 +1,148 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.ValidationReportView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_ValidationReport_Title}"
+        Width="720" Height="480" MinWidth="480" MinHeight="320"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="#1AF44336"
+                CornerRadius="4"
+                Padding="10,6"
+                Margin="0,0,0,8"
+                Visibility="{Binding HasBlockedBanner, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{Binding BlockedBannerText}"
+                       Foreground="#F44336"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
+            <iconPacks:PackIconMaterial Kind="{Binding HeaderIconKind}"
+                                        Foreground="{Binding HeaderIconBrush}"
+                                        Width="20" Height="20"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,8,0"/>
+            <TextBlock Text="{Binding FamilyName}"
+                       FontWeight="SemiBold"
+                       FontSize="14"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"/>
+            <TextBlock Text="{Binding CategoryPath, StringFormat=' — {0}'}"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="2"
+                   Text="{Binding Summary}"
+                   Margin="0,0,0,10"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   TextWrapping="Wrap"/>
+
+        <DataGrid x:Name="IssuesGrid"
+                  Grid.Row="3"
+                  ItemsSource="{Binding Issues}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  Style="{DynamicResource CompactDataGrid}"
+                  CellStyle="{DynamicResource CompactDataGridCell}"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="False"
+                  SelectionMode="Single"
+                  SelectionUnit="FullRow">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn x:Name="ColSeverity" Width="32">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <iconPacks:PackIconMaterial Kind="CloseCircleOutline"
+                                                            Foreground="#F44336"
+                                                            Width="15" Height="15"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center">
+                                    <iconPacks:PackIconMaterial.Style>
+                                        <Style TargetType="iconPacks:PackIconMaterial">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsError}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </iconPacks:PackIconMaterial.Style>
+                                </iconPacks:PackIconMaterial>
+                                <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
+                                                            Foreground="#FB8C00"
+                                                            Width="15" Height="15"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center">
+                                    <iconPacks:PackIconMaterial.Style>
+                                        <Style TargetType="iconPacks:PackIconMaterial">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsError}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </iconPacks:PackIconMaterial.Style>
+                                </iconPacks:PackIconMaterial>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn x:Name="ColSection" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding SectionName}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn x:Name="ColType" Binding="{Binding TypeName}" Width="110"/>
+                <DataGridTextColumn x:Name="ColAttribute" Binding="{Binding AttributeName}" Width="130"/>
+                <DataGridTextColumn x:Name="ColCheck" Binding="{Binding CheckDescription}" Width="*"/>
+                <DataGridTextColumn x:Name="ColExpected" Binding="{Binding ExpectedValue}" Width="110"/>
+                <DataGridTextColumn x:Name="ColActual" Binding="{Binding ActualValue}" Width="110"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="{loc:Loc FM_ValidationReport_Close}"
+                    Command="{Binding CloseCommand}"
+                    IsDefault="True"
+                    IsCancel="True"
+                    MinWidth="90"
+                    Style="{DynamicResource PrimaryButton}"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

@@ -46,4 +46,5 @@ public sealed record PreparedFamilyItem(
     string? MatchedVersionLabel = null,
     IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
     bool IsCrossNameDuplicate = false,
-    string? MatchedItemName = null);
+    string? MatchedItemName = null,
+    FamilyHealthReport? HealthReport = null);

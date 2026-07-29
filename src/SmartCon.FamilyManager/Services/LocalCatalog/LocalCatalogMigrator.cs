@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 24)
+        if (initialVersion < 25)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v24");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v25");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -78,6 +78,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 22, MigrateV22Async, ct);
         await RunMigrationAsync(connection, 23, MigrateV23Async, ct);
         await RunMigrationAsync(connection, 24, MigrateV24Async, ct);
+        await RunMigrationAsync(connection, 25, MigrateV25Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1081,6 +1082,50 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// V25 (import validation gate): adds the <c>category_validation_rules</c>
+    /// table — per-binding validation rules (HasValue / Equals / Between / …)
+    /// checked on import and on category change. Additive only; the table is
+    /// empty until the user defines rules in the category editor.
+    /// </summary>
+    private static async Task MigrateV25Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 25) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            if (!await TableExistsAsync(connection, "category_validation_rules", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.CreateCategoryValidationRules;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.Transaction = tx;
+                idxCmd.CommandText = FamilyCatalogSql.CreateCategoryValidationRulesIndexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '25' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v25: added category_validation_rules table (import validation gate)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1257,6 +1302,19 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             using var cmd = connection.CreateCommand();
             cmd.CommandText = FamilyCatalogSql.MigrateV23AddGlbStateColumn;
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "category_validation_rules", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.CreateCategoryValidationRules;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using (var rulesIdxCmd = connection.CreateCommand())
+        {
+            rulesIdxCmd.CommandText = FamilyCatalogSql.CreateCategoryValidationRulesIndexes;
+            await rulesIdxCmd.ExecuteNonQueryAsync(ct);
         }
 
         using (var v16IdxCmd = connection.CreateCommand())
