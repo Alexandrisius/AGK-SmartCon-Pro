@@ -163,6 +163,13 @@ public sealed partial class CategoryTreeEditorViewModel
         }
     }
 
+    /// <summary>
+    /// Atomic metadata import: the whole package (categories, attributes,
+    /// bindings, validation rules) is written to the catalog database
+    /// immediately — NOT staged into the draft. The editor then reloads
+    /// from the DB, so imported bindings and rule badges are visible at
+    /// once (no OK + reopen).
+    /// </summary>
     [RelayCommand]
     private async Task ImportFromJsonAsync()
     {
@@ -182,39 +189,38 @@ public sealed partial class CategoryTreeEditorViewModel
 
             package = NormalizeImportedPackage(package);
 
-            var importedNodes = new List<CategoryNodeViewModel>();
-            foreach (var cat in package.Categories)
-            {
-                importedNodes.AddRange(ImportCategoryNode(cat, null, 0, ""));
-            }
-
+            var (categoriesCreated, categoriesReused) = await ImportCategoriesToDbAsync(package.Categories);
             var attributesImported = await ImportAttributesAsync(package.Attributes);
+            var bindingResult = await ImportBindingsToDbAsync(package.Bindings);
 
-            RootNodes = new ObservableCollection<CategoryNodeViewModel>(importedNodes);
-            _bindingChanges.Clear();
-            _pendingBindingImports = package.Bindings.Count > 0
-                ? new List<MetadataExportBinding>(package.Bindings)
-                : null;
+            // Reload the editor from the DB: the tree, the binding
+            // checkboxes and the rule badges all reflect the import
+            // immediately.
             SelectedNode = null;
-            UpdateHasUnsavedChanges();
-
-            if (attributesImported > 0)
-            {
-                _metadataMediator.RaiseMetadataChanged();
-            }
+            await LoadTreeAsync();
+            _metadataMediator.RaiseMetadataChanged();
 
             var summary = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_Imported) ?? "Imported {0} categories, {1} attributes",
-                importedNodes.Count, attributesImported);
-            if (package.Bindings.Count > 0)
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ImportedFull)
+                    ?? "Imported: {0} new categories ({1} existing), {2} attributes, {3} bindings, {4} rules",
+                categoriesCreated, categoriesReused, attributesImported,
+                bindingResult.BindingsImported, bindingResult.RulesImported);
+            var skippedTotal = bindingResult.BindingsSkipped + bindingResult.RulesSkipped;
+            if (skippedTotal > 0)
             {
-                summary += $" (pending: {package.Bindings.Count} bindings — save on OK)";
+                summary += string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ImportedSkipped)
+                        ?? " (skipped: {0})",
+                    skippedTotal);
             }
+
             StatusMessage = summary;
 
             SmartConLogger.Info(
-                $"ImportFromJson: categories={importedNodes.Count}, " +
-                $"attributesImported={attributesImported}, pendingBindings={package.Bindings.Count}");
+                $"ImportFromJson: categoriesCreated={categoriesCreated}, categoriesReused={categoriesReused}, " +
+                $"attributesImported={attributesImported}, bindings={bindingResult.BindingsImported} " +
+                $"(skipped={bindingResult.BindingsSkipped}), rules={bindingResult.RulesImported} " +
+                $"(skipped={bindingResult.RulesSkipped}), warnings={bindingResult.Warnings.Count}");
         }
         catch (Exception ex)
         {
@@ -223,6 +229,57 @@ public sealed partial class CategoryTreeEditorViewModel
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: {0}",
                 ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Writes package categories directly to the DB with dedupe by
+    /// FullPath: an existing category is reused (its bindings merge in
+    /// the next step), a missing one is created level by level so
+    /// children get the real parent id.
+    /// </summary>
+    private async Task<(int Created, int Reused)> ImportCategoriesToDbAsync(List<MetadataExportCategoryNode> nodes)
+    {
+        if (nodes.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        var existingByPath = (await _categoryRepository.GetAllAsync())
+            .ToDictionary(c => c.FullPath, c => c, StringComparer.OrdinalIgnoreCase);
+
+        var created = 0;
+        var reused = 0;
+
+        async Task ImportNodeAsync(MetadataExportCategoryNode node, string? parentId, string parentPath, int sortOrder)
+        {
+            var path = string.IsNullOrEmpty(parentPath) ? node.Name : $"{parentPath} > {node.Name}";
+
+            string realId;
+            if (existingByPath.TryGetValue(path, out var existingCat))
+            {
+                realId = existingCat.Id;
+                reused++;
+            }
+            else
+            {
+                var newCat = await _categoryRepository.AddAsync(node.Name, parentId, sortOrder);
+                realId = newCat.Id;
+                existingByPath[path] = newCat;
+                created++;
+            }
+
+            for (var i = 0; i < node.Children.Count; i++)
+            {
+                await ImportNodeAsync(node.Children[i], realId, path, i);
+            }
+        }
+
+        foreach (var node in nodes)
+        {
+            await ImportNodeAsync(node, null, string.Empty, 0);
+        }
+
+        return (created, reused);
     }
 
     private async Task<int> ImportAttributesAsync(List<MetadataExportAttribute> attributes)
@@ -269,32 +326,5 @@ public sealed partial class CategoryTreeEditorViewModel
             Attributes = source.Attributes ?? [],
             Bindings = source.Bindings ?? []
         };
-    }
-
-    private static List<CategoryNodeViewModel> ImportCategoryNode(
-        MetadataExportCategoryNode node, string? parentId, int sortOrder, string parentPath)
-    {
-        var result = new List<CategoryNodeViewModel>();
-        var currentPath = string.IsNullOrEmpty(parentPath) ? node.Name : $"{parentPath} > {node.Name}";
-        var categoryId = Guid.NewGuid().ToString();
-        var vm = new CategoryNodeViewModel(categoryId, node.Name, parentId, currentPath)
-        {
-            SortOrder = sortOrder,
-            OriginalSortOrder = sortOrder,
-            IsNew = true,
-            IsDirty = true
-        };
-        result.Add(vm);
-
-        for (int i = 0; i < node.Children.Count; i++)
-        {
-            var children = ImportCategoryNode(node.Children[i], categoryId, i, currentPath);
-            foreach (var child in children)
-            {
-                vm.Children.Add(child);
-            }
-        }
-
-        return result;
     }
 }

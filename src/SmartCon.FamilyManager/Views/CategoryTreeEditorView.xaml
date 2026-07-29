@@ -388,7 +388,6 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <Button Grid.Column="0" Content="{loc:Loc FM_CTE_Import}"
@@ -467,20 +466,13 @@
                     Style="{DynamicResource SecondaryButton}"
                     Padding="12,4" Margin="4,0,0,0"/>
 
-            <Button Grid.Column="4"
-                    Content="{loc:Loc Btn_OK}"
-                    Command="{Binding OkCommand}"
-                    Width="80" Height="28"
-                    Padding="12,4" Margin="0,0,8,0"
+            <Button Grid.Column="4" Content="{loc:Loc FM_ValidationReport_Close}"
+                    Command="{Binding CloseCommand}"
+                    Width="90" Height="28"
+                    Padding="12,4"
                     IsDefault="True"
-                    Style="{DynamicResource PrimaryButton}"/>
-
-            <Button Grid.Column="5" Content="{loc:Loc Btn_Cancel}"
-                    Command="{Binding CancelAsyncCommand}"
-                    Width="80" Height="28"
                     IsCancel="True"
-                    Style="{DynamicResource SecondaryButton}"
-                    Padding="12,4"/>
+                    Style="{DynamicResource PrimaryButton}"/>
         </Grid>
     </Grid>
 </controls:DialogWindowBase>

@@ -11,7 +11,9 @@ public sealed partial class AttributeListItemViewModel : ObservableObject
     [ObservableProperty] private bool _isBound;
     [ObservableProperty] private bool _isInherited;
     [ObservableProperty] private string? _sourceCategoryName;
-    [ObservableProperty] private string? _bindingId;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEditRules))]
+    private string? _bindingId;
     [ObservableProperty] private bool _isEnabled = true;
 
     /// <summary>
@@ -94,15 +96,15 @@ public sealed partial class AttributeListItemViewModel : ObservableObject
     /// </summary>
     public void NotifyBoundStateChanged() => OnPropertyChanged(nameof(IsBound));
 
-    public bool OriginalIsBound { get; set; }
-    public bool IsDirty { get; set; }
-
     public CategoryTreeEditorViewModel? Parent { get; set; }
 
     [RelayCommand]
-    private void ToggleBinding()
+    private async Task ToggleBinding()
     {
-        Parent?.HandleBindingToggle(this, !IsBound);
+        if (Parent is not null)
+        {
+            await Parent.HandleBindingToggleAsync(this, !IsBound);
+        }
     }
 
     [RelayCommand]

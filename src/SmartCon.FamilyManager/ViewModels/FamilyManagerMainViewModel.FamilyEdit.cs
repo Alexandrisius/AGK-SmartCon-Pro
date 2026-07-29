@@ -23,9 +23,11 @@ public sealed partial class FamilyManagerMainViewModel
             ("Method", "OpenCategoryEditorAsync"));
         if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         var editorVm = _viewModelFactory.CreateCategoryTreeEditorViewModel();
-        editorVm.Saved += () => _ = LoadTreeAsync();
         await editorVm.InitializeAsync();
         _dialogService.ShowCategoryTreeEditor(editorVm);
+        // Full-immediate editor: all mutations were committed live inside
+        // the dialog — refresh the main tree once it closes.
+        await LoadTreeAsync();
     }
 
     [RelayCommand]

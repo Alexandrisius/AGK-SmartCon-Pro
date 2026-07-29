@@ -446,6 +446,8 @@ public static partial class LocalizationService
         ru["FM_CTE_RulesNone"] = "Правила валидации не заданы — нажмите для настройки"; en["FM_CTE_RulesNone"] = "No validation rules — click to configure";
         ru["FM_CTE_UnbindRulesTitle"] = "Правила валидации будут удалены"; en["FM_CTE_UnbindRulesTitle"] = "Validation rules will be deleted";
         ru["FM_CTE_UnbindRulesMessage"] = "У атрибута \"{0}\" заданы правила валидации ({1}). При отвязке они будут удалены без возможности восстановления. Продолжить?"; en["FM_CTE_UnbindRulesMessage"] = "Attribute \"{0}\" has validation rules ({1}). Unbinding will permanently delete them. Continue?";
+        ru["FM_CTE_ImportedFull"] = "Импортировано: категорий новых {0} (существующих {1}), атрибутов {2}, привязок {3}, правил {4}"; en["FM_CTE_ImportedFull"] = "Imported: {0} new categories ({1} existing), {2} attributes, {3} bindings, {4} rules";
+        ru["FM_CTE_ImportedSkipped"] = " (пропущено: {0})"; en["FM_CTE_ImportedSkipped"] = " (skipped: {0})";
         ru["FM_RulesEditor_Title"] = "Правила валидации"; en["FM_RulesEditor_Title"] = "Validation Rules";
         ru["FM_RulesEditor_Add"] = "Добавить правило"; en["FM_RulesEditor_Add"] = "Add rule";
         ru["FM_RulesEditor_Save"] = "Сохранить"; en["FM_RulesEditor_Save"] = "Save";

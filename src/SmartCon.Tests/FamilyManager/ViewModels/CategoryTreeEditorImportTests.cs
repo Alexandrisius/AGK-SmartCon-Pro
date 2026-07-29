@@ -42,166 +42,121 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
             new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator()));
 
     [Fact]
-    public async Task OkAsync_ReimportExistingCategory_DoesNotCreateDuplicate()
+    public async Task AddRootCommand_CreatesCategoryImmediately()
     {
-        var existing = await _categoryRepository.AddAsync("HVAC", null, 0);
-        var allBefore = await _categoryRepository.GetAllAsync();
-        Assert.Single(allBefore);
-
         var vm = CreateVm();
-        var importedNode = new CategoryNodeViewModel(Guid.NewGuid().ToString(), "HVAC", null, "HVAC")
-        {
-            SortOrder = 0,
-            OriginalSortOrder = 0,
-            IsNew = true,
-            IsDirty = true
-        };
-        vm.RootNodes = new ObservableCollection<CategoryNodeViewModel> { importedNode };
+        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns("Plumbing");
 
-        var savedCount = 0;
-        vm.Saved += () => savedCount++;
-        await vm.OkCommand.ExecuteAsync(null);
+        await vm.AddRootCommand.ExecuteAsync(null);
 
-        var allAfter = await _categoryRepository.GetAllAsync();
-        Assert.Single(allAfter);
-        Assert.Equal(existing.Id, allAfter[0].Id);
-        Assert.Equal(1, savedCount);
+        var all = await _categoryRepository.GetAllAsync();
+        var cat = Assert.Single(all);
+        Assert.Equal("Plumbing", cat.Name);
+        Assert.Single(vm.RootNodes);
+        Assert.Equal(cat.Id, vm.RootNodes[0].CategoryId);
     }
 
     [Fact]
-    public async Task OkAsync_ReimportNestedCategory_PreservesParentId()
+    public async Task AddChildCommand_CreatesChildImmediately()
     {
         var parent = await _categoryRepository.AddAsync("Pipes", null, 0);
-        await _categoryRepository.AddAsync("Steel", parent.Id, 0);
-
         var vm = CreateVm();
-        var parentVm = new CategoryNodeViewModel(Guid.NewGuid().ToString(), "Pipes", null, "Pipes")
-        {
-            SortOrder = 0,
-            OriginalSortOrder = 0,
-            IsNew = true,
-            IsDirty = true
-        };
-        var childVm = new CategoryNodeViewModel(Guid.NewGuid().ToString(), "Steel", parentVm.CategoryId, "Pipes > Steel")
-        {
-            SortOrder = 0,
-            OriginalSortOrder = 0,
-            IsNew = true,
-            IsDirty = true
-        };
-        parentVm.Children.Add(childVm);
-        vm.RootNodes = new ObservableCollection<CategoryNodeViewModel> { parentVm };
+        await vm.InitializeAsync();
+        vm.SelectedNode = vm.RootNodes[0];
 
-        await vm.OkCommand.ExecuteAsync(null);
+        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns("Steel");
+
+        await vm.AddChildCommand.ExecuteAsync(null);
 
         var all = await _categoryRepository.GetAllAsync();
         Assert.Equal(2, all.Count);
-        Assert.Equal(parent.Id, all.First(c => c.Name == "Pipes").Id);
         Assert.Equal(parent.Id, all.First(c => c.Name == "Steel").ParentId);
+        Assert.Single(vm.RootNodes[0].Children);
     }
 
     [Fact]
-    public async Task OkAsync_NewCategory_CreatesNewRecord()
+    public async Task RenameCommand_RenamesImmediately()
     {
+        var cat = await _categoryRepository.AddAsync("Pipes", null, 0);
         var vm = CreateVm();
-        var newNode = new CategoryNodeViewModel(Guid.NewGuid().ToString(), "Plumbing", null, "Plumbing")
-        {
-            SortOrder = 0,
-            OriginalSortOrder = 0,
-            IsNew = true,
-            IsDirty = true
-        };
-        vm.RootNodes = new ObservableCollection<CategoryNodeViewModel> { newNode };
+        await vm.InitializeAsync();
+        vm.SelectedNode = vm.RootNodes[0];
 
-        await vm.OkCommand.ExecuteAsync(null);
+        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns("Tubes");
 
-        var all = await _categoryRepository.GetAllAsync();
-        Assert.Single(all);
-        Assert.Equal("Plumbing", all[0].Name);
+        await vm.RenameCommand.ExecuteAsync(null);
+
+        Assert.Equal("Tubes", (await _categoryRepository.GetAllAsync())[0].Name);
+        Assert.Equal("Tubes", vm.RootNodes[0].DisplayName);
     }
 
     [Fact]
-    public async Task OkAsync_PendingBindingImports_CreatesBindingsOnOk()
+    public async Task ImportFromJsonAsync_Bindings_CreatedImmediately()
     {
-        var hvac = await _categoryRepository.AddAsync("HVAC", null, 0);
-        await _attributeRepository.CreateAsync("Width", "Dimensions");
-
         var vm = CreateVm();
-        SetPendingBindings(vm, new List<MetadataExportBinding>
+        var jsonPath = CreateTempJson(new MetadataExportPackage
         {
-            new() { CategoryPath = "HVAC", AttributeName = "Width", SortOrder = 0, IsEnabled = true }
+            Categories = { new() { Name = "HVAC" } },
+            Attributes = { new() { Name = "Width", Group = "Dimensions" } },
+            Bindings = { new() { CategoryPath = "HVAC", AttributeName = "Width", SortOrder = 0, IsEnabled = true } }
         });
 
-        var newNode = new CategoryNodeViewModel(Guid.NewGuid().ToString(), "HVAC", null, "HVAC")
-        {
-            SortOrder = 0,
-            OriginalSortOrder = 0,
-            IsNew = true,
-            IsDirty = true
-        };
-        vm.RootNodes = new ObservableCollection<CategoryNodeViewModel> { newNode };
+        _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
 
-        await vm.OkCommand.ExecuteAsync(null);
+        await vm.ImportFromJsonCommand.ExecuteAsync(null);
 
-        var bindings = await _bindingService.GetDirectBindingsAsync(hvac.Id);
+        var cat = Assert.Single(await _categoryRepository.GetAllAsync());
+        var bindings = await _bindingService.GetDirectBindingsAsync(cat.Id);
         Assert.Single(bindings);
-        Assert.Null(GetPendingBindings(vm));
     }
 
     [Fact]
-    public async Task OkAsync_PendingBindingImports_MissingCategory_SkipsAndContinues()
+    public async Task ImportFromJsonAsync_MissingBindingCategory_SkipsAndContinues()
     {
         var hvac = await _categoryRepository.AddAsync("HVAC", null, 0);
         await _attributeRepository.CreateAsync("Width", null);
         await _attributeRepository.CreateAsync("Height", null);
 
         var vm = CreateVm();
-        SetPendingBindings(vm, new List<MetadataExportBinding>
+        var jsonPath = CreateTempJson(new MetadataExportPackage
         {
-            new() { CategoryPath = "NonExistent", AttributeName = "Width", SortOrder = 0, IsEnabled = true },
-            new() { CategoryPath = "HVAC", AttributeName = "Height", SortOrder = 0, IsEnabled = true }
+            Bindings =
+            {
+                new() { CategoryPath = "NonExistent", AttributeName = "Width", SortOrder = 0, IsEnabled = true },
+                new() { CategoryPath = "HVAC", AttributeName = "Height", SortOrder = 0, IsEnabled = true }
+            }
         });
 
-        var newNode = new CategoryNodeViewModel(Guid.NewGuid().ToString(), "HVAC", null, "HVAC")
-        {
-            SortOrder = 0,
-            OriginalSortOrder = 0,
-            IsNew = true,
-            IsDirty = true
-        };
-        vm.RootNodes = new ObservableCollection<CategoryNodeViewModel> { newNode };
+        _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
 
-        await vm.OkCommand.ExecuteAsync(null);
+        await vm.ImportFromJsonCommand.ExecuteAsync(null);
 
         var bindings = await _bindingService.GetDirectBindingsAsync(hvac.Id);
         Assert.Single(bindings);
+        Assert.Equal("Height", (await _attributeRepository.GetAllAsync())
+            .First(a => a.Id == bindings[0].AttributeId).Name);
     }
 
     [Fact]
-    public async Task OkAsync_RaisesMetadataChanged_WhenPendingBindingsExist()
+    public async Task ImportFromJsonAsync_RaisesMetadataChanged_Always()
     {
-        var hvac = await _categoryRepository.AddAsync("HVAC", null, 0);
-        await _attributeRepository.CreateAsync("Width", null);
-
         var vm = CreateVm();
-        SetPendingBindings(vm, new List<MetadataExportBinding>
+        var jsonPath = CreateTempJson(new MetadataExportPackage
         {
-            new() { CategoryPath = "HVAC", AttributeName = "Width", SortOrder = 0, IsEnabled = true }
+            Categories = { new() { Name = "HVAC" } },
+            Attributes = { new() { Name = "Width" } },
+            Bindings = { new() { CategoryPath = "HVAC", AttributeName = "Width", SortOrder = 0, IsEnabled = true } }
         });
 
-        var newNode = new CategoryNodeViewModel(Guid.NewGuid().ToString(), "HVAC", null, "HVAC")
-        {
-            SortOrder = 0,
-            OriginalSortOrder = 0,
-            IsNew = true,
-            IsDirty = true
-        };
-        vm.RootNodes = new ObservableCollection<CategoryNodeViewModel> { newNode };
+        _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
 
         var fired = 0;
         _mediator.MetadataChanged += () => fired++;
 
-        await vm.OkCommand.ExecuteAsync(null);
+        await vm.ImportFromJsonCommand.ExecuteAsync(null);
 
         Assert.Equal(1, fired);
     }
@@ -272,7 +227,7 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
     }
 
     [Fact]
-    public async Task ImportFromJsonAsync_PendingBindings_MarksUnsavedChanges()
+    public async Task ImportFromJsonAsync_AtomicImport_CommitsEverything()
     {
         var vm = CreateVm();
         var jsonPath = CreateTempJson(new MetadataExportPackage
@@ -286,7 +241,8 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
 
         await vm.ImportFromJsonCommand.ExecuteAsync(null);
 
-        Assert.True(vm.HasUnsavedChanges);
+        var cat = Assert.Single(await _categoryRepository.GetAllAsync());
+        Assert.Single(await _bindingService.GetDirectBindingsAsync(cat.Id));
     }
 
     [Fact]
@@ -309,7 +265,7 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
     }
 
     [Fact]
-    public async Task ImportFromJsonAsync_DoesNotRaiseMediator_WhenNoAttributesImported()
+    public async Task ImportFromJsonAsync_NothingNew_StillReloadsAndRaisesMediator()
     {
         var vm = CreateVm();
         await _attributeRepository.CreateAsync("Width", null);
@@ -326,11 +282,11 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
 
         await vm.ImportFromJsonCommand.ExecuteAsync(null);
 
-        Assert.Equal(0, fired);
+        Assert.Equal(1, fired);
     }
 
     [Fact]
-    public async Task ImportFromJsonAsync_CategoriesVisible_AttributesInDb_BindingsPending()
+    public async Task ImportFromJsonAsync_AllSections_CommittedAndTreeReloaded()
     {
         var vm = CreateVm();
         var jsonPath = CreateTempJson(new MetadataExportPackage
@@ -357,32 +313,14 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
 
         Assert.Equal(2, vm.RootNodes.Count);
         Assert.Equal(2, (await _attributeRepository.GetAllAsync()).Count);
-        Assert.NotNull(GetPendingBindings(vm));
-        Assert.Single(GetPendingBindings(vm)!);
-    }
 
-    private static void SetPendingBindings(CategoryTreeEditorViewModel vm, List<MetadataExportBinding> bindings)
-    {
-        var field = typeof(CategoryTreeEditorViewModel).GetField(
-            "_pendingBindingImports",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        field!.SetValue(vm, bindings);
-        var update = typeof(CategoryTreeEditorViewModel).GetMethod(
-            "UpdateHasUnsavedChanges",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        update!.Invoke(vm, null);
-    }
-
-    private static List<MetadataExportBinding>? GetPendingBindings(CategoryTreeEditorViewModel vm)
-    {
-        var field = typeof(CategoryTreeEditorViewModel).GetField(
-            "_pendingBindingImports",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        return (List<MetadataExportBinding>?)field!.GetValue(vm);
+        var hvac = (await _categoryRepository.GetAllAsync()).First(c => c.Name == "HVAC");
+        var bindings = await _bindingService.GetDirectBindingsAsync(hvac.Id);
+        Assert.Single(bindings);
     }
 
     [Fact]
-    public async Task OkAsync_BindingWithValidationRules_RulesImported()
+    public async Task ImportFromJsonAsync_BindingWithValidationRules_RulesImported()
     {
         var vm = CreateVm();
         var jsonPath = CreateTempJson(new MetadataExportPackage
@@ -408,7 +346,6 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
 
         _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
         await vm.ImportFromJsonCommand.ExecuteAsync(null);
-        await vm.OkCommand.ExecuteAsync(null);
 
         var cats = await _categoryRepository.GetAllAsync();
         var cat = Assert.Single(cats);
@@ -425,7 +362,7 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
     }
 
     [Fact]
-    public async Task OkAsync_ExistingBinding_RulesNotOverwritten()
+    public async Task ImportFromJsonAsync_ExistingBinding_RulesNotOverwritten()
     {
         var cat = await _categoryRepository.AddAsync("HVAC", null, 0);
         var attr = await _attributeRepository.CreateAsync("Pressure", null);
@@ -453,7 +390,6 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
 
         _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
         await vm.ImportFromJsonCommand.ExecuteAsync(null);
-        await vm.OkCommand.ExecuteAsync(null);
 
         var rules = await ruleRepo.GetRulesForBindingAsync(existing.Id);
         var rule = Assert.Single(rules);
@@ -461,7 +397,7 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
     }
 
     [Fact]
-    public async Task OkAsync_UnknownRuleOperator_RuleSkipped_BindingImported()
+    public async Task ImportFromJsonAsync_UnknownRuleOperator_RuleSkipped_BindingImported()
     {
         var vm = CreateVm();
         var jsonPath = CreateTempJson(new MetadataExportPackage
@@ -477,6 +413,7 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
                     ValidationRules =
                     {
                         new() { Operator = "FutureOperatorV99" },
+                        new() { Operator = "999" },
                         new() { Operator = "HasValue" },
                     }
                 }
@@ -485,7 +422,6 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
 
         _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
         await vm.ImportFromJsonCommand.ExecuteAsync(null);
-        await vm.OkCommand.ExecuteAsync(null);
 
         var cats = await _categoryRepository.GetAllAsync();
         var bindings = await _bindingService.GetDirectBindingsAsync(cats[0].Id);
@@ -494,6 +430,151 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
 
         var rule = Assert.Single(rules);
         Assert.Equal(SmartCon.Core.Models.FamilyManager.ValidationRuleOperator.HasValue, rule.Operator);
+    }
+
+    [Fact]
+    public async Task ImportFromJsonAsync_ExistingCategoryPath_ReusedNotDuplicated()
+    {
+        var parent = await _categoryRepository.AddAsync("Pipes", null, 0);
+        var steel = await _categoryRepository.AddAsync("Steel", parent.Id, 0);
+
+        var vm = CreateVm();
+        var jsonPath = CreateTempJson(new MetadataExportPackage
+        {
+            Categories =
+            {
+                new()
+                {
+                    Name = "Pipes",
+                    Children = { new() { Name = "Steel" }, new() { Name = "Copper" } }
+                }
+            }
+        });
+
+        _dialogMock.Setup(s => s.ShowOpenJsonDialog(It.IsAny<string>(), It.IsAny<string?>())).Returns(jsonPath);
+
+        await vm.ImportFromJsonCommand.ExecuteAsync(null);
+
+        var all = await _categoryRepository.GetAllAsync();
+        Assert.Equal(3, all.Count);
+        Assert.Equal(parent.Id, all.First(c => c.Name == "Pipes").Id);
+        Assert.Equal(steel.Id, all.First(c => c.Name == "Steel").Id);
+        Assert.Equal(parent.Id, all.First(c => c.Name == "Copper").ParentId);
+    }
+
+    [Fact]
+    public async Task MoveNodeCommand_MovesCategoryImmediately()
+    {
+        var parent = await _categoryRepository.AddAsync("Pipes", null, 0);
+        var steel = await _categoryRepository.AddAsync("Steel", parent.Id, 0);
+        var copper = await _categoryRepository.AddAsync("Copper", parent.Id, 1);
+
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+        var parentVm = vm.RootNodes[0];
+        var copperVm = (CategoryNodeViewModel)parentVm.Children[1];
+
+        await vm.MoveNodeCommand.ExecuteAsync((copperVm, (CategoryNodeViewModel?)null, 1));
+
+        var all = await _categoryRepository.GetAllAsync();
+        Assert.Null(all.First(c => c.Name == "Copper").ParentId);
+        Assert.Equal(parent.Id, all.First(c => c.Name == "Steel").ParentId);
+        var movedVm = vm.RootNodes.FirstOrDefault(n => n.CategoryId == copper.Id);
+        Assert.NotNull(movedVm);
+        Assert.True(movedVm!.IsSelected);
+    }
+
+    [Fact]
+    public async Task HandleBindingToggle_Bind_CreatesBindingImmediately_AndActivatesShield()
+    {
+        var cat = await _categoryRepository.AddAsync("HVAC", null, 0);
+        var attr = await _attributeRepository.CreateAsync("Width", null);
+
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+        vm.SelectedNode = vm.RootNodes[0];
+
+        var item = new AttributeListItemViewModel
+        {
+            AttributeId = attr.Id,
+            Name = attr.Name,
+            Parent = vm,
+        };
+
+        await vm.HandleBindingToggleAsync(item, true);
+
+        var bindings = await _bindingService.GetDirectBindingsAsync(cat.Id);
+        var binding = Assert.Single(bindings);
+        Assert.True(item.IsBound);
+        Assert.Equal(binding.Id, item.BindingId);
+        Assert.True(item.CanEditRules);
+
+        await vm.HandleBindingToggleAsync(item, false);
+
+        Assert.Empty(await _bindingService.GetDirectBindingsAsync(cat.Id));
+        Assert.False(item.IsBound);
+        Assert.Null(item.BindingId);
+        Assert.False(item.CanEditRules);
+    }
+
+    [Fact]
+    public async Task HandleBindingToggle_UnbindWithRules_UserDeclines_KeepsBinding()
+    {
+        var cat = await _categoryRepository.AddAsync("HVAC", null, 0);
+        var attr = await _attributeRepository.CreateAsync("Width", null);
+        var binding = await _bindingService.CreateBindingAsync(cat.Id, attr.Id, 0);
+        var ruleRepo = new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator());
+        await ruleRepo.CreateRuleAsync(new SmartCon.Core.Models.FamilyManager.ValidationRule(
+            string.Empty, binding.Id, SmartCon.Core.Models.FamilyManager.ValidationRuleOperator.HasValue,
+            null, null, null, null, null, 0, true));
+
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+        vm.SelectedNode = vm.RootNodes[0];
+
+        var item = new AttributeListItemViewModel
+        {
+            AttributeId = attr.Id,
+            Name = attr.Name,
+            BindingId = binding.Id,
+            IsBound = true,
+            RuleCount = 1,
+            Parent = vm,
+        };
+
+        _dialogMock.Setup(s => s.ShowConfirmation(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
+
+        await vm.HandleBindingToggleAsync(item, false);
+
+        Assert.Single(await _bindingService.GetDirectBindingsAsync(cat.Id));
+        Assert.Single(await ruleRepo.GetRulesForBindingAsync(binding.Id));
+        Assert.True(item.IsBound);
+    }
+
+    [Fact]
+    public async Task HandleBindingToggle_InheritedBinding_NeverTouched()
+    {
+        var cat = await _categoryRepository.AddAsync("HVAC", null, 0);
+        var attr = await _attributeRepository.CreateAsync("Width", null);
+        var binding = await _bindingService.CreateBindingAsync(cat.Id, attr.Id, 0);
+
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+        vm.SelectedNode = vm.RootNodes[0];
+
+        var item = new AttributeListItemViewModel
+        {
+            AttributeId = attr.Id,
+            Name = attr.Name,
+            BindingId = binding.Id,
+            IsBound = true,
+            IsInherited = true,
+            Parent = vm,
+        };
+
+        await vm.HandleBindingToggleAsync(item, false);
+
+        Assert.Single(await _bindingService.GetDirectBindingsAsync(cat.Id));
     }
 
     private static string CreateTempJson(MetadataExportPackage package)
