@@ -204,6 +204,56 @@ public sealed class LocalValidationRuleRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRuleCountsForBindingsAsync_ReturnsTotalAndDisabledCounts()
+    {
+        var binding1 = await SeedBindingAsync("Pipes", "Pressure");
+        var binding2 = await SeedBindingAsync("Fittings", "DN");
+        await _repository.CreateRuleAsync(NewRule(binding1));
+        await _repository.CreateRuleAsync(NewRule(binding1, ValidationRuleOperator.IsPresent) with { IsEnabled = false });
+        await _repository.CreateRuleAsync(NewRule(binding1, ValidationRuleOperator.Between) with { IsEnabled = false, MinValue = 1.0, MaxValue = 2.0 });
+        await _repository.CreateRuleAsync(NewRule(binding2));
+
+        var counts = await _repository.GetRuleCountsForBindingsAsync(new[] { binding1, binding2 });
+
+        Assert.Equal(2, counts.Count);
+        Assert.Equal(3, counts[binding1].Total);
+        Assert.Equal(2, counts[binding1].Disabled);
+        Assert.Equal(1, counts[binding1].Enabled);
+        Assert.Equal(1, counts[binding2].Total);
+        Assert.Equal(0, counts[binding2].Disabled);
+    }
+
+    [Fact]
+    public async Task GetRuleCountsForBindingsAsync_EmptyInput_ReturnsEmpty()
+    {
+        var counts = await _repository.GetRuleCountsForBindingsAsync(Array.Empty<string>());
+
+        Assert.Empty(counts);
+    }
+
+    [Fact]
+    public async Task GetRulesForBindingAsync_NumericOperatorString_RuleSkipped()
+    {
+        var bindingId = await SeedBindingAsync();
+        var good = await _repository.CreateRuleAsync(NewRule(bindingId));
+
+        using (var connection = _fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "INSERT INTO category_validation_rules (id, binding_id, operator, sort_order, is_enabled) VALUES (@id, @bindingId, '99', 99, 1)";
+            cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", Guid.NewGuid().ToString()));
+            cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@bindingId", bindingId));
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var rules = await _repository.GetRulesForBindingAsync(bindingId);
+
+        Assert.Single(rules);
+        Assert.Equal(good.Id, rules[0].Id);
+    }
+
+    [Fact]
     public async Task DeleteBinding_CascadeDeletesRules()
     {
         var cat = await _categoryRepository.AddAsync("Pipes", null, 0);

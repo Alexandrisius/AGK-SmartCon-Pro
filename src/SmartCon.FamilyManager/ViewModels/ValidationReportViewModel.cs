@@ -8,13 +8,12 @@ namespace SmartCon.FamilyManager.ViewModels;
 
 /// <summary>
 /// One row of the validation report dialog: a health issue or a rule
-/// violation, flattened for a single DataGrid (Section / Type / Attribute
-/// / Check / Expected / Actual columns).
+/// violation, flattened for a single DataGrid (Type / Attribute / Check /
+/// Expected / Actual columns; the health-vs-rules split is conveyed by
+/// the status lines above the grid, not a column).
 /// </summary>
 public sealed record ValidationReportIssueRow(
-    bool IsHealthSection,
     bool IsError,
-    string SectionName,
     string TypeName,
     string AttributeName,
     string CheckDescription,
@@ -38,9 +37,19 @@ public sealed partial class ValidationReportViewModel : ObservableObject, IObser
 
     public IReadOnlyList<ValidationReportIssueRow> Issues { get; }
     public bool HasIssues => Issues.Count > 0;
-    public bool HasHealthSection { get; }
-    public bool HasRulesSection { get; }
     public bool IsPassed { get; }
+
+    /// <summary>One-line status of the system health check — always shown,
+    /// so "no rule violations" never reads as "nothing was checked".</summary>
+    public string HealthStatusText { get; }
+    public string HealthStatusIconKind { get; }
+    public string HealthStatusBrush { get; }
+
+    /// <summary>One-line status of the category rule check — explicitly
+    /// says "not configured" / "not checked" / "passed" / "violated".</summary>
+    public string RulesStatusText { get; }
+    public string RulesStatusIconKind { get; }
+    public string RulesStatusBrush { get; }
 
     public string HeaderIconKind => IsPassed ? "CheckCircleOutline" : "CloseCircleOutline";
     public string HeaderIconBrush => IsPassed ? "#4CAF50" : "#F44336";
@@ -66,9 +75,6 @@ public sealed partial class ValidationReportViewModel : ObservableObject, IObser
         FamilyName = familyName;
         CategoryPath = categoryPath;
 
-                var healthSectionName = Loc(Keys.FM_ValidationReport_SectionHealth) ?? "System check";
-        var rulesSectionName = Loc(Keys.FM_ValidationReport_SectionRules) ?? "Category rules";
-
         var rows = new List<ValidationReportIssueRow>();
 
         if (healthReport is not null && healthReport.Issues.Count > 0)
@@ -76,27 +82,22 @@ public sealed partial class ValidationReportViewModel : ObservableObject, IObser
             foreach (var issue in healthReport.Issues)
             {
                 rows.Add(new ValidationReportIssueRow(
-                    IsHealthSection: true,
                     IsError: issue.Severity == FamilyHealthIssueSeverity.Error,
-                    SectionName: healthSectionName,
-                    TypeName: issue.TypeName ?? string.Empty,
+                    TypeName: FamilyTypeSnapshot.ResolveDisplayName(issue.TypeName ?? string.Empty, familyName),
                     AttributeName: string.Empty,
                     CheckDescription: issue.Description,
                     ExpectedValue: string.Empty,
                     ActualValue: string.Empty));
             }
         }
-        HasHealthSection = rows.Count > 0;
 
         if (validationReport is not null && validationReport.Violations.Count > 0)
         {
             foreach (var violation in validationReport.Violations)
             {
                 rows.Add(new ValidationReportIssueRow(
-                    IsHealthSection: false,
                     IsError: true,
-                    SectionName: rulesSectionName,
-                    TypeName: violation.TypeName,
+                    TypeName: FamilyTypeSnapshot.ResolveDisplayName(violation.TypeName, familyName),
                     AttributeName: violation.AttributeName,
                     CheckDescription: FormatOperator(violation.Operator),
                     ExpectedValue: FormatExpected(violation),
@@ -104,13 +105,15 @@ public sealed partial class ValidationReportViewModel : ObservableObject, IObser
                         ?? (Loc(Keys.FM_ValidationReport_EmptyValue) ?? "<empty>")));
             }
         }
-        HasRulesSection = validationReport?.Violations.Count > 0;
 
         Issues = rows;
 
         var healthFailed = healthReport?.IsHealthy == false;
         var rulesFailed = validationReport?.IsValid == false;
         IsPassed = !healthFailed && !rulesFailed;
+
+        (HealthStatusText, HealthStatusIconKind, HealthStatusBrush) = BuildHealthLine(healthReport);
+        (RulesStatusText, RulesStatusIconKind, RulesStatusBrush) = BuildRulesLine(validationReport, validationRulesCount);
 
         _summary = BuildSummary(healthReport, validationReport, validationRulesCount);
     }
@@ -119,6 +122,66 @@ public sealed partial class ValidationReportViewModel : ObservableObject, IObser
     private void Close()
     {
         RequestClose?.Invoke(true);
+    }
+
+    private static (string Text, string Icon, string Brush) BuildHealthLine(FamilyHealthReport? healthReport)
+    {
+        if (healthReport is null)
+        {
+            return (Loc(Keys.FM_ValidationReport_HealthSkipped) ?? "Системная проверка: не выполнялась",
+                "InformationOutline", "#9E9E9E");
+        }
+
+        var errors = healthReport.Issues.Count(i => i.Severity == FamilyHealthIssueSeverity.Error);
+        if (errors > 0)
+        {
+            return (string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                    Loc(Keys.FM_ValidationReport_HealthErrorsLine) ?? "Системная проверка: ошибок {0}", errors),
+                "CloseCircleOutline", "#F44336");
+        }
+
+        var warnings = healthReport.Issues.Count(i => i.Severity == FamilyHealthIssueSeverity.Warning);
+        if (warnings > 0)
+        {
+            return (string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                    Loc(Keys.FM_ValidationReport_HealthWarningsLine) ?? "Системная проверка: предупреждений {0}", warnings),
+                "AlertCircleOutline", "#FB8C00");
+        }
+
+        return (Loc(Keys.FM_ValidationReport_HealthPassedLine) ?? "Системная проверка: пройдена",
+            "CheckCircleOutline", "#4CAF50");
+    }
+
+    private static (string Text, string Icon, string Brush) BuildRulesLine(
+        FamilyValidationReport? validationReport, int rulesCount)
+    {
+        if (rulesCount == 0)
+        {
+            return (Loc(Keys.FM_ValidationReport_RulesNone) ?? "Правила категории: не заданы",
+                "InformationOutline", "#9E9E9E");
+        }
+
+        if (validationReport is null)
+        {
+            return (Loc(Keys.FM_ValidationReport_RulesNotChecked) ?? "Правила категории: не проверялись",
+                "InformationOutline", "#9E9E9E");
+        }
+
+        var typesChecked = validationReport.RulesEvaluated / rulesCount;
+        if (!validationReport.IsValid)
+        {
+            return (string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                    Loc(Keys.FM_ValidationReport_RulesViolationsLine)
+                        ?? "Правила категории: нарушений {0} (правил: {1}, типов: {2})",
+                    validationReport.Violations.Count, rulesCount, typesChecked),
+                "CloseCircleOutline", "#F44336");
+        }
+
+        return (string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                Loc(Keys.FM_ValidationReport_RulesPassedLine)
+                    ?? "Правила категории: пройдены ({0} правил на {1} типах)",
+                rulesCount, typesChecked),
+            "CheckCircleOutline", "#4CAF50");
     }
 
     private string BuildSummary(FamilyHealthReport? healthReport, FamilyValidationReport? validationReport, int rulesCount)
@@ -147,9 +210,10 @@ public sealed partial class ValidationReportViewModel : ObservableObject, IObser
         }
         if (validationReport is not null && validationReport.Violations.Count > 0)
         {
+            var typesChecked = rulesCount > 0 ? validationReport.RulesEvaluated / rulesCount : 0;
             parts.Add(string.Format(System.Globalization.CultureInfo.CurrentCulture,
-                Loc(Keys.FM_ValidationReport_SummaryRuleViolations) ?? "rule violations: {0} (of {1} rules)",
-                validationReport.Violations.Count, rulesCount));
+                Loc(Keys.FM_ValidationReport_SummaryRuleViolations) ?? "rule violations: {0} (rules: {1}, types: {2})",
+                validationReport.Violations.Count, rulesCount, typesChecked));
         }
 
         return string.Format(System.Globalization.CultureInfo.CurrentCulture,

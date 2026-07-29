@@ -310,6 +310,7 @@ public static class StringLocalization
         public const string FM_Gate_Tooltip_FailedHealth = "FM_Gate_Tooltip_FailedHealth";
         public const string FM_Gate_Tooltip_FailedRules = "FM_Gate_Tooltip_FailedRules";
         public const string FM_Gate_Tooltip_FailedBoth = "FM_Gate_Tooltip_FailedBoth";
+        public const string FM_Gate_Tooltip_Imported = "FM_Gate_Tooltip_Imported";
         public const string FM_ValidationReport_Title = "FM_ValidationReport_Title";
         public const string FM_ValidationReport_Close = "FM_ValidationReport_Close";
         public const string FM_ValidationReport_ColSection = "FM_ValidationReport_ColSection";
@@ -327,6 +328,14 @@ public static class StringLocalization
         public const string FM_ValidationReport_SummaryHealthErrors = "FM_ValidationReport_SummaryHealthErrors";
         public const string FM_ValidationReport_SummaryHealthWarnings = "FM_ValidationReport_SummaryHealthWarnings";
         public const string FM_ValidationReport_SummaryRuleViolations = "FM_ValidationReport_SummaryRuleViolations";
+        public const string FM_ValidationReport_HealthSkipped = "FM_ValidationReport_HealthSkipped";
+        public const string FM_ValidationReport_HealthPassedLine = "FM_ValidationReport_HealthPassedLine";
+        public const string FM_ValidationReport_HealthWarningsLine = "FM_ValidationReport_HealthWarningsLine";
+        public const string FM_ValidationReport_HealthErrorsLine = "FM_ValidationReport_HealthErrorsLine";
+        public const string FM_ValidationReport_RulesNone = "FM_ValidationReport_RulesNone";
+        public const string FM_ValidationReport_RulesNotChecked = "FM_ValidationReport_RulesNotChecked";
+        public const string FM_ValidationReport_RulesPassedLine = "FM_ValidationReport_RulesPassedLine";
+        public const string FM_ValidationReport_RulesViolationsLine = "FM_ValidationReport_RulesViolationsLine";
         public const string FM_RuleOp_IsPresent = "FM_RuleOp_IsPresent";
         public const string FM_RuleOp_HasValue = "FM_RuleOp_HasValue";
         public const string FM_RuleOp_IsEmpty = "FM_RuleOp_IsEmpty";
@@ -337,6 +346,10 @@ public static class StringLocalization
         public const string FM_RuleOp_Between = "FM_RuleOp_Between";
         public const string FM_CTE_ValidationRules = "FM_CTE_ValidationRules";
         public const string FM_CTE_RulesCount = "FM_CTE_RulesCount";
+        public const string FM_CTE_RulesCountDisabled = "FM_CTE_RulesCountDisabled";
+        public const string FM_CTE_RulesNone = "FM_CTE_RulesNone";
+        public const string FM_CTE_UnbindRulesTitle = "FM_CTE_UnbindRulesTitle";
+        public const string FM_CTE_UnbindRulesMessage = "FM_CTE_UnbindRulesMessage";
         public const string FM_RulesEditor_Title = "FM_RulesEditor_Title";
         public const string FM_RulesEditor_Add = "FM_RulesEditor_Add";
         public const string FM_RulesEditor_Save = "FM_RulesEditor_Save";

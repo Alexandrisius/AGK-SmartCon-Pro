@@ -1019,6 +1019,18 @@ public sealed partial class FamilyManagerMainViewModel
             ? null
             : target.CategoryId;
 
+        // Drop on the family's own current category is a no-op — running
+        // the gate there would needlessly re-check rules (and could even
+        // block a family that already lives in the category).
+        var sameCategory = string.IsNullOrEmpty(leaf.CategoryId)
+            ? categoryId is null
+            : string.Equals(leaf.CategoryId, categoryId, StringComparison.Ordinal);
+        if (sameCategory)
+        {
+            SmartConLogger.Debug($"DropFamilyAsync: '{leaf.DisplayName}' dropped on its own category — no-op");
+            return;
+        }
+
         // Import Validation Gate: a rule-protected category accepts the
         // family only when it passes the rules (checked from persisted
         // extraction — no .rfa re-open). Blocked = dialog shown, move aborted.

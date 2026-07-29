@@ -70,6 +70,24 @@ public enum ValidationRuleOperator
 
 ---
 
+## ValidationRuleCounts
+
+Агрегированные счётчики правил одного binding'а. Выключенное правило
+продолжает существовать (считается в `Total`), но не участвует в гейте.
+Используется для щита-индикатора в редакторе категорий (зелёный — все
+включены, оранжевый — есть выключенные).
+
+**Файл:** `Models/FamilyManager/ValidationRuleCounts.cs`
+
+```csharp
+public sealed record ValidationRuleCounts(int Total, int Disabled)
+{
+    public int Enabled => Total - Disabled;
+}
+```
+
+---
+
 ## EffectiveValidationRule
 
 Правило, разрешённое против effective-набора атрибутов категории

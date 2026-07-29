@@ -328,6 +328,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public bool CanImport => Action != FamilyBatchImportAction.Skip;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GateTooltip))]
     private FamilyBatchImportRowState _importRowState = FamilyBatchImportRowState.Pending;
 
     [ObservableProperty]
@@ -376,6 +377,12 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         get
         {
             static string? Loc(string key) => SmartCon.UI.LanguageManager.GetString(key);
+            if (ImportRowState == FamilyBatchImportRowState.Success)
+            {
+                return Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_Imported)
+                    ?? "Импорт выполнен — открыть отчёт о проверке";
+            }
+
             return GateStatus switch
             {
                 FamilyRowGateStatus.Failed when HealthReport?.IsHealthy == false && ValidationReport?.IsValid == false =>

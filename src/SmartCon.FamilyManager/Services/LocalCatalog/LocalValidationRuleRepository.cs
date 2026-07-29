@@ -81,29 +81,29 @@ internal sealed class LocalValidationRuleRepository : IValidationRuleRepository
         return result.AsReadOnly();
     }
 
-    public async Task<IReadOnlyDictionary<string, int>> GetRuleCountsForBindingsAsync(IEnumerable<string> bindingIds, CancellationToken ct = default)
+    public async Task<IReadOnlyDictionary<string, ValidationRuleCounts>> GetRuleCountsForBindingsAsync(IEnumerable<string> bindingIds, CancellationToken ct = default)
     {
         await EnsureMigratedAsync(ct);
         var idList = bindingIds.ToList();
         if (idList.Count == 0)
-            return new Dictionary<string, int>();
+            return new Dictionary<string, ValidationRuleCounts>();
 
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
 
         var placeholders = string.Join(", ", idList.Select((_, i) => $"@p{i}"));
-        cmd.CommandText = $"SELECT binding_id, COUNT(*) as cnt FROM category_validation_rules WHERE binding_id IN ({placeholders}) GROUP BY binding_id";
+        cmd.CommandText = $"SELECT binding_id, COUNT(*) as cnt, SUM(CASE WHEN is_enabled = 0 THEN 1 ELSE 0 END) as disabled_cnt FROM category_validation_rules WHERE binding_id IN ({placeholders}) GROUP BY binding_id";
         for (var i = 0; i < idList.Count; i++)
         {
             cmd.Parameters.Add(new SqliteParameter($"@p{i}", idList[i]));
         }
 
-        var result = new Dictionary<string, int>();
+        var result = new Dictionary<string, ValidationRuleCounts>();
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            result[reader.GetString(0)] = reader.GetInt32(1);
+            result[reader.GetString(0)] = new ValidationRuleCounts(reader.GetInt32(1), reader.GetInt32(2));
         }
 
         return result;
@@ -205,7 +205,8 @@ internal sealed class LocalValidationRuleRepository : IValidationRuleRepository
     private static ValidationRule? TryReadRule(SqliteDataReader reader)
     {
         var operatorName = reader.GetString(2);
-        if (!Enum.TryParse<ValidationRuleOperator>(operatorName, out var ruleOperator))
+        if (!Enum.TryParse<ValidationRuleOperator>(operatorName, out var ruleOperator)
+            || !Enum.IsDefined(typeof(ValidationRuleOperator), ruleOperator))
         {
             SmartConLogger.Warn(
                 $"category_validation_rules: unknown operator '{operatorName}' in rule {reader.GetString(0)} — rule skipped " +

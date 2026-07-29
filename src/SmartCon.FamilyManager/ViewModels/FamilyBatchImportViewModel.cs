@@ -109,6 +109,12 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// </summary>
     private Task? _pendingValidation;
 
+    /// <summary>
+    /// Set when the dialog starts closing — in-flight gate revalidations
+    /// discard their results instead of mutating rows of a torn-down view.
+    /// </summary>
+    private volatile bool _isClosing;
+
     public FamilyBatchImportViewModel(
         IReadOnlyList<FamilyBatchImportItem> items,
         IFamilyManagerDialogService dialogService,
@@ -332,9 +338,23 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             }
         }
 
-        // Mutation phase (UI thread via dispatcher).
+        // Mutation phase (UI thread via dispatcher). Skipped entirely when
+        // the dialog is already closing: mutating rows of a torn-down view
+        // produces a visible flicker and serves nobody.
+        if (_isClosing)
+        {
+            SmartConLogger.Debug("BatchImport.Gate: revalidation result discarded — dialog is closing");
+            return;
+        }
+
         _dispatcher.Invoke(() =>
         {
+            if (_isClosing)
+            {
+                SmartConLogger.Debug("BatchImport.Gate: revalidation mutation skipped — dialog is closing");
+                return;
+            }
+
             try
             {
                 // Rows with no category revert to the health-only state.
@@ -412,6 +432,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                         }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Error(
+                    $"BatchImport.Gate: revalidation mutation failed: {ex.GetType().Name}: {ex.Message}");
             }
             finally
             {

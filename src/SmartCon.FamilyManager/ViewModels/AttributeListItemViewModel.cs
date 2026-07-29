@@ -21,8 +21,21 @@ public sealed partial class AttributeListItemViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRules))]
+    [NotifyPropertyChangedFor(nameof(ShieldIconKind))]
+    [NotifyPropertyChangedFor(nameof(ShieldBrush))]
     [NotifyPropertyChangedFor(nameof(RulesTooltip))]
     private int _ruleCount;
+
+    /// <summary>
+    /// Import Validation Gate: how many of the binding's rules are
+    /// disabled. Drives the orange shield-alert state so a disabled rule
+    /// stays visible instead of silently stopping to protect the category.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShieldIconKind))]
+    [NotifyPropertyChangedFor(nameof(ShieldBrush))]
+    [NotifyPropertyChangedFor(nameof(RulesTooltip))]
+    private int _disabledRuleCount;
 
     public bool HasRules => RuleCount > 0;
 
@@ -30,12 +43,56 @@ public sealed partial class AttributeListItemViewModel : ObservableObject
     /// (a draft category/binding has no row to attach rules to).</summary>
     public bool CanEditRules => BindingId is not null;
 
-    public string RulesTooltip => HasRules
-        ? string.Format(
-            System.Globalization.CultureInfo.CurrentCulture,
-            SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_CTE_RulesCount) ?? "Validation rules: {0}",
-            RuleCount)
-        : string.Empty;
+    /// <summary>
+    /// Shield button icon: outline shield when no rules, green shield-check
+    /// when every rule is enabled, orange shield-alert when at least one
+    /// rule is disabled.
+    /// </summary>
+    public string ShieldIconKind =>
+        !HasRules ? "ShieldOutline"
+        : DisabledRuleCount > 0 ? "ShieldAlertOutline"
+        : "ShieldCheck";
+
+    public string ShieldBrush =>
+        !HasRules ? "#9E9E9E"
+        : DisabledRuleCount > 0 ? "#FB8C00"
+        : "#4CAF50";
+
+    public string RulesTooltip
+    {
+        get
+        {
+            static string? Loc(string key) => SmartCon.UI.LanguageManager.GetString(key);
+            if (!HasRules)
+            {
+                return Loc(SmartCon.UI.StringLocalization.Keys.FM_CTE_RulesNone)
+                    ?? "Правила валидации не заданы — нажмите для настройки";
+            }
+
+            if (DisabledRuleCount > 0)
+            {
+                return string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    Loc(SmartCon.UI.StringLocalization.Keys.FM_CTE_RulesCountDisabled)
+                        ?? "Правила валидации: {0} (отключено: {1})",
+                    RuleCount,
+                    DisabledRuleCount);
+            }
+
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_CTE_RulesCount) ?? "Правила валидации: {0}",
+                RuleCount);
+        }
+    }
+
+    /// <summary>
+    /// Re-pushes <see cref="IsBound"/> to the OneWay-bound CheckBox —
+    /// needed when the parent cancels a toggle (e.g. the user declines
+    /// the "rules will be deleted" unbind confirmation) so the CheckBox
+    /// visually snaps back to the unchanged state.
+    /// </summary>
+    public void NotifyBoundStateChanged() => OnPropertyChanged(nameof(IsBound));
 
     public bool OriginalIsBound { get; set; }
     public bool IsDirty { get; set; }

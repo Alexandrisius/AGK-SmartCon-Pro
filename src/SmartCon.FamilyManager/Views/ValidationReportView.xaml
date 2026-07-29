@@ -7,7 +7,7 @@
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         Title="{loc:Loc FM_ValidationReport_Title}"
-        Width="720" Height="480" MinWidth="480" MinHeight="320"
+        Width="920" Height="480" MinWidth="700" MinHeight="320"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="False"
@@ -25,6 +25,7 @@
 
     <Grid Margin="12">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -63,23 +64,61 @@
 
         <TextBlock Grid.Row="2"
                    Text="{Binding Summary}"
-                   Margin="0,0,0,10"
+                   Margin="0,0,0,6"
                    Foreground="{DynamicResource TextMutedBrush}"
                    TextWrapping="Wrap"/>
 
+        <StackPanel Grid.Row="3" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
+                <iconPacks:PackIconMaterial Kind="{Binding HealthStatusIconKind}"
+                                            Foreground="{Binding HealthStatusBrush}"
+                                            Width="13" Height="13"
+                                            Margin="0,0,6,0"
+                                            VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding HealthStatusText}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <iconPacks:PackIconMaterial Kind="{Binding RulesStatusIconKind}"
+                                            Foreground="{Binding RulesStatusBrush}"
+                                            Width="13" Height="13"
+                                            Margin="0,0,6,0"
+                                            VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding RulesStatusText}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </StackPanel>
+
         <DataGrid x:Name="IssuesGrid"
-                  Grid.Row="3"
+                  Grid.Row="4"
                   ItemsSource="{Binding Issues}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
                   Style="{DynamicResource CompactDataGrid}"
-                  CellStyle="{DynamicResource CompactDataGridCell}"
                   CanUserResizeColumns="True"
                   CanUserSortColumns="False"
                   SelectionMode="Single"
                   SelectionUnit="FullRow">
+            <DataGrid.CellStyle>
+                <Style TargetType="DataGridCell" BasedOn="{StaticResource CompactDataGridCell}">
+                    <Setter Property="Padding" Value="8,0"/>
+                </Style>
+            </DataGrid.CellStyle>
+            <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                    <Setter Property="Padding" Value="8,0"/>
+                </Style>
+            </DataGrid.ColumnHeaderStyle>
             <DataGrid.Columns>
                 <DataGridTemplateColumn x:Name="ColSeverity" Width="32">
+                    <DataGridTemplateColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTemplateColumn.HeaderStyle>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Grid>
@@ -119,24 +158,81 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn x:Name="ColSection" Width="110">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding SectionName}"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextMutedBrush}"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTextColumn x:Name="ColType" Binding="{Binding TypeName}" Width="110"/>
-                <DataGridTextColumn x:Name="ColAttribute" Binding="{Binding AttributeName}" Width="130"/>
-                <DataGridTextColumn x:Name="ColCheck" Binding="{Binding CheckDescription}" Width="*"/>
-                <DataGridTextColumn x:Name="ColExpected" Binding="{Binding ExpectedValue}" Width="110"/>
-                <DataGridTextColumn x:Name="ColActual" Binding="{Binding ActualValue}" Width="110"/>
+                <DataGridTextColumn x:Name="ColType" Binding="{Binding TypeName}" Width="*" MinWidth="80">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="8,0"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColAttribute" Binding="{Binding AttributeName}" Width="*" MinWidth="100">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="8,0"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColCheck" Binding="{Binding CheckDescription}" Width="175" CanUserResize="False">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="8,0"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColExpected" Binding="{Binding ExpectedValue}" Width="*" MinWidth="100">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="8,0"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColActual" Binding="{Binding ActualValue}" Width="*" MinWidth="100">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="8,0"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
             </DataGrid.Columns>
         </DataGrid>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
             <Button Content="{loc:Loc FM_ValidationReport_Close}"
                     Command="{Binding CloseCommand}"
                     IsDefault="True"

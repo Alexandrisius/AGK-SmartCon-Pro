@@ -627,6 +627,10 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                 CategoryId = null;
                 CategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
             }
+            else if (string.Equals(CategoryId, result, StringComparison.Ordinal))
+            {
+                // Same category re-picked — nothing to change, no gate.
+            }
             else
             {
                 // Import Validation Gate: a rule-protected category accepts

@@ -13,7 +13,6 @@ public sealed partial class ValidationReportView : DialogWindowBase
         BindCloseRequest(viewModel);
 
         ColSeverity.Header = string.Empty;
-        ColSection.Header = LanguageManager.GetString(StringLocalization.Keys.FM_ValidationReport_ColSection);
         ColType.Header = LanguageManager.GetString(StringLocalization.Keys.FM_ValidationReport_ColType);
         ColAttribute.Header = LanguageManager.GetString(StringLocalization.Keys.FM_ValidationReport_ColAttribute);
         ColCheck.Header = LanguageManager.GetString(StringLocalization.Keys.FM_ValidationReport_ColCheck);

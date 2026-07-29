@@ -83,6 +83,10 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         }
     }
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(System.IntPtr hWnd);
+
     public void ShowModeless(object viewModel)
     {
 #pragma warning disable CA1510
@@ -105,7 +109,22 @@ public sealed class WpfDialogPresenter : IDialogPresenter
 
         var window = factory(viewModel);
         var helper = new WindowInteropHelper(window);
-        helper.Owner = GetOwnerHandle(_revitContext);
+        var ownerHandle = GetOwnerHandle(_revitContext);
+        helper.Owner = ownerHandle;
+
+        // Modeless-focus best practice (Jeremy Tammik tbc/a/1591, SO #13209526):
+        // once ANY modal child was shown during a modeless window's lifetime,
+        // Windows' foreground tracking gets confused, and closing the modeless
+        // window flashes the desktop / another app instead of returning to the
+        // owner (Revit). Hand the foreground back to the owner explicitly.
+        window.Closing += (_, _) =>
+        {
+            if (ownerHandle != IntPtr.Zero)
+            {
+                SmartConLogger.Freeze($"ShowModeless: restoring foreground to owner hwnd={ownerHandle} on close");
+                SetForegroundWindow(ownerHandle);
+            }
+        };
 
 #if NET48
         var recovery = BatchDialogRenderRecovery.Attach(window);
@@ -183,14 +202,44 @@ public sealed class WpfDialogPresenter : IDialogPresenter
     }
 
     /// <summary>
-    /// Returns the Revit main window handle. Uses UIApplication.MainWindowHandle
-    /// (the Autodesk-recommended API since Revit 2019 — see Autodesk forum
-    /// "Addin WPF Window Stops Responding": Process.MainWindowHandle is no longer
-    /// reliable since Revit 2019). Falls back to Process.MainWindowHandle when
+    /// Returns the owner handle for a dialog. Prefers the currently ACTIVE
+    /// SmartCon WPF window (nested-dialog parenting: category picker /
+    /// validation report / rules editor opened from another dialog become
+    /// its MODAL CHILD — the parent is properly disabled and re-activated
+    /// on close). Falls back to the Revit main window when no WPF dialog
+    /// is active (dialogs opened straight from the dockable pane).
+    /// Without this, every dialog was owned directly by Revit: a modal
+    /// child disabled only Revit while the modeless batch dialog stayed
+    /// interactive behind it, and closing the batch afterwards made
+    /// Windows shuffle foreground through the desktop — visible as Revit
+    /// momentarily "minimizing".
+    /// Uses UIApplication.MainWindowHandle (the Autodesk-recommended API
+    /// since Revit 2019 — see Autodesk forum "Addin WPF Window Stops
+    /// Responding": Process.MainWindowHandle is no longer reliable since
+    /// Revit 2019). Falls back to Process.MainWindowHandle when
     /// IRevitContext is not available (e.g. in unit tests or before startup).
     /// </summary>
     private static IntPtr GetOwnerHandle(IRevitContext? revitContext)
     {
+        try
+        {
+            var active = Application.Current?.Windows.OfType<Window>()
+                .FirstOrDefault(w => w.IsActive);
+            if (active is not null)
+            {
+                var activeHandle = new WindowInteropHelper(active).Handle;
+                if (activeHandle != IntPtr.Zero)
+                {
+                    return activeHandle;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Freeze(
+                $"GetOwnerHandle: active-window lookup failed: {ex.GetType().Name}: {ex.Message} — falling back to Revit main window");
+        }
+
         try
         {
             if (revitContext is RevitContext ctx)

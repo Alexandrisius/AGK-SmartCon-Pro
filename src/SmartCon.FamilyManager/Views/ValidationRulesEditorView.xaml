@@ -50,10 +50,41 @@
                   CanUserDeleteRows="False"
                   Style="{DynamicResource CompactDataGrid}"
                   CellStyle="{DynamicResource CompactDataGridCell}"
+                  RowHeight="36"
                   SelectionMode="Single"
                   SelectionUnit="FullRow">
+            <DataGrid.RowStyle>
+                <!--
+                    Выделение строки намеренно невидимо: строка — это набор
+                    редакторов (ComboBox/TextBox/CheckBox/Button), а не
+                    выбираемая сущность; подсветка выделения затирала
+                    gridlines и выглядела как баг, а снять её было нечем.
+                -->
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource CompactDataGridRow}">
+                    <Setter Property="Height" Value="36"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="Transparent"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsSelected" Value="True"/>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Background" Value="Transparent"/>
+                        </MultiTrigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsSelected" Value="False"/>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Background" Value="Transparent"/>
+                        </MultiTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
             <DataGrid.Columns>
-                <DataGridTemplateColumn x:Name="ColOperator" Width="150">
+                <DataGridTemplateColumn x:Name="ColOperator" Width="185" MinWidth="120">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <ComboBox ItemsSource="{Binding DataContext.AvailableOperators, RelativeSource={RelativeSource AncestorType=DataGrid}}"
@@ -61,15 +92,16 @@
                                       DisplayMemberPath="DisplayName"
                                       SelectedValue="{Binding Operator, UpdateSourceTrigger=PropertyChanged}"
                                       Style="{DynamicResource CompactComboBox}"
+                                      VerticalAlignment="Center"
                                       Margin="2"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
 
-                <DataGridTemplateColumn x:Name="ColValue" Width="*">
+                <DataGridTemplateColumn x:Name="ColValue" Width="*" MinWidth="130">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Grid Margin="2">
+                            <Grid Margin="2" VerticalAlignment="Center">
                                 <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}">
                                     <TextBox.Style>
                                         <Style TargetType="TextBox" BasedOn="{StaticResource CompactTextBox}">
@@ -100,7 +132,7 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
 
-                <DataGridTemplateColumn x:Name="ColEnabled" Width="60">
+                <DataGridTemplateColumn x:Name="ColEnabled" Width="60" MinWidth="60">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <CheckBox IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
@@ -111,7 +143,7 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
 
-                <DataGridTemplateColumn Width="40">
+                <DataGridTemplateColumn Width="40" MinWidth="40">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Button Command="{Binding DataContext.DeleteRuleCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"

@@ -400,6 +400,7 @@ public static partial class LocalizationService
         ru["FM_Gate_Tooltip_FailedHealth"] = "Системные ошибки в семействе: {0}. Импорт заблокирован."; en["FM_Gate_Tooltip_FailedHealth"] = "System errors in the family: {0}. Import blocked.";
         ru["FM_Gate_Tooltip_FailedRules"] = "Нарушены правила категории: {0}. Импорт заблокирован."; en["FM_Gate_Tooltip_FailedRules"] = "Rule violations: {0}. Import blocked.";
         ru["FM_Gate_Tooltip_FailedBoth"] = "Системные ошибки: {0}, нарушения правил: {1}. Импорт заблокирован."; en["FM_Gate_Tooltip_FailedBoth"] = "System errors: {0}, rule violations: {1}. Import blocked.";
+        ru["FM_Gate_Tooltip_Imported"] = "Импорт выполнен — открыть отчёт о проверке"; en["FM_Gate_Tooltip_Imported"] = "Import completed — open the validation report";
 
         // Validation Report dialog
         ru["FM_ValidationReport_Title"] = "Отчёт о проверке"; en["FM_ValidationReport_Title"] = "Validation Report";
@@ -418,7 +419,15 @@ public static partial class LocalizationService
         ru["FM_ValidationReport_SummaryFailed"] = "Проверка не пройдена — {0}"; en["FM_ValidationReport_SummaryFailed"] = "Check failed — {0}";
         ru["FM_ValidationReport_SummaryHealthErrors"] = "системные ошибки: {0}"; en["FM_ValidationReport_SummaryHealthErrors"] = "system errors: {0}";
         ru["FM_ValidationReport_SummaryHealthWarnings"] = "предупреждения: {0}"; en["FM_ValidationReport_SummaryHealthWarnings"] = "warnings: {0}";
-        ru["FM_ValidationReport_SummaryRuleViolations"] = "нарушения правил: {0} (из {1})"; en["FM_ValidationReport_SummaryRuleViolations"] = "rule violations: {0} (of {1})";
+        ru["FM_ValidationReport_SummaryRuleViolations"] = "нарушений правил: {0} (правил: {1}, типов: {2})"; en["FM_ValidationReport_SummaryRuleViolations"] = "rule violations: {0} (rules: {1}, types: {2})";
+        ru["FM_ValidationReport_HealthSkipped"] = "Системная проверка: не выполнялась"; en["FM_ValidationReport_HealthSkipped"] = "System check: not performed";
+        ru["FM_ValidationReport_HealthPassedLine"] = "Системная проверка: пройдена"; en["FM_ValidationReport_HealthPassedLine"] = "System check: passed";
+        ru["FM_ValidationReport_HealthWarningsLine"] = "Системная проверка: предупреждений {0}"; en["FM_ValidationReport_HealthWarningsLine"] = "System check: {0} warning(s)";
+        ru["FM_ValidationReport_HealthErrorsLine"] = "Системная проверка: ошибок {0}"; en["FM_ValidationReport_HealthErrorsLine"] = "System check: {0} error(s)";
+        ru["FM_ValidationReport_RulesNone"] = "Правила категории: не заданы"; en["FM_ValidationReport_RulesNone"] = "Category rules: not configured";
+        ru["FM_ValidationReport_RulesNotChecked"] = "Правила категории: не проверялись"; en["FM_ValidationReport_RulesNotChecked"] = "Category rules: not checked";
+        ru["FM_ValidationReport_RulesPassedLine"] = "Правила категории: пройдены ({0} правил на {1} типах)"; en["FM_ValidationReport_RulesPassedLine"] = "Category rules: passed ({0} rules on {1} types)";
+        ru["FM_ValidationReport_RulesViolationsLine"] = "Правила категории: нарушений {0} (правил: {1}, типов: {2})"; en["FM_ValidationReport_RulesViolationsLine"] = "Category rules: {0} violation(s) (rules: {1}, types: {2})";
 
         // Validation rule operators
         ru["FM_RuleOp_IsPresent"] = "Параметр присутствует"; en["FM_RuleOp_IsPresent"] = "Parameter exists";
@@ -433,6 +442,10 @@ public static partial class LocalizationService
         // Validation Rules Editor (category tree editor → attribute context menu)
         ru["FM_CTE_ValidationRules"] = "Правила валидации"; en["FM_CTE_ValidationRules"] = "Validation rules";
         ru["FM_CTE_RulesCount"] = "Правил валидации: {0}"; en["FM_CTE_RulesCount"] = "Validation rules: {0}";
+        ru["FM_CTE_RulesCountDisabled"] = "Правил валидации: {0} (отключено: {1})"; en["FM_CTE_RulesCountDisabled"] = "Validation rules: {0} (disabled: {1})";
+        ru["FM_CTE_RulesNone"] = "Правила валидации не заданы — нажмите для настройки"; en["FM_CTE_RulesNone"] = "No validation rules — click to configure";
+        ru["FM_CTE_UnbindRulesTitle"] = "Правила валидации будут удалены"; en["FM_CTE_UnbindRulesTitle"] = "Validation rules will be deleted";
+        ru["FM_CTE_UnbindRulesMessage"] = "У атрибута \"{0}\" заданы правила валидации ({1}). При отвязке они будут удалены без возможности восстановления. Продолжить?"; en["FM_CTE_UnbindRulesMessage"] = "Attribute \"{0}\" has validation rules ({1}). Unbinding will permanently delete them. Continue?";
         ru["FM_RulesEditor_Title"] = "Правила валидации"; en["FM_RulesEditor_Title"] = "Validation Rules";
         ru["FM_RulesEditor_Add"] = "Добавить правило"; en["FM_RulesEditor_Add"] = "Add rule";
         ru["FM_RulesEditor_Save"] = "Сохранить"; en["FM_RulesEditor_Save"] = "Save";

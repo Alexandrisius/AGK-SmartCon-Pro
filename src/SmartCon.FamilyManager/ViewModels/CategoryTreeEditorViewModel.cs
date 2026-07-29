@@ -259,7 +259,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             {
                 if (item.BindingId is not null && counts.TryGetValue(item.BindingId, out var count))
                 {
-                    item.RuleCount = count;
+                    item.RuleCount = count.Total;
+                    item.DisabledRuleCount = count.Disabled;
                 }
             }
         }
@@ -295,6 +296,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
                 // ALL rules of the binding (a disabled rule still exists).
                 var rules = await _ruleRepository.GetRulesForBindingAsync(item.BindingId);
                 item.RuleCount = rules.Count;
+                item.DisabledRuleCount = rules.Count(r => !r.IsEnabled);
                 _metadataMediator.RaiseMetadataChanged();
             }
         }
@@ -307,6 +309,26 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     internal void HandleBindingToggle(AttributeListItemViewModel item, bool shouldBeBound)
     {
         if (SelectedNode is null) return;
+
+        // Import Validation Gate: unbinding deletes the binding's
+        // validation rules (FK CASCADE). Warn before destroying them.
+        if (!shouldBeBound && item.HasRules)
+        {
+            var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnbindRulesTitle)
+                ?? "Правила валидации будут удалены";
+            var message = string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnbindRulesMessage)
+                    ?? "У атрибута \"{0}\" заданы правила валидации ({1}). При отвязке они будут удалены без возможности восстановления. Продолжить?",
+                item.Name,
+                item.RuleCount);
+            if (!_dialogService.ShowConfirmation(title, message))
+            {
+                item.NotifyBoundStateChanged();
+                return;
+            }
+        }
+
         var categoryId = SelectedNode.CategoryId;
         var attributeId = item.AttributeId;
 
