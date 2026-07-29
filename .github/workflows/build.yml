@@ -92,6 +92,16 @@ jobs:
       - name: Run Tests
         run: dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Release.R25
 
+      # Compile-only: интеграционные тесты выполняются внутри реального Revit
+      # (Nice3point.TUnit.Revit), на GitHub-hosted runner его нет — только
+      # проверяем компиляцию, прогон локальный (см. smartcon-testing skill).
+      # R25 (net8) + R21 (net48): polyfill/STJ-риски сосредоточены на net48.
+      - name: Build Integration Tests R25 (compile-only, no Revit on runner)
+        run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R25
+
+      - name: Build Integration Tests R21 (compile-only, no Revit on runner)
+        run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R21
+
   test-success:
     needs: [changes, test]
     if: always()

@@ -83,6 +83,31 @@
   </ItemGroup>
 
   <!-- ============================================================ -->
+  <!-- Wildcard VersionOverride для Nice3point.TUnit.Revit            -->
+  <!-- (только SmartCon.IntegrationTests). Пакет публикуется per-Revit -->
+  <!-- годом (2021.*–2027.*), как и RevitAPI — зеркалим схему выше.   -->
+  <!-- Пакета 2019/2020 не существует: R19 не поддерживается           -->
+  <!-- (csproj проекта выдаёт явную ошибку для RevitVersion < 2021).   -->
+  <!-- Update без Include в других проектах — no-op.                   -->
+  <!-- ============================================================ -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' != '' And '$(RevitVersion)' != '2019'">
+    <PackageReference Update="Nice3point.TUnit.Revit"
+                      VersionOverride="$(RevitVersion).*" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == ''">
+    <PackageReference Update="Nice3point.TUnit.Revit"
+                      VersionOverride="2021.*" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(RevitVersion)' != ''">
+    <PackageReference Update="Nice3point.TUnit.Revit"
+                      VersionOverride="$(RevitVersion).*" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(RevitVersion)' == ''">
+    <PackageReference Update="Nice3point.TUnit.Revit"
+                      VersionOverride="2025.*" />
+  </ItemGroup>
+
+  <!-- ============================================================ -->
   <!-- ADR-051 (Issue #134): на net48 merge-список (6 пакетов) сшивается -->
   <!-- ILRepack в SmartCon.Dependencies.dll. Любые ТРАНЗИТИВНЫЕ пути этих  -->
   <!-- пакетов в потребителях (HelixToolkit → CommunityToolkit.Mvvm и т.д.) -->
@@ -92,7 +117,10 @@
   <!-- НЕ обрезаются: они поставляются как подписанные оригиналы.         -->
   <!-- Держать синхронно с SmartCon.Dependencies/ILRepack.targets         -->
   <!-- ============================================================ -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies'">
+  <!-- SmartCon.IntegrationTests исключён из обрезки: это standalone test host,
+       а не плагин — ILRepack-изоляция ADR-051 на него не распространяется.
+       TUnit.Core требует реальный System.Text.Json >= 9.0.0 в output. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies' And '$(MSBuildProjectName)' != 'SmartCon.IntegrationTests'">
     <PackageReference Include="CommunityToolkit.Mvvm" ExcludeAssets="compile;runtime;contentFiles;build;buildTransitive;native" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" ExcludeAssets="all" />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" ExcludeAssets="all" />
