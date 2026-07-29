@@ -11,7 +11,7 @@
     <NoWarn>$(NoWarn);CA1510</NoWarn>
   </PropertyGroup>
 
-  <!-- CommunityToolkit.Mvvm + CodePages: на обеих TFM — внутри merged SmartCon.Dependencies (ADR-051) -->
+  <!-- CommunityToolkit.Mvvm + M.D.Sqlite: на обеих TFM — внутри merged SmartCon.Dependencies (ADR-051) -->
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>
@@ -31,8 +31,9 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- SQLitePCLRaw bundle: native e_sqlite3 + batteries Init — loose (managed-обёртка
+       M.D.Sqlite merged в SmartCon.Dependencies, #177-аудит) -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 

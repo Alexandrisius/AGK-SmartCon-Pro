@@ -108,7 +108,7 @@
   </ItemGroup>
 
   <!-- ============================================================ -->
-  <!-- ADR-051 (Issue #134): на net48 merge-список (6 пакетов) сшивается -->
+  <!-- ADR-051 (Issue #134): на net48 merge-список (7 пакетов) сшивается -->
   <!-- ILRepack в SmartCon.Dependencies.dll. Любые ТРАНЗИТИВНЫЕ пути этих  -->
   <!-- пакетов в потребителях (HelixToolkit → CommunityToolkit.Mvvm и т.д.) -->
   <!-- обязаны быть обрезаны, иначе CS0433 + сырые dll в output.          -->
@@ -127,15 +127,21 @@
     <PackageReference Include="System.Text.Json" ExcludeAssets="all" />
     <PackageReference Include="System.Text.Encodings.Web" ExcludeAssets="all" />
     <PackageReference Include="UTF.Unknown" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Data.Sqlite" ExcludeAssets="all" />
   </ItemGroup>
 
   <!-- net8 merge-список (ADR-051): те же типы сшиты в SmartCon.Dependencies —
        обрезаем транзитив у потребителей, иначе CS0433. STJ/Bcl.AsyncInterfaces/
-       CodePages не трогаем: на net8 их предоставляет shared-фреймворк. -->
+       CodePages не трогаем: на net8 их предоставляет shared-фреймворк.
+       M.E.DI.Abstractions: compile обрезаем (типы теперь из SmartCon.Dependencies),
+       но runtime СОХРАНЯЕМ — loose-копия нужна как name-fallback для
+       Logging.Abstractions (HelixToolkit ссылается на неё по имени, ILoggingBuilder). -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies'">
     <PackageReference Include="CommunityToolkit.Mvvm" ExcludeAssets="compile;runtime;contentFiles;build;buildTransitive;native" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" ExcludeAssets="compile;contentFiles;build;buildTransitive;native;analyzers" />
     <PackageReference Include="UTF.Unknown" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Data.Sqlite" ExcludeAssets="all" />
   </ItemGroup>
 
   <!-- Валидация: RevitVersion обязателен для net48 + проверка поддерживаемых значений -->

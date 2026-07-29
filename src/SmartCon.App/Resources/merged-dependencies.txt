@@ -5,16 +5,20 @@
 # как подписанные оригиналы и НЕ должны попадать в этот список.
 # Используется:
 #   - SmartCon.App (OnAssemblyResolve): эти имена резолвятся из SmartCon.Dependencies.dll, НЕ с диска.
-#   - release.ps1: копируется в архивы как obsolete-files.txt — Updater и installer удаляют
-#     эти файлы при обновлении/установке поверх старых версий.
+#   - release.ps1: копируется в архивы как obsolete-files.txt — Updater удаляет эти файлы
+#     только в net48-папках (gate по IsNet48InstallFolder), installer (DeleteObsoleteDlls) —
+#     во всех подпапках включая 2025/2026 (stale-копии на net8 инертны, чистка косметическая).
 # Формат: одно имя файла на строку, строки с '#' — комментарии.
-# Держать в синхронизации с src/SmartCon.Dependencies/ILRepack.targets.
+# Держать в синхронизации с net48-блоком src/SmartCon.Dependencies/ILRepack.targets
+# (net8 merge-список шире — см. ILRepack.targets; сюда он НЕ входит: файл — источник
+# obsolete-чистки, а удалять с диска нужно только имена, сшитые на net48).
 CommunityToolkit.Mvvm.dll
 Microsoft.Extensions.DependencyInjection.dll
 Microsoft.Bcl.AsyncInterfaces.dll
 System.Text.Json.dll
 System.Text.Encodings.Web.dll
 UtfUnknown.dll
+Microsoft.Data.Sqlite.dll
 # Исторический мусор (поставлялся версиями < 2.0.0 до Issue #129):
 SharpGLTF.Core.dll
 SharpGLTF.Toolkit.dll

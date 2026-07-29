@@ -18,13 +18,16 @@
     </PackageReference>
   </ItemGroup>
 
-  <!-- System.Text.Json: .NET 8 BCL. На net48 — внутри merged SmartCon.Dependencies (ADR-051). -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+  <!-- SmartCon.Dependencies (обе TFM, ADR-051): STJ на net48; M.E.DI.Abstractions
+       и M.D.Sqlite — merged-типы на обеих TFM (#177). -->
+  <ItemGroup>
     <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" />
+  <!-- System.Memory (net48): раньше приезжал транзитивно через M.D.Sqlite → SQLitePCLRaw.core;
+       после merge M.D.Sqlite (#177) нужен явно — STJ API (ReadOnlySpan/ReadOnlyMemory). -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="System.Memory" />
   </ItemGroup>
 
 </Project>
