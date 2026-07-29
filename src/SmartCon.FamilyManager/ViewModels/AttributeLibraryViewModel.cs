@@ -226,11 +226,9 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     }
 
     [RelayCommand]
-    private void Delete()
+    private void Delete(AttributeDefinitionDraft? draft)
     {
-        if (SelectedItem is null) return;
-
-        var draft = SelectedItem;
+        if (draft is null) return;
 
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_AL_Delete) ?? "Delete";
         var message = draft.BindingCount > 0
@@ -239,17 +237,17 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
 
         if (!_dialogService.ShowConfirmation(title, message)) return;
 
-        if (draft.IsNew)
-        {
-            Items.Remove(draft);
-            SelectedItem = null;
-        }
-        else
+        if (!draft.IsNew)
         {
             _pendingDeletions.Add(draft);
-            Items.Remove(draft);
+        }
+
+        Items.Remove(draft);
+        if (ReferenceEquals(SelectedItem, draft))
+        {
             SelectedItem = null;
         }
+
         StatusMessage = string.Empty;
     }
 

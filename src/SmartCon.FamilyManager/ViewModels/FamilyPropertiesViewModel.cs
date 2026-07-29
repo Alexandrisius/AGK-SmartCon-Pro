@@ -32,6 +32,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IAvatarCropService _avatarCropService;
     private readonly IDatabaseUpdateStateService _updateState;
     private readonly IFamilyFactRepository _factRepository;
+    private readonly ICategoryChangeGateService _categoryChangeGate;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string? _description;
@@ -245,7 +246,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IFamilyFileResolver fileResolver,
         IAvatarCropService avatarCropService,
         IDatabaseUpdateStateService updateState,
-        IFamilyFactRepository factRepository)
+        IFamilyFactRepository factRepository,
+        ICategoryChangeGateService categoryChangeGate)
     {
         SmartConLogger.Info($"FamilyPropertiesViewModel ctor: start for itemId={catalogItemId} name='{name}'");
         _catalogItemId = catalogItemId;
@@ -267,6 +269,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _avatarCropService = avatarCropService;
         _updateState = updateState;
         _factRepository = factRepository;
+        _categoryChangeGate = categoryChangeGate;
 
         Name = name;
         Description = description;
@@ -624,8 +627,22 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                 CategoryId = null;
                 CategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
             }
+            else if (string.Equals(CategoryId, result, StringComparison.Ordinal))
+            {
+                // Same category re-picked — nothing to change, no gate.
+            }
             else
             {
+                // Import Validation Gate: a rule-protected category accepts
+                // the family only when it passes the rules (persisted
+                // extraction — no .rfa re-open). Blocked = dialog shown,
+                // selection aborted.
+                if (!await _categoryChangeGate.EnsureFamilyPassesAsync(
+                        _catalogItemId, Name, result, pickerVm.SelectedPath))
+                {
+                    return;
+                }
+
                 CategoryId = result;
                 CategoryPath = pickerVm.SelectedPath;
             }

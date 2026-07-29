@@ -328,10 +328,92 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public bool CanImport => Action != FamilyBatchImportAction.Skip;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GateTooltip))]
     private FamilyBatchImportRowState _importRowState = FamilyBatchImportRowState.Pending;
 
     [ObservableProperty]
     private string? _importErrorMessage;
+
+    /// <summary>
+    /// Import Validation Gate: system health report from Phase 1 Prepare
+    /// (null for system families and when the check did not run).
+    /// </summary>
+    public FamilyHealthReport? HealthReport { get; }
+
+    /// <summary>
+    /// Import Validation Gate: latest rule-check report for the currently
+    /// assigned category (null until a category with rules is assigned).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GateTooltip))]
+    private FamilyValidationReport? _validationReport;
+
+    /// <summary>
+    /// Import Validation Gate: number of enabled rules of the currently
+    /// assigned category — lets the report dialog distinguish "no rules"
+    /// from "rules passed".
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GateTooltip))]
+    private int _validationRulesCount;
+
+    /// <summary>
+    /// Import Validation Gate: combined gate status shown in the status
+    /// column while the row has not been imported yet.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGateBlocked))]
+    [NotifyPropertyChangedFor(nameof(GateTooltip))]
+    private FamilyRowGateStatus _gateStatus = FamilyRowGateStatus.NotChecked;
+
+    /// <summary><c>true</c> when the gate failed (health errors or rule
+    /// violations) — the row is forced to Skip and cannot be imported.</summary>
+    public bool IsGateBlocked => GateStatus == FamilyRowGateStatus.Failed;
+
+    /// <summary>Localized short summary of the gate result for the status
+    /// icon tooltip.</summary>
+    public string GateTooltip
+    {
+        get
+        {
+            static string? Loc(string key) => SmartCon.UI.LanguageManager.GetString(key);
+            if (ImportRowState == FamilyBatchImportRowState.Success)
+            {
+                return Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_Imported)
+                    ?? "Импорт выполнен — открыть отчёт о проверке";
+            }
+
+            return GateStatus switch
+            {
+                FamilyRowGateStatus.Failed when HealthReport?.IsHealthy == false && ValidationReport?.IsValid == false =>
+                    string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                        Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_FailedBoth) ?? "System errors: {0}, rule violations: {1}",
+                        HealthReport.Issues.Count(i => i.Severity == FamilyHealthIssueSeverity.Error),
+                        ValidationReport.Violations.Count),
+                FamilyRowGateStatus.Failed when HealthReport?.IsHealthy == false =>
+                    string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                        Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_FailedHealth) ?? "System errors in the family: {0}",
+                        HealthReport.Issues.Count(i => i.Severity == FamilyHealthIssueSeverity.Error)),
+                FamilyRowGateStatus.Failed when ValidationReport is not null =>
+                    string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                        Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_FailedRules) ?? "Rule violations: {0}",
+                        ValidationReport.Violations.Count),
+                FamilyRowGateStatus.Warning =>
+                    string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                        Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_Warning) ?? "Warnings: {0}",
+                        HealthReport?.Issues.Count ?? 0),
+                FamilyRowGateStatus.Passed when ValidationRulesCount > 0 =>
+                    string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                        Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_PassedRules) ?? "Passed {0} rules",
+                        ValidationRulesCount),
+                FamilyRowGateStatus.Passed =>
+                    Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_Passed) ?? "Check passed",
+                FamilyRowGateStatus.Checking =>
+                    Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_Checking) ?? "Checking…",
+                _ => Loc(SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_NotChecked) ?? "Category not assigned — rules not checked",
+            };
+        }
+    }
 
     [ObservableProperty]
     private IReadOnlyList<FamilyBatchImportAction> _availableActions;
@@ -346,6 +428,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         SourceTypes = item.SourceTypes;
         LoadableSnapshot = item.LoadableSnapshot;
         SystemSnapshot = item.SystemSnapshot;
+        HealthReport = item.HealthReport;
         _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;
         Status = item.Status;
@@ -387,6 +470,19 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _existingCategoryId = item.ExistingCategoryId;
         _existingCategoryPath = item.ExistingCategoryPath;
         _availableActions = BuildAvailableActions(item.Status);
+        // Initial gate state from the Prepare health check: errors block
+        // immediately; warnings surface as Warning; rule check runs later
+        // (on category assignment) via the parent view-model.
+        _gateStatus = HealthReport?.IsHealthy == false
+            ? FamilyRowGateStatus.Failed
+            : HealthReport is not null && HealthReport.Issues.Count > 0
+                ? FamilyRowGateStatus.Warning
+                : FamilyRowGateStatus.NotChecked;
+        if (_gateStatus == FamilyRowGateStatus.Failed)
+        {
+            _availableActions = [FamilyBatchImportAction.Skip];
+            _action = FamilyBatchImportAction.Skip;
+        }
     }
 
     private static IReadOnlyList<FamilyBatchImportAction> BuildAvailableActions(FamilyBatchImportStatus status) => status switch
@@ -404,11 +500,21 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     partial void OnActionChanged(FamilyBatchImportAction value)
     {
+        if (_suppressActionBroadcast) return;
         ActionChanged?.Invoke(this, value);
     }
 
     partial void OnStatusChanged(FamilyBatchImportStatus value)
     {
+        // Gate block wins over the status-driven action set: a blocked row
+        // stays forced to Skip no matter how the dedup status flips.
+        if (IsGateBlocked)
+        {
+            AvailableActions = [FamilyBatchImportAction.Skip];
+            SetActionSilently(FamilyBatchImportAction.Skip);
+            return;
+        }
+
         // v2.0.1 hotfix: recompute AvailableActions when Status flips so
         // OverwriteCurrent appears for Existing and disappears for New.
         // Previously the list was built once in the constructor, so a
@@ -459,6 +565,61 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     {
         SelectionChanged?.Invoke(this, value);
     }
+
+    partial void OnGateStatusChanged(FamilyRowGateStatus value)
+    {
+        if (value == FamilyRowGateStatus.Failed)
+        {
+            AvailableActions = [FamilyBatchImportAction.Skip];
+            SetActionSilently(FamilyBatchImportAction.Skip);
+            return;
+        }
+
+        // Unblock: restore the status-driven action set and reset the
+        // forced Skip so a row that passes after a category change
+        // becomes importable again (the user can re-pick Skip manually).
+        var wasBlocked = !AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
+            && Action == FamilyBatchImportAction.Skip;
+        AvailableActions = BuildAvailableActions(Status);
+        if (value != FamilyRowGateStatus.Checking
+            && (wasBlocked || !AvailableActions.Contains(Action)))
+        {
+            SetActionSilently(
+                AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
+                    ? FamilyBatchImportAction.IncrementVersion
+                    : FamilyBatchImportAction.Skip);
+        }
+    }
+
+    /// <summary>
+    /// Gate-driven action changes must NOT batch-propagate to the other
+    /// selected rows: a forced Skip (or its reset) is this row's own
+    /// verdict, not a user instruction for the whole selection. User
+    /// picks in the combo box keep broadcasting via
+    /// <see cref="ActionChanged"/>.
+    /// </summary>
+    private bool _suppressActionBroadcast;
+
+    private void SetActionSilently(FamilyBatchImportAction action)
+    {
+        _suppressActionBroadcast = true;
+        try
+        {
+            Action = action;
+        }
+        finally
+        {
+            _suppressActionBroadcast = false;
+        }
+    }
+
+    [RelayCommand]
+    private void OpenValidationReport()
+    {
+        OpenValidationReportRequested?.Invoke(this);
+    }
+
+    public event Action<FamilyBatchImportRow>? OpenValidationReportRequested;
 
     [RelayCommand]
     private async Task PickCategory()

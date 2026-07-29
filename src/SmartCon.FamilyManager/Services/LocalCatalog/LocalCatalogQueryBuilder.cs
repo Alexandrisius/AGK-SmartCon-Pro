@@ -40,6 +40,13 @@ internal static class LocalCatalogQueryBuilder
         {
             conditions.Add("(ci.category_id IS NULL OR ci.category_id = '')");
         }
+        // Import Validation Gate (quarantine zone): read-only roles never
+        // see uncategorized families — editors distribute them from the
+        // quarantine into rule-protected categories.
+        if (query.ExcludeUncategorized)
+        {
+            conditions.Add("(ci.category_id IS NOT NULL AND ci.category_id != '')");
+        }
         if (query.CategoryIdsFilter is { Count: > 0 })
         {
             var placeholders = new List<string>(query.CategoryIdsFilter.Count);

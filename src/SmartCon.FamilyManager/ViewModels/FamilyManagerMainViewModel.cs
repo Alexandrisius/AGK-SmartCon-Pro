@@ -72,6 +72,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IProjectBaseBindingEvaluator _projectBaseEvaluator;
     private readonly IDatabaseCompatibilityService _compatibility;
     private readonly IAboutDialogService _aboutDialogService;
+    private readonly IFamilyImportValidationService _validationService;
+    private readonly ICategoryChangeGateService _categoryChangeGate;
 
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
@@ -237,6 +239,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _projectBaseEvaluator = services.ProjectBaseEvaluator;
         _compatibility = services.CompatibilityService;
         _aboutDialogService = services.AboutDialogService;
+        _validationService = services.ValidationService;
+        _categoryChangeGate = services.CategoryChangeGate;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();

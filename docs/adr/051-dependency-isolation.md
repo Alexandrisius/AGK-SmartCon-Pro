@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-17  
 **Status:** accepted  
-**Related:** Issue #134 (DLL hell у пользователя), #129 (System.Text.Json MissingMethodException, R21), #114 (CodePages pin), ADR-042 (HelixToolkit pins)
+**Related:** Issue #134 (DLL hell у пользователя), #129 (System.Text.Json MissingMethodException, R21), #114 (CodePages pin), #177 (TypeLoadException IKeyedServiceProvider — Abstractions не была в net8 merge-списке), ADR-042 (HelixToolkit pins)
 
 ## Context
 
@@ -18,14 +18,14 @@
 
 **Правило merge (критично, проверено инцидентом при реализации):** пакет можно сшивать, только если **ни один подписанный сторонний компонент** в нашей dependency-замыкания не ссылается на него по strong name. Подписанный потребитель отклоняет merged-замену: неподписанную — `0x80131044 «Strong name required»`, подписанную с другим identity — `0x80131040 «manifest does not match»` (так HelixToolkit → `CommunityToolkit.Diagnostics 8.3.0.0/4aff` уронил 3D preview: `XamlParseException → TypeInitializationException ViewBoxNode`). Правило проверяется перечислением `GetReferencedAssemblies()` всех подписанных третьих сторон (HelixToolkit, SharpDX, Roslyn, Logging.Abstractions, Sqlite, MahApps).
 
-**Финальный merge-список (6 пакетов, только наши неподписанные потребители):** CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, Microsoft.Bcl.AsyncInterfaces, System.Text.Json, System.Text.Encodings.Web, UTF.Unknown.
+**Финальный merge-список (7 пакетов, только наши неподписанные потребители):** CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, Microsoft.Bcl.AsyncInterfaces, System.Text.Json, System.Text.Encodings.Web, UTF.Unknown, Microsoft.Data.Sqlite (managed-обёртка; добавлена по аудиту #177 — наш код зовёт её напрямую, подписанных сторонних потребителей нет).
 
 **Намеренно LOOSE (оригинальные подписанные файлы в output, net48-блок в SmartCon.App.csproj):**
 - CommunityToolkit.Common/.Diagnostics — HelixToolkit → 4aff 8.3.0.0 exact
 - Microsoft.Extensions.DependencyInjection.Abstractions — Logging.Abstractions → adb 8.0.0.2
 - System.Memory / Buffers / Unsafe / Tasks.Extensions / Numerics.Vectors — Roslyn/Helix/Sqlite (cc7b/b03f, токен-чувствительные)
 - System.Text.Encoding.CodePages — Roslyn → b03f 7.0.0.0
-- HelixToolkit/SharpDX/MahApps/Xaml.Behaviors — WPF (XmlnsDefinition/pack URI); SQLite — native interop; System.ValueTuple — фасад фреймворка
+- HelixToolkit/SharpDX/MahApps/Xaml.Behaviors — WPF (XmlnsDefinition/pack URI); SQLitePCLRaw.*/e_sqlite3 — native interop (managed-обёртка M.D.Sqlite при этом мержится); System.ValueTuple — фасад фреймворка
 
 **Механика:**
 - `Internalize=false` (типы публичны для потребителей); output подписан `SmartCon.snk` (коммит в репо, identity-стабильность; не обязательно при текущем списке, защита на будущее).
@@ -41,9 +41,11 @@
 
 **Принятое решение — merge на net8** (рекомендация ricaun: «the easiest option to isolate the plugin would be to ILRepack all the dependencies inside the main plugin dll»; тот же принцип, что IsRepackable у RevitLookup). На .NET Core нет strong-name enforcement уровня net48 (загрузчик биндит по simple name, конфликт возможен только при совпадении simple name в одном контексте) — поэтому merge безопасен для любых пакетов:
 
-**net8 merge-список:** Nice3point.Revit.Toolkit (2025.2.0 — используется только ради базовых классов/ResolveHelper, его ALC не используется), CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, UTF.Unknown.
+**net8 merge-список:** Nice3point.Revit.Toolkit (2025.2.0 — используется только ради базовых классов/ResolveHelper, его ALC не используется), CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, **Microsoft.Extensions.DependencyInjection.Abstractions**, UTF.Unknown, Microsoft.Data.Sqlite.
 
-**Намеренно НЕ мержим на net8:** System.Text.Json, Microsoft.Bcl.AsyncInterfaces, System.Text.Encodings.Web, System.Text.Encoding.CodePages — предоставляются shared-фреймворком .NET (проверено наличием в `dotnet/shared/Microsoft.NETCore.App`), конфликт невозможен по построению. CT.Common/Diagnostics и M.E.DI.Abstractions — loose (нужны Roslyn/HelixToolkit).
+**M.E.DI.Abstractions вошла в merge-список пост-фактум (Issue #177).** Изначально она осталась loose по net48-правилу («подписанная Logging.Abstractions требует оригинал по strong name»), механически перенесённому на net8. На .NET 8 strong-name enforcement нет: Default ALC биндит по simple name и **первая загруженная версия побеждает** (`Assembly.LoadFrom` второй копии возвращает закэшированную). Revit 2025 поставляет `M.E.DI(.Abstractions) 7.0.0` в своей папке, и штатные компоненты (Parameters Service DB, P&ID Modeler) загружают их до пользовательских адд-инов. Merged `M.E.DI 8` (`ServiceProvider` реализует `IKeyedServiceProvider`, появившийся в Abstractions 8.0) резолвил Abstractions в чужую 7.0.0.0 → `TypeLoadException`, плагин не стартовал. Loose-копия Abstractions 8.x сохраняется в output потребителей (`ExcludeAssets` без `runtime`) как name-fallback для `Logging.Abstractions` (HelixToolkit): её единственная точка контакта — `ILoggingBuilder.Services : IServiceCollection`, тип существует и в 7.0, поэтому биндинг к любой версии ABI-безопасен.
+
+**Намеренно НЕ мержим на net8:** System.Text.Json, Microsoft.Bcl.AsyncInterfaces, System.Text.Encodings.Web, System.Text.Encoding.CodePages — предоставляются shared-фреймворком .NET (проверено наличием в `dotnet/shared/Microsoft.NETCore.App`), конфликт невозможен по построению. CT.Common/Diagnostics — loose (нужны Roslyn/HelixToolkit; наш код их типы напрямую не использует — `Guard` локальный, `SmartCon.Core.Common`).
 
 Результат: наш код вообще не запрашивает `CommunityToolkit.Mvvm`/`Microsoft.Extensions.DependencyInjection` по имени — чужая старая версия в Default-контексте (Eneca Auditor 8.2.0.0) физически не может вызвать 0x80131621. `ManifestSettings` для Revit 2026+ сохранён как бонус (нативная изоляция поверх merge).
 

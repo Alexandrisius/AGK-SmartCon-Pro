@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    SmartCon.IntegrationTests — интеграционные тесты, выполняемые ВНУТРИ реального
+    процесса Revit через Nice3point.TUnit.Revit (см. .agents/skills/smartcon-testing/
+    references/integration-testing.md).
+
+    Отличия от SmartCon.Tests (xUnit):
+      * TFM НЕ пинут — наследуется из Directory.Build.props по конфигурации
+        (Debug.R21 → net48 + Revit 2021, Debug.R25 → net8.0-windows + Revit 2025).
+      * Версия Nice3point.TUnit.Revit — через VersionOverride "$(RevitVersion).*"
+        в Directory.Build.targets (тот же паттерн, что и RevitAPI).
+      * Запуск: `dotnet test -c Debug.R25` или `dotnet run -c Debug.R25`
+        (требуется установленный лицензионный Revit соответствующего года).
+
+    Ограничения:
+      * R19/R20 не поддерживаются — пакет Nice3point.TUnit.Revit публикуется
+        только для Revit 2021+ (см. Error ниже).
+      * Тест-хост не имеет UI-сессии: типы RevitAPIUI (UIApplication, UIDocument,
+        TaskDialog) в тестах НЕ использовать — compile-time они доступны транзитивно
+        через SmartCon.Revit, но в рантайме UI-сессии нет и обращение к ним упадёт.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SmartCon.IntegrationTests</RootNamespace>
+    <AssemblyName>SmartCon.IntegrationTests</AssemblyName>
+    <IsPackable>false</IsPackable>
+
+    <!-- Microsoft.Testing.Platform: поддержка `dotnet test` (TUnit построен на MTP) -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+
+    <!-- net48: отключаем неявный polyfill-пакет TUnit (баг thomhurst/TUnit#3731 —
+         на .NET Framework он не попадает в компиляцию, CS0122). Вместо него
+         ModuleInitializerAttribute генерирует PolySharp (подключён централизованно
+         в Directory.Build.props) — он internal, но source-generated код TUnit
+         живёт в этой же сборке, поэтому доступен. -->
+    <EnableTUnitPolyfills Condition="'$(TargetFramework)' == 'net48'">false</EnableTUnitPolyfills>
+  </PropertyGroup>
+
+  <!-- Явная ошибка при сборке для R19/R20: Nice3point.TUnit.Revit не существует
+       для Revit 2019/2020. Проект исключён из R19-сборок на уровне sln (нет
+       Build.0) — этот target срабатывает только при прямой сборке csproj. -->
+  <Target Name="ValidateIntegrationTestRevitVersion" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(RevitVersion)' == '2019' Or '$(RevitVersion)' == '2020'"
+           Text="SmartCon.IntegrationTests не поддерживает Revit $(RevitVersion): пакет Nice3point.TUnit.Revit публикуется только для Revit 2021+. Используйте конфигурацию Debug.R21 или новее." />
+  </Target>
+
+  <ItemGroup>
+    <!-- Версия — через VersionOverride "$(RevitVersion).*" в Directory.Build.targets -->
+    <PackageReference Include="Nice3point.TUnit.Revit" />
+    <!-- RevitAPI compile-time only: DLL предоставляет процесс Revit при инъекции -->
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <!-- net48: TUnit.Core 1.44 требует System.Text.Json >= 9.0.0, а центральный пин
+         production — 8.0.6 (ADR-051, ILRepack merge). Тест-хост — standalone exe,
+         merge-изоляция на него не распространяется (см. исключение в
+         Directory.Build.targets), поэтому поднимаем версию только здесь и только
+         для net48 (на net8 STJ предоставляется фреймворком). -->
+    <PackageReference Include="System.Text.Json" VersionOverride="9.0.0"
+                      Condition="'$(TargetFramework)' == 'net48'" />
+    <PackageReference Include="System.Text.Encodings.Web" VersionOverride="9.0.0"
+                      Condition="'$(TargetFramework)' == 'net48'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
+    <ProjectReference Include="..\SmartCon.Revit\SmartCon.Revit.csproj" />
+  </ItemGroup>
+
+</Project>

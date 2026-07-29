@@ -26,6 +26,16 @@
 | **ProjectManagement** | да | — | да | — | — | — | — |
 | **FamilyManager** | да | — | да | — | — | — | — |
 | **Tests** | да | — | — | — | да | да | да |
+| **IntegrationTests** | да | да | — | — | — | — | — |
+
+### SmartCon.IntegrationTests (особая роль)
+
+`SmartCon.IntegrationTests` — единственный проект, которому **разрешена** ссылка
+на `SmartCon.Revit`: его назначение — тестировать границу SmartCon ↔ Revit API
+внутри реального процесса Revit (Nice3point.TUnit.Revit, см.
+`.agents/skills/smartcon-testing/references/integration-testing.md`).
+Ограничения: только Core + Revit, без UI/App/модулей; типы RevitAPIUI в тестах
+запрещены (тест-хост без UI-сессии — FileLoadException дестабилизирует сессию).
 
 ### SmartCon.Dependencies (net48 only, ADR-051)
 

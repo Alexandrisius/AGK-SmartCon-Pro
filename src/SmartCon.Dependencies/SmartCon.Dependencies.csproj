@@ -9,10 +9,15 @@
     signed-but-different-identity → 0x80131040 "manifest does not match".
     Everything else stays LOOSE on disk as the original signed files:
       CommunityToolkit.Common/.Diagnostics (HelixToolkit → 4aff 8.3.0.0),
-      M.E.DI.Abstractions (Logging.Abstractions → adb 8.0.0.2),
+      M.E.DI.Abstractions (Logging.Abstractions → adb 8.0.0.2) — net48 ONLY,
       System.Memory/Buffers/Unsafe/Tasks.Extensions/Numerics.Vectors (Roslyn/Helix),
       System.Text.Encoding.CodePages (Roslyn → b03f 7.0.0.0).
-    net8.0-windows: merges ONLY Nice3point.Revit.Toolkit (unsigned — merge-safe).
+    net8.0-windows: strong-name enforcement отсутствует (биндинг по simple name,
+    первая загруженная версия побеждает), поэтому merge безопасен для любых пакетов.
+    M.E.DI.Abstractions на net8 МЕРЖИТСЯ (#177): loose-версия — дыра в изоляции
+    (Revit 2025 грузит Abstractions 7.0.0.0 в Default-контекст раньше SmartCon →
+    TypeLoadException IKeyedServiceProvider). Loose-копия 8.x при этом остаётся
+    в output потребителей как name-fallback для Logging.Abstractions (HelixToolkit).
   -->
   <PropertyGroup>
     <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
@@ -26,7 +31,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
-    <!-- MERGE-список (6 пакетов, только наши неподписанные потребители).
+    <!-- MERGE-список (7 пакетов, только наши неподписанные потребители).
          CommunityToolkit.Mvvm: analyzers текут к потребителям (source-генераторы),
          остальные активы — нет (PrivateAssets). Транзитивы (Common/Diagnostics,
          Memory/Buffers/...) попадают в output проекта для ILRepack LibraryPath,
@@ -37,6 +42,10 @@
     <PackageReference Include="System.Text.Json" PrivateAssets="all" />
     <PackageReference Include="System.Text.Encodings.Web" PrivateAssets="all" />
     <PackageReference Include="UTF.Unknown" PrivateAssets="all" />
+    <!-- M.D.Sqlite — managed-обёртка; мержим (#177-аудит): подписанных сторонних
+         потребителей нет, наш единственный потребитель — свой код. SQLitePCLRaw.*
+         и native e_sqlite3 остаются loose (native asset resolution). -->
+    <PackageReference Include="Microsoft.Data.Sqlite" PrivateAssets="all" />
     <!-- Транзитивы для LibraryPath (loose-файлы, не merge) -->
     <PackageReference Include="CommunityToolkit.Common" PrivateAssets="all" />
     <PackageReference Include="CommunityToolkit.Diagnostics" PrivateAssets="all" />
@@ -54,15 +63,20 @@
          типы получают identity SmartCon.Dependencies и не могут столкнуться с чужими
          версиями в Default-контексте (Eneca/CT.Mvvm 8.2 → 0x80131621 больше не наш).
          CommunityToolkit.Mvvm: analyzers текут к потребителям (source-генераторы).
+         M.E.DI.Abstractions мержим вместе с M.E.DI (#177): иначе её имя резолвится
+         в чужую 7.0.0.0 из Default-контекста (нет IKeyedServiceProvider → TypeLoadException).
          STJ/Bcl.AsyncInterfaces/Encodings.Web на net8 НЕ мержим — предоставляет framework. -->
     <PackageReference Include="Nice3point.Revit.Toolkit" PrivateAssets="all" />
     <PackageReference Include="CommunityToolkit.Mvvm" PrivateAssets="compile;runtime;contentFiles;build;buildTransitive;native" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" PrivateAssets="all" />
     <PackageReference Include="UTF.Unknown" PrivateAssets="all" />
+    <!-- M.D.Sqlite мержим (#177-аудит): loose-обёртка — высокий риск DLL-hell
+         (популярна у чужих адд-инов, наш код зовёт её напрямую). SQLitePCLRaw/e_sqlite3 loose. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" PrivateAssets="all" />
     <!-- Транзитивы для LibraryPath (не merge, поставляются loose для Roslyn/Helix) -->
     <PackageReference Include="CommunityToolkit.Common" PrivateAssets="all" />
     <PackageReference Include="CommunityToolkit.Diagnostics" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

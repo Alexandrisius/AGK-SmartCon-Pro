@@ -39,6 +39,13 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IFamilyCatalogProvider? _catalogProvider;
     /// <summary>
+    /// Import Validation Gate: resolves effective rules per category and
+    /// evaluates row snapshots. Nullable for backward compatibility with
+    /// older test fixtures — production always passes a real instance;
+    /// when null, the gate stays inert (rows behave as pre-feature).
+    /// </summary>
+    private readonly IFamilyImportValidationService? _validationService;
+    /// <summary>
     /// v2.0.0: optional precomputer that re-derives the
     /// (CatalogItemId, VersionLabel, ManagedPath) triple when the user
     /// renames a row in the dialog. Nullable for backward compatibility
@@ -94,6 +101,20 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     private readonly Dictionary<FamilyBatchImportRow, (CancellationTokenSource Cts, Task Task)> _pendingNameChanges = new();
     private readonly object _pendingNameChangesLock = new();
 
+    /// <summary>
+    /// Import Validation Gate: the most recent in-flight
+    /// <see cref="RevalidateRowsSafeAsync"/> task. Awaited by
+    /// <c>RunImportAsync</c> so a category change typed right before
+    /// pressing Import cannot race the row snapshot.
+    /// </summary>
+    private Task? _pendingValidation;
+
+    /// <summary>
+    /// Set when the dialog starts closing — in-flight gate revalidations
+    /// discard their results instead of mutating rows of a torn-down view.
+    /// </summary>
+    private volatile bool _isClosing;
+
     public FamilyBatchImportViewModel(
         IReadOnlyList<FamilyBatchImportItem> items,
         IFamilyManagerDialogService dialogService,
@@ -105,7 +126,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         IContentHashDedupService? dedupService = null,
         IFamilyBatchImportExecutor? executor = null,
         string? publishedByUser = null,
-        IDispatcher? dispatcher = null)
+        IDispatcher? dispatcher = null,
+        IFamilyImportValidationService? validationService = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
@@ -116,6 +138,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         _categoryId = defaultCategoryId;
         _publishedByUser = publishedByUser;
         _dispatcher = dispatcher ?? new InlineDispatcher();
+        _validationService = validationService;
         InitializeExecutionState();
 
         foreach (var item in items)
@@ -152,6 +175,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.CategoryChanged += OnRowCategoryChanged;
             row.SelectionChanged += OnRowSelectionChanged;
             row.NameChanged += OnRowNameChanged;
+            row.OpenValidationReportRequested += OnRowOpenValidationReport;
             Items.Add(row);
         }
         var commandLockedCount = Items.Count(r => r.CategoryProvenance == CategoryProvenance.Command);
@@ -162,6 +186,20 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 $"'{defaultCategoryName ?? defaultCategoryId}' (provenance=Command)");
         }
         UpdateCanImport();
+
+        // Import Validation Gate: rows that arrive with a category
+        // assigned (Import-to-Category command, AutoName from existing
+        // items) get their rule check immediately — the dialog shows
+        // Checking until it completes. Health-blocked rows are included:
+        // they stay Failed but still collect the rule report for the
+        // detail dialog.
+        var rowsWithCategory = Items
+            .Where(r => !string.IsNullOrEmpty(r.TargetCategoryId))
+            .ToList();
+        if (rowsWithCategory.Count > 0)
+        {
+            _pendingValidation = RevalidateRowsSafeAsync(rowsWithCategory);
+        }
     }
 
     private void OnRowSelectionChanged(FamilyBatchImportRow row, bool isSelected)
@@ -239,7 +277,193 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     {
         if (_batchApplying) return;
         ApplyCategoryToSelection(row, payload.Id, payload.Path);
+
+        // Import Validation Gate: re-check the affected rows against the
+        // new category's rules (source + batch-applied selection).
+        var affected = new List<FamilyBatchImportRow> { row };
+        affected.AddRange(GetOtherSelectedRows(row).Where(r => r.CategoryProvenance == row.CategoryProvenance));
+        _pendingValidation = RevalidateRowsSafeAsync(affected);
     }
+
+    /// <summary>
+    /// Import Validation Gate: runs the rule check for rows against their
+    /// assigned categories. Rules are fetched once per category (async
+    /// SQLite I/O on the thread pool); ALL row mutations are marshalled
+    /// back through <see cref="_dispatcher"/> (ADR-031/036) — the
+    /// continuation after <c>ConfigureAwait(false)</c> runs off the UI
+    /// thread, and touching <c>_selectedRows</c> / row properties there
+    /// would race the UI. Rows blocked by the health check keep their
+    /// Failed status (the rule report is still recorded for the report
+    /// dialog).
+    /// </summary>
+    private async Task RevalidateRowsSafeAsync(IReadOnlyList<FamilyBatchImportRow> rows)
+    {
+        if (_validationService is null || rows.Count == 0) return;
+
+        var byCategory = rows
+            .Where(r => !string.IsNullOrEmpty(r.TargetCategoryId))
+            .GroupBy(r => r.TargetCategoryId!)
+            .ToList();
+        var noCategoryRows = rows
+            .Where(r => string.IsNullOrEmpty(r.TargetCategoryId))
+            .ToList();
+
+        // Checking state first (we are on the UI thread at entry — all
+        // callers are UI event handlers / the constructor).
+        foreach (var row in byCategory.SelectMany(g => g))
+        {
+            if (!row.IsGateBlocked)
+            {
+                row.GateStatus = FamilyRowGateStatus.Checking;
+            }
+        }
+
+        // Fetch phase (thread pool): per-category rules with per-group
+        // error isolation — one failing category must not strand the
+        // others in Checking forever.
+        var fetched = new List<(string CategoryId, List<FamilyBatchImportRow> Rows, IReadOnlyList<EffectiveValidationRule>? Rules)>();
+        foreach (var group in byCategory)
+        {
+            try
+            {
+                var rules = await _validationService.GetEffectiveRulesAsync(group.Key).ConfigureAwait(false);
+                fetched.Add((group.Key, group.ToList(), rules));
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"BatchImport.Gate: rules fetch failed for category '{group.Key}': {ex.Message} " +
+                    "[Action: проверьте, что БД каталога доступна; строки этой категории остались непроверенными]");
+                fetched.Add((group.Key, group.ToList(), null));
+            }
+        }
+
+        // Mutation phase (UI thread via dispatcher). Skipped entirely when
+        // the dialog is already closing: mutating rows of a torn-down view
+        // produces a visible flicker and serves nobody.
+        if (_isClosing)
+        {
+            SmartConLogger.Debug("BatchImport.Gate: revalidation result discarded — dialog is closing");
+            return;
+        }
+
+        _dispatcher.Invoke(() =>
+        {
+            if (_isClosing)
+            {
+                SmartConLogger.Debug("BatchImport.Gate: revalidation mutation skipped — dialog is closing");
+                return;
+            }
+
+            try
+            {
+                // Rows with no category revert to the health-only state.
+                // The guard keys on the HEALTH block specifically: a
+                // rule-blocked row becomes unblocked when its category is
+                // cleared, while a health-blocked row stays Failed.
+                foreach (var row in noCategoryRows)
+                {
+                    row.ValidationReport = null;
+                    row.ValidationRulesCount = 0;
+                    if (row.HealthReport?.IsHealthy == false)
+                    {
+                        row.GateStatus = FamilyRowGateStatus.Failed;
+                    }
+                    else
+                    {
+                        row.GateStatus = row.HealthReport is not null && row.HealthReport.Issues.Count > 0
+                            ? FamilyRowGateStatus.Warning
+                            : FamilyRowGateStatus.NotChecked;
+                    }
+                }
+
+                foreach (var (categoryId, groupRows, rules) in fetched)
+                {
+                    if (rules is null)
+                    {
+                        // Fetch failed: revert to the health-only state so
+                        // the rows are not stuck in Checking.
+                        foreach (var row in groupRows)
+                        {
+                            row.ValidationReport = null;
+                            row.ValidationRulesCount = 0;
+                            if (row.HealthReport?.IsHealthy == false) continue;
+                            row.GateStatus = row.HealthReport is not null && row.HealthReport.Issues.Count > 0
+                                ? FamilyRowGateStatus.Warning
+                                : FamilyRowGateStatus.NotChecked;
+                        }
+                        continue;
+                    }
+
+                    foreach (var row in groupRows)
+                    {
+                        // The user may have re-picked the category while
+                        // the rules query was running — discard the stale
+                        // result.
+                        if (!string.Equals(row.TargetCategoryId, categoryId, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        var report = _validationService.ValidateFromSnapshots(
+                            row.LoadableSnapshot, row.SystemSnapshot, rules);
+
+                        row.ValidationReport = report;
+                        row.ValidationRulesCount = rules.Count;
+
+                        if (row.HealthReport?.IsHealthy == false)
+                        {
+                            row.GateStatus = FamilyRowGateStatus.Failed;
+                        }
+                        else if (!report.IsValid)
+                        {
+                            row.GateStatus = FamilyRowGateStatus.Failed;
+                            SmartConLogger.Debug(
+                                $"BatchImport.Gate: '{row.FileName}' failed validation for category '{categoryId}': " +
+                                $"{report.Violations.Count} violation(s) of {rules.Count} rule(s)");
+                        }
+                        else if (row.HealthReport is not null && row.HealthReport.Issues.Count > 0)
+                        {
+                            row.GateStatus = FamilyRowGateStatus.Warning;
+                        }
+                        else
+                        {
+                            row.GateStatus = FamilyRowGateStatus.Passed;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Error(
+                    $"BatchImport.Gate: revalidation mutation failed: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                UpdateCanImport();
+            }
+        });
+    }
+
+    private void OnRowOpenValidationReport(FamilyBatchImportRow row)
+    {
+        try
+        {
+            var reportVm = _viewModelFactory.CreateValidationReportViewModel(
+                row.FileName,
+                row.TargetCategoryPath,
+                row.HealthReport,
+                row.ValidationReport,
+                row.ValidationRulesCount);
+            _dialogService.ShowValidationReport(reportVm);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error(
+                $"BatchImport.Gate: failed to open validation report for '{row.FileName}': {ex.Message}");
+        }
+    }
+
 
     /// <summary>
     /// v2.0.0 hotfix: re-resolve catalog status when the user renames a
@@ -628,6 +852,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.CategoryChanged -= OnRowCategoryChanged;
             row.SelectionChanged -= OnRowSelectionChanged;
             row.NameChanged -= OnRowNameChanged;
+            row.OpenValidationReportRequested -= OnRowOpenValidationReport;
         }
     }
 

@@ -6,6 +6,7 @@
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         Title="{loc:Loc FM_CTE_CategoriesAndAttrs}"
         Width="850" Height="580" MinWidth="700" MinHeight="450"
@@ -243,29 +244,68 @@
                         </Grid>
                     </Grid>
 
-                    <ScrollViewer Grid.Row="2" 
-                                  VerticalScrollBarVisibility="Auto"
-                                  Visibility="{Binding HasSelectedCategory, Converter={StaticResource BoolToVis}}">
-                        <ItemsControl ItemsSource="{Binding AttributeItems}">
-                            <ItemsControl.ItemTemplate>
+                    <ListBox Grid.Row="2"
+                             ItemsSource="{Binding AttributeItems}"
+                             behaviors:ListBoxBehaviors.RightClickSelect="True"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             SelectionMode="Single"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             Visibility="{Binding HasSelectedCategory, Converter={StaticResource BoolToVis}}">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0,1"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="ItemBorder"
+                                                        Background="Transparent"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}"
+                                                        SnapsToDevicePixels="True">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
+                                                    </Trigger>
+                                                    <MultiTrigger>
+                                                        <MultiTrigger.Conditions>
+                                                            <Condition Property="IsSelected" Value="True"/>
+                                                            <Condition Property="IsMouseOver" Value="True"/>
+                                                        </MultiTrigger.Conditions>
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
+                                                    </MultiTrigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Border Padding="8,6"
-                                            Background="Transparent"
-                                            CornerRadius="4">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Style.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter Property="Background" Value="{DynamicResource HoverAltSurfaceBrush}"/>
-                                                    </Trigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
+                                            Background="Transparent">
+                                        <Border.ContextMenu>
+                                            <ContextMenu Style="{StaticResource ModernContextMenu}">
+                                                <MenuItem Header="{loc:Loc FM_CTE_ValidationRules}"
+                                                          Command="{Binding OpenValidationRulesCommand}"
+                                                          IsEnabled="{Binding CanEditRules}"
+                                                          Style="{StaticResource ModernMenuItem}"/>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="28"/>
                                             </Grid.ColumnDefinitions>
 
                                             <CheckBox Grid.Column="0" Margin="0,0,8,0">
@@ -287,7 +327,8 @@
                                                 </CheckBox.Style>
                                             </CheckBox>
 
-                                            <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Name}"
                                                        VerticalAlignment="Center"
                                                        FontSize="12"
                                                        Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -295,12 +336,26 @@
                                             <TextBlock Grid.Column="2" Text="{Binding Group}"
                                                        Margin="8,0,0,0" VerticalAlignment="Center"
                                                        Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
+
+                                            <Button Grid.Column="3"
+                                                    Command="{Binding OpenValidationRulesCommand}"
+                                                    IsEnabled="{Binding CanEditRules}"
+                                                    ToolTip="{Binding RulesTooltip}"
+                                                    Width="24" Height="24"
+                                                    Margin="4,0,0,0"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Cursor="Hand"
+                                                    Style="{DynamicResource FlatIconButton}">
+                                                <iconPacks:PackIconMaterial Kind="{Binding ShieldIconKind}"
+                                                                            Foreground="{Binding ShieldBrush}"
+                                                                            Width="15" Height="15"/>
+                                            </Button>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
 
                     <TextBlock Grid.Row="2" 
                                Text="{loc:Loc FM_CTE_SelectCategoryHint}"
@@ -332,7 +387,6 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
@@ -412,20 +466,13 @@
                     Style="{DynamicResource SecondaryButton}"
                     Padding="12,4" Margin="4,0,0,0"/>
 
-            <Button Grid.Column="4"
-                    Content="{loc:Loc Btn_OK}"
-                    Command="{Binding OkCommand}"
-                    Width="80" Height="28"
-                    Padding="12,4" Margin="0,0,8,0"
+            <Button Grid.Column="4" Content="{loc:Loc FM_ValidationReport_Close}"
+                    Command="{Binding CloseCommand}"
+                    Width="90" Height="28"
+                    Padding="12,4"
                     IsDefault="True"
-                    Style="{DynamicResource PrimaryButton}"/>
-
-            <Button Grid.Column="5" Content="{loc:Loc Btn_Cancel}"
-                    Command="{Binding CancelAsyncCommand}"
-                    Width="80" Height="28"
                     IsCancel="True"
-                    Style="{DynamicResource SecondaryButton}"
-                    Padding="12,4"/>
+                    Style="{DynamicResource PrimaryButton}"/>
         </Grid>
     </Grid>
 </controls:DialogWindowBase>

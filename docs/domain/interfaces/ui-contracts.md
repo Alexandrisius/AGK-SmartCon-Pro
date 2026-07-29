@@ -52,7 +52,7 @@ public interface ICloseAwareViewModel
 Enterprise pattern: интерфейс для диалоговых ViewModel, которые модифицируют данные и должны показывать диалог подтверждения "Сохранить / Сбросить / Отмена" при закрытии окна.
 
 **Файл:** `SmartCon.Core/Services/Interfaces/ISaveableViewModel.cs`
-**Реализация:** Реализуется ViewModel с редактируемыми данными (например, `CategoryTreeEditorViewModel`, `AttributeLibraryViewModel`, `FamilyPropertiesViewModel`).
+**Реализация:** Реализуется ViewModel с редактируемыми данными (например, `AttributeLibraryViewModel`, `FamilyPropertiesViewModel`).
 
 ```csharp
 public interface ISaveableViewModel

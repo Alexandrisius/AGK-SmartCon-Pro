@@ -144,11 +144,12 @@ public sealed partial class FamilyManagerMainViewModel
                     MatchedVersionLabel: p.MatchedVersionLabel,
                     LoadableSnapshot: p.LoadableSnapshot,
                     SystemSnapshot: p.SystemSnapshot,
-                GeometryPerType: p.GeometryPerType,
-                IsCrossNameDuplicate: p.IsCrossNameDuplicate,
-                MatchedItemName: p.MatchedItemName,
-                ExistingCategoryId: existingCategoryId,
-                ExistingCategoryPath: existingCategoryName)
+                    GeometryPerType: p.GeometryPerType,
+                    IsCrossNameDuplicate: p.IsCrossNameDuplicate,
+                    MatchedItemName: p.MatchedItemName,
+                    ExistingCategoryId: existingCategoryId,
+                    ExistingCategoryPath: existingCategoryName,
+                    HealthReport: p.HealthReport)
                 {
                     Action = status == FamilyBatchImportStatus.Duplicate
                         ? FamilyBatchImportAction.Skip
@@ -176,7 +177,8 @@ public sealed partial class FamilyManagerMainViewModel
                 dedupService: _dedupService,
                 executor: executor,
                 publishedByUser: _revitContext.GetUsername(),
-                dispatcher: _dispatcher);
+                dispatcher: _dispatcher,
+                validationService: _validationService);
 
             _dialogService.ShowModelessBatchImportDialog(vm);
             await vm.DialogCompletion;
@@ -487,7 +489,8 @@ public sealed partial class FamilyManagerMainViewModel
                 IsCrossNameDuplicate: p.IsCrossNameDuplicate,
                 MatchedItemName: p.MatchedItemName,
                 ExistingCategoryId: existingCategoryId,
-                ExistingCategoryPath: existingCategoryName)
+                ExistingCategoryPath: existingCategoryName,
+                HealthReport: p.HealthReport)
             {
                 Action = status == FamilyBatchImportStatus.Duplicate
                     ? FamilyBatchImportAction.Skip

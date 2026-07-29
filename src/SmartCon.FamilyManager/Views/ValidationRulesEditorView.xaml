@@ -1,0 +1,195 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.ValidationRulesEditorView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        Title="{loc:Loc FM_RulesEditor_Title}"
+        Width="640" Height="420" MinWidth="480" MinHeight="300"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,8">
+            <TextBlock Text="{Binding AttributeName}"
+                       FontWeight="SemiBold"
+                       FontSize="14"
+                       TextTrimming="CharacterEllipsis"/>
+            <TextBlock Text="{Binding CategoryPath}"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+
+        <DataGrid x:Name="RulesGrid"
+                  Grid.Row="1"
+                  ItemsSource="{Binding Rules}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  Style="{DynamicResource CompactDataGrid}"
+                  CellStyle="{DynamicResource CompactDataGridCell}"
+                  RowHeight="36"
+                  SelectionMode="Single"
+                  SelectionUnit="FullRow">
+            <DataGrid.RowStyle>
+                <!--
+                    Выделение строки намеренно невидимо: строка — это набор
+                    редакторов (ComboBox/TextBox/CheckBox/Button), а не
+                    выбираемая сущность; подсветка выделения затирала
+                    gridlines и выглядела как баг, а снять её было нечем.
+                -->
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource CompactDataGridRow}">
+                    <Setter Property="Height" Value="36"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="Transparent"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsSelected" Value="True"/>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Background" Value="Transparent"/>
+                        </MultiTrigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsSelected" Value="False"/>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Background" Value="Transparent"/>
+                        </MultiTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+            <DataGrid.Columns>
+                <DataGridTemplateColumn x:Name="ColOperator" Width="185" MinWidth="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ComboBox ItemsSource="{Binding DataContext.AvailableOperators, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                      SelectedValuePath="Operator"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectedValue="{Binding Operator, UpdateSourceTrigger=PropertyChanged}"
+                                      Style="{DynamicResource CompactComboBox}"
+                                      VerticalAlignment="Center"
+                                      Margin="2"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn x:Name="ColValue" Width="*" MinWidth="130">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid Margin="2" VerticalAlignment="Center">
+                                <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}">
+                                    <TextBox.Style>
+                                        <Style TargetType="TextBox" BasedOn="{StaticResource CompactTextBox}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ShowValueField}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ShowNumberField}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBox.Style>
+                                </TextBox>
+                                <StackPanel Orientation="Horizontal"
+                                            Visibility="{Binding ShowRangeFields, Converter={StaticResource BoolToVis}}">
+                                    <TextBox Text="{Binding MinValue, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{DynamicResource CompactTextBox}"
+                                             Width="90"/>
+                                    <TextBlock Text="—" VerticalAlignment="Center" Margin="6,0"/>
+                                    <TextBox Text="{Binding MaxValue, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{DynamicResource CompactTextBox}"
+                                             Width="90"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn x:Name="ColEnabled" Width="60" MinWidth="60">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                      Style="{DynamicResource CompactCheckBox}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn Width="40" MinWidth="40">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Command="{Binding DataContext.DeleteRuleCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                    CommandParameter="{Binding}"
+                                    Style="{DynamicResource FlatIconButton}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <iconPacks:PackIconMaterial Kind="DeleteOutline"
+                                                            Foreground="{DynamicResource TextMutedBrush}"
+                                                            Width="15" Height="15"/>
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0"
+                    Command="{Binding AddRuleCommand}"
+                    Style="{DynamicResource SecondaryButton}"
+                    Content="{loc:Loc FM_RulesEditor_Add}"/>
+            <TextBlock Grid.Column="1"
+                       Text="{Binding StatusMessage}"
+                       Foreground="{DynamicResource DangerBrush}"
+                       VerticalAlignment="Center"
+                       Margin="10,0,0,0"
+                       TextWrapping="Wrap"/>
+        </Grid>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="{loc:Loc FM_RulesEditor_Save}"
+                    Command="{Binding SaveCommand}"
+                    IsDefault="True"
+                    MinWidth="90"
+                    Margin="0,0,8,0"
+                    Style="{DynamicResource PrimaryButton}"/>
+            <Button Content="{loc:Loc FM_RulesEditor_Cancel}"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"
+                    MinWidth="90"
+                    Style="{DynamicResource SecondaryButton}"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

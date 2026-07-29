@@ -17,6 +17,9 @@ SmartCon.sln
 ├── SmartCon.Dependencies      <- net48-only: ILRepack-хост сторонних зависимостей (ADR-051).
 │                                 Не референсится на net8 — там изоляция через ALC (Nice3point.Revit.Toolkit).
 ├── SmartCon.Tests             <- Unit + ViewModel тесты (xUnit + Moq).
+├── SmartCon.IntegrationTests  <- Интеграционные тесты внутри реального Revit
+│                                 (TUnit + Nice3point.TUnit.Revit): граница SmartCon ↔ Revit API.
+│                                 R21+ (R19/R20 не поддерживаются пакетом). Только Core + Revit.
 └── SmartCon.Updater           <- Standalone .NET 8 updater: применяет pending
                                    update при закрытии Revit (staging-based).
 ```
@@ -441,4 +444,20 @@ SmartCon.Tests/
 │   ├── ObsoleteFileCleanerTests.cs
 │   └── UpdateBackupManagerTests.cs
 └── TestDoubles/
+```
+
+---
+
+## SmartCon.IntegrationTests
+
+Интеграционные тесты внутри реального процесса Revit (TUnit + Nice3point.TUnit.Revit).
+Паттерны и 9 жёстких правил — `.agents/skills/smartcon-testing/references/integration-testing.md`.
+
+```
+SmartCon.IntegrationTests/
+├── TestsConfiguration.cs           # RevitThreadExecutor + NotInParallel
+├── Support/                        # StubRevitContext, ModelSeed, SampleFiles, фикстуры
+├── PipeConnect/                    # коннекторы, цепочки, маппинг (ES), CTC, параметры
+├── FamilyManager/                  # ES-маркер, загрузка .rfa, извлечение, FHV3 hash
+└── ProjectManagement/              # Purge, виды, настройки Share (ES)
 ```

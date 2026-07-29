@@ -14,13 +14,6 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
     public string FullPath { get; set; }
     public int SortOrder { get; set; }
 
-    public bool IsNew { get; set; }
-    public bool IsDirty { get; set; }
-    public bool IsDeleted { get; set; }
-    public string OriginalName { get; set; } = string.Empty;
-    public string? OriginalParentId { get; set; }
-    public int OriginalSortOrder { get; set; }
-
     [ObservableProperty] private int _familyCount;
 
     /// <summary>Roll-up: true if any leaf under this category is stale (recursive).</summary>
@@ -43,11 +36,8 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
         CategoryId = node.Id;
         ParentId = node.ParentId;
         DisplayName = node.Name;
-        OriginalName = node.Name;
         FullPath = node.FullPath;
         SortOrder = node.SortOrder;
-        OriginalSortOrder = node.SortOrder;
-        OriginalParentId = node.ParentId;
         PropertyChanged += OnSelfPropertyChanged;
     }
 
@@ -56,10 +46,7 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
         CategoryId = categoryId;
         ParentId = parentId;
         DisplayName = name;
-        OriginalName = name;
         FullPath = fullPath;
-        IsNew = true;
-        IsDirty = true;
         PropertyChanged += OnSelfPropertyChanged;
     }
 

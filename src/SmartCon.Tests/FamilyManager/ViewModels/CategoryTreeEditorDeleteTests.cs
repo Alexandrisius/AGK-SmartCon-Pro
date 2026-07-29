@@ -36,12 +36,13 @@ public sealed class CategoryTreeEditorDeleteTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     private CategoryTreeEditorViewModel CreateVm() =>
-        new(_categoryRepository, _dialogMock.Object, _attributeRepository, _bindingService, _mediator, _factoryMock.Object);
+        new(_categoryRepository, _dialogMock.Object, _attributeRepository, _bindingService, _mediator, _factoryMock.Object,
+            new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator()));
 
     private static CategoryNodeViewModel MakeNode(string id, string name, CategoryNodeViewModel? parent = null)
     {
         var fullPath = parent is null ? name : $"{parent.FullPath}/{name}";
-        return new CategoryNodeViewModel(id, name, parent?.CategoryId, fullPath) { SortOrder = 0, OriginalSortOrder = 0 };
+        return new CategoryNodeViewModel(id, name, parent?.CategoryId, fullPath) { SortOrder = 0 };
     }
 
     [Fact]
@@ -192,20 +193,18 @@ public sealed class CategoryTreeEditorDeleteTests : IDisposable
     }
 
     [Fact]
-    public async Task Delete_AfterFirstDelete_RemovedNodeIsMarkedDeleted()
+    public async Task Delete_Confirmed_RemovesCategoryFromDatabaseImmediately()
     {
+        var seeded = await _categoryRepository.AddAsync("A", null, 0);
         var vm = CreateVm();
-        var a = MakeNode("a", "A");
-        var b = MakeNode("b", "B");
-        vm.RootNodes.Add(a);
-        vm.RootNodes.Add(b);
+        await vm.InitializeAsync();
 
-        vm.SelectedNode = a;
+        vm.SelectedNode = vm.RootNodes[0];
         _dialogMock.Setup(s => s.ShowConfirmation(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
 
-        await Task.Yield();
-        vm.DeleteCommand.Execute(null);
+        await vm.DeleteCommand.ExecuteAsync(null);
 
-        Assert.True(a.IsDeleted);
+        Assert.Empty(await _categoryRepository.GetAllAsync());
+        Assert.Empty(vm.RootNodes);
     }
 }

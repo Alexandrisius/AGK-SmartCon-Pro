@@ -37,7 +37,8 @@ public sealed class CategoryTreeEditorGroupFilterTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     private CategoryTreeEditorViewModel CreateVm() =>
-        new(_categoryRepository, _dialogMock.Object, _attributeRepository, _bindingService, _mediator, _factoryMock.Object);
+        new(_categoryRepository, _dialogMock.Object, _attributeRepository, _bindingService, _mediator, _factoryMock.Object,
+            new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator()));
 
     private static async Task WaitForAttributesLoaded(CategoryTreeEditorViewModel vm)
     {

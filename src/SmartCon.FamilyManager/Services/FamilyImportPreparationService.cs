@@ -27,6 +27,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
     private readonly IContentHashDedupService _dedupService;
     private readonly IRevitContext _revitContext;
     private readonly IFamilyTypeCatalogBaker _typeCatalogBaker;
+    private readonly IFamilyHealthChecker _healthChecker;
 
     private readonly Dictionary<string, Document> _openedDocuments = new(StringComparer.Ordinal);
 
@@ -36,7 +37,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         IFamilyContentHasher contentHasher,
         IContentHashDedupService dedupService,
         IRevitContext revitContext,
-        IFamilyTypeCatalogBaker typeCatalogBaker)
+        IFamilyTypeCatalogBaker typeCatalogBaker,
+        IFamilyHealthChecker healthChecker)
     {
         _awaitableEvent = awaitableEvent ?? throw new ArgumentNullException(nameof(awaitableEvent));
         _snapshotExtractor = snapshotExtractor ?? throw new ArgumentNullException(nameof(snapshotExtractor));
@@ -44,6 +46,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         _dedupService = dedupService ?? throw new ArgumentNullException(nameof(dedupService));
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));
         _typeCatalogBaker = typeCatalogBaker ?? throw new ArgumentNullException(nameof(typeCatalogBaker));
+        _healthChecker = healthChecker ?? throw new ArgumentNullException(nameof(healthChecker));
     }
 
     /// <summary>
@@ -152,6 +155,12 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
 
         try
         {
+            // Active document stays untouched (no type switching — the user
+            // is editing it): collect accumulated warnings only.
+            var healthReport = await _awaitableEvent
+                .RaiseAsync(app => _healthChecker.CheckActiveFamilyDocument(activeDoc), ct)
+                .ConfigureAwait(false);
+
             var snapshot = await _awaitableEvent
                 .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(activeDoc), ct)
                 .ConfigureAwait(false);
@@ -183,7 +192,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 ExistingVersionLabel: dedupResult.ExistingVersionLabel,
                 MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
                 IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
-                MatchedItemName: dedupResult.HashMatch?.MatchedItemName);
+                MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
+                HealthReport: healthReport);
         }
         catch (Exception ex)
         {
@@ -526,6 +536,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         Document? doc = null;
         FamilySnapshot? snapshot = null;
         IReadOnlyList<FamilyGeometryPerType>? geometryPerType = null;
+        FamilyHealthReport? healthReport = null;
 
         try
         {
@@ -627,6 +638,25 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                     "snapshot from raw .rfa");
             }
 
+            // Import health check: switch every type with Regenerate and
+            // collect system errors/warnings (rolled back — document stays
+            // unmodified). Runs AFTER the bake-in so baked types are
+            // checked too, BEFORE the snapshot so a corrupt family is
+            // flagged in the same single open.
+            try
+            {
+                healthReport = await _awaitableEvent
+                    .RaiseAsync(app => _healthChecker.CheckFamilyDocument(doc, ct), ct)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception healthEx)
+            {
+                SmartConLogger.Warn(
+                    $"Health check failed for '{Path.GetFileName(filePath)}': {healthEx.GetType().Name}: {healthEx.Message} " +
+                    "[Action: файл будет показан в диалоге без данных о системных ошибках — проверьте его вручную в Revit]");
+            }
+
             // Phase: snapshot + hashing only. 3D geometry extraction is
             // DEFERRED to the post-confirmation geometry pipeline
             // (FamilyGeometryPipeline.RunAsync → IFamilyGeometryExtractor.ExtractAsync)
@@ -687,7 +717,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
             GeometryPerType: geometryPerType,
             IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
-            MatchedItemName: dedupResult.HashMatch?.MatchedItemName);
+            MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
+            HealthReport: healthReport);
     }
 
     private async Task<PreparedFamilyItem> PrepareSystemCategoryAsync(

@@ -23,9 +23,11 @@ public sealed partial class FamilyManagerMainViewModel
             ("Method", "OpenCategoryEditorAsync"));
         if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
         var editorVm = _viewModelFactory.CreateCategoryTreeEditorViewModel();
-        editorVm.Saved += () => _ = LoadTreeAsync();
         await editorVm.InitializeAsync();
         _dialogService.ShowCategoryTreeEditor(editorVm);
+        // Full-immediate editor: all mutations were committed live inside
+        // the dialog — refresh the main tree once it closes.
+        await LoadTreeAsync();
     }
 
     [RelayCommand]
@@ -327,7 +329,8 @@ public sealed partial class FamilyManagerMainViewModel
             IsCrossNameDuplicate: prepared.IsCrossNameDuplicate,
             MatchedItemName: prepared.MatchedItemName,
             ExistingCategoryId: existingCategoryId,
-            ExistingCategoryPath: existingCategoryName)
+            ExistingCategoryPath: existingCategoryName,
+            HealthReport: prepared.HealthReport)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -341,7 +344,8 @@ public sealed partial class FamilyManagerMainViewModel
             catalogProvider: _catalogProvider,
             importPrecomputer: _importPrecomputer,
             dedupService: _dedupService,
-            dispatcher: _dispatcher);
+            dispatcher: _dispatcher,
+            validationService: _validationService);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -833,7 +837,8 @@ public sealed partial class FamilyManagerMainViewModel
             dedupService: _dedupService,
             executor: executor,
             publishedByUser: _revitContext.GetUsername(),
-            dispatcher: _dispatcher);
+            dispatcher: _dispatcher,
+            validationService: _validationService);
 
         _dialogService.ShowModelessBatchImportDialog(vm);
         await vm.DialogCompletion;
@@ -1015,6 +1020,27 @@ public sealed partial class FamilyManagerMainViewModel
         var categoryId = target.CategoryId == "__no_category__"
             ? null
             : target.CategoryId;
+
+        // Drop on the family's own current category is a no-op — running
+        // the gate there would needlessly re-check rules (and could even
+        // block a family that already lives in the category).
+        var sameCategory = string.IsNullOrEmpty(leaf.CategoryId)
+            ? categoryId is null
+            : string.Equals(leaf.CategoryId, categoryId, StringComparison.Ordinal);
+        if (sameCategory)
+        {
+            SmartConLogger.Debug($"DropFamilyAsync: '{leaf.DisplayName}' dropped on its own category — no-op");
+            return;
+        }
+
+        // Import Validation Gate: a rule-protected category accepts the
+        // family only when it passes the rules (checked from persisted
+        // extraction — no .rfa re-open). Blocked = dialog shown, move aborted.
+        if (!await _categoryChangeGate.EnsureFamilyPassesAsync(
+                leaf.CatalogItemId, leaf.DisplayName, categoryId, target.FullPath))
+        {
+            return;
+        }
 
         await MoveFamilyToCategoryAsync(leaf.CatalogItemId, categoryId);
     }

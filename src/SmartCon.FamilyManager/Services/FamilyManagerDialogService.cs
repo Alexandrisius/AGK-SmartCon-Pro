@@ -215,6 +215,10 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
 
     public bool? ShowBatchImportDialog(object viewModel) => _presenter.ShowDialog(viewModel);
 
+    public bool? ShowValidationReport(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    public bool? ShowValidationRulesEditor(object viewModel) => _presenter.ShowDialog(viewModel);
+
     /// <inheritdoc/>
     public void ShowModelessBatchImportDialog(object viewModel) => _presenter.ShowModeless(viewModel);
 

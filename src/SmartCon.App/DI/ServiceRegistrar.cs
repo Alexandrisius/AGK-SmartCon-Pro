@@ -100,6 +100,12 @@ public static class ServiceRegistrar
         services.AddSingleton<IFittingInsertService, RevitFittingInsertService>();
         services.AddSingleton<IFittingChainResolver, FittingChainResolver>();
 
+        // --- FamilyManager Validation (Import Validation Gate) ---
+        services.AddSingleton<IFamilyValidationEngine, FamilyValidationEngine>();
+        services.AddSingleton<IFamilyHealthChecker, RevitFamilyHealthChecker>();
+        services.AddSingleton<IFamilyImportValidationService, SmartCon.FamilyManager.Services.Validation.FamilyImportValidationService>();
+        services.AddSingleton<ICategoryChangeGateService, SmartCon.FamilyManager.Services.Validation.CategoryChangeGateService>();
+
         // --- Chain (Phase 7) ---
         services.AddSingleton<IElementChainIterator, ElementChainIterator>();
         services.AddSingleton<INetworkMover, NetworkMover>();
@@ -148,6 +154,8 @@ public static class ServiceRegistrar
             presenter.Register<SharedParameterPickerViewModel>(vm => new SharedParameterPickerView(vm));
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
+            presenter.Register<ValidationReportViewModel>(vm => new ValidationReportView(vm));
+            presenter.Register<ValidationRulesEditorViewModel>(vm => new ValidationRulesEditorView(vm));
             presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
             presenter.Register<DatabaseUpdateProgressViewModel>(vm => new DatabaseUpdateProgressView(vm));
             presenter.Register<FmProjectBaseRulesEditorViewModel>(vm => new FmProjectBaseRulesEditorView(vm));
@@ -203,6 +211,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IAttributeDefinitionRepository>(sp => sp.GetRequiredService<LocalAttributeDefinitionRepository>());
         services.AddSingleton<LocalCategoryAttributeBindingService>();
         services.AddSingleton<ICategoryAttributeBindingService>(sp => sp.GetRequiredService<LocalCategoryAttributeBindingService>());
+        services.AddSingleton<LocalValidationRuleRepository>();
+        services.AddSingleton<IValidationRuleRepository>(sp => sp.GetRequiredService<LocalValidationRuleRepository>());
         services.AddSingleton<LocalAttributeValueRepository>();
         services.AddSingleton<IAttributeValueRepository>(sp => sp.GetRequiredService<LocalAttributeValueRepository>());
         services.AddSingleton<LocalFamilyDataImportRunRepository>();

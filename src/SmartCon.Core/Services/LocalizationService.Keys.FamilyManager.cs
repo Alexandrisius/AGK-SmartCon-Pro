@@ -391,6 +391,80 @@ public static partial class LocalizationService
         ru["FM_CategoryProvenance_AutoHash"] = "Из дубликата (совпадение содержимого)"; en["FM_CategoryProvenance_AutoHash"] = "From duplicate (content match)";
         ru["FM_CategoryProvenance_None"] = "Категория не назначена"; en["FM_CategoryProvenance_None"] = "No category assigned";
 
+        // Import Validation Gate (status column tooltips)
+        ru["FM_Gate_Tooltip_NotChecked"] = "Файл прочитан. Категория не назначена — правила не проверялись."; en["FM_Gate_Tooltip_NotChecked"] = "File read. No category assigned — rules not checked.";
+        ru["FM_Gate_Tooltip_Checking"] = "Проверка по правилам категории…"; en["FM_Gate_Tooltip_Checking"] = "Checking category rules…";
+        ru["FM_Gate_Tooltip_Passed"] = "Проверка пройдена"; en["FM_Gate_Tooltip_Passed"] = "Check passed";
+        ru["FM_Gate_Tooltip_PassedRules"] = "Проверка пройдена ({0} правил)"; en["FM_Gate_Tooltip_PassedRules"] = "Passed {0} rules";
+        ru["FM_Gate_Tooltip_Warning"] = "Предупреждения в семействе: {0}. Импорт разрешён."; en["FM_Gate_Tooltip_Warning"] = "Family warnings: {0}. Import allowed.";
+        ru["FM_Gate_Tooltip_FailedHealth"] = "Системные ошибки в семействе: {0}. Импорт заблокирован."; en["FM_Gate_Tooltip_FailedHealth"] = "System errors in the family: {0}. Import blocked.";
+        ru["FM_Gate_Tooltip_FailedRules"] = "Нарушены правила категории: {0}. Импорт заблокирован."; en["FM_Gate_Tooltip_FailedRules"] = "Rule violations: {0}. Import blocked.";
+        ru["FM_Gate_Tooltip_FailedBoth"] = "Системные ошибки: {0}, нарушения правил: {1}. Импорт заблокирован."; en["FM_Gate_Tooltip_FailedBoth"] = "System errors: {0}, rule violations: {1}. Import blocked.";
+        ru["FM_Gate_Tooltip_Imported"] = "Импорт выполнен — открыть отчёт о проверке"; en["FM_Gate_Tooltip_Imported"] = "Import completed — open the validation report";
+
+        // Validation Report dialog
+        ru["FM_ValidationReport_Title"] = "Отчёт о проверке"; en["FM_ValidationReport_Title"] = "Validation Report";
+        ru["FM_ValidationReport_Close"] = "Закрыть"; en["FM_ValidationReport_Close"] = "Close";
+        ru["FM_ValidationReport_ColSection"] = "Проверка"; en["FM_ValidationReport_ColSection"] = "Section";
+        ru["FM_ValidationReport_ColType"] = "Тип"; en["FM_ValidationReport_ColType"] = "Type";
+        ru["FM_ValidationReport_ColAttribute"] = "Атрибут"; en["FM_ValidationReport_ColAttribute"] = "Attribute";
+        ru["FM_ValidationReport_ColCheck"] = "Условие"; en["FM_ValidationReport_ColCheck"] = "Check";
+        ru["FM_ValidationReport_ColExpected"] = "Ожидалось"; en["FM_ValidationReport_ColExpected"] = "Expected";
+        ru["FM_ValidationReport_ColActual"] = "Фактически"; en["FM_ValidationReport_ColActual"] = "Actual";
+        ru["FM_ValidationReport_SectionHealth"] = "Системная"; en["FM_ValidationReport_SectionHealth"] = "System";
+        ru["FM_ValidationReport_SectionRules"] = "Правила"; en["FM_ValidationReport_SectionRules"] = "Rules";
+        ru["FM_ValidationReport_EmptyValue"] = "<пусто>"; en["FM_ValidationReport_EmptyValue"] = "<empty>";
+        ru["FM_ValidationReport_SummaryPassed"] = "Все проверки пройдены (для категории не заданы правила)"; en["FM_ValidationReport_SummaryPassed"] = "All checks passed (no rules configured for the category)";
+        ru["FM_ValidationReport_SummaryPassedRules"] = "Все проверки пройдены ({0} правил)"; en["FM_ValidationReport_SummaryPassedRules"] = "All checks passed ({0} rules)";
+        ru["FM_ValidationReport_SummaryFailed"] = "Проверка не пройдена — {0}"; en["FM_ValidationReport_SummaryFailed"] = "Check failed — {0}";
+        ru["FM_ValidationReport_SummaryHealthErrors"] = "системные ошибки: {0}"; en["FM_ValidationReport_SummaryHealthErrors"] = "system errors: {0}";
+        ru["FM_ValidationReport_SummaryHealthWarnings"] = "предупреждения: {0}"; en["FM_ValidationReport_SummaryHealthWarnings"] = "warnings: {0}";
+        ru["FM_ValidationReport_SummaryRuleViolations"] = "нарушений правил: {0} (правил: {1}, типов: {2})"; en["FM_ValidationReport_SummaryRuleViolations"] = "rule violations: {0} (rules: {1}, types: {2})";
+        ru["FM_ValidationReport_HealthSkipped"] = "Системная проверка: не выполнялась"; en["FM_ValidationReport_HealthSkipped"] = "System check: not performed";
+        ru["FM_ValidationReport_HealthPassedLine"] = "Системная проверка: пройдена"; en["FM_ValidationReport_HealthPassedLine"] = "System check: passed";
+        ru["FM_ValidationReport_HealthWarningsLine"] = "Системная проверка: предупреждений {0}"; en["FM_ValidationReport_HealthWarningsLine"] = "System check: {0} warning(s)";
+        ru["FM_ValidationReport_HealthErrorsLine"] = "Системная проверка: ошибок {0}"; en["FM_ValidationReport_HealthErrorsLine"] = "System check: {0} error(s)";
+        ru["FM_ValidationReport_RulesNone"] = "Правила категории: не заданы"; en["FM_ValidationReport_RulesNone"] = "Category rules: not configured";
+        ru["FM_ValidationReport_RulesNotChecked"] = "Правила категории: не проверялись"; en["FM_ValidationReport_RulesNotChecked"] = "Category rules: not checked";
+        ru["FM_ValidationReport_RulesPassedLine"] = "Правила категории: пройдены ({0} правил на {1} типах)"; en["FM_ValidationReport_RulesPassedLine"] = "Category rules: passed ({0} rules on {1} types)";
+        ru["FM_ValidationReport_RulesViolationsLine"] = "Правила категории: нарушений {0} (правил: {1}, типов: {2})"; en["FM_ValidationReport_RulesViolationsLine"] = "Category rules: {0} violation(s) (rules: {1}, types: {2})";
+
+        // Validation rule operators
+        ru["FM_RuleOp_IsPresent"] = "Параметр присутствует"; en["FM_RuleOp_IsPresent"] = "Parameter exists";
+        ru["FM_RuleOp_HasValue"] = "Заполнен"; en["FM_RuleOp_HasValue"] = "Has value";
+        ru["FM_RuleOp_IsEmpty"] = "Пустой"; en["FM_RuleOp_IsEmpty"] = "Is empty";
+        ru["FM_RuleOp_Equals"] = "Равно"; en["FM_RuleOp_Equals"] = "Equals";
+        ru["FM_RuleOp_NotEquals"] = "Не равно"; en["FM_RuleOp_NotEquals"] = "Not equals";
+        ru["FM_RuleOp_Contains"] = "Содержит"; en["FM_RuleOp_Contains"] = "Contains";
+        ru["FM_RuleOp_NotContains"] = "Не содержит"; en["FM_RuleOp_NotContains"] = "Not contains";
+        ru["FM_RuleOp_Between"] = "В диапазоне"; en["FM_RuleOp_Between"] = "Between";
+
+        // Validation Rules Editor (category tree editor → attribute context menu)
+        ru["FM_CTE_ValidationRules"] = "Правила валидации"; en["FM_CTE_ValidationRules"] = "Validation rules";
+        ru["FM_CTE_RulesCount"] = "Правил валидации: {0}"; en["FM_CTE_RulesCount"] = "Validation rules: {0}";
+        ru["FM_CTE_RulesCountDisabled"] = "Правил валидации: {0} (отключено: {1})"; en["FM_CTE_RulesCountDisabled"] = "Validation rules: {0} (disabled: {1})";
+        ru["FM_CTE_RulesNone"] = "Правила валидации не заданы — нажмите для настройки"; en["FM_CTE_RulesNone"] = "No validation rules — click to configure";
+        ru["FM_CTE_UnbindRulesTitle"] = "Правила валидации будут удалены"; en["FM_CTE_UnbindRulesTitle"] = "Validation rules will be deleted";
+        ru["FM_CTE_UnbindRulesMessage"] = "У атрибута \"{0}\" заданы правила валидации ({1}). При отвязке они будут удалены без возможности восстановления. Продолжить?"; en["FM_CTE_UnbindRulesMessage"] = "Attribute \"{0}\" has validation rules ({1}). Unbinding will permanently delete them. Continue?";
+        ru["FM_CTE_ImportedFull"] = "Импортировано: категорий новых {0} (существующих {1}), атрибутов {2}, привязок {3}, правил {4}"; en["FM_CTE_ImportedFull"] = "Imported: {0} new categories ({1} existing), {2} attributes, {3} bindings, {4} rules";
+        ru["FM_CTE_ImportedSkipped"] = " (пропущено: {0})"; en["FM_CTE_ImportedSkipped"] = " (skipped: {0})";
+        ru["FM_RulesEditor_Title"] = "Правила валидации"; en["FM_RulesEditor_Title"] = "Validation Rules";
+        ru["FM_RulesEditor_Add"] = "Добавить правило"; en["FM_RulesEditor_Add"] = "Add rule";
+        ru["FM_RulesEditor_Save"] = "Сохранить"; en["FM_RulesEditor_Save"] = "Save";
+        ru["FM_RulesEditor_Cancel"] = "Отмена"; en["FM_RulesEditor_Cancel"] = "Cancel";
+        ru["FM_RulesEditor_ColOperator"] = "Условие"; en["FM_RulesEditor_ColOperator"] = "Operator";
+        ru["FM_RulesEditor_ColValue"] = "Значение"; en["FM_RulesEditor_ColValue"] = "Value";
+        ru["FM_RulesEditor_ColEnabled"] = "Вкл."; en["FM_RulesEditor_ColEnabled"] = "On";
+        ru["FM_RulesEditor_ErrorValueRequired"] = "Для этого условия требуется значение"; en["FM_RulesEditor_ErrorValueRequired"] = "Value is required for this operator";
+        ru["FM_RulesEditor_ErrorNumberRequired"] = "Для этого условия требуется число"; en["FM_RulesEditor_ErrorNumberRequired"] = "A number is required for this operator";
+        ru["FM_RulesEditor_ErrorRangeRequired"] = "Обе границы диапазона должны быть числами"; en["FM_RulesEditor_ErrorRangeRequired"] = "Both range bounds must be numbers";
+        ru["FM_RulesEditor_ErrorRangeOrder"] = "Нижняя граница не должна превышать верхнюю"; en["FM_RulesEditor_ErrorRangeOrder"] = "The lower bound must not exceed the upper bound";
+
+        // Category-change gate (DnD / properties picker)
+        ru["FM_Gate_CategoryBlocked_Banner"] = "Категория «{0}» не может быть применена — семейство не проходит её правила. Перемещение отменено."; en["FM_Gate_CategoryBlocked_Banner"] = "Category \"{0}\" cannot be applied — the family fails its rules. The move was cancelled.";
+        ru["FM_Gate_CategoryBlockedNoData_Title"] = "Категория не может быть применена"; en["FM_Gate_CategoryBlockedNoData_Title"] = "Category cannot be applied";
+        ru["FM_Gate_CategoryBlockedNoData_Body"] = "Семейство «{0}» нельзя переместить в «{1}»: атрибуты не извлечены, проверить правила невозможно.\n\nВыполните «Обновить базу» и повторите."; en["FM_Gate_CategoryBlockedNoData_Body"] = "Family \"{0}\" cannot be moved to \"{1}\": attributes were not extracted, so the rules cannot be checked.\n\nRun \"Update database\" and try again.";
+
         // Hash Recalculation Migration (Issue #126)
         ru["FM_HashRecalc_LoadBlockedTitle"] = "Требуется обновление базы"; en["FM_HashRecalc_LoadBlockedTitle"] = "Database Update Required";
         ru["FM_HashRecalc_LoadBlockedBody"] = "Действие временно недоступно: база данных создана в старой версии SmartCon и требует обновления ({0} записей). До завершения обновления база работает в режиме просмотра.\n\nОбновить сейчас? Процесс можно прервать — он продолжится с места остановки."; en["FM_HashRecalc_LoadBlockedBody"] = "This action is temporarily unavailable: the database was created by an older SmartCon version and must be updated ({0} records). Until the update completes, the database is read-only.\n\nUpdate now? You can interrupt the process — it will resume from where it stopped.";

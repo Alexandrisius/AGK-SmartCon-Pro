@@ -74,6 +74,10 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
     public bool? ShowAttributeLibrary(object viewModel) => throw new NotImplementedException();
     public bool? ShowProfile(object viewModel) => throw new NotImplementedException();
     public bool? ShowBatchImportDialog(object viewModel) => throw new NotImplementedException();
+
+    public bool? ShowValidationReport(object viewModel) => throw new NotImplementedException();
+
+    public bool? ShowValidationRulesEditor(object viewModel) => throw new NotImplementedException();
     public void ShowModelessBatchImportDialog(object viewModel) => throw new NotImplementedException();
     public void ShowDatabaseUpdateProgressDialog(object viewModel)
     {

@@ -103,6 +103,19 @@ public interface IFamilyManagerDialogService
     bool? ShowBatchImportDialog(object viewModel);
 
     /// <summary>
+    /// Show the validation report dialog (import validation gate): the
+    /// read-only detail of why a batch row passed/failed — health issues
+    /// and rule violations. Returns when the user closes it.
+    /// </summary>
+    bool? ShowValidationReport(object viewModel);
+
+    /// <summary>
+    /// Show the validation rules editor for one category-attribute
+    /// binding. Returns true when the user saved the rules.
+    /// </summary>
+    bool? ShowValidationRulesEditor(object viewModel);
+
+    /// <summary>
     /// Show the batch import dialog as a modeless window (Issue #127): the
     /// dialog stays open during the import and drives progress/cancellation
     /// through its view model. Returns immediately; the caller awaits the

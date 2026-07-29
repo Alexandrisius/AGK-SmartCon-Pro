@@ -17,7 +17,10 @@ public static class DependencyConflictAnalyzer
     /// <summary>Минимальные assembly-версии, с которыми собран SmartCon.
     /// System.Text.Json исключён намеренно: на net48 он merged (конфликт невозможен),
     /// на net8 поставляется shared-рантаймом с assembly version 8.0.0.0 (false positive,
-    /// версия NuGet-пакета 8.0.0.6 ≠ версии сборки рантайма).</summary>
+    /// версия NuGet-пакета 8.0.0.6 ≠ версии сборки рантайма).
+    /// HelixToolkit.Wpf.SharpDX / MahApps.Metro.IconPacks / Xaml.Behaviors — loose-зависимости,
+    /// которые смержить нельзя (WPF pack URI / XmlnsDefinition, #177-аудит): конфликт здесь
+    /// не уронит старт плагина, но деградирует UI-модули — фиксируем для диагностики.</summary>
     public static IReadOnlyDictionary<string, Version> MinimumVersions { get; } =
         new Dictionary<string, Version>(StringComparer.OrdinalIgnoreCase)
         {
@@ -26,6 +29,9 @@ public static class DependencyConflictAnalyzer
             ["Microsoft.Bcl.AsyncInterfaces"] = new Version(10, 0, 0, 1),
             ["System.Threading.Tasks.Extensions"] = new Version(4, 2, 4, 0),
             ["System.Runtime.CompilerServices.Unsafe"] = new Version(6, 0, 3, 0),
+            ["HelixToolkit.Wpf.SharpDX"] = new Version(3, 1, 2, 0),
+            ["MahApps.Metro.IconPacks.Material"] = new Version(6, 0, 0, 0),
+            ["Microsoft.Xaml.Behaviors"] = new Version(1, 1, 0, 0),
         };
 
     public static IReadOnlyList<DependencyConflict> Analyze(IEnumerable<LoadedDependencyInfo> loadedAssemblies)

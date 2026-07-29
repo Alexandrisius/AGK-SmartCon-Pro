@@ -115,6 +115,9 @@ public sealed partial class FamilyBatchImportViewModel
     [RelayCommand(CanExecute = nameof(CanExecuteSecondary))]
     private void Cancel()
     {
+        SmartConLogger.Debug(
+            $"BatchImport: Cancel pressed (state={_state}, pendingValidation={_pendingValidation is not null}, " +
+            $"blockedRows={Items.Count(r => r.IsGateBlocked)})");
         switch (_state)
         {
             case BatchDialogState.Setup:
@@ -175,6 +178,24 @@ public sealed partial class FamilyBatchImportViewModel
             }
             catch (OperationCanceledException)
             {
+            }
+        }
+
+        // Import Validation Gate: an in-flight revalidation (category was
+        // changed just before pressing Import) must complete first —
+        // otherwise the import snapshots a stale gate verdict.
+        var pendingValidation = _pendingValidation;
+        if (pendingValidation is not null)
+        {
+            try
+            {
+                await pendingValidation;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                SmartConLogger.Warn(
+                    $"BatchImport: gate revalidation failed while awaiting before import: {ex.Message} " +
+                    $"[Action: импорт продолжится с текущими данными строк]");
             }
         }
 
@@ -309,12 +330,17 @@ public sealed partial class FamilyBatchImportViewModel
 
     private void Close(bool? result)
     {
+        _isClosing = true;
+        SmartConLogger.Debug($"BatchImport: Close(result={result})");
         _completionTcs.TrySetResult(result);
         RequestClose?.Invoke(result);
     }
 
     public void ConfirmClose(CloseConfirmationArgs args)
     {
+        // _isClosing ставится только в ветках, реально ведущих к закрытию:
+        // в Importing/Stopping диалог остаётся жить (args.Cancel = true),
+        // и застрявший флаг молча сломал бы любую будущую ревалидацию.
         switch (_state)
         {
             case BatchDialogState.Importing:
@@ -326,13 +352,16 @@ public sealed partial class FamilyBatchImportViewModel
                 break;
             case BatchDialogState.Paused:
                 args.Cancel = true;
+                _isClosing = true;
                 CloseAfterStop();
                 break;
             case BatchDialogState.Summary:
+                _isClosing = true;
                 args.DialogResult = true;
                 _completionTcs.TrySetResult(true);
                 break;
             default:
+                _isClosing = true;
                 args.DialogResult = false;
                 _completionTcs.TrySetResult(false);
                 break;

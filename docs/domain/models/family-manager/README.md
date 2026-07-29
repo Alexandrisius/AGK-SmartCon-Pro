@@ -22,6 +22,7 @@ module: family-manager-index
 | [`actualization.md`](actualization.md) | Миграции и актуализация БД (ADR-054): `DatabaseMigrationProgress`, `ActualizationVariant`, `FamilyActualizationContext`, `FamilyMigrationExtractResult` |
 | [`geometry.md`](geometry.md) | Снапшоты (`FamilySnapshot`, `SystemFamilySnapshot`, `ConnectorSnapshot`, `CompoundStructureSnapshot`, `RoutingPreferencesSnapshot`), геометрия и 3D-превью (`GeometryMetrics`, `MeshData`, `FamilyGeometryPreview`) |
 | [`family-facts.md`](family-facts.md) | Family Facts подсистема (ADR-055): `FamilyFact`, `FamilyFactsData`, `FamilyFactRule`, `FamilyFactRuleSet`, `PartTypeLabelMap` |
+| [`validation.md`](validation.md) | Import Validation Gate (ADR-059): `ValidationRule`, `ValidationRuleOperator`, health-check (`FamilyHealthReport`), гейт-статусы (`FamilyRowGateStatus`), нормализованные входы (`FamilyValidationInput`), отчёты (`FamilyValidationReport`, `RuleViolation`), `FamilyValidationEngine`, `DisplayValueParser` |
 
 ## См. также
 
