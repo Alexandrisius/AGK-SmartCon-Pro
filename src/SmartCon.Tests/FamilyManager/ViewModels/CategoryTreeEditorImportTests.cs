@@ -45,7 +45,7 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
     public async Task AddRootCommand_CreatesCategoryImmediately()
     {
         var vm = CreateVm();
-        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .Returns("Plumbing");
 
         await vm.AddRootCommand.ExecuteAsync(null);
@@ -65,7 +65,7 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
         await vm.InitializeAsync();
         vm.SelectedNode = vm.RootNodes[0];
 
-        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .Returns("Steel");
 
         await vm.AddChildCommand.ExecuteAsync(null);
@@ -84,7 +84,7 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
         await vm.InitializeAsync();
         vm.SelectedNode = vm.RootNodes[0];
 
-        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+        _dialogMock.Setup(s => s.ShowInputDialog(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .Returns("Tubes");
 
         await vm.RenameCommand.ExecuteAsync(null);

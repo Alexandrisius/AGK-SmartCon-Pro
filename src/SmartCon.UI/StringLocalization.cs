@@ -412,7 +412,7 @@ public static class StringLocalization
         public const string FM_DbDeleteFilesLocked = "FM_DbDeleteFilesLocked";
         public const string FM_DbNewTitle = "FM_DbNewTitle";
         public const string FM_DbNewPrompt = "FM_DbNewPrompt";
-        public const string FM_DbNewDefault = "FM_DbNewDefault";
+        public const string FM_DbNewPlaceholder = "FM_DbNewPlaceholder";
         public const string FM_PBase_CreateGeneralDatabase = "FM_PBase_CreateGeneralDatabase";
         public const string FM_PBase_CreateProjectDatabase = "FM_PBase_CreateProjectDatabase";
         public const string FM_PBase_CreateDatabase = "FM_PBase_CreateDatabase";

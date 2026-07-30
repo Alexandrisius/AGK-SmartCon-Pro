@@ -11,12 +11,19 @@ public sealed partial class InputDialogViewModel : ObservableObject, IObservable
 {
     [ObservableProperty] private string _title = string.Empty;
     [ObservableProperty] private string _prompt = string.Empty;
-    [ObservableProperty] private string _inputText = string.Empty;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OkCommand))]
+    private string _inputText = string.Empty;
+
+    [ObservableProperty] private string _placeholderText = string.Empty;
 
     public event Action<bool?>? RequestClose;
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasInputText))]
     private void Ok() => RequestClose?.Invoke(true);
+
+    private bool HasInputText => !string.IsNullOrWhiteSpace(InputText);
 
     [RelayCommand]
     private void Cancel() => RequestClose?.Invoke(null);

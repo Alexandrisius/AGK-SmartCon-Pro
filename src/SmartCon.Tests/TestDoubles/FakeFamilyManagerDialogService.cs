@@ -45,7 +45,7 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
         LastInfoMessage = message;
     }
     public void ShowError(string title, string message) => throw new NotImplementedException();
-    public string? ShowInputDialog(string title, string prompt, string defaultText = "") => throw new NotImplementedException();
+    public string? ShowInputDialog(string title, string prompt, string defaultText = "", string placeholderText = "") => throw new NotImplementedException();
     public DialogResult ShowYesNoCancel(string title, string message) => throw new NotImplementedException();
     public bool? ShowCategoryTreeEditor(object viewModel) => throw new NotImplementedException();
     public bool? ShowProjectBaseRulesEditor(object viewModel) => throw new NotImplementedException();

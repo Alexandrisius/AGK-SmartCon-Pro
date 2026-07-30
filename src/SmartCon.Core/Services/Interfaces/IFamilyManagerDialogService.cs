@@ -43,7 +43,7 @@ public interface IFamilyManagerDialogService
     void ShowInfo(string title, string message);
 
     /// <summary>Show simple input dialog and return entered text, or null if cancelled.</summary>
-    string? ShowInputDialog(string title, string prompt, string defaultText = "");
+    string? ShowInputDialog(string title, string prompt, string defaultText = "", string placeholderText = "");
 
     /// <summary>Show Yes/No confirmation dialog. Returns true if user clicked Yes.</summary>
     bool ShowConfirmation(string title, string message);

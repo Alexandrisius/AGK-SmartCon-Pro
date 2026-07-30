@@ -82,7 +82,7 @@ public static partial class LocalizationService
         ru["FM_DbDeleteFilesLocked"] = "БД \"{0}\" удалена из списка, но файлы не удалены, так как используются в проекте. Закройте Revit, чтобы удалить остатки."; en["FM_DbDeleteFilesLocked"] = "Database \"{0}\" removed from the list, but files could not be deleted because they are in use by the project. Close Revit to remove remaining files.";
         ru["FM_DbNewTitle"] = "Новая база данных"; en["FM_DbNewTitle"] = "New Database";
         ru["FM_DbNewPrompt"] = "Введите название новой базы данных:"; en["FM_DbNewPrompt"] = "Enter new database name:";
-        ru["FM_DbNewDefault"] = "Новый каталог"; en["FM_DbNewDefault"] = "New Catalog";
+        ru["FM_DbNewPlaceholder"] = "Название базы данных"; en["FM_DbNewPlaceholder"] = "Database name";
         ru["FM_FamilyDeleted"] = "Семейство \"{0}\" удалено из каталога"; en["FM_FamilyDeleted"] = "Family \"{0}\" deleted from catalog";
         ru["FM_FamilyDeleteError"] = "Ошибка удаления семейства"; en["FM_FamilyDeleteError"] = "Error deleting family";
         ru["FM_FamilyDeleteTitle"] = "Удаление семейства"; en["FM_FamilyDeleteTitle"] = "Delete Family";

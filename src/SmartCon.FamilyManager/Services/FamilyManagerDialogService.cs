@@ -87,13 +87,14 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public void ShowError(string title, string message) =>
         System.Windows.MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
 
-    public string? ShowInputDialog(string title, string prompt, string defaultText = "")
+    public string? ShowInputDialog(string title, string prompt, string defaultText = "", string placeholderText = "")
     {
         var vm = new ViewModels.InputDialogViewModel
         {
             Title = title,
             Prompt = prompt,
-            InputText = defaultText
+            InputText = defaultText,
+            PlaceholderText = placeholderText
         };
         var view = new Views.InputDialogView(vm);
         var result = view.ShowDialog();

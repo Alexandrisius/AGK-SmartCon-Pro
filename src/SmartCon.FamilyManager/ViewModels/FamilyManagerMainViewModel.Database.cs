@@ -169,7 +169,7 @@ public sealed partial class FamilyManagerMainViewModel
         var name = _dialogService.ShowInputDialog(
             LanguageManager.GetString(StringLocalization.Keys.FM_DbNewTitle) ?? "New Database",
             LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPrompt) ?? "Enter database name:",
-            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewDefault) ?? "New Catalog");
+            placeholderText: LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPlaceholder) ?? "Database name");
 
         if (string.IsNullOrWhiteSpace(name)) return;
 
@@ -218,7 +218,7 @@ public sealed partial class FamilyManagerMainViewModel
         var name = _dialogService.ShowInputDialog(
             LanguageManager.GetString(StringLocalization.Keys.FM_DbNewTitle) ?? "New Project Database",
             LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPrompt) ?? "Enter database name:",
-            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewDefault) ?? "New Project Catalog");
+            placeholderText: LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPlaceholder) ?? "Database name");
 
         if (string.IsNullOrWhiteSpace(name)) return;
 
