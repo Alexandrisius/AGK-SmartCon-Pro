@@ -59,7 +59,8 @@ public sealed class SystemTypeSyncTests : RevitApiTest
         _segmentSync = segmentSync;
         _syncService = new SystemTypeSyncService(
             _targetTx, new RevitFamilySnapshotExtractor(), _finder, new SystemClock(),
-            materialSync, segmentSync, new NullFittingDependencyResolver());
+            materialSync, segmentSync, new NullFittingDependencyResolver(),
+            new RevitCompoundStructureSyncService(materialSync));
 
         _sourceTx.RunInTransaction(SourceDoc, "Seed reference pipe type", doc =>
         {

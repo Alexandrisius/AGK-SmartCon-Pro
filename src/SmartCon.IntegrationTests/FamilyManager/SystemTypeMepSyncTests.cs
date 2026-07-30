@@ -52,7 +52,8 @@ public sealed class SystemTypeMepSyncTests : RevitApiTest
         var segmentSync = new RevitSegmentSyncService(materialSync);
         _syncService = new SystemTypeSyncService(
             _targetTx, new RevitFamilySnapshotExtractor(), _finder, new SystemClock(),
-            materialSync, segmentSync, new NullFittingDependencyResolver());
+            materialSync, segmentSync, new NullFittingDependencyResolver(),
+            new RevitCompoundStructureSyncService(materialSync));
 
         var seeded = false;
         _sourceTx.RunInTransaction(SourceDoc, "Seed reference routing", doc =>

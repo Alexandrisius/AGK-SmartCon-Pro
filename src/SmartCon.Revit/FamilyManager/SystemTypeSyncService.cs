@@ -21,6 +21,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     private readonly IMaterialSyncService _materialSync;
     private readonly ISegmentSyncService _segmentSync;
     private readonly IFittingDependencyResolver _fittingResolver;
+    private readonly ICompoundStructureSyncService _structureSync;
 
     public SystemTypeSyncService(
         ITransactionService tx,
@@ -29,7 +30,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         IClock clock,
         IMaterialSyncService materialSync,
         ISegmentSyncService segmentSync,
-        IFittingDependencyResolver fittingResolver)
+        IFittingDependencyResolver fittingResolver,
+        ICompoundStructureSyncService structureSync)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(tx);
@@ -39,6 +41,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         ArgumentNullException.ThrowIfNull(materialSync);
         ArgumentNullException.ThrowIfNull(segmentSync);
         ArgumentNullException.ThrowIfNull(fittingResolver);
+        ArgumentNullException.ThrowIfNull(structureSync);
 #else
         if (tx is null) throw new ArgumentNullException(nameof(tx));
         if (snapshotExtractor is null) throw new ArgumentNullException(nameof(snapshotExtractor));
@@ -47,6 +50,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         if (materialSync is null) throw new ArgumentNullException(nameof(materialSync));
         if (segmentSync is null) throw new ArgumentNullException(nameof(segmentSync));
         if (fittingResolver is null) throw new ArgumentNullException(nameof(fittingResolver));
+        if (structureSync is null) throw new ArgumentNullException(nameof(structureSync));
 #endif
         _tx = tx;
         _snapshotExtractor = snapshotExtractor;
@@ -55,6 +59,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         _materialSync = materialSync;
         _segmentSync = segmentSync;
         _fittingResolver = fittingResolver;
+        _structureSync = structureSync;
     }
 
     public SystemTypeSyncResult SyncTypeFromSource(
@@ -144,6 +149,11 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             if (template.Routing is not null && target is MEPCurveType mepCurveType)
             {
                 notConverged = SyncRoutingPreferences(sourceDoc, doc, mepCurveType, template.Routing);
+            }
+
+            if (template.Structure is not null && target is HostObjAttributes)
+            {
+                notConverged += _structureSync.SyncStructure(sourceDoc, doc, target, template.Structure);
             }
 
             RevitFamilyVersionStore.WriteEntityToElement(target, new FamilyVersion(

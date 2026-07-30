@@ -293,6 +293,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IMaterialSyncService, RevitMaterialSyncService>();
         services.AddSingleton<ISegmentSyncService, RevitSegmentSyncService>();
         services.AddSingleton<IFittingDependencyResolver, CatalogFittingDependencyResolver>();
+        services.AddSingleton<ICompoundStructureSyncService, RevitCompoundStructureSyncService>();
         services.AddSingleton<ISystemTypeSyncService, SystemTypeSyncService>();
         services.AddSingleton<ISystemTypeSyncOrchestrator, SystemFamilySyncOrchestrator>();
 
