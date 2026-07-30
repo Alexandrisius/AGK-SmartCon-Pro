@@ -178,7 +178,8 @@ public class IntegrationTests { }
 - [revit-mocking.md](references/revit-mocking.md) — What CANNOT be mocked, why, workarounds
 - [test-fakes.md](references/test-fakes.md) — Existing fakes + how to write new ones
 - [moq-patterns.md](references/moq-patterns.md) — Moq patterns: Callback, Returns, Verify, Sequences
-- [integration-testing.md](references/integration-testing.md) — **SmartCon.IntegrationTests** (Nice3point.TUnit.Revit): запуск, правила, структура
+- [integration-testing.md](references/integration-testing.md) — **SmartCon.IntegrationTests** (Nice3point.TUnit.Revit): запуск, правила, структура, паттерн «зонд»
+- [autonomous-loop.md](references/autonomous-loop.md) — **Автономная разработка DB-уровня**: петля «тест ↔ лог ↔ фикс» без человека, контракт петли, стоп-условия, adversarial review
 - [project-conventions.md](references/project-conventions.md) — Multi-version build, DEBUG symbol gotcha, net48/ThrowIfNull
 - [jeremy-tammik.md](references/jeremy-tammik.md) — Jeremy Tammik recommendations
 - [open-source.md](references/open-source.md) — GitHub examples: Speckle, ricaun, Scotec, Onbox
