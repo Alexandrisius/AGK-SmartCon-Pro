@@ -115,6 +115,54 @@ src/SmartCon.IntegrationTests/
 | `FamilyLoadResult.IsSuccess` не компилируется | Свойство называется `Success` | Проверять точные имена моделей по исходникам |
 | Запуск подмножества тестов | — | `dotnet run ... -- --treenode-filter "/*/*ClassName*/*/*"` |
 
+## Gotchas, найденные на практике (2026-07-30, #104)
+
+| Симптом | Причина | Решение |
+|---|---|---|
+| `catch (ArgumentException)` не ловит исключение Revit | `Autodesk.Revit.Exceptions.ArgumentException` НЕ наследует `System.ArgumentException` | Ловить Revit-тип явно (или оба) |
+| Тест на отказ операции флакует между машинами | Revit отклоняет операцию машино-зависимо: upfront-исключение ИЛИ silent `Commit()==RolledBack` | Assert на контракт, а не на механизм: `threw || !committed` + состояние документа |
+| Тип шаблона не удаляется в тесте | Последний тип системной семьи удалить нельзя; при копии FamilyName стен ремапится в "Basic Wall" | Не удалять; если нужно избавиться от коллизии имён — rename (см. `TemplateCollisionResolver`) |
+| Огибания стен «не синхронизируются» | `WRAPPING_AT_*` — legacy-параметры, есть только в старых Revit и только при shell-слоях | Источник — `CompoundStructure.EndCap/OpeningWrapping` |
+| Форумный сниппет `PipeScheduleType.Create(...).GetTypeId()` | `PipeScheduleType : ElementType`, `GetTypeId()` = Invalid | Передавать `.Id` самого элемента в `PipeSegment.Create` |
+| `doc.Delete` кидает на одних типах, молча откатывается на других | Разные механизмы отказа у Revit | Не полагаться на один режим; проверять статус коммита |
+
+## Паттерн «зонд» — диагностика поведения Revit вместо гипотез
+
+Когда поведение API неизвестно или подозрительно (агент гадает по статическому анализу) —
+НЕ теоретизируй. Напиши одноразовый интеграционный тест-зонд, который **измеряет**
+реальность и пишет результат в `smartcon.log` через `SmartConLogger.Info("PROBE: ...")`:
+
+```csharp
+[Test]
+[HookExecutor<RevitThreadExecutor>]
+public async Task Probe_CollisionBehavior()
+{
+    var docA = Application.NewProjectDocument(UnitSystem.Metric);
+    var docB = Application.NewProjectDocument(UnitSystem.Metric);
+    try
+    {
+        // ... воспроизводим сценарий минимальным кодом ...
+        var names = new FilteredElementCollector(docA).OfClass(typeof(WallType)).Select(t => t.Name);
+        SmartConLogger.Info("PROBE: " + string.Join(", ", names));
+        await Assert.That(names).IsNotNull(); // зонд всегда зелёный — ценность в логе
+    }
+    finally { docA.Close(false); docB.Close(false); }
+}
+```
+
+Правила зондов:
+- Читай ответ из лога (`Select-String PROBE`), не из assertion message.
+- Для commit-time поведения логируй `rawTx.Commit()` (TransactionStatus!) и failures через
+  кастомный `IFailuresPreprocessor` — именно так был пойман silent `RolledBack` (#178).
+- Сидируй seed-проверки результатом (`Set` может молча вернуть false) — иначе зонд
+  измеряет не тот сценарий (пример: `get_Parameter` вернул null, `?.Set` молча пропустил).
+- После диагностики зонд превращай в настоящий регрессионный тест с контрактными
+  assertions (или удаляй) — не оставляй «висячие» зонды в сьюте.
+
+Реальные кейсы, где зонд заменил 3+ итерации гипотез: авторенейм при CopyElements
+несмотря на `UseDestinationTypes`; `Commit()==RolledBack` без исключения при удалении
+последнего типа семьи; отсутствие `WRAPPING_AT_*` параметров в Revit 2025.
+
 ## Доказанная ценность
 
 Сьют поймал первый production-баг в день внедрения: **#176** — флаги
