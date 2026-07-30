@@ -34,7 +34,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         _catalog = catalog;
     }
 
-    public void LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion)
+    public bool LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion)
     {
         var uiApp = _revitUIContext.GetUIApplication();
         var activeDoc = _revitUIContext.GetUIDocument().Document;
@@ -42,15 +42,14 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         if (uiApp is null || activeDoc is null)
         {
             SmartConLogger.Error("SystemFamilyPlacement.ABORT: uiApp or activeDoc is null");
-            return;
+            return false;
         }
 
         if (_syncOrchestrator.IsProjectTypeCurrent(activeDoc, catalogItemId, typeName, targetRevitVersion))
         {
             SmartConLogger.Debug(
                 $"SystemFamilyPlacement: type '{typeName}' is up-to-date (marker match), activating placement.");
-            ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId);
-            return;
+            return ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId);
         }
 
         var result = _syncOrchestrator.SyncTypes(
@@ -62,13 +61,13 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             SmartConLogger.Error(
                 $"SystemFamilyPlacement: sync failed for '{typeName}': " +
                 $"{typeResult?.ErrorMessage ?? "no result"}");
-            return;
+            return false;
         }
 
-        ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId);
+        return ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId);
     }
 
-    private void ActivatePlacementByName(
+    private bool ActivatePlacementByName(
         UIApplication uiApp, Document activeDoc, string typeName, string catalogItemId)
     {
         var categoryOrdinal = ResolveCategoryOrdinal(catalogItemId);
@@ -78,10 +77,11 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         {
             SmartConLogger.Error(
                 $"SystemFamilyPlacement: type '{typeName}' not found in the active project after sync");
-            return;
+            return false;
         }
 
         uiApp.ActiveUIDocument?.PostRequestForElementTypePlacement(elementType);
+        return true;
     }
 
     private int? ResolveCategoryOrdinal(string catalogItemId)

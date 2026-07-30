@@ -486,14 +486,19 @@ public sealed partial class FamilyManagerMainViewModel
 
     private async Task PlaceSystemTypeAsync(string catalogItemId, string typeName, int targetRevit)
     {
+        var placed = false;
         await _awaitableEvent.RaiseAsync(_ =>
         {
             try
             {
-                _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, targetRevit);
-                StatusMessage = string.Format(
-                    LocalizationService.GetString("FM_PlaceSystemType") ?? "System type \"{0}\" — click to place",
-                    typeName);
+                placed = _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, targetRevit);
+                StatusMessage = placed
+                    ? string.Format(
+                        LocalizationService.GetString("FM_PlaceSystemType") ?? "System type \"{0}\" — click to place",
+                        typeName)
+                    : string.Format(
+                        LocalizationService.GetString("FM_LoadError") ?? "Load error: {0}",
+                        typeName);
             }
             catch (Exception ex)
             {
@@ -501,6 +506,14 @@ public sealed partial class FamilyManagerMainViewModel
                     LocalizationService.GetString("FM_LoadError") ?? "Load error: {0}",
                     ex.Message);
             }
-        });
+        }).ConfigureAwait(true);
+
+        if (placed)
+        {
+            // Same rationale as the DnD path: fresh marker on the synced type
+            // — the item's stale badge must clear immediately.
+            _staleDetector.MarkUpdated([catalogItemId]);
+            await LoadTreeAsync().ConfigureAwait(true);
+        }
     }
 }

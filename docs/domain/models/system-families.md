@@ -119,3 +119,94 @@ public sealed record SystemFamilyExtractionTask(
     string? VersionId,
     string? FileId);
 ```
+
+---
+
+## SystemTypeSyncResult
+
+Результат синхронизации одного системного типа (Issue #104, ADR-061). `NotConvergedCount` — остаточные расхождения зависимостей (нерезолвленные правила трассировки, неудалимые размеры сегментов), тип при этом считается синхронизированным.
+
+**Файл:** `Models/FamilyManager/SystemTypeSyncResult.cs`
+
+```csharp
+public enum SystemTypeSyncStatus
+{
+    Created, Updated, NotFoundInSource, NoPrototypeType, Failed,
+}
+
+public sealed record SystemTypeSyncResult(
+    string TypeName,
+    SystemTypeSyncStatus Status,
+    int ParametersWritten,
+    int ParametersSkipped,
+    string? ErrorMessage = null,
+    int NotConvergedCount = 0)
+{
+    public bool IsSuccess { get; }
+}
+
+public sealed record SystemFamilySyncResult(
+    string CatalogItemId,
+    IReadOnlyList<SystemTypeSyncResult> TypeResults)
+{
+    public int SuccessCount { get; }
+    public int FailedCount { get; }
+    public bool AllSucceeded { get; }
+    public int TotalNotConverged { get; }
+}
+```
+
+---
+
+## SystemTypeLocation
+
+Локация системного типа (`ElementType`) в документе: имя + ordinal категории + ElementId. Используется batch-сбором `ISystemTypeFinder.CollectTypes` для матчинга stale-detection (ключ `(CategoryOrdinal, Name)` — одинаковые имена в разных категориях не конфликтуют).
+
+**Файл:** `Models/FamilyManager/SystemTypeLocation.cs`
+
+```csharp
+public sealed record SystemTypeLocation(
+    string TypeName,
+    int CategoryOrdinal,
+    ElementId TypeId);
+```
+
+---
+
+## SegmentSnapshot / SegmentSizeSnapshot
+
+Эталонные данные сегмента трубы/воздуховода из мини-проекта (Issue #104): имя + материал + спецификация + шероховатость + таблица размеров. Все диаметры — internal units (feet).
+
+**Файл:** `Models/FamilyManager/SegmentSnapshot.cs`
+
+```csharp
+public sealed record SegmentSnapshot(
+    string Name,
+    string? MaterialName,
+    string? ScheduleName,
+    double Roughness,
+    IReadOnlyList<SegmentSizeSnapshot> Sizes);
+
+public sealed record SegmentSizeSnapshot(
+    double NominalDiameter,
+    double InnerDiameter,
+    double OuterDiameter,
+    bool UsedInSizeLists,
+    bool UsedInSizing);
+```
+
+---
+
+## SegmentSyncResult
+
+Результат синхронизации одного сегмента: разрешённый ElementId + счётчики конвергенции таблицы размеров. `SizesNotConverged` — неудалимые/некорректируемые размеры (используются размещёнными трубами или последний) — попадает в пользовательский счётчик «не приведено к эталону».
+
+**Файл:** `Models/FamilyManager/SegmentSyncResult.cs`
+
+```csharp
+public sealed record SegmentSyncResult(
+    ElementId? SegmentId,
+    int SizesAdded,
+    int SizesRemoved,
+    int SizesNotConverged);
+```

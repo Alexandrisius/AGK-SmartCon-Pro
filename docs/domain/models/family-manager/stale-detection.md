@@ -196,3 +196,34 @@ public static class LoadableMarkerLogic
 - `FamilyManagerMainViewModel.FamilyEdit.cs:WriteVersionMarkersForImportedLoadablesAsync` — тонкая обёртка, делегирующая в этот helper. Вызывается из `ProcessProjectImportAsync` после `LoadableFamilyImportOrchestrator.ImportAndPersistTypesAsync` и перед `_staleDetector.InvalidateCache()`.
 
 **Pure logic** — никакого Revit API в сигнатуре (только `IFamilyVersionWriter`). Позволяет unit-тестировать через hand-written fake `IFamilyVersionWriter` без поднятия Revit (`src/SmartCon.Tests/FamilyManager/Stale/LoadableMarkerLogicTests.cs` — 8 тестов на empty batch / single / multiple / no-match skip / full failure / partial failure isolation / targetRevit passthrough / null-args throws).
+
+---
+
+## SystemTypeStaleLogic
+
+Чистая логика агрегации ES-маркеров типов системного элемента каталога в единый stale-вердикт (Issue #104, ADR-061). Системный элемент каталога = N типов; он устарел, если ЛЮБОЙ из его присутствующих в проекте типов не имеет маркера (`NoEntityStorage`) или имеет несовпадающий маркер (первая ненулевая причина в порядке типов). Не содержит зависимостей от Revit API — юнит-тестируемо (`SystemTypeStaleLogicTests`), по образцу `StaleSnapshotLogic`.
+
+**Файл:** `SystemTypeStaleLogic.cs` (в `SmartCon.Core/Services/Interfaces/`)
+
+```csharp
+public static class SystemTypeStaleLogic
+{
+    public static StaleReason ComputeReason(
+        FamilyVersion marker,
+        string catalogItemId,
+        string? currentVersionLabel,
+        int targetRevit);
+
+    public static (bool IsStale, StaleReason Reason, string? LoadedLabel) Aggregate(
+        IReadOnlyList<FamilyVersion?> markers,
+        string catalogItemId,
+        string? currentVersionLabel,
+        int targetRevit);
+}
+```
+
+**Семантика:**
+
+- `Aggregate` принимает маркеры ТОЛЬКО типов, присутствующих в проекте (caller отфильтровывает незагруженные); пустой список = не stale (тип не загружен — как unloadable семейство).
+- `ComputeReason` повторяет правила loadable: чужой `CatalogItemId` или другой `VersionLabel` → `VersionMismatch`; другой `SourceRevitVersion` → `RevitVersionMismatch` (при обоих > 0).
+- Используется `StaleDetector` (system-ветки Check) и `SystemFamilySyncOrchestrator.IsProjectTypeCurrent` (fast-path размещения) — одинаковый вердикт в обоих местах.

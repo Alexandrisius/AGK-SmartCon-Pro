@@ -203,3 +203,132 @@ public static class CategoryCompat
 `SystemFamilySelectionFilter`) и `SystemFamilyRevitOperations.PickSelectedElements`.
 После резолвинга результат обязательно сверяется с `SystemCategoryRegistry.SupportedCategories`
 — defense in depth.
+
+---
+
+## ISystemTypeFinder
+
+Поиск системных типов (`ElementType`: PipeType, WallType, DuctType, …) в проекте по (имя, ordinal категории) (Issue #104, ADR-061). Категория обязательна для разрешения коллизий одинаковых имён в разных категориях («Стандартный» труба vs стена). Revit main thread only (I-01).
+
+**Файл:** `ISystemTypeFinder.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitSystemTypeFinder.cs`
+
+```csharp
+public interface ISystemTypeFinder
+{
+    ElementId? FindTypeByName(Document doc, string typeName, int? categoryOrdinal);
+    IReadOnlyList<SystemTypeLocation> CollectTypes(
+        Document doc, IReadOnlyCollection<int> categoryOrdinals);
+}
+```
+
+---
+
+## ISystemTypeSyncService
+
+Ядро синхронизации системного типа (Issue #104, ADR-061): читает эталон из открытого мини-проекта и записывает в проект БЕЗ копирования элементов. Существующий тип перезаписывается на месте; отсутствующий создаётся `Duplicate()` типа-болванки той же категории. Одна транзакция на тип: создание + параметры (+фолбэк создания материала при ElementId-резолве) + сегменты + структура + правила трассировки + ES-маркер (одна точка отмены). Вызывается на Revit main thread; владельцем sourceDoc является caller (оркестратор переиспользует одно открытие на батч).
+
+**Файл:** `ISystemTypeSyncService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/SystemTypeSyncService.cs`
+
+```csharp
+public interface ISystemTypeSyncService
+{
+    SystemTypeSyncResult SyncTypeFromSource(
+        Document sourceDoc,
+        Document activeDoc,
+        string typeName,
+        string catalogItemId,
+        string versionLabel,
+        int sourceRevitVersion);
+}
+```
+
+---
+
+## ISystemTypeSyncOrchestrator
+
+Оркестратор поверх `ISystemTypeSyncService` (Issue #104, ADR-061): резолвит managed-файл мини-проекта, открывает его один раз на батч типов, закрывает в finally. `IsProjectTypeCurrent` — fast-path для DnD/размещения (без открытия файла, тот же вердикт `SystemTypeStaleLogic.ComputeReason`, что у stale-детектора). SQLite-чтения внутри — через `AsyncBridge.RunSync` на Revit main thread.
+
+**Файл:** `ISystemTypeSyncOrchestrator.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/SystemFamilySyncOrchestrator.cs`
+
+```csharp
+public interface ISystemTypeSyncOrchestrator
+{
+    bool IsProjectTypeCurrent(
+        Document activeDoc, string catalogItemId, string typeName, int targetRevitVersion);
+
+    SystemFamilySyncResult SyncTypes(
+        Document activeDoc, string catalogItemId,
+        IReadOnlyList<string> typeNames, int targetRevitVersion);
+}
+```
+
+---
+
+## IMaterialSyncService
+
+Синхронизация материала по имени (Issue #104, ADR-061): никогда не копируется между документами (Revit 2024+ дублирует). Существующий обновляется на месте (графика, appearance через `AppearanceAssetEditScope`, физика/теплотехника через `PropertySetElement`) — shared-ассеты предварительно детачатся (`Duplicate`), чтобы не задеть чужие материалы. Отсутствующий создаётся дубликатом прототипа с asset. Отсутствующий ассет в эталоне НЕ очищает целевой (асимметрия осознанная). Вызывается внутри открытой транзакции.
+
+**Файл:** `IMaterialSyncService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitMaterialSyncService.cs`
+
+```csharp
+public interface IMaterialSyncService
+{
+    ElementId? SyncMaterial(Document sourceDoc, Document activeDoc, string materialName);
+}
+```
+
+---
+
+## ISegmentSyncService
+
+Синхронизация сегмента трубы/воздуховода по имени (Issue #104, ADR-061): таблица размеров к эталону — добавление/коррекция всегда; удаление только неиспользуемых размеров и только pipe-сегментов (usage через `RBS_PIPE_SEGMENT_PARAM`+диаметр; duct usage API не проверить — не трогаем); последний размер не удаляем. Создание через `PipeSegment.Create` + `PipeScheduleType.Create` (duct-сегменты API не создаёт — Warn + skip). Остаток — `SizesNotConverged` → пользовательский счётчик.
+
+**Файл:** `ISegmentSyncService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitSegmentSyncService.cs`
+
+```csharp
+public interface ISegmentSyncService
+{
+    SegmentSnapshot? ReadSegment(Document sourceDoc, string segmentName);
+    SegmentSyncResult SyncSegment(Document sourceDoc, Document activeDoc, string segmentName);
+}
+```
+
+---
+
+## IFittingDependencyResolver
+
+Разрешение фитингов трассировки (Issue #104, ADR-061): фитинг — обычное loadable-семейство каталога; есть в проекте по `"{Family}:{Type}"` — используется, нет — догружается из каталога, нет в каталоге — правило пропускается (Warn). Вызывается СТРОГО вне транзакции (`LoadFamily` запрещён в modifiable document) — оркестратор вызывает его до открытия sync-транзакции.
+
+**Файл:** `IFittingDependencyResolver.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/CatalogFittingDependencyResolver.cs`
+
+```csharp
+public interface IFittingDependencyResolver
+{
+    ElementId? EnsureFitting(
+        Document activeDoc, string familyName, string typeName, int targetRevitVersion);
+}
+```
+
+---
+
+## ICompoundStructureSyncService
+
+Замена compound structure слоистого типа (стены/перекрытия/крыши/потолки) эталоном (Issue #104, ADR-061): слои в эталонном порядке (материалы по имени через `IMaterialSyncService`), shell-границы ПОСЛЕ слоёв, variable layer, точный `StructuralMaterialIndex`, `EndCap`/`OpeningWrapping` + по-слойные `LayerCapFlag`/`ParticipatesInWrapping`. Невалидная структура отклоняется без изменения типа (rejection-safe, not-converged). `EndCap=NoEndCap` для не-стен. Вертикально-составные стены — known limitation.
+
+**Файл:** `ICompoundStructureSyncService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitCompoundStructureSyncService.cs`
+
+```csharp
+public interface ICompoundStructureSyncService
+{
+    int SyncStructure(
+        Document sourceDoc, Document activeDoc,
+        ElementType target, CompoundStructureSnapshot structure);
+}
+```

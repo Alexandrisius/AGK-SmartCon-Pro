@@ -106,3 +106,22 @@ public interface ICategoryNodeInfo
 **FamilyManagerServices Aggregate (Phase 4b):**
 
 `public sealed record FamilyManagerServices(...)` с 30 readonly properties, заменяет 30-param ctor `FamilyManagerMainViewModel`. **Файл:** `SmartCon.FamilyManager/ViewModels/FamilyManagerServices.cs`. **DI:** `AddSingleton<FamilyManagerServices>()` (auto-resolve).
+
+---
+
+## ISystemTypeVersionStore
+
+CRUD для ES-маркера `SmartCon_FamilyVersion_v1` на системных типах (`ElementType`) проекта (Issue #104, ADR-061). Та же схема и payload, что у `IFamilyVersionStore`; отличается только носитель маркера. Реализация общая — `RevitFamilyVersionStore` реализует оба интерфейса (один singleton); inline-запись внутри транзакции синхронизации — через `WriteEntityToElement`.
+
+**Файл:** `ISystemTypeVersionStore.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyVersionStore.cs`
+
+```csharp
+public interface ISystemTypeVersionStore
+{
+    FamilyVersion? ReadFromType(Document doc, ElementId typeId);
+    void WriteToType(Document doc, ElementId typeId, FamilyVersion version);
+    IReadOnlyDictionary<ElementId, FamilyVersion?> ReadManyFromTypes(
+        Document doc, IEnumerable<ElementId> typeIds);
+}
+```

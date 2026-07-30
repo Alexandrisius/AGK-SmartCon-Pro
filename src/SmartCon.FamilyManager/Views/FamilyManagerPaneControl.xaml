@@ -910,36 +910,37 @@
                                     <DataTrigger Binding="{Binding PlacementTarget.DataContext.IsStale, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="True">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
+                                    <!-- Issue #104: system types have a single overwrite
+                                         semantics — a flat command instead of the submenu -->
+                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.FamilySource, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="system">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </MenuItem.Style>
                         <MenuItem Header="{loc:Loc FM_UpdateKeepParams}"
-                                  Command="{Binding UpdateStaleKeepParamsCommand}">
-                            <MenuItem.Style>
-                                <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <!-- Issue #104: system types have a single
-                                             overwrite semantics — no "keep parameters" -->
-                                        <DataTrigger Binding="{Binding PlacementTarget.DataContext.FamilySource, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="system">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </MenuItem.Style>
-                        </MenuItem>
-                        <MenuItem Command="{Binding UpdateStaleCommand}">
-                            <MenuItem.Style>
-                                <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
-                                    <Setter Property="Header" Value="{loc:Loc FM_UpdateOverwriteParams}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding PlacementTarget.DataContext.FamilySource, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="system">
-                                            <Setter Property="Header" Value="{loc:Loc FM_Update}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </MenuItem.Style>
-                        </MenuItem>
+                                  Command="{Binding UpdateStaleKeepParamsCommand}"
+                                  Style="{StaticResource ModernMenuItem}" />
+                        <MenuItem Header="{loc:Loc FM_UpdateOverwriteParams}"
+                                  Command="{Binding UpdateStaleCommand}"
+                                  Style="{StaticResource ModernMenuItem}" />
+                    </MenuItem>
+                    <MenuItem Header="{loc:Loc FM_Update}"
+                              Command="{Binding UpdateStaleCommand}">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding PlacementTarget.DataContext.IsStale, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="True"/>
+                                            <Condition Binding="{Binding PlacementTarget.DataContext.FamilySource, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="system"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
                     </MenuItem>
                     <MenuItem>
                         <MenuItem.Style>

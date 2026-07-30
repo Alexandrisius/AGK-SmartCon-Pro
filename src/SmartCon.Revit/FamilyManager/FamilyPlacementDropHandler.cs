@@ -76,12 +76,25 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             if (dragData.FamilySource == "system" || !string.IsNullOrEmpty(dragData.UniqueId))
             {
                 SmartConLogger.Info($"System family: '{dragData.FamilyName}', type: '{dragData.TypeName}' (FamilySource='{dragData.FamilySource}', UniqueId='{dragData.UniqueId}')");
-                _systemFamilyPlacementService.LoadAndPlaceSystemType(
+                var placed = _systemFamilyPlacementService.LoadAndPlaceSystemType(
                     dragData.CatalogItemId,
                     dragData.TypeName,
                     dragData.TargetRevitVersion);
 
-                _onSuccess?.Invoke($"Системный тип '{dragData.TypeName}' скопирован и активирован");
+                if (placed)
+                {
+                    // Issue #104: the just-synced type carries a fresh ES
+                    // marker — prune the item from the stale snapshot so its
+                    // badge clears immediately (same as the loadable path in
+                    // WriteVersionMarker). The next "Проверить" re-evaluates
+                    // the item's other types when the family has several.
+                    _staleDetector.MarkUpdated([dragData.CatalogItemId]);
+                    _onSuccess?.Invoke($"Системный тип '{dragData.TypeName}' скопирован и активирован");
+                }
+                else
+                {
+                    _onError?.Invoke($"Не удалось синхронизировать системный тип '{dragData.TypeName}'");
+                }
                 _onCompleted?.Invoke();
                 return;
             }

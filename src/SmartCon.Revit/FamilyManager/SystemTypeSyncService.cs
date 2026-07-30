@@ -502,7 +502,16 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             }
 
             if (ok) written++;
-            else skipped++;
+            else
+            {
+                skipped++;
+                // Set returned false without throwing — not covered by the
+                // catch above, record the reason explicitly.
+                if (!skippedDetails.Any(d => d.StartsWith(value.ParameterName + "(", StringComparison.Ordinal)))
+                {
+                    skippedDetails.Add($"{value.ParameterName}(set-rejected)");
+                }
+            }
         }
 
         if (skippedDetails.Count > 0)
