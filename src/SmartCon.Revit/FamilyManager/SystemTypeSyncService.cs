@@ -429,7 +429,10 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     {
         var written = 0;
         var skipped = 0;
-        var failCounter = new HotLoopCounter(sampleEvery: 16);
+        // Every skip is logged with its reason: ~30 params per type is far
+        // from hot-loop volume, and an unexplained skip list was a blind
+        // spot when diagnosing "the parameter did not sync" reports.
+        var skippedDetails = new List<string>();
 
         foreach (var value in template.Values)
         {
@@ -439,13 +442,10 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
 
             if (param is null || param.IsReadOnly)
             {
-                if (failCounter.ShouldLog())
-                {
-                    SmartConLogger.Debug(
-                        $"Parameter '{value.ParameterName}' skipped: " +
-                        (param is null ? "not found on target" : "read-only"));
-                }
                 skipped++;
+                skippedDetails.Add(param is null
+                    ? $"{value.ParameterName}(missing)"
+                    : $"{value.ParameterName}(read-only)");
                 continue;
             }
 
@@ -475,6 +475,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                             SmartConLogger.Debug(
                                 $"Parameter '{value.ParameterName}' clear failed: {ex.Message}");
                             skipped++;
+                            skippedDetails.Add($"{value.ParameterName}(clear-failed)");
                         }
                     }
                 }
@@ -495,15 +496,19 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             }
             catch (Exception ex)
             {
-                if (failCounter.ShouldLog())
-                {
-                    SmartConLogger.Debug(
-                        $"Parameter '{value.ParameterName}' write failed: {ex.Message}");
-                }
+                SmartConLogger.Debug(
+                    $"Parameter '{value.ParameterName}' write failed: {ex.Message}");
+                skippedDetails.Add($"{value.ParameterName}(set-failed)");
             }
 
             if (ok) written++;
             else skipped++;
+        }
+
+        if (skippedDetails.Count > 0)
+        {
+            SmartConLogger.Debug(
+                $"Skipped parameters for '{target.Name}': [{string.Join(", ", skippedDetails)}]");
         }
 
         return (written, skipped);

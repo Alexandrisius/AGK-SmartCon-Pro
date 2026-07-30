@@ -1,4 +1,4 @@
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using Nice3point.TUnit.Revit.Executors;
 using SmartCon.Core.Models.FamilyManager;
@@ -343,6 +343,75 @@ public sealed class SystemTypeStructureSyncTests : RevitApiTest
         }
     }
 
+    [Test]
+    public async Task Structure_StructuralIndexAndWrappingParams_Synced()
+    {
+        // Баг ручного теста: чек-бокс «Материал несущих конструкций» на слое
+        // (StructuralMaterialIndex) и параметры огибания/функции стены.
+        const string typeName = "SmartCon Structural Flags Wall";
+        var seeded = false;
+        var sourceTx = new RevitTransactionService(new StubRevitContext(SourceDoc));
+        sourceTx.RunInTransaction(SourceDoc, "Seed structural flags wall", doc =>
+        {
+            var wallType = FindBasicWallType(doc);
+            if (wallType is null) return;
+            var anyMaterial = new FilteredElementCollector(doc)
+                .OfClass(typeof(Material))
+                .Cast<Material>()
+                .First();
+
+            var type = (WallType)wallType.Duplicate(typeName);
+            // Shell-слой обязателен: параметры огибания существуют на типе
+            // стены только когда в структуре есть shell-слои.
+            var layers = new List<CompoundStructureLayer>
+            {
+                new(Mm(10), MaterialFunctionAssignment.Finish1, anyMaterial.Id),
+                new(Mm(100), MaterialFunctionAssignment.Structure, anyMaterial.Id),
+                new(Mm(50), MaterialFunctionAssignment.Insulation, anyMaterial.Id),
+            };
+            var structure = CompoundStructure.CreateSimpleCompoundStructure(layers);
+            structure.SetNumberOfShellLayers(ShellLayerType.Exterior, 1);
+            // Чек-бокс на ТРЕТЬЕМ слое (insulation) — не эвристика «первый Structure».
+            structure.StructuralMaterialIndex = 2;
+            // Огибания — свойства CompoundStructure (legacy WRAPPING_AT_*
+            // параметры есть не во всех версиях Revit).
+            structure.EndCap = EndCapCondition.Interior;
+            structure.OpeningWrapping = OpeningWrappingCondition.ExteriorAndInterior;
+            structure.SetParticipatesInWrapping(0, true);
+            type.SetCompoundStructure(structure);
+
+            seeded = true;
+        });
+
+        if (!seeded)
+        {
+            Skip.Test("Не удалось сидировать стену со structural-флагом");
+        }
+
+        var result = SyncService.SyncTypeFromSource(
+            SourceDoc, TargetDoc, typeName, "item-wall-flags", "v1",
+            int.Parse(Application.VersionNumber));
+
+        using (Assert.Multiple())
+        {
+            await Assert.That(result.IsSuccess).IsTrue();
+        }
+
+        var typeId = _finder!.FindTypeByName(TargetDoc, typeName, null);
+        var wallType = (WallType)TargetDoc.GetElement(typeId!)!;
+        using (Assert.Multiple())
+        {
+            using var structure = wallType.GetCompoundStructure();
+            await Assert.That(structure).IsNotNull();
+            await Assert.That(structure!.StructuralMaterialIndex).IsEqualTo(2);
+            await Assert.That(structure.GetLayers().Count).IsEqualTo(3);
+            await Assert.That(structure.GetNumberOfShellLayers(ShellLayerType.Exterior)).IsEqualTo(1);
+            await Assert.That((int)structure.EndCap).IsEqualTo((int)EndCapCondition.Interior);
+            await Assert.That((int)structure.OpeningWrapping).IsEqualTo((int)OpeningWrappingCondition.ExteriorAndInterior);
+            await Assert.That(structure.ParticipatesInWrapping(0)).IsTrue();
+        }
+    }
+
     private static WallType? FindBasicWallType(Document doc)
     {
         return new FilteredElementCollector(doc)
@@ -368,3 +437,5 @@ public sealed class SystemTypeStructureSyncTests : RevitApiTest
             Document activeDoc, string familyName, string typeName, int targetRevitVersion) => null;
     }
 }
+
+

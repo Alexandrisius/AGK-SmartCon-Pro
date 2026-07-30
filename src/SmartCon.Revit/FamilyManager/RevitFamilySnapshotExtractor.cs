@@ -1245,6 +1245,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 
             var layers = compoundStructure.GetLayers();
             var variableLayerIndex = compoundStructure.VariableLayerIndex;
+            var exteriorShells = compoundStructure.GetNumberOfShellLayers(ShellLayerType.Exterior);
+            var interiorShells = compoundStructure.GetNumberOfShellLayers(ShellLayerType.Interior);
             var snapshots = new List<CompoundLayerSnapshot>(layers.Count);
 
             for (var i = 0; i < layers.Count; i++)
@@ -1263,17 +1265,41 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     materialName = null;
                 }
 
+                // Wrapping participation is defined only for shell layers
+                // (leading exterior + trailing interior ones).
+                var isShellLayer = i < exteriorShells || i >= layers.Count - interiorShells;
+                var participatesInWrapping = false;
+                if (isShellLayer)
+                {
+                    try { participatesInWrapping = compoundStructure.ParticipatesInWrapping(i); }
+                    catch { /* core-layer guard — stays false */ }
+                }
+
+                var layerCapFlag = false;
+                try { layerCapFlag = layer.LayerCapFlag; }
+                catch { /* best-effort flag */ }
+
                 snapshots.Add(new CompoundLayerSnapshot(
                     Function: (int)layer.Function,
                     Width: layer.Width,
                     MaterialName: materialName,
-                    IsVariable: i == variableLayerIndex));
+                    IsVariable: i == variableLayerIndex,
+                    LayerCapFlag: layerCapFlag,
+                    ParticipatesInWrapping: participatesInWrapping));
             }
 
+            var endCap = -1;
+            var openingWrapping = -1;
+            try { endCap = (int)compoundStructure.EndCap; } catch { /* stays unknown */ }
+            try { openingWrapping = (int)compoundStructure.OpeningWrapping; } catch { /* stays unknown */ }
+
             return new CompoundStructureSnapshot(
-                ExteriorShellLayerCount: compoundStructure.GetNumberOfShellLayers(ShellLayerType.Exterior),
-                InteriorShellLayerCount: compoundStructure.GetNumberOfShellLayers(ShellLayerType.Interior),
-                Layers: snapshots);
+                ExteriorShellLayerCount: exteriorShells,
+                InteriorShellLayerCount: interiorShells,
+                Layers: snapshots,
+                StructuralMaterialIndex: compoundStructure.StructuralMaterialIndex,
+                EndCap: endCap,
+                OpeningWrapping: openingWrapping);
         }
         catch (Exception ex)
         {

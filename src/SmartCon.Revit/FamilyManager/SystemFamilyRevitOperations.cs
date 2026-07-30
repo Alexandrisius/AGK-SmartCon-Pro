@@ -197,6 +197,23 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
         try
         {
+            // #104: the default template may already contain types of this
+            // category with the same names (e.g. wall "Стена 1"). CopyElements
+            // does NOT skip the incoming type on collision — it copies it with
+            // an auto-generated name ("Стена 2") even with
+            // UseDestinationTypes, and the mini-project then stores the type
+            // under a foreign name. Template types cannot be deleted upfront
+            // (Revit forbids deleting the last type of a system family), so
+            // they are renamed away before the copy and deleted after it.
+            var sourceTypeNames = new List<string>();
+            foreach (var id in sourceTypeIds)
+            {
+                var name = sourceDoc.GetElement(id)?.Name;
+                if (!string.IsNullOrEmpty(name)) sourceTypeNames.Add(name!);
+            }
+            var temporaryTypeIds = TemplateCollisionResolver.RenameConflictingTemplateTypes(
+                _transactionService, newDoc, category, sourceTypeNames);
+
             ICollection<ElementId> copiedTypeIds = [];
             _transactionService.RunInTransaction(newDoc, "Copy system types", doc =>
             {
@@ -206,6 +223,9 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 copiedTypeIds = ElementTransformUtils.CopyElements(
                     sourceDoc, sourceTypeIds, doc, null, options);
             });
+
+            TemplateCollisionResolver.DeleteTemporaryTypes(
+                _transactionService, newDoc, temporaryTypeIds);
 
             // Размещение инстансов в новом проекте (только для линейных категорий).
             Dictionary<ElementId, List<ElementId>> placedInstancesByType = [];
