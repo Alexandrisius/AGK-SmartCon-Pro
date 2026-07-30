@@ -20,6 +20,9 @@ internal sealed class StaleDetector : IStaleDetector
     private readonly IFamilyManagerAwaitableEvent _awaitable;
     private readonly IRevitContext _revitContext;
     private readonly IClock _clock;
+    private readonly ISystemTypeFinder _systemTypeFinder;
+    private readonly ISystemTypeVersionStore _systemTypeStore;
+    private readonly IFamilyTypeRepository _typeRepository;
     private FamilyStaleSnapshot? _cachedSnapshot;
     private readonly object _cacheLock = new();
 
@@ -28,7 +31,10 @@ internal sealed class StaleDetector : IStaleDetector
         IFamilyCatalogProvider catalog,
         IFamilyManagerAwaitableEvent awaitable,
         IRevitContext revitContext,
-        IClock clock)
+        IClock clock,
+        ISystemTypeFinder systemTypeFinder,
+        ISystemTypeVersionStore systemTypeStore,
+        IFamilyTypeRepository typeRepository)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(store);
@@ -36,18 +42,27 @@ internal sealed class StaleDetector : IStaleDetector
         ArgumentNullException.ThrowIfNull(awaitable);
         ArgumentNullException.ThrowIfNull(revitContext);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(systemTypeFinder);
+        ArgumentNullException.ThrowIfNull(systemTypeStore);
+        ArgumentNullException.ThrowIfNull(typeRepository);
 #else
         if (store is null) throw new ArgumentNullException(nameof(store));
         if (catalog is null) throw new ArgumentNullException(nameof(catalog));
         if (awaitable is null) throw new ArgumentNullException(nameof(awaitable));
         if (revitContext is null) throw new ArgumentNullException(nameof(revitContext));
         if (clock is null) throw new ArgumentNullException(nameof(clock));
+        if (systemTypeFinder is null) throw new ArgumentNullException(nameof(systemTypeFinder));
+        if (systemTypeStore is null) throw new ArgumentNullException(nameof(systemTypeStore));
+        if (typeRepository is null) throw new ArgumentNullException(nameof(typeRepository));
 #endif
         _store = store;
         _catalog = catalog;
         _awaitable = awaitable;
         _revitContext = revitContext;
         _clock = clock;
+        _systemTypeFinder = systemTypeFinder;
+        _systemTypeStore = systemTypeStore;
+        _typeRepository = typeRepository;
     }
 
     public async Task<StaleCheckResult> CheckFamilyAsync(
@@ -103,15 +118,7 @@ internal sealed class StaleDetector : IStaleDetector
 
         // Single-family check updates the snapshot entry for this family only,
         // leaving all other entries intact.
-        lock (_cacheLock)
-        {
-            var before = _cachedSnapshot?.Results.Count ?? 0;
-            _cachedSnapshot = StaleSnapshotLogic.MergeInto(_cachedSnapshot, new[] { result }, _clock.UtcNow);
-            SmartConLogger.Info(
-                $"CheckFamily: upserted entry for '{result.CatalogItemId}' " +
-                $"(IsStale={result.IsStale}). " +
-                $"Snapshot size: {before} -> {_cachedSnapshot.Results.Count}.");
-        }
+        MergeSingleResult(result);
         return result;
     }
 
@@ -167,6 +174,55 @@ internal sealed class StaleDetector : IStaleDetector
         ct.ThrowIfCancellationRequested();
         if (catalogItems.Count == 0) return Array.Empty<StaleCheckResult>();
 
+        // Issue #104: system catalog items are matched by (type name,
+        // category) against ElementType markers — a completely different
+        // mechanism from loadable families (Family element by name).
+        var loadableItems = catalogItems
+            .Where(i => i.FamilySource != "system")
+            .ToList();
+        var systemItems = catalogItems
+            .Where(i => i.FamilySource == "system")
+            .ToList();
+
+        var results = new List<StaleCheckResult>();
+        var targetRevit = ResolveTargetRevit();
+
+        if (loadableItems.Count > 0)
+        {
+            var loadableResults = await CheckLoadableItemsAsync(loadableItems, doc, targetRevit, ct)
+                .ConfigureAwait(true);
+            results.AddRange(loadableResults);
+        }
+
+        if (systemItems.Count > 0)
+        {
+            var systemResults = await CheckSystemItemsAsync(systemItems, doc, targetRevit, ct)
+                .ConfigureAwait(true);
+            results.AddRange(systemResults);
+        }
+
+        if (results.Count == 0) return Array.Empty<StaleCheckResult>();
+
+        // 6) Merge into session cache: existing entries for OTHER families are preserved.
+        lock (_cacheLock)
+        {
+            var before = _cachedSnapshot?.Results.Count ?? 0;
+            _cachedSnapshot = StaleSnapshotLogic.MergeInto(_cachedSnapshot, results, _clock.UtcNow);
+            var staleNow = results.Count(r => r.IsStale);
+            SmartConLogger.Info(
+                $"CheckCategory: merged {results.Count} results ({staleNow} stale). " +
+                $"Snapshot size: {before} -> {_cachedSnapshot.Results.Count}.");
+        }
+
+        return results;
+    }
+
+    private async Task<IReadOnlyList<StaleCheckResult>> CheckLoadableItemsAsync(
+        IReadOnlyList<FamilyCatalogItem> loadableItems,
+        Document doc,
+        int targetRevit,
+        CancellationToken ct)
+    {
         // 2) Collect Family element ids from the active document on the Revit thread.
         // Two families with the same Name are rare but possible (e.g. two
         // loadable variants both loaded). We use a list, log a warning, and
@@ -214,12 +270,12 @@ internal sealed class StaleDetector : IStaleDetector
         // 3) Match catalog items to Revit Family elements by name (left join).
         var matched = new List<(FamilyCatalogItem Item, string FamilyName, ElementId Id)>();
         var matchCounter = new HotLoopCounter(sampleEvery: 32);
-        foreach (var item in catalogItems)
+        foreach (var item in loadableItems)
         {
             if (matchCounter.ShouldLog())
             {
                 SmartConLogger.Debug(
-                    $"Matching {matchCounter.Count}/{catalogItems.Count}: '{item.Name}'.");
+                    $"Matching {matchCounter.Count}/{loadableItems.Count}: '{item.Name}'.");
             }
             if (familyIds.TryGetValue(item.Name, out var hits) && hits.Count > 0)
             {
@@ -237,7 +293,6 @@ internal sealed class StaleDetector : IStaleDetector
 
         // 5) Compute StaleReason for each.
         var results = new List<StaleCheckResult>(matched.Count);
-        var targetRevit = ResolveTargetRevit();
         var reasonCounter = new HotLoopCounter(sampleEvery: 32);
         foreach (var (item, familyName, id) in matched)
         {
@@ -266,18 +321,206 @@ internal sealed class StaleDetector : IStaleDetector
             }
         }
 
-        // 6) Merge into session cache: existing entries for OTHER families are preserved.
+        return results;
+    }
+
+    /// <summary>
+    /// System-family branch of <see cref="CheckCategoryAsync"/> (Issue #104):
+    /// matches each system catalog item's types (from <c>family_types</c>)
+    /// against project <c>ElementType</c> elements by (type name, category
+    /// ordinal) and aggregates one verdict per item.
+    /// </summary>
+    private async Task<IReadOnlyList<StaleCheckResult>> CheckSystemItemsAsync(
+        IReadOnlyList<FamilyCatalogItem> systemItems,
+        Document doc,
+        int targetRevit,
+        CancellationToken ct)
+    {
+        var typeNamesByItem = await _typeRepository
+            .GetAllTypesBatchAsync(systemItems.Select(i => i.Id), ct)
+            .ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+
+        var categoryOrdinals = systemItems
+            .Select(i => i.RevitCategoryId)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+        if (categoryOrdinals.Count == 0) return Array.Empty<StaleCheckResult>();
+
+        var projectTypes = await _awaitable.RaiseAsync(
+            _ => _systemTypeFinder.CollectTypes(doc, categoryOrdinals),
+            ct).ConfigureAwait(true);
+        ct.ThrowIfCancellationRequested();
+
+        var typesByCategoryAndName = new Dictionary<(int Category, string Name), ElementId>();
+        foreach (var location in projectTypes)
+        {
+            // Names are matched case-insensitively (same semantics as
+            // ISystemTypeFinder.FindTypeByName) — the tuple key carries the
+            // upper-invariant form so OrdinalIgnoreCase applies to lookups.
+            // TryAdd is unavailable on net48 — indexer assignment is
+            // equivalent here (duplicate keys impossible per category).
+            typesByCategoryAndName[
+                (location.CategoryOrdinal, location.TypeName.ToUpperInvariant())] = location.TypeId;
+        }
+
+        var matched = new List<(FamilyCatalogItem Item, List<ElementId> TypeIds)>();
+        foreach (var item in systemItems)
+        {
+            if (!item.RevitCategoryId.HasValue) continue;
+            if (!typeNamesByItem.TryGetValue(item.Id, out var descriptors) || descriptors.Count == 0)
+                continue;
+
+            var ids = new List<ElementId>();
+            foreach (var descriptor in descriptors)
+            {
+                if (typesByCategoryAndName.TryGetValue(
+                        (item.RevitCategoryId.Value, descriptor.Name.ToUpperInvariant()), out var typeId))
+                {
+                    ids.Add(typeId);
+                }
+            }
+            if (ids.Count > 0)
+            {
+                matched.Add((item, ids));
+            }
+        }
+
+        if (matched.Count == 0) return Array.Empty<StaleCheckResult>();
+
+        var allIds = matched.SelectMany(m => m.TypeIds).Distinct().ToList();
+        var markers = await _awaitable.RaiseAsync(
+            _ => _systemTypeStore.ReadManyFromTypes(doc, allIds),
+            ct).ConfigureAwait(true);
+
+        var results = new List<StaleCheckResult>(matched.Count);
+        foreach (var (item, typeIds) in matched)
+        {
+            var itemMarkers = typeIds
+                .Select(id => markers.TryGetValue(id, out var m) ? m : null)
+                .ToList();
+            var (isStale, reason, loadedLabel) = AggregateSystemTypeMarkers(item, itemMarkers, targetRevit);
+            results.Add(new StaleCheckResult(
+                item.Id,
+                item.Name,
+                item.CurrentVersionLabel,
+                loadedLabel,
+                isStale,
+                reason));
+        }
+        return results;
+    }
+
+    public async Task<StaleCheckResult?> CheckSystemFamilyAsync(
+        string catalogItemId,
+        string displayName,
+        Document doc,
+        CancellationToken ct)
+    {
+        using var _scope = SmartConLogger.BeginScope(
+            "StaleDetection",
+            ("Method", nameof(CheckSystemFamilyAsync)),
+            ("CatalogItemId", catalogItemId));
+
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(doc);
+#else
+        if (doc is null) throw new ArgumentNullException(nameof(doc));
+#endif
+
+        var catalogItem = await _catalog.GetItemAsync(catalogItemId, ct).ConfigureAwait(false);
+        if (catalogItem is null)
+        {
+            var notInCatalog = new StaleCheckResult(
+                catalogItemId, displayName, null, null, true, StaleReason.NotInCatalog);
+            MergeSingleResult(notInCatalog);
+            return notInCatalog;
+        }
+
+        var descriptors = await _typeRepository
+            .GetTypesForItemAsync(catalogItemId, ct)
+            .ConfigureAwait(false);
+        var typeNames = descriptors.Select(d => d.Name).ToList();
+        if (typeNames.Count == 0)
+        {
+            SmartConLogger.Info(
+                $"CheckSystemFamily: '{displayName}' has no types in the catalog. " +
+                "[Action: skipped — reimport the mini-project to rebuild the type list]");
+            return null;
+        }
+
+        var categoryOrdinal = catalogItem.RevitCategoryId;
+        var foundIds = await _awaitable.RaiseAsync(
+            _ =>
+            {
+                var ids = new List<ElementId>();
+                foreach (var name in typeNames)
+                {
+                    var id = _systemTypeFinder.FindTypeByName(doc, name, categoryOrdinal);
+                    if (id is not null) ids.Add(id);
+                }
+                return ids;
+            }, ct).ConfigureAwait(true);
+
+        if (foundIds.Count == 0)
+        {
+            SmartConLogger.Info(
+                $"CheckSystemFamily: none of {typeNames.Count} types of '{displayName}' " +
+                "are present in the project. [Action: skipped — load the types first]");
+            return null;
+        }
+
+        var markers = await _awaitable.RaiseAsync(
+            _ => _systemTypeStore.ReadManyFromTypes(doc, foundIds),
+            ct).ConfigureAwait(true);
+
+        var itemMarkers = foundIds
+            .Select(id => markers.TryGetValue(id, out var m) ? m : null)
+            .ToList();
+        var targetRevit = ResolveTargetRevit();
+        var (isStale, reason, loadedLabel) = AggregateSystemTypeMarkers(catalogItem, itemMarkers, targetRevit);
+
+        var result = new StaleCheckResult(
+            catalogItemId,
+            displayName,
+            catalogItem.CurrentVersionLabel,
+            loadedLabel,
+            isStale,
+            reason);
+        MergeSingleResult(result);
+        SmartConLogger.Info(
+            $"CheckSystemFamily: '{displayName}' IsStale={isStale} Reason={reason} " +
+            $"({foundIds.Count}/{typeNames.Count} types found in project).");
+        return result;
+    }
+
+    /// <summary>
+    /// Aggregates per-type markers of one system catalog item into a single
+    /// verdict. Thin wrapper over the pure <see cref="SystemTypeStaleLogic"/>
+    /// (Core) so the aggregation is unit-testable without Revit.
+    /// </summary>
+    internal static (bool IsStale, StaleReason Reason, string? LoadedLabel) AggregateSystemTypeMarkers(
+        FamilyCatalogItem item,
+        IReadOnlyList<FamilyVersion?> markers,
+        int targetRevit)
+    {
+        return SystemTypeStaleLogic.Aggregate(
+            markers, item.Id, item.CurrentVersionLabel, targetRevit);
+    }
+
+    private void MergeSingleResult(StaleCheckResult result)
+    {
         lock (_cacheLock)
         {
             var before = _cachedSnapshot?.Results.Count ?? 0;
-            _cachedSnapshot = StaleSnapshotLogic.MergeInto(_cachedSnapshot, results, _clock.UtcNow);
-            var staleNow = results.Count(r => r.IsStale);
+            _cachedSnapshot = StaleSnapshotLogic.MergeInto(_cachedSnapshot, new[] { result }, _clock.UtcNow);
             SmartConLogger.Info(
-                $"CheckCategory: merged {results.Count} results ({staleNow} stale). " +
+                $"MergeSingleResult: upserted entry for '{result.CatalogItemId}' " +
+                $"(IsStale={result.IsStale}). " +
                 $"Snapshot size: {before} -> {_cachedSnapshot.Results.Count}.");
         }
-
-        return results;
     }
 
     public FamilyStaleSnapshot? GetCachedSnapshot()
@@ -355,29 +598,21 @@ internal sealed class StaleDetector : IStaleDetector
 
     private static StaleReason ComputeReason(FamilyVersion loaded, FamilyCatalogItem item, int targetRevit)
     {
+        var reason = SystemTypeStaleLogic.ComputeReason(
+            loaded, item.Id, item.CurrentVersionLabel, targetRevit);
+
         // Defensive: a marker for a different catalog ID would yield a false
         // "not stale" verdict. This is rare (would require manually-written ES
         // data with the wrong GUID) but cheap to guard.
-        if (!string.IsNullOrEmpty(loaded.CatalogItemId) &&
+        if (reason == StaleReason.VersionMismatch &&
+            !string.IsNullOrEmpty(loaded.CatalogItemId) &&
             !string.Equals(loaded.CatalogItemId, item.Id, StringComparison.Ordinal))
         {
             SmartConLogger.Warn(
                 $"ComputeReason: ES marker CatalogItemId='{loaded.CatalogItemId}' " +
                 $"does not match catalog id '{item.Id}'. " +
                 "[Action: ES data is corrupted for this family; treat as stale]");
-            return StaleReason.VersionMismatch;
         }
-
-        if (!string.IsNullOrEmpty(item.CurrentVersionLabel) &&
-            !string.Equals(loaded.VersionLabel, item.CurrentVersionLabel, StringComparison.Ordinal))
-        {
-            return StaleReason.VersionMismatch;
-        }
-        if (loaded.SourceRevitVersion > 0 && targetRevit > 0 &&
-            loaded.SourceRevitVersion != targetRevit)
-        {
-            return StaleReason.RevitVersionMismatch;
-        }
-        return StaleReason.None;
+        return reason;
     }
 }

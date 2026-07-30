@@ -279,12 +279,19 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyGeometryPipeline, SmartCon.FamilyManager.Services.Geometry.FamilyGeometryPipeline>();
 
         // --- FamilyManager Stale Detection (Phase 24 / ADR-030) ---
-        services.AddSingleton<IFamilyVersionStore, RevitFamilyVersionStore>();
+        services.AddSingleton<RevitFamilyVersionStore>();
+        services.AddSingleton<IFamilyVersionStore>(sp => sp.GetRequiredService<RevitFamilyVersionStore>());
         services.AddSingleton<IFamilyVersionWriter, FamilyVersionWriter>();
         services.AddSingleton<IStaleDetector, StaleDetector>();
         services.AddSingleton<IStaleFamilyUpdater, StaleFamilyUpdater>();
         services.AddSingleton<IStaleCategoryAggregator, StaleCategoryAggregator>();
         services.AddSingleton<IFamilyFinder, RevitFamilyFinder>();
+
+        // --- System family sync (Issue #104) ---
+        services.AddSingleton<ISystemTypeVersionStore>(sp => sp.GetRequiredService<RevitFamilyVersionStore>());
+        services.AddSingleton<ISystemTypeFinder, RevitSystemTypeFinder>();
+        services.AddSingleton<ISystemTypeSyncService, SystemTypeSyncService>();
+        services.AddSingleton<ISystemTypeSyncOrchestrator, SystemFamilySyncOrchestrator>();
 
         services.AddSingleton<FamilyManagerMainViewModel>();
         services.AddSingleton<FamilyManagerPaneControl>();

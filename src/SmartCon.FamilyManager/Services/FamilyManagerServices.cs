@@ -46,6 +46,13 @@ public sealed record FamilyManagerServices(
     IFamilyAssetService AssetService,
     IFamilyMetadataExtractionService MetadataService,
     ISystemFamilyPlacementService SystemFamilyPlacementService,
+    /// <summary>
+    /// Issue #104: synchronizes system types in the project with the catalog
+    /// mini-project (create-or-update + ES marker). Backs "Загрузить в
+    /// проект" for system families, the placement fast-path check and the
+    /// system branch of stale update.
+    /// </summary>
+    ISystemTypeSyncOrchestrator SystemSyncOrchestrator,
     ISystemFamilyRevitOperations SystemFamilyRevitOps,
     ISystemFamilyIsolationProjectService SystemFamilyIsolationProject,
     ISystemFamilyAttributeExtractor SystemFamilyAttributeExtractor,

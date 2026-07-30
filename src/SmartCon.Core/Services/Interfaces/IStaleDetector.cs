@@ -57,6 +57,22 @@ public interface IStaleDetector
         CancellationToken ct);
 
     /// <summary>
+    /// Check a single system family (mini-project catalog item) against the
+    /// catalog (Issue #104). A system item owns N types; the check locates
+    /// the item's types in the project by (type name, category), reads their
+    /// ES markers and aggregates one verdict: the item is stale when ANY of
+    /// its project-loaded types has no marker or a mismatched marker.
+    /// Returns <c>null</c> when none of the item's types exist in the project
+    /// ("not loaded" — same UX as an unloaded loadable family).
+    /// Updates the session snapshot for this item.
+    /// </summary>
+    Task<StaleCheckResult?> CheckSystemFamilyAsync(
+        string catalogItemId,
+        string displayName,
+        Document doc,
+        CancellationToken ct);
+
+    /// <summary>
     /// Returns the current session-scoped snapshot, or <c>null</c> if no check has run
     /// in this session (or the cache was invalidated).
     /// </summary>

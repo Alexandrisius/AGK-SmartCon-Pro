@@ -3,25 +3,35 @@ using Autodesk.Revit.UI;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
-using SmartCon.Core.Threading;
 using SmartCon.Revit.Context;
 
 namespace SmartCon.Revit.FamilyManager;
 
+/// <summary>
+/// Placement entry point for system types (Issue #104). Since the sync
+/// feature, placement never copies elements between documents: an up-to-date
+/// type (ES marker matches the catalog) starts placement immediately;
+/// otherwise the type is synchronized first via
+/// <see cref="ISystemTypeSyncOrchestrator"/> and placement starts with the
+/// already-updated type.
+/// </summary>
 public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
 {
     private readonly IRevitUIContext _revitUIContext;
-    private readonly IFamilyFileResolver _fileResolver;
-    private readonly ITransactionService _transactionService;
+    private readonly ISystemTypeSyncOrchestrator _syncOrchestrator;
+    private readonly ISystemTypeFinder _typeFinder;
+    private readonly IFamilyCatalogProvider _catalog;
 
     public SystemFamilyPlacementService(
         IRevitUIContext revitUIContext,
-        IFamilyFileResolver fileResolver,
-        ITransactionService transactionService)
+        ISystemTypeSyncOrchestrator syncOrchestrator,
+        ISystemTypeFinder typeFinder,
+        IFamilyCatalogProvider catalog)
     {
         _revitUIContext = revitUIContext;
-        _fileResolver = fileResolver;
-        _transactionService = transactionService;
+        _syncOrchestrator = syncOrchestrator;
+        _typeFinder = typeFinder;
+        _catalog = catalog;
     }
 
     public void LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion)
@@ -35,104 +45,58 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             return;
         }
 
-        var resolved = AsyncBridge.RunSync(() => _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevitVersion));
-
-        if (string.IsNullOrEmpty(resolved.AbsolutePath))
+        if (_syncOrchestrator.IsProjectTypeCurrent(activeDoc, catalogItemId, typeName, targetRevitVersion))
         {
-            SmartConLogger.Error("SystemFamilyPlacement.ABORT: No file resolved");
+            SmartConLogger.Debug(
+                $"SystemFamilyPlacement: type '{typeName}' is up-to-date (marker match), activating placement.");
+            ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId);
             return;
         }
 
-        Document? sourceDoc = null;
-        try
+        var result = _syncOrchestrator.SyncTypes(
+            activeDoc, catalogItemId, new[] { typeName }, targetRevitVersion);
+
+        var typeResult = result.TypeResults.Count > 0 ? result.TypeResults[0] : null;
+        if (typeResult is null || !typeResult.IsSuccess)
         {
-            sourceDoc = uiApp.Application.OpenDocumentFile(resolved.AbsolutePath);
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"SystemFamilyPlacement.OpenDocumentFile failed: {ex.Message}");
+            SmartConLogger.Error(
+                $"SystemFamilyPlacement: sync failed for '{typeName}': " +
+                $"{typeResult?.ErrorMessage ?? "no result"}");
             return;
         }
 
-        try
-        {
-            var sourceType = FindTypeByName(sourceDoc, typeName);
-            if (sourceType is null)
-            {
-                SmartConLogger.Error($"SystemFamilyPlacement: Type '{typeName}' not found in source doc");
-                return;
-            }
-
-            var existingType = FindTypeByName(activeDoc, sourceType.Name, sourceType.Category?.Id);
-            if (existingType is not null)
-            {
-                CloseAndRelease(sourceDoc);
-                sourceDoc = null;
-                ActivatePlacement(uiApp, existingType);
-                return;
-            }
-
-            _transactionService.RunInTransaction("Copy system type", doc =>
-            {
-                var options = new CopyPasteOptions();
-                options.SetDuplicateTypeNamesHandler(new SkipDuplicateTypesHandler());
-
-                ElementTransformUtils.CopyElements(
-                    sourceDoc, new List<ElementId> { sourceType.Id }, activeDoc, null, options);
-            });
-
-            var copiedType = FindTypeByName(activeDoc, sourceType.Name, sourceType.Category?.Id);
-
-            CloseAndRelease(sourceDoc);
-            sourceDoc = null;
-
-            if (copiedType is not null)
-            {
-                ActivatePlacement(uiApp, copiedType);
-            }
-        }
-        finally
-        {
-            if (sourceDoc is not null)
-            {
-                CloseAndRelease(sourceDoc);
-            }
-        }
+        ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId);
     }
 
-    private static void CloseAndRelease(Document doc)
+    private void ActivatePlacementByName(
+        UIApplication uiApp, Document activeDoc, string typeName, string catalogItemId)
     {
-        try { doc.Close(false); } catch { }
-        // REVIT-237190: best-effort synchronous COM cleanup after Close —
-        // throws ArgumentException on Revit versions where Document is a
-        // managed wrapper, which is fine to ignore.
-        try { System.Runtime.InteropServices.Marshal.ReleaseComObject(doc); } catch { }
-    }
+        var categoryOrdinal = ResolveCategoryOrdinal(catalogItemId);
+        var typeId = _typeFinder.FindTypeByName(activeDoc, typeName, categoryOrdinal);
+        var elementType = typeId is not null ? activeDoc.GetElement(typeId) as ElementType : null;
+        if (elementType is null)
+        {
+            SmartConLogger.Error(
+                $"SystemFamilyPlacement: type '{typeName}' not found in the active project after sync");
+            return;
+        }
 
-    private static void ActivatePlacement(UIApplication uiApp, ElementType elementType)
-    {
         uiApp.ActiveUIDocument?.PostRequestForElementTypePlacement(elementType);
     }
 
-    private static ElementType? FindTypeByName(Document doc, string name, ElementId? categoryId = null)
+    private int? ResolveCategoryOrdinal(string catalogItemId)
     {
-        var collector = new FilteredElementCollector(doc).OfClass(typeof(ElementType));
-
-        if (categoryId is not null && categoryId != ElementId.InvalidElementId)
+        try
         {
-            try { collector = collector.OfCategoryId(categoryId); }
-            catch { }
+            var item = Core.Threading.AsyncBridge.RunSync(
+                () => _catalog.GetItemAsync(catalogItemId, CancellationToken.None));
+            return item?.RevitCategoryId;
         }
-
-        return collector.Cast<ElementType>()
-            .FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private sealed class SkipDuplicateTypesHandler : IDuplicateTypeNamesHandler
-    {
-        public DuplicateTypeAction OnDuplicateTypeNamesFound(DuplicateTypeNamesHandlerArgs args)
+        catch (Exception ex)
         {
-            return DuplicateTypeAction.UseDestinationTypes;
+            SmartConLogger.Debug(
+                $"SystemFamilyPlacement: category resolve failed for '{catalogItemId}': {ex.Message}");
+            return null;
         }
     }
 }

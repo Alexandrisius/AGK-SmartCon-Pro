@@ -1071,6 +1071,23 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         }
     }
 
+    public SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(projectDoc);
+        ArgumentNullException.ThrowIfNull(typeId);
+#else
+        if (projectDoc is null) throw new ArgumentNullException(nameof(projectDoc));
+        if (typeId is null) throw new ArgumentNullException(nameof(typeId));
+#endif
+
+        var elementType = projectDoc.GetElement(typeId) as ElementType
+            ?? throw new InvalidOperationException(
+                $"Element {typeId} is not an ElementType in the given document.");
+
+        return ExtractSystemType(elementType, projectDoc);
+    }
+
     private static SystemTypeSnapshot ExtractSystemType(
         ElementType elementType, Document projectDoc)
     {

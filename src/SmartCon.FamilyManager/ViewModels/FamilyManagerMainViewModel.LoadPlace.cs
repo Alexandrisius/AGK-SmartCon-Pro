@@ -131,6 +131,16 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task ExecuteLoadOrUpdateAsync(bool overwriteParameterValues)
     {
         if (SelectedItem is null) return;
+
+        // Issue #104: system families are synchronized from the mini-project
+        // (no .rfa load). The gate on pending DB updates is not applied —
+        // parity with system placement, which only reads the catalog.
+        if (SelectedTreeNode is FamilyLeafNodeViewModel systemLeaf && systemLeaf.FamilySource == "system")
+        {
+            await ExecuteLoadSystemFamilyAsync(systemLeaf).ConfigureAwait(true);
+            return;
+        }
+
         if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
 
         var selectedId = SelectedItem.Id;
@@ -336,6 +346,124 @@ public sealed partial class FamilyManagerMainViewModel
                     ex.Message);
             }
         });
+    }
+
+    /// <summary>
+    /// "Загрузить в проект" for a system catalog item (Issue #104):
+    /// synchronizes ALL types of the mini-project into the project without
+    /// starting placement. One source-document open per call, one
+    /// transaction per type.
+    /// </summary>
+    private async Task ExecuteLoadSystemFamilyAsync(FamilyLeafNodeViewModel leaf)
+    {
+        var typeNames = (await _typeRepository
+                .GetTypesForItemAsync(leaf.CatalogItemId, CancellationToken.None)
+                .ConfigureAwait(true))
+            .Select(d => d.Name)
+            .ToList();
+
+        if (typeNames.Count == 0)
+        {
+            StatusMessage = string.Format(
+                LocalizationService.GetString("FM_SystemTypeNoTypes")
+                    ?? "\"{0}\": no types in the catalog — reimport the mini-project",
+                leaf.DisplayName);
+            return;
+        }
+
+        SystemFamilySyncResult? result = null;
+        await _awaitableEvent.RaiseAsync(_ =>
+        {
+            try
+            {
+                result = _systemSyncOrchestrator.SyncTypes(
+                    _revitContext.GetDocument(),
+                    leaf.CatalogItemId,
+                    typeNames,
+                    CurrentRevitVersion);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                    ex.Message);
+            }
+        }).ConfigureAwait(true);
+
+        if (result is null) return;
+
+        StatusMessage = result.FailedCount == 0
+            ? string.Format(
+                LocalizationService.GetString("FM_SystemTypesSynced")
+                    ?? "\"{0}\": synchronized {1} of {2} types",
+                leaf.DisplayName, result.SuccessCount, result.TypeResults.Count)
+            : string.Format(
+                LocalizationService.GetString("FM_SystemTypesSyncedWithErrors")
+                    ?? "\"{0}\": synchronized {1} of {2} types, errors: {3}",
+                leaf.DisplayName, result.SuccessCount, result.TypeResults.Count, result.FailedCount);
+
+        if (result.AllSucceeded)
+        {
+            // Prune only on full success: a partially synchronized item still
+            // has stale types and must keep its badge until the next Check.
+            _staleDetector.MarkUpdated([leaf.CatalogItemId]);
+            InvalidateLoadedFamilyNamesCache();
+            await LoadTreeAsync().ConfigureAwait(true);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadSystemTypeToProject))]
+    private async Task LoadSystemTypeToProjectAsync(FamilyTypeNodeViewModel? typeNode)
+    {
+        if (typeNode is null) return;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return;
+
+        await _awaitableEvent.RaiseAsync(_ =>
+        {
+            try
+            {
+                var result = _systemSyncOrchestrator.SyncTypes(
+                    _revitContext.GetDocument(),
+                    leaf.CatalogItemId,
+                    new[] { typeNode.TypeName },
+                    CurrentRevitVersion);
+
+                var typeResult = result.TypeResults.Count > 0 ? result.TypeResults[0] : null;
+                StatusMessage = typeResult is not null && typeResult.IsSuccess
+                    ? string.Format(
+                        LocalizationService.GetString("FM_SystemTypesSynced")
+                            ?? "\"{0}\": synchronized {1} of {2} types",
+                        typeNode.TypeName, result.SuccessCount, result.TypeResults.Count)
+                    : string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                        typeResult?.ErrorMessage ?? typeNode.TypeName);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
+                    ex.Message);
+            }
+        }).ConfigureAwait(true);
+
+        // The stale snapshot is intentionally NOT pruned here: a single-type
+        // load leaves the item's other types untouched, so the item-level
+        // verdict can only be re-evaluated by the next "Проверить".
+    }
+
+    private bool CanLoadSystemTypeToProject(FamilyTypeNodeViewModel? typeNode)
+    {
+        if (typeNode is null || !typeNode.IsSystemType) return false;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return false;
+
+        return leaf.ContentStatus == ContentStatus.Active
+            && !leaf.IsRevitIncompatible
+            && _accessControl.CanLoadToProject
+            && _activeBaseCompatibleWithCurrentDoc;
     }
 
     private async Task PlaceSystemTypeAsync(string catalogItemId, string typeName, int targetRevit)

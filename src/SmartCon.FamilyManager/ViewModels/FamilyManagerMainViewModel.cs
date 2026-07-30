@@ -48,6 +48,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyAssetService _assetService;
     private readonly IFamilyMetadataExtractionService _metadataService;
     private readonly ISystemFamilyPlacementService _systemFamilyPlacementService;
+    private readonly ISystemTypeSyncOrchestrator _systemSyncOrchestrator;
     private readonly ISystemFamilyRevitOperations _systemFamilyRevitOps;
     private readonly ISystemFamilyIsolationProjectService _systemFamilyIsolationProject;
     private readonly ISystemFamilyAttributeExtractor _systemFamilyAttributeExtractor;
@@ -208,6 +209,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _assetService = services.AssetService;
         _metadataService = services.MetadataService;
         _systemFamilyPlacementService = services.SystemFamilyPlacementService;
+        _systemSyncOrchestrator = services.SystemSyncOrchestrator;
         _systemFamilyRevitOps = services.SystemFamilyRevitOps;
         _systemFamilyIsolationProject = services.SystemFamilyIsolationProject;
         _systemFamilyAttributeExtractor = services.SystemFamilyAttributeExtractor;

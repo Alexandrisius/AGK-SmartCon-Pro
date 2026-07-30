@@ -1,0 +1,194 @@
+using Autodesk.Revit.DB;
+using SmartCon.Core.Logging;
+using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Threading;
+
+namespace SmartCon.Revit.FamilyManager;
+
+/// <summary>
+/// Revit implementation of <see cref="ISystemTypeSyncOrchestrator"/>
+/// (Issue #104). Owns the mini-project lifetime: resolves the managed file,
+/// opens it once per batch, closes it in <c>finally</c>. All methods run on
+/// the Revit main thread (I-01).
+/// </summary>
+public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
+{
+    private readonly IFamilyFileResolver _fileResolver;
+    private readonly IFamilyCatalogProvider _catalog;
+    private readonly ISystemTypeSyncService _syncService;
+    private readonly ISystemTypeFinder _typeFinder;
+    private readonly ISystemTypeVersionStore _versionStore;
+
+    public SystemFamilySyncOrchestrator(
+        IFamilyFileResolver fileResolver,
+        IFamilyCatalogProvider catalog,
+        ISystemTypeSyncService syncService,
+        ISystemTypeFinder typeFinder,
+        ISystemTypeVersionStore versionStore)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(fileResolver);
+        ArgumentNullException.ThrowIfNull(catalog);
+        ArgumentNullException.ThrowIfNull(syncService);
+        ArgumentNullException.ThrowIfNull(typeFinder);
+        ArgumentNullException.ThrowIfNull(versionStore);
+#else
+        if (fileResolver is null) throw new ArgumentNullException(nameof(fileResolver));
+        if (catalog is null) throw new ArgumentNullException(nameof(catalog));
+        if (syncService is null) throw new ArgumentNullException(nameof(syncService));
+        if (typeFinder is null) throw new ArgumentNullException(nameof(typeFinder));
+        if (versionStore is null) throw new ArgumentNullException(nameof(versionStore));
+#endif
+        _fileResolver = fileResolver;
+        _catalog = catalog;
+        _syncService = syncService;
+        _typeFinder = typeFinder;
+        _versionStore = versionStore;
+    }
+
+    public bool IsProjectTypeCurrent(
+        Document activeDoc,
+        string catalogItemId,
+        string typeName,
+        int targetRevitVersion)
+    {
+        if (activeDoc is null) return false;
+
+        var resolved = AsyncBridge.RunSync(
+            () => _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevitVersion));
+        if (resolved is null || string.IsNullOrEmpty(resolved.AbsolutePath))
+            return false;
+
+        var categoryOrdinal = ResolveCategoryOrdinal(catalogItemId);
+        var typeId = _typeFinder.FindTypeByName(activeDoc, typeName, categoryOrdinal);
+        if (typeId is null) return false;
+
+        var marker = _versionStore.ReadFromType(activeDoc, typeId);
+        if (marker is null) return false;
+
+        // Same verdict logic as the stale detector (SystemTypeStaleLogic):
+        // placement re-syncs exactly when a Check would mark the type stale.
+        return SystemTypeStaleLogic.ComputeReason(
+            marker, catalogItemId, resolved.VersionLabel, targetRevitVersion) == StaleReason.None;
+    }
+
+    public SystemFamilySyncResult SyncTypes(
+        Document activeDoc,
+        string catalogItemId,
+        IReadOnlyList<string> typeNames,
+        int targetRevitVersion)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(activeDoc);
+        ArgumentNullException.ThrowIfNull(catalogItemId);
+        ArgumentNullException.ThrowIfNull(typeNames);
+#else
+        if (activeDoc is null) throw new ArgumentNullException(nameof(activeDoc));
+        if (catalogItemId is null) throw new ArgumentNullException(nameof(catalogItemId));
+        if (typeNames is null) throw new ArgumentNullException(nameof(typeNames));
+#endif
+
+        using var _scope = SmartConLogger.BeginScope(
+            "SystemSync",
+            ("Method", nameof(SyncTypes)),
+            ("CatalogItemId", catalogItemId),
+            ("Count", typeNames.Count));
+
+        if (typeNames.Count == 0)
+        {
+            return new SystemFamilySyncResult(catalogItemId, Array.Empty<SystemTypeSyncResult>());
+        }
+
+        var resolved = AsyncBridge.RunSync(
+            () => _fileResolver.ResolveForLoadAsync(catalogItemId, targetRevitVersion));
+        if (resolved is null || string.IsNullOrEmpty(resolved.AbsolutePath))
+        {
+            SmartConLogger.Warn(
+                $"SyncTypes[{catalogItemId}]: no managed file resolved for Revit {targetRevitVersion}. " +
+                "[Action: import a version for this Revit into the catalog; types were not synchronized]");
+            return FailAll(catalogItemId, typeNames, "No managed file resolved for the current Revit version");
+        }
+
+        Document? sourceDoc = null;
+        try
+        {
+            sourceDoc = activeDoc.Application.OpenDocumentFile(resolved.AbsolutePath);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error(
+                $"SyncTypes[{catalogItemId}]: OpenDocumentFile failed: {ex.Message}");
+            return FailAll(catalogItemId, typeNames, $"OpenDocumentFile failed: {ex.Message}");
+        }
+
+        try
+        {
+            var results = new List<SystemTypeSyncResult>(typeNames.Count);
+            foreach (var typeName in typeNames)
+            {
+                try
+                {
+                    results.Add(_syncService.SyncTypeFromSource(
+                        sourceDoc,
+                        activeDoc,
+                        typeName,
+                        catalogItemId,
+                        resolved.VersionLabel ?? string.Empty,
+                        targetRevitVersion));
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"SyncTypes[{catalogItemId}]: type '{typeName}' failed: {ex.Message}. " +
+                        "[Action: type skipped, batch continues]");
+                    results.Add(new SystemTypeSyncResult(
+                        typeName, SystemTypeSyncStatus.Failed, 0, 0, ex.Message));
+                }
+            }
+
+            var succeeded = results.Count(r => r.IsSuccess);
+            SmartConLogger.Info(
+                $"SyncTypes[{catalogItemId}]: {succeeded}/{results.Count} types synchronized.");
+            return new SystemFamilySyncResult(catalogItemId, results);
+        }
+        finally
+        {
+            CloseAndRelease(sourceDoc);
+        }
+    }
+
+    private int? ResolveCategoryOrdinal(string catalogItemId)
+    {
+        try
+        {
+            var item = AsyncBridge.RunSync(
+                () => _catalog.GetItemAsync(catalogItemId, CancellationToken.None));
+            return item?.RevitCategoryId;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"ResolveCategoryOrdinal[{catalogItemId}]: {ex.Message} — category filter skipped.");
+            return null;
+        }
+    }
+
+    private static SystemFamilySyncResult FailAll(
+        string catalogItemId, IReadOnlyList<string> typeNames, string error)
+    {
+        var results = typeNames
+            .Select(n => new SystemTypeSyncResult(n, SystemTypeSyncStatus.Failed, 0, 0, error))
+            .ToList();
+        return new SystemFamilySyncResult(catalogItemId, results);
+    }
+
+    private static void CloseAndRelease(Document doc)
+    {
+        try { doc.Close(false); } catch { }
+        // REVIT-237190: best-effort synchronous COM cleanup after Close —
+        // throws ArgumentException on Revit versions where Document is a
+        // managed wrapper, which is fine to ignore.
+        try { System.Runtime.InteropServices.Marshal.ReleaseComObject(doc); } catch { }
+    }
+}

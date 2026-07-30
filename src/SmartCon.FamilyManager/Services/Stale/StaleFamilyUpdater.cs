@@ -21,6 +21,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
     private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
+    private readonly IFamilyCatalogProvider? _catalog;
+    private readonly IFamilyTypeRepository? _typeRepository;
+    private readonly ISystemTypeSyncOrchestrator? _systemSyncOrchestrator;
 
     public StaleFamilyUpdater(
         IFamilyLoadService loadService,
@@ -31,7 +34,10 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         IRevitContext revitContext,
         IFamilyVersionWriter versionWriter,
         IClock clock,
-        ISharedNestedFamilyRepository? nestedSharedRepository = null)
+        ISharedNestedFamilyRepository? nestedSharedRepository = null,
+        IFamilyCatalogProvider? catalog = null,
+        IFamilyTypeRepository? typeRepository = null,
+        ISystemTypeSyncOrchestrator? systemSyncOrchestrator = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(loadService);
@@ -61,6 +67,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         _versionWriter = versionWriter;
         _clock = clock;
         _nestedSharedRepository = nestedSharedRepository;
+        _catalog = catalog;
+        _typeRepository = typeRepository;
+        _systemSyncOrchestrator = systemSyncOrchestrator;
     }
 
     public async Task<bool> UpdateFamilyAsync(
@@ -140,6 +149,21 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         try
         {
             var targetRevit = ResolveTargetRevit(catalogItemId);
+
+            // Issue #104: system catalog items are synchronized from the
+            // mini-project (parameter/structure/routing data written into the
+            // existing project types), never re-loaded like .rfa families.
+            // The ES marker is written by the synchronizer inside its
+            // per-type transaction. overwriteParameterValues is not
+            // applicable — the catalog reference always overwrites.
+            if (_catalog is not null && _typeRepository is not null && _systemSyncOrchestrator is not null)
+            {
+                var item = await _catalog.GetItemAsync(catalogItemId, ct).ConfigureAwait(true);
+                if (item is not null && item.FamilySource == "system")
+                {
+                    return await UpdateSystemFamilyCoreAsync(item, targetRevit, ct).ConfigureAwait(true);
+                }
+            }
 
             var resolved = await _fileResolver
                 .ResolveForLoadAsync(catalogItemId, targetRevit, ct)
@@ -255,6 +279,44 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 "[Action: family skipped, batch continues]");
             return (false, null);
         }
+    }
+
+    private async Task<(bool success, string? familyName)> UpdateSystemFamilyCoreAsync(
+        FamilyCatalogItem item,
+        int targetRevit,
+        CancellationToken ct)
+    {
+        var descriptors = await _typeRepository!
+            .GetTypesForItemAsync(item.Id, ct)
+            .ConfigureAwait(true);
+        var typeNames = descriptors.Select(d => d.Name).ToList();
+        if (typeNames.Count == 0)
+        {
+            SmartConLogger.Warn(
+                $"UpdateSystemFamily[{item.Id}]: no types in the catalog for '{item.Name}'. " +
+                "[Action: reimport the mini-project to rebuild the type list]");
+            return (false, item.Name);
+        }
+
+        var result = await _awaitable.RaiseAsync(
+            _ => _systemSyncOrchestrator!.SyncTypes(
+                _revitContext.GetDocument(), item.Id, typeNames, targetRevit),
+            ct).ConfigureAwait(true);
+
+        if (!result.AllSucceeded)
+        {
+            var failed = result.TypeResults
+                .Where(r => !r.IsSuccess)
+                .Select(r => r.TypeName)
+                .ToList();
+            SmartConLogger.Warn(
+                $"UpdateSystemFamily[{item.Id}]: {result.SuccessCount}/{result.TypeResults.Count} " +
+                $"types synchronized; failed: [{string.Join(", ", failed)}]. " +
+                "[Action: the item stays stale — check the log for per-type errors and retry]");
+            return (false, item.Name);
+        }
+
+        return (true, item.Name);
     }
 
     private int ResolveTargetRevit(string catalogItemId)

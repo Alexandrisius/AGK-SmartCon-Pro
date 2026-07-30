@@ -745,6 +745,12 @@ public static partial class LocalizationService
         en["FM_PBase_PreviewParsed"] = "Parsed";
         ru["FM_PlaceSystemType"] = "Системный тип \"{0}\" — щёлкните для размещения";
         en["FM_PlaceSystemType"] = "System type \"{0}\" — click to place";
+        ru["FM_SystemTypesSynced"] = "«{0}»: синхронизировано типов {1} из {2}";
+        en["FM_SystemTypesSynced"] = "\"{0}\": synchronized {1} of {2} types";
+        ru["FM_SystemTypesSyncedWithErrors"] = "«{0}»: синхронизировано типов {1} из {2}, ошибок: {3}";
+        en["FM_SystemTypesSyncedWithErrors"] = "\"{0}\": synchronized {1} of {2} types, errors: {3}";
+        ru["FM_SystemTypeNoTypes"] = "«{0}»: в каталоге нет типов — переимпортируйте мини-проект";
+        en["FM_SystemTypeNoTypes"] = "\"{0}\": no types in the catalog — reimport the mini-project";
         ru["FM_PBase_ColIndex"] = "#";
         en["FM_PBase_ColIndex"] = "#";
         ru["FM_PBase_ColField"] = "Поле";

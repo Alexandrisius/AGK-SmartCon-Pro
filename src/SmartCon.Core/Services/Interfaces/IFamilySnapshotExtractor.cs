@@ -54,6 +54,18 @@ public interface IFamilySnapshotExtractor
         BuiltInCategory builtInCategory);
 
     /// <summary>
+    /// Extract a single <see cref="SystemTypeSnapshot"/> (parameters,
+    /// compound structure, routing preferences) for one system type in an
+    /// open project document. Used by the system-type synchronizer
+    /// (Issue #104) to read the reference data of a type from the catalog
+    /// mini-project before writing it into the active project.
+    /// </summary>
+    /// <param name="projectDoc">Open project document (.rvt) containing the
+    /// type.</param>
+    /// <param name="typeId">Element id of the <c>ElementType</c> to extract.</param>
+    SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId);
+
+    /// <summary>
     /// Extracts 3D tessellated geometry for EACH family type by iterating
     /// <c>FamilyManager.CurrentType</c> inside a Transaction+RollBack
     /// (I-03b). Type-dependent extrusions that return empty

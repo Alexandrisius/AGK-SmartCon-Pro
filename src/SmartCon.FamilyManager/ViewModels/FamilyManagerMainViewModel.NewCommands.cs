@@ -108,6 +108,29 @@ public sealed partial class FamilyManagerMainViewModel
                 ("CatalogItemId", family.CatalogItemId));
 
             var doc = _revitContext.GetDocument();
+
+            // Issue #104: system leaves are matched by their types'
+            // ElementType markers, not by a Family element.
+            if (family.FamilySource == "system")
+            {
+                var systemResult = await _staleDetector.CheckSystemFamilyAsync(
+                    family.CatalogItemId, family.DisplayName, doc, CancellationToken.None)
+                    .ConfigureAwait(true);
+
+                if (systemResult is null)
+                {
+                    StatusMessage = $"«{family.DisplayName}»: не загружено в проект — сначала загрузите";
+                    return;
+                }
+
+                family.IsStale = systemResult.IsStale;
+                family.StaleReason = systemResult.Reason;
+                StatusMessage = systemResult.IsStale
+                    ? $"«{family.DisplayName}»: устарело — {systemResult.Reason}"
+                    : $"«{family.DisplayName}»: актуально";
+                return;
+            }
+
             var familyId = await _awaitableEvent.RaiseAsync(
                 _ => _familyFinder.FindByName(doc, family.DisplayName),
                 CancellationToken.None).ConfigureAwait(true);

@@ -914,11 +914,32 @@
                             </Style>
                         </MenuItem.Style>
                         <MenuItem Header="{loc:Loc FM_UpdateKeepParams}"
-                                  Command="{Binding UpdateStaleKeepParamsCommand}"
-                                  Style="{StaticResource ModernMenuItem}" />
-                        <MenuItem Header="{loc:Loc FM_UpdateOverwriteParams}"
-                                  Command="{Binding UpdateStaleCommand}"
-                                  Style="{StaticResource ModernMenuItem}" />
+                                  Command="{Binding UpdateStaleKeepParamsCommand}">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <!-- Issue #104: system types have a single
+                                             overwrite semantics — no "keep parameters" -->
+                                        <DataTrigger Binding="{Binding PlacementTarget.DataContext.FamilySource, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="system">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
+                        <MenuItem Command="{Binding UpdateStaleCommand}">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                    <Setter Property="Header" Value="{loc:Loc FM_UpdateOverwriteParams}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PlacementTarget.DataContext.FamilySource, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="system">
+                                            <Setter Property="Header" Value="{loc:Loc FM_Update}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
                     </MenuItem>
                     <MenuItem>
                         <MenuItem.Style>
@@ -953,6 +974,21 @@
                     <MenuItem Header="{loc:Loc FM_PlaceType}"
                               Command="{Binding PlaceTypeCommand}"
                               Style="{StaticResource ModernMenuItem}" />
+                    <MenuItem Header="{loc:Loc FM_LoadToProject}"
+                              Command="{Binding LoadSystemTypeToProjectCommand}"
+                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                              behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.FamilySource, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="system">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                    </MenuItem>
                 </ContextMenu>
 
                 <Style x:Key="FamilyTreeItemBaseStyle" TargetType="TreeViewItem" BasedOn="{StaticResource ModernTreeViewItem}">

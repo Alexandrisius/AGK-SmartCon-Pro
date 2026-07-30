@@ -23,7 +23,7 @@ namespace SmartCon.Revit.FamilyManager;
 /// </list>
 /// </para>
 /// </remarks>
-public sealed class RevitFamilyVersionStore : IFamilyVersionStore
+public sealed class RevitFamilyVersionStore : IFamilyVersionStore, ISystemTypeVersionStore
 {
     private readonly ITransactionService _tx;
 
@@ -94,14 +94,7 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
             var family = txDoc.GetElement(familyId) as Autodesk.Revit.DB.Family;
             if (family is null) return;
 
-            var schema = FamilyVersionSchema.GetOrCreate();
-            using var entity = new Entity(schema);
-            entity.Set(FamilyVersionSchema.FieldSchemaVersion, FamilyVersion.CurrentSchemaVersion);
-            entity.Set(FamilyVersionSchema.FieldCatalogItemId, version.CatalogItemId);
-            entity.Set(FamilyVersionSchema.FieldVersionLabel, version.VersionLabel);
-            entity.Set(FamilyVersionSchema.FieldLoadedAtUtc, version.LoadedAtUtc.ToString("o"));
-            entity.Set(FamilyVersionSchema.FieldSourceRevitVersion, version.SourceRevitVersion);
-            family.SetEntity(entity);
+            WriteEntityToElement(family, version);
         });
     }
 
@@ -173,6 +166,145 @@ public sealed class RevitFamilyVersionStore : IFamilyVersionStore
                 $"ReadManyFromDocument: processed {count} families");
         }
         return result;
+    }
+
+    public FamilyVersion? ReadFromType(Document doc, ElementId typeId)
+    {
+        if (doc is null) return null;
+        if (typeId is null) return null;
+        if (typeId == ElementId.InvalidElementId) return null;
+
+        try
+        {
+            var type = doc.GetElement(typeId) as ElementType;
+            if (type is null) return null;
+
+            var schema = FamilyVersionSchema.GetOrCreate();
+            using var entity = type.GetEntity(schema);
+            if (!entity.IsValid()) return null;
+
+            return ReadEntity(entity);
+        }
+        catch (Exception ex)
+        {
+#if NET8_0_OR_GREATER
+            var idValue = typeId.Value;
+#else
+#pragma warning disable CS0618 // IntegerValue is deprecated in Revit 2024; removed in 2025. Use Value when available.
+            var idValue = typeId.IntegerValue;
+#pragma warning restore CS0618
+#endif
+            using var _scope = SmartConLogger.BeginScope(
+                "StaleDetection",
+                ("Method", nameof(ReadFromType)),
+                ("TypeId", idValue));
+            SmartConLogger.Warn(
+                $"ReadFromType[{idValue}]: failed: {ex.Message}. " +
+                "[Action: type skipped, batch continues]");
+            return null;
+        }
+    }
+
+    public void WriteToType(Document doc, ElementId typeId, FamilyVersion version)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(doc);
+        ArgumentNullException.ThrowIfNull(typeId);
+        ArgumentNullException.ThrowIfNull(version);
+#else
+        if (doc is null) throw new ArgumentNullException(nameof(doc));
+        if (typeId is null) throw new ArgumentNullException(nameof(typeId));
+        if (version is null) throw new ArgumentNullException(nameof(version));
+#endif
+
+        if (typeId == ElementId.InvalidElementId)
+            throw new ArgumentException("Cannot write FamilyVersion marker to an invalid ElementId", nameof(typeId));
+
+        _tx.RunInTransaction(doc, "SmartCon: Write FamilyVersion (system type)", txDoc =>
+        {
+            var type = txDoc.GetElement(typeId) as ElementType;
+            if (type is null) return;
+
+            WriteEntityToElement(type, version);
+        });
+    }
+
+    public IReadOnlyDictionary<ElementId, FamilyVersion?> ReadManyFromTypes(
+        Document doc, IEnumerable<ElementId> typeIds)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(doc);
+        ArgumentNullException.ThrowIfNull(typeIds);
+#else
+        if (doc is null) throw new ArgumentNullException(nameof(doc));
+        if (typeIds is null) throw new ArgumentNullException(nameof(typeIds));
+#endif
+
+        var schema = FamilyVersionSchema.GetOrCreate();
+        var result = new Dictionary<ElementId, FamilyVersion?>();
+        var counter = new HotLoopCounter(sampleEvery: 32);
+        foreach (var id in typeIds)
+        {
+            if (id is null) continue;
+            if (id == ElementId.InvalidElementId) continue;
+            try
+            {
+                var type = doc.GetElement(id) as ElementType;
+                if (type is null)
+                {
+                    result[id] = null;
+                    continue;
+                }
+
+                using var entity = type.GetEntity(schema);
+                if (!entity.IsValid())
+                {
+                    result[id] = null;
+                    continue;
+                }
+
+                result[id] = ReadEntity(entity);
+            }
+            catch (Exception ex)
+            {
+                if (counter.ShouldLog())
+                {
+#if NET8_0_OR_GREATER
+                    var idValue = id.Value;
+#else
+#pragma warning disable CS0618 // IntegerValue is deprecated in Revit 2024; removed in 2025. Use Value when available.
+                    var idValue = id.IntegerValue;
+#pragma warning restore CS0618
+#endif
+                    using var _scope = SmartConLogger.BeginScope(
+                        "StaleDetection",
+                        ("Method", nameof(ReadManyFromTypes)));
+                    SmartConLogger.Warn(
+                        $"ReadManyFromTypes[{idValue}]: {ex.Message}. " +
+                        $"[Action: type skipped, batch continues (processed {counter.Count})]");
+                }
+                result[id] = null;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Write the marker entity directly onto an element. Intended for callers
+    /// that already hold an open transaction (e.g. the system-type
+    /// synchronizer writes the marker inside its single sync transaction so
+    /// the whole operation stays one Undo step).
+    /// </summary>
+    internal static void WriteEntityToElement(Element element, FamilyVersion version)
+    {
+        var schema = FamilyVersionSchema.GetOrCreate();
+        using var entity = new Entity(schema);
+        entity.Set(FamilyVersionSchema.FieldSchemaVersion, FamilyVersion.CurrentSchemaVersion);
+        entity.Set(FamilyVersionSchema.FieldCatalogItemId, version.CatalogItemId);
+        entity.Set(FamilyVersionSchema.FieldVersionLabel, version.VersionLabel);
+        entity.Set(FamilyVersionSchema.FieldLoadedAtUtc, version.LoadedAtUtc.ToString("o"));
+        entity.Set(FamilyVersionSchema.FieldSourceRevitVersion, version.SourceRevitVersion);
+        element.SetEntity(entity);
     }
 
     private static FamilyVersion? ReadEntity(Entity entity)
