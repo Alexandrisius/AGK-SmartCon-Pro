@@ -211,7 +211,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 var name = sourceDoc.GetElement(id)?.Name;
                 if (!string.IsNullOrEmpty(name)) sourceTypeNames.Add(name!);
             }
-            var temporaryTypeIds = TemplateCollisionResolver.RenameConflictingTemplateTypes(
+            TemplateCollisionResolver.RenameConflictingTemplateTypes(
                 _transactionService, newDoc, category, sourceTypeNames);
 
             ICollection<ElementId> copiedTypeIds = [];
@@ -224,8 +224,12 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                     sourceDoc, sourceTypeIds, doc, null, options);
             });
 
-            TemplateCollisionResolver.DeleteTemporaryTypes(
-                _transactionService, newDoc, temporaryTypeIds);
+            // The renamed template types are intentionally LEFT in the
+            // mini-project: deleting them is unreliable (Revit forbids
+            // deleting the last type of a system family and, in a real UI
+            // session, shows a modal error dialog that freezes the batch
+            // import). They are harmless — catalog type lists are built from
+            // placed instances and the synchronizer matches types by name.
 
             // Размещение инстансов в новом проекте (только для линейных категорий).
             Dictionary<ElementId, List<ElementId>> placedInstancesByType = [];

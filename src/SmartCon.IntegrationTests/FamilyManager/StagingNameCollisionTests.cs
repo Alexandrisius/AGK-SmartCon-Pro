@@ -66,9 +66,12 @@ public sealed class StagingNameCollisionTests : RevitApiTest
                 sourceTypeId = wallType.Id;
             });
 
-            // Staging-последовательность: rename шаблонных типов + копирование + удаление.
+            // Staging-последовательность: rename шаблонных типов + копирование.
+            // Переименованный шаблонный тип НЕ удаляется — Revit запрещает
+            // удаление последнего типа системной семьи (в UI-сессии — модальный
+            // диалог и зависание batch-импорта); оставшийся тип безвреден.
             var miniTx = new RevitTransactionService(new StubRevitContext(miniDoc));
-            var temporaryIds = TemplateCollisionResolver.RenameConflictingTemplateTypes(
+            TemplateCollisionResolver.RenameConflictingTemplateTypes(
                 miniTx, miniDoc, BuiltInCategory.OST_Walls, new[] { templateTypeName });
 
             miniTx.RunInTransaction(miniDoc, "Copy system types", doc =>
@@ -79,15 +82,9 @@ public sealed class StagingNameCollisionTests : RevitApiTest
                     sourceDoc, new List<ElementId> { sourceTypeId }, doc, null, options);
             });
 
-            TemplateCollisionResolver.DeleteTemporaryTypes(miniTx, miniDoc, temporaryIds);
-
             using (Assert.Multiple())
             {
                 // Имя источника сохранилось ровно один раз, авторенейма нет.
-                // (Временный zz-тип шаблона может остаться — Revit отклоняет
-                // удаление последнего типа семьи молчаливым RolledBack; это
-                // задокументированное допустимое состояние, в каталог он не
-                // попадает — discovery идёт по размещённым инстансам.)
                 var names = new FilteredElementCollector(miniDoc)
                     .OfClass(typeof(WallType))
                     .Select(t => t.Name)
