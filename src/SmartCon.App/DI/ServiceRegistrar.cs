@@ -290,6 +290,9 @@ public static class ServiceRegistrar
         // --- System family sync (Issue #104) ---
         services.AddSingleton<ISystemTypeVersionStore>(sp => sp.GetRequiredService<RevitFamilyVersionStore>());
         services.AddSingleton<ISystemTypeFinder, RevitSystemTypeFinder>();
+        services.AddSingleton<IMaterialSyncService, RevitMaterialSyncService>();
+        services.AddSingleton<ISegmentSyncService, RevitSegmentSyncService>();
+        services.AddSingleton<IFittingDependencyResolver, CatalogFittingDependencyResolver>();
         services.AddSingleton<ISystemTypeSyncService, SystemTypeSyncService>();
         services.AddSingleton<ISystemTypeSyncOrchestrator, SystemFamilySyncOrchestrator>();
 

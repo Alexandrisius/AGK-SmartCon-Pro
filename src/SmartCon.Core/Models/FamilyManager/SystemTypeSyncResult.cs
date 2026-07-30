@@ -38,12 +38,18 @@ public enum SystemTypeSyncStatus
 /// reference, failed <c>Set</c>).</param>
 /// <param name="ErrorMessage">Failure details when
 /// <see cref="Status"/> is a failure state.</param>
+/// <param name="NotConvergedCount">Number of dependency items that could not
+/// be fully brought to the catalog reference: unresolved routing rules
+/// (missing fitting in project and catalog) and segment sizes that could not
+/// be removed/corrected (in use by placed MEP curves). The type still counts
+/// as synchronized — the residue is reported to the user.</param>
 public sealed record SystemTypeSyncResult(
     string TypeName,
     SystemTypeSyncStatus Status,
     int ParametersWritten,
     int ParametersSkipped,
-    string? ErrorMessage = null)
+    string? ErrorMessage = null,
+    int NotConvergedCount = 0)
 {
     public bool IsSuccess =>
         Status is SystemTypeSyncStatus.Created or SystemTypeSyncStatus.Updated;
@@ -79,4 +85,20 @@ public sealed record SystemFamilySyncResult(
     /// <c>false</c> so the stale snapshot keeps the entry and the next Check
     /// re-evaluates the item.</summary>
     public bool AllSucceeded => TypeResults.Count > 0 && FailedCount == 0;
+
+    /// <summary>Total number of dependency items across all types that could
+    /// not be fully brought to the catalog reference (see
+    /// <see cref="SystemTypeSyncResult.NotConvergedCount"/>).</summary>
+    public int TotalNotConverged
+    {
+        get
+        {
+            var total = 0;
+            foreach (var r in TypeResults)
+            {
+                total += r.NotConvergedCount;
+            }
+            return total;
+        }
+    }
 }

@@ -32,6 +32,8 @@ public sealed class SystemTypeSyncTests : RevitApiTest
     private RevitFamilyVersionStore? _store;
     private SystemTypeSyncService? _syncService;
     private RevitSystemTypeFinder? _finder;
+    private RevitMaterialSyncService? _materialSync;
+    private RevitSegmentSyncService? _segmentSync;
     private ElementId? _sourceTypeId;
     private string? _doubleParamName;
     private double _doubleParamValue;
@@ -51,8 +53,13 @@ public sealed class SystemTypeSyncTests : RevitApiTest
         _targetTx = new RevitTransactionService(new StubRevitContext(TargetDoc));
         _store = new RevitFamilyVersionStore(_targetTx);
         _finder = new RevitSystemTypeFinder();
+        var materialSync = new RevitMaterialSyncService();
+        var segmentSync = new RevitSegmentSyncService(materialSync);
+        _materialSync = materialSync;
+        _segmentSync = segmentSync;
         _syncService = new SystemTypeSyncService(
-            _targetTx, new RevitFamilySnapshotExtractor(), _finder, new SystemClock());
+            _targetTx, new RevitFamilySnapshotExtractor(), _finder, new SystemClock(),
+            materialSync, segmentSync, new NullFittingDependencyResolver());
 
         _sourceTx.RunInTransaction(SourceDoc, "Seed reference pipe type", doc =>
         {
@@ -302,6 +309,12 @@ public sealed class SystemTypeSyncTests : RevitApiTest
             try { miniDoc?.Close(false); } catch { }
             try { File.Delete(miniPath); } catch { }
         }
+    }
+
+    private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
+    {
+        public ElementId? EnsureFitting(
+            Document activeDoc, string familyName, string typeName, int targetRevitVersion) => null;
     }
 
     private sealed class FakeFamilyFileResolver : IFamilyFileResolver

@@ -751,6 +751,8 @@ public static partial class LocalizationService
         en["FM_SystemTypesSyncedWithErrors"] = "\"{0}\": synchronized {1} of {2} types, errors: {3}";
         ru["FM_SystemTypeNoTypes"] = "«{0}»: в каталоге нет типов — переимпортируйте мини-проект";
         en["FM_SystemTypeNoTypes"] = "\"{0}\": no types in the catalog — reimport the mini-project";
+        ru["FM_SystemTypesNotConverged"] = "; не приведено к эталону: {0} (подробности — в журнале)";
+        en["FM_SystemTypesNotConverged"] = "; not converged to reference: {0} (see the log)";
         ru["FM_PBase_ColIndex"] = "#";
         en["FM_PBase_ColIndex"] = "#";
         ru["FM_PBase_ColField"] = "Поле";

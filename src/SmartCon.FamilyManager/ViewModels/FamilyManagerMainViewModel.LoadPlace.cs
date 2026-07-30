@@ -402,6 +402,14 @@ public sealed partial class FamilyManagerMainViewModel
                     ?? "\"{0}\": synchronized {1} of {2} types, errors: {3}",
                 leaf.DisplayName, result.SuccessCount, result.TypeResults.Count, result.FailedCount);
 
+        if (result.TotalNotConverged > 0)
+        {
+            StatusMessage += string.Format(
+                LocalizationService.GetString("FM_SystemTypesNotConverged")
+                    ?? "; not converged to reference: {0} (see the log)",
+                result.TotalNotConverged);
+        }
+
         if (result.AllSucceeded)
         {
             // Prune only on full success: a partially synchronized item still

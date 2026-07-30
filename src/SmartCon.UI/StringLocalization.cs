@@ -510,6 +510,7 @@ public static class StringLocalization
         public const string FM_SystemTypesSynced = "FM_SystemTypesSynced";
         public const string FM_SystemTypesSyncedWithErrors = "FM_SystemTypesSyncedWithErrors";
         public const string FM_SystemTypeNoTypes = "FM_SystemTypeNoTypes";
+        public const string FM_SystemTypesNotConverged = "FM_SystemTypesNotConverged";
         public const string FM_PBase_ColIndex = "FM_PBase_ColIndex";
         public const string FM_PBase_ColField = "FM_PBase_ColField";
         public const string FM_PBase_ColParseRule = "FM_PBase_ColParseRule";
