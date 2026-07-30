@@ -37,4 +37,20 @@ public interface IFamilyVersionWriter
         string? versionLabel,
         int targetRevit,
         CancellationToken ct);
+
+    /// <summary>
+    /// Write the version marker onto a system type (<c>ElementType</c>) in the
+    /// active project, located by its <paramref name="typeUniqueId"/>
+    /// (Issue #104). Used after "Импорт активного файла" for system
+    /// categories: the types in the active project ARE the authoritative
+    /// source of the just-stored catalog version, so they receive the marker
+    /// immediately and the next Check does not flag them as stale.
+    /// No-op when the unique id does not resolve to an ElementType.
+    /// </summary>
+    Task WriteSystemTypeMarkerAsync(
+        string catalogItemId,
+        string typeUniqueId,
+        string? versionLabel,
+        int targetRevit,
+        CancellationToken ct);
 }

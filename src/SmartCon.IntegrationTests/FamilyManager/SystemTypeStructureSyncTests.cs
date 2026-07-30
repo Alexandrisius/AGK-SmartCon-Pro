@@ -271,6 +271,78 @@ public sealed class SystemTypeStructureSyncTests : RevitApiTest
         }
     }
 
+    [Test]
+    public async Task Structure_FloorType_LayersApplied()
+    {
+        // HostObjAttributes-путь общий для стен/перекрытий/крыш/потолков:
+        // проверяем на перекрытии, что sync не привязан к WallType.
+        const string floorTypeName = "SmartCon Structured Floor";
+        var seeded = false;
+        var sourceTx = new RevitTransactionService(new StubRevitContext(SourceDoc));
+        sourceTx.RunInTransaction(SourceDoc, "Seed reference floor type", doc =>
+        {
+            var floorType = new FilteredElementCollector(doc)
+                .OfClass(typeof(FloorType))
+                .Cast<FloorType>()
+                .FirstOrDefault(t =>
+                {
+                    try
+                    {
+                        using var cs = t.GetCompoundStructure();
+                        return cs is not null;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                });
+            if (floorType is null) return;
+
+            var anyMaterial = new FilteredElementCollector(doc)
+                .OfClass(typeof(Material))
+                .Cast<Material>()
+                .First();
+            var coreMaterial = new FilteredElementCollector(doc)
+                .OfClass(typeof(Material))
+                .Cast<Material>()
+                .First(m => string.Equals(m.Name, CoreMaterialName, StringComparison.OrdinalIgnoreCase));
+
+            var type = (FloorType)floorType.Duplicate(floorTypeName);
+            var layers = new List<CompoundStructureLayer>
+            {
+                new(Mm(150), MaterialFunctionAssignment.Structure, coreMaterial.Id),
+            };
+            var floorStructure = CompoundStructure.CreateSimpleCompoundStructure(layers);
+            floorStructure.EndCap = EndCapCondition.NoEndCap;
+            type.SetCompoundStructure(floorStructure);
+            seeded = true;
+        });
+
+        if (!seeded)
+        {
+            Skip.Test("В шаблоне проекта нет слоистого FloorType — сидирование невозможно");
+        }
+
+        var result = SyncService.SyncTypeFromSource(
+            SourceDoc, TargetDoc, floorTypeName, "item-floor", "v1",
+            int.Parse(Application.VersionNumber));
+
+        using (Assert.Multiple())
+        {
+            await Assert.That(result.IsSuccess).IsTrue();
+            await Assert.That(result.Status).IsEqualTo(SystemTypeSyncStatus.Created);
+
+            var typeId = _finder!.FindTypeByName(TargetDoc, floorTypeName, null);
+            var floorType = (FloorType)TargetDoc.GetElement(typeId!)!;
+            using var structure = floorType.GetCompoundStructure();
+            var layers = structure!.GetLayers();
+            await Assert.That(layers.Count).IsEqualTo(1);
+            await Assert.That(layers[0].Width).IsEqualTo(Mm(150));
+            var material = TargetDoc.GetElement(layers[0].MaterialId) as Material;
+            await Assert.That(material?.Name).IsEqualTo(CoreMaterialName);
+        }
+    }
+
     private static WallType? FindBasicWallType(Document doc)
     {
         return new FilteredElementCollector(doc)

@@ -48,6 +48,13 @@ public sealed class LoadableMarkerLogicTests
             Calls.Add((catalogItemId, familyName, versionLabel, targetRevit));
             return Task.CompletedTask;
         }
+
+        public Task WriteSystemTypeMarkerAsync(
+            string catalogItemId,
+            string typeUniqueId,
+            string? versionLabel,
+            int targetRevit,
+            CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class ThrowingVersionWriter : IFamilyVersionWriter
@@ -63,6 +70,13 @@ public sealed class LoadableMarkerLogicTests
         {
             throw ToThrow;
         }
+
+        public Task WriteSystemTypeMarkerAsync(
+            string catalogItemId,
+            string typeUniqueId,
+            string? versionLabel,
+            int targetRevit,
+            CancellationToken ct) => Task.CompletedTask;
     }
 
     [Fact]
@@ -283,5 +297,12 @@ public sealed class LoadableMarkerLogicTests
             }
             return Task.CompletedTask;
         }
+
+        public Task WriteSystemTypeMarkerAsync(
+            string catalogItemId,
+            string typeUniqueId,
+            string? versionLabel,
+            int targetRevit,
+            CancellationToken ct) => Task.CompletedTask;
     }
 }

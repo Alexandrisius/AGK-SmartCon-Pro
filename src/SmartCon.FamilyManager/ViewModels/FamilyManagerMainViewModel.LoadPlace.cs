@@ -463,7 +463,9 @@ public sealed partial class FamilyManagerMainViewModel
 
     private bool CanLoadSystemTypeToProject(FamilyTypeNodeViewModel? typeNode)
     {
-        if (typeNode is null || !typeNode.IsSystemType) return false;
+        // Same predicate as the menu visibility trigger (FamilySource ==
+        // "system") — the command and the menu item must never disagree.
+        if (typeNode is null || typeNode.FamilySource != "system") return false;
 
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return false;

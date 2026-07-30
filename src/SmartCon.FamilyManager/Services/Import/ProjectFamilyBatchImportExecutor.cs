@@ -13,6 +13,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
     private readonly ILoadableFamilyImportOrchestrator _loadableFamilyImportOrchestrator;
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IStaleDetector _staleDetector;
+    private readonly IFamilyCatalogProvider _catalog;
     private readonly LoadableAttributeExtractionHelper _extraction;
     private readonly int _revitVersion;
 
@@ -25,6 +26,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         ISharedNestedFamilyRepository sharedNestedRepository,
         IFamilyVersionWriter versionWriter,
         IStaleDetector staleDetector,
+        IFamilyCatalogProvider catalog,
         int revitVersion)
     {
         _staging = staging;
@@ -33,6 +35,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         _loadableFamilyImportOrchestrator = loadableFamilyImportOrchestrator;
         _versionWriter = versionWriter;
         _staleDetector = staleDetector;
+        _catalog = catalog;
         _revitVersion = revitVersion;
         _extraction = new LoadableAttributeExtractionHelper(
             dataImportService, sharedNestedRepository, revitVersion);
@@ -194,6 +197,10 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                     .ConfigureAwait(false);
             }
             success++;
+            // Issue #104: the types in the active project ARE the source of
+            // the just-stored catalog version — stamp them with the version
+            // marker so the next Check does not flag them as stale.
+            await WriteSystemTypeMarkersAsync(staged, sysResult, ct).ConfigureAwait(false);
             Report(progress, index, total, item.FileName,
                 FamilyBatchImportPhase.Importing, FamilyBatchImportRowState.Success, null, success, skipped, errors);
         }
@@ -206,6 +213,76 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         }
 
         return (success, skipped, errors);
+    }
+
+    /// <summary>
+    /// Issue #104: after a successful system import the active project's
+    /// types receive the version marker of the just-stored catalog version
+    /// (they are its authoritative source). Marker failures never roll back
+    /// the import — an unmarked type is simply flagged stale by the next
+    /// Check until it is explicitly synced.
+    /// </summary>
+    private async Task WriteSystemTypeMarkersAsync(
+        FamilyBatchImportItem staged,
+        SystemFamilyImportResult sysResult,
+        CancellationToken ct)
+    {
+        try
+        {
+            var catalogItemId = sysResult.ExtractionTasks.Count > 0
+                ? sysResult.ExtractionTasks[0].CatalogItemId
+                : null;
+            var sourceTypes = staged.SourceTypes;
+            if (string.IsNullOrEmpty(catalogItemId) || sourceTypes is null || sourceTypes.Count == 0)
+                return;
+
+            var catalogItem = await _catalog.GetItemAsync(catalogItemId!, ct).ConfigureAwait(false);
+            var versionLabel = catalogItem?.CurrentVersionLabel;
+
+            var written = 0;
+            foreach (var type in sourceTypes)
+            {
+                if (string.IsNullOrEmpty(type.UniqueId)) continue;
+                try
+                {
+                    await _versionWriter.WriteSystemTypeMarkerAsync(
+                        catalogItemId!, type.UniqueId, versionLabel, _revitVersion, ct)
+                        .ConfigureAwait(false);
+                    written++;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"System type marker write failed for '{type.Name}' " +
+                        $"(CatalogItemId={catalogItemId}): {ex.GetType().Name}: {ex.Message}. " +
+                        "[Action: тип в проекте останется без маркера — Проверить покажет " +
+                        "stale до явной Загрузки в проект]");
+                }
+            }
+
+            if (written > 0)
+            {
+                SmartConLogger.Info(
+                    $"System type markers written: {written}/{sourceTypes.Count} " +
+                    $"(CatalogItemId={catalogItemId}, label={versionLabel ?? "<none>"}).");
+                _staleDetector.InvalidateCache();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"System type marker pass failed: {ex.Message} " +
+                "[Action: типы в проекте останутся без маркеров — Проверить покажет " +
+                "stale до явной Загрузки в проект]");
+        }
     }
 
     private async Task<(int Success, int Skipped, int Errors)> ProcessLoadableItemAsync(

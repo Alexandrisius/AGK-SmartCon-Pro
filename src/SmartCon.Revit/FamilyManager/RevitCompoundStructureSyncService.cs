@@ -163,6 +163,15 @@ public sealed class RevitCompoundStructureSyncService : ICompoundStructureSyncSe
 
             try
             {
+                // EndCap condition is not part of the reference snapshot
+                // (FHV3 is frozen): walls accept the CreateSimple default;
+                // floors/roofs/ceilings require NoEndCap (Revit validation:
+                // "wrong EndCap condition for this element type").
+                if (target is not WallType)
+                {
+                    try { compoundStructure.EndCap = EndCapCondition.NoEndCap; }
+                    catch { /* best-effort — SetCompoundStructure validates anyway */ }
+                }
                 hostType.SetCompoundStructure(compoundStructure);
             }
             catch (Exception ex)

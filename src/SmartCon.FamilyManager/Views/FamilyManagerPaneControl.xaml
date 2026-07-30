@@ -1322,6 +1322,29 @@
                        ToolTip="{Binding StatusMessage}"
                        MaxHeight="36"/>
 
+            <!-- Batch progress ("N из M: имя") — visible only while a
+                 Check/Update batch is running; the final summary still
+                 lands in StatusMessage. -->
+            <TextBlock Grid.Column="1"
+                       Text="{Binding StaleCheckMessage}"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding StaleCheckMessage}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsStaleCheckInProgress}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+
             <TextBlock Grid.Column="2"
                        Text="{Binding TotalItemCount}"
                        VerticalAlignment="Center"
