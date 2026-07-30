@@ -1320,7 +1320,20 @@
                        TextWrapping="Wrap"
                        TextTrimming="CharacterEllipsis"
                        ToolTip="{Binding StatusMessage}"
-                       MaxHeight="36"/>
+                       MaxHeight="36">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <!-- Hidden while the batch progress is shown in
+                                 the same cell (no text overlap). -->
+                            <DataTrigger Binding="{Binding IsStaleCheckInProgress}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
 
             <!-- Batch progress ("N из M: имя") — visible only while a
                  Check/Update batch is running; the final summary still

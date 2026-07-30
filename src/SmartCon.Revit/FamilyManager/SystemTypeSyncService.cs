@@ -196,6 +196,9 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var rule in routing.Rules)
         {
+            // Segments are resolved by the segment synchronizer, never via
+            // the catalog fitting path (a segment name could contain ':').
+            if (rule.GroupType == (int)RoutingPreferenceRuleGroupType.Segments) continue;
             var partName = rule.PartName;
             if (partName is null) continue;
             var separator = partName.IndexOf(':');

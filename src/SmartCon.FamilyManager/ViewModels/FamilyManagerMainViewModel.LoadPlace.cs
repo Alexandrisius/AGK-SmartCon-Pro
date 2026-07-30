@@ -141,6 +141,14 @@ public sealed partial class FamilyManagerMainViewModel
             return;
         }
 
+        // A system type node selected (e.g. the leaf command invoked with a
+        // type selected) — sync just that type, never the .rfa path.
+        if (SelectedTreeNode is FamilyTypeNodeViewModel systemTypeNode && systemTypeNode.FamilySource == "system")
+        {
+            await LoadSystemTypeToProjectAsync(systemTypeNode).ConfigureAwait(true);
+            return;
+        }
+
         if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
 
         var selectedId = SelectedItem.Id;
