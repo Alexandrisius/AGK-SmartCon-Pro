@@ -94,4 +94,45 @@ public sealed class TransactionServiceTests : RevitApiTest
             await Assert.That(ModelSeed.CountInstances<Wall>(Doc)).IsEqualTo(0);
         }
     }
+
+    [Test]
+    public async Task RunInTransaction_SilentRollback_NeverReportsSuccess()
+    {
+        // Issue #178: удаление последнего типа системной семьи Revit отклоняет
+        // двумя способами (машино-зависимо): ArgumentException upfront или
+        // error-failure на коммите с молчаливым RolledBack. Контракт #178:
+        // операция НИКОГДА не должна отчитаться успехом — либо исключение,
+        // либо false; тип при этом остаётся живым.
+        var singleTypeFamily = new FilteredElementCollector(Doc)
+            .OfClass(typeof(WallType))
+            .Cast<WallType>()
+            .GroupBy(t => t.FamilyName)
+            .FirstOrDefault(g => g.Count() == 1);
+        if (singleTypeFamily is null)
+        {
+            Skip.Test("В шаблоне нет семьи стен с единственным типом — сидирование невозможно");
+        }
+
+        var victim = singleTypeFamily!.First();
+
+        var threw = false;
+        var committed = true;
+        try
+        {
+            committed = Transactions.RunInTransaction(Doc, "Delete last family type", doc =>
+            {
+                doc.Delete(victim.Id);
+            });
+        }
+        catch (Autodesk.Revit.Exceptions.ArgumentException)
+        {
+            threw = true;
+        }
+
+        using (Assert.Multiple())
+        {
+            await Assert.That(threw || !committed).IsTrue();
+            await Assert.That(Doc.GetElement(victim.Id)).IsNotNull();
+        }
+    }
 }
