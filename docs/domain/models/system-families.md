@@ -210,3 +210,46 @@ public sealed record SegmentSyncResult(
     int SizesRemoved,
     int SizesNotConverged);
 ```
+
+---
+
+## SystemPlacementResult
+
+Результат `ISystemFamilyPlacementService.LoadAndPlaceSystemType` (ADR-027 Phase 2).
+Различает три исхода загрузки+размещения системного типа: успешная активация
+размещения; тип загружен, но интерактивное размещение невозможно
+(`UIDocument.CanPlaceElementType` = false — например, изоляция требует
+существующий host, пользователь размещает вручную); неудача синхронизации.
+
+**Файл:** `Models/FamilyManager/SystemPlacementResult.cs`
+
+```csharp
+public enum SystemPlacementResult
+{
+    Placed,
+    LoadedManualPlacementRequired,
+    Failed,
+}
+```
+
+---
+
+## SystemCategoryPlacementAvailability
+
+Версионный гейт размещения инстансов системных категорий в staged мини-проекте
+(ADR-027 Phase 2). Единый источник правды «категория → минимальная версия Revit»:
+потолки — 2022 (`Ceiling.Create`), ограждения — 2025 (`Railing.Create` по CurveLoop).
+Используется реестром размещения (`SystemCategoryRegistry.GetPlacementHandler`)
+и импортным гейтом UI (`ApplyPlacementVersionGate`): категория, недоступная на
+текущей версии Revit, не импортируется в библиотеку. Категории вне таблицы
+размещаются на всех поддерживаемых версиях.
+
+**Файл:** `Services/FamilyManager/SystemCategoryPlacementAvailability.cs`
+
+```csharp
+public static class SystemCategoryPlacementAvailability
+{
+    public static int? GetMinRevitVersion(BuiltInCategory category);
+    public static bool IsSupported(BuiltInCategory category, int revitMajorVersion);
+}
+```
