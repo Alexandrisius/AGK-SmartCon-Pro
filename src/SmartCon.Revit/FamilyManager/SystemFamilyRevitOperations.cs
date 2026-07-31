@@ -17,15 +17,18 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
     private readonly IRevitUIContext _revitUIContext;
     private readonly ITransactionService _transactionService;
     private readonly ILoadableFamilyScanner _loadableFamilyScanner;
+    private readonly IMiniProjectMarker _miniProjectMarker;
 
     public SystemFamilyRevitOperations(
         IRevitUIContext revitUIContext,
         ITransactionService transactionService,
-        ILoadableFamilyScanner loadableFamilyScanner)
+        ILoadableFamilyScanner loadableFamilyScanner,
+        IMiniProjectMarker miniProjectMarker)
     {
         _revitUIContext = revitUIContext;
         _transactionService = transactionService;
         _loadableFamilyScanner = loadableFamilyScanner;
+        _miniProjectMarker = miniProjectMarker;
     }
 
     public SelectedElementsAnalysis PickSelectedElements()
@@ -163,7 +166,8 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory category,
         string displayName,
-        string managedRvtPath)
+        string managedRvtPath,
+        string? catalogItemId = null)
     {
         if (sourceDoc is null)
             return new CreateCleanProjectResult(false, null, "sourceDoc is null", 0);
@@ -240,6 +244,13 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             NormalizeInstanceDimensions(newDoc, placedInstancesByType, category);
 
             var placedCount = placedInstancesByType.Sum(kv => kv.Value.Count);
+
+            // #188: mark the staged file as a SmartCon reference mini-project
+            // BEFORE SaveAs — the document is closed without saving afterwards,
+            // so the marker must already be inside the saved file. The marker
+            // authorizes the safe close-without-save after reimport (#186) and
+            // excludes the file from active-DB auto-switching.
+            _miniProjectMarker.MarkAsMiniProject(newDoc, catalogItemId);
 
             // v2.0.0: SaveAs directly into managed storage, no temp staging.
             var managedDir = Path.GetDirectoryName(managedRvtPath);

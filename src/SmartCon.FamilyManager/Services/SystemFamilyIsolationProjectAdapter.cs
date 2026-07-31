@@ -40,7 +40,8 @@ internal sealed class SystemFamilyIsolationProjectAdapter : ISystemFamilyIsolati
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory category,
         string displayName,
-        string managedRvtPath)
+        string managedRvtPath,
+        string? catalogItemId = null)
     {
         using var _scope = SmartConLogger.BeginScope("CreateCleanProject",
             ("Method", "CreateCleanProjectWithTypesAndInstances"),
@@ -55,7 +56,7 @@ internal sealed class SystemFamilyIsolationProjectAdapter : ISystemFamilyIsolati
             $"[SystemImport.Create] {displayName} ({category}): staging {typeUniqueIds.Count} type(s) -> {managedRvtPath}");
 
         var result = _revitOps.CreateCleanProjectWithTypesAndInstances(
-            sourceDoc, typeUniqueIds, category, displayName, managedRvtPath);
+            sourceDoc, typeUniqueIds, category, displayName, managedRvtPath, catalogItemId);
 
         if (result.Success)
         {

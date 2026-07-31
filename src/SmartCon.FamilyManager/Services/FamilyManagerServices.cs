@@ -146,4 +146,11 @@ public sealed record FamilyManagerServices(
     /// (DnD in the tree, category picker in properties): blocks moves
     /// into rule-protected categories when the family fails the rules.
     /// </summary>
-    ICategoryChangeGateService CategoryChangeGate);
+    ICategoryChangeGateService CategoryChangeGate,
+    /// <summary>
+    /// Issue #188: ES-based marker distinguishing SmartCon reference
+    /// mini-projects from user work projects. Used by the post-import close
+    /// (#186 — never close an unmarked document) and by the active-document
+    /// notifier in the Revit layer (auto-DB-switch guard).
+    /// </summary>
+    IMiniProjectMarker MiniProjectMarker);

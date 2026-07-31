@@ -167,6 +167,7 @@ public sealed partial class FamilyManagerMainViewModel
                     break;
 
                 case ActiveDocumentKind.Project:
+                    string? capturedActivePath = null;
                     var (systemAnalysesRaw, loadableFamilies) = await _awaitableEvent.RaiseAsync<(IReadOnlyList<CategoryAnalysis>, IReadOnlyList<LoadableFamilyInfo>)>(obj =>
                     {
                         try
@@ -175,6 +176,7 @@ public sealed partial class FamilyManagerMainViewModel
                             var activeDoc = uiApp.ActiveUIDocument?.Document;
                             if (activeDoc is null) return (Array.Empty<CategoryAnalysis>(), Array.Empty<LoadableFamilyInfo>());
 
+                            capturedActivePath = activeDoc.PathName;
                             var sys = _systemFamilyRevitOps.AnalyzeActiveProject(activeDoc);
                             var load = _loadableFamilyScanner.GetUniqueFamilies(activeDoc);
                             return (sys, load);
@@ -232,7 +234,17 @@ public sealed partial class FamilyManagerMainViewModel
                             LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound) ?? "Не удалось подготовить семейства для импорта");
                         return;
                     }
-                    await ProcessProjectImportAsync(batchItems);
+                    var outcome = await ProcessProjectImportAsync(batchItems);
+                    // #186: after a successful reimport close the reference
+                    // mini-project and return focus to the work project —
+                    // consistent with the .rfa flow (CloseFamilyDocumentAsync).
+                    // A document without the mini-project ES marker (#188) is
+                    // NEVER closed — that is the user's real work project.
+                    if (outcome.ImportStarted && outcome.SuccessCount > 0
+                        && !string.IsNullOrEmpty(capturedActivePath))
+                    {
+                        await CloseMiniProjectAfterImportAsync(capturedActivePath!);
+                    }
                     break;
             }
         }
@@ -659,6 +671,130 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     /// <summary>
+    /// Issue #186: after a successful "Импорт активного файла" run closes the
+    /// reference mini-project WITHOUT saving and returns focus to the user's
+    /// work project — consistent with the .rfa flow
+    /// (<see cref="CloseFamilyDocumentAsync"/>).
+    /// </summary>
+    /// <remarks>
+    /// Safety contract (#188):
+    /// <list type="bullet">
+    /// <item>Only a document carrying the mini-project ES marker is eligible —
+    ///       an unmarked document (the user's real work project) is NEVER
+    ///       closed;</item>
+    /// <item>closing is always <c>Close(false)</c> — saving would overwrite the
+    ///       read-only reference version on disk (I-16);</item>
+    /// <item><c>Document.Close</c> is forbidden on the ACTIVE document, so
+    ///       focus first moves to a work project
+    ///       (<see cref="WorkProjectSelector"/>); when none is open, a blank
+    ///       project is created — <c>PostableCommand.Close</c> is deliberately
+    ///       NOT used because its "Save changes?" prompt risks overwriting the
+    ///       reference;</item>
+    /// <item>"Импорт выделенных элементов" does not call this method — the
+    ///       mini-project stays open.</item>
+    /// </list>
+    /// </remarks>
+    private async Task CloseMiniProjectAfterImportAsync(string capturedMiniProjectPath)
+    {
+        using var _scope = SmartConLogger.BeginScope("FMImport",
+            ("Method", nameof(CloseMiniProjectAfterImportAsync)),
+            ("File", System.IO.Path.GetFileName(capturedMiniProjectPath)));
+        try
+        {
+            await _awaitableEvent.RaiseAsync(obj =>
+            {
+                var uiApp = (Autodesk.Revit.UI.UIApplication)obj;
+                var app = uiApp.Application;
+
+                Document? capturedDoc = null;
+                var openDocs = new List<OpenDocumentInfo>();
+                foreach (Document d in app.Documents)
+                {
+                    var isMini = _miniProjectMarker.IsMiniProject(d);
+                    openDocs.Add(new OpenDocumentInfo(
+                        d.PathName ?? string.Empty, d.IsFamilyDocument, d.IsLinked, isMini));
+                    if (string.Equals(d.PathName, capturedMiniProjectPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        capturedDoc = d;
+                    }
+                }
+
+                if (capturedDoc is null)
+                {
+                    SmartConLogger.Debug("Mini-project document not found among open documents (already closed?)");
+                    return;
+                }
+
+                // #188: NEVER close a document that is not a marked SmartCon
+                // mini-project — that would destroy unsaved work in the user's
+                // real project.
+                if (!_miniProjectMarker.IsMiniProject(capturedDoc))
+                {
+                    SmartConLogger.Info(
+                        "Active document is not a marked SmartCon mini-project — leaving it open (work-project protection)");
+                    return;
+                }
+
+                var activePath = uiApp.ActiveUIDocument?.Document?.PathName;
+                if (string.Equals(activePath, capturedMiniProjectPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    var workPath = WorkProjectSelector.SelectWorkProjectPath(openDocs, capturedMiniProjectPath);
+                    if (workPath is not null)
+                    {
+                        try
+                        {
+                            uiApp.OpenAndActivateDocument(workPath);
+                        }
+                        catch (Exception activateEx)
+                        {
+                            SmartConLogger.Warn(
+                                $"Activate work project failed: {activateEx.Message} " +
+                                "[Action: переключитесь на рабочий проект в Revit вручную и закройте мини-проект без сохранения]");
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        // No work project open: Document.Close is forbidden on
+                        // the active document and PostableCommand.Close would
+                        // ask "Save changes?" — a blank project takes focus so
+                        // the reference can be closed without saving.
+                        try
+                        {
+                            app.NewProjectDocument(UnitSystem.Metric);
+                        }
+                        catch (Exception newEx)
+                        {
+                            SmartConLogger.Warn(
+                                $"NewProjectDocument failed: {newEx.Message} " +
+                                "[Action: закройте мини-проект вручную БЕЗ сохранения]");
+                            return;
+                        }
+                    }
+                }
+
+                try
+                {
+                    capturedDoc.Close(false);
+                    SmartConLogger.Info("Reference mini-project closed without saving");
+                }
+                catch (Exception closeEx)
+                {
+                    SmartConLogger.Warn(
+                        $"Mini-project close failed: {closeEx.Message} " +
+                        "[Action: закройте мини-проект вручную БЕЗ сохранения]");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"CloseMiniProjectAfterImportAsync failed: {ex.Message} " +
+                "[Action: закройте мини-проект вручную БЕЗ сохранения — каталог уже содержит импортированную версию]");
+        }
+    }
+
+    /// <summary>
     /// Switches focus back to the project (if one was open) and closes the
     /// family document that was just imported. Runs on the Revit UI thread
     /// via the awaitable external event. Tolerates missing documents
@@ -780,7 +916,7 @@ public sealed partial class FamilyManagerMainViewModel
         int RevitVersion,
         string? OriginalPathName);
 
-    private async Task ProcessProjectImportAsync(List<FamilyBatchImportItem> batchItems)
+    private async Task<ProjectImportOutcome> ProcessProjectImportAsync(List<FamilyBatchImportItem> batchItems)
     {
         using var _ = SmartConLogger.BeginScope("FMImport",
             ("Method", "ProcessProjectImportAsync"));
@@ -789,7 +925,7 @@ public sealed partial class FamilyManagerMainViewModel
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_ImportPrepareError) ?? "Error",
                 LanguageManager.GetString(StringLocalization.Keys.FM_NoSystemFamiliesFound) ?? "No families found");
-            return;
+            return ProjectImportOutcome.NotStarted;
         }
 
         // ProcessProjectImportAsync is invoked from:
@@ -808,7 +944,7 @@ public sealed partial class FamilyManagerMainViewModel
             SmartConLogger.Warn(
                 "Batch import dialog is already open — ignoring re-entry " +
                 "[Action: дождитесь завершения текущего импорта или закройте его диалог]");
-            return;
+            return ProjectImportOutcome.NotStarted;
         }
         _batchDialogOpen = true;
 
@@ -853,7 +989,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (!vm.ImportStarted)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
-            return;
+            return ProjectImportOutcome.NotStarted;
         }
 
         if (vm.ImportSuccessCount > 0)
@@ -865,6 +1001,16 @@ public sealed partial class FamilyManagerMainViewModel
             LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_SummaryFormat)
                 ?? "Импортировано: {0}, пропущено: {1}, ошибок: {2}",
             vm.ImportSuccessCount, vm.ImportSkippedCount, vm.ImportErrorCount);
+
+        // #185/#186: collect the catalog items this run touched so callers can
+        // run post-import actions (safe mini-project close, stale check).
+        var importedItems = batchItems
+            .Where(i => i.Action != FamilyBatchImportAction.Skip)
+            .Select(i => new { Id = i.PrecomputedCatalogItemId ?? i.ExistingCatalogItemId, Item = i })
+            .Where(x => !string.IsNullOrEmpty(x.Id))
+            .Select(x => new ImportedCatalogItem(x.Id!, x.Item.FileName, x.Item.FamilySource))
+            .ToList();
+        return new ProjectImportOutcome(true, vm.ImportSuccessCount, importedItems);
         }
         finally
         {

@@ -330,7 +330,10 @@ public sealed partial class FamilyManagerMainViewModel
                     ?? "Импорт {0} элементов...",
                 batchItems.Count);
 
-            await ProcessProjectImportAsync(batchItems);
+            // #186: "Импорт выделенных элементов" НЕ закрывает мини-проект
+            // после импорта (в отличие от "Импорт активного файла") — outcome
+            // здесь нужен только для будущей авто stale-проверки (#185).
+            var outcome = await ProcessProjectImportAsync(batchItems);
         }
         catch (Exception ex)
         {

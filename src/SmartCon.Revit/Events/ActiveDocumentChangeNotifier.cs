@@ -3,6 +3,7 @@ using Autodesk.Revit.DB.Events;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Events;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.Events;
@@ -34,9 +35,15 @@ namespace SmartCon.Revit.Events;
 /// </remarks>
 public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier, IDisposable
 {
+    private readonly IMiniProjectMarker _miniProjectMarker;
     private UIControlledApplication? _application;
     private Document? _lastActiveDocument;
     private string? _lastNotifiedPath;
+
+    public ActiveDocumentChangeNotifier(IMiniProjectMarker miniProjectMarker)
+    {
+        _miniProjectMarker = miniProjectMarker;
+    }
 
     public event EventHandler<ActiveDocumentChangedEventArgs>? ActiveDocumentChanged;
     public event EventHandler<ActiveDocumentPathChangedEventArgs>? ActiveDocumentPathChanged;
@@ -96,6 +103,19 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
             return;
         }
 
+        // #188: a SmartCon reference mini-project (staged system family types)
+        // is not a user work project and must never drive active-DB
+        // auto-switching — otherwise opening it via "Редактировать" silently
+        // switches the catalog to the default base and the curator reimports
+        // the new version into the WRONG database. ES marker is authoritative;
+        // the path pattern is the fallback for legacy files without a marker.
+        if (_miniProjectMarker.IsMiniProject(currentDoc)
+            || MiniProjectPathPattern.IsMiniProjectPath(currentDoc.PathName))
+        {
+            SmartConLogger.Debug("Active document is a SmartCon mini-project (system family reference) — ignoring, current base kept");
+            return;
+        }
+
         var previous = e.PreviousActiveView?.Document;
         if (previous is not null && previous.Equals(currentDoc))
         {
@@ -150,6 +170,16 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
         if (doc.IsFamilyDocument)
         {
             SmartConLogger.Debug("Saved document is a family (.rfa) — ignoring");
+            return;
+        }
+
+        // #188: manual Ctrl+S inside a mini-project (blocked on disk by the
+        // read-only attribute, I-16) or a programmatic SaveAs of a staged file
+        // must not trigger project-base re-activation either.
+        if (_miniProjectMarker.IsMiniProject(doc)
+            || MiniProjectPathPattern.IsMiniProjectPath(doc.PathName))
+        {
+            SmartConLogger.Debug("Saved document is a SmartCon mini-project — ignoring, current base kept");
             return;
         }
 

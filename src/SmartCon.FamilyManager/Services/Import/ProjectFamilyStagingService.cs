@@ -77,8 +77,11 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
             try
             {
                 var categoryEnum = (BuiltInCategory)source.CategoryId;
+                // #188: pass the catalog item id so the staged mini-project
+                // marker links the file to its catalog row.
+                var catalogItemId = item.ExistingCatalogItemId ?? item.PrecomputedCatalogItemId;
                 createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
-                    activeDoc, source.TypeUniqueIds, categoryEnum, source.DisplayName, managedRvtPath!);
+                    activeDoc, source.TypeUniqueIds, categoryEnum, source.DisplayName, managedRvtPath!, catalogItemId);
             }
             catch (Exception ex)
             {

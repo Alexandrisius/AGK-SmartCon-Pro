@@ -236,6 +236,10 @@ public static class ServiceRegistrar
         services.AddSingleton<ILoadableFamilyImportOrchestrator, SmartCon.FamilyManager.Services.LoadableFamilyImportOrchestrator>();
         services.AddSingleton<ISystemFamilyRevitOperations, SystemFamilyRevitOperations>();
         services.AddSingleton<ISystemFamilyPlacementService, SystemFamilyPlacementService>();
+        // Issue #188: mini-project marker — ES-based flag on staged system
+        // family .rvt files; consumed by the staging writer, the active-doc
+        // notifier (auto-DB-switch guard) and the post-import close (#186).
+        services.AddSingleton<IMiniProjectMarker, RevitMiniProjectMarker>();
         services.AddSingleton<ISystemFamilyIsolationProjectService, SmartCon.FamilyManager.Services.SystemFamilyIsolationProjectAdapter>();
         services.AddSingleton<ISystemFamilyAttributeExtractor, SmartCon.FamilyManager.Services.SystemFamilyAttributeExtractor>();
         services.AddSingleton<ISystemFamilyImportOrchestrator, SmartCon.FamilyManager.Services.SystemFamilyImportOrchestrator>();
@@ -328,9 +332,14 @@ public static class ServiceRegistrar
         // front (decision A2 of #119 — recommended by Jeremy Tammik since it
         // fires on both DocumentOpened and cross-document tab switches). It
         // also implements IDisposable, which the DI container invokes from
-        // ServiceLocator.Dispose during OnShutdown to unsubscribe.
-        var activeDocNotifier = new ActiveDocumentChangeNotifier();
-        services.AddSingleton<IActiveDocumentChangeNotifier>(activeDocNotifier);
-        activeDocNotifier.Register(app);
+        // ServiceLocator.Dispose during OnShutdown to unsubscribe. Registered
+        // via factory so it receives IMiniProjectMarker (#188) — the manual
+        // Register(app) call must happen after the marker is resolvable.
+        services.AddSingleton<IActiveDocumentChangeNotifier>(sp =>
+        {
+            var notifier = new ActiveDocumentChangeNotifier(sp.GetRequiredService<IMiniProjectMarker>());
+            notifier.Register(app);
+            return notifier;
+        });
     }
 }

@@ -75,6 +75,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IAboutDialogService _aboutDialogService;
     private readonly IFamilyImportValidationService _validationService;
     private readonly ICategoryChangeGateService _categoryChangeGate;
+    private readonly IMiniProjectMarker _miniProjectMarker;
 
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
@@ -243,6 +244,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _aboutDialogService = services.AboutDialogService;
         _validationService = services.ValidationService;
         _categoryChangeGate = services.CategoryChangeGate;
+        _miniProjectMarker = services.MiniProjectMarker;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();
