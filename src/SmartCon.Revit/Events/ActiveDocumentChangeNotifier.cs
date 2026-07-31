@@ -20,10 +20,12 @@ namespace SmartCon.Revit.Events;
 /// until the file is saved (#174).
 /// </summary>
 /// <remarks>
-/// The notifier is registered in <c>ServiceRegistrar</c> as a singleton. Its
-/// <see cref="Register"/> method is called once from <c>App.OnStartup</c>
-/// (which holds the <see cref="UIControlledApplication"/> reference) and the
-/// <see cref="Dispose"/> method on shutdown — see <c>ServiceLocator.Dispose</c>
+/// The notifier is registered in <c>ServiceRegistrar</c> as a singleton via a
+/// DI factory (so it receives <c>IMiniProjectMarker</c>, #188); the factory
+/// calls <see cref="Register"/> with the <see cref="UIControlledApplication"/>
+/// reference, and the eager resolve in <c>App.OnStartupCore</c> makes the
+/// subscription timing explicit (adversarial review M2). <see cref="Dispose"/>
+/// runs on shutdown via the DI container — see <c>ServiceLocator.Dispose</c>
 /// path wired in <c>App.OnShutdown</c>. We must subscribe on
 /// <c>UIControlledApplication</c> rather than <c>UIApplication</c> because
 /// the latter is only available inside <c>ExternalEvent</c> callbacks, while

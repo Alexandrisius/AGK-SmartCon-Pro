@@ -64,7 +64,7 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
                 return (FamilyBatchImportItem?)null;
             }
 
-            var managedRvtPath = ResolveManagedPath(item, source.DisplayName, ".rvt");
+            var managedRvtPath = ResolveManagedPath(item, source.DisplayName, ".rvt", out var generatedCatalogItemId);
             if (string.IsNullOrEmpty(managedRvtPath))
             {
                 SmartConLogger.Warn(
@@ -78,8 +78,11 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
             {
                 var categoryEnum = (BuiltInCategory)source.CategoryId;
                 // #188: pass the catalog item id so the staged mini-project
-                // marker links the file to its catalog row.
-                var catalogItemId = item.ExistingCatalogItemId ?? item.PrecomputedCatalogItemId;
+                // marker links the file to its catalog row (M3: including the
+                // fallback-allocated id — otherwise ES id↔file link breaks).
+                var catalogItemId = item.ExistingCatalogItemId
+                    ?? item.PrecomputedCatalogItemId
+                    ?? generatedCatalogItemId;
                 createResult = _systemFamilyIsolationProject.CreateCleanProjectWithTypesAndInstances(
                     activeDoc, source.TypeUniqueIds, categoryEnum, source.DisplayName, managedRvtPath!, catalogItemId);
             }
@@ -147,7 +150,7 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
                 return (FamilyBatchImportItem?)null;
             }
 
-            var managedRfaPath = ResolveManagedPath(item, source.FamilyName, ".rfa");
+            var managedRfaPath = ResolveManagedPath(item, source.FamilyName, ".rfa", out var _);
             if (string.IsNullOrEmpty(managedRfaPath))
             {
                 SmartConLogger.Warn(
@@ -185,8 +188,11 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
         }, ct);
     }
 
-    private string? ResolveManagedPath(FamilyBatchImportItem item, string displayName, string extension)
+    private string? ResolveManagedPath(
+        FamilyBatchImportItem item, string displayName, string extension,
+        out string? generatedCatalogItemId)
     {
+        generatedCatalogItemId = null;
         if (item.Action == FamilyBatchImportAction.OverwriteCurrent
             && !string.IsNullOrEmpty(item.ExistingCatalogItemId)
             && !string.IsNullOrEmpty(item.ExistingVersionLabel))
@@ -216,8 +222,11 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
 
         var dbRoot = _databaseManager.GetActiveDatabasePath();
         if (string.IsNullOrEmpty(dbRoot)) return null;
-        var catalogItemId = Guid.NewGuid().ToString("N");
-        var versionDir = Path.Combine(dbRoot, "files", catalogItemId, "v1");
+        // #188 (review M3): this fallback allocates the catalog item id — it
+        // must reach the mini-project marker, otherwise the ES link
+        // id↔file is broken (file under {random-guid}, empty marker id).
+        generatedCatalogItemId = Guid.NewGuid().ToString("N");
+        var versionDir = Path.Combine(dbRoot, "files", generatedCatalogItemId, "v1");
         var safeName = SafeFileName.SanitizeFileName(SafeFileName.GetBaseName(displayName));
         if (string.IsNullOrEmpty(safeName)) safeName = "Family";
         return Path.Combine(versionDir, safeName + extension);

@@ -710,7 +710,11 @@ public sealed partial class FamilyManagerMainViewModel
                 var openDocs = new List<OpenDocumentInfo>();
                 foreach (Document d in app.Documents)
                 {
-                    var isMini = _miniProjectMarker.IsMiniProject(d);
+                    // L1: the path fallback keeps legacy unmarked mini-projects
+                    // out of the focus candidates as well (ES marker is the
+                    // primary check, path pattern covers pre-#188 files).
+                    var isMini = _miniProjectMarker.IsMiniProject(d)
+                        || MiniProjectPathPattern.IsMiniProjectPath(d.PathName);
                     openDocs.Add(new OpenDocumentInfo(
                         d.PathName ?? string.Empty, d.IsFamilyDocument, d.IsLinked, isMini));
                     if (string.Equals(d.PathName, capturedMiniProjectPath, StringComparison.OrdinalIgnoreCase))
@@ -727,11 +731,17 @@ public sealed partial class FamilyManagerMainViewModel
 
                 // #188: NEVER close a document that is not a marked SmartCon
                 // mini-project — that would destroy unsaved work in the user's
-                // real project.
-                if (!_miniProjectMarker.IsMiniProject(capturedDoc))
+                // real project. Two factors are required (adversarial review
+                // M1): the ES marker AND the managed-storage path. A fork
+                // (mini-project SaveAs'd to a user location as the seed of a
+                // new work project) keeps the ES marker but leaves managed
+                // storage — closing it would lose unsaved user work.
+                if (!_miniProjectMarker.IsMiniProject(capturedDoc)
+                    || !MiniProjectPathPattern.IsMiniProjectPath(capturedDoc.PathName))
                 {
                     SmartConLogger.Info(
-                        "Active document is not a marked SmartCon mini-project — leaving it open (work-project protection)");
+                        "Active document is not a marked managed-storage mini-project " +
+                        "(no ES marker or outside managed storage) — leaving it open (work-project protection)");
                     return;
                 }
 

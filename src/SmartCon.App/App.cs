@@ -87,6 +87,12 @@ public sealed class App : AppBase
             var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
             application.RegisterDockablePane(fmPaneId, "Family Manager", fmProvider);
 
+            // Explicit eager resolve (adversarial review M2): the notifier's
+            // DI factory subscribes to ViewActivated — the timing of that
+            // subscription must not depend on the transitive pane-resolution
+            // chain above surviving future refactors.
+            _ = ServiceHost.GetService<IActiveDocumentChangeNotifier>();
+
             RibbonBuilder.CreateRibbon(application);
 
             return Result.Succeeded;
