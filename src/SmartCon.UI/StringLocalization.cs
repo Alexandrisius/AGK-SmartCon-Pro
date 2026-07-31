@@ -383,6 +383,7 @@ public static class StringLocalization
         public const string FM_BatchImport_ProgressExtracting = "FM_BatchImport_ProgressExtracting";
         public const string FM_BatchImport_Finalizing = "FM_BatchImport_Finalizing";
         public const string FM_BatchImport_SummaryFormat = "FM_BatchImport_SummaryFormat";
+        public const string FM_PostImportStaleFormat = "FM_PostImportStaleFormat";
         public const string FM_AttrStatus_Found = "FM_AttrStatus_Found";
         public const string FM_AttrStatus_MissingParameter = "FM_AttrStatus_MissingParameter";
         public const string FM_AttrStatus_EmptyValue = "FM_AttrStatus_EmptyValue";

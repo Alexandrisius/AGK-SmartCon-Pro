@@ -245,6 +245,15 @@ public sealed partial class FamilyManagerMainViewModel
                     {
                         await CloseMiniProjectAfterImportAsync(capturedActivePath!);
                     }
+
+                    // #185: automatic stale check right after the import —
+                    // the work project (now active) holds markers of the
+                    // previous catalog version; the user must SEE that
+                    // "Обновить" is needed, without hunting for "Проверить".
+                    if (outcome.ImportStarted && outcome.SuccessCount > 0)
+                    {
+                        await RunPostImportStaleCheckAsync(outcome.ImportedItems);
+                    }
                     break;
             }
         }

@@ -331,9 +331,16 @@ public sealed partial class FamilyManagerMainViewModel
                 batchItems.Count);
 
             // #186: "Импорт выделенных элементов" НЕ закрывает мини-проект
-            // после импорта (в отличие от "Импорт активного файла") — outcome
-            // здесь нужен только для будущей авто stale-проверки (#185).
+            // после импорта (в отличие от "Импорт активного файла").
             var outcome = await ProcessProjectImportAsync(batchItems);
+
+            // #185: automatic stale check after the import (active document
+            // stays the user's project — its other types of the reimported
+            // items may carry markers of older versions).
+            if (outcome.ImportStarted && outcome.SuccessCount > 0)
+            {
+                await RunPostImportStaleCheckAsync(outcome.ImportedItems);
+            }
         }
         catch (Exception ex)
         {

@@ -314,7 +314,13 @@ public sealed partial class FamilyManagerMainViewModel
         //    Returns null only if the cache has been invalidated (DB switch,
         //    explicit InvalidateCache) — in that case we have nothing to apply.
         var merged = _staleDetector.GetMergedSnapshot(results);
-        if (merged is null) return;
+        if (merged is null)
+        {
+            // #185: silent no-op is undiagnosable in a race with
+            // InvalidateCache — at least leave a Debug trace.
+            SmartConLogger.Debug("ApplyStaleResultsToTreeAsync: merged snapshot is null (cache invalidated or cold start) — badges not updated");
+            return;
+        }
 
         // 1) Collect all stale IDs from the merged snapshot — covers every
         //    category that was checked in this session.
@@ -369,6 +375,118 @@ public sealed partial class FamilyManagerMainViewModel
         CheckFamilyCommand.NotifyCanExecuteChanged();
         UpdateCategoryOverwriteParamsCommand.NotifyCanExecuteChanged();
         UpdateCategoryKeepParamsCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Issue #185: automatic stale check right after a catalog import
+    /// completes ("Импорт активного файла" / "Импорт выделенных элементов").
+    /// The user must SEE immediately that the work project's types are now
+    /// outdated relative to the freshly imported catalog version — otherwise
+    /// the "Обновить" command (ADR-061 sync) stays undiscovered.
+    /// </summary>
+    /// <remarks>
+    /// Runs once per batch (never per item). The active document at this
+    /// point is the WORK project (after the #186 mini-project close), whose
+    /// types carry markers of the PREVIOUS catalog version — the check
+    /// honestly flags them stale. Items not present in the project are
+    /// skipped (not stale — simply not loaded).
+    /// </remarks>
+    internal async Task RunPostImportStaleCheckAsync(IReadOnlyList<ImportedCatalogItem> items)
+    {
+        if (items.Count == 0) return;
+        // M1 (review): the cycle must hold the same guard as a manual Check —
+        // otherwise a concurrent "Обновить"/"Проверить" would race the merge
+        // and a stale badge could land on a just-updated family.
+        if (IsStaleCheckInProgress)
+        {
+            SmartConLogger.Debug("Post-import stale check skipped — another check is already running");
+            return;
+        }
+        IsStaleCheckInProgress = true;
+        // XAML contract: while IsStaleCheckInProgress is set the status line
+        // shows StaleCheckMessage (and StatusMessage is collapsed) — the
+        // message must be non-null, otherwise the user sees a blank bar and
+        // disabled commands with no reason.
+        StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
+        using var _scope = SmartConLogger.BeginScope(
+            "StaleDetection",
+            ("Method", nameof(RunPostImportStaleCheckAsync)),
+            ("Count", items.Count));
+        try
+        {
+            Autodesk.Revit.DB.Document? doc = null;
+            try
+            {
+                doc = _revitContext.GetDocument();
+            }
+            catch (Exception)
+            {
+                // L1 (review): RevitContext.GetDocument throws (NRE) when no
+                // document is active — that is a silent skip, not a Warn.
+                SmartConLogger.Debug("Post-import stale check skipped — no active document");
+                return;
+            }
+
+            var results = new List<StaleCheckResult>();
+            var seenItemIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in items)
+            {
+                // L3 (review): the batch may carry two rows for one catalog
+                // item (cross-name duplicate + MakeActive) — check it once.
+                if (!seenItemIds.Add(item.CatalogItemId)) continue;
+
+                if (item.FamilySource == "system")
+                {
+                    var systemResult = await _staleDetector.CheckSystemFamilyAsync(
+                        item.CatalogItemId, item.DisplayName, doc, CancellationToken.None)
+                        .ConfigureAwait(true);
+                    if (systemResult is not null) results.Add(systemResult);
+                }
+                else
+                {
+                    var familyId = await _awaitableEvent.RaiseAsync(
+                        _ => _familyFinder.FindByName(doc, item.DisplayName),
+                        CancellationToken.None).ConfigureAwait(true);
+                    if (familyId is null) continue;
+
+                    results.Add(await _staleDetector.CheckFamilyAsync(
+                        item.CatalogItemId, item.DisplayName, doc, familyId, CancellationToken.None)
+                        .ConfigureAwait(true));
+                }
+            }
+
+            if (results.Count == 0)
+            {
+                SmartConLogger.Info(
+                    $"Post-import stale check: none of {items.Count} imported item(s) are present in the active project");
+                return;
+            }
+
+            await ApplyStaleResultsToTreeAsync(results, CancellationToken.None).ConfigureAwait(true);
+
+            var staleCount = results.Count(r => r.IsStale);
+            SmartConLogger.Info(
+                $"Post-import stale check: {staleCount} stale of {results.Count} checked item(s)");
+            if (staleCount > 0)
+            {
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_PostImportStaleFormat)
+                        ?? "Проверка после импорта: устарело {0} из {1} — обновите через «Обновить» в контекстном меню",
+                    staleCount, results.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Post-import stale check failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: не критично — запустите «Проверить» вручную из контекстного меню]");
+        }
+        finally
+        {
+            IsStaleCheckInProgress = false;
+            StaleCheckMessage = null;
+            NotifyCheckCommands();
+        }
     }
 
     private static IEnumerable<CategoryNodeViewModel> EnumerateAllCategories(
