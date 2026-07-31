@@ -1,8 +1,5 @@
-using System.Reflection;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Mechanical;
-using Autodesk.Revit.DB.Plumbing;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 using SmartCon.Core.Compatibility;
@@ -231,12 +228,10 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             // import). They are harmless — catalog type lists are built from
             // placed instances and the synchronizer matches types by name.
 
-            // Размещение инстансов в новом проекте (только для линейных категорий).
-            Dictionary<ElementId, List<ElementId>> placedInstancesByType = [];
-            _transactionService.RunInTransaction(newDoc, "Place instances on grid", doc =>
-            {
-                placedInstancesByType = PlaceInstancesOnGrid(doc, copiedTypeIds, category);
-            });
+            // Размещение инстансов в новом проекте. Общая внешняя транзакция
+            // убрана (ADR-027 Phase 2): каждый handler управляет транзакциями
+            // сам — StairsEditScope запрещает старт внутри активной транзакции.
+            var placedInstancesByType = PlaceInstancesOnGrid(newDoc, copiedTypeIds, category);
 
             // Нормализация диаметров/размеров на размещённых инстансах.
             // Причина: новый проект (NewProjectDocument Metric) создаёт типы
@@ -283,19 +278,23 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
     /// <summary>
     /// Размещает инстансы скопированных типов на сетке 2×2 м на Level 1.
-    /// Поддерживаются только ЛИНЕЙНЫЕ категории (двухточечное размещение).
-    /// Категории с другой геометрией (Floors, Roofs, Ceilings — CurveLoop; Stairs/Railings — сложные) — копируются только как типы.
+    /// Handler категории сам управляет транзакциями (ADR-027 Phase 2 —
+    /// StairsEditScope нельзя стартовать внутри активной транзакции).
+    /// Версионная доступность (потолки R22+, ограждения R25+) фильтруется
+    /// <see cref="SystemCategoryPlacementAvailability"/>; недоступная на этой
+    /// версии категория до staging не доходит — её отсекает импортный гейт.
     /// </summary>
     /// <returns>Словарь: typeId → список ID размещённых инстансов этого типа.</returns>
-    private static Dictionary<ElementId, List<ElementId>> PlaceInstancesOnGrid(
+    private Dictionary<ElementId, List<ElementId>> PlaceInstancesOnGrid(
         Document newDoc, ICollection<ElementId> typeIds, BuiltInCategory category)
     {
         var instancesByType = new Dictionary<ElementId, List<ElementId>>();
 
-        var handler = SystemCategoryRegistry.GetPlacementHandler(category);
+        var revitMajor = int.TryParse(newDoc.Application.VersionNumber, out var v) ? v : 0;
+        var handler = SystemCategoryRegistry.GetPlacementHandler(category, revitMajor);
         if (handler is null)
         {
-            SmartConLogger.Info($"No placement handler for {category}; types copied only");
+            SmartConLogger.Info($"No placement handler for {category} on Revit {revitMajor}; types copied only");
             return instancesByType;
         }
 
@@ -328,7 +327,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
             try
             {
-                var created = handler(newDoc, type, level, start, end);
+                var created = handler(newDoc, _transactionService, type, level, start, end);
                 if (created is not null)
                 {
                     if (!instancesByType.TryGetValue(typeId, out var list))
@@ -454,217 +453,3 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         }
     }
 }
-
-/// <summary>
-/// Реестр поддерживаемых системных категорий и их handlers для placement.
-/// Содержит ОДНО место для добавления/удаления категорий.
-///
-/// РЕАЛИЗОВАННЫЕ КАТЕГОРИИ (Phase 1):
-///   - OST_PipeCurves                       -> Pipe.Create (2 точки)
-///   - OST_FlexPipeCurves                   -> FlexPipe.Create (2 точки + tangents)
-///   - OST_DuctCurves                       -> Duct.Create (2 точки)
-///   - OST_FlexDuctCurves                   -> FlexDuct.Create (2 точки + tangents)
-///   - OST_Walls                            -> Wall.Create (Line)
-///   - OST_Conduit                          -> Conduit.Create (2 точки)
-///   - OST_CableTray                        -> CableTray.Create (2 точки)
-///
-/// НЕРЕАЛИЗОВАННЫЕ КАТЕГОРИИ (Phase 2 TODO — нужны CurveLoop или сложная логика):
-///   - OST_Floors, OST_Roofs, OST_Ceilings  -> NewFloor/NewRoof/NewCeiling (CurveLoop)
-///   - OST_Stairs, OST_Railings             -> Stairs.Create, Railing.Create (сложно)
-///   - OST_PipeInsulations, OST_DuctInsulations -> InsulationLiningBase (требует host)
-/// Типы этих категорий КОПИРУЮТСЯ, но НЕ размещаются.
-/// </summary>
-internal static class SystemCategoryRegistry
-{
-    public sealed record Entry(
-        BuiltInCategory Category,
-        string DisplayName,
-        Func<Document, Element, Level, XYZ, XYZ, Element?>? PlacementHandler);
-
-    public static readonly IReadOnlyList<Entry> Entries = BuildEntries();
-
-    public static Func<Document, Element, Level, XYZ, XYZ, Element?>? GetPlacementHandler(BuiltInCategory category)
-    {
-        foreach (var e in Entries)
-        {
-            if (e.Category == category) return e.PlacementHandler;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Единый источник правды для набора поддерживаемых системных категорий.
-    /// Используется:
-    ///   - <see cref="Selection.AnyElementSelectionFilter"/> для фильтрации выбора в Revit UI
-    ///   - <see cref="PickSelectedElements"/> для проверки
-    ///     соответствия категории типа каноническому списку (defense in depth)
-    /// </summary>
-    public static readonly HashSet<BuiltInCategory> SupportedCategories =
-        new(Entries.Select(e => e.Category));
-
-    private static IReadOnlyList<Entry> BuildEntries()
-    {
-        return new List<Entry>
-        {
-            new(BuiltInCategory.OST_PipeCurves,      "Трубы",        PlacePipe),
-            new(BuiltInCategory.OST_FlexPipeCurves,  "Гибкие трубы", PlaceFlexPipe),
-            new(BuiltInCategory.OST_DuctCurves,      "Воздуховоды",  PlaceDuct),
-            new(BuiltInCategory.OST_FlexDuctCurves,  "Гибкие воздуховоды", PlaceFlexDuct),
-            new(BuiltInCategory.OST_Conduit,         "Короба",       PlaceConduit),
-            new(BuiltInCategory.OST_CableTray,       "Лотки",        PlaceCableTray),
-            new(BuiltInCategory.OST_Walls,           "Стены",        PlaceWall),
-
-            // Копируются, но НЕ размещаются (Phase 2 TODO — см. ADR-027 §"Phase 2 TODO"):
-            //
-            // Эти категории зарегистрированы с PlacementHandler = null, чтобы
-            // AnalyzeActiveProject / PickSelectedElements продолжали показывать
-            // их в batch dialog. Тип копируется в mini-rvt (copied=N), но
-            // инстанс НЕ размещается (placed=0), и SystemFamilyAttributeExtractor
-            // пишет 0 атрибутов. User decision 2026-06-08: оставить видимыми
-            // для awareness, реализацию placement делать в Phase 2.
-            //
-            // Blockers (детали в ADR-027):
-            //   Floors / Roofs / Ceilings — требуют CurveLoop, не 2-точечный line
-            //   Stairs                  — многоуровневая иерархия
-            //   Railings                — требует host + continuous path
-            //   PipeInsulations         — требует host pipe в destination doc
-            //   DuctInsulations         — требует host duct в destination doc
-            //
-            // При реализации Phase 2: сигнатура PlacementHandler изменится
-            // (Floor.NewFloor нужен CurveLoop, InsulationLiningBase.Create нужен host).
-            new(BuiltInCategory.OST_Floors,          "Перекрытия",   null),
-            new(BuiltInCategory.OST_Roofs,           "Крыши",        null),
-            new(BuiltInCategory.OST_Ceilings,        "Потолки",      null),
-            new(BuiltInCategory.OST_Stairs,          "Лестницы",     null),
-            new(BuiltInCategory.OST_Railings,        "Ограждения",   null),
-            new(BuiltInCategory.OST_PipeInsulations, "Изоляция труб", null),
-            new(BuiltInCategory.OST_DuctInsulations, "Изоляция воздуховодов", null),
-        };
-    }
-
-    private static Element? PlacePipe(Document doc, Element type, Level level, XYZ start, XYZ end)
-    {
-        if (type is not PipeType pipeType) return null;
-        var sysType = new FilteredElementCollector(doc)
-            .OfClass(typeof(PipingSystemType))
-            .Cast<PipingSystemType>()
-            .FirstOrDefault();
-        if (sysType is null) return null;
-        return Pipe.Create(doc, sysType.Id, pipeType.Id, level.Id, start, end);
-    }
-
-    /// <summary>
-    /// Places a flex pipe instance on the grid. <see cref="FlexPipe.Create"/>
-    /// requires a <see cref="FlexPipeType"/> (not a regular <see cref="PipeType"/>)
-    /// and an array of intermediate points, so the regular <see cref="PlacePipe"/>
-    /// handler cannot be reused. The number of points and the tangent vectors
-    /// are minimal — Revit derives the spline from the points alone.
-    /// </summary>
-    private static Element? PlaceFlexPipe(Document doc, Element type, Level level, XYZ start, XYZ end)
-    {
-        if (type is not FlexPipeType flexPipeType) return null;
-        var sysType = new FilteredElementCollector(doc)
-            .OfClass(typeof(PipingSystemType))
-            .Cast<PipingSystemType>()
-            .FirstOrDefault();
-        if (sysType is null) return null;
-
-        var points = new List<XYZ> { start, end };
-        var tangent = XYZ.BasisX;
-        return FlexPipe.Create(doc, sysType.Id, flexPipeType.Id, level.Id, tangent, tangent, points);
-    }
-
-    private static Element? PlaceDuct(Document doc, Element type, Level level, XYZ start, XYZ end)
-    {
-        if (type is not DuctType ductType) return null;
-        var sysType = new FilteredElementCollector(doc)
-            .OfClass(typeof(MechanicalSystemType))
-            .Cast<MechanicalSystemType>()
-            .FirstOrDefault();
-        if (sysType is null) return null;
-        return Duct.Create(doc, sysType.Id, ductType.Id, level.Id, start, end);
-    }
-
-    /// <summary>
-    /// Places a flex duct instance on the grid. <see cref="FlexDuct.Create"/>
-    /// requires a <see cref="FlexDuctType"/> (not a regular <see cref="DuctType"/>)
-    /// and an array of intermediate points, so the regular <see cref="PlaceDuct"/>
-    /// handler cannot be reused. Mirrors <see cref="PlaceFlexPipe"/>.
-    /// </summary>
-    private static Element? PlaceFlexDuct(Document doc, Element type, Level level, XYZ start, XYZ end)
-    {
-        if (type is not FlexDuctType flexDuctType) return null;
-        var sysType = new FilteredElementCollector(doc)
-            .OfClass(typeof(MechanicalSystemType))
-            .Cast<MechanicalSystemType>()
-            .FirstOrDefault();
-        if (sysType is null) return null;
-
-        var points = new List<XYZ> { start, end };
-        var tangent = XYZ.BasisX;
-        return FlexDuct.Create(doc, sysType.Id, flexDuctType.Id, level.Id, tangent, tangent, points);
-    }
-
-    private static Element? PlaceConduit(Document doc, Element type, Level level, XYZ start, XYZ end)
-    {
-        var assembly = doc.GetType().Assembly;
-        var conduitType = assembly.GetType("Autodesk.Revit.DB.Electrical.ConduitType");
-        var conduit = assembly.GetType("Autodesk.Revit.DB.Electrical.Conduit");
-        if (conduitType is null || conduit is null) return null;
-        if (!conduitType.IsInstanceOfType(type)) return null;
-
-        var createMethod = conduit.GetMethod(
-            "Create",
-            BindingFlags.Public | BindingFlags.Static,
-            null,
-            new[] { typeof(Document), typeof(ElementId), typeof(XYZ), typeof(XYZ), typeof(ElementId) },
-            null);
-        if (createMethod is null) return null;
-
-        try
-        {
-            return createMethod.Invoke(null, new object[] { doc, type.Id, start, end, level.Id }) as Element;
-        }
-        catch (TargetInvocationException tex)
-        {
-            SmartConLogger.Warn($"{tex.InnerException?.Message ?? tex.Message}");
-            return null;
-        }
-    }
-
-    private static Element? PlaceCableTray(Document doc, Element type, Level level, XYZ start, XYZ end)
-    {
-        var assembly = doc.GetType().Assembly;
-        var cableTrayType = assembly.GetType("Autodesk.Revit.DB.Electrical.CableTrayType");
-        var cableTray = assembly.GetType("Autodesk.Revit.DB.Electrical.CableTray");
-        if (cableTrayType is null || cableTray is null) return null;
-        if (!cableTrayType.IsInstanceOfType(type)) return null;
-
-        var createMethod = cableTray.GetMethod(
-            "Create",
-            BindingFlags.Public | BindingFlags.Static,
-            null,
-            new[] { typeof(Document), typeof(ElementId), typeof(XYZ), typeof(XYZ), typeof(ElementId) },
-            null);
-        if (createMethod is null) return null;
-
-        try
-        {
-            return createMethod.Invoke(null, new object[] { doc, type.Id, start, end, level.Id }) as Element;
-        }
-        catch (TargetInvocationException tex)
-        {
-            SmartConLogger.Warn($"{tex.InnerException?.Message ?? tex.Message}");
-            return null;
-        }
-    }
-
-    private static Element? PlaceWall(Document doc, Element type, Level level, XYZ start, XYZ end)
-    {
-        if (type is not WallType wallType) return null;
-        var line = Line.CreateBound(start, end);
-        var height = RevitUnitsCompat.MetersToInternal(3.0);
-        return Wall.Create(doc, line, wallType.Id, level.Id, height, 0.0, false, false);
-    }
-}
-
