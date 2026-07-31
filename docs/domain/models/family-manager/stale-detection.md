@@ -227,3 +227,44 @@ public static class SystemTypeStaleLogic
 - `Aggregate` принимает маркеры ТОЛЬКО типов, присутствующих в проекте (caller отфильтровывает незагруженные); пустой список = не stale (тип не загружен — как unloadable семейство).
 - `ComputeReason` повторяет правила loadable: чужой `CatalogItemId` или другой `VersionLabel` → `VersionMismatch`; другой `SourceRevitVersion` → `RevitVersionMismatch` (при обоих > 0).
 - Используется `StaleDetector` (system-ветки Check) и `SystemFamilySyncOrchestrator.IsProjectTypeCurrent` (fast-path размещения) — одинаковый вердикт в обоих местах.
+
+---
+
+## SystemTypeRef
+
+Ссылка на системный тип по ПОЛНОЙ идентичности — (семья, имя). Голое имя типа
+неоднозначно: «Стандарт» существует и в «Conduit with Fittings», и в
+«Conduit without Fittings» (Issue #183). Используется в
+`ISystemTypeSyncOrchestrator.SyncTypes` — оркестратор синхронизирует типы
+только по полной паре; `FamilyName == null` — legacy-поведение (первый
+матч по имени).
+
+**Файл:** `SystemTypeRef.cs`
+
+```csharp
+public sealed record SystemTypeRef(
+    string Name,
+    string? FamilyName = null);
+```
+
+---
+
+## TypePresenceState
+
+Трёхзначное состояние присутствия типа в активном проекте (Issue #187) —
+управляет точкой-индикатором в дереве каталога: серая (тип не загружен),
+зелёная (загружен и актуален), оранжевая (загружен, но устарел).
+Вычисляется из двух флагов узла типа: `IsInProject` (presence-снимок
+активного документа) и `IsStaleInProject` (per-type stale-карта
+`StaleDetector` для системных типов; для loadable — leaf-флаг `IsStale`).
+
+**Файл:** `TypePresenceState.cs`
+
+```csharp
+public enum TypePresenceState
+{
+    NotInProject,     // серый — типа нет в активном проекте
+    InProject,        // зелёный — загружен и актуален
+    StaleInProject,   // оранжевый — загружен, но устарел относительно каталога
+}
+```

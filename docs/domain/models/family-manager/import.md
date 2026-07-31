@@ -560,3 +560,103 @@ public sealed record FamilyBatchImportExecutionResult(
     int ErrorCount,
     bool WasStopped);
 ```
+
+---
+
+## ProjectImportOutcome
+
+Результат `FamilyManagerMainViewModel.ProcessProjectImportAsync` (batch-импорт
+проекта: «Импорт активного файла» / «Импорт выделенных элементов»).
+`ImportStarted == false` — пользователь отменил batch-диалог до старта:
+вызывающий НЕ должен выполнять пост-импортные действия (закрытие
+мини-проекта #186, авто stale-проверка #185).
+
+**Файл:** `ProjectImportOutcome.cs`
+
+```csharp
+public sealed record ProjectImportOutcome(
+    bool ImportStarted,
+    int SuccessCount,
+    IReadOnlyList<ImportedCatalogItem> ImportedItems)
+{
+    public static readonly ProjectImportOutcome NotStarted = new(false, 0, []);
+}
+```
+
+---
+
+## ImportedCatalogItem
+
+Один затронутый импортом элемент каталога — минимум данных для пост-импортной
+stale-проверки (#185) без повторного запроса к БД.
+
+**Файл:** `ProjectImportOutcome.cs`
+
+```csharp
+public sealed record ImportedCatalogItem(
+    string CatalogItemId,
+    string DisplayName,
+    string FamilySource);
+```
+
+---
+
+## MiniProjectPathPattern
+
+Чистая (pure) проверка пути по форме managed storage
+(`{dbRoot}\files\{catalogItemId}\{versionLabel}\{name}.rvt`) — fallback
+распознавания эталонного мини-проекта для файлов, созданных до появления
+ES-маркера (Issue #188). Консервативна по дизайну: ложноположительное
+распознавание скрыло бы реальный рабочий проект от автопереключения базы,
+поэтому требуется полная форма пути. Решения о закрытии (#186) этот
+fallback НЕ используют — только ES-маркер.
+
+**Файл:** `MiniProjectPathPattern.cs` (`SmartCon.Core/Services/FamilyManager/`)
+
+```csharp
+public static class MiniProjectPathPattern
+{
+    public static bool IsMiniProjectPath(string? path);
+}
+```
+
+---
+
+## OpenDocumentInfo
+
+Снимок одного открытого документа Revit для чистой логики выбора рабочего
+проекта (`WorkProjectSelector`) — VM маппит `Document` на этот record, чтобы
+логика оставалась юнит-тестируемой без Revit API.
+
+**Файл:** `WorkProjectSelector.cs` (`SmartCon.Core/Services/FamilyManager/`)
+
+```csharp
+public sealed record OpenDocumentInfo(
+    string PathName,
+    bool IsFamilyDocument,
+    bool IsLinked,
+    bool IsMiniProject);
+```
+
+---
+
+## WorkProjectSelector
+
+Чистая логика выбора документа, которому передать фокус после закрытия
+эталонного мини-проекта (#186). Рабочий проект — только реальный проект
+пользователя: не семья, не link, не другой мини-проект, не закрываемый
+эталон. `null` — подходящего документа нет (вызывающий создаёт пустой
+проект: `Document.Close` запрещён на активном документе, а
+`PostableCommand.Close` показал бы «Сохранить?» — риск перезаписи
+read-only эталона v1).
+
+**Файл:** `WorkProjectSelector.cs` (`SmartCon.Core/Services/FamilyManager/`)
+
+```csharp
+public static class WorkProjectSelector
+{
+    public static string? SelectWorkProjectPath(
+        IReadOnlyList<OpenDocumentInfo> openDocuments,
+        string? referencePath);
+}
+```

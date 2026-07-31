@@ -340,3 +340,35 @@ public interface ICompoundStructureSyncService
         ElementType target, CompoundStructureSnapshot structure);
 }
 ```
+
+---
+
+## IMiniProjectMarker
+
+Маркировка эталонных мини-проектов (staged .rvt системных семейств, ADR-061 §2)
+через ExtensibleStorage (Issue #188) — отличие от реальных рабочих проектов
+пользователя для:
+
+- безопасного закрытия без сохранения после «Импорта активного файла» (#186) —
+  рабочий проект НИКОГДА не закрывается (дополнительно требуется managed-путь —
+  защита от fork-сценария, когда мини-проект стал зерном нового проекта);
+- исключения из автопереключения активной БД по `ViewActivated` — мини-проект
+  не является проектной базой;
+- защиты от случайного сохранения — закрытие всегда `Close(false)`, read-only
+  файл на диске (I-16) остаётся нетронутым.
+
+Маркер пишется при staging ДО `SaveAs` (путешествует с файлом между сессиями).
+Реализация: `SmartCon.Revit/FamilyManager/RevitMiniProjectMarker.cs` +
+`MiniProjectSchema` (DataStorage «SmartCon.MiniProject»).
+
+**Файл:** `IMiniProjectMarker.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitMiniProjectMarker.cs`
+
+```csharp
+public interface IMiniProjectMarker
+{
+    void MarkAsMiniProject(Document doc, string? catalogItemId);
+    bool IsMiniProject(Document doc);
+    string? ReadCatalogItemId(Document doc);
+}
+```

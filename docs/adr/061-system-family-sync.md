@@ -2,7 +2,23 @@
 
 **Date:** 2026-07-30
 **Status:** accepted
-**Related:** Issue #104, #178, #179, ADR-030 (stale-detection v2 / ES-маркер), ADR-049/056 (content hash FHV2/FHV3), ADR-027 (system categories registry), ADR-054 (движок актуализации БД), I-01/I-03/I-05/I-09/I-16
+**Related:** Issue #104, #178, #179, #183, ADR-030 (stale-detection v2 / ES-маркер), ADR-049/056 (content hash FHV2/FHV3), ADR-027 (system categories registry), ADR-054 (движок актуализации БД), ADR-062 (маркер мини-проектов), I-01/I-03/I-05/I-09/I-16
+
+## Revision History
+
+* **2026-07-31** — **Issue #183: идентичность типа = (FamilyName, TypeName, category).**
+  Sync матчил тип только по имени — «Стандарт» короба «Conduit without
+  Fittings» обновлял «Conduit with Fittings» (другая системная СЕМЬЯ).
+  Исправлено сквозным образом: `SystemTypeSnapshot.FamilyName` (hash-neutral,
+  FHV4 = #179); DDL **V26** (`family_types.family_name`, UNIQUE
+  `(item, version, family, name)`); эталон и target матчатся по
+  `(family, name)`; `Duplicate()`-прототип только из своей семьи, иначе
+  skip `FamilyNotFound`; `SyncTypes` принимает `SystemTypeRef`; stale
+  (batch+single) матчится по паре; legacy-строки без семьи деградируют к
+  first-match (pre-#183). `TemplateCollisionResolver` осознанно НЕ тронут
+  (CopyElements ремапит системные семьи — точный матчинг по семье там
+  ненадёжен). Follow-ups: #190 (cross-locale family key), #191 (name-keyed
+  attribute pipeline).
 
 ## Context
 
