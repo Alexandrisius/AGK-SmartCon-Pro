@@ -28,8 +28,10 @@ namespace SmartCon.Revit.FamilyManager;
 /// revitapidocs). Простые handler'ы открывают транзакцию через
 /// <see cref="ITransactionService"/> (I-03), лестницы — через scope,
 /// внутри которого транзакция сервиса легальна.
+/// Видимость public — по прецеденту <c>TemplateCollisionResolver</c>:
+/// интеграционные тесты (SmartCon.IntegrationTests) вызывают handler'ы напрямую.
 /// </summary>
-internal static class SystemCategoryRegistry
+public static class SystemCategoryRegistry
 {
     /// <summary>
     /// Размещает один инстанс типа в staged мини-проекте и возвращает его.
@@ -298,10 +300,14 @@ internal static class SystemCategoryRegistry
     }
 
     /// <summary>
-    /// Плоская крыша по контуру 1×1 м. <c>Creation.Document.NewFootPrintRoof</c>
-    /// доступен на всех поддерживаемых версиях; скат не задаём
-    /// (<c>DefinesSlope</c> по умолчанию отключён — эталону достаточно
-    /// плоского экземпляра).
+    /// Двускатная крыша 1×1 м вытягиванием открытого профиля.
+    /// <c>NewFootPrintRoof</c> непригоден: старый Creation-метод требует
+    /// UI-контекст и бросает <c>Autodesk.Revit.Exceptions.ArgumentNullException</c>
+    /// в фоновом документе (staged мини-проект никогда не активен — проверено
+    /// зондом в реальном Revit). <c>NewExtrusionRoof</c> с ОТКРЫТЫМ профилем
+    /// (замкнутый контур отклоняется «Invalid profile») работает в фоновом
+    /// документе на всех версиях. ReferencePlane строится на первом ViewPlan
+    /// шаблона (<c>doc.ActiveView</c> у фонового документа = null).
     /// </summary>
     private static Element? PlaceRoof(Document doc, ITransactionService txService, Element type, Level level, XYZ start, XYZ end)
     {
@@ -309,8 +315,31 @@ internal static class SystemCategoryRegistry
         Element? created = null;
         txService.RunInTransaction(doc, "Place roof", d =>
         {
-            var footPrint = ToCurveArray(BuildRectangularLoop(start));
-            created = d.Create.NewFootPrintRoof(footPrint, level, roofType, out _);
+            var viewPlan = new FilteredElementCollector(d)
+                .OfClass(typeof(ViewPlan))
+                .Cast<ViewPlan>()
+                .First();
+
+            var sizeFt = RevitUnitsCompat.MetersToInternal(1.0);
+            var riseFt = RevitUnitsCompat.MetersToInternal(0.3);
+
+            // Вертикальная рабочая плоскость через ячейку (нормаль +X):
+            // bubbleEnd/freeEnd задают ось Z плоскости, cutVec — её ось Y.
+            var refPlane = d.Create.NewReferencePlane(
+                start,
+                new XYZ(start.X, start.Y, start.Z + sizeFt),
+                XYZ.BasisY,
+                viewPlan);
+
+            // Открытый двускатный профиль в плоскости YZ.
+            var p1 = start;
+            var p2 = new XYZ(start.X, start.Y + sizeFt / 2, start.Z + riseFt);
+            var p3 = new XYZ(start.X, start.Y + sizeFt, start.Z);
+            var profile = new CurveArray();
+            profile.Append(Line.CreateBound(p1, p2));
+            profile.Append(Line.CreateBound(p2, p3));
+
+            created = d.Create.NewExtrusionRoof(profile, refPlane, level, roofType, 0, sizeFt);
         });
         return created;
     }
@@ -365,9 +394,10 @@ internal static class SystemCategoryRegistry
         }
 
         Element? created = null;
+        ElementId stairsId;
         using (var scope = new StairsEditScope(doc, "SmartCon_StairPlacement"))
         {
-            var stairsId = scope.Start(level.Id, topLevel!.Id);
+            stairsId = scope.Start(level.Id, topLevel!.Id);
 
             txService.RunInTransaction(doc, "Place stair run", d =>
             {
@@ -382,17 +412,24 @@ internal static class SystemCategoryRegistry
                     new XYZ(start.X + runLengthFt, start.Y, level.Elevation));
                 var run = StairsRun.CreateStraightRun(d, stairsId, runLine, StairsRunJustification.Center);
                 run.EndsWithRiser = true;
-
-                foreach (var railingId in stairs.GetAssociatedRailings())
-                {
-                    d.Delete(railingId);
-                }
-
-                created = stairs;
             });
 
             scope.Commit(new StairsFailuresPreprocessor());
         }
+
+        // Дефолтные ограждения StairsEditScope материализуются только при
+        // scope.Commit — удалять их надо ПОСЛЕ коммита scope (внутри scope
+        // GetAssociatedRailings ещё пуст).
+        txService.RunInTransaction(doc, "Remove default railings", d =>
+        {
+            var stairs = (Stairs)d.GetElement(stairsId);
+            foreach (var railingId in stairs.GetAssociatedRailings())
+            {
+                d.Delete(railingId);
+            }
+            created = stairs;
+        });
+
         return created;
     }
 
