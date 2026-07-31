@@ -87,14 +87,29 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
             // one AnalyzeActiveProject uses) — default project content
             // (levels, views, materials, curtain mullions) is excluded by
             // construction, no heuristics.
+            //
+            // #181: insulation mini-projects always contain a host pipe/duct
+            // (CF-4720), and OST_PipeCurves precedes OST_PipeInsulations in
+            // the registry — without the host filter the insulation staged
+            // file would misdetect as "Трубы". Hosts are excluded from
+            // detection exactly like in the import analysis.
+            HashSet<ElementId>? insulatedHostIds = null;
             string? categoryName = null;
             BuiltInCategory? detectedCategory = null;
             foreach (var entry in SystemCategoryRegistry.Entries)
             {
-                var instance = new FilteredElementCollector(doc)
+                var instances = new FilteredElementCollector(doc)
                     .OfCategory(entry.Category)
                     .WhereElementIsNotElementType()
-                    .FirstOrDefault();
+                    .AsEnumerable();
+
+                if (InsulationHostFilter.IsInsulationHostCategory(entry.Category))
+                {
+                    insulatedHostIds ??= InsulationHostFilter.CollectInsulatedHostIds(doc);
+                    instances = instances.Where(e => !insulatedHostIds.Contains(e.Id));
+                }
+
+                var instance = instances.FirstOrDefault();
                 if (instance?.Category is not null)
                 {
                     categoryName = instance.Category.Name;

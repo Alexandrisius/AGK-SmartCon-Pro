@@ -54,6 +54,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         var systemTypes = new Dictionary<string, SelectedSystemType>();
         var loadableFamilies = new Dictionary<string, LoadableFamilyInfo>();
         int skippedCount = 0;
+        int skippedInsulationHosts = 0;
 
         foreach (var r in refs)
         {
@@ -76,10 +77,35 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             }
 
             var typeId = elem.GetTypeId();
-            if (typeId == ElementId.InvalidElementId) { skippedCount++; continue; }
+            if (typeId == ElementId.InvalidElementId)
+            {
+                // #182: log WHY a picked element is skipped (was silent).
+                skippedCount++;
+                SmartConLogger.Debug(
+                    $"Picker skipped {elem.GetType().Name} (id={elem.Id.GetValue()}, name='{elem.Name}') — GetTypeId is invalid");
+                continue;
+            }
+
+            // #181: a picked pipe/duct carrying insulation is an insulation
+            // host (CF-4720 artifact), not standalone content — exclude it
+            // exactly like AnalyzeActiveProject does.
+            var elemBic = CategoryCompat.GetBuiltInCategory(elem.Category);
+            if (IsInsulationHostCategory(elemBic) && HasInsulation(doc, elem.Id))
+            {
+                skippedInsulationHosts++;
+                SmartConLogger.Info(
+                    $"Skipped '{elem.Name}': pipe/duct with insulation is an insulation host, not standalone content");
+                continue;
+            }
 
             var typeElem = doc.GetElement(typeId);
-            if (typeElem is null) { skippedCount++; continue; }
+            if (typeElem is null)
+            {
+                skippedCount++;
+                SmartConLogger.Debug(
+                    $"Picker skipped {elem.GetType().Name} (id={elem.Id.GetValue()}) — type element {typeId.GetValue()} not found");
+                continue;
+            }
 
             var category = typeElem.Category;
             var categoryName = category?.Name ?? "Unknown";
@@ -113,6 +139,9 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         if (skippedCount > 0)
             SmartConLogger.Info(
                 $"Skipped {skippedCount} element(s) without resolvable type/category");
+        if (skippedInsulationHosts > 0)
+            SmartConLogger.Info(
+                $"Skipped {skippedInsulationHosts} insulation host(s) (pipe/duct with insulation — #181)");
 
         return new SelectedElementsAnalysis(
             SystemTypes: systemTypes.Values.ToList(),
@@ -125,16 +154,34 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             ("Method", "AnalyzeActiveProject"));
         if (activeDoc is null) return [];
 
+        // #181: pipes/ducts existing ONLY as insulation hosts (the insulation
+        // type cannot exist without a host, CF-4720) are artifacts of the
+        // Revit API, not standalone user content. Excluding them here — before
+        // the type grouping — keeps "Трубы"/"Воздуховоды" categories with the
+        // template "По умолчанию" type out of the batch dialog. A pipe/duct
+        // WITHOUT insulation stays regular content. Computed lazily, only when
+        // a host category is actually reached.
+        HashSet<ElementId>? insulatedHostIds = null;
+
         var result = new List<CategoryAnalysis>();
 
         foreach (var entry in SystemCategoryRegistry.Entries)
         {
             try
             {
+                var instances = new FilteredElementCollector(activeDoc)
+                    .OfCategory(entry.Category)
+                    .WhereElementIsNotElementType()
+                    .AsEnumerable();
+
+                if (IsInsulationHostCategory(entry.Category))
+                {
+                    insulatedHostIds ??= CollectInsulatedHostIds(activeDoc);
+                    instances = instances.Where(e => !insulatedHostIds.Contains(e.Id));
+                }
+
                 var placedTypeIds = new HashSet<ElementId>(
-                    new FilteredElementCollector(activeDoc)
-                        .OfCategory(entry.Category)
-                        .WhereElementIsNotElementType()
+                    instances
                         .Select(e => e.GetTypeId())
                         .Where(id => id != null && id != ElementId.InvalidElementId));
 
@@ -455,6 +502,16 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         // pass should inline the call sites and delete this wrapper.
         return SafeFileName.SanitizeFileName(name);
     }
+
+    /// <summary>#181: делегаты в <see cref="InsulationHostFilter"/> (общий фильтр, используется и детектом категории staged-файла).</summary>
+    private static bool IsInsulationHostCategory(BuiltInCategory bic)
+        => InsulationHostFilter.IsInsulationHostCategory(bic);
+
+    private static HashSet<ElementId> CollectInsulatedHostIds(Document doc)
+        => InsulationHostFilter.CollectInsulatedHostIds(doc);
+
+    private static bool HasInsulation(Document doc, ElementId elementId)
+        => InsulationHostFilter.HasInsulation(doc, elementId);
 
     private sealed class SkipDuplicateTypesHandler : IDuplicateTypeNamesHandler
     {

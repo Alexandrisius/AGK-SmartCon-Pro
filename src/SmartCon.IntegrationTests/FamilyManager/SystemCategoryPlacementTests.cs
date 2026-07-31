@@ -377,38 +377,11 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
     }
 
     /// <summary>
-    /// Пустой дефолтный шаблон НЕ содержит типов изоляции (они материализуются
-    /// только при UI-клике «Add Insulation», CF-4720 — API их не создаёт).
-    /// MEP-шаблоны установки Revit содержат готовые типы (проверено зондом
-    /// PROBE T на R25: Systems/Mechanical/Plumbing — PipeIns=2, DuctIns=2).
+    /// MEP-шаблон с типами изоляции (CF-4720: пустой шаблон их не содержит).
+    /// Реализация переехала в <see cref="Support.SampleFiles.NewMepTemplateDocument"/>
+    /// — переиспользуется InsulationHostExclusionTests (#181).
     /// </summary>
     private static Document? NewMepTemplateDocument()
-    {
-        var root = $@"C:\ProgramData\Autodesk\RVT {Application.VersionNumber}\Templates";
-        var candidates = new[]
-        {
-            $@"{root}\Russian\Systems-DefaultRUSRUS.rte",
-            $@"{root}\Russian\Mechanical-DefaultRUSRUS.rte",
-            $@"{root}\Russian\Plumbing-DefaultRUSRUS.rte",
-            $@"{root}\English\Systems-Default_Metric.rte",
-            $@"{root}\English\Mechanical-Default_Metric.rte",
-            $@"{root}\English\Plumbing-Default_Metric.rte",
-        };
-
-        foreach (var path in candidates)
-        {
-            if (!File.Exists(path)) continue;
-
-            try
-            {
-                return Application.NewProjectDocument(path);
-            }
-            catch (Exception)
-            {
-                // Шаблон залочен/битый/новее текущей версии — пробуем следующий.
-            }
-        }
-        return null;
-    }
+        => Support.SampleFiles.NewMepTemplateDocument(Application);
 }
 
