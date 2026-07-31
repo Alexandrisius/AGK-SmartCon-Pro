@@ -167,7 +167,7 @@ public sealed partial class FamilyManagerMainViewModel
                     break;
 
                 case ActiveDocumentKind.Project:
-                    var (systemAnalyses, loadableFamilies) = await _awaitableEvent.RaiseAsync<(IReadOnlyList<CategoryAnalysis>, IReadOnlyList<LoadableFamilyInfo>)>(obj =>
+                    var (systemAnalysesRaw, loadableFamilies) = await _awaitableEvent.RaiseAsync<(IReadOnlyList<CategoryAnalysis>, IReadOnlyList<LoadableFamilyInfo>)>(obj =>
                     {
                         try
                         {
@@ -186,6 +186,12 @@ public sealed partial class FamilyManagerMainViewModel
                             return (Array.Empty<CategoryAnalysis>(), Array.Empty<LoadableFamilyInfo>());
                         }
                     });
+
+                    // ADR-027 Phase 2: categories whose placement API is missing
+                    // on this Revit version (ceilings <2022, railings <2025) are
+                    // excluded with a styled info dialog — a staged mini-project
+                    // without placed instances is not a valid reference.
+                    var systemAnalyses = ApplyPlacementVersionGate(systemAnalysesRaw);
 
                     var systemTypeCount = systemAnalyses.Sum(a => a.TypeCount);
                     var systemCategoryCount = systemAnalyses.Count;

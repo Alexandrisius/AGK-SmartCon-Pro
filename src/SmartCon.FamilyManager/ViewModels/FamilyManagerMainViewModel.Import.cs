@@ -374,10 +374,56 @@ public sealed partial class FamilyManagerMainViewModel
                 g.Select(t => new SystemTypeInfo(t.Name, t.UniqueId)).ToList()))
             .ToList();
 
+        systemAnalyses = ApplyPlacementVersionGate(systemAnalyses);
+
         var prepared = await _preparationService.PrepareProjectImportAsync(
             systemAnalyses, analysis.LoadableFamilies, ct);
 
         return await MapPreparedItemsToBatchItemsAsync(prepared, ct);
+    }
+
+    /// <summary>
+    /// Версионный гейт размещения (ADR-027 Phase 2): категории, чей placement
+    /// API недоступен на текущей версии Revit (потолки — 2022+, ограждения —
+    /// 2025+), исключаются из импорта с styled-диалогом. Эталонный
+    /// мини-проект без размещённых инстансов не считается валидным —
+    /// категория не попадает в библиотеку на этой версии Revit.
+    /// </summary>
+    private List<CategoryAnalysis> ApplyPlacementVersionGate(
+        IReadOnlyList<CategoryAnalysis> systemAnalyses)
+    {
+        if (systemAnalyses.Count == 0 || CurrentRevitVersion <= 0)
+        {
+            return systemAnalyses as List<CategoryAnalysis> ?? systemAnalyses.ToList();
+        }
+
+        var gated = systemAnalyses
+            .Where(a => !SystemCategoryPlacementAvailability.IsSupported(a.Category, CurrentRevitVersion))
+            .ToList();
+        if (gated.Count == 0)
+        {
+            return systemAnalyses as List<CategoryAnalysis> ?? systemAnalyses.ToList();
+        }
+
+        var items = string.Join("\n", gated.Select(g => string.Format(
+            LocalizationService.GetString("FM_ImportVersionGateItem") ?? "• {0} — требуется Revit {1}+",
+            g.DisplayName,
+            SystemCategoryPlacementAvailability.GetMinRevitVersion(g.Category))));
+
+        SmartConLogger.Info(
+            $"Placement version gate: excluded {gated.Count} categories on Revit {CurrentRevitVersion}: " +
+            string.Join(", ", gated.Select(g => g.Category.ToString())));
+
+        _dialogService.ShowInfo(
+            LocalizationService.GetString("FM_ImportVersionGateTitle") ?? "Импорт ограничен версией Revit",
+            string.Format(
+                LocalizationService.GetString("FM_ImportVersionGateBody")
+                    ?? "Следующие системные категории нельзя загрузить в библиотеку на Revit {0}:\n{1}\n\nОни не будут импортированы.",
+                CurrentRevitVersion, items));
+
+        return systemAnalyses
+            .Where(a => SystemCategoryPlacementAvailability.IsSupported(a.Category, CurrentRevitVersion))
+            .ToList();
     }
 
     private async Task<List<FamilyBatchImportItem>> BuildActiveProjectBatchItemsAsync(
