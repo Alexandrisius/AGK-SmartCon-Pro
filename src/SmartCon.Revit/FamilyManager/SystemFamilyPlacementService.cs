@@ -14,6 +14,13 @@ namespace SmartCon.Revit.FamilyManager;
 /// otherwise the type is synchronized first via
 /// <see cref="ISystemTypeSyncOrchestrator"/> and placement starts with the
 /// already-updated type.
+/// Categories that cannot be placed interactively (insulations require a
+/// host — <c>UIDocument.CanPlaceElementType</c> is false and
+/// <c>PostRequestForElementTypePlacement</c> throws
+/// <see cref="Autodesk.Revit.Exceptions.ArgumentException"/>) are reported
+/// as <see cref="SystemPlacementResult.LoadedManualPlacementRequired"/>:
+/// the synchronized type stays in the project and the user places it
+/// manually instead of crashing the command.
 /// </summary>
 public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
 {
@@ -34,7 +41,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         _catalog = catalog;
     }
 
-    public bool LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion)
+    public SystemPlacementResult LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion)
     {
         var uiApp = _revitUIContext.GetUIApplication();
         var activeDoc = _revitUIContext.GetUIDocument().Document;
@@ -42,7 +49,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         if (uiApp is null || activeDoc is null)
         {
             SmartConLogger.Error("SystemFamilyPlacement.ABORT: uiApp or activeDoc is null");
-            return false;
+            return SystemPlacementResult.Failed;
         }
 
         if (_syncOrchestrator.IsProjectTypeCurrent(activeDoc, catalogItemId, typeName, targetRevitVersion))
@@ -61,13 +68,13 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             SmartConLogger.Error(
                 $"SystemFamilyPlacement: sync failed for '{typeName}': " +
                 $"{typeResult?.ErrorMessage ?? "no result"}");
-            return false;
+            return SystemPlacementResult.Failed;
         }
 
         return ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId);
     }
 
-    private bool ActivatePlacementByName(
+    private SystemPlacementResult ActivatePlacementByName(
         UIApplication uiApp, Document activeDoc, string typeName, string catalogItemId)
     {
         var categoryOrdinal = ResolveCategoryOrdinal(catalogItemId);
@@ -77,11 +84,36 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         {
             SmartConLogger.Error(
                 $"SystemFamilyPlacement: type '{typeName}' not found in the active project after sync");
-            return false;
+            return SystemPlacementResult.Failed;
         }
 
-        uiApp.ActiveUIDocument?.PostRequestForElementTypePlacement(elementType);
-        return true;
+        var uidoc = uiApp.ActiveUIDocument;
+        if (uidoc is null)
+        {
+            SmartConLogger.Error("SystemFamilyPlacement.ABORT: ActiveUIDocument is null");
+            return SystemPlacementResult.Failed;
+        }
+
+        if (!uidoc.CanPlaceElementType(elementType))
+        {
+            SmartConLogger.Info(
+                $"SystemFamilyPlacement: type '{typeName}' is loaded but cannot be placed " +
+                "interactively (host-dependent category) — manual placement required");
+            return SystemPlacementResult.LoadedManualPlacementRequired;
+        }
+
+        try
+        {
+            uidoc.PostRequestForElementTypePlacement(elementType);
+            return SystemPlacementResult.Placed;
+        }
+        catch (Autodesk.Revit.Exceptions.ArgumentException ex)
+        {
+            SmartConLogger.Warn(
+                $"SystemFamilyPlacement: PostRequestForElementTypePlacement rejected '{typeName}': " +
+                $"{ex.Message} [Action: place the type manually in the Revit UI]");
+            return SystemPlacementResult.LoadedManualPlacementRequired;
+        }
     }
 
     private int? ResolveCategoryOrdinal(string catalogItemId)

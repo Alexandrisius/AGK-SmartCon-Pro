@@ -76,12 +76,12 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             if (dragData.FamilySource == "system" || !string.IsNullOrEmpty(dragData.UniqueId))
             {
                 SmartConLogger.Info($"System family: '{dragData.FamilyName}', type: '{dragData.TypeName}' (FamilySource='{dragData.FamilySource}', UniqueId='{dragData.UniqueId}')");
-                var placed = _systemFamilyPlacementService.LoadAndPlaceSystemType(
+                var result = _systemFamilyPlacementService.LoadAndPlaceSystemType(
                     dragData.CatalogItemId,
                     dragData.TypeName,
                     dragData.TargetRevitVersion);
 
-                if (placed)
+                if (result != Core.Models.FamilyManager.SystemPlacementResult.Failed)
                 {
                     // Issue #104: the just-synced type carries a fresh ES
                     // marker — prune the item from the stale snapshot so its
@@ -89,7 +89,9 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                     // WriteVersionMarker). The next "Проверить" re-evaluates
                     // the item's other types when the family has several.
                     _staleDetector.MarkUpdated([dragData.CatalogItemId]);
-                    _onSuccess?.Invoke($"Системный тип '{dragData.TypeName}' скопирован и активирован");
+                    _onSuccess?.Invoke(result == Core.Models.FamilyManager.SystemPlacementResult.Placed
+                        ? $"Системный тип '{dragData.TypeName}' скопирован и активирован"
+                        : $"Системный тип '{dragData.TypeName}' загружен в проект — разместите его вручную (например, изоляция применяется к существующей трубе/воздуховоду)");
                 }
                 else
                 {

@@ -745,6 +745,14 @@ public static partial class LocalizationService
         en["FM_PBase_PreviewParsed"] = "Parsed";
         ru["FM_PlaceSystemType"] = "Системный тип \"{0}\" — щёлкните для размещения";
         en["FM_PlaceSystemType"] = "System type \"{0}\" — click to place";
+        ru["FM_PlaceSystemTypeManual"] = "Тип \"{0}\" загружен в проект. Разместите его вручную — например, изоляция применяется к существующей трубе или воздуховоду";
+        en["FM_PlaceSystemTypeManual"] = "Type \"{0}\" is loaded into the project. Place it manually — e.g. insulation applies to an existing pipe or duct";
+        ru["FM_ImportVersionGateTitle"] = "Импорт ограничен версией Revit";
+        en["FM_ImportVersionGateTitle"] = "Import limited by Revit version";
+        ru["FM_ImportVersionGateBody"] = "Следующие системные категории нельзя загрузить в библиотеку на Revit {0}:\n{1}\n\nОни не будут импортированы. Обновите Revit до требуемой версии, чтобы добавить их в каталог.";
+        en["FM_ImportVersionGateBody"] = "The following system categories cannot be loaded into the library on Revit {0}:\n{1}\n\nThey will not be imported. Upgrade Revit to the required version to add them to the catalog.";
+        ru["FM_ImportVersionGateItem"] = "• {0} — требуется Revit {1}+";
+        en["FM_ImportVersionGateItem"] = "• {0} — requires Revit {1}+";
         ru["FM_SystemTypesSynced"] = "«{0}»: синхронизировано типов {1} из {2}";
         en["FM_SystemTypesSynced"] = "\"{0}\": synchronized {1} of {2} types";
         ru["FM_SystemTypesSyncedWithErrors"] = "«{0}»: синхронизировано типов {1} из {2}, ошибок: {3}";

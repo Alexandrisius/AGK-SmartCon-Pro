@@ -486,19 +486,25 @@ public sealed partial class FamilyManagerMainViewModel
 
     private async Task PlaceSystemTypeAsync(string catalogItemId, string typeName, int targetRevit)
     {
-        var placed = false;
+        var result = SystemPlacementResult.Failed;
         await _awaitableEvent.RaiseAsync(_ =>
         {
             try
             {
-                placed = _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, targetRevit);
-                StatusMessage = placed
-                    ? string.Format(
+                result = _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, targetRevit);
+                StatusMessage = result switch
+                {
+                    SystemPlacementResult.Placed => string.Format(
                         LocalizationService.GetString("FM_PlaceSystemType") ?? "System type \"{0}\" — click to place",
-                        typeName)
-                    : string.Format(
+                        typeName),
+                    SystemPlacementResult.LoadedManualPlacementRequired => string.Format(
+                        LocalizationService.GetString("FM_PlaceSystemTypeManual")
+                            ?? "Тип \"{0}\" загружен в проект. Разместите его вручную — например, изоляция применяется к существующей трубе или воздуховоду",
+                        typeName),
+                    _ => string.Format(
                         LocalizationService.GetString("FM_LoadError") ?? "Load error: {0}",
-                        typeName);
+                        typeName),
+                };
             }
             catch (Exception ex)
             {
@@ -508,7 +514,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }).ConfigureAwait(true);
 
-        if (placed)
+        if (result != SystemPlacementResult.Failed)
         {
             // Same rationale as the DnD path: fresh marker on the synced type
             // — the item's stale badge must clear immediately.
