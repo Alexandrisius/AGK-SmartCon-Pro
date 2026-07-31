@@ -68,7 +68,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         string typeName,
         string catalogItemId,
         string versionLabel,
-        int sourceRevitVersion)
+        int sourceRevitVersion,
+        string? familyName = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(sourceDoc);
@@ -88,11 +89,11 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             ("TypeName", typeName),
             ("CatalogItemId", catalogItemId));
 
-        var sourceTypeId = _typeFinder.FindTypeByName(sourceDoc, typeName, null);
+        var sourceTypeId = _typeFinder.FindTypeByName(sourceDoc, typeName, null, familyName);
         if (sourceTypeId is null)
         {
             SmartConLogger.Warn(
-                $"Type '{typeName}' not found in the source mini-project. " +
+                $"Type '{typeName}' (family '{familyName ?? "<any>"}') not found in the source mini-project. " +
                 "[Action: reimport the mini-project into the catalog — its type list is out of sync]");
             return new SystemTypeSyncResult(
                 typeName, SystemTypeSyncStatus.NotFoundInSource, 0, 0,
@@ -101,6 +102,14 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
 
         var sourceType = sourceDoc.GetElement(sourceTypeId) as ElementType;
         var categoryOrdinal = GetCategoryOrdinal(sourceType);
+        // #183: the system family of the reference type is the identity key —
+        // the target is matched by (family, name, category) and a created
+        // type is duplicated from a prototype of the SAME family, never from
+        // a foreign one ("Conduit without Fittings" must not update/create
+        // types of "Conduit with Fittings"). The caller-supplied familyName
+        // locates the exact reference type in the mini-project; the document
+        // value is the ground truth for the target match.
+        var effectiveFamilyName = sourceType?.FamilyName ?? familyName;
         var template = _snapshotExtractor.ExtractSingleSystemType(sourceDoc, sourceTypeId);
 
         // Phase A — fitting dependencies. LoadFamily throws when the target
@@ -118,23 +127,26 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         SystemTypeSyncResult? result = null;
         var committed = _tx.RunInTransaction(activeDoc, $"SmartCon: Sync system type '{typeName}'", doc =>
         {
-            var targetId = _typeFinder.FindTypeByName(doc, typeName, categoryOrdinal);
+            var targetId = _typeFinder.FindTypeByName(doc, typeName, categoryOrdinal, effectiveFamilyName);
             var target = targetId is not null ? doc.GetElement(targetId) as ElementType : null;
 
             var status = SystemTypeSyncStatus.Updated;
             if (target is null)
             {
-                var prototype = FindPrototypeType(doc, categoryOrdinal);
+                var prototype = FindPrototypeType(doc, categoryOrdinal, effectiveFamilyName);
                 if (prototype is null)
                 {
+                    // #183: no same-family prototype — the system family does
+                    // not exist in the project and cannot be created via the
+                    // API. Skipping is the only safe outcome: duplicating a
+                    // FOREIGN family type would corrupt the identity.
                     SmartConLogger.Warn(
-                        $"Type '{typeName}': no prototype type of category ordinal " +
-                        $"{(categoryOrdinal?.ToString() ?? "<none>")} exists in the project; " +
-                        "cannot create the type. " +
-                        "[Action: create any type of this category in the project manually, then retry]");
+                        $"Type '{typeName}' (family '{effectiveFamilyName ?? "<unknown>"}'): the system family does not exist " +
+                        "in the project; the type cannot be created. " +
+                        "[Action: load any type of this system family into the project manually (e.g. place one element), then retry]");
                     result = new SystemTypeSyncResult(
-                        typeName, SystemTypeSyncStatus.NoPrototypeType, 0, 0,
-                        "No prototype type of the same category in the project");
+                        typeName, SystemTypeSyncStatus.FamilyNotFound, 0, 0,
+                        $"System family '{effectiveFamilyName ?? "<unknown>"}' not present in the project");
                     return;
                 }
 
@@ -400,7 +412,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         }
     }
 
-    private static ElementType? FindPrototypeType(Document doc, int? categoryOrdinal)
+    private static ElementType? FindPrototypeType(Document doc, int? categoryOrdinal, string? familyName)
     {
         // Without a category we must not create: duplicating a type of a
         // foreign category would produce a wrong-category type. Creation is
@@ -412,7 +424,15 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             using var collector = new FilteredElementCollector(doc)
                 .OfClass(typeof(ElementType))
                 .OfCategoryId(Core.Compatibility.ElementIdCompat.Create(categoryOrdinal.Value));
-            return collector.Cast<ElementType>().FirstOrDefault();
+            // #183: the prototype must belong to the SAME system family —
+            // duplicating a foreign-family type would register the new type
+            // in the wrong family (e.g. "Conduit with Fittings" instead of
+            // "Conduit without Fittings"). A null family name keeps the
+            // legacy any-prototype behaviour (should not happen in practice —
+            // every system ElementType reports a FamilyName).
+            return collector.Cast<ElementType>().FirstOrDefault(t =>
+                string.IsNullOrEmpty(familyName)
+                || string.Equals(t.FamilyName, familyName, StringComparison.OrdinalIgnoreCase));
         }
         catch
         {

@@ -6,4 +6,5 @@ public sealed record SelectedSystemType(
     string UniqueId,
     string Name,
     string CategoryName,
-    BuiltInCategory Category);
+    BuiltInCategory Category,
+    string? FamilyName = null);

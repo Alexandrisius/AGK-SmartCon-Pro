@@ -21,13 +21,16 @@ public interface ISystemTypeFinder
 {
     /// <summary>
     /// Find a system type by name (case-insensitive), optionally restricted to
-    /// a category. Returns the first match; duplicates within the same
-    /// category are impossible in Revit, duplicates across categories are
-    /// filtered out by <paramref name="categoryOrdinal"/> — when it is
-    /// <c>null</c> and several categories contain a type with this name, a
-    /// <c>Warn</c> is logged and the first match wins.
+    /// a category and/or a system family. Returns the first match; duplicates
+    /// within the same category+family are impossible in Revit.
     /// </summary>
-    ElementId? FindTypeByName(Document doc, string typeName, int? categoryOrdinal);
+    /// <param name="familyName">Issue #183: system family of the type
+    /// (e.g. "Conduit with Fittings" vs "Conduit without Fittings") — the
+    /// identity of a system type is (family, name, category). When
+    /// <c>null</c>, the family is not filtered (legacy behaviour: the first
+    /// name match wins, a Warn is logged on duplicates).</param>
+    ElementId? FindTypeByName(
+        Document doc, string typeName, int? categoryOrdinal, string? familyName = null);
 
     /// <summary>
     /// Collect all system types of the given categories. Used by stale

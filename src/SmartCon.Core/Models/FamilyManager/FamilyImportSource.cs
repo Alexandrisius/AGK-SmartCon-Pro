@@ -33,11 +33,15 @@ public abstract record FamilyImportSource
     /// <param name="CategoryId">Numeric <c>BuiltInCategory</c> ordinal.</param>
     /// <param name="TypeUniqueIds">UniqueIds of the type elements to copy into the mini-rvt.</param>
     /// <param name="TypeNames">Display names of the same types (parallel to <paramref name="TypeUniqueIds"/>).</param>
+    /// <param name="TypeFamilyNames">Revit system family of each type
+    /// (parallel to <paramref name="TypeUniqueIds"/>; Issue #183) — flows
+    /// into <c>family_types.family_name</c>; null for legacy producers.</param>
     public sealed record SystemSource(
         string DisplayName,
         int CategoryId,
         IReadOnlyList<string> TypeUniqueIds,
-        IReadOnlyList<string> TypeNames) : FamilyImportSource;
+        IReadOnlyList<string> TypeNames,
+        IReadOnlyList<string?>? TypeFamilyNames = null) : FamilyImportSource;
 
     /// <summary>
     /// Loadable-family source. The orchestrator's post-dialog flow calls

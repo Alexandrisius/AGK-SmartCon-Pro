@@ -146,10 +146,11 @@ internal static class FamilyCatalogSql
             file_id TEXT,
             extraction_run_id TEXT,
             type_unique_id TEXT,
+            family_name TEXT NOT NULL DEFAULT '',
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
             FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
-            UNIQUE(catalog_item_id, version_id, type_name)
+            UNIQUE(catalog_item_id, version_id, family_name, type_name)
         )
         """;
 
@@ -158,11 +159,14 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
         -- v2.1.0 (ADR-041 rev #2): orchestrator types have version_id IS NULL.
         -- SQLite treats NULL != NULL in composite UNIQUE, so the table-level
-        -- UNIQUE(catalog_item_id, version_id, type_name) does not prevent
-        -- duplicate orchestrator types. This partial unique index closes the
-        -- gap: one (catalog_item_id, type_name) per item for NULL versions.
+        -- UNIQUE(catalog_item_id, version_id, family_name, type_name) does
+        -- not prevent duplicate orchestrator types. This partial unique
+        -- index closes the gap: one (catalog_item_id, family_name,
+        -- type_name) per item for NULL versions. V26 (#183): family_name
+        -- added — a system type is identified by (family, name), never by
+        -- name alone.
         CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
-        ON family_types (catalog_item_id, type_name)
+        ON family_types (catalog_item_id, family_name, type_name)
         WHERE version_id IS NULL
         """;
 
@@ -898,5 +902,58 @@ internal static class FamilyCatalogSql
     public const string MigrateV24BackfillMinPluginVersion = """
         UPDATE database_meta SET min_plugin_version = '2.0.1-beta.5'
         WHERE EXISTS (SELECT 1 FROM catalog_versions WHERE hash_format_version = 3)
+        """;
+
+    /// <summary>
+    /// V26 (#183): adds <c>family_name TEXT NOT NULL DEFAULT ''</c> to
+    /// <c>family_types</c> and extends the UNIQUE identity to
+    /// (catalog_item_id, version_id, family_name, type_name) — a system type
+    /// is identified by (family, name), never by name alone ("Стандарт"
+    /// exists in both "Conduit with Fittings" and "Conduit without
+    /// Fittings"). Recreate-and-copy pattern (same as V15/V17/V18).
+    /// Empty string (not NULL) keeps the UNIQUE constraint strict for
+    /// legacy/loadable rows (SQLite treats NULL != NULL).
+    /// </summary>
+    public const string MigrateV26RecreateFamilyTypesWithFamilyName = """
+        -- 1. Clean up orphan rows (same guard as V18).
+        DELETE FROM family_types
+        WHERE (version_id IS NOT NULL AND version_id NOT IN (SELECT id FROM catalog_versions))
+           OR catalog_item_id NOT IN (SELECT id FROM catalog_items)
+           OR (file_id IS NOT NULL AND file_id NOT IN (SELECT id FROM family_files));
+
+        -- 2. Recreate family_types with (family, name) identity.
+        DROP TABLE IF EXISTS family_types_v26;
+
+        CREATE TABLE family_types_v26 (
+            id TEXT PRIMARY KEY,
+            catalog_item_id TEXT NOT NULL,
+            type_name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            version_id TEXT,
+            file_id TEXT,
+            extraction_run_id TEXT,
+            type_unique_id TEXT,
+            family_name TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+            FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
+            UNIQUE(catalog_item_id, version_id, family_name, type_name)
+        );
+
+        INSERT INTO family_types_v26 (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name)
+        SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, ''
+        FROM family_types;
+
+        DROP TABLE family_types;
+        ALTER TABLE family_types_v26 RENAME TO family_types;
+
+        -- 3. Recreate indexes; the orchestrator partial UNIQUE index now
+        --    carries family_name as well (NULL version_id case).
+        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
+        CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
+        ON family_types (catalog_item_id, family_name, type_name)
+        WHERE version_id IS NULL
         """;
 }

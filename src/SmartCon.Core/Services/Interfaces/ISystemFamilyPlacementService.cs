@@ -13,5 +13,9 @@ public interface ISystemFamilyPlacementService
     /// returns <see cref="SystemPlacementResult.LoadedManualPlacementRequired"/>
     /// — the type IS in the project, the user places it manually.
     /// </summary>
-    SystemPlacementResult LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion);
+    /// <param name="familyName">Issue #183: Revit system family of the type —
+    /// the sync and the placement lookup are restricted to it; null keeps
+    /// the legacy first-name-match behaviour.</param>
+    SystemPlacementResult LoadAndPlaceSystemType(
+        string catalogItemId, string typeName, int targetRevitVersion, string? familyName = null);
 }

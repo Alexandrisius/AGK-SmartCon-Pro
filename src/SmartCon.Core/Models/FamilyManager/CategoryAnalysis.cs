@@ -19,7 +19,11 @@ public sealed record CategoryAnalysis(
 /// Информация об одном типе системного семейства (после фильтрации по размещённым).
 /// Name — human-readable имя типа в Revit.
 /// UniqueId — для последующего копирования через ElementTransformUtils.CopyElements.
+/// FamilyName — системная семья типа (Issue #183): идентичность типа —
+/// (FamilyName, Name), иначе «Стандарт» из «Conduit without Fittings»
+/// неотличим от «Conduit with Fittings». null для legacy-заполнителей.
 /// </summary>
 public sealed record SystemTypeInfo(
     string Name,
-    string UniqueId);
+    string UniqueId,
+    string? FamilyName = null);

@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 25)
+        if (initialVersion < 26)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v25");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v26");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -79,6 +79,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 23, MigrateV23Async, ct);
         await RunMigrationAsync(connection, 24, MigrateV24Async, ct);
         await RunMigrationAsync(connection, 25, MigrateV25Async, ct);
+        // V26 recreates family_types (parent of extracted_attribute_values)
+        // — must run under the FK-off rebuild recipe like V15/V17/V18.
+        await RunRebuildMigrationAsync(connection, 26, MigrateV26Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1118,6 +1121,44 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
 
             tx.Commit();
             SmartConLogger.Info("Migration v25: added category_validation_rules table (import validation gate)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V26 (#183): adds <c>family_name TEXT NOT NULL DEFAULT ''</c> to
+    /// <c>family_types</c> and extends the UNIQUE identity to
+    /// (catalog_item_id, version_id, family_name, type_name) — a system type
+    /// is identified by (family, name), never by name alone ("Стандарт"
+    /// exists in both "Conduit with Fittings" and "Conduit without
+    /// Fittings"). Recreate-and-copy pattern (same as V15/V17/V18).
+    /// Idempotent: if the table already has family_name, the recreate is a
+    /// no-op data copy.
+    /// </summary>
+    private static async Task MigrateV26Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 26) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = FamilyCatalogSql.MigrateV26RecreateFamilyTypesWithFamilyName;
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '26' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v26: added family_name to family_types; UNIQUE is now (catalog_item_id, version_id, family_name, type_name) (#183)");
         }
         catch
         {

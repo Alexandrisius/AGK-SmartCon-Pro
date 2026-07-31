@@ -354,16 +354,23 @@ internal sealed class StaleDetector : IStaleDetector
             ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
 
-        var typesByCategoryAndName = new Dictionary<(int Category, string Name), ElementId>();
+        var typesByCategoryAndName = new Dictionary<(int Category, string Name), List<(string? Family, ElementId Id)>>();
         foreach (var location in projectTypes)
         {
             // Names are matched case-insensitively (same semantics as
             // ISystemTypeFinder.FindTypeByName) — the tuple key carries the
             // upper-invariant form so OrdinalIgnoreCase applies to lookups.
-            // TryAdd is unavailable on net48 — indexer assignment is
-            // equivalent here (duplicate keys impossible per category).
-            typesByCategoryAndName[
-                (location.CategoryOrdinal, location.TypeName.ToUpperInvariant())] = location.TypeId;
+            // #183: one (category, name) key maps to a LIST of candidates —
+            // "Стандарт" exists in both conduit families; the descriptor's
+            // family disambiguates (legacy null family → first candidate,
+            // the pre-#183 behaviour).
+            var key = (location.CategoryOrdinal, location.TypeName.ToUpperInvariant());
+            if (!typesByCategoryAndName.TryGetValue(key, out var candidates))
+            {
+                candidates = new List<(string?, ElementId)>();
+                typesByCategoryAndName[key] = candidates;
+            }
+            candidates.Add((location.FamilyName, location.TypeId));
         }
 
         var matched = new List<(FamilyCatalogItem Item, List<ElementId> TypeIds)>();
@@ -376,10 +383,30 @@ internal sealed class StaleDetector : IStaleDetector
             var ids = new List<ElementId>();
             foreach (var descriptor in descriptors)
             {
-                if (typesByCategoryAndName.TryGetValue(
-                        (item.RevitCategoryId.Value, descriptor.Name.ToUpperInvariant()), out var typeId))
+                if (!typesByCategoryAndName.TryGetValue(
+                        (item.RevitCategoryId.Value, descriptor.Name.ToUpperInvariant()), out var candidates))
                 {
-                    ids.Add(typeId);
+                    continue;
+                }
+
+                if (descriptor.FamilyName is not null)
+                {
+                    // Exact identity match (family, name) — never read the
+                    // marker of a foreign family's type.
+                    foreach (var (family, id) in candidates)
+                    {
+                        if (string.Equals(family, descriptor.FamilyName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            ids.Add(id);
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    // Legacy row without family (pre-V26): first candidate,
+                    // same as the pre-#183 name-only match.
+                    ids.Add(candidates[0].Id);
                 }
             }
             if (ids.Count > 0)
@@ -442,8 +469,7 @@ internal sealed class StaleDetector : IStaleDetector
         var descriptors = await _typeRepository
             .GetTypesForItemAsync(catalogItemId, ct)
             .ConfigureAwait(false);
-        var typeNames = descriptors.Select(d => d.Name).ToList();
-        if (typeNames.Count == 0)
+        if (descriptors.Count == 0)
         {
             SmartConLogger.Info(
                 $"CheckSystemFamily: '{displayName}' has no types in the catalog. " +
@@ -456,10 +482,16 @@ internal sealed class StaleDetector : IStaleDetector
             _ =>
             {
                 var ids = new List<ElementId>();
-                foreach (var name in typeNames)
+                // #183: match by full identity (family, name) — with two
+                // conduit families sharing "Стандарт" a name-only lookup
+                // would return the SAME first match twice and never read
+                // the marker of the other family's type. Legacy rows
+                // (family NULL) degrade to the pre-#183 first-name match.
+                foreach (var descriptor in descriptors)
                 {
-                    var id = _systemTypeFinder.FindTypeByName(doc, name, categoryOrdinal);
-                    if (id is not null) ids.Add(id);
+                    var id = _systemTypeFinder.FindTypeByName(
+                        doc, descriptor.Name, categoryOrdinal, descriptor.FamilyName);
+                    if (id is not null && !ids.Contains(id)) ids.Add(id);
                 }
                 return ids;
             }, ct).ConfigureAwait(true);
@@ -467,7 +499,7 @@ internal sealed class StaleDetector : IStaleDetector
         if (foundIds.Count == 0)
         {
             SmartConLogger.Info(
-                $"CheckSystemFamily: none of {typeNames.Count} types of '{displayName}' " +
+                $"CheckSystemFamily: none of {descriptors.Count} types of '{displayName}' " +
                 "are present in the project. [Action: skipped — load the types first]");
             return null;
         }
@@ -492,7 +524,7 @@ internal sealed class StaleDetector : IStaleDetector
         MergeSingleResult(result);
         SmartConLogger.Info(
             $"CheckSystemFamily: '{displayName}' IsStale={isStale} Reason={reason} " +
-            $"({foundIds.Count}/{typeNames.Count} types found in project).");
+            $"({foundIds.Count}/{descriptors.Count} types found in project).");
         return result;
     }
 

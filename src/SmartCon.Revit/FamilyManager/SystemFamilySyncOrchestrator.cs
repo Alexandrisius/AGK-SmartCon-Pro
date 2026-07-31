@@ -51,7 +51,8 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
         Document activeDoc,
         string catalogItemId,
         string typeName,
-        int targetRevitVersion)
+        int targetRevitVersion,
+        string? familyName = null)
     {
         if (activeDoc is null) return false;
 
@@ -61,7 +62,10 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
             return false;
 
         var categoryOrdinal = ResolveCategoryOrdinal(catalogItemId);
-        var typeId = _typeFinder.FindTypeByName(activeDoc, typeName, categoryOrdinal);
+        // #183: the marker check must find the type of the SAME family —
+        // otherwise an up-to-date "Conduit with Fittings: Стандарт" would
+        // satisfy the fast path for "Conduit without Fittings: Стандарт".
+        var typeId = _typeFinder.FindTypeByName(activeDoc, typeName, categoryOrdinal, familyName);
         if (typeId is null) return false;
 
         var marker = _versionStore.ReadFromType(activeDoc, typeId);
@@ -76,26 +80,26 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
     public SystemFamilySyncResult SyncTypes(
         Document activeDoc,
         string catalogItemId,
-        IReadOnlyList<string> typeNames,
+        IReadOnlyList<SystemTypeRef> types,
         int targetRevitVersion)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(activeDoc);
         ArgumentNullException.ThrowIfNull(catalogItemId);
-        ArgumentNullException.ThrowIfNull(typeNames);
+        ArgumentNullException.ThrowIfNull(types);
 #else
         if (activeDoc is null) throw new ArgumentNullException(nameof(activeDoc));
         if (catalogItemId is null) throw new ArgumentNullException(nameof(catalogItemId));
-        if (typeNames is null) throw new ArgumentNullException(nameof(typeNames));
+        if (types is null) throw new ArgumentNullException(nameof(types));
 #endif
 
         using var _scope = SmartConLogger.BeginScope(
             "SystemSync",
             ("Method", nameof(SyncTypes)),
             ("CatalogItemId", catalogItemId),
-            ("Count", typeNames.Count));
+            ("Count", types.Count));
 
-        if (typeNames.Count == 0)
+        if (types.Count == 0)
         {
             return new SystemFamilySyncResult(catalogItemId, Array.Empty<SystemTypeSyncResult>());
         }
@@ -107,7 +111,7 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
             SmartConLogger.Warn(
                 $"SyncTypes[{catalogItemId}]: no managed file resolved for Revit {targetRevitVersion}. " +
                 "[Action: import a version for this Revit into the catalog; types were not synchronized]");
-            return FailAll(catalogItemId, typeNames, "No managed file resolved for the current Revit version");
+            return FailAll(catalogItemId, types, "No managed file resolved for the current Revit version");
         }
 
         Document? sourceDoc = null;
@@ -119,31 +123,32 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
         {
             SmartConLogger.Error(
                 $"SyncTypes[{catalogItemId}]: OpenDocumentFile failed: {ex.Message}");
-            return FailAll(catalogItemId, typeNames, $"OpenDocumentFile failed: {ex.Message}");
+            return FailAll(catalogItemId, types, $"OpenDocumentFile failed: {ex.Message}");
         }
 
         try
         {
-            var results = new List<SystemTypeSyncResult>(typeNames.Count);
-            foreach (var typeName in typeNames)
+            var results = new List<SystemTypeSyncResult>(types.Count);
+            foreach (var type in types)
             {
                 try
                 {
                     results.Add(_syncService.SyncTypeFromSource(
                         sourceDoc,
                         activeDoc,
-                        typeName,
+                        type.Name,
                         catalogItemId,
                         resolved.VersionLabel ?? string.Empty,
-                        targetRevitVersion));
+                        targetRevitVersion,
+                        type.FamilyName));
                 }
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn(
-                        $"SyncTypes[{catalogItemId}]: type '{typeName}' failed: {ex.Message}. " +
+                        $"SyncTypes[{catalogItemId}]: type '{type.Name}' failed: {ex.Message}. " +
                         "[Action: type skipped, batch continues]");
                     results.Add(new SystemTypeSyncResult(
-                        typeName, SystemTypeSyncStatus.Failed, 0, 0, ex.Message));
+                        type.Name, SystemTypeSyncStatus.Failed, 0, 0, ex.Message));
                 }
             }
 
@@ -175,10 +180,10 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
     }
 
     private static SystemFamilySyncResult FailAll(
-        string catalogItemId, IReadOnlyList<string> typeNames, string error)
+        string catalogItemId, IReadOnlyList<SystemTypeRef> types, string error)
     {
-        var results = typeNames
-            .Select(n => new SystemTypeSyncResult(n, SystemTypeSyncStatus.Failed, 0, 0, error))
+        var results = types
+            .Select(t => new SystemTypeSyncResult(t.Name, SystemTypeSyncStatus.Failed, 0, 0, error))
             .ToList();
         return new SystemFamilySyncResult(catalogItemId, results);
     }

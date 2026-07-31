@@ -68,7 +68,127 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("25", version);
+        Assert.Equal("26", version);
+    }
+
+    [Fact]
+    public async Task Migrate_V26_AddsFamilyNameAndPreservesRows()
+    {
+        // V26 (#183): family_types gets family_name ('' default for legacy
+        // rows) and the UNIQUE becomes (item, version, family, name).
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedFamilyTypeRowAsync(fixture, itemId, "Стандарт", familyName: "Conduit without Fittings");
+
+        await RewindFamilyTypesToV25Async(fixture);
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var colCmd = connection.CreateCommand())
+        {
+            colCmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('family_types') WHERE name='family_name'";
+            Assert.Equal(1L, (long)(await colCmd.ExecuteScalarAsync())!);
+        }
+
+        using (var rowCmd = connection.CreateCommand())
+        {
+            // Legacy row migrated with '' family_name (never NULL).
+            rowCmd.CommandText = "SELECT type_name, family_name FROM family_types WHERE catalog_item_id = @id";
+            rowCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", itemId));
+            using var reader = await rowCmd.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("Стандарт", reader.GetString(0));
+            Assert.Equal(string.Empty, reader.GetString(1));
+        }
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("26", (string?)await versionCmd.ExecuteScalarAsync());
+        }
+    }
+
+    private static async Task SeedFamilyTypeRowAsync(
+        TempCatalogFixture fixture, string catalogItemId, string typeName, string familyName)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, family_name)
+            VALUES (@id, @itemId, @name, 0, @family)
+            """;
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", Guid.NewGuid().ToString()));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@itemId", catalogItemId));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", typeName));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@family", familyName));
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Simulates the pre-V26 schema: recreates family_types with the V18-V25
+    /// structure (no family_name, UNIQUE(item, version, name)) and rewinds
+    /// schema_version to 25.
+    /// </summary>
+    private static async Task RewindFamilyTypesToV25Async(TempCatalogFixture fixture)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+
+        using (var fkOff = conn.CreateCommand())
+        {
+            fkOff.CommandText = "PRAGMA foreign_keys=OFF";
+            await fkOff.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                DROP TABLE IF EXISTS family_types_v25;
+
+                CREATE TABLE family_types_v25 (
+                    id TEXT PRIMARY KEY,
+                    catalog_item_id TEXT NOT NULL,
+                    type_name TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    version_id TEXT,
+                    file_id TEXT,
+                    extraction_run_id TEXT,
+                    type_unique_id TEXT,
+                    FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+                    FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
+                    UNIQUE(catalog_item_id, version_id, type_name)
+                );
+
+                INSERT INTO family_types_v25 (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id)
+                SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id
+                FROM family_types;
+
+                DROP TABLE family_types;
+                ALTER TABLE family_types_v25 RENAME TO family_types;
+
+                CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
+                CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
+                CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
+                ON family_types (catalog_item_id, type_name)
+                WHERE version_id IS NULL;
+
+                UPDATE schema_info SET value = '25' WHERE key='schema_version';
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+        finally
+        {
+            using var fkOn = conn.CreateCommand();
+            fkOn.CommandText = "PRAGMA foreign_keys=ON";
+            await fkOn.ExecuteNonQueryAsync();
+        }
     }
 
     [Fact]
@@ -228,7 +348,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("25", version);
+        Assert.Equal("26", version);
 
         using var tableCmd = verify.CreateCommand();
         tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_nested_shared_families'";
@@ -299,7 +419,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("25", version);
+        Assert.Equal("26", version);
 
         using var cmd = verify.CreateCommand();
         cmd.CommandText = "PRAGMA table_info(database_meta)";
@@ -332,7 +452,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("25", version);
+        Assert.Equal("26", version);
 
         using var cmd = verify.CreateCommand();
         cmd.CommandText = "PRAGMA table_info(database_meta)";
@@ -395,7 +515,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("25", version);
+        Assert.Equal("26", version);
     }
 
     [Fact]
@@ -664,7 +784,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("25", version);
+        Assert.Equal("26", version);
 
         foreach (var (table, column) in new[]
         {
@@ -782,7 +902,7 @@ public sealed class LocalCatalogMigratorTests
 
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-        Assert.Equal("25", (string?)await versionCmd.ExecuteScalarAsync());
+        Assert.Equal("26", (string?)await versionCmd.ExecuteScalarAsync());
 
         // Orphans are gone from both rebuilt tables.
         foreach (var (table, ghostId) in new[]
@@ -846,7 +966,7 @@ public sealed class LocalCatalogMigratorTests
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
             var version = (string?)await versionCmd.ExecuteScalarAsync();
-            Assert.Equal("25", version);
+            Assert.Equal("26", version);
         }
 
         using (var cmd = verify.CreateCommand())

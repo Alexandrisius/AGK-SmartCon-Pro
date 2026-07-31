@@ -34,7 +34,8 @@ public sealed partial class FamilyManagerMainViewModel
             CurrentRevitVersion,
             typeNode.IsVirtual,
             leaf.FamilySource,
-            typeNode.UniqueId);
+            typeNode.UniqueId,
+            typeNode.FamilyName);
 
         _placementDragService.StartPlacementDrag(data);
     }
@@ -236,7 +237,8 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (leaf.FamilySource == "system")
         {
-            await PlaceSystemTypeAsync(leaf.CatalogItemId, typeNode.TypeName, CurrentRevitVersion);
+            await PlaceSystemTypeAsync(
+                leaf.CatalogItemId, typeNode.TypeName, CurrentRevitVersion, typeNode.FamilyName);
             return;
         }
 
@@ -364,13 +366,15 @@ public sealed partial class FamilyManagerMainViewModel
     /// </summary>
     private async Task ExecuteLoadSystemFamilyAsync(FamilyLeafNodeViewModel leaf)
     {
-        var typeNames = (await _typeRepository
+        // #183: full identity (family, name) per type — a bare name list
+        // cannot distinguish "Стандарт" of two conduit families.
+        var types = (await _typeRepository
                 .GetTypesForItemAsync(leaf.CatalogItemId, CancellationToken.None)
                 .ConfigureAwait(true))
-            .Select(d => d.Name)
+            .Select(d => new SystemTypeRef(d.Name, d.FamilyName))
             .ToList();
 
-        if (typeNames.Count == 0)
+        if (types.Count == 0)
         {
             StatusMessage = string.Format(
                 LocalizationService.GetString("FM_SystemTypeNoTypes")
@@ -387,7 +391,7 @@ public sealed partial class FamilyManagerMainViewModel
                 result = _systemSyncOrchestrator.SyncTypes(
                     _revitContext.GetDocument(),
                     leaf.CatalogItemId,
-                    typeNames,
+                    types,
                     CurrentRevitVersion);
             }
             catch (Exception ex)
@@ -443,7 +447,7 @@ public sealed partial class FamilyManagerMainViewModel
                 var result = _systemSyncOrchestrator.SyncTypes(
                     _revitContext.GetDocument(),
                     leaf.CatalogItemId,
-                    new[] { typeNode.TypeName },
+                    new[] { new SystemTypeRef(typeNode.TypeName, typeNode.FamilyName) },
                     CurrentRevitVersion);
 
                 var typeResult = result.TypeResults.Count > 0 ? result.TypeResults[0] : null;
@@ -484,14 +488,16 @@ public sealed partial class FamilyManagerMainViewModel
             && _activeBaseCompatibleWithCurrentDoc;
     }
 
-    private async Task PlaceSystemTypeAsync(string catalogItemId, string typeName, int targetRevit)
+    private async Task PlaceSystemTypeAsync(
+        string catalogItemId, string typeName, int targetRevit, string? familyName = null)
     {
         var result = SystemPlacementResult.Failed;
         await _awaitableEvent.RaiseAsync(_ =>
         {
             try
             {
-                result = _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, targetRevit);
+                result = _systemFamilyPlacementService.LoadAndPlaceSystemType(
+                    catalogItemId, typeName, targetRevit, familyName);
                 StatusMessage = result switch
                 {
                     SystemPlacementResult.Placed => string.Format(

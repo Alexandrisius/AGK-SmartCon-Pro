@@ -13,7 +13,8 @@ namespace SmartCon.Revit.FamilyManager;
 /// </summary>
 public sealed class RevitSystemTypeFinder : ISystemTypeFinder
 {
-    public ElementId? FindTypeByName(Document doc, string typeName, int? categoryOrdinal)
+    public ElementId? FindTypeByName(
+        Document doc, string typeName, int? categoryOrdinal, string? familyName = null)
     {
         if (doc is null || string.IsNullOrEmpty(typeName)) return null;
 
@@ -24,6 +25,14 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
         {
             if (type.Name is null) continue;
             if (!string.Equals(type.Name, typeName, StringComparison.OrdinalIgnoreCase)) continue;
+            // #183: when the reference family is known, the type must come
+            // from THAT system family — "Стандарт" of "Conduit with
+            // Fittings" must never match "Conduit without Fittings".
+            if (!string.IsNullOrEmpty(familyName)
+                && !string.Equals(type.FamilyName, familyName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             if (firstMatch is null)
             {
                 firstMatch = type.Id;
@@ -38,9 +47,10 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
         {
             SmartConLogger.Warn(
                 $"FindTypeByName: type name '{typeName}' matches {duplicates + 1} " +
-                $"ElementType elements (category filter: {(categoryOrdinal.HasValue ? categoryOrdinal.Value.ToString() : "<none>")}); " +
+                $"ElementType elements (category filter: {(categoryOrdinal.HasValue ? categoryOrdinal.Value.ToString() : "<none>")}, " +
+                $"family filter: {familyName ?? "<none>"}); " +
                 "the first match will be used. " +
-                "[Action: pass the category ordinal to disambiguate — the ES version " +
+                "[Action: pass the family name and category ordinal to disambiguate — the ES version " +
                 "marker may have been written to the wrong element]");
         }
         return firstMatch;
@@ -59,7 +69,9 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
             foreach (var type in collector.Cast<ElementType>())
             {
                 if (type.Name is null) continue;
-                result.Add(new SystemTypeLocation(type.Name, ordinal, type.Id));
+                // #183: FamilyName collected so stale detection can match
+                // by (family, name) instead of name alone.
+                result.Add(new SystemTypeLocation(type.Name, ordinal, type.Id, type.FamilyName));
             }
         }
         return result;

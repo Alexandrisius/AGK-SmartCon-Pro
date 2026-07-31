@@ -10,4 +10,8 @@ public sealed record FamilyPlacementDragData(
     int TargetRevitVersion,
     bool IsVirtual = false,
     string FamilySource = "loadable",
-    string? UniqueId = null);
+    string? UniqueId = null,
+    /// <summary>Issue #183: Revit SYSTEM family of the type (not the catalog
+    /// item display name in <see cref="FamilyName"/>) — the sync identity is
+    /// (system family, type name). null for legacy/loadable.</summary>
+    string? SystemFamilyName = null);

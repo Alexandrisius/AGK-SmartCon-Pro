@@ -1221,7 +1221,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             Name: name,
             Values: sortedValues,
             Structure: ExtractCompoundStructure(elementType, projectDoc),
-            Routing: ExtractRoutingPreferences(elementType, projectDoc));
+            Routing: ExtractRoutingPreferences(elementType, projectDoc),
+            // #183: the system family is the identity key of the sync
+            // (FamilyName + Name, never name alone). Sync-only — NOT part
+            // of the content hash (FHV4 candidate, #179).
+            FamilyName: elementType.FamilyName);
     }
 
     /// <summary>

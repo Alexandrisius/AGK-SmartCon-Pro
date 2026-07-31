@@ -374,7 +374,7 @@ public sealed partial class FamilyManagerMainViewModel
             .Select(g => new CategoryAnalysis(
                 g.Key,
                 g.First().CategoryName,
-                g.Select(t => new SystemTypeInfo(t.Name, t.UniqueId)).ToList()))
+                g.Select(t => new SystemTypeInfo(t.Name, t.UniqueId, t.FamilyName)).ToList()))
             .ToList();
 
         systemAnalyses = ApplyPlacementVersionGate(systemAnalyses);

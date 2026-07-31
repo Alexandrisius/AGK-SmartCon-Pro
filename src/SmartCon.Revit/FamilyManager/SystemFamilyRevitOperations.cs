@@ -132,7 +132,8 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                     typeElem.UniqueId,
                     typeElem.Name,
                     categoryName,
-                    builtInCategory);
+                    builtInCategory,
+                    (typeElem as ElementType)?.FamilyName);
             }
         }
 
@@ -192,7 +193,10 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 {
                     var typeElem = activeDoc.GetElement(typeId);
                     if (typeElem is null) continue;
-                    types.Add(new SystemTypeInfo(typeElem.Name, typeElem.UniqueId));
+                    // #183: FamilyName flows into family_types.family_name —
+                    // the sync identity is (family, name), never name alone.
+                    types.Add(new SystemTypeInfo(
+                        typeElem.Name, typeElem.UniqueId, (typeElem as ElementType)?.FamilyName));
                 }
 
                 if (types.Count == 0) continue;

@@ -279,7 +279,7 @@ public sealed class SystemTypeSyncTests : RevitApiTest
                 resolver, catalog, SyncService, _finder!, Store);
 
             var result = orchestrator.SyncTypes(
-                TargetDoc, CatalogItemId, new[] { TestTypeName },
+                TargetDoc, CatalogItemId, new[] { new SystemTypeRef(TestTypeName) },
                 int.Parse(Application.VersionNumber));
 
             using (Assert.Multiple())

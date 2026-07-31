@@ -22,6 +22,13 @@ public enum SystemTypeSyncStatus
     /// of the same category is available to duplicate.</summary>
     NoPrototypeType,
 
+    /// <summary>Issue #183: the system FAMILY of the reference type (e.g.
+    /// "Conduit without Fittings") does not exist in the project, so no
+    /// same-family prototype can be duplicated. A system family cannot be
+    /// created via the API — the type is skipped, never created in a foreign
+    /// family.</summary>
+    FamilyNotFound,
+
     /// <summary>Synchronization failed (transaction or API error).</summary>
     Failed,
 }

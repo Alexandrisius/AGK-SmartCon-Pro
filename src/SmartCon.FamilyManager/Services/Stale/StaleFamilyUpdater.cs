@@ -289,8 +289,11 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         var descriptors = await _typeRepository!
             .GetTypesForItemAsync(item.Id, ct)
             .ConfigureAwait(true);
-        var typeNames = descriptors.Select(d => d.Name).ToList();
-        if (typeNames.Count == 0)
+        // #183: full identity (family, name) per type.
+        var types = descriptors
+            .Select(d => new SystemTypeRef(d.Name, d.FamilyName))
+            .ToList();
+        if (types.Count == 0)
         {
             SmartConLogger.Warn(
                 $"UpdateSystemFamily[{item.Id}]: no types in the catalog for '{item.Name}'. " +
@@ -300,7 +303,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
         var result = await _awaitable.RaiseAsync(
             _ => _systemSyncOrchestrator!.SyncTypes(
-                _revitContext.GetDocument(), item.Id, typeNames, targetRevit),
+                _revitContext.GetDocument(), item.Id, types, targetRevit),
             ct).ConfigureAwait(true);
 
         if (!result.AllSucceeded)

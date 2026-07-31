@@ -627,6 +627,66 @@ public sealed class LocalFamilyTypeRepositoryTests : IDisposable
         Assert.Equal("Versioned Type", activeTypes[0].Name);
     }
 
+    [Fact]
+    public async Task SyncTypesAsync_SameNameDifferentFamilies_StoredAsTwoRows()
+    {
+        // V26 (#183): "Стандарт" of "Conduit with Fittings" and "Conduit
+        // without Fittings" are TWO types, not an UPSERT collision — the
+        // identity is (family, name).
+        var itemId = await SeedBareCatalogItemAsync("TwoFamilies.rfa");
+        var types = new List<FamilyTypeDescriptor>
+        {
+            new("t1", itemId, "Стандарт", 0, FamilyName: "Conduit with Fittings"),
+            new("t2", itemId, "Стандарт", 1, FamilyName: "Conduit without Fittings")
+        };
+
+        await _repository.SyncTypesAsync(itemId, null, null, NoRunId, types);
+        var result = await _repository.GetTypesForItemAsync(itemId);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Conduit with Fittings", result[0].FamilyName);
+        Assert.Equal("Conduit without Fittings", result[1].FamilyName);
+    }
+
+    [Fact]
+    public async Task SyncTypesAsync_NullFamilyName_NormalizedToNullOnRead()
+    {
+        // V26 (#183): loadable/legacy types carry no family — the DB stores
+        // '' (keeps UNIQUE strict), the domain model reads it back as null.
+        var itemId = await SeedBareCatalogItemAsync("NoFamily.rfa");
+        var types = new List<FamilyTypeDescriptor>
+        {
+            new("t1", itemId, "Type A", 0)
+        };
+
+        await _repository.SyncTypesAsync(itemId, null, null, NoRunId, types);
+        var result = await _repository.GetTypesForItemAsync(itemId);
+
+        Assert.Single(result);
+        Assert.Null(result[0].FamilyName);
+    }
+
+    [Fact]
+    public async Task SyncTypesAsync_SameFamilyAndNameTwice_UpsertsNotDuplicates()
+    {
+        // V26 (#183): reimport of the same (family, name) type must UPDATE
+        // the existing row (sort_order change), not insert a duplicate.
+        var itemId = await SeedBareCatalogItemAsync("UpsertFamily.rfa");
+        await _repository.SyncTypesAsync(itemId, null, null, NoRunId, new List<FamilyTypeDescriptor>
+        {
+            new("t1", itemId, "Стандарт", 0, FamilyName: "Conduit with Fittings")
+        });
+
+        await _repository.SyncTypesAsync(itemId, null, null, NoRunId, new List<FamilyTypeDescriptor>
+        {
+            new("t2", itemId, "Стандарт", 5, FamilyName: "Conduit with Fittings")
+        });
+
+        var result = await _repository.GetTypesForItemAsync(itemId);
+        Assert.Single(result);
+        Assert.Equal(5, result[0].SortOrder);
+    }
+
     public void Dispose()
     {
         _fixture.Dispose();

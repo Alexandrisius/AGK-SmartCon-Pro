@@ -12,7 +12,11 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="CategoryOrdinal"><c>BuiltInCategory</c> ordinal of the type's
 /// category. Matches <c>catalog_items.revit_category_id</c>.</param>
 /// <param name="TypeId">Element id of the type in the document.</param>
+/// <param name="FamilyName">Revit system family of the type (Issue #183) —
+/// collected so stale detection can match by (family, name) instead of
+/// name alone; <c>null</c> when the type reports no family name.</param>
 public sealed record SystemTypeLocation(
     string TypeName,
     int CategoryOrdinal,
-    ElementId TypeId);
+    ElementId TypeId,
+    string? FamilyName = null);

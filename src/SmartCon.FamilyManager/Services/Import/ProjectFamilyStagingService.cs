@@ -115,8 +115,16 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
             {
                 FilePath = createResult.FilePath!,
                 SourceTypes = source.TypeNames
-                    .Zip(source.TypeUniqueIds, (name, uid) => new FamilySourceTypeInfo(
-                        uid, name, source.DisplayName, source.CategoryId))
+                    .Zip(source.TypeUniqueIds, (name, uid) => (name, uid))
+                    .Select((pair, i) => new FamilySourceTypeInfo(
+                        pair.uid,
+                        pair.name,
+                        source.DisplayName,
+                        source.CategoryId,
+                        // #183: parallel family list (nullable for legacy rows)
+                        source.TypeFamilyNames is not null && i < source.TypeFamilyNames.Count
+                            ? source.TypeFamilyNames[i]
+                            : null))
                     .ToList()
             };
         }, ct);

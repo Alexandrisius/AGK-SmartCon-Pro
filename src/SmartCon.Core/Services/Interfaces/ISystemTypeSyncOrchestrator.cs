@@ -22,16 +22,18 @@ public interface ISystemTypeSyncOrchestrator
 {
     /// <summary>
     /// Fast path for placement: <c>true</c> when the type
-    /// (<paramref name="typeName"/>) exists in the project AND carries an ES
-    /// marker whose catalog item, version label and Revit version all match
-    /// the currently resolvable catalog file. Any mismatch, a missing marker
-    /// or an unresolvable file returns <c>false</c> (sync required).
+    /// (<paramref name="typeName"/> of family <paramref name="familyName"/>)
+    /// exists in the project AND carries an ES marker whose catalog item,
+    /// version label and Revit version all match the currently resolvable
+    /// catalog file. Any mismatch, a missing marker or an unresolvable file
+    /// returns <c>false</c> (sync required).
     /// </summary>
     bool IsProjectTypeCurrent(
         Document activeDoc,
         string catalogItemId,
         string typeName,
-        int targetRevitVersion);
+        int targetRevitVersion,
+        string? familyName = null);
 
     /// <summary>
     /// Synchronize the given types of a system catalog item into the active
@@ -39,10 +41,11 @@ public interface ISystemTypeSyncOrchestrator
     /// each type is synchronized in its own transaction (one Undo step per
     /// type) and receives the ES version marker on success. A failing type
     /// does not abort the batch — its result carries the error.
+    /// Types are addressed by full identity (family, name) — Issue #183.
     /// </summary>
     SystemFamilySyncResult SyncTypes(
         Document activeDoc,
         string catalogItemId,
-        IReadOnlyList<string> typeNames,
+        IReadOnlyList<SystemTypeRef> types,
         int targetRevitVersion);
 }

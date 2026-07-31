@@ -127,7 +127,10 @@ internal sealed class SystemFamilyImportOrchestrator : ISystemFamilyImportOrches
             VersionId: versionId,
             FileId: fileId,
             ExtractionRunId: null,
-            UniqueId: t.UniqueId)).ToList();
+            UniqueId: t.UniqueId,
+            // #183: the type identity is (family, name) — persisted into
+            // family_types.family_name (V26).
+            FamilyName: t.FamilyName)).ToList();
 
         // v2.0.0 (ADR-036): orchestrator replaces the entire type set for
         // the catalog item atomically. Pass the real versionId/fileId from

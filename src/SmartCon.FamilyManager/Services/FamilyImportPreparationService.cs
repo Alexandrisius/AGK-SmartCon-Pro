@@ -751,14 +751,17 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             $"status={dedupResult.Status}");
 
         var sourceTypes = analysis.Types
-            .Select(t => new FamilySourceTypeInfo(t.UniqueId, t.Name, displayName, (int)builtInCategory))
+            .Select(t => new FamilySourceTypeInfo(t.UniqueId, t.Name, displayName, (int)builtInCategory, t.FamilyName))
             .ToList();
 
         var source = new FamilyImportSource.SystemSource(
             DisplayName: displayName,
             CategoryId: (int)builtInCategory,
             TypeUniqueIds: typeUniqueIds,
-            TypeNames: analysis.Types.Select(t => t.Name).ToList());
+            TypeNames: analysis.Types.Select(t => t.Name).ToList(),
+            // #183: parallel family-name list so the staged import persists
+            // family_types.family_name and the sync matches by (family, name).
+            TypeFamilyNames: analysis.Types.Select(t => t.FamilyName).ToList());
 
         return new PreparedFamilyItem(
             SourcePath: $"system://{displayName}",

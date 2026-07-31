@@ -34,11 +34,16 @@ public interface ISystemTypeSyncService
     /// marker (from the resolved catalog file).</param>
     /// <param name="sourceRevitVersion">Current Revit major version, written
     /// into the ES marker for RevitVersionMismatch detection.</param>
+    /// <param name="familyName">Issue #183: system family of the type — the
+    /// reference lookup and the target match are restricted to this family
+    /// ("Conduit without Fittings" never touches "Conduit with Fittings").
+    /// <c>null</c> keeps the legacy first-name-match behaviour.</param>
     SystemTypeSyncResult SyncTypeFromSource(
         Document sourceDoc,
         Document activeDoc,
         string typeName,
         string catalogItemId,
         string versionLabel,
-        int sourceRevitVersion);
+        int sourceRevitVersion,
+        string? familyName = null);
 }

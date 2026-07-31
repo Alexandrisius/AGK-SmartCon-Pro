@@ -696,7 +696,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                             t.CatalogItemId, t.Name, isVirtual: false,
                             familySource: leaf.FamilySource, uniqueId: t.UniqueId,
                             displayName: FamilyTypeSnapshot.ResolveDisplayName(t.Name, leaf.DisplayName),
-                            isUnavailable: leaf.IsUnavailable));
+                            isUnavailable: leaf.IsUnavailable,
+                            familyName: t.FamilyName));
                     }
                 }
 
