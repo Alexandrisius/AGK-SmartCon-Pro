@@ -38,7 +38,11 @@ public static class SystemCategoryRegistry
     /// <paramref name="start"/>/<paramref name="end"/> — ячейка сетки (2 м шаг,
     /// 1 м глубина) на уровне <paramref name="level"/>; handler'ы с контурной
     /// геометрией строят из неё прямоугольник 1×1 м. Возвращает <c>null</c>,
-    /// если размещение невозможно (несовпадение класса типа, версия API).
+    /// если размещение невозможно (несовпадение класса типа, версия API,
+    /// откат транзакции — в т.ч. silent <c>Commit()==RolledBack</c> из #178,
+    /// результаты <see cref="ITransactionService.RunInTransaction"/> проверяются).
+    /// Возвращённый элемент создан в уже закоммиченной транзакции — используйте
+    /// его ТОЛЬКО для чтения (Id, тип, связи); модификация вне транзакции = краш.
     /// </summary>
     public delegate Element? PlacementHandler(
         Document doc, ITransactionService txService, Element type, Level level, XYZ start, XYZ end);
@@ -133,14 +137,17 @@ public static class SystemCategoryRegistry
     {
         if (type is not PipeType pipeType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place pipe", d =>
+        if (!txService.RunInTransaction(doc, "Place pipe", d =>
         {
             var sysType = new FilteredElementCollector(d)
                 .OfClass(typeof(PipingSystemType))
                 .Cast<PipingSystemType>()
                 .First();
             created = Pipe.Create(d, sysType.Id, pipeType.Id, level.Id, start, end);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -152,7 +159,7 @@ public static class SystemCategoryRegistry
     {
         if (type is not FlexPipeType flexPipeType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place flex pipe", d =>
+        if (!txService.RunInTransaction(doc, "Place flex pipe", d =>
         {
             var sysType = new FilteredElementCollector(d)
                 .OfClass(typeof(PipingSystemType))
@@ -161,7 +168,10 @@ public static class SystemCategoryRegistry
             var points = new List<XYZ> { start, end };
             var tangent = XYZ.BasisX;
             created = FlexPipe.Create(d, sysType.Id, flexPipeType.Id, level.Id, tangent, tangent, points);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -169,14 +179,17 @@ public static class SystemCategoryRegistry
     {
         if (type is not DuctType ductType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place duct", d =>
+        if (!txService.RunInTransaction(doc, "Place duct", d =>
         {
             var sysType = new FilteredElementCollector(d)
                 .OfClass(typeof(MechanicalSystemType))
                 .Cast<MechanicalSystemType>()
                 .First();
             created = Duct.Create(d, sysType.Id, ductType.Id, level.Id, start, end);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -185,7 +198,7 @@ public static class SystemCategoryRegistry
     {
         if (type is not FlexDuctType flexDuctType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place flex duct", d =>
+        if (!txService.RunInTransaction(doc, "Place flex duct", d =>
         {
             var sysType = new FilteredElementCollector(d)
                 .OfClass(typeof(MechanicalSystemType))
@@ -194,7 +207,10 @@ public static class SystemCategoryRegistry
             var points = new List<XYZ> { start, end };
             var tangent = XYZ.BasisX;
             created = FlexDuct.Create(d, sysType.Id, flexDuctType.Id, level.Id, tangent, tangent, points);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -215,7 +231,7 @@ public static class SystemCategoryRegistry
         if (createMethod is null) return null;
 
         Element? created = null;
-        txService.RunInTransaction(doc, "Place conduit", d =>
+        if (!txService.RunInTransaction(doc, "Place conduit", d =>
         {
             try
             {
@@ -223,9 +239,12 @@ public static class SystemCategoryRegistry
             }
             catch (TargetInvocationException tex)
             {
-                SmartConLogger.Warn($"{tex.InnerException?.Message ?? tex.Message}");
+                SmartConLogger.Warn($"{tex.InnerException?.Message ?? tex.Message} [Action: проверьте, что тип короба/лотка валиден для двухточечного размещения]");
             }
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -246,7 +265,7 @@ public static class SystemCategoryRegistry
         if (createMethod is null) return null;
 
         Element? created = null;
-        txService.RunInTransaction(doc, "Place cable tray", d =>
+        if (!txService.RunInTransaction(doc, "Place cable tray", d =>
         {
             try
             {
@@ -254,9 +273,12 @@ public static class SystemCategoryRegistry
             }
             catch (TargetInvocationException tex)
             {
-                SmartConLogger.Warn($"{tex.InnerException?.Message ?? tex.Message}");
+                SmartConLogger.Warn($"{tex.InnerException?.Message ?? tex.Message} [Action: проверьте, что тип короба/лотка валиден для двухточечного размещения]");
             }
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -266,12 +288,15 @@ public static class SystemCategoryRegistry
     {
         if (type is not WallType wallType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place wall", d =>
+        if (!txService.RunInTransaction(doc, "Place wall", d =>
         {
             var line = Line.CreateBound(start, end);
             var height = RevitUnitsCompat.MetersToInternal(3.0);
             created = Wall.Create(d, line, wallType.Id, level.Id, height, 0.0, false, false);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -287,7 +312,7 @@ public static class SystemCategoryRegistry
     {
         if (type is not FloorType floorType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place floor", d =>
+        if (!txService.RunInTransaction(doc, "Place floor", d =>
         {
             var loop = BuildRectangularLoop(start);
 #if REVIT2022_OR_GREATER
@@ -295,7 +320,10 @@ public static class SystemCategoryRegistry
 #else
             created = d.Create.NewFloor(ToCurveArray(loop), floorType, level, structural: false);
 #endif
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -313,7 +341,7 @@ public static class SystemCategoryRegistry
     {
         if (type is not RoofType roofType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place roof", d =>
+        if (!txService.RunInTransaction(doc, "Place roof", d =>
         {
             var viewPlan = new FilteredElementCollector(d)
                 .OfClass(typeof(ViewPlan))
@@ -340,7 +368,10 @@ public static class SystemCategoryRegistry
             profile.Append(Line.CreateBound(p2, p3));
 
             created = d.Create.NewExtrusionRoof(profile, refPlane, level, roofType, 0, sizeFt);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -355,11 +386,14 @@ public static class SystemCategoryRegistry
 #if REVIT2022_OR_GREATER
         if (type is not CeilingType ceilingType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place ceiling", d =>
+        if (!txService.RunInTransaction(doc, "Place ceiling", d =>
         {
             var loop = BuildRectangularLoop(start);
             created = Ceiling.Create(d, new List<CurveLoop> { loop }, ceilingType.Id, level.Id);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
 #else
         return null;
@@ -387,19 +421,23 @@ public static class SystemCategoryRegistry
         var topLevel = FindLevelAbove(doc, level);
         if (topLevel is null)
         {
-            txService.RunInTransaction(doc, "Create top level", d =>
+            if (!txService.RunInTransaction(doc, "Create top level", d =>
             {
                 topLevel = Level.Create(d, level.Elevation + RevitUnitsCompat.MetersToInternal(4.0));
-            });
+            }))
+            {
+                return null;
+            }
         }
 
-        Element? created = null;
         ElementId stairsId;
         using (var scope = new StairsEditScope(doc, "SmartCon_StairPlacement"))
         {
             stairsId = scope.Start(level.Id, topLevel!.Id);
 
-            txService.RunInTransaction(doc, "Place stair run", d =>
+            // Откат «Place stair run» (silent RolledBack, #178): scope НЕ
+            // коммитим — Dispose отменит его, пустая лестница не останется.
+            if (!txService.RunInTransaction(doc, "Place stair run", d =>
             {
                 var stairs = (Stairs)d.GetElement(stairsId);
                 stairs.ChangeTypeId(stairsType.Id);
@@ -412,7 +450,10 @@ public static class SystemCategoryRegistry
                     new XYZ(start.X + runLengthFt, start.Y, level.Elevation));
                 var run = StairsRun.CreateStraightRun(d, stairsId, runLine, StairsRunJustification.Center);
                 run.EndsWithRiser = true;
-            });
+            }))
+            {
+                return null;
+            }
 
             scope.Commit(new StairsFailuresPreprocessor());
         }
@@ -420,7 +461,8 @@ public static class SystemCategoryRegistry
         // Дефолтные ограждения StairsEditScope материализуются только при
         // scope.Commit — удалять их надо ПОСЛЕ коммита scope (внутри scope
         // GetAssociatedRailings ещё пуст).
-        txService.RunInTransaction(doc, "Remove default railings", d =>
+        Element? created = null;
+        if (!txService.RunInTransaction(doc, "Remove default railings", d =>
         {
             var stairs = (Stairs)d.GetElement(stairsId);
             foreach (var railingId in stairs.GetAssociatedRailings())
@@ -428,7 +470,10 @@ public static class SystemCategoryRegistry
                 d.Delete(railingId);
             }
             created = stairs;
-        });
+        }))
+        {
+            return null;
+        }
 
         return created;
     }
@@ -456,12 +501,15 @@ public static class SystemCategoryRegistry
 #if REVIT2025_OR_GREATER
         if (type is not RailingType railingType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place railing", d =>
+        if (!txService.RunInTransaction(doc, "Place railing", d =>
         {
             var path = BuildRectangularLoop(start);
             if (!Railing.IsValidPathForRailing(path)) return;
             created = Railing.Create(d, path, railingType.Id, level.Id);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
 #else
         return null;
@@ -482,7 +530,7 @@ public static class SystemCategoryRegistry
     {
         if (type is not PipeInsulationType insulationType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place pipe insulation", d =>
+        if (!txService.RunInTransaction(doc, "Place pipe insulation", d =>
         {
             var sysType = new FilteredElementCollector(d)
                 .OfClass(typeof(PipingSystemType))
@@ -495,7 +543,10 @@ public static class SystemCategoryRegistry
             var pipe = Pipe.Create(d, sysType.Id, pipeType.Id, level.Id, start, end);
             var thicknessFt = RevitUnitsCompat.MetersToInternal(0.025);
             created = PipeInsulation.Create(d, pipe.Id, insulationType.Id, thicknessFt);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 
@@ -504,7 +555,7 @@ public static class SystemCategoryRegistry
     {
         if (type is not DuctInsulationType insulationType) return null;
         Element? created = null;
-        txService.RunInTransaction(doc, "Place duct insulation", d =>
+        if (!txService.RunInTransaction(doc, "Place duct insulation", d =>
         {
             var sysType = new FilteredElementCollector(d)
                 .OfClass(typeof(MechanicalSystemType))
@@ -517,7 +568,10 @@ public static class SystemCategoryRegistry
             var duct = Duct.Create(d, sysType.Id, ductType.Id, level.Id, start, end);
             var thicknessFt = RevitUnitsCompat.MetersToInternal(0.025);
             created = DuctInsulation.Create(d, duct.Id, insulationType.Id, thicknessFt);
-        });
+        }))
+        {
+            return null;
+        }
         return created;
     }
 }

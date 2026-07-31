@@ -223,8 +223,6 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
         finally { doc.Close(false); }
     }
 
-    // ── Хелперы ─────────────────────────────────────────────────────────
-
     [Test]
     [HookExecutor<RevitThreadExecutor>]
     public async Task Stairs_Placed_TargetTypeRunPresentDefaultRailingsRemoved()
@@ -267,10 +265,6 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
         }
         finally { doc.Close(false); }
     }
-
-    // ── Хелперы ─────────────────────────────────────────────────────────
-
-    // ── Хелперы ─────────────────────────────────────────────────────────
 
 #if REVIT2025_OR_GREATER
     [Test]
@@ -367,11 +361,17 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
 
             // Snapshot extractor обязан найти тип из размещённого инстанса
             // (первая ветка ExtractSystemCategoryFromStagedProject), а не через
-            // fallback «все типы категории».
+            // fallback «все типы категории»: в документе ровно ОДИН инстанс
+            // одного типа → первая ветка даёт ровно один тип; fallback вернул
+            // бы ВСЕ FloorType шаблона (их несколько).
             var extractor = new RevitFamilySnapshotExtractor();
             var snapshot = extractor.ExtractSystemCategoryFromStagedProject(doc, BuiltInCategory.OST_Floors);
 
-            await Assert.That(snapshot.Types.Select(t => t.Name)).Contains(floorType!.Name);
+            using (Assert.Multiple())
+            {
+                await Assert.That(snapshot.Types.Count).IsEqualTo(1);
+                await Assert.That(snapshot.Types[0].Name).IsEqualTo(floorType!.Name);
+            }
         }
         finally { doc.Close(false); }
     }
@@ -397,9 +397,15 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
 
         foreach (var path in candidates)
         {
-            if (File.Exists(path))
+            if (!File.Exists(path)) continue;
+
+            try
             {
                 return Application.NewProjectDocument(path);
+            }
+            catch (Exception)
+            {
+                // Шаблон залочен/битый/новее текущей версии — пробуем следующий.
             }
         }
         return null;

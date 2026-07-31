@@ -1436,10 +1436,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
     /// mini-project (.rvt) during database actualization (ADR-056).
     /// Type discovery mirrors the staging contract
     /// (<c>SystemFamilyRevitOperations.CreateCleanProjectWithTypesAndInstances</c>):
-    /// placed instances are the domain truth for placed categories;
-    /// for Phase-2 categories (copied without placement) all types of
-    /// the category are taken — the caller (hash task) trims them to the
-    /// catalog's authoritative type list from <c>family_types</c>.
+    /// placed instances are the domain truth (ADR-027 Phase 2 — all 14
+    /// categories place instances). The "all category types" fallback serves
+    /// only legacy staged files created BEFORE Phase 2 (copied without
+    /// placement) — the caller (hash task) trims them to the catalog's
+    /// authoritative type list from <c>family_types</c>.
     /// </summary>
     public SystemFamilySnapshot ExtractSystemCategoryFromStagedProject(
         Document stagedDoc, BuiltInCategory builtInCategory)

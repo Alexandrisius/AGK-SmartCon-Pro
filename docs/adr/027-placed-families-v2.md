@@ -200,6 +200,14 @@ the reference is visually inspectable and the snapshot extractor reads types fro
    profile (closed loops are rejected as "Invalid profile") works in background
    documents on all versions. `ReferencePlane` is created on the template's first
    `ViewPlan` (`doc.ActiveView` is null for background documents).
+   **Legacy `NewFloor` (R19–R21) assessed as safe:** unlike the footprint API it
+   was the mainstream floor-creation API for years (2019–2021 docs have no
+   UI-context caveats; batch floor creation in background documents was standard
+   practice). A reflection probe on Revit 2023 is not applicable — the method was
+   removed from the public API surface after 2022. Final confirmation belongs to
+   the manual test matrix on a machine with Revit 2019–2021 (no such Revit on the
+   current dev machine — the integration suite ran via `-p:RevitVersion=2023`,
+   which compiles the `Floor.Create` branch).
 4. **Stairs: `ChangeTypeId` after `StairsEditScope.Start`, railings removed AFTER
    `scope.Commit`.** `Start` creates an empty stairs with the default type; the handler
    switches it to the catalog type, adds one straight run sized from

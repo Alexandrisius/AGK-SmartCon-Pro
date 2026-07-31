@@ -168,7 +168,8 @@ public interface ISystemFamilyAttributeExtractionService
 
 Размещение (load + place) одного типа системного семейства в активный проект
 пользователя. Используется после импорта — пользователь выбирает тип в
-каталоге, и плагин загружает его из managed storage и размещает в сцене.
+каталоге, и плагин синхронизирует его с эталоном (ADR-061) и активирует
+размещение в сцене.
 
 **Файл:** `ISystemFamilyPlacementService.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/SystemFamilyPlacementService.cs`
@@ -176,9 +177,16 @@ public interface ISystemFamilyAttributeExtractionService
 ```csharp
 public interface ISystemFamilyPlacementService
 {
-    void LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion);
+    SystemPlacementResult LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion);
 }
 ```
+
+**ADR-027 Phase 2:** возвращаемое значение — `SystemPlacementResult` (было
+`bool`). Тип, чья категория не размещается интерактивно
+(`UIDocument.CanPlaceElementType` = false — изоляция требует host), даёт
+`LoadedManualPlacementRequired`: синхронизированный тип остаётся в проекте,
+пользователь размещает его вручную (раньше — краш
+`PostRequestForElementTypePlacement` на `ArgumentException`).
 
 ---
 
