@@ -153,4 +153,9 @@ public sealed record FamilyManagerServices(
     /// (#186 — never close an unmarked document) and by the active-document
     /// notifier in the Revit layer (auto-DB-switch guard).
     /// </summary>
-    IMiniProjectMarker MiniProjectMarker);
+    IMiniProjectMarker MiniProjectMarker,
+    /// <summary>
+    /// Issue #187: system type finder for the project-presence badges on
+    /// type nodes (one CollectTypes pass per tree load).
+    /// </summary>
+    ISystemTypeFinder SystemTypeFinder);

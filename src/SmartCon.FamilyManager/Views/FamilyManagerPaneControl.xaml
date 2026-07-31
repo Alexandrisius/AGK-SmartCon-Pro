@@ -1198,23 +1198,34 @@
 
                 <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
                     <Grid HorizontalAlignment="Stretch">
-                        <ContentControl VerticalAlignment="Center">
-                            <ContentControl.Style>
-                                <Style TargetType="ContentControl">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsUnavailable}" Value="True">
-                                            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ContentControl.Style>
-                            <ContentControl.Content>
-                                <MultiBinding Converter="{StaticResource SearchHighlight}">
-                                    <Binding Path="DisplayName"/>
-                                    <Binding Path="DataContext.SearchText" RelativeSource="{RelativeSource AncestorType=TreeView}"/>
-                                </MultiBinding>
-                            </ContentControl.Content>
-                        </ContentControl>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- #187: project-presence badge — the (family, name)
+                                 type exists in the active project. -->
+                            <iconPacks:PackIconMaterial Kind="CheckCircle"
+                                                        Width="12" Height="12"
+                                                        Margin="0,0,4,0"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{DynamicResource SuccessBrush}"
+                                                        ToolTip="{loc:Loc FM_TypeInProject_Tooltip}"
+                                                        Visibility="{Binding IsInProject, Converter={StaticResource BoolToVis}}"/>
+                            <ContentControl VerticalAlignment="Center">
+                                <ContentControl.Style>
+                                    <Style TargetType="ContentControl">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsUnavailable}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ContentControl.Style>
+                                <ContentControl.Content>
+                                    <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                        <Binding Path="DisplayName"/>
+                                        <Binding Path="DataContext.SearchText" RelativeSource="{RelativeSource AncestorType=TreeView}"/>
+                                    </MultiBinding>
+                                </ContentControl.Content>
+                            </ContentControl>
+                        </StackPanel>
                     </Grid>
                 </DataTemplate>
             </TreeView.Resources>

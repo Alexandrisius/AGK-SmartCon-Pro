@@ -91,8 +91,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                     // the item's other types when the family has several.
                     _staleDetector.MarkUpdated([dragData.CatalogItemId]);
                     _onSuccess?.Invoke(result == Core.Models.FamilyManager.SystemPlacementResult.Placed
-                        ? $"Системный тип '{dragData.TypeName}' скопирован и активирован"
-                        : $"Системный тип '{dragData.TypeName}' загружен в проект — разместите его вручную (например, изоляция применяется к существующей трубе/воздуховоду)");
+                        ? $"Системный тип '{dragData.TypeName}' синхронизирован и активирован"
+                        : $"Системный тип '{dragData.TypeName}' синхронизирован с проектом — разместите его вручную (например, изоляция применяется к существующей трубе/воздуховоду). Обновить позже: «Загрузить в проект» на узле типа");
                 }
                 else
                 {

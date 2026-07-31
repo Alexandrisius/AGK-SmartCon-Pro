@@ -39,6 +39,11 @@ public sealed partial class FamilyManagerMainViewModel
         RecomputeActiveBaseMatch();
         RefreshConnections();
         InvalidateLoadAndPlaceCommands();
+
+        // #187 (M1): presence badges are bound to the ACTIVE document. A
+        // document switch without a DB switch does not reload the tree —
+        // refresh the badges in place against the new document.
+        await RefreshSystemTypeProjectPresenceSafeAsync();
     }
 
     /// <summary>

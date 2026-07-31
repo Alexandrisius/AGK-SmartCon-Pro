@@ -76,6 +76,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyImportValidationService _validationService;
     private readonly ICategoryChangeGateService _categoryChangeGate;
     private readonly IMiniProjectMarker _miniProjectMarker;
+    private readonly ISystemTypeFinder _systemTypeFinder;
 
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
@@ -89,6 +90,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
     private HashSet<string>? _loadedFamilyNamesCache;
     private string? _loadedFamilyNamesCacheProjectPath;
+    /// <summary>#187 (M1): catalog items of the last LoadTreeAsync — reused by
+    /// the presence refresh on document switches without a DB switch.</summary>
+    private IReadOnlyList<FamilyCatalogItem>? _lastTreeCatalogItems;
 
     // ── Stale detection session cache (Phase 24 / ADR-030) ─────────────
     [ObservableProperty] private bool _isStaleCheckInProgress;
@@ -245,6 +249,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _validationService = services.ValidationService;
         _categoryChangeGate = services.CategoryChangeGate;
         _miniProjectMarker = services.MiniProjectMarker;
+        _systemTypeFinder = services.SystemTypeFinder;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();
@@ -695,7 +700,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                         leaf.Children.Add(new FamilyTypeNodeViewModel(
                             t.CatalogItemId, t.Name, isVirtual: false,
                             familySource: leaf.FamilySource, uniqueId: t.UniqueId,
-                            displayName: FamilyTypeSnapshot.ResolveDisplayName(t.Name, leaf.DisplayName),
+                            displayName: ResolveTypeDisplayName(t, leaf),
                             isUnavailable: leaf.IsUnavailable,
                             familyName: t.FamilyName));
                     }
@@ -718,6 +723,20 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         leaf.Children.Add(new FamilyTypeNodeViewModel(
             leaf.CatalogItemId, leaf.DisplayName, isVirtual: true,
             familySource: leaf.FamilySource, isUnavailable: leaf.IsUnavailable));
+    }
+
+    /// <summary>
+    /// #187: display name of a type node. System types of the same name but
+    /// different families (#183: "Стандарт" in both conduit families) are
+    /// indistinguishable without the family suffix — appended for system
+    /// types with a known family.
+    /// </summary>
+    internal static string ResolveTypeDisplayName(FamilyTypeDescriptor type, FamilyLeafNodeViewModel leaf)
+    {
+        var baseName = FamilyTypeSnapshot.ResolveDisplayName(type.Name, leaf.DisplayName);
+        return leaf.FamilySource == "system" && !string.IsNullOrEmpty(type.FamilyName)
+            ? $"{baseName} ({type.FamilyName})"
+            : baseName;
     }
 
     [RelayCommand(CanExecute = nameof(HasActiveDatabase))]

@@ -1,6 +1,8 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
+public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
 {
     public override bool IsCategory => false;
     public override bool IsType => true;
@@ -18,6 +20,14 @@ public sealed class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
     /// (family, name). null for legacy rows and loadable types.
     /// </summary>
     public string? FamilyName { get; }
+
+    /// <summary>
+    /// #187: the type is present in the ACTIVE project (same family + name
+    /// found in the document). Computed on every tree load via one
+    /// CollectTypes pass over the system categories of the catalog.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isInProject;
 
     public bool IsSystemType =>
         FamilySource == "system" || (UniqueId is not null && UniqueId.Length > 0);

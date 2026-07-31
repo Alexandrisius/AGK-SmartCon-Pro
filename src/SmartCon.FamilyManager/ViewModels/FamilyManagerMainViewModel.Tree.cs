@@ -49,6 +49,9 @@ public sealed partial class FamilyManagerMainViewModel
             stageSw.Restart();
             var results = await _catalogProvider.SearchAsync(query, ct);
             SmartConLogger.Freeze($"LoadTreeAsync: SearchAsync took {stageSw.ElapsedMilliseconds}ms, results={results.Count}");
+            // #187 (M1): kept for the presence refresh on document switches
+            // that do NOT reload the tree (OnActiveDocumentChanged).
+            _lastTreeCatalogItems = results;
 
             stageSw.Restart();
             TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
@@ -230,6 +233,23 @@ public sealed partial class FamilyManagerMainViewModel
             stageSw.Restart();
             await ApplyStaleResultsToTreeAsync(Array.Empty<StaleCheckResult>(), ct).ConfigureAwait(true);
             SmartConLogger.Freeze($"LoadTreeAsync: ApplyStaleResultsToTreeAsync took {stageSw.ElapsedMilliseconds}ms");
+
+            // #187: project-presence badges on system type nodes — one
+            // CollectTypes pass over the catalog's system categories, then a
+            // (family, name) set lookup per node. Cheap: a single collector
+            // per tree load, refreshed with every LoadTreeAsync (import,
+            // sync, stale check, DB switch).
+            stageSw.Restart();
+            try
+            {
+                await RefreshSystemTypeProjectPresenceAsync(results, ct).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "RefreshSystemTypeProjectPresence"));
+                SmartConLogger.Debug($"presence refresh skipped: {ex.Message}");
+            }
+            SmartConLogger.Freeze($"LoadTreeAsync: RefreshSystemTypeProjectPresence took {stageSw.ElapsedMilliseconds}ms");
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -244,6 +264,99 @@ public sealed partial class FamilyManagerMainViewModel
             totalSw.Stop();
             SmartConLogger.Freeze($"LoadTreeAsync: TOTAL took {totalSw.ElapsedMilliseconds}ms, thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
             SmartConLogger.Debug($"LoadTreeAsync: finally thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
+        }
+    }
+
+    /// <summary>
+    /// #187: marks system type nodes whose (family, name) is present in the
+    /// ACTIVE project — one CollectTypes pass over the catalog's system
+    /// categories, then O(1) set lookups per node. Legacy rows (no family)
+    /// fall back to a name match within the item's category.
+    /// </summary>
+    private async Task RefreshSystemTypeProjectPresenceAsync(
+        IReadOnlyList<FamilyCatalogItem> catalogItems, CancellationToken ct)
+    {
+        var systemItems = catalogItems
+            .Where(i => i.FamilySource == "system" && i.RevitCategoryId.HasValue)
+            .ToList();
+        if (systemItems.Count == 0) return;
+
+        Autodesk.Revit.DB.Document? doc;
+        try
+        {
+            doc = _revitContext.GetDocument();
+        }
+        catch (Exception)
+        {
+            // No active document (all closed) — badges stay as they were.
+            return;
+        }
+
+        var ordinals = systemItems.Select(i => i.RevitCategoryId!.Value).Distinct().ToList();
+        var locations = await _awaitableEvent.RaiseAsync(
+            _ => _systemTypeFinder.CollectTypes(doc, ordinals), ct).ConfigureAwait(true);
+
+        var present = new HashSet<(string Family, string Name)>(
+            locations
+                .Where(l => l.FamilyName is not null)
+                .Select(l => (l.FamilyName!.ToUpperInvariant(), l.TypeName.ToUpperInvariant())));
+        var presentNamesByCategory = new Dictionary<int, HashSet<string>>();
+        foreach (var l in locations)
+        {
+            if (!presentNamesByCategory.TryGetValue(l.CategoryOrdinal, out var set))
+            {
+                set = new HashSet<string>();
+                presentNamesByCategory[l.CategoryOrdinal] = set;
+            }
+            set.Add(l.TypeName.ToUpperInvariant());
+        }
+
+        var ordinalByItem = systemItems
+            .Where(i => i.RevitCategoryId.HasValue)
+            .ToDictionary(i => i.Id, i => i.RevitCategoryId!.Value);
+
+        foreach (var leaf in EnumerateAllLeaves(TreeNodes.OfType<CategoryNodeViewModel>()))
+        {
+            if (leaf.FamilySource != "system") continue;
+            foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
+            {
+                // Virtual nodes carry the leaf's display name as TypeName —
+                // a presence lookup by it is meaningless (M3 review).
+                if (typeNode.IsVirtual) continue;
+
+                bool isPresent;
+                if (typeNode.FamilyName is not null)
+                {
+                    isPresent = present.Contains(
+                        (typeNode.FamilyName.ToUpperInvariant(), typeNode.TypeName.ToUpperInvariant()));
+                }
+                else
+                {
+                    isPresent = ordinalByItem.TryGetValue(leaf.CatalogItemId, out var ordinal)
+                        && presentNamesByCategory.TryGetValue(ordinal, out var names)
+                        && names.Contains(typeNode.TypeName.ToUpperInvariant());
+                }
+                typeNode.IsInProject = isPresent;
+            }
+        }
+    }
+
+    /// <summary>
+    /// #187 (M1): re-evaluates presence badges against the CURRENT active
+    /// document without rebuilding the tree — used on document switches that
+    /// do not trigger a LoadTreeAsync (same active database).
+    /// </summary>
+    internal async Task RefreshSystemTypeProjectPresenceSafeAsync()
+    {
+        if (_lastTreeCatalogItems is null) return;
+        try
+        {
+            await RefreshSystemTypeProjectPresenceAsync(_lastTreeCatalogItems, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"presence refresh on document switch skipped: {ex.Message}");
         }
     }
 
