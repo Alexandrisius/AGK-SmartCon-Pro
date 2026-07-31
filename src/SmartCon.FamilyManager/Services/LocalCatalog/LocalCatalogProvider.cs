@@ -273,7 +273,12 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
                     old.ContentHash,
                     old.HashFormatVersion,
                     old.ActiveRevitMajorVersion,
-                    old.MinRevitMajorVersion);
+                    old.MinRevitMajorVersion,
+                    // #187: tags enrichment rebuilt the record WITHOUT this
+                    // field — SearchAsync always returned RevitCategoryId=null,
+                    // silently breaking presence badges AND the batch stale
+                    // check for system items (both filter on it).
+                    old.RevitCategoryId);
             }
         }
 

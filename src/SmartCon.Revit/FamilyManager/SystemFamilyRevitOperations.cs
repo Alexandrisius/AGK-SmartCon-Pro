@@ -61,6 +61,13 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             var elem = doc.GetElement(r);
             if (elem is null) continue;
 
+            // #182: log what the picker ACCEPTED (rejections are logged in
+            // the filter) — a hosted railing click resolves to the host
+            // stairs, and only the accepted-element log tells that story.
+            SmartConLogger.Debug(
+                $"Picker accepted {elem.GetType().Name} (id={elem.Id.GetValue()}, " +
+                $"category='{elem.Category?.Name ?? "(none)"}', name='{elem.Name}')");
+
             if (elem is FamilyInstance fi)
             {
                 var family = fi.Symbol?.Family;

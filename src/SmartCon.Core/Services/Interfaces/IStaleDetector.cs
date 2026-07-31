@@ -105,4 +105,20 @@ public interface IStaleDetector
     /// of the snapshot intact.
     /// </summary>
     void InvalidateCache();
+
+    /// <summary>
+    /// #187: per-type stale verdicts of one system catalog item
+    /// (typeKey "FAMILY|NAME" upper-invariant → isStale), or null when the
+    /// item was never checked. Feeds the orange presence dot on the exact
+    /// outdated type node in the catalog tree.
+    /// </summary>
+    IReadOnlyDictionary<string, bool>? GetSystemTypeStaleMap(string catalogItemId);
+
+    /// <summary>
+    /// #187: clears ONE type's stale verdict after its successful sync
+    /// (per-type "Обновить") — the type's ES marker was just rewritten to the
+    /// current catalog version, so its orange dot must clear immediately
+    /// without a full "Проверить".
+    /// </summary>
+    void MarkSystemTypeUpdated(string catalogItemId, string typeKey);
 }

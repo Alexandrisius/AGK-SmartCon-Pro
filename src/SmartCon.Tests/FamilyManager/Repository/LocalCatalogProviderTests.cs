@@ -104,6 +104,56 @@ public sealed class LocalCatalogProviderTests
     }
 
     [Fact]
+    public async Task SearchAsync_WithTags_PreservesRevitCategoryId()
+    {
+        // #187: the tags enrichment in SearchAsync rebuilt FamilyCatalogItem
+        // WITHOUT RevitCategoryId — every search returned null, silently
+        // breaking presence badges and the batch stale check for system items.
+        using var fixture = await CreateAndMigrate();
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Стены", tags: new[] { "mep" });
+
+        var query = new FamilyCatalogQuery(null, null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
+        var results = await fixture.GetProvider().SearchAsync(query);
+
+        var item = Assert.Single(results);
+        Assert.Equal(-2000011, item.RevitCategoryId);
+        Assert.Equal("system", item.FamilySource);
+        Assert.Contains("mep", item.Tags);
+    }
+
+    private static async Task SeedSystemItemWithRevitCategoryAsync(
+        TempCatalogFixture fixture, string id, string name, string[] tags)
+    {
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO catalog_items (id, name, normalized_name, content_status, family_source, revit_category, revit_category_id, created_at_utc, updated_at_utc)
+            VALUES (@id, @name, @norm, 'Active', 'system', 'Стены', -2000011, @now, @now)
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@id", id));
+        cmd.Parameters.Add(new SqliteParameter("@name", name));
+        cmd.Parameters.Add(new SqliteParameter("@norm", name.ToLowerInvariant()));
+        cmd.Parameters.Add(new SqliteParameter("@now", DateTimeOffset.UtcNow.ToString("o")));
+        await cmd.ExecuteNonQueryAsync();
+
+        foreach (var tag in tags)
+        {
+            var normalizedTag = SmartCon.Core.Services.FamilyManager.FamilySearchNormalizer.Normalize(tag);
+            using var tagCmd = connection.CreateCommand();
+            tagCmd.CommandText = """
+                INSERT OR IGNORE INTO catalog_tags (catalog_item_id, tag, normalized_tag)
+                VALUES (@id, @tag, @normalizedTag)
+                """;
+            tagCmd.Parameters.Add(new SqliteParameter("@id", id));
+            tagCmd.Parameters.Add(new SqliteParameter("@tag", tag));
+            tagCmd.Parameters.Add(new SqliteParameter("@normalizedTag", normalizedTag));
+            await tagCmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
     public async Task SearchAsync_FilterByCategoryId()
     {
         using var fixture = await CreateAndMigrate();

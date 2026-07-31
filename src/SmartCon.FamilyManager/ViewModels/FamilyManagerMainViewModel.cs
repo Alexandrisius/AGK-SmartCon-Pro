@@ -93,6 +93,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     /// <summary>#187 (M1): catalog items of the last LoadTreeAsync — reused by
     /// the presence refresh on document switches without a DB switch.</summary>
     private IReadOnlyList<FamilyCatalogItem>? _lastTreeCatalogItems;
+    /// <summary>#187 (#2): cached presence snapshot of the active document —
+    /// re-applied to freshly rebuilt tree nodes so badges do not flicker.</summary>
+    private FamilyManagerMainViewModel.ProjectPresenceSnapshot? _presenceSnapshot;
 
     // ── Stale detection session cache (Phase 24 / ADR-030) ─────────────
     [ObservableProperty] private bool _isStaleCheckInProgress;
@@ -603,7 +606,11 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             var parent = FindParentOf(TreeNodes, typeNode);
             if (parent is FamilyLeafNodeViewModel parentLeaf)
             {
-                CanPlaceType = parentLeaf.ContentStatus == ContentStatus.Active
+                // #187: menu/command agreement — "Разместить" is hidden for a
+                // stale type (only "Обновить" is offered), so CanExecute must
+                // agree.
+                CanPlaceType = typeNode.PresenceState != TypePresenceState.StaleInProject
+                    && parentLeaf.ContentStatus == ContentStatus.Active
                     && !parentLeaf.IsRevitIncompatible
                     && _accessControl.CanLoadToProject
                     && _activeBaseCompatibleWithCurrentDoc;

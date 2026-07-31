@@ -61,6 +61,14 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty]
     private StaleReason _staleReason;
 
+    /// <summary>
+    /// #187: the family is loaded in the ACTIVE project (a FamilySymbol of
+    /// the same family name exists in the document). Computed on every tree
+    /// load via one FamilySymbol collector pass.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isInProject;
+
     public FamilyLeafNodeViewModel(
         FamilyCatalogItemRow row,
         IFamilyAssetService assetService,

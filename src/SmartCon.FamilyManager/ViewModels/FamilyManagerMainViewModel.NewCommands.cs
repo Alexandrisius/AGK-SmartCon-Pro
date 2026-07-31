@@ -366,6 +366,9 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }
 
+        // 5) #187: per-type orange dots follow the freshly checked markers.
+        ApplySystemTypeStaleMaps();
+
         await Task.CompletedTask;
     }
 

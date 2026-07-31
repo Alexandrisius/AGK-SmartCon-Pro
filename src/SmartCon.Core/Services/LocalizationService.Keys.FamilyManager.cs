@@ -100,6 +100,9 @@ public static partial class LocalizationService
         ru["FM_Check"] = "Проверить"; en["FM_Check"] = "Check";
         ru["FM_Stale"] = "Устарело"; en["FM_Stale"] = "Stale";
         ru["FM_StaleTooltipNone"] = "Актуальная версия"; en["FM_StaleTooltipNone"] = "Up to date";
+        ru["FM_PresenceTooltipNotInProject"] = "Тип не загружен в активный проект"; en["FM_PresenceTooltipNotInProject"] = "Type is not loaded in the active project";
+        ru["FM_PresenceTooltipInProject"] = "Тип загружен в активный проект и актуален"; en["FM_PresenceTooltipInProject"] = "Type is loaded in the active project and up to date";
+        ru["FM_PresenceTooltipStale"] = "Тип загружен, но устарел — обновите через «Обновить»"; en["FM_PresenceTooltipStale"] = "Type is loaded but outdated — refresh via 'Update'";
         ru["FM_StaleTooltipNoES"] = "Нет маркера версии (загружено до 2.0)"; en["FM_StaleTooltipNoES"] = "No version marker (loaded before 2.0)";
         ru["FM_StaleTooltipMismatch"] = "Версия в проекте отличается от каталога"; en["FM_StaleTooltipMismatch"] = "Project version differs from catalog";
         ru["FM_StaleTooltipRevitVer"] = "Загружено в другой версии Revit"; en["FM_StaleTooltipRevitVer"] = "Loaded in a different Revit version";
@@ -384,6 +387,7 @@ public static partial class LocalizationService
         ru["FM_BatchImport_Finalizing"] = "Завершение..."; en["FM_BatchImport_Finalizing"] = "Finalizing...";
         ru["FM_BatchImport_SummaryFormat"] = "Импортировано: {0}, пропущено: {1}, ошибок: {2}"; en["FM_BatchImport_SummaryFormat"] = "Imported: {0}, skipped: {1}, errors: {2}";
         ru["FM_PostImportStaleFormat"] = "Проверка после импорта: устарело {0} из {1} — обновите через «Обновить» в контекстном меню"; en["FM_PostImportStaleFormat"] = "Post-import check: {0} of {1} outdated — refresh via 'Update' in the context menu";
+        ru["FM_UpdateAllTypes"] = "Обновить все типы"; en["FM_UpdateAllTypes"] = "Update all types";
         ru["FM_BatchImport_CrossNameDuplicate_Tooltip"] = "Содержимое совпадает с семейством \"{0}\" ({1}), хотя имя файла другое.\n\"Сделать активной\" — файл не импортируется, активируется найденная версия.\n\"Новая версия\" — семейство \"{0}\" будет переименовано в имя этого файла."; en["FM_BatchImport_CrossNameDuplicate_Tooltip"] = "Content matches family \"{0}\" ({1}) although the file name differs.\n\"Make Active\" — the file is not imported; the matched version is activated.\n\"New Version\" — family \"{0}\" will be renamed to this file's name.";
         ru["FM_BatchImport_CategoryMoveWarning_Tooltip"] = "\"{0}\" будет перемещено из \"{1}\" в \"{2}\" при импорте."; en["FM_BatchImport_CategoryMoveWarning_Tooltip"] = "\"{0}\" will be moved from \"{1}\" to \"{2}\" on import.";
         ru["FM_CategoryProvenance_Command"] = "Задано командой «Импорт в категорию»"; en["FM_CategoryProvenance_Command"] = "Set by the 'Import to Category' command";

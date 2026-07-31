@@ -553,6 +553,9 @@ public static class StringLocalization
         public const string FM_Check = "FM_Check";
         public const string FM_Stale = "FM_Stale";
         public const string FM_StaleTooltipNone = "FM_StaleTooltipNone";
+        public const string FM_PresenceTooltipNotInProject = "FM_PresenceTooltipNotInProject";
+        public const string FM_PresenceTooltipInProject = "FM_PresenceTooltipInProject";
+        public const string FM_PresenceTooltipStale = "FM_PresenceTooltipStale";
         public const string FM_StaleTooltipNoES = "FM_StaleTooltipNoES";
         public const string FM_StaleTooltipMismatch = "FM_StaleTooltipMismatch";
         public const string FM_StaleTooltipRevitVer = "FM_StaleTooltipRevitVer";

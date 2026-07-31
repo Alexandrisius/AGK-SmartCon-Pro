@@ -674,6 +674,23 @@ public sealed partial class FamilyManagerMainViewModel
             // IncrementVersion/OverwriteCurrent close the editor.
             var pathToClose = saveAsPath ?? placeholderFilePath;
             await CloseFamilyDocumentAsync(pathToClose);
+
+            // #185: automatic stale check after a single loadable import —
+            // the work project (now active again) may hold markers of the
+            // previous catalog version; the user must SEE "Обновить" is
+            // needed without hunting for "Проверить". MakeActive is NOT
+            // skipped (review M2): a rollback to an older version makes the
+            // project's markers of the newer one stale — the check is honest.
+            if (!string.IsNullOrEmpty(importResult.CatalogItemId))
+            {
+                await RunPostImportStaleCheckAsync(new[]
+                {
+                    new ImportedCatalogItem(
+                        importResult.CatalogItemId!,
+                        importItem.FileName,
+                        "loadable")
+                });
+            }
         }
 
         await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);

@@ -4,6 +4,7 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
+        xmlns:coremodels="clr-namespace:SmartCon.Core.Models.FamilyManager;assembly=SmartCon.Core"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:fmbehaviors="clr-namespace:SmartCon.FamilyManager.Behaviors"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
@@ -23,6 +24,7 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <converters:StaleCountToTooltipConverter x:Key="StaleCountToTooltipConverter"/>
             <converters:StaleReasonToTooltipConverter x:Key="StaleReasonToTooltipConverter"/>
+            <converters:PresenceStateToTooltipConverter x:Key="PresenceStateToTooltipConverter"/>
             <converters:UnavailableReasonToTooltipConverter x:Key="UnavailableReasonToTooltipConverter"/>
             <converters:TotalItemCountToTooltipConverter x:Key="TotalItemCountToTooltipConverter"/>
             <converters:SearchHighlightConverter x:Key="SearchHighlight"/>
@@ -902,7 +904,7 @@
                             </Style>
                         </MenuItem.Style>
                     </MenuItem>
-                    <MenuItem Header="{loc:Loc FM_Update}">
+                    <MenuItem Header="{loc:Loc FM_UpdateAllTypes}">
                         <MenuItem.Style>
                             <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -925,7 +927,7 @@
                                   Command="{Binding UpdateStaleCommand}"
                                   Style="{StaticResource ModernMenuItem}" />
                     </MenuItem>
-                    <MenuItem Header="{loc:Loc FM_Update}"
+                    <MenuItem Header="{loc:Loc FM_UpdateAllTypes}"
                               Command="{Binding UpdateStaleCommand}">
                         <MenuItem.Style>
                             <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
@@ -972,18 +974,37 @@
                 <ContextMenu x:Key="FamilyTypeNodeContextMenu" Style="{StaticResource ModernContextMenu}"
                              Focusable="False"
                              DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                    <!-- #187: command set follows the presence dot —
+                         grey: only "Разместить"; green: "Разместить" + "Обновить";
+                         orange (stale): only "Обновить". -->
                     <MenuItem Header="{loc:Loc FM_PlaceType}"
-                              Command="{Binding PlaceTypeCommand}"
-                              Style="{StaticResource ModernMenuItem}" />
-                    <MenuItem Header="{loc:Loc FM_LoadToProject}"
-                              Command="{Binding LoadSystemTypeToProjectCommand}"
+                              Command="{Binding PlaceTypeCommand}">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.PresenceState, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                 Value="{x:Static coremodels:TypePresenceState.StaleInProject}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                    </MenuItem>
+                    <MenuItem Header="{loc:Loc FM_Update}"
+                              Command="{Binding UpdateTypeCommand}"
                               CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                               behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True">
                         <MenuItem.Style>
                             <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItem}">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.FamilySource, RelativeSource={RelativeSource AncestorType=ContextMenu}}" Value="system">
+                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.PresenceState, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                 Value="{x:Static coremodels:TypePresenceState.InProject}">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding PlacementTarget.DataContext.PresenceState, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                 Value="{x:Static coremodels:TypePresenceState.StaleInProject}">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -1199,15 +1220,52 @@
                 <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <!-- #187: project-presence badge — the (family, name)
-                                 type exists in the active project. -->
-                            <iconPacks:PackIconMaterial Kind="CheckCircle"
-                                                        Width="12" Height="12"
-                                                        Margin="0,0,4,0"
-                                                        VerticalAlignment="Center"
-                                                        Foreground="{DynamicResource SuccessBrush}"
-                                                        ToolTip="{loc:Loc FM_TypeInProject_Tooltip}"
-                                                        Visibility="{Binding IsInProject, Converter={StaticResource BoolToVis}}"/>
+                            <!-- #187: presence dot — grey = not in project,
+                                 green = loaded and up to date, orange = loaded
+                                 but outdated (stale). Radial gradient gives a
+                                 soft modern glow instead of a flat fill. -->
+                            <Ellipse Width="8" Height="8"
+                                     Margin="0,0,6,0"
+                                     VerticalAlignment="Center"
+                                     ToolTip="{Binding PresenceState, Converter={StaticResource PresenceStateToTooltipConverter}}">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill">
+                                            <Setter.Value>
+                                                <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
+                                                    <GradientStop Color="#FFB0BEC5" Offset="0"/>
+                                                    <GradientStop Color="#FF78909C" Offset="0.55"/>
+                                                    <GradientStop Color="#0078909C" Offset="1"/>
+                                                </RadialGradientBrush>
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PresenceState}" Value="{x:Static coremodels:TypePresenceState.InProject}">
+                                                <Setter Property="Fill">
+                                                    <Setter.Value>
+                                                        <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
+                                                            <GradientStop Color="#FF7BE495" Offset="0"/>
+                                                            <GradientStop Color="#FF34A853" Offset="0.55"/>
+                                                            <GradientStop Color="#0034A853" Offset="1"/>
+                                                        </RadialGradientBrush>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PresenceState}" Value="{x:Static coremodels:TypePresenceState.StaleInProject}">
+                                                <Setter Property="Fill">
+                                                    <Setter.Value>
+                                                        <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
+                                                            <GradientStop Color="#FFFFB74D" Offset="0"/>
+                                                            <GradientStop Color="#FFF57C00" Offset="0.55"/>
+                                                            <GradientStop Color="#00F57C00" Offset="1"/>
+                                                        </RadialGradientBrush>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
                             <ContentControl VerticalAlignment="Center">
                                 <ContentControl.Style>
                                     <Style TargetType="ContentControl">

@@ -25,6 +25,10 @@ internal sealed class StaleDetector : IStaleDetector
     private readonly IFamilyTypeRepository _typeRepository;
     private FamilyStaleSnapshot? _cachedSnapshot;
     private readonly object _cacheLock = new();
+    /// <summary>#187: per-type stale verdicts for system items —
+    /// catalogItemId → (typeKey "FAMILY|NAME" upper → isStale). Feeds the
+    /// orange presence dot on the exact outdated type node.</summary>
+    private readonly Dictionary<string, Dictionary<string, bool>> _systemTypeStaleByType = new(StringComparer.Ordinal);
 
     public StaleDetector(
         IFamilyVersionStore store,
@@ -374,6 +378,10 @@ internal sealed class StaleDetector : IStaleDetector
         }
 
         var matched = new List<(FamilyCatalogItem Item, List<ElementId> TypeIds)>();
+        // #187: per-descriptor matches kept for the per-type stale map
+        // (orange presence dot) — the aggregate verdict alone loses which
+        // concrete type is outdated.
+        var matchedByDescriptor = new List<(FamilyCatalogItem Item, FamilyTypeDescriptor Descriptor, ElementId TypeId)>();
         foreach (var item in systemItems)
         {
             if (!item.RevitCategoryId.HasValue) continue;
@@ -398,6 +406,7 @@ internal sealed class StaleDetector : IStaleDetector
                         if (string.Equals(family, descriptor.FamilyName, StringComparison.OrdinalIgnoreCase))
                         {
                             ids.Add(id);
+                            matchedByDescriptor.Add((item, descriptor, id));
                             break;
                         }
                     }
@@ -407,6 +416,7 @@ internal sealed class StaleDetector : IStaleDetector
                     // Legacy row without family (pre-V26): first candidate,
                     // same as the pre-#183 name-only match.
                     ids.Add(candidates[0].Id);
+                    matchedByDescriptor.Add((item, descriptor, candidates[0].Id));
                 }
             }
             if (ids.Count > 0)
@@ -437,6 +447,31 @@ internal sealed class StaleDetector : IStaleDetector
                 isStale,
                 reason));
         }
+
+        // #187: per-type stale map — one verdict per (family, name) type so
+        // the tree can paint the ORANGE presence dot on the exact outdated
+        // type, not just the leaf roll-up.
+        lock (_cacheLock)
+        {
+            foreach (var group in matchedByDescriptor.GroupBy(m => m.Item.Id))
+            {
+                var item = group.First().Item;
+                var typeMap = new Dictionary<string, bool>(StringComparer.Ordinal);
+                foreach (var (_, descriptor, typeId) in group)
+                {
+                    markers.TryGetValue(typeId, out var marker);
+                    // #187: a missing marker IS the NoEntityStorage stale reason
+                    // (ADR-061 §4 parity — ComputeReason requires a non-null marker).
+                    var reason = marker is null
+                        ? StaleReason.NoEntityStorage
+                        : SystemTypeStaleLogic.ComputeReason(
+                            marker, item.Id, item.CurrentVersionLabel, targetRevit);
+                    typeMap[BuildSystemTypeKey(descriptor.FamilyName, descriptor.Name)] = reason != StaleReason.None;
+                }
+                _systemTypeStaleByType[group.Key] = typeMap;
+            }
+        }
+
         return results;
     }
 
@@ -478,10 +513,10 @@ internal sealed class StaleDetector : IStaleDetector
         }
 
         var categoryOrdinal = catalogItem.RevitCategoryId;
-        var foundIds = await _awaitable.RaiseAsync(
+        var foundPairs = await _awaitable.RaiseAsync(
             _ =>
             {
-                var ids = new List<ElementId>();
+                var pairs = new List<(FamilyTypeDescriptor Descriptor, ElementId TypeId)>();
                 // #183: match by full identity (family, name) — with two
                 // conduit families sharing "Стандарт" a name-only lookup
                 // would return the SAME first match twice and never read
@@ -491,12 +526,15 @@ internal sealed class StaleDetector : IStaleDetector
                 {
                     var id = _systemTypeFinder.FindTypeByName(
                         doc, descriptor.Name, categoryOrdinal, descriptor.FamilyName);
-                    if (id is not null && !ids.Contains(id)) ids.Add(id);
+                    if (id is not null && !pairs.Any(p => p.TypeId == id))
+                    {
+                        pairs.Add((descriptor, id));
+                    }
                 }
-                return ids;
+                return pairs;
             }, ct).ConfigureAwait(true);
 
-        if (foundIds.Count == 0)
+        if (foundPairs.Count == 0)
         {
             SmartConLogger.Info(
                 $"CheckSystemFamily: none of {descriptors.Count} types of '{displayName}' " +
@@ -504,6 +542,7 @@ internal sealed class StaleDetector : IStaleDetector
             return null;
         }
 
+        var foundIds = foundPairs.Select(p => p.TypeId).ToList();
         var markers = await _awaitable.RaiseAsync(
             _ => _systemTypeStore.ReadManyFromTypes(doc, foundIds),
             ct).ConfigureAwait(true);
@@ -513,6 +552,22 @@ internal sealed class StaleDetector : IStaleDetector
             .ToList();
         var targetRevit = ResolveTargetRevit();
         var (isStale, reason, loadedLabel) = AggregateSystemTypeMarkers(catalogItem, itemMarkers, targetRevit);
+
+        // #187: per-type stale map (orange presence dot per exact type).
+        var typeMap = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var (descriptor, typeId) in foundPairs)
+        {
+            markers.TryGetValue(typeId, out var marker);
+            var typeReason = marker is null
+                ? StaleReason.NoEntityStorage
+                : SystemTypeStaleLogic.ComputeReason(
+                    marker, catalogItemId, catalogItem.CurrentVersionLabel, targetRevit);
+            typeMap[BuildSystemTypeKey(descriptor.FamilyName, descriptor.Name)] = typeReason != StaleReason.None;
+        }
+        lock (_cacheLock)
+        {
+            _systemTypeStaleByType[catalogItemId] = typeMap;
+        }
 
         var result = new StaleCheckResult(
             catalogItemId,
@@ -574,6 +629,10 @@ internal sealed class StaleDetector : IStaleDetector
         if (catalogItemIds is null || catalogItemIds.Count == 0) return;
         lock (_cacheLock)
         {
+            foreach (var id in catalogItemIds)
+            {
+                _systemTypeStaleByType.Remove(id);
+            }
             if (_cachedSnapshot is null) return;
             var before = _cachedSnapshot.Results.Count;
             var updated = StaleSnapshotLogic.RemoveFrom(_cachedSnapshot, catalogItemIds, _clock.UtcNow);
@@ -593,8 +652,48 @@ internal sealed class StaleDetector : IStaleDetector
 
     public void InvalidateCache()
     {
-        lock (_cacheLock) _cachedSnapshot = null;
+        lock (_cacheLock)
+        {
+            _cachedSnapshot = null;
+            _systemTypeStaleByType.Clear();
+        }
     }
+
+    /// <summary>
+    /// #187: per-type stale verdicts of one system catalog item
+    /// (typeKey "FAMILY|NAME" upper → isStale), or null when the item was
+    /// never checked. Used by the tree to paint the orange presence dot on
+    /// the exact outdated type node.
+    /// </summary>
+    public IReadOnlyDictionary<string, bool>? GetSystemTypeStaleMap(string catalogItemId)
+    {
+        lock (_cacheLock)
+        {
+            return _systemTypeStaleByType.TryGetValue(catalogItemId, out var map) ? map : null;
+        }
+    }
+
+    /// <summary>
+    /// #187: clears ONE type's stale verdict after its successful sync
+    /// (per-type "Обновить") — the type's ES marker was just rewritten to the
+    /// current catalog version, so its orange dot must clear immediately
+    /// without a full "Проверить".
+    /// </summary>
+    public void MarkSystemTypeUpdated(string catalogItemId, string typeKey)
+    {
+        lock (_cacheLock)
+        {
+            if (_systemTypeStaleByType.TryGetValue(catalogItemId, out var map))
+            {
+                map[typeKey] = false;
+            }
+        }
+    }
+
+    /// <summary>#187: type key shared with the tree —
+    /// "FAMILY|NAME" (upper-invariant), "|NAME" for legacy rows without family.</summary>
+    internal static string BuildSystemTypeKey(string? familyName, string typeName)
+        => $"{(familyName ?? string.Empty).ToUpperInvariant()}|{typeName.ToUpperInvariant()}";
 
     private int ResolveTargetRevit()
     {

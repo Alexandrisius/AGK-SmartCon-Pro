@@ -63,4 +63,27 @@ public sealed class RevitFamilyFinder : IFamilyFinder
         }
         return firstMatch;
     }
+
+    public IReadOnlyList<(string FamilyName, string TypeName)> CollectLoadedFamilySymbols(Document doc)
+    {
+        if (doc is null) return Array.Empty<(string, string)>();
+
+        // One collector pass for the whole project. FamilySymbol carries both
+        // names (Family.Name + Name), so a single scan feeds the leaf badge
+        // ("family loaded") and the per-type badge ("symbol loaded") at once.
+        // In-place families are excluded by construction — their symbols
+        // must not mark catalog entries as present (they are not catalog
+        // content and cannot be synced).
+        var result = new List<(string, string)>();
+        using var collector = new FilteredElementCollector(doc)
+            .OfClass(typeof(FamilySymbol));
+        foreach (FamilySymbol symbol in collector)
+        {
+            var family = symbol.Family;
+            if (family is null || family.IsInPlace) continue;
+            if (family.Name is null || symbol.Name is null) continue;
+            result.Add((family.Name, symbol.Name));
+        }
+        return result;
+    }
 }

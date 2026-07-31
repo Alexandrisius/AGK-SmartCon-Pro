@@ -4,6 +4,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services.Stale;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -459,6 +460,17 @@ public sealed partial class FamilyManagerMainViewModel
                     : string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                         typeResult?.ErrorMessage ?? typeNode.TypeName);
+
+                // #187 (review M1): the just-synced type carries a fresh ES
+                // marker — clear its per-type stale verdict so the orange dot
+                // drops immediately instead of waiting for a full "Проверить".
+                if (typeResult is not null && typeResult.IsSuccess)
+                {
+                    _staleDetector.MarkSystemTypeUpdated(
+                        leaf.CatalogItemId,
+                        StaleDetector.BuildSystemTypeKey(typeNode.FamilyName, typeNode.TypeName));
+                    typeNode.IsStaleInProject = false;
+                }
             }
             catch (Exception ex)
             {
@@ -478,6 +490,49 @@ public sealed partial class FamilyManagerMainViewModel
         // Same predicate as the menu visibility trigger (FamilySource ==
         // "system") — the command and the menu item must never disagree.
         if (typeNode is null || typeNode.FamilySource != "system") return false;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return false;
+
+        return leaf.ContentStatus == ContentStatus.Active
+            && !leaf.IsRevitIncompatible
+            && _accessControl.CanLoadToProject
+            && _activeBaseCompatibleWithCurrentDoc;
+    }
+
+    /// <summary>
+    /// #187: uniform "Обновить" on a TYPE node — synchronizes the single type
+    /// from the catalog reference. System types go through the ADR-061 sync
+    /// (same as the former per-type "Загрузить в проект"); loadable types
+    /// refresh their owning family while preserving the already-loaded types
+    /// (#101) — per-symbol overwrite is not possible via the Revit API.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanUpdateType))]
+    private async Task UpdateTypeAsync(FamilyTypeNodeViewModel? typeNode)
+    {
+        if (typeNode is null) return;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return;
+
+        if (typeNode.FamilySource == "system")
+        {
+            await LoadSystemTypeToProjectAsync(typeNode);
+            return;
+        }
+
+        // Loadable: the update is family-scoped (preserves loaded types) —
+        // delegate to the stale-update path of the parent leaf. Side effect
+        // (documented): the parent leaf becomes the selected node, matching
+        // what the user right-clicked on.
+        SelectedTreeNode = leaf;
+        await ExecuteUpdateStaleAsync(overwriteParameterValues: true);
+    }
+
+    private bool CanUpdateType(FamilyTypeNodeViewModel? typeNode)
+    {
+        if (typeNode is null || typeNode.IsVirtual) return false;
+        if (!typeNode.IsInProject && !typeNode.IsStaleInProject) return false;
 
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return false;

@@ -4,6 +4,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services.Stale;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -239,16 +240,23 @@ public sealed partial class FamilyManagerMainViewModel
             // (family, name) set lookup per node. Cheap: a single collector
             // per tree load, refreshed with every LoadTreeAsync (import,
             // sync, stale check, DB switch).
+            //
+            // #2 (no flicker): the freshly rebuilt nodes first receive the
+            // CACHED snapshot (same document → badges appear instantly, not
+            // after the Revit round-trip); the recompute then refreshes them
+            // and replaces the cache.
             stageSw.Restart();
-            try
+            // L1 (review): when no document event has arrived yet the path is
+            // UNKNOWN (startup race, #174) — treat it as "same document" so
+            // the cached snapshot still prevents flicker; a real mismatch is
+            // healed by the recompute below.
+            if (_presenceSnapshot is not null
+                && (_currentActiveDocumentPath is null
+                    || string.Equals(_presenceSnapshot.DocumentPath, _currentActiveDocumentPath, StringComparison.OrdinalIgnoreCase)))
             {
-                await RefreshSystemTypeProjectPresenceAsync(results, ct).ConfigureAwait(true);
+                ApplyPresenceSnapshot(_presenceSnapshot);
             }
-            catch (Exception ex)
-            {
-                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "RefreshSystemTypeProjectPresence"));
-                SmartConLogger.Debug($"presence refresh skipped: {ex.Message}");
-            }
+            await RecomputePresenceAsync(ct).ConfigureAwait(true);
             SmartConLogger.Freeze($"LoadTreeAsync: RefreshSystemTypeProjectPresence took {stageSw.ElapsedMilliseconds}ms");
         }
         catch (OperationCanceledException) { }
@@ -268,76 +276,244 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     /// <summary>
-    /// #187: marks system type nodes whose (family, name) is present in the
-    /// ACTIVE project — one CollectTypes pass over the catalog's system
-    /// categories, then O(1) set lookups per node. Legacy rows (no family)
-    /// fall back to a name match within the item's category.
+    /// #187: immutable presence snapshot of ONE document — which catalog
+    /// types/families are loaded in it. Cached in
+    /// <see cref="_presenceSnapshot"/> and re-applied to freshly rebuilt
+    /// tree nodes when the document has not changed (#2: badges must not
+    /// flicker on every LoadTreeAsync).
     /// </summary>
-    private async Task RefreshSystemTypeProjectPresenceAsync(
-        IReadOnlyList<FamilyCatalogItem> catalogItems, CancellationToken ct)
+    private sealed class ProjectPresenceSnapshot
+    {
+        public required string DocumentPath { get; init; }
+        public required HashSet<(string Family, string Name)> SystemTypes { get; init; }
+        public required Dictionary<int, HashSet<string>> SystemTypeNamesByCategory { get; init; }
+        public required Dictionary<string, int> SystemCategoryOrdinalByItem { get; init; }
+        public required HashSet<string> LoadableFamilies { get; init; }
+        public required HashSet<(string Family, string Type)> LoadableTypes { get; init; }
+    }
+
+    /// <summary>
+    /// #187: computes the presence snapshot of the ACTIVE document. MUST run
+    /// inside the awaitable ExternalEvent (Revit API: CollectTypes +
+    /// CollectLoadedFamilySymbols). A slice is skipped when the catalog
+    /// carries no items of that kind (no pointless collector passes).
+    /// </summary>
+    private ProjectPresenceSnapshot ComputePresenceSnapshot(
+        Autodesk.Revit.DB.Document doc, IReadOnlyList<FamilyCatalogItem> catalogItems)
     {
         var systemItems = catalogItems
             .Where(i => i.FamilySource == "system" && i.RevitCategoryId.HasValue)
             .ToList();
-        if (systemItems.Count == 0) return;
 
-        Autodesk.Revit.DB.Document? doc;
-        try
+        // System slice: all ElementTypes of the catalog's system categories.
+        var systemTypes = new HashSet<(string Family, string Name)>();
+        var systemTypeNamesByCategory = new Dictionary<int, HashSet<string>>();
+        if (systemItems.Count > 0)
         {
-            doc = _revitContext.GetDocument();
-        }
-        catch (Exception)
-        {
-            // No active document (all closed) — badges stay as they were.
-            return;
-        }
-
-        var ordinals = systemItems.Select(i => i.RevitCategoryId!.Value).Distinct().ToList();
-        var locations = await _awaitableEvent.RaiseAsync(
-            _ => _systemTypeFinder.CollectTypes(doc, ordinals), ct).ConfigureAwait(true);
-
-        var present = new HashSet<(string Family, string Name)>(
-            locations
-                .Where(l => l.FamilyName is not null)
-                .Select(l => (l.FamilyName!.ToUpperInvariant(), l.TypeName.ToUpperInvariant())));
-        var presentNamesByCategory = new Dictionary<int, HashSet<string>>();
-        foreach (var l in locations)
-        {
-            if (!presentNamesByCategory.TryGetValue(l.CategoryOrdinal, out var set))
+            var ordinals = systemItems.Select(i => i.RevitCategoryId!.Value).Distinct().ToList();
+            var locations = _systemTypeFinder.CollectTypes(doc, ordinals);
+            foreach (var l in locations)
             {
-                set = new HashSet<string>();
-                presentNamesByCategory[l.CategoryOrdinal] = set;
+                if (l.FamilyName is not null)
+                {
+                    systemTypes.Add((l.FamilyName.ToUpperInvariant(), l.TypeName.ToUpperInvariant()));
+                }
+                if (!systemTypeNamesByCategory.TryGetValue(l.CategoryOrdinal, out var set))
+                {
+                    set = new HashSet<string>();
+                    systemTypeNamesByCategory[l.CategoryOrdinal] = set;
+                }
+                set.Add(l.TypeName.ToUpperInvariant());
             }
-            set.Add(l.TypeName.ToUpperInvariant());
         }
 
-        var ordinalByItem = systemItems
-            .Where(i => i.RevitCategoryId.HasValue)
-            .ToDictionary(i => i.Id, i => i.RevitCategoryId!.Value);
+        // Loadable slice: every FamilySymbol (family loaded + symbol loaded).
+        // Skipped entirely for a system-only catalog (L5 review).
+        var loadableFamilies = new HashSet<string>(StringComparer.Ordinal);
+        var loadableTypes = new HashSet<(string Family, string Type)>();
+        if (catalogItems.Any(i => i.FamilySource != "system"))
+        {
+            foreach (var (familyName, typeName) in _familyFinder.CollectLoadedFamilySymbols(doc))
+            {
+                loadableFamilies.Add(familyName.ToUpperInvariant());
+                loadableTypes.Add((familyName.ToUpperInvariant(), typeName.ToUpperInvariant()));
+            }
+        }
 
+        return new ProjectPresenceSnapshot
+        {
+            DocumentPath = doc.PathName ?? string.Empty,
+            SystemTypes = systemTypes,
+            SystemTypeNamesByCategory = systemTypeNamesByCategory,
+            SystemCategoryOrdinalByItem = systemItems
+                .Where(i => i.RevitCategoryId.HasValue)
+                .ToDictionary(i => i.Id, i => i.RevitCategoryId!.Value),
+            LoadableFamilies = loadableFamilies,
+            LoadableTypes = loadableTypes,
+        };
+    }
+
+    /// <summary>
+    /// #187: applies a presence snapshot to the CURRENT tree nodes — pure
+    /// in-memory pass (no Revit API). System leaf badges roll up from their
+    /// types (#1: a system family has no LoadFamily — it "is in the project"
+    /// when at least one of its types is).
+    /// </summary>
+    private int ApplyPresenceSnapshot(ProjectPresenceSnapshot snapshot)
+    {
+        var marked = 0;
         foreach (var leaf in EnumerateAllLeaves(TreeNodes.OfType<CategoryNodeViewModel>()))
         {
-            if (leaf.FamilySource != "system") continue;
+            var familyKey = leaf.DisplayName.ToUpperInvariant();
+            if (leaf.FamilySource == "system")
+            {
+                // #187: per-type stale map (orange dot) — available after a
+                // stale check ran for this item; null before the first check.
+                var staleMap = _staleDetector.GetSystemTypeStaleMap(leaf.CatalogItemId);
+
+                var anyTypePresent = false;
+                foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
+                {
+                    // Virtual nodes carry the leaf's display name as TypeName —
+                    // a presence lookup by it is meaningless.
+                    if (typeNode.IsVirtual) continue;
+
+                    bool isPresent;
+                    if (typeNode.FamilyName is not null)
+                    {
+                        isPresent = snapshot.SystemTypes.Contains(
+                            (typeNode.FamilyName.ToUpperInvariant(), typeNode.TypeName.ToUpperInvariant()));
+                    }
+                    else
+                    {
+                        isPresent = snapshot.SystemCategoryOrdinalByItem.TryGetValue(leaf.CatalogItemId, out var ordinal)
+                            && snapshot.SystemTypeNamesByCategory.TryGetValue(ordinal, out var names)
+                            && names.Contains(typeNode.TypeName.ToUpperInvariant());
+                    }
+                    if (isPresent) { anyTypePresent = true; marked++; }
+                    typeNode.IsInProject = isPresent;
+                    typeNode.IsStaleInProject = isPresent
+                        && staleMap is not null
+                        && staleMap.TryGetValue(
+                            StaleDetector.BuildSystemTypeKey(typeNode.FamilyName, typeNode.TypeName), out var stale)
+                        && stale;
+                }
+                leaf.IsInProject = anyTypePresent;
+            }
+            else
+            {
+                var leafPresent = snapshot.LoadableFamilies.Contains(familyKey);
+                leaf.IsInProject = leafPresent;
+
+                foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
+                {
+                    if (typeNode.IsVirtual) continue;
+
+                    var typePresent = snapshot.LoadableTypes.Contains(
+                        (familyKey, typeNode.TypeName.ToUpperInvariant()));
+                    if (typePresent) marked++;
+                    typeNode.IsInProject = typePresent;
+                    // #187: loadable stale is leaf-scoped (the whole family
+                    // version is outdated) — every loaded type of a stale
+                    // family gets the orange dot.
+                    typeNode.IsStaleInProject = typePresent && leaf.IsStale;
+                }
+            }
+        }
+        return marked;
+    }
+
+    /// <summary>
+    /// #187: re-applies the per-type stale maps (orange dots) after a stale
+    /// check updated them — the presence snapshot is untouched (types did
+    /// not move in/out of the project, only their freshness changed).
+    /// </summary>
+    internal void ApplySystemTypeStaleMaps()
+    {
+        foreach (var leaf in EnumerateAllLeaves(TreeNodes.OfType<CategoryNodeViewModel>()))
+        {
+            if (leaf.FamilySource != "system")
+            {
+                // Loadable: leaf-scoped stale — refresh the per-type dots
+                // with the leaf's own IsStale flag.
+                foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
+                {
+                    if (typeNode.IsVirtual) continue;
+                    typeNode.IsStaleInProject = typeNode.IsInProject && leaf.IsStale;
+                }
+                continue;
+            }
+            var staleMap = _staleDetector.GetSystemTypeStaleMap(leaf.CatalogItemId);
             foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
             {
-                // Virtual nodes carry the leaf's display name as TypeName —
-                // a presence lookup by it is meaningless (M3 review).
                 if (typeNode.IsVirtual) continue;
-
-                bool isPresent;
-                if (typeNode.FamilyName is not null)
-                {
-                    isPresent = present.Contains(
-                        (typeNode.FamilyName.ToUpperInvariant(), typeNode.TypeName.ToUpperInvariant()));
-                }
-                else
-                {
-                    isPresent = ordinalByItem.TryGetValue(leaf.CatalogItemId, out var ordinal)
-                        && presentNamesByCategory.TryGetValue(ordinal, out var names)
-                        && names.Contains(typeNode.TypeName.ToUpperInvariant());
-                }
-                typeNode.IsInProject = isPresent;
+                typeNode.IsStaleInProject = typeNode.IsInProject
+                    && staleMap is not null
+                    && staleMap.TryGetValue(
+                        StaleDetector.BuildSystemTypeKey(typeNode.FamilyName, typeNode.TypeName), out var stale)
+                    && stale;
             }
+        }
+    }
+
+    /// <summary>
+    /// #187: re-evaluates presence against the CURRENT active document and
+    /// caches the snapshot. The whole pass runs inside the awaitable
+    /// ExternalEvent — <c>RevitContext.GetDocument()</c> MUST be called on
+    /// the Revit thread, not on a thread-pool continuation of the
+    /// ViewActivated handler (#3: badges did not refresh on document switch).
+    /// The snapshot is computed over the FULL catalog (never the
+    /// search-scoped list) — a search-filtered snapshot would drop slices
+    /// and re-introduce flicker when the search is cleared (review M).
+    /// </summary>
+    private async Task RecomputePresenceAsync(CancellationToken ct)
+    {
+        using var _scope = SmartConLogger.BeginScope("FMPresence",
+            ("Method", nameof(RecomputePresenceAsync)));
+        try
+        {
+            var allItems = await _catalogProvider.SearchAsync(
+                new FamilyCatalogQuery(
+                    SearchText: null,
+                    CategoryFilter: null,
+                    StatusFilter: null,
+                    Tags: null,
+                    Sort: FamilyCatalogSort.NameAsc,
+                    Offset: 0,
+                    Limit: int.MaxValue,
+                    ExcludeUncategorized: !_accessControl.IsEditorRole),
+                ct).ConfigureAwait(true);
+
+            var snapshot = await _awaitableEvent.RaiseAsync(_ =>
+            {
+                var doc = _revitContext.GetDocument();
+                // A family document (.rfa) is not a project — presence badges
+                // are meaningless against it (and would wipe to zero). Keep
+                // the current badges; they re-evaluate on the next project.
+                if (doc.IsFamilyDocument) return null;
+                return ComputePresenceSnapshot(doc, allItems);
+            }, ct).ConfigureAwait(true);
+
+            if (snapshot is null)
+            {
+                SmartConLogger.Debug("Presence recompute skipped — active document is a family");
+                return;
+            }
+
+            _presenceSnapshot = snapshot;
+            var marked = ApplyPresenceSnapshot(snapshot);
+            SmartConLogger.Debug(
+                $"Presence: snapshot '{System.IO.Path.GetFileName(snapshot.DocumentPath)}' — {marked} badge(s) set");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // No active document (all closed) or a collector failure — badges
+            // stay as they were; the next LoadTree re-evaluates.
+            SmartConLogger.Debug($"Presence recompute skipped: {ex.Message}");
         }
     }
 
@@ -349,15 +525,7 @@ public sealed partial class FamilyManagerMainViewModel
     internal async Task RefreshSystemTypeProjectPresenceSafeAsync()
     {
         if (_lastTreeCatalogItems is null) return;
-        try
-        {
-            await RefreshSystemTypeProjectPresenceAsync(_lastTreeCatalogItems, CancellationToken.None)
-                .ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Debug($"presence refresh on document switch skipped: {ex.Message}");
-        }
+        await RecomputePresenceAsync(CancellationToken.None);
     }
 
     private CatalogTreeNodeViewModel? BuildCategoryNode(

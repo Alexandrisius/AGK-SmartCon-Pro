@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
@@ -27,7 +28,26 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
     /// CollectTypes pass over the system categories of the catalog.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PresenceState))]
     private bool _isInProject;
+
+    /// <summary>
+    /// #187: the type is present in the ACTIVE project AND its ES marker
+    /// does not match the catalog (outdated) — the orange dot. Meaningful
+    /// only for system types; always false for loadable (their stale badge
+    /// lives on the leaf).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PresenceState))]
+    private bool _isStaleInProject;
+
+    /// <summary>#187: tri-state presence for the dot indicator.</summary>
+    public TypePresenceState PresenceState =>
+        !IsInProject
+            ? TypePresenceState.NotInProject
+            : IsStaleInProject
+                ? TypePresenceState.StaleInProject
+                : TypePresenceState.InProject;
 
     public bool IsSystemType =>
         FamilySource == "system" || (UniqueId is not null && UniqueId.Length > 0);
