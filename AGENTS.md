@@ -23,7 +23,7 @@
 | Собрать R24 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24` |
 | Тесты | `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` |
 | Интеграционные тесты R25 | `dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows` |
-| Интеграционные тесты R21 | `dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48` |
+| Интеграционные тесты net48 (R21-R24) | `dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023` (версия = любой **установленный** Revit 2021-2024; суть прогона — платформа net48, а не конкретный год) |
 | Собрать все + деплой | `build-and-deploy.bat` |
 | Release | `tools\release.bat` |
 
@@ -271,9 +271,11 @@ Revit-boundary кода без зелёного интеграционного �
 **Запуск** (требуется установленный Revit соответствующей версии, ~60 сек на сьют):
 ```bash
 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows
-dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023
 # Подмножество: ... -- --treenode-filter "/*/*ClassName*/*/*"
 ```
+
+**Философия версий прогона (важно, не путать!):** суть сьюта — проверка **платформы**, а не конкретного года Revit. Обязательный минимум: **R25 (net8, новейший API)** + **любой net48-прогон (Revit 2021-2024, по наличию на машине)**. Инжектор Nice3point ищет Revit года `$(RevitVersion)` — поэтому на машине без Revit 2021 прогон `-c Debug.R21` падает с `FileNotFoundException: RevitAPI 21.0.0.0`; лечение — явный `-p:RevitVersion=YYYY` (глобальное свойство перекрывает пин из `Directory.Build.props`, год = любой установленный net48-Revit). По остаточному принципу, если установлено несколько версий, полезно гонять разные API (2021 минимальный / 2023-2024 промежуточные / 2025 новейший).
 
 **Доказанная ценность:** сьют поймал production-баг #176 в день внедрения
 (флаги PurgeSheets/PurgeSchedules не сохраняли листы/ведомости — невидимо для юнит-тестов).

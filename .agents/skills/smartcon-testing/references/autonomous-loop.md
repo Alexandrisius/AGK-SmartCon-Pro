@@ -36,9 +36,10 @@
 # Точечный прогон (быстрый, для итераций фикса)
 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows -- --treenode-filter "/*/*/MyClassTests/*"
 
-# Полный гейт (обязателен перед коммитом)
+# Полный гейт (обязателен перед коммитом). RevitVersion = любой УСТАНОВЛЕННЫЙ
+# net48-Revit (2021–2024): суть прогона — платформа net48, а не конкретный год.
 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows
-dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023
 
 # Лог цикла
 Select-String "$env:APPDATA\AGK\SmartCon\smartcon.log" -Encoding UTF8 -Pattern "\[ERR\]|\[WRN\]"

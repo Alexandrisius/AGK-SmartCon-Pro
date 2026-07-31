@@ -21,12 +21,19 @@
 # Revit 2025 (net8.0-windows)
 dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Debug.R25 --framework net8.0-windows
 
-# Revit 2021 (net48)
-dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Debug.R21 --framework net48
+# Любая net48-версия, УСТАНОВЛЕННАЯ на машине (2021–2024)
+dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Debug.R21 --framework net48 -p:RevitVersion=2023
 ```
 
 - `--framework` **обязателен** для `dotnet run` (иначе «проект для нескольких платформ»).
-- Требуется установленный лицензионный Revit соответствующего года.
+- Требуется установленный лицензионный Revit **именно года `$(RevitVersion)`** —
+  инжектор ищет его при старте. На машине без Revit 2021 прогон
+  `-c Debug.R21` падает с `FileNotFoundException: RevitAPI 21.0.0.0` —
+  передай `-p:RevitVersion=YYYY` (глобальное свойство перекрывает пин из
+  `Directory.Build.props`).
+- **Философия версий:** суть прогона — платформа, не год. Обязательный
+  минимум: R25 (net8, новейший API) + любой net48 (2021–2024 по наличию).
+  По остаточному принципу — разные API (2021 min / 2023–2024 mid / 2025 max).
 - Прогон запускает реальный процесс Revit (~30–60 сек на сессию).
 - `dotnet test -c Debug.R25` тоже работает (TestingPlatformDotnetTestSupport=true).
 

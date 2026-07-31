@@ -7,7 +7,10 @@
 
     Отличия от SmartCon.Tests (xUnit):
       * TFM НЕ пинут — наследуется из Directory.Build.props по конфигурации
-        (Debug.R21 → net48 + Revit 2021, Debug.R25 → net8.0-windows + Revit 2025).
+        (Debug.R21 → net48, Debug.R25 → net8.0-windows). Суть net48-прогона —
+        ПЛАТФОРМА, а не год Revit: на машине без Revit 2021 запускай
+        `-c Debug.R21 -p:RevitVersion=YYYY` (любой установленный 2021–2024;
+        глобальное свойство перекрывает пин RevitVersion=2021 из props).
       * Версия Nice3point.TUnit.Revit — через VersionOverride "$(RevitVersion).*"
         в Directory.Build.targets (тот же паттерн, что и RevitAPI).
       * Запуск: `dotnet test -c Debug.R25` или `dotnet run -c Debug.R25`
