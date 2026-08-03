@@ -28,17 +28,20 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
     private readonly ISystemTypeSyncOrchestrator _syncOrchestrator;
     private readonly ISystemTypeFinder _typeFinder;
     private readonly IFamilyCatalogProvider _catalog;
+    private readonly ITransactionService _transactionService;
 
     public SystemFamilyPlacementService(
         IRevitUIContext revitUIContext,
         ISystemTypeSyncOrchestrator syncOrchestrator,
         ISystemTypeFinder typeFinder,
-        IFamilyCatalogProvider catalog)
+        IFamilyCatalogProvider catalog,
+        ITransactionService transactionService)
     {
         _revitUIContext = revitUIContext;
         _syncOrchestrator = syncOrchestrator;
         _typeFinder = typeFinder;
         _catalog = catalog;
+        _transactionService = transactionService;
     }
 
     public SystemPlacementResult LoadAndPlaceSystemType(
@@ -95,6 +98,33 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             return SystemPlacementResult.Failed;
         }
 
+        // Manual test 2026-08-04 (#200 follow-up): PostRequestForElementTypePlacement
+        // SILENTLY no-ops for sketch-based categories (floors, roofs, stairs,
+        // railings) — CanPlaceElementType returns true, the request is queued,
+        // and Revit never enters placement (the user sees nothing). The native
+        // activation for these categories is the tool command with the type
+        // preselected as the project default (SetDefaultElementTypeId +
+        // PostCommand — the documented workaround, Autodesk forums).
+        if (TryGetPostCommandActivation(categoryOrdinal, out var typeGroup, out var postableCommand))
+        {
+            try
+            {
+                _transactionService.RunInTransaction(activeDoc, $"Set default type '{typeName}'", d =>
+                {
+                    d.SetDefaultElementTypeId(typeGroup, elementType.Id);
+                });
+                uiApp.PostCommand(RevitCommandId.LookupPostableCommandId(postableCommand));
+                return SystemPlacementResult.Placed;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"SystemFamilyPlacement: PostCommand activation of '{typeName}' failed: {ex.Message} " +
+                    "[Action: place the type manually in the Revit UI]");
+                return SystemPlacementResult.LoadedManualPlacementRequired;
+            }
+        }
+
         if (!uidoc.CanPlaceElementType(elementType))
         {
             SmartConLogger.Info(
@@ -114,6 +144,41 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
                 $"SystemFamilyPlacement: PostRequestForElementTypePlacement rejected '{typeName}': " +
                 $"{ex.Message} [Action: place the type manually in the Revit UI]");
             return SystemPlacementResult.LoadedManualPlacementRequired;
+        }
+    }
+
+    /// <summary>
+    /// Sketch-based categories (floors, roofs, stairs, railings) whose
+    /// native activation goes through the tool command:
+    /// <c>SetDefaultElementTypeId</c> preselects the type, then
+    /// <c>PostCommand</c> starts the tool. <c>PostRequestForElementTypePlacement</c>
+    /// silently no-ops for them (manual test 2026-08-04).
+    /// </summary>
+    private static bool TryGetPostCommandActivation(
+        int? categoryOrdinal, out ElementTypeGroup typeGroup, out PostableCommand command)
+    {
+        typeGroup = default;
+        command = default;
+        switch (categoryOrdinal)
+        {
+            case (int)BuiltInCategory.OST_Floors:
+                typeGroup = ElementTypeGroup.FloorType;
+                command = PostableCommand.ArchitecturalFloor;
+                return true;
+            case (int)BuiltInCategory.OST_Roofs:
+                typeGroup = ElementTypeGroup.RoofType;
+                command = PostableCommand.RoofByFootprint;
+                return true;
+            case (int)BuiltInCategory.OST_Stairs:
+                typeGroup = ElementTypeGroup.StairsType;
+                command = PostableCommand.Stair;
+                return true;
+            case (int)BuiltInCategory.OST_StairsRailing:
+                typeGroup = ElementTypeGroup.StairsRailingType;
+                command = PostableCommand.Railing;
+                return true;
+            default:
+                return false;
         }
     }
 

@@ -81,6 +81,21 @@ public sealed class StairsSubtypeSyncTests : RevitApiTest
                     targetRun.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_COMMENTS)?.AsString())
                     .IsEqualTo("run-from-reference");
             }
+
+            // Supports live in OST_StairsStringerCarriage (NOT
+            // OST_StairsSupports — that category matches no elements,
+            // RevitLookup/Autodesk forums). The support type reference must
+            // follow the reference by name. The source assertion is
+            // UNCONDITIONAL: if the template's stairs type loses its
+            // support, the test must fail loudly, not skip the check.
+            var sourceStairs = (StairsType)sourceDoc.GetElement(sourceStairsTypeId)!;
+            await Assert.That(sourceStairs.LeftSideSupportType)
+                .IsNotEqualTo(ElementId.InvalidElementId);
+            var expectedSupportName = sourceDoc.GetElement(sourceStairs.LeftSideSupportType)!.Name;
+            await Assert.That(targetStairs.LeftSideSupportType)
+                .IsNotEqualTo(ElementId.InvalidElementId);
+            var targetSupportName = targetDoc.GetElement(targetStairs.LeftSideSupportType)!.Name;
+            await Assert.That(targetSupportName).IsEqualTo(expectedSupportName);
         }
         finally
         {

@@ -71,7 +71,12 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             if (elem is FamilyInstance fi)
             {
                 var family = fi.Symbol?.Family;
-                if (family is null || family.IsInPlace) { skippedCount++; continue; }
+                // #196: non-editable families (curtain wall system panels,
+                // «Системная панель») cannot be opened via EditFamily — the
+                // loadable import path always fails on them. Same guard as
+                // LoadableFamilyScanner (the picker enumerates families on
+                // its own, so both paths need the filter).
+                if (family is null || family.IsInPlace || !family.IsEditable) { skippedCount++; continue; }
                 if (!loadableFamilies.ContainsKey(family.UniqueId))
                 {
                     loadableFamilies[family.UniqueId] = new LoadableFamilyInfo(

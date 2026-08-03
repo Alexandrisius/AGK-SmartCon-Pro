@@ -638,20 +638,22 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             typeof(StairsRunType), null, "RunType", id => target.RunType = id, elementIdCache);
         notConverged += SyncReferencedSubtype(sourceDoc, doc, source.LandingType,
             typeof(StairsLandingType), null, "LandingType", id => target.LandingType = id, elementIdCache);
-        // Support types have no dedicated API class — they are plain
-        // ElementTypes of OST_StairsSupports (revitapidocs 2026 namespace
-        // listing), so they are collected by category.
+        // Support types have no dedicated API class — their elements live in
+        // OST_StairsStringerCarriage (RevitLookup/Autodesk forums: the
+        // OST_StairsSupports category object exists but no element carries
+        // it — collecting by it finds NOTHING), so they are collected by
+        // that category.
         notConverged += SyncReferencedSubtype(sourceDoc, doc, source.LeftSideSupportType,
-            null, BuiltInCategory.OST_StairsSupports, "LeftSideSupportType", id => target.LeftSideSupportType = id, elementIdCache);
+            null, BuiltInCategory.OST_StairsStringerCarriage, "LeftSideSupportType", id => target.LeftSideSupportType = id, elementIdCache);
         notConverged += SyncReferencedSubtype(sourceDoc, doc, source.RightSideSupportType,
-            null, BuiltInCategory.OST_StairsSupports, "RightSideSupportType", id => target.RightSideSupportType = id, elementIdCache);
+            null, BuiltInCategory.OST_StairsStringerCarriage, "RightSideSupportType", id => target.RightSideSupportType = id, elementIdCache);
         // The setters throw when the target type has no middle supports /
         // the support style is none (revitapidocs InvalidOperationException)
         // — guard on the CURRENT state (parameters were already written).
         if (target.HasMiddleSupports)
         {
             notConverged += SyncReferencedSubtype(sourceDoc, doc, source.MiddleSupportType,
-                null, BuiltInCategory.OST_StairsSupports, "MiddleSupportType", id => target.MiddleSupportType = id, elementIdCache);
+                null, BuiltInCategory.OST_StairsStringerCarriage, "MiddleSupportType", id => target.MiddleSupportType = id, elementIdCache);
         }
 
         var cutMarkParam = target.get_Parameter(BuiltInParameter.STAIRSTYPE_CUTMARK_TYPE);

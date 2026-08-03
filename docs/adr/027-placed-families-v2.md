@@ -19,6 +19,17 @@ The user (a senior MEP engineer) asked: *"у нас в модели могут �
 
 ## Revision History
 
+* **2026-08-04** — **PostCommand-активация sketch-категорий (ручной тест).**
+  `PostRequestForElementTypePlacement` МОЛЧА no-op'ится для sketch-категорий
+  (перекрытия, крыши, лестницы, ограждения): `CanPlaceElementType` = true,
+  запрос принимается, но Revit не входит в режим размещения. Нативная
+  активация для них — `Document.SetDefaultElementTypeId(ElementTypeGroup.X,
+  typeId)` (тип становится дефолтом проекта) + `PostCommand(PostableCommand.Y)`:
+  ArchitecturalFloor / RoofByFootprint / Stair / Railing. Остальные категории
+  — прежний путь (PostRequest; потолки подтверждены работающими нативно).
+  Попутно: пикер «Импорт выделенных элементов» получил guard
+  `Family.IsEditable` (панель витража, #196 — пикер перечисляет семейства
+  сам, фильтр сканера его не покрывал).
 * **2026-08-03** — **Issue #200: railing по линии.**
   `PlaceRailing` переведён с замкнутого прямоугольника на открытый линейный
   путь (start→end) — ограждение path-based элемент, одиночный Line валиден
