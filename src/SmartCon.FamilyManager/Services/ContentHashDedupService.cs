@@ -27,6 +27,11 @@ namespace SmartCon.FamilyManager.Services;
 /// of A. A Warn is logged; the default action stays Skip so the user
 /// decides consciously.</item>
 /// <item>Cross-source separation enforced in SQL (family_source filter).</item>
+/// <item>Issue #192: system-family identity is the BuiltInCategory
+/// ordinal (already part of the system content hash), never the category
+/// display name — a hash match for a system row is therefore never a
+/// cross-name duplicate, and the no-hash fallback looks the item up by
+/// <c>revit_category_id</c>.</item>
 /// </list>
 /// </remarks>
 public sealed class ContentHashDedupService : IContentHashDedupService
@@ -42,12 +47,15 @@ public sealed class ContentHashDedupService : IContentHashDedupService
         string normalizedName,
         FamilyContentHash? contentHash,
         string familySource,
+        int? revitCategoryId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(normalizedName))
             return new ContentHashDedupResult(
                 FamilyBatchImportStatus.Error,
                 null, null, null);
+
+        var isSystem = string.Equals(familySource, "system", StringComparison.OrdinalIgnoreCase);
 
         using var _scope = SmartConLogger.BeginScope("Dedup",
             ("Method", nameof(CheckAsync)),
@@ -70,7 +78,13 @@ public sealed class ContentHashDedupService : IContentHashDedupService
 
             if (match is not null)
             {
-                var isCrossName = !string.Equals(
+                // Issue #192: for system families the BuiltInCategory
+                // ordinal is part of the hash itself, so a hash match is
+                // always the same category — a display-name difference
+                // (document/template/locale-dependent) is not a cross-name
+                // duplicate. For loadable families the file name is the
+                // stable user-controlled identity and the rule stands.
+                var isCrossName = !isSystem && !string.Equals(
                     match.MatchedItemNormalizedName, normalizedName, StringComparison.Ordinal);
                 var matchType = match.IsCurrentVersion ? "current" : "archived";
 
@@ -112,7 +126,36 @@ public sealed class ContentHashDedupService : IContentHashDedupService
             }
         }
 
-        // Step 2: no hash match — fall back to the name lookup.
+        // Step 2 (Issue #192): system-family identity is the category
+        // ordinal, not the unstable display name — without it the
+        // name lookup would miss an existing item whose category name
+        // differs per document and produce a duplicate catalog row.
+        // A category MISS falls through to the legacy name lookup:
+        // pre-V22 rows may have revit_category_id = NULL (the backfill
+        // task is optional) and must keep matching by name.
+        if (isSystem && revitCategoryId.HasValue)
+        {
+            var existingByCategory = await _catalogProvider
+                .FindByRevitCategoryIdAsync(revitCategoryId.Value, familySource, ct)
+                .ConfigureAwait(false);
+
+            if (existingByCategory is not null)
+            {
+                SmartConLogger.Info(
+                    $"Dedup result: Existing (system category id={revitCategoryId.Value} found as " +
+                    $"'{existingByCategory.Name}', " +
+                    $"{(contentHash is null
+                        ? "no hash to compare — category-only dedup"
+                        : "hash does not match any version — content changed")})");
+                return new ContentHashDedupResult(
+                    FamilyBatchImportStatus.Existing,
+                    ExistingCatalogItemId: existingByCategory.Id,
+                    ExistingVersionLabel: existingByCategory.CurrentVersionLabel,
+                    HashMatch: null);
+            }
+        }
+
+        // Step 3: no hash match — fall back to the name lookup.
         var existingByName = await _catalogProvider
             .FindByNormalizedNameAsync(normalizedName, ct)
             .ConfigureAwait(false);

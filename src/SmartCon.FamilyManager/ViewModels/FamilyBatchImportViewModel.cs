@@ -510,6 +510,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         var rowContentHash = row.PrecomputedContentHash;
         var rowHashFormatVersion = row.HashFormatVersion;
         var rowFamilySource = row.FamilySource;
+        // Issue #192: system-row identity is the BuiltInCategory ordinal —
+        // the dedup needs it for the category-based fallback lookup.
+        var rowRevitCategoryId = row.Source is SmartCon.Core.Models.FamilyManager.FamilyImportSource.SystemSource sysSource
+            ? sysSource.CategoryId
+            : (int?)null;
 
         var renameTask = Task.Run(async () =>
         {
@@ -535,7 +540,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 if (_dedupService is not null)
                 {
                     dedupResult = await _dedupService
-                        .CheckAsync(normalized, contentHash, rowFamilySource, token)
+                        .CheckAsync(normalized, contentHash, rowFamilySource, rowRevitCategoryId, token)
                         .ConfigureAwait(false);
                     if (token.IsCancellationRequested) return;
                 }

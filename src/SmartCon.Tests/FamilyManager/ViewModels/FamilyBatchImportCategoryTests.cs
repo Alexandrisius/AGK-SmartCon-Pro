@@ -202,6 +202,7 @@ public sealed class FamilyBatchImportCategoryTests
                 It.IsAny<string>(),
                 It.IsAny<FamilyContentHash?>(),
                 It.IsAny<string>(),
+                It.IsAny<int?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ContentHashDedupResult(
                 Status: FamilyBatchImportStatus.Duplicate,

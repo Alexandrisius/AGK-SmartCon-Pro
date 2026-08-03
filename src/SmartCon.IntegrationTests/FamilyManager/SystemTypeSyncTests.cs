@@ -382,6 +382,10 @@ public sealed class SystemTypeSyncTests : RevitApiTest
             string normalizedName, CancellationToken ct = default) =>
             throw new NotImplementedException();
 
+        public Task<FamilyCatalogItem?> FindByRevitCategoryIdAsync(
+            int revitCategoryId, string familySource, CancellationToken ct = default) =>
+            throw new NotImplementedException();
+
         public Task<ContentHashMatch?> FindByContentHashAcrossVersionsAsync(
             string hexHash, int hashFormatVersion, string familySource, CancellationToken ct = default) =>
             throw new NotImplementedException();

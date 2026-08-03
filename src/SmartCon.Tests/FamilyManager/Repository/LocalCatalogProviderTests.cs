@@ -154,6 +154,42 @@ public sealed class LocalCatalogProviderTests
     }
 
     [Fact]
+    public async Task FindByRevitCategoryIdAsync_Found_ReturnsItem()
+    {
+        using var fixture = await CreateAndMigrate();
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Стены", tags: []);
+
+        var item = await fixture.GetProvider().FindByRevitCategoryIdAsync(-2000011, "system");
+
+        Assert.NotNull(item);
+        Assert.Equal("sys1", item.Id);
+        Assert.Equal(-2000011, item.RevitCategoryId);
+    }
+
+    [Fact]
+    public async Task FindByRevitCategoryIdAsync_NotFound_ReturnsNull()
+    {
+        using var fixture = await CreateAndMigrate();
+
+        var item = await fixture.GetProvider().FindByRevitCategoryIdAsync(-2000011, "system");
+
+        Assert.Null(item);
+    }
+
+    [Fact]
+    public async Task FindByRevitCategoryIdAsync_CrossSourceSeparation_ReturnsNull()
+    {
+        // #192: a system-category id must never resolve to a loadable row
+        // and vice versa (same separation as the hash search).
+        using var fixture = await CreateAndMigrate();
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Стены", tags: []);
+
+        var item = await fixture.GetProvider().FindByRevitCategoryIdAsync(-2000011, "loadable");
+
+        Assert.Null(item);
+    }
+
+    [Fact]
     public async Task SearchAsync_FilterByCategoryId()
     {
         using var fixture = await CreateAndMigrate();

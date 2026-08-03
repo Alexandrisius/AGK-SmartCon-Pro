@@ -49,6 +49,16 @@ public interface IFamilyCatalogProvider
     Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default);
 
     /// <summary>
+    /// Find a catalog item by its <c>BuiltInCategory</c> ordinal
+    /// (<c>catalog_items.revit_category_id</c>), filtered by
+    /// <paramref name="familySource"/> for cross-source separation.
+    /// Issue #192: for system families the category ordinal is the stable
+    /// identity — the category display name varies per
+    /// document/template/locale and cannot be used for the lookup.
+    /// </summary>
+    Task<FamilyCatalogItem?> FindByRevitCategoryIdAsync(int revitCategoryId, string familySource, CancellationToken ct = default);
+
+    /// <summary>
     /// Cross-version content-hash search. Looks for a matching
     /// <c>content_hash</c> across ALL versions (current and archived) of
     /// ALL catalog items, filtered by <paramref name="familySource"/> for

@@ -465,7 +465,14 @@ public sealed partial class FamilyManagerMainViewModel
                 prepared[0] with
                 {
                     DisplayName = projectNameOverride,
-                    SourcePath = $"system://{SafeFileName.GetBaseName(projectNameOverride)}"
+                    SourcePath = $"system://{SafeFileName.GetBaseName(projectNameOverride)}",
+                    // The staged pipeline reads SystemSource.DisplayName — the
+                    // override must reach it too, otherwise the staged
+                    // mini-project is logged/marked under the category name
+                    // instead of the user-facing family name.
+                    Source = prepared[0].Source is SmartCon.Core.Models.FamilyManager.FamilyImportSource.SystemSource sys
+                        ? sys with { DisplayName = projectNameOverride }
+                        : prepared[0].Source
                 }
             };
         }

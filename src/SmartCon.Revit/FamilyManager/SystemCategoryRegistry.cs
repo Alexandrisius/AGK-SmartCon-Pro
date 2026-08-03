@@ -49,6 +49,12 @@ public static class SystemCategoryRegistry
 
     public sealed record Entry(
         BuiltInCategory Category,
+        // Fallback-only display name (#192): the user-facing category name
+        // ALWAYS comes from the document (typeElem.Category.Name — the
+        // picker, AnalyzeActiveProject, the snapshot extractor). This value
+        // is used only when the document name cannot be resolved, and in
+        // log messages. Keep it equal to the official RU Revit category
+        // name so the fallback never invents names of its own.
         string DisplayName,
         PlacementHandler? Handler);
 
@@ -97,8 +103,8 @@ public static class SystemCategoryRegistry
             new(BuiltInCategory.OST_Ceilings,        "Потолки",      PlaceCeiling),
             new(BuiltInCategory.OST_Stairs,          "Лестницы",     PlaceStairs),
             new(BuiltInCategory.OST_Railings,        "Ограждения",   PlaceRailing),
-            new(BuiltInCategory.OST_PipeInsulations, "Изоляция труб", PlacePipeInsulation),
-            new(BuiltInCategory.OST_DuctInsulations, "Изоляция воздуховодов", PlaceDuctInsulation),
+            new(BuiltInCategory.OST_PipeInsulations, "Материалы изоляции трубопроводов", PlacePipeInsulation),
+            new(BuiltInCategory.OST_DuctInsulations, "Материалы изоляции воздуховодов", PlaceDuctInsulation),
         };
     }
 

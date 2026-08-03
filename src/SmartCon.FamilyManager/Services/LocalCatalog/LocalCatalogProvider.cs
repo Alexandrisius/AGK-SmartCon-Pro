@@ -527,6 +527,22 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         return ReadCatalogItem(reader);
     }
 
+    public async Task<FamilyCatalogItem?> FindByRevitCategoryIdAsync(int revitCategoryId, string familySource, CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT * FROM catalog_items WHERE revit_category_id = @catId AND family_source = @source ORDER BY created_at_utc LIMIT 1";
+        cmd.Parameters.Add(new SqliteParameter("@catId", revitCategoryId));
+        cmd.Parameters.Add(new SqliteParameter("@source", familySource));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            return null;
+
+        return ReadCatalogItem(reader);
+    }
+
     public async Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();

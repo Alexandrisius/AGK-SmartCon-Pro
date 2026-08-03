@@ -71,16 +71,21 @@ public interface IContentHashDedupService
         string normalizedName,
         FamilyContentHash? contentHash,
         string familySource,
+        int? revitCategoryId = null,
         CancellationToken ct = default);
 }
 ```
 
 **Business rules (Issue #126, hash-first):**
 - Хэш совпал с любой версией (current или archived) ЛЮБОГО айтема каталога, независимо от имени → `Duplicate`. Найденный по хэшу айтем — канонический «existing» для MakeActive/IncrementVersion. Если его нормализованное имя отличается от имени строки — `IsCrossNameDuplicate = true` (batch-диалог рисует ⚠ с tooltip).
-- Хэш не совпал (или хэша нет) и имя есть в каталоге → `Existing`.
-- Хэш не совпал (или хэша нет) и имени нет в каталоге → `New`.
+- Хэш не совпал (или хэша нет) и идентичность есть в каталоге → `Existing`.
+- Хэш не совпал (или хэша нет) и идентичности нет в каталоге → `New`.
 - Конфликт имя/контент (хэш совпал с айтемом A, имя занято другим айтемом B): контент важнее — Duplicate к A, Warn в лог, действие по умолчанию Skip.
 - Cross-source separation: `"loadable"` hashes are never compared against `"system"` hashes and vice versa.
+
+**Identity per source (Issue #192):**
+- `"loadable"`: идентичность — нормализованное имя .rfa-файла (стабильно, контролируется пользователем). Cross-name семантика в силе.
+- `"system"`: идентичность — `BuiltInCategory` ordinal (`revitCategoryId`), НЕ имя категории. Display-имя категории зависит от документа/шаблона/локали («Материалы изоляции воздуховодов» vs «Изоляция воздуховодов» для одного OST_DuctInsulations), а ordinal уже входит в каноническую строку хэша → hash-матч для system **никогда** не является cross-name duplicate; fallback без хэша ищет айтем через `IFamilyCatalogProvider.FindByRevitCategoryIdAsync`, а не по имени. Иначе: ложный ⚠-бейдж при совпадающем контенте и дубли айтемов каталога при изменённом контенте.
 
 ---
 

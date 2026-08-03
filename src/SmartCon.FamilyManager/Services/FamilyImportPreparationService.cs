@@ -169,7 +169,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             var normalizedName = FamilyNameNormalizer.Normalize(displayName);
 
             var dedupResult = await Task.Run(
-                () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct),
+                () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct: ct),
                 ct).ConfigureAwait(false);
 
             SmartConLogger.Info(
@@ -693,7 +693,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         var normalizedName = FamilyNameNormalizer.Normalize(fileName);
 
         var dedupResult = await Task.Run(
-            () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct),
+            () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct: ct),
             ct).ConfigureAwait(false);
 
         SmartConLogger.Info(
@@ -743,7 +743,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         var normalizedName = FamilyNameNormalizer.Normalize(displayName);
 
         var dedupResult = await Task.Run(
-            () => _dedupService.CheckAsync(normalizedName, hash, "system", ct),
+            () => _dedupService.CheckAsync(normalizedName, hash, "system", (int)builtInCategory, ct),
             ct).ConfigureAwait(false);
 
         SmartConLogger.Info(
@@ -838,7 +838,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         var normalizedName = FamilyNameNormalizer.Normalize(loadable.FamilyName);
 
         var dedupResult = await Task.Run(
-            () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct),
+            () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct: ct),
             ct).ConfigureAwait(false);
 
         SmartConLogger.Info(

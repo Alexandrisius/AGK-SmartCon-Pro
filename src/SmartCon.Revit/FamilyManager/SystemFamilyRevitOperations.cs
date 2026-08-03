@@ -196,10 +196,17 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 if (placedTypeIds.Count == 0) continue;
 
                 var types = new List<SystemTypeInfo>();
+                string? documentCategoryName = null;
                 foreach (var typeId in placedTypeIds)
                 {
                     var typeElem = activeDoc.GetElement(typeId);
                     if (typeElem is null) continue;
+                    // The category display name MUST come from the document
+                    // (same source as the picker and the snapshot extractor) —
+                    // the registry name is only a fallback. Display names of
+                    // built-in categories differ per template/version/locale
+                    // and the document is the single source of truth.
+                    documentCategoryName ??= typeElem.Category?.Name;
                     // #183: FamilyName flows into family_types.family_name —
                     // the sync identity is (family, name), never name alone.
                     types.Add(new SystemTypeInfo(
@@ -208,7 +215,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
                 if (types.Count == 0) continue;
 
-                result.Add(new CategoryAnalysis(entry.Category, entry.DisplayName, types));
+                result.Add(new CategoryAnalysis(entry.Category, documentCategoryName ?? entry.DisplayName, types));
             }
             catch (Exception ex)
             {
