@@ -42,7 +42,7 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
     [Fact]
     public async Task BuildTriple_NewName_AllocatesFreshGuidAndV1()
     {
-        var triple = await _precomputer.BuildPrecomputedTripleAsync("Brand New Family", ".rfa");
+        var triple = await _precomputer.BuildPrecomputedTripleAsync("Brand New Family", ".rfa", "loadable");
 
         Assert.NotNull(triple);
         Assert.False(string.IsNullOrEmpty(triple!.CatalogItemId));
@@ -56,7 +56,7 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
     [Fact]
     public async Task BuildTriple_NewName_RvtExtension_HonoursExtension()
     {
-        var triple = await _precomputer.BuildPrecomputedTripleAsync("Свежие трубы", ".rvt");
+        var triple = await _precomputer.BuildPrecomputedTripleAsync("Свежие трубы", ".rvt", "system");
 
         Assert.NotNull(triple);
         Assert.Equal("v1", triple!.VersionLabel);
@@ -67,9 +67,9 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
     [Fact]
     public async Task BuildTriple_NullOrWhitespace_ReturnsNull()
     {
-        Assert.Null(await _precomputer.BuildPrecomputedTripleAsync("", ".rfa"));
-        Assert.Null(await _precomputer.BuildPrecomputedTripleAsync("   ", ".rfa"));
-        Assert.Null(await _precomputer.BuildPrecomputedTripleAsync(null!, ".rfa"));
+        Assert.Null(await _precomputer.BuildPrecomputedTripleAsync("", ".rfa", "loadable"));
+        Assert.Null(await _precomputer.BuildPrecomputedTripleAsync("   ", ".rfa", "loadable"));
+        Assert.Null(await _precomputer.BuildPrecomputedTripleAsync(null!, ".rfa", "loadable"));
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
         Assert.True(seedResult.Success);
         Assert.Equal("v1", seedResult.VersionLabel);
 
-        var triple = await _precomputer.BuildPrecomputedTripleAsync("Existing Family", ".rfa");
+        var triple = await _precomputer.BuildPrecomputedTripleAsync("Existing Family", ".rfa", "loadable");
 
         Assert.NotNull(triple);
         // Must reuse the same id (not allocate a fresh GUID).
@@ -99,7 +99,7 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
         // The precomputer must go through it so the on-disk file matches
         // the path the import service will register. "bad/name?" becomes
         // "bad_name_" under Path.GetInvalidFileNameChars on Windows.
-        var triple = await _precomputer.BuildPrecomputedTripleAsync("bad/name?", ".rfa");
+        var triple = await _precomputer.BuildPrecomputedTripleAsync("bad/name?", ".rfa", "loadable");
 
         Assert.NotNull(triple);
         // The Path.GetInvalidFileNameChars rule replaces '/' and '?' with '_'.
@@ -113,8 +113,8 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
         // "new" precomputer call allocates a fresh GUID even when the
         // display name matches. (We are NOT debouncing; the call only
         // reuses an id when the catalog already has that name.)
-        var first = await _precomputer.BuildPrecomputedTripleAsync("Repeat", ".rfa");
-        var second = await _precomputer.BuildPrecomputedTripleAsync("Repeat", ".rfa");
+        var first = await _precomputer.BuildPrecomputedTripleAsync("Repeat", ".rfa", "loadable");
+        var second = await _precomputer.BuildPrecomputedTripleAsync("Repeat", ".rfa", "loadable");
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -131,8 +131,8 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
         await _importService.ImportFileAsync(
             new FamilyImportRequest(seed, 2025, null, null, null));
 
-        var seededTriple = await _precomputer.BuildPrecomputedTripleAsync("Seeded", ".rfa");
-        var freshTriple = await _precomputer.BuildPrecomputedTripleAsync("Different", ".rfa");
+        var seededTriple = await _precomputer.BuildPrecomputedTripleAsync("Seeded", ".rfa", "loadable");
+        var freshTriple = await _precomputer.BuildPrecomputedTripleAsync("Different", ".rfa", "loadable");
 
         Assert.NotNull(seededTriple);
         Assert.NotNull(freshTriple);
@@ -162,7 +162,7 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
         // be for a NEW name (Status = New, no existing item), then
         // assert that the *parent directory of that path* does not
         // exist on disk in the fixture's TempDir.
-        var triple = await _precomputer.BuildPrecomputedTripleAsync("BrandNewPure", ".rfa");
+        var triple = await _precomputer.BuildPrecomputedTripleAsync("BrandNewPure", ".rfa", "loadable");
 
         Assert.NotNull(triple);
         // The parent directory of the canonical managed path must
@@ -194,7 +194,7 @@ public sealed class LocalFamilyImportPrecomputerTests : IDisposable
             new FamilyImportRequest(seed, 2025, null, null, null));
         Assert.True(seedResult.Success);
 
-        var triple = await _precomputer.BuildPrecomputedTripleAsync("OverwriteMe", ".rfa");
+        var triple = await _precomputer.BuildPrecomputedTripleAsync("OverwriteMe", ".rfa", "loadable");
 
         Assert.NotNull(triple);
         // vN+1, not vN. (vN would mean we'd accidentally overwrite

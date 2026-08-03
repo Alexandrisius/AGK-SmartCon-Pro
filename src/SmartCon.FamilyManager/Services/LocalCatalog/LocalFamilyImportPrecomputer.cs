@@ -69,6 +69,7 @@ internal sealed class LocalFamilyImportPrecomputer : IFamilyImportPrecomputer
     public async Task<PrecomputedImportTriple?> BuildPrecomputedTripleAsync(
         string displayName,
         string extension,
+        string familySource,
         string? forcedCatalogItemId = null,
         CancellationToken ct = default)
     {
@@ -98,7 +99,7 @@ internal sealed class LocalFamilyImportPrecomputer : IFamilyImportPrecomputer
         {
             var normalizedName = FamilyNameNormalizer.Normalize(displayName);
             var existing = await _catalogProvider
-                .FindByNormalizedNameAsync(normalizedName, ct)
+                .FindByNormalizedNameAsync(normalizedName, familySource, ct)
                 .ConfigureAwait(false);
 
             if (existing is not null)

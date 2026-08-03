@@ -25,7 +25,7 @@ public interface IFamilyCatalogProvider
     Task<FamilyFileRecord?> GetFileAsync(string fileId, CancellationToken ct = default);
     Task<int> GetItemCountAsync(CancellationToken ct = default);
     Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default);
-    Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default);
+    Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, string? familySource = null, CancellationToken ct = default);
     Task<FamilyCatalogItem?> FindByRevitCategoryIdAsync(int revitCategoryId, string familySource, CancellationToken ct = default);
     Task<ContentHashMatch?> FindByContentHashAcrossVersionsAsync(string hexHash, int hashFormatVersion, string familySource, CancellationToken ct = default);
     Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default);

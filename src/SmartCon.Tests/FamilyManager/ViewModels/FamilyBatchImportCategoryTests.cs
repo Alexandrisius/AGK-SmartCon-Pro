@@ -76,7 +76,7 @@ public sealed class FamilyBatchImportCategoryTests
     {
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
         return catalogMock;
     }
@@ -362,8 +362,8 @@ public sealed class FamilyBatchImportCategoryTests
         var existing = MakeCatalogItem("existing-9", "ExistingFamily", "cat-duct", "HVAC > Ducts", "v3");
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns<string, CancellationToken>((normalized, _) =>
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, CancellationToken>((normalized, _, _) =>
                 normalized == existing.NormalizedName
                     ? Task.FromResult<FamilyCatalogItem?>(existing)
                     : Task.FromResult<FamilyCatalogItem?>(null));
@@ -391,8 +391,8 @@ public sealed class FamilyBatchImportCategoryTests
         var existing = MakeCatalogItem("existing-cat", "ExistingWithCat", "cat-duct", "HVAC > Ducts");
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns<string, CancellationToken>((normalized, _) =>
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, CancellationToken>((normalized, _, _) =>
                 normalized == existing.NormalizedName
                     ? Task.FromResult<FamilyCatalogItem?>(existing)
                     : Task.FromResult<FamilyCatalogItem?>(null));

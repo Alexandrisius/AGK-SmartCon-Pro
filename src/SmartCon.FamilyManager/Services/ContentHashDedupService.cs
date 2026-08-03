@@ -94,7 +94,7 @@ public sealed class ContentHashDedupService : IContentHashDedupService
                     // belong to a DIFFERENT catalog item? Content wins,
                     // but the user should be able to audit the decision.
                     var nameOwner = await _catalogProvider
-                        .FindByNormalizedNameAsync(normalizedName, ct)
+                        .FindByNormalizedNameAsync(normalizedName, familySource, ct)
                         .ConfigureAwait(false);
                     if (nameOwner is not null && nameOwner.Id != match.CatalogItemId)
                     {
@@ -156,8 +156,10 @@ public sealed class ContentHashDedupService : IContentHashDedupService
         }
 
         // Step 3: no hash match — fall back to the name lookup.
+        // Issue #201: the lookup is source-scoped — a "system" row must
+        // never match a loadable item with the same name (and vice versa).
         var existingByName = await _catalogProvider
-            .FindByNormalizedNameAsync(normalizedName, ct)
+            .FindByNormalizedNameAsync(normalizedName, familySource, ct)
             .ConfigureAwait(false);
 
         if (existingByName is null)

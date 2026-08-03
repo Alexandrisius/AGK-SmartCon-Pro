@@ -68,7 +68,7 @@ public sealed class CatalogFittingDependencyResolver : IFittingDependencyResolve
 
         var item = AsyncBridge.RunSync(
             () => _catalog.FindByNormalizedNameAsync(
-                FamilySearchNormalizer.Normalize(familyName), CancellationToken.None));
+                FamilySearchNormalizer.Normalize(familyName), "loadable", CancellationToken.None));
         if (item is null)
         {
             SmartConLogger.Warn(

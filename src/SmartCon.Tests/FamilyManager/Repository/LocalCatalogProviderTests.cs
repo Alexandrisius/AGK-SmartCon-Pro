@@ -190,6 +190,47 @@ public sealed class LocalCatalogProviderTests
     }
 
     [Fact]
+    public async Task FindByNormalizedNameAsync_SourceFilter_ReturnsItemOfThatSource()
+    {
+        // #201: the same normalized name exists in both sources — the
+        // source filter must pick the row of the requested source.
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "load1", "Трубы", "трубы");
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Трубы", tags: []);
+
+        var item = await fixture.GetProvider().FindByNormalizedNameAsync("трубы", "system");
+
+        Assert.NotNull(item);
+        Assert.Equal("sys1", item.Id);
+        Assert.Equal("system", item.FamilySource);
+    }
+
+    [Fact]
+    public async Task FindByNormalizedNameAsync_CrossSource_ReturnsNull()
+    {
+        // #201: a system query must never match a loadable row with the
+        // same name (and vice versa).
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "load1", "Трубы", "трубы");
+
+        var item = await fixture.GetProvider().FindByNormalizedNameAsync("трубы", "system");
+
+        Assert.Null(item);
+    }
+
+    [Fact]
+    public async Task FindByNormalizedNameAsync_NullSource_MatchesAnySource()
+    {
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "load1", "Трубы", "трубы");
+
+        var item = await fixture.GetProvider().FindByNormalizedNameAsync("трубы");
+
+        Assert.NotNull(item);
+        Assert.Equal("load1", item.Id);
+    }
+
+    [Fact]
     public async Task SearchAsync_FilterByCategoryId()
     {
         using var fixture = await CreateAndMigrate();

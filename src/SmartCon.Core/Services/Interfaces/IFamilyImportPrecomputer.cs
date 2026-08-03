@@ -38,6 +38,11 @@ public interface IFamilyImportPrecomputer
     /// for a loadable family, <c>".rvt"</c> for a system family project
     /// snapshot). <c>".rfa"</c> is the default for null/empty input.
     /// </param>
+    /// <param name="familySource">
+    /// <c>"loadable"</c> or <c>"system"</c> — scopes the existing-item
+    /// name lookup (issue #201: a system row must never match a loadable
+    /// catalog item with the same name, and vice versa).
+    /// </param>
     /// <param name="forcedCatalogItemId">
     /// Issue #126: when the dedup service matched this row to an existing
     /// catalog item BY CONTENT HASH (possibly under a different name),
@@ -56,6 +61,7 @@ public interface IFamilyImportPrecomputer
     Task<PrecomputedImportTriple?> BuildPrecomputedTripleAsync(
         string displayName,
         string extension,
+        string familySource,
         string? forcedCatalogItemId = null,
         CancellationToken ct = default);
 }

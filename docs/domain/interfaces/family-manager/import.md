@@ -154,14 +154,16 @@ public interface IFamilyImportPrecomputer
     Task<PrecomputedImportTriple?> BuildPrecomputedTripleAsync(
         string displayName,
         string extension,
+        string familySource,
         string? forcedCatalogItemId = null,
         CancellationToken ct = default);
 }
 ```
 
 Семантика:
+- `familySource` (Issue #201): `"loadable"` / `"system"` — скоуп name-lookup'а существующего айтема; системная строка никогда не матчится на loadable-айтем с тем же именем (и наоборот).
 - `forcedCatalogItemId` (Issue #126): когда дедуп-сервис сматчил строку к существующему айтему ПО ХЭШУ (возможно под другим именем), caller передаёт id этого айтема — triple целится в него (его next version label + managed path в ЕГО папке), а не в name-lookup. Иначе IncrementVersion писал бы файл в сиротскую GUID-папку и падал на UNIQUE constraint со стейл `v1`.
-- Без `forcedCatalogItemId`: нормализует `displayName` через `FamilyNameNormalizer` и ищет existing item через `IFamilyCatalogProvider.FindByNormalizedNameAsync`.
+- Без `forcedCatalogItemId`: нормализует `displayName` через `FamilyNameNormalizer` и ищет existing item через `IFamilyCatalogProvider.FindByNormalizedNameAsync` (source-scoped по `familySource`).
 - Если existing найден — возвращает `(existing.Id, ComputeNextVersionLabel(existing.Id), ComputeManagedFilePath(...))`: id сохраняется, версия инкрементируется (`vN → vN+1`).
 - Если existing не найден — возвращает `(Guid.NewGuid() в формате "N", "v1", ComputeManagedFilePath(...))`.
 - `extension` — расширение с ведущей точкой (`".rfa"` для loadable, `".rvt"` для system); `".rfa"` default для null/empty.

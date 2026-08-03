@@ -548,7 +548,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 var existing = _catalogProvider is null
                     ? null
                     : await _catalogProvider
-                        .FindByNormalizedNameAsync(normalized, token)
+                        .FindByNormalizedNameAsync(normalized, rowFamilySource, token)
                         .ConfigureAwait(false);
                 if (token.IsCancellationRequested) return;
 
@@ -610,7 +610,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     // hash (possibly under a different name), the triple
                     // must target that item, not the name lookup.
                     precomputed = await _importPrecomputer
-                        .BuildPrecomputedTripleAsync(newName, extension, dedupResult?.ExistingCatalogItemId, token)
+                        .BuildPrecomputedTripleAsync(newName, extension, rowFamilySource, dedupResult?.ExistingCatalogItemId, token)
                         .ConfigureAwait(false);
                     if (token.IsCancellationRequested) return;
                 }

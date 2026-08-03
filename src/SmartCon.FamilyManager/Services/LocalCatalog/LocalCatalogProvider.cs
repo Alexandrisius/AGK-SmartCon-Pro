@@ -512,13 +512,19 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
         ImportedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("imported_at_utc"))));
 
-    public async Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default)
+    public async Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, string? familySource = null, CancellationToken ct = default)
     {
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT * FROM catalog_items WHERE normalized_name = @name LIMIT 1";
+        cmd.CommandText = familySource is null
+            ? "SELECT * FROM catalog_items WHERE normalized_name = @name ORDER BY created_at_utc LIMIT 1"
+            : "SELECT * FROM catalog_items WHERE normalized_name = @name AND family_source = @source ORDER BY created_at_utc LIMIT 1";
         cmd.Parameters.Add(new SqliteParameter("@name", normalizedName));
+        if (familySource is not null)
+        {
+            cmd.Parameters.Add(new SqliteParameter("@source", familySource));
+        }
 
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))

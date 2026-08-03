@@ -75,7 +75,7 @@ public class ContentHashDedupServiceTests
     {
         SetupHashSearch("ABC123", "loadable", null);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
 
         var result = await _sut.CheckAsync("testfamily", CreateHash(), "loadable");
@@ -91,7 +91,7 @@ public class ContentHashDedupServiceTests
     {
         var item = CreateCatalogItem();
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);
 
         var result = await _sut.CheckAsync("testfamily", null, "loadable");
@@ -109,7 +109,7 @@ public class ContentHashDedupServiceTests
         var match = CreateMatch(currentLabel: "v2");
 
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);
         SetupHashSearch("ABC123", "loadable", match);
 
@@ -131,7 +131,7 @@ public class ContentHashDedupServiceTests
         var match = CreateMatch(matchedLabel: "v2", isCurrent: false, currentLabel: "v3");
 
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);
         SetupHashSearch("ABC123", "loadable", match);
 
@@ -152,7 +152,7 @@ public class ContentHashDedupServiceTests
         var item = CreateCatalogItem(currentVersion: "v1");
 
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);
         SetupHashSearch("ABC123", "loadable", null);
 
@@ -189,7 +189,7 @@ public class ContentHashDedupServiceTests
         // hash misses does the name lookup run.
         SetupHashSearch("ABC123", "loadable", null);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("unique", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("unique", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
 
         var result = await _sut.CheckAsync("unique", CreateHash(), "loadable");
@@ -208,7 +208,7 @@ public class ContentHashDedupServiceTests
     {
         var item = CreateCatalogItem();
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("testfamily", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(item);
 
         var result = await _sut.CheckAsync("testfamily", null, "loadable");
@@ -228,7 +228,7 @@ public class ContentHashDedupServiceTests
         var match = CreateMatch(itemName: "Трубы", matchedLabel: "v1", currentLabel: "v1");
         SetupHashSearch("DEF456", "system", match);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("трубы", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("трубы", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateCatalogItem(familySource: "system"));
 
         var hash = new FamilyContentHash("DEF456", FamilyContentHashFormat.CurrentVersion, "system");
@@ -251,7 +251,7 @@ public class ContentHashDedupServiceTests
         var match = CreateMatch(itemId: "item-9", itemName: "OldName", matchedLabel: "v2", currentLabel: "v3");
         SetupHashSearch("ABC123", "loadable", match);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("newname", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("newname", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
 
         var result = await _sut.CheckAsync("newname", CreateHash(), "loadable");
@@ -274,7 +274,7 @@ public class ContentHashDedupServiceTests
         var match = CreateMatch(itemId: "item-a", itemName: "ItemA", matchedLabel: "v1", currentLabel: "v1");
         SetupHashSearch("ABC123", "loadable", match);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("itemb", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("itemb", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateCatalogItem(id: "item-b", name: "ItemB"));
 
         var result = await _sut.CheckAsync("itemb", CreateHash(), "loadable");
@@ -294,7 +294,7 @@ public class ContentHashDedupServiceTests
         var match = CreateMatch(itemId: "item-1", itemName: "ItemA", matchedLabel: "v1", currentLabel: "v1");
         SetupHashSearch("ABC123", "loadable", match);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("itemb", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("itemb", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateCatalogItem(id: "item-1", name: "ItemB"));
 
         var result = await _sut.CheckAsync("itemb", CreateHash(), "loadable");
@@ -329,7 +329,7 @@ public class ContentHashDedupServiceTests
         Assert.Equal("item-sys", result.ExistingCatalogItemId);
         Assert.Equal("v1", result.ExistingVersionLabel);
         _mockProvider.Verify(
-            p => p.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            p => p.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Never,
             "System hash match must not trigger the cross-name conflict name lookup");
     }
@@ -342,7 +342,7 @@ public class ContentHashDedupServiceTests
         var match = CreateMatch(itemId: "item-9", itemName: "OldName", matchedLabel: "v1", currentLabel: "v1");
         SetupHashSearch("ABC123", "loadable", match);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("newname", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("newname", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
 
         var result = await _sut.CheckAsync("newname", CreateHash(), "loadable");
@@ -409,7 +409,7 @@ public class ContentHashDedupServiceTests
         // pass the id; this guards future regressions).
         SetupHashSearch("FFF000", "system", null);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("трубы", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("трубы", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateCatalogItem(familySource: "system"));
 
         var hash = new FamilyContentHash("FFF000", FamilyContentHashFormat.CurrentVersion, "system");
@@ -434,7 +434,7 @@ public class ContentHashDedupServiceTests
             .Setup(p => p.FindByRevitCategoryIdAsync(-2008123, "system", It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
         _mockProvider
-            .Setup(p => p.FindByNormalizedNameAsync("изоляция воздуховодов", It.IsAny<CancellationToken>()))
+            .Setup(p => p.FindByNormalizedNameAsync("изоляция воздуховодов", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateCatalogItem(id: "item-legacy", name: "Изоляция воздуховодов", currentVersion: "v4", familySource: "system"));
 
         var hash = new FamilyContentHash("FFF000", FamilyContentHashFormat.CurrentVersion, "system");
@@ -443,5 +443,28 @@ public class ContentHashDedupServiceTests
         Assert.Equal(FamilyBatchImportStatus.Existing, result.Status);
         Assert.Equal("item-legacy", result.ExistingCatalogItemId);
         Assert.Equal("v4", result.ExistingVersionLabel);
+    }
+
+    [Fact]
+    public async Task CheckAsync_SystemRow_NameLookupIsSourceScoped()
+    {
+        // #201: a system row whose normalized name equals a LOADABLE
+        // item's name must NOT be reported as Existing — the name lookup
+        // is scoped to familySource (cross-source separation, same as the
+        // hash search and the category lookup).
+        _mockProvider
+            .Setup(p => p.FindByRevitCategoryIdAsync(-2000134, "system", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FamilyCatalogItem?)null);
+        _mockProvider
+            .Setup(p => p.FindByNormalizedNameAsync("трубы", "system", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FamilyCatalogItem?)null);
+
+        var result = await _sut.CheckAsync("трубы", null, "system", -2000134);
+
+        Assert.Equal(FamilyBatchImportStatus.New, result.Status);
+        Assert.Null(result.ExistingCatalogItemId);
+        _mockProvider.Verify(
+            p => p.FindByNormalizedNameAsync("трубы", "system", It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

@@ -379,7 +379,7 @@ public sealed class SystemTypeSyncTests : RevitApiTest
             throw new NotImplementedException();
 
         public Task<FamilyCatalogItem?> FindByNormalizedNameAsync(
-            string normalizedName, CancellationToken ct = default) =>
+            string normalizedName, string? familySource = null, CancellationToken ct = default) =>
             throw new NotImplementedException();
 
         public Task<FamilyCatalogItem?> FindByRevitCategoryIdAsync(

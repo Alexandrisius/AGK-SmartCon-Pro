@@ -318,7 +318,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
 
         var precomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(prepared.DisplayName, ".rfa", prepared.ExistingCatalogItemId, CancellationToken.None)
+            .BuildPrecomputedTripleAsync(prepared.DisplayName, ".rfa", prepared.FamilySource, prepared.ExistingCatalogItemId, CancellationToken.None)
             .ConfigureAwait(false);
         var precomputedCatalogItemId = precomputed?.CatalogItemId ?? Guid.NewGuid().ToString("N");
         var precomputedVersionLabel = precomputed?.VersionLabel ?? "v1";
@@ -338,7 +338,7 @@ public sealed partial class FamilyManagerMainViewModel
             prepared.ExistingVersionLabel,
             existingCategoryId,
             existingCategoryName,
-            FamilySource: "loadable",
+            FamilySource: prepared.FamilySource,
             TypeCount: SnapshotExtractionMapper.ResolveTypeCount(
                 prepared.LoadableSnapshot, prepared.SystemSnapshot, prepared.SourceTypes),
             RevitCategory: prepared.LoadableSnapshot?.Category,
@@ -392,7 +392,7 @@ public sealed partial class FamilyManagerMainViewModel
         var displayName = importItem.FileName;
 
         var postDialogPrecomputed = await _importPrecomputer
-            .BuildPrecomputedTripleAsync(displayName, ".rfa", importItem.ExistingCatalogItemId, CancellationToken.None)
+            .BuildPrecomputedTripleAsync(displayName, ".rfa", importItem.FamilySource, importItem.ExistingCatalogItemId, CancellationToken.None)
             .ConfigureAwait(false);
         var resolvedCatalogItemId = postDialogPrecomputed?.CatalogItemId
             ?? importItem.PrecomputedCatalogItemId

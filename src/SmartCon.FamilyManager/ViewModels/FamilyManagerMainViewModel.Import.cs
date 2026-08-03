@@ -117,7 +117,7 @@ public sealed partial class FamilyManagerMainViewModel
                     : p.Status;
 
                 var precomputed = await _importPrecomputer
-                    .BuildPrecomputedTripleAsync(p.DisplayName, ".rfa", p.ExistingCatalogItemId, CancellationToken.None)
+                    .BuildPrecomputedTripleAsync(p.DisplayName, ".rfa", p.FamilySource, p.ExistingCatalogItemId, CancellationToken.None)
                     .ConfigureAwait(false);
 
                 items.Add(new FamilyBatchImportItem(
@@ -518,7 +518,7 @@ public sealed partial class FamilyManagerMainViewModel
             // by content hash (possibly under a different name), the
             // precomputed triple must target THAT item, not a name lookup.
             var precomputed = await _importPrecomputer
-                .BuildPrecomputedTripleAsync(p.DisplayName, extension, p.ExistingCatalogItemId, ct)
+                .BuildPrecomputedTripleAsync(p.DisplayName, extension, p.FamilySource, p.ExistingCatalogItemId, ct)
                 .ConfigureAwait(false);
 
             var status = p.ErrorMessage is not null

@@ -206,7 +206,7 @@ the reference is visually inspectable and the snapshot extractor reads types fro
 | `OST_Ramps` (пандусы) | #198 | no public `Ramp.Create` API — type-only import candidate |
 | `OST_Wire` (провода) | #199 | `Wire.Create` requires a plan view id — needs view handling in staging |
 | `OST_DuctLinings` (внутр. изоляция) | #197 | not yet registered; host-required like `DuctInsulation` |
-| `OST_CurtainWallPanels` (панель витража) | #196 | non-editable family — loadable path fails, needs exclusion or system path |
+| `OST_CurtainWallPanels` (панель витража) | #196 | non-editable family — исключена из loadable-импорта сканером (`Family.IsEditable == false`); системный путь (типы панелей) — возможный follow-up |
 
 ### Decisions (Phase 2)
 
