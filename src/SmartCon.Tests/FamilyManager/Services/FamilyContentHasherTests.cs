@@ -1194,4 +1194,156 @@ public class FamilyContentHasherTests
         Assert.NotNull(hashNamed);
         Assert.NotEqual(hashNoPart!.HexString, hashNamed!.HexString);
     }
+
+    [Fact]
+    public void ComputeForSystem_FamilyKey_IsHashContent()
+    {
+        // ADR-064/065 (FHV4): the locale-invariant family key is identity —
+        // same type name in two families must hash differently.
+        var withFittings = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Стандарт", [], FamilyKey: SystemFamilyKeys.ConduitWithFittings),
+        ]);
+        var withoutFittings = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Стандарт", [], FamilyKey: SystemFamilyKeys.ConduitWithoutFittings),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(withFittings);
+        var hash2 = _hasher.ComputeForSystem(withoutFittings);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_StructExtras_ShiftHash()
+    {
+        // #179 (FHV4): StructuralMaterialIndex/EndCap/OpeningWrapping and
+        // per-layer LayerCapFlag/ParticipatesInWrapping are hash content.
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(1, 1,
+                    [new CompoundLayerSnapshot(1, 0.5, "Concrete", false, false, false)],
+                    StructuralMaterialIndex: 0, EndCap: 1, OpeningWrapping: 2)),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(1, 1,
+                    [new CompoundLayerSnapshot(1, 0.5, "Concrete", false, true, true)],
+                    StructuralMaterialIndex: 1, EndCap: 2, OpeningWrapping: 3)),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_StairsSubtypes_ShiftHash()
+    {
+        // #184 (FHV4): subtype references are identity — changing the run
+        // type in the reference changes the hash.
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Stair", [],
+                Stairs: new StairsSubtypesSnapshot("Run A", "Landing A", null, null, null, "Cut A")),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Stair", [],
+                Stairs: new StairsSubtypesSnapshot("Run B", "Landing A", null, null, null, "Cut A")),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_RailingStructure_ShiftHash()
+    {
+        var balusters = new RailingBalusterSnapshot(0.5, 0, 0, ["Bal:Std"], false, 0, null);
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Railing", [],
+                Railing: new RailingStructureSnapshot("TopRail A", 0.9, null, null, null, null,
+                    null, null, null, null,
+                    [new RailingRailSnapshot("Rail 1", 0.5, 0.0, "Profile:Rect", "Steel")],
+                    balusters)),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Railing", [],
+                Railing: new RailingStructureSnapshot("TopRail A", 1.0, null, null, null, null,
+                    null, null, null, null,
+                    [new RailingRailSnapshot("Rail 1", 0.5, 0.0, "Profile:Rect", "Steel")],
+                    balusters)),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_SegmentSizeTables_ShiftHash()
+    {
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Segments:
+                [
+                    new SegmentSnapshot("Steel", "Steel", null, 0.00015,
+                        [new SegmentSizeSnapshot(0.05, 0.04, 0.05, true, true)]),
+                ]),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Segments:
+                [
+                    new SegmentSnapshot("Steel", "Steel", null, 0.00015,
+                        [new SegmentSizeSnapshot(0.06, 0.04, 0.06, true, true)]),
+                ]),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_OptionalSections_NullVsPresent_Differ()
+    {
+        // A type without the FHV4 sections must not collide with the same
+        // type carrying them (section marker '-' vs real content).
+        var bare = CreateSystemSnapshot(types: [new SystemTypeSnapshot("Type", [])]);
+        var enriched = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Type", [], FamilyKey: SystemFamilyKeys.SingleFamily),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(bare);
+        var hash2 = _hasher.ComputeForSystem(enriched);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
 }

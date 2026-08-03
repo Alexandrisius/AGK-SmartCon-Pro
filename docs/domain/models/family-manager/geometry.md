@@ -88,7 +88,10 @@ public sealed record SystemTypeSnapshot(
     CompoundStructureSnapshot? Structure = null,
     RoutingPreferencesSnapshot? Routing = null,
     string? FamilyName = null,
-    string? FamilyKey = null);
+    string? FamilyKey = null,
+    StairsSubtypesSnapshot? Stairs = null,
+    RailingStructureSnapshot? Railing = null,
+    IReadOnlyList<SegmentSnapshot>? Segments = null);
 
 public sealed record SystemParameterValue(
     string ParameterName,
@@ -101,6 +104,41 @@ public sealed record SystemParameterValue(
     string? SpecTypeId = null,
     string? UnitTypeId = null);
 ```
+
+FHV4 (ADR-065): `FamilyKey` входит в content-хэш; `Stairs`/`Railing`/`Segments` —
+identity-сводки для хэша (имена ссылок, не глубокие данные — sync читает эталон
+живьём из мини-проекта, ADR-061).
+
+### StairsSubtypesSnapshot / RailingStructureSnapshot (FHV4, ADR-065)
+
+```csharp
+public sealed record StairsSubtypesSnapshot(
+    string? RunTypeName, string? LandingTypeName,
+    string? LeftSupportTypeName, string? RightSupportTypeName,
+    string? MiddleSupportTypeName, string? CutMarkTypeName);
+
+public sealed record RailingStructureSnapshot(
+    string? TopRailTypeName, double? TopRailHeight,
+    string? PrimaryHandrailTypeName, double? PrimaryHandrailHeight,
+    double? PrimaryHandrailLateralOffset, int? PrimaryHandrailPosition,
+    string? SecondaryHandrailTypeName, double? SecondaryHandrailHeight,
+    double? SecondaryHandrailLateralOffset, int? SecondaryHandrailPosition,
+    IReadOnlyList<RailingRailSnapshot> Rails,
+    RailingBalusterSnapshot Balusters);
+
+public sealed record RailingRailSnapshot(
+    string Name, double Height, double Offset,
+    string? ProfileName, string? MaterialName);
+
+public sealed record RailingBalusterSnapshot(
+    double PatternLength, int DistributionJustification, int BreakPattern,
+    IReadOnlyList<string?> BalusterFamilyNames,
+    bool UseBalusterPerTreadOnStairs, int BalusterPerTreadNumber,
+    string? BalusterPerTreadFamilyName);
+```
+
+Ссылки на элементы — по ИМЕНАМ (user content, locale-stable); балясины/профили —
+family-qualified (`"{Family}:{Type}"`, как routing part names).
 
 - `CategoryName` — display name (e.g. "Трубы", "Воздуховоды"). NOT hashed since FHV3 (ADR-056) — locale-dependent.
 - `CategoryId` — numeric `BuiltInCategory` ordinal carried as `int` so Core does not depend on `Autodesk.Revit.DB` (I-09). The hashed category identity (FHV3).

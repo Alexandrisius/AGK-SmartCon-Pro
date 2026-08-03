@@ -11,12 +11,15 @@ public static class DbCompatibility
     /// carrying the current breaking data format. Bumped only by changes
     /// that make older plugins harmful to the catalog (e.g. a new
     /// content-hash format: their dedup would silently create duplicates).
-    /// Every bump MUST ship with a schema migration backfilling
+    /// Every bump MUST ship with a backfill of
     /// <c>database_meta.min_plugin_version</c> from the data marker that
-    /// proves the breaking change was applied (see migration V24 for the
-    /// FHV3 precedent: <c>hash_format_version = 3</c>).
+    /// proves the breaking change was applied (FHV3 precedent: schema
+    /// migration V24 keyed on <c>hash_format_version = 3</c>; FHV4:
+    /// runtime backfill inside the <c>hash-v4</c> actualization task —
+    /// v4 rows exist only after the task runs, so a schema migration
+    /// cannot key on them).
     /// Non-breaking releases (additive columns, optional artifacts) do NOT
     /// bump this floor.
     /// </summary>
-    public const string CurrentMinPluginVersion = "2.0.1-beta.5";
+    public const string CurrentMinPluginVersion = "2.0.1-beta.8";
 }

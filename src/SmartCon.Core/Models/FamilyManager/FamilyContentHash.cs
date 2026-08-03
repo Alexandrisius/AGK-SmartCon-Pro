@@ -43,6 +43,16 @@ public sealed record FamilyContentHash(
 ///     category name and gains per-type STRUCT (compound layers) and
 ///     ROUTING (routing preferences) sections. Both sources need a
 ///     full file-based recomputation (critical task <c>hash-v3</c>).
+/// 4 — system identity coverage (Issues #184/#179/#190, ADR-065).
+///     System only: <c>FHV4|SYSTEM|{catId}|...</c> adds per-type FAMKEY
+///     (locale-invariant family key), STRUCT gains
+///     StructuralMaterialIndex/EndCap/OpeningWrapping and per-layer
+///     LayerCapFlag/ParticipatesInWrapping, new SEGMENTS (size tables),
+///     SUBTYPES (stairs subtype references by name) and RAILING
+///     (structure summary) sections. Loadable canonical string is
+///     unchanged (FHV3 loadable rows are re-stamped to 4 by the same
+///     critical task <c>hash-v4</c> — recompute is file-based for both
+///     sources, so no cheap flag pass is needed).
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -58,7 +68,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

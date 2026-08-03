@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.IO;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Architecture;
+using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -1228,7 +1230,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             FamilyName: elementType.FamilyName,
             // #190 (ADR-064): locale-invariant family identity — the primary
             // matcher on mixed-locale teams. Sync-only, not hashed.
-            FamilyKey: SystemFamilyKeyResolver.Resolve(elementType));
+            FamilyKey: SystemFamilyKeyResolver.Resolve(elementType),
+            // FHV4 (ADR-065): subtype/structure/segment identity summaries.
+            Stairs: ExtractStairsSubtypes(elementType, projectDoc),
+            Railing: ExtractRailingStructure(elementType, projectDoc),
+            Segments: ExtractSegments(elementType, projectDoc));
     }
 
     /// <summary>
@@ -1436,6 +1442,289 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             PartName: partName,
             Description: description,
             Criteria: criteria);
+    }
+
+    /// <summary>
+    /// Segment size tables referenced by the type's routing rules
+    /// (Segments group) — FHV4 hash content (#179, ADR-065). Mirrors
+    /// <c>RevitSegmentSyncService.ReadSegment</c>; <c>null</c> for
+    /// non-MEP types and types without segment rules.
+    /// </summary>
+    private static IReadOnlyList<SegmentSnapshot>? ExtractSegments(
+        ElementType elementType, Document doc)
+    {
+        if (elementType is not MEPCurveType mepCurveType)
+            return null;
+
+        try
+        {
+            using var manager = mepCurveType.RoutingPreferenceManager;
+            if (manager is null)
+                return null;
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var segments = new List<SegmentSnapshot>();
+            var ruleCount = manager.GetNumberOfRules(RoutingPreferenceRuleGroupType.Segments);
+            for (var i = 0; i < ruleCount; i++)
+            {
+                RoutingPreferenceRule rule;
+                try
+                {
+                    rule = manager.GetRule(RoutingPreferenceRuleGroupType.Segments, i);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug(
+                        $"Segment rule read failed (Segments[{i}]) for type '{elementType.Name}': {ex.Message}");
+                    continue;
+                }
+
+                if (rule.MEPPartId is null || rule.MEPPartId == ElementId.InvalidElementId)
+                    continue;
+                if (doc.GetElement(rule.MEPPartId) is not Segment segment)
+                    continue;
+                if (!seen.Add(segment.Name))
+                    continue;
+
+                segments.Add(BuildSegmentSnapshot(segment, doc));
+            }
+
+            return segments.Count == 0 ? null : segments;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"Segments read failed for type '{elementType.Name}': {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Shared segment snapshot builder (FHV4, ADR-065) — single source for
+    /// the hash path (extractor) and the sync path
+    /// (<c>RevitSegmentSyncService.ReadSegment</c>), so the hash always
+    /// reflects exactly what the sync writes.
+    /// </summary>
+    internal static SegmentSnapshot BuildSegmentSnapshot(Segment segment, Document doc)
+    {
+        string? materialName = null;
+        try
+        {
+            if (segment.MaterialId is not null && segment.MaterialId != ElementId.InvalidElementId)
+            {
+                materialName = doc.GetElement(segment.MaterialId)?.Name;
+            }
+        }
+        catch { /* unresolved material — null */ }
+
+        string? scheduleName = null;
+        if (segment is PipeSegment pipeSegment)
+        {
+            try
+            {
+                if (pipeSegment.ScheduleTypeId is not null &&
+                    pipeSegment.ScheduleTypeId != ElementId.InvalidElementId)
+                {
+                    scheduleName = doc.GetElement(pipeSegment.ScheduleTypeId)?.Name;
+                }
+            }
+            catch { /* unresolved schedule — null */ }
+        }
+
+        var sizes = segment.GetSizes()
+            .Select(s => new SegmentSizeSnapshot(
+                s.NominalDiameter, s.InnerDiameter, s.OuterDiameter,
+                s.UsedInSizeLists, s.UsedInSizing))
+            .ToList();
+
+        return new SegmentSnapshot(segment.Name, materialName, scheduleName, segment.Roughness, sizes);
+    }
+
+    /// <summary>
+    /// Stairs subtype references by NAME — FHV4 hash identity (#184,
+    /// ADR-065). <c>null</c> for non-stairs types. The cut mark type has
+    /// no dedicated property — it is read via the
+    /// <c>STAIRSTYPE_CUTMARK_TYPE</c> built-in parameter (Autodesk
+    /// Stairs Annotations guide).
+    /// </summary>
+    private static StairsSubtypesSnapshot? ExtractStairsSubtypes(
+        ElementType elementType, Document doc)
+    {
+        if (elementType is not StairsType stairsType)
+            return null;
+
+        try
+        {
+            string? NameOf(ElementId? id)
+            {
+                try
+                {
+                    return id is null || id == ElementId.InvalidElementId
+                        ? null
+                        : doc.GetElement(id)?.Name;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            ElementId? cutMarkId = null;
+            try
+            {
+                cutMarkId = stairsType
+                    .get_Parameter(BuiltInParameter.STAIRSTYPE_CUTMARK_TYPE)
+                    ?.AsElementId();
+            }
+            catch { /* no cut mark parameter — null */ }
+
+            return new StairsSubtypesSnapshot(
+                RunTypeName: NameOf(stairsType.RunType),
+                LandingTypeName: NameOf(stairsType.LandingType),
+                LeftSupportTypeName: NameOf(stairsType.LeftSideSupportType),
+                RightSupportTypeName: NameOf(stairsType.RightSideSupportType),
+                MiddleSupportTypeName: NameOf(stairsType.MiddleSupportType),
+                CutMarkTypeName: NameOf(cutMarkId));
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"Stairs subtypes read failed for type '{elementType.Name}': {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Railing structure identity summary — FHV4 hash content (ADR-065):
+    /// top rail, handrails, the non-continuous rail list and the baluster
+    /// placement scalars. Element references are carried by NAME (user
+    /// content, locale-stable); baluster families are family-qualified
+    /// ("{Family}:{Type}") like routing part names. <c>null</c> for
+    /// non-railing types.
+    /// </summary>
+    private static RailingStructureSnapshot? ExtractRailingStructure(
+        ElementType elementType, Document doc)
+    {
+        if (elementType is not RailingType railingType)
+            return null;
+
+        try
+        {
+            string? NameOf(ElementId? id)
+            {
+                try
+                {
+                    return id is null || id == ElementId.InvalidElementId
+                        ? null
+                        : doc.GetElement(id)?.Name;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            string? FamilyQualifiedNameOf(ElementId? id)
+            {
+                try
+                {
+                    if (id is null || id == ElementId.InvalidElementId)
+                        return null;
+                    return doc.GetElement(id) switch
+                    {
+                        FamilySymbol symbol => $"{symbol.Family?.Name}:{symbol.Name}",
+                        var element => element?.Name,
+                    };
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            var rails = new List<RailingRailSnapshot>();
+            using (var railStructure = railingType.RailStructure)
+            {
+                if (railStructure is not null)
+                {
+                    var railCount = railStructure.GetNonContinuousRailCount();
+                    for (var i = 0; i < railCount; i++)
+                    {
+                        using var rail = railStructure.GetNonContinuousRail(i);
+                        if (rail is null) continue;
+                        rails.Add(new RailingRailSnapshot(
+                            rail.Name ?? string.Empty,
+                            rail.Height,
+                            rail.Offset,
+                            FamilyQualifiedNameOf(rail.ProfileId),
+                            NameOf(rail.MaterialId)));
+                    }
+                }
+            }
+
+            RailingBalusterSnapshot balusters;
+            using (var placement = railingType.BalusterPlacement)
+            {
+                if (placement is not null)
+                {
+                    var balusterNames = new List<string?>();
+                    double patternLength = 0;
+                    var justification = -1;
+                    var breakPattern = -1;
+                    using (var pattern = placement.BalusterPattern)
+                    {
+                        if (pattern is not null)
+                        {
+                            patternLength = pattern.Length;
+                            justification = (int)pattern.DistributionJustification;
+                            breakPattern = (int)pattern.BreakPattern;
+                            var balusterCount = pattern.GetBalusterCount();
+                            for (var i = 0; i < balusterCount; i++)
+                            {
+                                using var baluster = pattern.GetBaluster(i);
+                                balusterNames.Add(baluster is null
+                                    ? null
+                                    : FamilyQualifiedNameOf(baluster.BalusterFamilyId));
+                            }
+                        }
+                    }
+
+                    balusters = new RailingBalusterSnapshot(
+                        PatternLength: patternLength,
+                        DistributionJustification: justification,
+                        BreakPattern: breakPattern,
+                        BalusterFamilyNames: balusterNames,
+                        UseBalusterPerTreadOnStairs: placement.UseBalusterPerTreadOnStairs,
+                        BalusterPerTreadNumber: placement.BalusterPerTreadNumber,
+                        BalusterPerTreadFamilyName: FamilyQualifiedNameOf(placement.BalusterPerTreadFamilyId));
+                }
+                else
+                {
+                    balusters = new RailingBalusterSnapshot(
+                        0, -1, -1, [], false, 0, null);
+                }
+            }
+
+            return new RailingStructureSnapshot(
+                TopRailTypeName: NameOf(railingType.TopRailType),
+                TopRailHeight: railingType.TopRailHeight,
+                PrimaryHandrailTypeName: NameOf(railingType.PrimaryHandrailType),
+                PrimaryHandrailHeight: railingType.PrimaryHandrailHeight,
+                PrimaryHandrailLateralOffset: railingType.PrimaryHandrailLateralOffset,
+                PrimaryHandrailPosition: (int)railingType.PrimaryHandRailPosition,
+                SecondaryHandrailTypeName: NameOf(railingType.SecondaryHandrailType),
+                SecondaryHandrailHeight: railingType.SecondaryHandrailHeight,
+                SecondaryHandrailLateralOffset: railingType.SecondaryHandrailLateralOffset,
+                SecondaryHandrailPosition: (int)railingType.SecondaryHandRailPosition,
+                Rails: rails,
+                Balusters: balusters);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"Railing structure read failed for type '{elementType.Name}': {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>

@@ -18,14 +18,14 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// do not sort.</param>
 /// <param name="StructuralMaterialIndex">Index of the layer whose material
 /// is the structural material (the "Материал несущих конструкций" per-layer
-/// checkbox), <c>-1</c> when none. Sync-only field (Issue #104): NOT part of
-/// the FHV3 canonical string — the hash format is frozen, so the content
-/// hasher must not read this member.</param>
+/// checkbox), <c>-1</c> when none. Synced since #104; not hashed in FHV3 —
+/// hash content since FHV4 (ADR-065).</param>
 /// <param name="EndCap"><c>EndCapCondition</c> enum ordinal ("Огибание в
-/// торцах стен" / end wrapping). Sync-only, not hashed (FHV3 frozen).</param>
+/// торцах стен" / end wrapping). Synced since #104; hash content since FHV4
+/// (ADR-065).</param>
 /// <param name="OpeningWrapping"><c>OpeningWrappingCondition</c> enum
-/// ordinal ("Огибание в местах вставки элементов"). Sync-only, not hashed
-/// (FHV3 frozen).</param>
+/// ordinal ("Огибание в местах вставки элементов"). Synced since #104; hash
+/// content since FHV4 (ADR-065).</param>
 public sealed record CompoundStructureSnapshot(
     int ExteriorShellLayerCount,
     int InteriorShellLayerCount,
@@ -47,13 +47,13 @@ public sealed record CompoundStructureSnapshot(
 /// <param name="IsVariable"><c>true</c> when this is the variable
 /// thickness layer (<c>CompoundStructure.VariableLayerIndex</c>).</param>
 /// <param name="LayerCapFlag">Per-layer end-cap flag
-/// (<c>CompoundStructureLayer.LayerCapFlag</c>). Sync-only (Issue #104), NOT
-/// part of the FHV3 canonical string.</param>
+/// (<c>CompoundStructureLayer.LayerCapFlag</c>). Synced since #104; hash
+/// content since FHV4 (ADR-065).</param>
 /// <param name="ParticipatesInWrapping"><c>true</c> when this shell layer
 /// participates in wrapping at inserts/openings
 /// (<c>CompoundStructure.ParticipatesInWrapping</c>); meaningful only for
-/// shell layers, <c>false</c> for core layers. Sync-only, not hashed
-/// (FHV3 frozen).</param>
+/// shell layers, <c>false</c> for core layers. Synced since #104; hash
+/// content since FHV4 (ADR-065).</param>
 public sealed record CompoundLayerSnapshot(
     int Function,
     double Width,

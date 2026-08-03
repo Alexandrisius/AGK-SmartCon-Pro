@@ -40,14 +40,83 @@ public sealed record SystemFamilySnapshot(
 /// <param name="FamilyKey">Locale-invariant family identity (Issue #190,
 /// ADR-064) — one of <see cref="SystemFamilyKeys"/>. Preferred over
 /// <paramref name="FamilyName"/> for sync/stale matching when present.
-/// SYNC-ONLY field — NOT part of the content hash.</param>
+/// Part of the content hash since FHV4 (ADR-065).</param>
+/// <param name="Stairs">Stairs subtype references (run/landing/supports/
+/// cut mark) by NAME — identity summary for the FHV4 hash (Issue #184,
+/// ADR-065). <c>null</c> for non-stairs types. Sync reads the subtype
+/// data live from the mini-project (ADR-061), not from this snapshot.</param>
+/// <param name="Railing">Railing structure identity summary (top rail,
+/// handrails, non-continuous rails, baluster placement) for the FHV4
+/// hash (ADR-065). <c>null</c> for non-railing types.</param>
+/// <param name="Segments">Segment size tables referenced by the routing
+/// rules of a MEP curve type — FHV4 hash content (Issue #179, ADR-065).
+/// <c>null</c> when the type has no routing/segments.</param>
 public sealed record SystemTypeSnapshot(
     string Name,
     IReadOnlyList<SystemParameterValue> Values,
     CompoundStructureSnapshot? Structure = null,
     RoutingPreferencesSnapshot? Routing = null,
     string? FamilyName = null,
-    string? FamilyKey = null);
+    string? FamilyKey = null,
+    StairsSubtypesSnapshot? Stairs = null,
+    RailingStructureSnapshot? Railing = null,
+    IReadOnlyList<SegmentSnapshot>? Segments = null);
+
+/// <summary>
+/// Identity summary of a stairs type's subtype references (Issue #184,
+/// ADR-065): the NAMES of the referenced run/landing/support/cut-mark
+/// types. Names are user content (not UI-localized), so they survive
+/// cross-locale extraction. <c>null</c> = the reference is not set
+/// (e.g. no middle supports).
+/// </summary>
+public sealed record StairsSubtypesSnapshot(
+    string? RunTypeName,
+    string? LandingTypeName,
+    string? LeftSupportTypeName,
+    string? RightSupportTypeName,
+    string? MiddleSupportTypeName,
+    string? CutMarkTypeName);
+
+/// <summary>
+/// Identity summary of a railing type's structure (ADR-065): top rail,
+/// handrails, the non-continuous rail list and the baluster placement
+/// scalars. Element references are carried by NAME (user content,
+/// locale-stable).
+/// </summary>
+public sealed record RailingStructureSnapshot(
+    string? TopRailTypeName,
+    double? TopRailHeight,
+    string? PrimaryHandrailTypeName,
+    double? PrimaryHandrailHeight,
+    double? PrimaryHandrailLateralOffset,
+    int? PrimaryHandrailPosition,
+    string? SecondaryHandrailTypeName,
+    double? SecondaryHandrailHeight,
+    double? SecondaryHandrailLateralOffset,
+    int? SecondaryHandrailPosition,
+    IReadOnlyList<RailingRailSnapshot> Rails,
+    RailingBalusterSnapshot Balusters);
+
+/// <summary>One non-continuous rail of a <see cref="RailingStructureSnapshot"/>.</summary>
+public sealed record RailingRailSnapshot(
+    string Name,
+    double Height,
+    double Offset,
+    string? ProfileName,
+    string? MaterialName);
+
+/// <summary>
+/// Baluster placement identity summary (ADR-065): main-pattern scalars +
+/// the baluster family names in pattern order + per-tread settings.
+/// </summary>
+public sealed record RailingBalusterSnapshot(
+    double PatternLength,
+    int DistributionJustification,
+    int BreakPattern,
+    IReadOnlyList<string?> BalusterFamilyNames,
+    bool UseBalusterPerTreadOnStairs,
+    int BalusterPerTreadNumber,
+    string? BalusterPerTreadFamilyName);
 
 /// <summary>
 /// One parameter value on one system-family type. Same semantics as

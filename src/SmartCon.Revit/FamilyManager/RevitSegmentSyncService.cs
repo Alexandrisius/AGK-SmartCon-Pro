@@ -45,37 +45,9 @@ public sealed class RevitSegmentSyncService : ISegmentSyncService
         var segment = FindSegmentByName(sourceDoc, segmentName);
         if (segment is null) return null;
 
-        string? materialName = null;
-        try
-        {
-            if (segment.MaterialId is not null && segment.MaterialId != ElementId.InvalidElementId)
-            {
-                materialName = sourceDoc.GetElement(segment.MaterialId)?.Name;
-            }
-        }
-        catch { /* unresolved material — null */ }
-
-        string? scheduleName = null;
-        if (segment is PipeSegment pipeSegment)
-        {
-            try
-            {
-                if (pipeSegment.ScheduleTypeId is not null &&
-                    pipeSegment.ScheduleTypeId != ElementId.InvalidElementId)
-                {
-                    scheduleName = sourceDoc.GetElement(pipeSegment.ScheduleTypeId)?.Name;
-                }
-            }
-            catch { /* unresolved schedule — null */ }
-        }
-
-        var sizes = segment.GetSizes()
-            .Select(s => new SegmentSizeSnapshot(
-                s.NominalDiameter, s.InnerDiameter, s.OuterDiameter,
-                s.UsedInSizeLists, s.UsedInSizing))
-            .ToList();
-
-        return new SegmentSnapshot(segment.Name, materialName, scheduleName, segment.Roughness, sizes);
+        // Single builder shared with the FHV4 hash extraction (ADR-065) —
+        // the hash must reflect exactly what the sync writes.
+        return RevitFamilySnapshotExtractor.BuildSegmentSnapshot(segment, sourceDoc);
     }
 
     public SegmentSyncResult SyncSegment(Document sourceDoc, Document activeDoc, string segmentName)

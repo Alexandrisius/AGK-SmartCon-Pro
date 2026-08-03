@@ -257,15 +257,20 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 
     /// <summary>
     /// Build the canonical string for a system family snapshot.
-    /// Format: FHV3|SYSTEM|{catId}|TYPES|{typeName}|{params}|STRUCT|...|ROUTING|...
+    /// Format: FHV4|SYSTEM|{catId}|TYPES|{typeName}|{params}|FAMKEY|...|STRUCT|...|ROUTING|...|SEGMENTS|...|SUBTYPES|...|RAILING|...
     /// The category display name is NOT part of the hash (v3, Issue #159):
     /// it is UI-locale dependent — the ordinal is the identity.
-    /// STRUCT/ROUTING live inside the per-type loop (they are per-type data).
+    /// STRUCT/ROUTING/SEGMENTS/SUBTYPES/RAILING live inside the per-type
+    /// loop (they are per-type data). FHV4 (ADR-065): +FAMKEY (locale-
+    /// invariant family identity, #190), STRUCT gains StructuralMaterialIndex/
+    /// EndCap/OpeningWrapping and per-layer LayerCapFlag/ParticipatesInWrapping
+    /// (#179), new SEGMENTS (segment size tables), SUBTYPES (stairs subtype
+    /// references by name, #184) and RAILING (railing structure summary).
     /// </summary>
     internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
     {
         var sb = new StringBuilder(512);
-        sb.Append("FHV3|SYSTEM|");
+        sb.Append("FHV4|SYSTEM|");
         sb.Append(snapshot.CategoryId).Append('|');
 
         sb.Append("TYPES|");
@@ -291,17 +296,25 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
                 sb.Append(Escape(v.ResolvedElementName ?? NullElementMarker)).Append('|');
             }
 
+            sb.Append("FAMKEY|");
+            sb.Append(Escape(t.FamilyKey ?? string.Empty)).Append('|');
+
             sb.Append("STRUCT|");
             if (t.Structure is not null)
             {
                 sb.Append(t.Structure.ExteriorShellLayerCount).Append('|');
                 sb.Append(t.Structure.InteriorShellLayerCount).Append('|');
+                sb.Append(t.Structure.StructuralMaterialIndex).Append('|');
+                sb.Append(t.Structure.EndCap).Append('|');
+                sb.Append(t.Structure.OpeningWrapping).Append('|');
                 foreach (var layer in t.Structure.Layers)
                 {
                     sb.Append(layer.Function).Append('|');
                     sb.Append(layer.Width.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
                     sb.Append(Escape(layer.MaterialName ?? NullMaterialMarker)).Append('|');
                     sb.Append(layer.IsVariable ? 'V' : 'N').Append('|');
+                    sb.Append(layer.LayerCapFlag ? 'C' : 'N').Append('|');
+                    sb.Append(layer.ParticipatesInWrapping ? 'W' : 'N').Append('|');
                 }
             }
             else
@@ -330,9 +343,105 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             {
                 sb.Append('-').Append('|');
             }
+
+            sb.Append("SEGMENTS|");
+            if (t.Segments is not null)
+            {
+                foreach (var segment in t.Segments)
+                {
+                    sb.Append(Escape(segment.Name)).Append('|');
+                    sb.Append(Escape(segment.MaterialName ?? NullMaterialMarker)).Append('|');
+                    sb.Append(Escape(segment.ScheduleName ?? NullPartMarker)).Append('|');
+                    sb.Append(segment.Roughness.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                    foreach (var size in segment.Sizes)
+                    {
+                        sb.Append(size.NominalDiameter.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                        sb.Append(size.InnerDiameter.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                        sb.Append(size.OuterDiameter.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                        sb.Append(size.UsedInSizeLists ? 'L' : 'N').Append('|');
+                        sb.Append(size.UsedInSizing ? 'S' : 'N').Append('|');
+                    }
+                }
+            }
+            else
+            {
+                sb.Append('-').Append('|');
+            }
+
+            sb.Append("SUBTYPES|");
+            if (t.Stairs is not null)
+            {
+                sb.Append(Escape(t.Stairs.RunTypeName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(t.Stairs.LandingTypeName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(t.Stairs.LeftSupportTypeName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(t.Stairs.RightSupportTypeName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(t.Stairs.MiddleSupportTypeName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(t.Stairs.CutMarkTypeName ?? NullPartMarker)).Append('|');
+            }
+            else
+            {
+                sb.Append('-').Append('|');
+            }
+
+            sb.Append("RAILING|");
+            if (t.Railing is not null)
+            {
+                var r = t.Railing;
+                sb.Append(Escape(r.TopRailTypeName ?? NullPartMarker)).Append('|');
+                AppendNullableNumber(sb, r.TopRailHeight);
+                sb.Append(Escape(r.PrimaryHandrailTypeName ?? NullPartMarker)).Append('|');
+                AppendNullableNumber(sb, r.PrimaryHandrailHeight);
+                AppendNullableNumber(sb, r.PrimaryHandrailLateralOffset);
+                AppendNullableInt(sb, r.PrimaryHandrailPosition);
+                sb.Append(Escape(r.SecondaryHandrailTypeName ?? NullPartMarker)).Append('|');
+                AppendNullableNumber(sb, r.SecondaryHandrailHeight);
+                AppendNullableNumber(sb, r.SecondaryHandrailLateralOffset);
+                AppendNullableInt(sb, r.SecondaryHandrailPosition);
+                foreach (var rail in r.Rails)
+                {
+                    sb.Append(Escape(rail.Name)).Append('|');
+                    sb.Append(rail.Height.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                    sb.Append(rail.Offset.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                    sb.Append(Escape(rail.ProfileName ?? NullPartMarker)).Append('|');
+                    sb.Append(Escape(rail.MaterialName ?? NullMaterialMarker)).Append('|');
+                }
+                var b = r.Balusters;
+                sb.Append(b.PatternLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                sb.Append(b.DistributionJustification).Append('|');
+                sb.Append(b.BreakPattern).Append('|');
+                foreach (var balusterName in b.BalusterFamilyNames)
+                {
+                    sb.Append(Escape(balusterName ?? NullPartMarker)).Append('|');
+                }
+                sb.Append(b.UseBalusterPerTreadOnStairs ? 'T' : 'N').Append('|');
+                sb.Append(b.BalusterPerTreadNumber).Append('|');
+                sb.Append(Escape(b.BalusterPerTreadFamilyName ?? NullPartMarker)).Append('|');
+            }
+            else
+            {
+                sb.Append('-').Append('|');
+            }
         }
 
         return sb.ToString();
+    }
+
+    private static void AppendNullableNumber(StringBuilder sb, double? value)
+    {
+        if (value.HasValue)
+            sb.Append(value.Value.ToString("0.######", CultureInfo.InvariantCulture));
+        else
+            sb.Append(NullPartMarker);
+        sb.Append('|');
+    }
+
+    private static void AppendNullableInt(StringBuilder sb, int? value)
+    {
+        if (value.HasValue)
+            sb.Append(value.Value);
+        else
+            sb.Append(NullPartMarker);
+        sb.Append('|');
     }
 
     /// <summary>
