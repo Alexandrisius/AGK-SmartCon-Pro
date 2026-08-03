@@ -38,7 +38,7 @@ public static class SystemCategoryRegistry
     /// Размещает один инстанс типа в staged мини-проекте и возвращает его.
     /// <paramref name="start"/>/<paramref name="end"/> — ячейка сетки (2 м шаг,
     /// 1 м глубина) на уровне <paramref name="level"/>; handler'ы с контурной
-    /// геометрией строят из неё прямоугольник 1×1 м. Возвращает <c>null</c>,
+    /// геометрией строят прямоугольник по двум углам (вырождение — до 1 м). Возвращает <c>null</c>,
     /// если размещение невозможно (несовпадение класса типа, версия API,
     /// откат транзакции — в т.ч. silent <c>Commit()==RolledBack</c> из #178,
     /// результаты <see cref="ITransactionService.RunInTransaction"/> проверяются).
@@ -133,14 +133,26 @@ public static class SystemCategoryRegistry
 
     // ── Геометрия-хелперы ───────────────────────────────────────────────
 
-    /// <summary>Прямоугольный замкнутый контур 1×1 м от точки ячейки (в её плоскости).</summary>
-    private static CurveLoop BuildRectangularLoop(XYZ origin)
+    /// <summary>
+    /// Прямоугольный замкнутый контур между двумя углами (плоскость Z первой
+    /// точки). #200: (start, end) — противоположные углы, так что pick-активация
+    /// «по области» передаёт реальные размеры; вырожденные/совпадающие точки
+    /// расширяются до 1 м (staging-сетка и защита от нулевой площади).
+    /// </summary>
+    private static CurveLoop BuildRectangularLoop(XYZ corner1, XYZ corner2)
     {
         var sizeFt = RevitUnitsCompat.MetersToInternal(1.0);
-        var p1 = origin;
-        var p2 = new XYZ(origin.X + sizeFt, origin.Y, origin.Z);
-        var p3 = new XYZ(origin.X + sizeFt, origin.Y + sizeFt, origin.Z);
-        var p4 = new XYZ(origin.X, origin.Y + sizeFt, origin.Z);
+        var minX = Math.Min(corner1.X, corner2.X);
+        var minY = Math.Min(corner1.Y, corner2.Y);
+        var maxX = Math.Max(corner1.X, corner2.X);
+        var maxY = Math.Max(corner1.Y, corner2.Y);
+        if (maxX - minX < 1e-6) maxX = minX + sizeFt;
+        if (maxY - minY < 1e-6) maxY = minY + sizeFt;
+        var z = corner1.Z;
+        var p1 = new XYZ(minX, minY, z);
+        var p2 = new XYZ(maxX, minY, z);
+        var p3 = new XYZ(maxX, maxY, z);
+        var p4 = new XYZ(minX, maxY, z);
         var loop = new CurveLoop();
         loop.Append(Line.CreateBound(p1, p2));
         loop.Append(Line.CreateBound(p2, p3));
@@ -332,7 +344,8 @@ public static class SystemCategoryRegistry
     // ── Слоистые контурные (Phase 2) ────────────────────────────────────
 
     /// <summary>
-    /// Перекрытие 1×1 м на уровне. <c>Floor.Create</c> — Revit 2022+;
+    /// Перекрытие по двум углам на уровне (#200: в staging — ячейка сетки,
+    /// в pick-активации — реальные углы). <c>Floor.Create</c> — Revit 2022+;
     /// для R19–R21 — legacy <c>Creation.Document.NewFloor</c> (в Revit 2024+
     /// уже нерабочий — подтверждено Autodesk forum 12954276, поэтому ветки
     /// строго по <c>REVIT2022_OR_GREATER</c>).
@@ -343,7 +356,7 @@ public static class SystemCategoryRegistry
         Element? created = null;
         if (!txService.RunInTransaction(doc, "Place floor", d =>
         {
-            var loop = BuildRectangularLoop(start);
+            var loop = BuildRectangularLoop(start, end);
 #if REVIT2022_OR_GREATER
             created = Floor.Create(d, new List<CurveLoop> { loop }, floorType.Id, level.Id);
 #else
@@ -405,7 +418,7 @@ public static class SystemCategoryRegistry
     }
 
     /// <summary>
-    /// Потолок 1×1 м. <c>Ceiling.Create</c> существует только с Revit 2022
+    /// Потолок по двум углам (#200). <c>Ceiling.Create</c> существует только с Revit 2022
     /// (раньше API создания потолков не было вообще). На R19–R21 handler
     /// недостижим — версионный гейт
     /// <see cref="SystemCategoryPlacementAvailability"/> отсекает вызов.
@@ -417,7 +430,7 @@ public static class SystemCategoryRegistry
         Element? created = null;
         if (!txService.RunInTransaction(doc, "Place ceiling", d =>
         {
-            var loop = BuildRectangularLoop(start);
+            var loop = BuildRectangularLoop(start, end);
             created = Ceiling.Create(d, new List<CurveLoop> { loop }, ceilingType.Id, level.Id);
         }))
         {
@@ -519,7 +532,11 @@ public static class SystemCategoryRegistry
     }
 
     /// <summary>
-    /// Ограждение по прямоугольному пути 1×1 м на уровне.
+    /// Ограждение по ОТКРЫТОМУ линейному пути (start→end) на уровне (#200).
+    /// Ограждение — path-based элемент (как труба): типичное использование —
+    /// линия балкона/лестницы, а не замкнутая область. Одиночный Line
+    /// валиден для <c>Railing.IsValidPathForRailing</c> (revitapidocs:
+    /// "continuous, lines or arcs only, max two curves meet in one end point").
     /// <c>Railing.Create(Document, CurveLoop, …)</c> — только Revit 2025+
     /// (host-вариант требует лестницу/пандус и засорял бы эталон чужим
     /// элементом — отклонено). На R19–R24 handler недостижим — версионный
@@ -532,7 +549,9 @@ public static class SystemCategoryRegistry
         Element? created = null;
         if (!txService.RunInTransaction(doc, "Place railing", d =>
         {
-            var path = BuildRectangularLoop(start);
+            if (start.DistanceTo(end) < 1e-6) return;
+            var path = new CurveLoop();
+            path.Append(Line.CreateBound(start, end));
             if (!Railing.IsValidPathForRailing(path)) return;
             created = Railing.Create(d, path, railingType.Id, level.Id);
         }))

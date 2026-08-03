@@ -19,6 +19,16 @@ The user (a senior MEP engineer) asked: *"у нас в модели могут �
 
 ## Revision History
 
+* **2026-08-03** — **Issue #200: railing по линии.**
+  `PlaceRailing` переведён с замкнутого прямоугольника на открытый линейный
+  путь (start→end) — ограждение path-based элемент, одиночный Line валиден
+  для `Railing.IsValidPathForRailing`. Активация размещения из каталога
+  остаётся ТОЛЬКО нативной (`CanPlaceElementType` +
+  `PostRequestForElementTypePlacement`; иначе `LoadedManualPlacementRequired`)
+  — кастомные пикеры геометрии отклонены владельцем (2026-08-03): «Revit
+  всегда должен сам активировать свой PostRequest». Попутно
+  `BuildRectangularLoop(corner1, corner2)` принимает два угла (в staging
+  геометрия ячейки неизменна — вырождение по Y расширяется до 1 м).
 * **2026-07-31** — **Phase 2 implemented.** Все 14 системных категорий (позже +#197/#199 → 16) размещают
   инстансы в staged мини-проекте (см. §"Phase 2 — implemented" ниже, заменяет
   прежний §"Phase 2 TODO"). Ключевые решения: handler'ы сами управляют

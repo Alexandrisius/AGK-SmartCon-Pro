@@ -137,6 +137,52 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
 
     [Test]
     [HookExecutor<RevitThreadExecutor>]
+    public async Task Floor_Placed_NonDegenerateCorners_RectangleHonorsBothCorners()
+    {
+        // #200 (review): BuildRectangularLoop(corner1, corner2) must honor
+        // BOTH corners — the staging grid passes collinear points (the
+        // degenerate branch), so the min/max path needs its own coverage.
+        var doc = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var floorType = new FilteredElementCollector(doc)
+                .OfClass(typeof(FloorType))
+                .Cast<FloorType>()
+                .FirstOrDefault();
+            if (floorType is null) { Skip.Test("В шаблоне нет FloorType"); }
+
+            var revitMajor = int.Parse(Application.VersionNumber);
+            var handler = SystemCategoryRegistry.GetPlacementHandler(BuiltInCategory.OST_Floors, revitMajor);
+            if (handler is null) { Skip.Test("Нет handler"); }
+
+            var level = new FilteredElementCollector(doc)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .OrderBy(l => l.Elevation)
+                .First();
+
+            var txService = new RevitTransactionService(new StubRevitContext(doc));
+            var start = new XYZ(0, 0, level.Elevation);
+            var end = new XYZ(
+                RevitUnitsCompat.MetersToInternal(2.0),
+                RevitUnitsCompat.MetersToInternal(1.5),
+                level.Elevation);
+            var created = handler!(doc, txService, floorType!, level, start, end);
+
+            await Assert.That(created).IsNotNull();
+            var bb = created!.get_BoundingBox(null);
+            await Assert.That(bb).IsNotNull();
+            var tol = 0.01; // ~3 мм
+            await Assert.That(Math.Abs(
+                bb!.Max.X - bb.Min.X - RevitUnitsCompat.MetersToInternal(2.0))).IsLessThan(tol);
+            await Assert.That(Math.Abs(
+                bb.Max.Y - bb.Min.Y - RevitUnitsCompat.MetersToInternal(1.5))).IsLessThan(tol);
+        }
+        finally { doc.Close(false); }
+    }
+
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
     public async Task PipeInsulation_Placed_HostCreatedAndLinked()
     {
         var doc = NewMepTemplateDocument();
