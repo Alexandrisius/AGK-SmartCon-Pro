@@ -129,7 +129,14 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                         _versionWriter,
                         _revitVersion,
                         CancellationToken.None).ConfigureAwait(false);
-                    _staleDetector.InvalidateCache();
+                    // Selective invalidation: only the imported items' check
+                    // results are outdated — other families keep their stale
+                    // badges (a full InvalidateCache wiped them on every import).
+                    _staleDetector.InvalidateItems(importedLoadableItems
+                        .Select(i => i.PrecomputedCatalogItemId ?? i.ExistingCatalogItemId)
+                        .Where(id => !string.IsNullOrEmpty(id))
+                        .Select(id => id!)
+                        .ToArray());
                 }
                 catch (Exception ex)
                 {
@@ -269,7 +276,10 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                 SmartConLogger.Info(
                     $"System type markers written: {written}/{sourceTypes.Count} " +
                     $"(CatalogItemId={catalogItemId}, label={versionLabel ?? "<none>"}).");
-                _staleDetector.InvalidateCache();
+                // Selective invalidation: only THIS item's check result is
+                // outdated (it runs per system item in the batch — a full
+                // InvalidateCache wiped the previous items' stale badges).
+                _staleDetector.InvalidateItems(new[] { catalogItemId! });
             }
         }
         catch (OperationCanceledException)

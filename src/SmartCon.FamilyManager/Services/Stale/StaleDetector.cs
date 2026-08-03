@@ -659,6 +659,25 @@ internal sealed class StaleDetector : IStaleDetector
         }
     }
 
+    public void InvalidateItems(IReadOnlyCollection<string> catalogItemIds)
+    {
+        if (catalogItemIds is null || catalogItemIds.Count == 0) return;
+        lock (_cacheLock)
+        {
+            foreach (var id in catalogItemIds)
+            {
+                _systemTypeStaleByType.Remove(id);
+            }
+            if (_cachedSnapshot is null) return;
+            var before = _cachedSnapshot.Results.Count;
+            _cachedSnapshot = StaleSnapshotLogic.RemoveFrom(_cachedSnapshot, catalogItemIds, _clock.UtcNow);
+            SmartConLogger.Info(
+                $"InvalidateItems: dropped {before - _cachedSnapshot.Results.Count} imported item(s) " +
+                $"from the stale snapshot (re-check pending). " +
+                $"Snapshot size: {_cachedSnapshot.Results.Count}.");
+        }
+    }
+
     /// <summary>
     /// #187: per-type stale verdicts of one system catalog item
     /// (typeKey "FAMILY|NAME" upper → isStale), or null when the item was

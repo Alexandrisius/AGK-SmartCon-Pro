@@ -169,13 +169,44 @@ the reference is visually inspectable and the snapshot extractor reads types fro
 
 | Category | Placement API | Versions |
 |---|---|---|
+| `OST_PipeCurves` | `Pipe.Create` | All |
+| `OST_FlexPipeCurves` | `FlexPipe.Create` | All |
+| `OST_DuctCurves` | `Duct.Create` | All |
+| `OST_FlexDuctCurves` | `FlexDuct.Create` | All |
+| `OST_Conduit` | `Conduit.Create` | All |
+| `OST_CableTray` | `CableTray.Create` | All |
+| `OST_Walls` | `Wall.Create` | All |
 | `OST_Floors` | `Floor.Create(CurveLoop)` / legacy `NewFloor` | R22+ / R19–R21 |
 | `OST_Roofs` | `NewExtrusionRoof` (open gable profile) — **not** `NewFootPrintRoof`, see trap #3 below | All |
 | `OST_Ceilings` | `Ceiling.Create(CurveLoop)` | **R22+ only** → version gate |
 | `OST_Stairs` | `StairsEditScope` + `ChangeTypeId` + `StairsRun.CreateStraightRun` | All |
-| `OST_Railings` | `Railing.Create(CurveLoop)` | **R25+ only** → version gate |
+| `OST_StairsRailing` | `Railing.Create(CurveLoop)` | **R25+ only** → version gate |
 | `OST_PipeInsulations` | programmatic host `Pipe` + `PipeInsulation.Create` | All |
 | `OST_DuctInsulations` | programmatic host `Duct` + `DuctInsulation.Create` | All |
+
+> **Railing category correction (Issue #182, 2026-08-03):** railing instances and
+> `RailingType` live in **`OST_StairsRailing`**, not `OST_Railings` (Tammik,
+> tbc/a/0619_retrieve_railings). The registry used `OST_Railings` until 2026-08-03,
+> which made railings unpickable in the element picker and invisible to
+> `AnalyzeActiveProject`. Field databases with the old id cannot exist (the
+> category was unimportable both ways) — no migration needed.
+
+### Per-Revit support summary (version gates)
+
+| Revit | Blocked categories |
+|---|---|
+| 2019–2021 | `OST_Ceilings` (needs 2022+), `OST_StairsRailing` (needs 2025+) |
+| 2022–2024 | `OST_StairsRailing` (needs 2025+) |
+| 2025+ | none — all 14 categories |
+
+### Not supported (tracked as follow-up issues)
+
+| Category | Issue | Reason |
+|---|---|---|
+| `OST_Ramps` (пандусы) | #198 | no public `Ramp.Create` API — type-only import candidate |
+| `OST_Wire` (провода) | #199 | `Wire.Create` requires a plan view id — needs view handling in staging |
+| `OST_DuctLinings` (внутр. изоляция) | #197 | not yet registered; host-required like `DuctInsulation` |
+| `OST_CurtainWallPanels` (панель витража) | #196 | non-editable family — loadable path fails, needs exclusion or system path |
 
 ### Decisions (Phase 2)
 

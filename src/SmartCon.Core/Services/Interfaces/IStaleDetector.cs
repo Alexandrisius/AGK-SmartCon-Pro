@@ -107,6 +107,17 @@ public interface IStaleDetector
     void InvalidateCache();
 
     /// <summary>
+    /// Drops ONLY the given catalog item IDs from the snapshot (and their
+    /// per-type verdicts) without touching the rest. Called by the batch
+    /// import executor after writing version markers: the check results
+    /// of the just-imported items are outdated and will be re-evaluated by
+    /// the post-import check, but every other family's stale marker must
+    /// survive (a full <see cref="InvalidateCache"/> here made previously
+    /// flagged families lose their stale badge on the next import).
+    /// </summary>
+    void InvalidateItems(IReadOnlyCollection<string> catalogItemIds);
+
+    /// <summary>
     /// #187: per-type stale verdicts of one system catalog item
     /// (typeKey "FAMILY|NAME" upper-invariant → isStale), or null when the
     /// item was never checked. Feeds the orange presence dot on the exact

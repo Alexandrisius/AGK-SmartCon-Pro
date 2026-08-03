@@ -975,7 +975,7 @@
                              Focusable="False"
                              DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
                     <!-- #187: command set follows the presence dot —
-                         grey: only "Разместить"; green: "Разместить" + "Обновить";
+                         grey: only "Разместить"; light blue: "Разместить" + "Обновить";
                          orange (stale): only "Обновить". -->
                     <MenuItem Header="{loc:Loc FM_PlaceType}"
                               Command="{Binding PlaceTypeCommand}">
@@ -1221,9 +1221,10 @@
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <!-- #187: presence dot — grey = not in project,
-                                 green = loaded and up to date, orange = loaded
-                                 but outdated (stale). Radial gradient gives a
-                                 soft modern glow instead of a flat fill. -->
+                                 light blue (Revit Project Browser style) = loaded
+                                 and up to date, orange = loaded but outdated
+                                 (stale). Radial gradient gives a soft modern
+                                 glow instead of a flat fill. -->
                             <Ellipse Width="8" Height="8"
                                      Margin="0,0,6,0"
                                      VerticalAlignment="Center"
@@ -1243,10 +1244,11 @@
                                             <DataTrigger Binding="{Binding PresenceState}" Value="{x:Static coremodels:TypePresenceState.InProject}">
                                                 <Setter Property="Fill">
                                                     <Setter.Value>
+                                                        <!-- Revit-style light blue (Project Browser "view on sheet" indicator, Revit 2023+) -->
                                                         <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
-                                                            <GradientStop Color="#FF7BE495" Offset="0"/>
-                                                            <GradientStop Color="#FF34A853" Offset="0.55"/>
-                                                            <GradientStop Color="#0034A853" Offset="1"/>
+                                                            <GradientStop Color="#FF64B5F6" Offset="0"/>
+                                                            <GradientStop Color="#FF1E88E5" Offset="0.55"/>
+                                                            <GradientStop Color="#001E88E5" Offset="1"/>
                                                         </RadialGradientBrush>
                                                     </Setter.Value>
                                                 </Setter>

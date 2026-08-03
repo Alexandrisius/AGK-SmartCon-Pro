@@ -26,7 +26,7 @@ public interface IFamilyVersionStore
 
 ## IStaleDetector
 
-On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69). Все проверки читают ES-маркер через `IFamilyVersionStore.ReadManyFromDocument` (batch, in-memory). `CheckCategoryAsync` обновляет сессионный снимок, `CheckFamilyAsync` — нет. `GetCachedSnapshot` / `InvalidateCache` — сессионный кеш (D-10, инвалидируется при Load/Update/Edit/смене БД).
+On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69; системные семейства — Issue #104). Все проверки читают ES-маркер через `IFamilyVersionStore` (in-memory). Сессионный снимок **мержится** при каждой проверке (другие категории сохраняются) и **прунится** при успешном Update (только обновлённые). `InvalidateCache` — полный сброс (D-10: Edit/смена БД); `InvalidateItems` — селективный сброс только импортированных (batch-импорт, иначе бейджи прошлых семейств пропадали).
 
 **Файл:** `IStaleDetector.cs`
 
@@ -34,20 +34,22 @@ On-demand проверка актуальности семейств в акти
 public interface IStaleDetector
 {
     Task<StaleCheckResult> CheckFamilyAsync(
-        string catalogItemId,
-        string familyName,
-        Document doc,
-        ElementId familyId,
-        CancellationToken ct);
+        string catalogItemId, string familyName, Document doc,
+        ElementId familyId, CancellationToken ct);
 
     Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
-        string? categoryId,
-        bool recursive,
-        Document doc,
-        CancellationToken ct);
+        IReadOnlyList<string>? categoryIds, Document doc, CancellationToken ct);
+
+    Task<StaleCheckResult?> CheckSystemFamilyAsync(
+        string catalogItemId, string displayName, Document doc, CancellationToken ct);
 
     FamilyStaleSnapshot? GetCachedSnapshot();
+    FamilyStaleSnapshot? GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults);
+    void MarkUpdated(IReadOnlyCollection<string> catalogItemIds);
     void InvalidateCache();
+    void InvalidateItems(IReadOnlyCollection<string> catalogItemIds);
+    IReadOnlyDictionary<string, bool>? GetSystemTypeStaleMap(string catalogItemId);
+    void MarkSystemTypeUpdated(string catalogItemId, string typeKey);
 }
 ```
 
