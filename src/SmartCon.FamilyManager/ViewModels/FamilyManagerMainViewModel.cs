@@ -707,7 +707,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                         leaf.Children.Add(new FamilyTypeNodeViewModel(
                             t.CatalogItemId, t.Name, isVirtual: false,
                             familySource: leaf.FamilySource, uniqueId: t.UniqueId,
-                            displayName: ResolveTypeDisplayName(t, leaf),
+                            displayName: FamilyTypeSnapshot.ResolveDisplayName(t.Name, leaf.DisplayName),
                             isUnavailable: leaf.IsUnavailable,
                             familyName: t.FamilyName));
                     }
@@ -730,20 +730,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         leaf.Children.Add(new FamilyTypeNodeViewModel(
             leaf.CatalogItemId, leaf.DisplayName, isVirtual: true,
             familySource: leaf.FamilySource, isUnavailable: leaf.IsUnavailable));
-    }
-
-    /// <summary>
-    /// #187: display name of a type node. System types of the same name but
-    /// different families (#183: "Стандарт" in both conduit families) are
-    /// indistinguishable without the family suffix — appended for system
-    /// types with a known family.
-    /// </summary>
-    internal static string ResolveTypeDisplayName(FamilyTypeDescriptor type, FamilyLeafNodeViewModel leaf)
-    {
-        var baseName = FamilyTypeSnapshot.ResolveDisplayName(type.Name, leaf.DisplayName);
-        return leaf.FamilySource == "system" && !string.IsNullOrEmpty(type.FamilyName)
-            ? $"{baseName} ({type.FamilyName})"
-            : baseName;
     }
 
     [RelayCommand(CanExecute = nameof(HasActiveDatabase))]
