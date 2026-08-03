@@ -128,6 +128,12 @@ public sealed partial class FamilyManagerMainViewModel
                 StatusMessage = systemResult.IsStale
                     ? $"«{family.DisplayName}»: устарело — {systemResult.Reason}"
                     : $"«{family.DisplayName}»: актуально";
+                // The detector already upserted the fresh result (and the
+                // per-type verdicts) into the snapshot — apply the merged
+                // picture so the orange type dots and the category rollup
+                // repaint, exactly like after a category Check.
+                await ApplyStaleResultsToTreeAsync([], CancellationToken.None)
+                    .ConfigureAwait(true);
                 return;
             }
 
@@ -158,6 +164,10 @@ public sealed partial class FamilyManagerMainViewModel
                 : $"«{family.DisplayName}»: актуально";
             SmartConLogger.Info(
                 $"Check completed: '{family.DisplayName}' IsStale={result.IsStale} Reason={result.Reason}.");
+            // Same repaint as the system path above: the snapshot holds the
+            // fresh result — apply it so the category rollup stays truthful.
+            await ApplyStaleResultsToTreeAsync([], CancellationToken.None)
+                .ConfigureAwait(true);
         }
         catch (Exception ex)
         {
