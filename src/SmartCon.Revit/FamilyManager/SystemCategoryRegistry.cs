@@ -102,7 +102,11 @@ public static class SystemCategoryRegistry
             new(BuiltInCategory.OST_Roofs,           "Крыши",        PlaceRoof),
             new(BuiltInCategory.OST_Ceilings,        "Потолки",      PlaceCeiling),
             new(BuiltInCategory.OST_Stairs,          "Лестницы",     PlaceStairs),
-            new(BuiltInCategory.OST_Railings,        "Ограждения",   PlaceRailing),
+            // #182: Railing instances AND RailingType live in OST_StairsRailing,
+            // NOT OST_Railings (Tammik tbc/a/0619_retrieve_railings). Using
+            // OST_Railings here made railings unpickable and invisible to
+            // AnalyzeActiveProject.
+            new(BuiltInCategory.OST_StairsRailing, "Ограждения",   PlaceRailing),
             new(BuiltInCategory.OST_PipeInsulations, "Материалы изоляции трубопроводов", PlacePipeInsulation),
             new(BuiltInCategory.OST_DuctInsulations, "Материалы изоляции воздуховодов", PlaceDuctInsulation),
         };

@@ -281,7 +281,7 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
             if (railingType is null) { Skip.Test("В шаблоне нет RailingType"); }
 
             var revitMajor = int.Parse(Application.VersionNumber);
-            var handler = SystemCategoryRegistry.GetPlacementHandler(BuiltInCategory.OST_Railings, revitMajor);
+            var handler = SystemCategoryRegistry.GetPlacementHandler(BuiltInCategory.OST_StairsRailing, revitMajor);
             if (handler is null) { Skip.Test("Нет handler"); }
 
             var level = new FilteredElementCollector(doc)
@@ -298,6 +298,52 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
                 await Assert.That(created).IsNotNull();
                 await Assert.That(created).IsTypeOf<Autodesk.Revit.DB.Architecture.Railing>();
                 await Assert.That(created!.GetTypeId()).IsEqualTo(railingType!.Id);
+            }
+        }
+        finally { doc.Close(false); }
+    }
+
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task Railing_AnalyzeActiveProject_FindsPlacedInstanceAndType()
+    {
+        // #182: railing instances/types live in OST_StairsRailing, not
+        // OST_Railings — with the wrong constant the picker rejected every
+        // railing and AnalyzeActiveProject never saw the category.
+        var doc = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var railingType = new FilteredElementCollector(doc)
+                .OfClass(typeof(Autodesk.Revit.DB.Architecture.RailingType))
+                .Cast<Autodesk.Revit.DB.Architecture.RailingType>()
+                .FirstOrDefault();
+            if (railingType is null) { Skip.Test("В шаблоне нет RailingType"); }
+
+            var revitMajor = int.Parse(Application.VersionNumber);
+            var handler = SystemCategoryRegistry.GetPlacementHandler(BuiltInCategory.OST_StairsRailing, revitMajor);
+            if (handler is null) { Skip.Test("Нет handler"); }
+
+            var level = new FilteredElementCollector(doc)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .OrderBy(l => l.Elevation)
+                .First();
+
+            var txService = new RevitTransactionService(new StubRevitContext(doc));
+            var created = handler!(doc, txService, railingType!, level, XYZ.Zero, new XYZ(3.280839895, 0, 0));
+            if (created is null) { Skip.Test("Не удалось разместить ограждение в шаблоне"); }
+
+            var ops = new SystemFamilyRevitOperations(
+                null!, txService, new LoadableFamilyScanner(),
+                new RevitMiniProjectMarker(txService, new SmartCon.Core.Services.Interfaces.SystemClock()));
+            var analyses = ops.AnalyzeActiveProject(doc);
+
+            var railingCategory = analyses.FirstOrDefault(
+                a => a.Category == BuiltInCategory.OST_StairsRailing);
+            using (Assert.Multiple())
+            {
+                await Assert.That(railingCategory).IsNotNull();
+                await Assert.That(railingCategory!.Types.Select(t => t.Name)).Contains(railingType!.Name);
             }
         }
         finally { doc.Close(false); }
@@ -320,14 +366,14 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
         {
             await Assert.That(SystemCategoryPlacementAvailability.IsSupported(BuiltInCategory.OST_Ceilings, 2021)).IsFalse();
             await Assert.That(SystemCategoryPlacementAvailability.IsSupported(BuiltInCategory.OST_Ceilings, 2022)).IsTrue();
-            await Assert.That(SystemCategoryPlacementAvailability.IsSupported(BuiltInCategory.OST_Railings, 2024)).IsFalse();
-            await Assert.That(SystemCategoryPlacementAvailability.IsSupported(BuiltInCategory.OST_Railings, 2025)).IsTrue();
+            await Assert.That(SystemCategoryPlacementAvailability.IsSupported(BuiltInCategory.OST_StairsRailing, 2024)).IsFalse();
+            await Assert.That(SystemCategoryPlacementAvailability.IsSupported(BuiltInCategory.OST_StairsRailing, 2025)).IsTrue();
             await Assert.That(SystemCategoryPlacementAvailability.IsSupported(BuiltInCategory.OST_Floors, 2019)).IsTrue();
             await Assert.That(SystemCategoryPlacementAvailability.IsSupported(BuiltInCategory.OST_PipeInsulations, 2019)).IsTrue();
 
             // Реестр применяет ту же матрицу.
             await Assert.That(SystemCategoryRegistry.GetPlacementHandler(BuiltInCategory.OST_Ceilings, 2021)).IsNull();
-            await Assert.That(SystemCategoryRegistry.GetPlacementHandler(BuiltInCategory.OST_Railings, 2024)).IsNull();
+            await Assert.That(SystemCategoryRegistry.GetPlacementHandler(BuiltInCategory.OST_StairsRailing, 2024)).IsNull();
             await Assert.That(SystemCategoryRegistry.GetPlacementHandler(BuiltInCategory.OST_Floors, 2019)).IsNotNull();
         }
     }

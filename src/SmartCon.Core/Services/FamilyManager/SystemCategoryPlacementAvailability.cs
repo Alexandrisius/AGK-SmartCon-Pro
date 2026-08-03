@@ -18,7 +18,8 @@ public static class SystemCategoryPlacementAvailability
         new Dictionary<BuiltInCategory, int>
         {
             { BuiltInCategory.OST_Ceilings, 2022 },
-            { BuiltInCategory.OST_Railings, 2025 },
+            // #182: railing elements live in OST_StairsRailing (not OST_Railings).
+            { BuiltInCategory.OST_StairsRailing, 2025 },
         };
 
     /// <summary>
