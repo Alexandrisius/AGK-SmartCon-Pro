@@ -25,7 +25,9 @@ public sealed record CategoryAnalysis(
 
 public sealed record SystemTypeInfo(
     string Name,
-    string UniqueId);
+    string UniqueId,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 ```
 
 ---
@@ -45,7 +47,9 @@ public sealed record SelectedSystemType(
     string UniqueId,
     string Name,
     string CategoryName,
-    BuiltInCategory Category);
+    BuiltInCategory Category,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 ```
 
 | Поле | Тип | Назначение |
@@ -168,7 +172,9 @@ public sealed record SystemFamilySyncResult(
 public sealed record SystemTypeLocation(
     string TypeName,
     int CategoryOrdinal,
-    ElementId TypeId);
+    ElementId TypeId,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 ```
 
 ---

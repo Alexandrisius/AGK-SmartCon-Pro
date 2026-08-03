@@ -124,6 +124,10 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
                         // #183: parallel family list (nullable for legacy rows)
                         source.TypeFamilyNames is not null && i < source.TypeFamilyNames.Count
                             ? source.TypeFamilyNames[i]
+                            : null,
+                        // #190 (ADR-064): parallel family-key list
+                        source.TypeFamilyKeys is not null && i < source.TypeFamilyKeys.Count
+                            ? source.TypeFamilyKeys[i]
                             : null))
                     .ToList()
             };

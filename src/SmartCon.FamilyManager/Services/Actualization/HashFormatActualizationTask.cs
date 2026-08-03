@@ -145,8 +145,8 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
     private async Task<SystemFamilySnapshot> TrimToCatalogTypeNamesAsync(
         SystemFamilySnapshot snapshot, ActualizationGroup group, CancellationToken ct)
     {
-        var catalogNames = await LoadCatalogTypeNamesAsync(group, ct).ConfigureAwait(false);
-        if (catalogNames.Count == 0)
+        var catalogTypes = await LoadCatalogTypeIdentitiesAsync(group, ct).ConfigureAwait(false);
+        if (catalogTypes.Count == 0)
         {
             SmartConLogger.Debug(
                 $"No catalog type names for '{group.ItemName}' ({group.VersionLabel}) — " +
@@ -154,8 +154,19 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
             return snapshot;
         }
 
+        // #190/#191: match by full identity — the name alone collapses
+        // same-named types of different system families. A catalog row
+        // matches a staged type when the name is equal AND the family
+        // tokens agree; legacy rows (no key, no name — pre-V26) match by
+        // name only.
         var kept = snapshot.Types
-            .Where(t => catalogNames.Contains(t.Name))
+            .Where(t => catalogTypes.Any(c =>
+                string.Equals(c.Name, t.Name, StringComparison.Ordinal)
+                && (c.FamilyKey is not null
+                    ? string.Equals(c.FamilyKey, t.FamilyKey, StringComparison.OrdinalIgnoreCase)
+                    : c.FamilyName is not null
+                        ? string.Equals(c.FamilyName, t.FamilyName, StringComparison.OrdinalIgnoreCase)
+                        : true)))
             .ToList();
 
         if (kept.Count == snapshot.Types.Count)
@@ -165,7 +176,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         {
             SmartConLogger.Warn(
                 $"Staged types of '{group.ItemName}' ({group.VersionLabel}) match none of the " +
-                $"{catalogNames.Count} catalog type names — hashing the full staged list. " +
+                $"{catalogTypes.Count} catalog type names — hashing the full staged list. " +
                 $"[Action: при расхождении дедупликации переимпортируйте категорию из проекта]");
             return snapshot;
         }
@@ -176,15 +187,15 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         return snapshot with { Types = kept };
     }
 
-    private async Task<HashSet<string>> LoadCatalogTypeNamesAsync(
+    private async Task<List<(string Name, string? FamilyKey, string? FamilyName)>> LoadCatalogTypeIdentitiesAsync(
         ActualizationGroup group, CancellationToken ct)
     {
-        var names = new HashSet<string>(StringComparer.Ordinal);
+        var rows = new List<(string Name, string? FamilyKey, string? FamilyName)>();
         using var connection = Database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
-            SELECT DISTINCT type_name FROM family_types
+            SELECT DISTINCT type_name, family_key, family_name FROM family_types
             WHERE catalog_item_id = @itemId
               AND version_id IN ({VariantIdParams(cmd, group.Variants)})
             """;
@@ -192,10 +203,12 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            if (!reader.IsDBNull(0))
-                names.Add(reader.GetString(0));
+            if (reader.IsDBNull(0)) continue;
+            var familyKey = reader.IsDBNull(1) || string.IsNullOrEmpty(reader.GetString(1)) ? null : reader.GetString(1);
+            var familyName = reader.IsDBNull(2) || string.IsNullOrEmpty(reader.GetString(2)) ? null : reader.GetString(2);
+            rows.Add((reader.GetString(0), familyKey, familyName));
         }
-        return names;
+        return rows;
     }
 
     private async Task WriteMarkerAsync(

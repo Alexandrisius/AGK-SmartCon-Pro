@@ -86,7 +86,9 @@ public sealed record SystemTypeSnapshot(
     string Name,
     IReadOnlyList<SystemParameterValue> Values,
     CompoundStructureSnapshot? Structure = null,
-    RoutingPreferencesSnapshot? Routing = null);
+    RoutingPreferencesSnapshot? Routing = null,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 
 public sealed record SystemParameterValue(
     string ParameterName,

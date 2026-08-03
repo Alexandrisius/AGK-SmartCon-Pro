@@ -109,12 +109,20 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
 
             var values = ExtractTypeParameters(elementType, projectDoc);
 
-            types.Add(new FamilyExtractionTypeValues(typeName, 0, values));
+            // #191: the family identity must travel with the extraction —
+            // without it a keyed family_types row never matches and the
+            // save would duplicate/collapse types (see ADR-064). Loadable
+            // symbols (FamilySymbol) keep null identity — their family is
+            // implied by the catalog item itself.
+            types.Add(new FamilyExtractionTypeValues(
+                typeName, 0, values,
+                elementType is FamilySymbol ? null : elementType.FamilyName,
+                elementType is FamilySymbol ? null : SystemFamilyKeyResolver.Resolve(elementType)));
         }
 
         var sorted = types
             .OrderBy(t => t.TypeName, StringComparer.OrdinalIgnoreCase)
-            .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values))
+            .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values, t.FamilyName, t.FamilyKey))
             .ToList();
 
         if (requestedSet is not null)

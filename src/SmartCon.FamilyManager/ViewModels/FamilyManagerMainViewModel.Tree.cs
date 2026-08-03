@@ -285,7 +285,11 @@ public sealed partial class FamilyManagerMainViewModel
     private sealed class ProjectPresenceSnapshot
     {
         public required string DocumentPath { get; init; }
-        public required HashSet<(string Family, string Name)> SystemTypes { get; init; }
+        // #190 (review fix): the category ordinal is part of the identity —
+        // the "Single" key of one-family categories (pipes, insulations, …)
+        // is identical across categories, so a category-less set would
+        // cross-match same-named types of different categories.
+        public required HashSet<(int Category, string Family, string Name)> SystemTypes { get; init; }
         public required Dictionary<int, HashSet<string>> SystemTypeNamesByCategory { get; init; }
         public required Dictionary<string, int> SystemCategoryOrdinalByItem { get; init; }
         public required HashSet<string> LoadableFamilies { get; init; }
@@ -306,7 +310,7 @@ public sealed partial class FamilyManagerMainViewModel
             .ToList();
 
         // System slice: all ElementTypes of the catalog's system categories.
-        var systemTypes = new HashSet<(string Family, string Name)>();
+        var systemTypes = new HashSet<(int Category, string Family, string Name)>();
         var systemTypeNamesByCategory = new Dictionary<int, HashSet<string>>();
         if (systemItems.Count > 0)
         {
@@ -314,9 +318,20 @@ public sealed partial class FamilyManagerMainViewModel
             var locations = _systemTypeFinder.CollectTypes(doc, ordinals);
             foreach (var l in locations)
             {
+                // #190 (ADR-064): register BOTH identity forms — the
+                // locale-invariant key (new V27 rows match by it) and the
+                // localized name (legacy pre-V27 rows match by it). The set
+                // is a lookup structure, not a store, so dual entries are
+                // safe: a node matches iff ITS descriptor token is present.
+                // The category ordinal prefixes every entry — "Single" is
+                // the same token across one-family categories.
+                if (l.FamilyKey is not null)
+                {
+                    systemTypes.Add((l.CategoryOrdinal, l.FamilyKey.ToUpperInvariant(), l.TypeName.ToUpperInvariant()));
+                }
                 if (l.FamilyName is not null)
                 {
-                    systemTypes.Add((l.FamilyName.ToUpperInvariant(), l.TypeName.ToUpperInvariant()));
+                    systemTypes.Add((l.CategoryOrdinal, l.FamilyName.ToUpperInvariant(), l.TypeName.ToUpperInvariant()));
                 }
                 if (!systemTypeNamesByCategory.TryGetValue(l.CategoryOrdinal, out var set))
                 {
@@ -379,15 +394,24 @@ public sealed partial class FamilyManagerMainViewModel
                     if (typeNode.IsVirtual) continue;
 
                     bool isPresent;
-                    if (typeNode.FamilyName is not null)
+                    // #190 (ADR-064): effective identity token — the
+                    // locale-invariant key when the row has one (V27+), the
+                    // localized family name for legacy rows. The snapshot
+                    // set carries both forms (see ComputePresenceSnapshot);
+                    // the category ordinal disambiguates one-family tokens.
+                    var familyToken = typeNode.FamilyKey ?? typeNode.FamilyName;
+                    if (!snapshot.SystemCategoryOrdinalByItem.TryGetValue(leaf.CatalogItemId, out var ordinal))
+                    {
+                        isPresent = false;
+                    }
+                    else if (familyToken is not null)
                     {
                         isPresent = snapshot.SystemTypes.Contains(
-                            (typeNode.FamilyName.ToUpperInvariant(), typeNode.TypeName.ToUpperInvariant()));
+                            (ordinal, familyToken.ToUpperInvariant(), typeNode.TypeName.ToUpperInvariant()));
                     }
                     else
                     {
-                        isPresent = snapshot.SystemCategoryOrdinalByItem.TryGetValue(leaf.CatalogItemId, out var ordinal)
-                            && snapshot.SystemTypeNamesByCategory.TryGetValue(ordinal, out var names)
+                        isPresent = snapshot.SystemTypeNamesByCategory.TryGetValue(ordinal, out var names)
                             && names.Contains(typeNode.TypeName.ToUpperInvariant());
                     }
                     if (isPresent) { anyTypePresent = true; marked++; }
@@ -395,7 +419,7 @@ public sealed partial class FamilyManagerMainViewModel
                     typeNode.IsStaleInProject = isPresent
                         && staleMap is not null
                         && staleMap.TryGetValue(
-                            StaleDetector.BuildSystemTypeKey(typeNode.FamilyName, typeNode.TypeName), out var stale)
+                            StaleDetector.BuildSystemTypeKey(typeNode.FamilyKey, typeNode.FamilyName, typeNode.TypeName), out var stale)
                         && stale;
                 }
                 leaf.IsInProject = anyTypePresent;
@@ -450,7 +474,7 @@ public sealed partial class FamilyManagerMainViewModel
                 typeNode.IsStaleInProject = typeNode.IsInProject
                     && staleMap is not null
                     && staleMap.TryGetValue(
-                        StaleDetector.BuildSystemTypeKey(typeNode.FamilyName, typeNode.TypeName), out var stale)
+                        StaleDetector.BuildSystemTypeKey(typeNode.FamilyKey, typeNode.FamilyName, typeNode.TypeName), out var stale)
                     && stale;
             }
         }

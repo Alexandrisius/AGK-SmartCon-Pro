@@ -14,7 +14,7 @@ namespace SmartCon.Revit.FamilyManager;
 public sealed class RevitSystemTypeFinder : ISystemTypeFinder
 {
     public ElementId? FindTypeByName(
-        Document doc, string typeName, int? categoryOrdinal, string? familyName = null)
+        Document doc, string typeName, int? categoryOrdinal, string? familyName = null, string? familyKey = null)
     {
         if (doc is null || string.IsNullOrEmpty(typeName)) return null;
 
@@ -25,10 +25,19 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
         {
             if (type.Name is null) continue;
             if (!string.Equals(type.Name, typeName, StringComparison.OrdinalIgnoreCase)) continue;
-            // #183: when the reference family is known, the type must come
-            // from THAT system family — "Стандарт" of "Conduit with
-            // Fittings" must never match "Conduit without Fittings".
-            if (!string.IsNullOrEmpty(familyName)
+            // #190 (ADR-064): the locale-invariant key is the PRIMARY family
+            // filter — the localized FamilyName never matches across locales.
+            // #183 (legacy): when no key is supplied, the family name
+            // restricts the match — "Стандарт" of "Conduit with Fittings"
+            // must never match "Conduit without Fittings".
+            if (!string.IsNullOrEmpty(familyKey))
+            {
+                if (!string.Equals(SystemFamilyKeyResolver.Resolve(type), familyKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+            }
+            else if (!string.IsNullOrEmpty(familyName)
                 && !string.Equals(type.FamilyName, familyName, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -71,7 +80,10 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
                 if (type.Name is null) continue;
                 // #183: FamilyName collected so stale detection can match
                 // by (family, name) instead of name alone.
-                result.Add(new SystemTypeLocation(type.Name, ordinal, type.Id, type.FamilyName));
+                // #190 (ADR-064): FamilyKey is the locale-invariant identity
+                // — always computable for system types.
+                result.Add(new SystemTypeLocation(
+                    type.Name, ordinal, type.Id, type.FamilyName, SystemFamilyKeyResolver.Resolve(type)));
             }
         }
         return result;

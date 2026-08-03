@@ -52,7 +52,8 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
         string catalogItemId,
         string typeName,
         int targetRevitVersion,
-        string? familyName = null)
+        string? familyName = null,
+        string? familyKey = null)
     {
         if (activeDoc is null) return false;
 
@@ -65,7 +66,8 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
         // #183: the marker check must find the type of the SAME family —
         // otherwise an up-to-date "Conduit with Fittings: Стандарт" would
         // satisfy the fast path for "Conduit without Fittings: Стандарт".
-        var typeId = _typeFinder.FindTypeByName(activeDoc, typeName, categoryOrdinal, familyName);
+        // #190: the locale-invariant key is the primary filter.
+        var typeId = _typeFinder.FindTypeByName(activeDoc, typeName, categoryOrdinal, familyName, familyKey);
         if (typeId is null) return false;
 
         var marker = _versionStore.ReadFromType(activeDoc, typeId);
@@ -140,7 +142,8 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
                         catalogItemId,
                         resolved.VersionLabel ?? string.Empty,
                         targetRevitVersion,
-                        type.FamilyName));
+                        type.FamilyName,
+                        type.FamilyKey));
                 }
                 catch (Exception ex)
                 {

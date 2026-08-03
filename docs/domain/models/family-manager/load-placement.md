@@ -202,5 +202,9 @@ public sealed record FamilyPlacementDragData(
     string FamilyName,
     string TypeName,
     int TargetRevitVersion,
-    bool IsVirtual = false);
+    bool IsVirtual = false,
+    string FamilySource = "loadable",
+    string? UniqueId = null,
+    string? SystemFamilyName = null,
+    string? SystemFamilyKey = null);
 ```

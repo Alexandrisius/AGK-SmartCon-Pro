@@ -37,7 +37,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name
+            SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name, family_key
             FROM family_types
             WHERE catalog_item_id = @itemId
               AND (
@@ -67,7 +67,8 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 reader.IsDBNull(5) ? null : reader.GetString(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6),
-                NormalizeFamilyName(reader.IsDBNull(7) ? null : reader.GetString(7))));
+                NormalizeFamilyName(reader.IsDBNull(7) ? null : reader.GetString(7)),
+                NormalizeFamilyName(reader.IsDBNull(8) ? null : reader.GetString(8))));
         }
 
         return result.AsReadOnly();
@@ -83,12 +84,12 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
 
         if (versionId is null)
         {
-            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name FROM family_types WHERE catalog_item_id = @itemId AND version_id IS NULL ORDER BY sort_order";
+            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name, family_key FROM family_types WHERE catalog_item_id = @itemId AND version_id IS NULL ORDER BY sort_order";
             cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
         }
         else
         {
-            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name FROM family_types WHERE catalog_item_id = @itemId AND version_id = @versionId ORDER BY sort_order";
+            cmd.CommandText = "SELECT id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name, family_key FROM family_types WHERE catalog_item_id = @itemId AND version_id = @versionId ORDER BY sort_order";
             cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
             cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
         }
@@ -105,7 +106,8 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 reader.IsDBNull(5) ? null : reader.GetString(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6),
-                NormalizeFamilyName(reader.IsDBNull(7) ? null : reader.GetString(7))));
+                NormalizeFamilyName(reader.IsDBNull(7) ? null : reader.GetString(7)),
+                NormalizeFamilyName(reader.IsDBNull(8) ? null : reader.GetString(8))));
         }
 
         return result.AsReadOnly();
@@ -138,7 +140,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
         var placeholders = string.Join(",", Enumerable.Range(0, idList.Count).Select(i => $"@p{i}"));
         using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
-            SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name
+            SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name, family_key
             FROM family_types
             WHERE catalog_item_id IN ({placeholders})
               AND (
@@ -171,7 +173,8 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                 reader.IsDBNull(5) ? null : reader.GetString(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6),
                 reader.IsDBNull(7) ? null : reader.GetString(7),
-                NormalizeFamilyName(reader.IsDBNull(8) ? null : reader.GetString(8)));
+                NormalizeFamilyName(reader.IsDBNull(8) ? null : reader.GetString(8)),
+                NormalizeFamilyName(reader.IsDBNull(9) ? null : reader.GetString(9)));
 
             if (!result.TryGetValue(itemId, out var list))
             {
@@ -288,13 +291,14 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
             {
                 using var upsertCmd = connection.CreateCommand();
                 upsertCmd.CommandText = """
-                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name)
-                    VALUES (@id, @itemId, @name, @sort, @versionId, @fileId, @runId, @uniqueId, @familyName)
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id, family_name, family_key)
+                    VALUES (@id, @itemId, @name, @sort, @versionId, @fileId, @runId, @uniqueId, @familyName, @familyKey)
                     ON CONFLICT(catalog_item_id, version_id, family_name, type_name) DO UPDATE SET
                         sort_order = excluded.sort_order,
                         file_id = excluded.file_id,
                         extraction_run_id = excluded.extraction_run_id,
-                        type_unique_id = COALESCE(excluded.type_unique_id, family_types.type_unique_id)
+                        type_unique_id = COALESCE(excluded.type_unique_id, family_types.type_unique_id),
+                        family_key = CASE WHEN excluded.family_key <> '' THEN excluded.family_key ELSE family_types.family_key END
                     RETURNING id
                     """;
                 upsertCmd.Parameters.Add(new SqliteParameter("@id", types[i].Id));
@@ -306,6 +310,7 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                 upsertCmd.Parameters.Add(new SqliteParameter("@runId", runId));
                 upsertCmd.Parameters.Add(new SqliteParameter("@uniqueId", (object?)types[i].UniqueId ?? DBNull.Value));
                 upsertCmd.Parameters.Add(new SqliteParameter("@familyName", types[i].FamilyName ?? string.Empty));
+                upsertCmd.Parameters.Add(new SqliteParameter("@familyKey", types[i].FamilyKey ?? string.Empty));
                 var returnedId = await upsertCmd.ExecuteScalarAsync(ct);
                 if (returnedId is null || returnedId is DBNull)
                 {
@@ -313,7 +318,11 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
                         $"SyncTypesAsync: RETURNING id returned null for type '{types[i].Name}' " +
                         $"(catalog_item_id='{catalogItemId}', version_id='{versionId ?? "<null>"}'). Possible SQLite version < 3.35.");
                 }
-                result[types[i].Name] = (string)returnedId;
+                // #191: the result map is keyed by the full identity
+                // (SystemTypeIdentityKey — "TOKEN|NAME") so same-named
+                // types of different system families do not overwrite
+                // each other.
+                result[SystemTypeIdentityKey.Build(types[i].FamilyKey, types[i].FamilyName, types[i].Name)] = (string)returnedId;
             }
 
             tx.Commit();
@@ -340,9 +349,9 @@ internal sealed class LocalFamilyTypeRepository : IFamilyTypeRepository
     }
 
     /// <summary>
-    /// V26 (#183): the DB stores family_name as '' (never NULL, keeps the
-    /// UNIQUE strict); the domain model exposes it as null ("no family
-    /// known/applicable").
+    /// V26 (#183) / V27 (#190): the DB stores family_name and family_key as
+    /// '' (never NULL, keeps the UNIQUE strict); the domain model exposes
+    /// them as null ("no family known/applicable"). Shared by both columns.
     /// </summary>
     private static string? NormalizeFamilyName(string? dbValue)
         => string.IsNullOrEmpty(dbValue) ? null : dbValue;

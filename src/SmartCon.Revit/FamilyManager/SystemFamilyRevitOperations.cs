@@ -140,7 +140,8 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                     typeElem.Name,
                     categoryName,
                     builtInCategory,
-                    (typeElem as ElementType)?.FamilyName);
+                    (typeElem as ElementType)?.FamilyName,
+                    (typeElem as ElementType) is { } et ? SystemFamilyKeyResolver.Resolve(et) : null);
             }
         }
 
@@ -209,8 +210,13 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                     documentCategoryName ??= typeElem.Category?.Name;
                     // #183: FamilyName flows into family_types.family_name —
                     // the sync identity is (family, name), never name alone.
+                    // #190 (ADR-064): FamilyKey is the locale-invariant
+                    // identity — persisted into family_types.family_key (V27).
                     types.Add(new SystemTypeInfo(
-                        typeElem.Name, typeElem.UniqueId, (typeElem as ElementType)?.FamilyName));
+                        typeElem.Name,
+                        typeElem.UniqueId,
+                        (typeElem as ElementType)?.FamilyName,
+                        (typeElem as ElementType) is { } et ? SystemFamilyKeyResolver.Resolve(et) : null));
                 }
 
                 if (types.Count == 0) continue;

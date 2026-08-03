@@ -177,7 +177,9 @@ public interface ISystemFamilyAttributeExtractionService
 ```csharp
 public interface ISystemFamilyPlacementService
 {
-    SystemPlacementResult LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion);
+    SystemPlacementResult LoadAndPlaceSystemType(
+        string catalogItemId, string typeName, int targetRevitVersion,
+        string? familyName = null, string? familyKey = null);
 }
 ```
 
@@ -224,11 +226,14 @@ public static class CategoryCompat
 ```csharp
 public interface ISystemTypeFinder
 {
-    ElementId? FindTypeByName(Document doc, string typeName, int? categoryOrdinal);
+    ElementId? FindTypeByName(Document doc, string typeName, int? categoryOrdinal,
+        string? familyName = null, string? familyKey = null);
     IReadOnlyList<SystemTypeLocation> CollectTypes(
         Document doc, IReadOnlyCollection<int> categoryOrdinals);
 }
 ```
+
+Issue #183: `familyName` ограничивает матчинг одной системной семьёй («Стандарт» из «Conduit with Fittings» не матчится на «Conduit without Fittings»). Issue #190 (ADR-064): `familyKey` — locale-invariant первичный фильтр; при его наличии `familyName` игнорируется.
 
 ---
 
@@ -248,7 +253,9 @@ public interface ISystemTypeSyncService
         string typeName,
         string catalogItemId,
         string versionLabel,
-        int sourceRevitVersion);
+        int sourceRevitVersion,
+        string? familyName = null,
+        string? familyKey = null);
 }
 ```
 
@@ -265,11 +272,12 @@ public interface ISystemTypeSyncService
 public interface ISystemTypeSyncOrchestrator
 {
     bool IsProjectTypeCurrent(
-        Document activeDoc, string catalogItemId, string typeName, int targetRevitVersion);
+        Document activeDoc, string catalogItemId, string typeName, int targetRevitVersion,
+        string? familyName = null, string? familyKey = null);
 
     SystemFamilySyncResult SyncTypes(
         Document activeDoc, string catalogItemId,
-        IReadOnlyList<string> typeNames, int targetRevitVersion);
+        IReadOnlyList<SystemTypeRef> types, int targetRevitVersion);
 }
 ```
 

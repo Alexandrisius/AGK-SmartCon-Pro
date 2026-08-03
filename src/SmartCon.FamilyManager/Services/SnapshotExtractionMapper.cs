@@ -123,7 +123,9 @@ internal static class SnapshotExtractionMapper
                 // System family types only carry Type-scope parameters.
                 values.Add(ToValueResult(v, null, AttributeScope.Type));
             }
-            types.Add(new FamilyExtractionTypeValues(t.Name, sortOrder++, values));
+            // #191: the family identity flows into the attribute pipeline —
+            // same-named types of different system families stay distinct.
+            types.Add(new FamilyExtractionTypeValues(t.Name, sortOrder++, values, t.FamilyName, t.FamilyKey));
         }
 
         SmartConLogger.Info(

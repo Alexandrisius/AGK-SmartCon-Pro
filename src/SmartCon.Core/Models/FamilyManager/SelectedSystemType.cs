@@ -7,4 +7,5 @@ public sealed record SelectedSystemType(
     string Name,
     string CategoryName,
     BuiltInCategory Category,
-    string? FamilyName = null);
+    string? FamilyName = null,
+    string? FamilyKey = null);

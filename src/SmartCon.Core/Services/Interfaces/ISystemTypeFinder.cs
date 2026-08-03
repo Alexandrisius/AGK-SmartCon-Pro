@@ -29,8 +29,12 @@ public interface ISystemTypeFinder
     /// identity of a system type is (family, name, category). When
     /// <c>null</c>, the family is not filtered (legacy behaviour: the first
     /// name match wins, a Warn is logged on duplicates).</param>
+    /// <param name="familyKey">Issue #190 (ADR-064): locale-invariant family
+    /// key (<see cref="SystemFamilyKeys"/>). When non-null/non-empty it is
+    /// the PRIMARY filter and <paramref name="familyName"/> is ignored —
+    /// the localized name cannot match across locales.</param>
     ElementId? FindTypeByName(
-        Document doc, string typeName, int? categoryOrdinal, string? familyName = null);
+        Document doc, string typeName, int? categoryOrdinal, string? familyName = null, string? familyKey = null);
 
     /// <summary>
     /// Collect all system types of the given categories. Used by stale

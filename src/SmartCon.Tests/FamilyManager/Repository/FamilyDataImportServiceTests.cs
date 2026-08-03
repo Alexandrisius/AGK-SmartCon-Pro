@@ -119,6 +119,47 @@ public sealed class FamilyDataImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveExtractionResultAsync_SameNameTypesOfDifferentFamilies_BothPersistedWithOwnAttributes()
+    {
+        // #191: two same-named extraction types of different system families
+        // («Стандарт» in both conduit families) must produce TWO descriptors
+        // and each family's attribute values must land on its OWN type row —
+        // the pre-#191 name-keyed matching reused one descriptor Id twice
+        // (PK violation → the whole attribute save rolled back).
+        var itemId = await SeedCatalogItemAsync("Conduits");
+        await SeedAttributeDefAsync("Param1");
+
+        var extractionResult = new FamilyExtractionResult(
+            true,
+            [
+                new FamilyExtractionTypeValues("Стандарт", 0,
+                [
+                    new FamilyExtractionValueResult("Param1", AttributeScope.Type, "String", "with-fittings", null, null, null, AttributeValueStatus.Found, null)
+                ], FamilyName: "Conduit with Fittings", FamilyKey: SystemFamilyKeys.ConduitWithFittings),
+                new FamilyExtractionTypeValues("Стандарт", 1,
+                [
+                    new FamilyExtractionValueResult("Param1", AttributeScope.Type, "String", "without-fittings", null, null, null, AttributeValueStatus.Found, null)
+                ], FamilyName: "Conduit without Fittings", FamilyKey: SystemFamilyKeys.ConduitWithoutFittings)
+            ],
+            null,
+            null,
+            2025);
+
+        var result = await _service.SaveExtractionResultAsync(itemId, extractionResult, null, null);
+
+        Assert.True(result.Success);
+
+        var types = await _typeRepo.GetTypesForItemAsync(itemId);
+        Assert.Equal(2, types.Count);
+        Assert.Equal(2, types.Select(t => t.Id).Distinct().Count());
+
+        var values = await _valueRepo.GetValuesForItemAsync(itemId, null);
+        Assert.Equal(2, values.Count);
+        // Each value is linked to its own family's type row.
+        Assert.Equal(2, values.Select(v => v.TypeId).Distinct().Count());
+    }
+
+    [Fact]
     public async Task SaveExtractionResultAsync_PartialStatus_WhenMissingValues()
     {
         var itemId = await SeedCatalogItemAsync("PartialFamily");

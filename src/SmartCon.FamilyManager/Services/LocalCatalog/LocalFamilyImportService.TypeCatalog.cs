@@ -204,7 +204,7 @@ internal sealed partial class LocalFamilyImportService
         {
             var entry = parseResult.Entries[i];
             if (!seenTypeNames.Contains(entry.TypeName)) continue;
-            if (!typeIdsByName.TryGetValue(entry.TypeName, out var typeId)) continue;
+            if (!typeIdsByName.TryGetValue(SystemTypeIdentityKey.Build(null, null, entry.TypeName), out var typeId)) continue;
 
             foreach (var param in entry.ParameterValues)
             {

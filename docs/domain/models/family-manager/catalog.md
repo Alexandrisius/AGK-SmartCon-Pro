@@ -450,7 +450,9 @@ public sealed record FamilyTypeDescriptor(
     string? VersionId = null,
     string? FileId = null,
     string? ExtractionRunId = null,
-    string? UniqueId = null);
+    string? UniqueId = null,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 ```
 
 **v2.0.0 (ADR-036):** `UniqueId` (Revit `Element.UniqueId` типа) добавлен для устранения коллизий

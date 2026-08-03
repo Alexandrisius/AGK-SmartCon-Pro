@@ -23,6 +23,14 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
     public string? FamilyName { get; }
 
     /// <summary>
+    /// Issue #190 (ADR-064): locale-invariant family identity (from
+    /// <c>family_types.family_key</c>) — preferred over
+    /// <see cref="FamilyName"/> for presence/stale matching. null for
+    /// legacy rows (pre-V27) and loadable types.
+    /// </summary>
+    public string? FamilyKey { get; }
+
+    /// <summary>
     /// #187: the type is present in the ACTIVE project (same family + name
     /// found in the document). Computed on every tree load via one
     /// CollectTypes pass over the system categories of the catalog.
@@ -60,7 +68,8 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
         string? uniqueId = null,
         string? displayName = null,
         bool isUnavailable = false,
-        string? familyName = null)
+        string? familyName = null,
+        string? familyKey = null)
     {
         CatalogItemId = catalogItemId;
         TypeName = typeName;
@@ -69,6 +78,7 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
         UniqueId = uniqueId;
         IsUnavailable = isUnavailable;
         FamilyName = familyName;
+        FamilyKey = familyKey;
         DisplayName = displayName ?? typeName;
     }
 }

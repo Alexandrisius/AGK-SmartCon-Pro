@@ -36,7 +36,8 @@ public sealed partial class FamilyManagerMainViewModel
             typeNode.IsVirtual,
             leaf.FamilySource,
             typeNode.UniqueId,
-            typeNode.FamilyName);
+            typeNode.FamilyName,
+            typeNode.FamilyKey);
 
         _placementDragService.StartPlacementDrag(data);
     }
@@ -239,7 +240,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (leaf.FamilySource == "system")
         {
             await PlaceSystemTypeAsync(
-                leaf.CatalogItemId, typeNode.TypeName, CurrentRevitVersion, typeNode.FamilyName);
+                leaf.CatalogItemId, typeNode.TypeName, CurrentRevitVersion, typeNode.FamilyName, typeNode.FamilyKey);
             return;
         }
 
@@ -372,7 +373,7 @@ public sealed partial class FamilyManagerMainViewModel
         var types = (await _typeRepository
                 .GetTypesForItemAsync(leaf.CatalogItemId, CancellationToken.None)
                 .ConfigureAwait(true))
-            .Select(d => new SystemTypeRef(d.Name, d.FamilyName))
+            .Select(d => new SystemTypeRef(d.Name, d.FamilyName, d.FamilyKey))
             .ToList();
 
         if (types.Count == 0)
@@ -448,7 +449,7 @@ public sealed partial class FamilyManagerMainViewModel
                 var result = _systemSyncOrchestrator.SyncTypes(
                     _revitContext.GetDocument(),
                     leaf.CatalogItemId,
-                    new[] { new SystemTypeRef(typeNode.TypeName, typeNode.FamilyName) },
+                    new[] { new SystemTypeRef(typeNode.TypeName, typeNode.FamilyName, typeNode.FamilyKey) },
                     CurrentRevitVersion);
 
                 var typeResult = result.TypeResults.Count > 0 ? result.TypeResults[0] : null;
@@ -468,7 +469,7 @@ public sealed partial class FamilyManagerMainViewModel
                 {
                     _staleDetector.MarkSystemTypeUpdated(
                         leaf.CatalogItemId,
-                        StaleDetector.BuildSystemTypeKey(typeNode.FamilyName, typeNode.TypeName));
+                        StaleDetector.BuildSystemTypeKey(typeNode.FamilyKey, typeNode.FamilyName, typeNode.TypeName));
                     typeNode.IsStaleInProject = false;
                 }
             }
@@ -544,7 +545,7 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     private async Task PlaceSystemTypeAsync(
-        string catalogItemId, string typeName, int targetRevit, string? familyName = null)
+        string catalogItemId, string typeName, int targetRevit, string? familyName = null, string? familyKey = null)
     {
         var result = SystemPlacementResult.Failed;
         await _awaitableEvent.RaiseAsync(_ =>
@@ -552,7 +553,7 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 result = _systemFamilyPlacementService.LoadAndPlaceSystemType(
-                    catalogItemId, typeName, targetRevit, familyName);
+                    catalogItemId, typeName, targetRevit, familyName, familyKey);
                 StatusMessage = result switch
                 {
                     SystemPlacementResult.Placed => string.Format(

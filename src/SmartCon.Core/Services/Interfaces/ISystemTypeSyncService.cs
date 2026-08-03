@@ -38,6 +38,9 @@ public interface ISystemTypeSyncService
     /// reference lookup and the target match are restricted to this family
     /// ("Conduit without Fittings" never touches "Conduit with Fittings").
     /// <c>null</c> keeps the legacy first-name-match behaviour.</param>
+    /// <param name="familyKey">Issue #190 (ADR-064): locale-invariant family
+    /// key — preferred over <paramref name="familyName"/> for both the
+    /// reference lookup and the target match when present.</param>
     SystemTypeSyncResult SyncTypeFromSource(
         Document sourceDoc,
         Document activeDoc,
@@ -45,5 +48,6 @@ public interface ISystemTypeSyncService
         string catalogItemId,
         string versionLabel,
         int sourceRevitVersion,
-        string? familyName = null);
+        string? familyName = null,
+        string? familyKey = null);
 }

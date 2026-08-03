@@ -36,12 +36,16 @@ public abstract record FamilyImportSource
     /// <param name="TypeFamilyNames">Revit system family of each type
     /// (parallel to <paramref name="TypeUniqueIds"/>; Issue #183) — flows
     /// into <c>family_types.family_name</c>; null for legacy producers.</param>
+    /// <param name="TypeFamilyKeys">Locale-invariant family key of each type
+    /// (parallel to <paramref name="TypeUniqueIds"/>; Issue #190, ADR-064) —
+    /// flows into <c>family_types.family_key</c>; null for legacy producers.</param>
     public sealed record SystemSource(
         string DisplayName,
         int CategoryId,
         IReadOnlyList<string> TypeUniqueIds,
         IReadOnlyList<string> TypeNames,
-        IReadOnlyList<string?>? TypeFamilyNames = null) : FamilyImportSource;
+        IReadOnlyList<string?>? TypeFamilyNames = null,
+        IReadOnlyList<string?>? TypeFamilyKeys = null) : FamilyImportSource;
 
     /// <summary>
     /// Loadable-family source. The orchestrator's post-dialog flow calls

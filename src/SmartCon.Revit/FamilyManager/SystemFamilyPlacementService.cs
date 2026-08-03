@@ -42,7 +42,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
     }
 
     public SystemPlacementResult LoadAndPlaceSystemType(
-        string catalogItemId, string typeName, int targetRevitVersion, string? familyName = null)
+        string catalogItemId, string typeName, int targetRevitVersion, string? familyName = null, string? familyKey = null)
     {
         var uiApp = _revitUIContext.GetUIApplication();
         var activeDoc = _revitUIContext.GetUIDocument().Document;
@@ -53,15 +53,15 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             return SystemPlacementResult.Failed;
         }
 
-        if (_syncOrchestrator.IsProjectTypeCurrent(activeDoc, catalogItemId, typeName, targetRevitVersion, familyName))
+        if (_syncOrchestrator.IsProjectTypeCurrent(activeDoc, catalogItemId, typeName, targetRevitVersion, familyName, familyKey))
         {
             SmartConLogger.Debug(
                 $"SystemFamilyPlacement: type '{typeName}' is up-to-date (marker match), activating placement.");
-            return ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId, familyName);
+            return ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId, familyName, familyKey);
         }
 
         var result = _syncOrchestrator.SyncTypes(
-            activeDoc, catalogItemId, new[] { new SystemTypeRef(typeName, familyName) }, targetRevitVersion);
+            activeDoc, catalogItemId, new[] { new SystemTypeRef(typeName, familyName, familyKey) }, targetRevitVersion);
 
         var typeResult = result.TypeResults.Count > 0 ? result.TypeResults[0] : null;
         if (typeResult is null || !typeResult.IsSuccess)
@@ -72,14 +72,14 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             return SystemPlacementResult.Failed;
         }
 
-        return ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId, familyName);
+        return ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId, familyName, familyKey);
     }
 
     private SystemPlacementResult ActivatePlacementByName(
-        UIApplication uiApp, Document activeDoc, string typeName, string catalogItemId, string? familyName)
+        UIApplication uiApp, Document activeDoc, string typeName, string catalogItemId, string? familyName, string? familyKey = null)
     {
         var categoryOrdinal = ResolveCategoryOrdinal(catalogItemId);
-        var typeId = _typeFinder.FindTypeByName(activeDoc, typeName, categoryOrdinal, familyName);
+        var typeId = _typeFinder.FindTypeByName(activeDoc, typeName, categoryOrdinal, familyName, familyKey);
         var elementType = typeId is not null ? activeDoc.GetElement(typeId) as ElementType : null;
         if (elementType is null)
         {

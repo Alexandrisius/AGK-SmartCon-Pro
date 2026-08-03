@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 26)
+        if (initialVersion < 27)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v26");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v27");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -82,6 +82,8 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         // V26 recreates family_types (parent of extracted_attribute_values)
         // — must run under the FK-off rebuild recipe like V15/V17/V18.
         await RunRebuildMigrationAsync(connection, 26, MigrateV26Async, ct);
+        // V27 is a plain ADD COLUMN — no rebuild needed.
+        await RunMigrationAsync(connection, 27, MigrateV27Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1167,6 +1169,54 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// V27 (#190, ADR-064): adds <c>family_key TEXT NOT NULL DEFAULT ''</c>
+    /// to <c>family_types</c> — the locale-invariant system family identity.
+    /// Plain ADD COLUMN (no recreate): the key is not a UNIQUE member.
+    /// Guarded by ColumnExists so a partially applied V27 heals on restart.
+    /// </summary>
+    private static async Task MigrateV27Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 27) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var columnAdded = false;
+            if (!await ColumnExistsAsync(connection, "family_types", "family_key", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV27AddFamilyKeyColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+                columnAdded = true;
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '27' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            if (columnAdded)
+            {
+                SmartConLogger.Info("Migration v27: added family_key to family_types — locale-invariant system family identity (#190)");
+            }
+            else
+            {
+                // Fresh DB: the column already exists via CREATE TABLE —
+                // only the version bump was needed.
+                SmartConLogger.Debug("Migration v27: family_key already present (fresh schema) — version bumped to 27");
+            }
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1289,6 +1339,13 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "ALTER TABLE family_types ADD COLUMN type_unique_id TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_types", "family_key", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV27AddFamilyKeyColumn;
             await cmd.ExecuteNonQueryAsync(ct);
         }
 

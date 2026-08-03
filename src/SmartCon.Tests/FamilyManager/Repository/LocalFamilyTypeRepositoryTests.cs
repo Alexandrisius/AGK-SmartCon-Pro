@@ -282,9 +282,10 @@ public sealed class LocalFamilyTypeRepositoryTests : IDisposable
         Assert.Single(result);
         Assert.Equal("Type A", result[0].Name);
 
-        // Returned typeIds map should contain only "Type A"
+        // Returned typeIds map should contain only "Type A" (keyed by the
+        // #191 identity key — "|TYPE A" for family-less loadable rows)
         Assert.Single(typeIds);
-        Assert.True(typeIds.ContainsKey("Type A"));
+        Assert.True(typeIds.ContainsKey(SystemTypeIdentityKey.Build(null, null, "Type A")));
     }
 
     [Fact]
@@ -390,9 +391,10 @@ public sealed class LocalFamilyTypeRepositoryTests : IDisposable
     [Fact]
     public async Task SyncTypesAsync_ReturnsTypeIdsMap()
     {
-        // v2.0.0 (ADR-036): SyncTypesAsync returns a {name → id} map so
-        // callers (e.g. FamilyDataImportService) can link attribute values
-        // to types in a single round-trip.
+        // v2.0.0 (ADR-036): SyncTypesAsync returns a map so callers (e.g.
+        // FamilyDataImportService) can link attribute values to types in a
+        // single round-trip. #191: the key is the full identity
+        // (SystemTypeIdentityKey — "|TYPE A" for family-less loadable rows).
         // v2.1.0 (ADR-041 rev #2): orchestrator case (no catalog_versions).
         var itemId = await SeedBareCatalogItemAsync("ReturnMap.rfa");
         var input = new List<FamilyTypeDescriptor>
@@ -403,14 +405,16 @@ public sealed class LocalFamilyTypeRepositoryTests : IDisposable
 
         var result = await _repository.SyncTypesAsync(itemId, null, null, NoRunId, input);
 
+        var keyA = SystemTypeIdentityKey.Build(null, null, "Type A");
+        var keyB = SystemTypeIdentityKey.Build(null, null, "Type B");
         Assert.Equal(2, result.Count);
-        Assert.True(result.ContainsKey("Type A"));
-        Assert.True(result.ContainsKey("Type B"));
+        Assert.True(result.ContainsKey(keyA));
+        Assert.True(result.ContainsKey(keyB));
         // IDs from the map are the actual row PKs (not the input.Id from
         // the descriptor) — UPSERT returns the id from RETURNING.
         var stored = await _repository.GetTypesForItemAsync(itemId);
-        Assert.Equal(stored[0].Id, result["Type A"]);
-        Assert.Equal(stored[1].Id, result["Type B"]);
+        Assert.Equal(stored[0].Id, result[keyA]);
+        Assert.Equal(stored[1].Id, result[keyB]);
     }
 
     [Fact]
@@ -646,6 +650,51 @@ public sealed class LocalFamilyTypeRepositoryTests : IDisposable
         Assert.Equal(2, result.Count);
         Assert.Equal("Conduit with Fittings", result[0].FamilyName);
         Assert.Equal("Conduit without Fittings", result[1].FamilyName);
+    }
+
+    [Fact]
+    public async Task SyncTypesAsync_FamilyKey_RoundTrips()
+    {
+        // V27 (#190, ADR-064): family_key persists and reads back; the
+        // domain null maps to '' in the DB (never NULL).
+        var itemId = await SeedBareCatalogItemAsync("FamilyKey.rfa");
+        var types = new List<FamilyTypeDescriptor>
+        {
+            new("t1", itemId, "Стандарт", 0,
+                FamilyName: "Conduit with Fittings", FamilyKey: SystemFamilyKeys.ConduitWithFittings),
+            new("t2", itemId, "Стандарт", 1,
+                FamilyName: "Conduit without Fittings", FamilyKey: SystemFamilyKeys.ConduitWithoutFittings)
+        };
+
+        var ids = await _repository.SyncTypesAsync(itemId, null, null, NoRunId, types);
+        var result = await _repository.GetTypesForItemAsync(itemId);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(SystemFamilyKeys.ConduitWithFittings, result[0].FamilyKey);
+        Assert.Equal(SystemFamilyKeys.ConduitWithoutFittings, result[1].FamilyKey);
+
+        // #191: the id map is keyed by the full identity — two same-named
+        // types do not overwrite each other.
+        Assert.Equal(2, ids.Count);
+        Assert.Equal(result[0].Id, ids[SystemTypeIdentityKey.Build(SystemFamilyKeys.ConduitWithFittings, null, "Стандарт")]);
+        Assert.Equal(result[1].Id, ids[SystemTypeIdentityKey.Build(SystemFamilyKeys.ConduitWithoutFittings, null, "Стандарт")]);
+    }
+
+    [Fact]
+    public async Task SyncTypesAsync_NullFamilyKey_NormalizedToNullOnRead()
+    {
+        // V27: no key computed (legacy producer) → '' in the DB → null in
+        // the domain model (mirrors the family_name convention).
+        var itemId = await SeedBareCatalogItemAsync("NullKey.rfa");
+        await _repository.SyncTypesAsync(itemId, null, null, NoRunId, new List<FamilyTypeDescriptor>
+        {
+            new("t1", itemId, "Тип A", 0, FamilyName: "Conduit with Fittings")
+        });
+
+        var result = await _repository.GetTypesForItemAsync(itemId);
+        Assert.Single(result);
+        Assert.Equal("Conduit with Fittings", result[0].FamilyName);
+        Assert.Null(result[0].FamilyKey);
     }
 
     [Fact]

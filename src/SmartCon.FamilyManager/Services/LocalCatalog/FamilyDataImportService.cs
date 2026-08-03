@@ -96,15 +96,22 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
         await _runRepository.CreateRunAsync(run, ct);
 
         var existingTypes = await _typeRepository.GetTypesForItemAsync(catalogItemId, ct);
-        var existingByName = existingTypes
-            .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        // #191: match by the full identity (family, name) — the pre-#191
+        // name-only grouping collapsed same-named types of different system
+        // families («Стандарт» in both conduit families) onto ONE descriptor,
+        // reusing its Id twice and sinking the attribute save on a PK
+        // violation. Loadable/legacy rows carry no family token — the key
+        // degrades to "|NAME", preserving the old name-only behaviour.
+        var existingByKey = existingTypes
+            .GroupBy(t => SystemTypeIdentityKey.Build(t.FamilyKey, t.FamilyName, t.Name), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
         var types = new List<FamilyTypeDescriptor>();
         for (var i = 0; i < extractionResult.Types.Count; i++)
         {
             var t = extractionResult.Types[i];
-            if (existingByName.TryGetValue(t.TypeName, out var existing))
+            var identityKey = SystemTypeIdentityKey.Build(t.FamilyKey, t.FamilyName, t.TypeName);
+            if (existingByKey.TryGetValue(identityKey, out var existing))
             {
                 var reused = existing with { ExtractionRunId = runId, VersionId = versionId, FileId = fileId };
                 types.Add(reused);
@@ -118,11 +125,14 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
                     t.SortOrder,
                     versionId,
                     fileId,
-                    runId));
+                    runId,
+                    UniqueId: null,
+                    FamilyName: t.FamilyName,
+                    FamilyKey: t.FamilyKey));
             }
         }
 
-        var typeIdsByName = await _typeRepository.SyncTypesAsync(catalogItemId, versionId, fileId, runId, types, ct);
+        var typeIdsByKey = await _typeRepository.SyncTypesAsync(catalogItemId, versionId, fileId, runId, types, ct);
 
         var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
         var attrByName = allAttrs.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
@@ -130,7 +140,11 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
         var values = new List<ExtractedAttributeValue>();
         foreach (var typeData in extractionResult.Types)
         {
-            typeIdsByName.TryGetValue(typeData.TypeName, out var typeId);
+            // #191: lookup by the full identity key — same-named types of
+            // different system families resolve to their OWN type row.
+            typeIdsByKey.TryGetValue(
+                SystemTypeIdentityKey.Build(typeData.FamilyKey, typeData.FamilyName, typeData.TypeName),
+                out var typeId);
             foreach (var val in typeData.Values)
             {
                 attrByName.TryGetValue(val.ParameterName, out var attrDef);

@@ -69,7 +69,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         string catalogItemId,
         string versionLabel,
         int sourceRevitVersion,
-        string? familyName = null)
+        string? familyName = null,
+        string? familyKey = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(sourceDoc);
@@ -89,11 +90,11 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             ("TypeName", typeName),
             ("CatalogItemId", catalogItemId));
 
-        var sourceTypeId = _typeFinder.FindTypeByName(sourceDoc, typeName, null, familyName);
+        var sourceTypeId = _typeFinder.FindTypeByName(sourceDoc, typeName, null, familyName, familyKey);
         if (sourceTypeId is null)
         {
             SmartConLogger.Warn(
-                $"Type '{typeName}' (family '{familyName ?? "<any>"}') not found in the source mini-project. " +
+                $"Type '{typeName}' (family '{familyName ?? "<any>"}', key '{familyKey ?? "<any>"}') not found in the source mini-project. " +
                 "[Action: reimport the mini-project into the catalog — its type list is out of sync]");
             return new SystemTypeSyncResult(
                 typeName, SystemTypeSyncStatus.NotFoundInSource, 0, 0,
@@ -109,7 +110,12 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         // types of "Conduit with Fittings"). The caller-supplied familyName
         // locates the exact reference type in the mini-project; the document
         // value is the ground truth for the target match.
+        // #190 (ADR-064): the document-computed family key is locale-invariant
+        // ground truth — the caller-supplied key is only the locator fallback.
         var effectiveFamilyName = sourceType?.FamilyName ?? familyName;
+        var effectiveFamilyKey = sourceType is not null
+            ? SystemFamilyKeyResolver.Resolve(sourceType)
+            : familyKey;
         var template = _snapshotExtractor.ExtractSingleSystemType(sourceDoc, sourceTypeId);
 
         // Phase A — fitting dependencies. LoadFamily throws when the target
@@ -127,13 +133,13 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         SystemTypeSyncResult? result = null;
         var committed = _tx.RunInTransaction(activeDoc, $"SmartCon: Sync system type '{typeName}'", doc =>
         {
-            var targetId = _typeFinder.FindTypeByName(doc, typeName, categoryOrdinal, effectiveFamilyName);
+            var targetId = _typeFinder.FindTypeByName(doc, typeName, categoryOrdinal, effectiveFamilyName, effectiveFamilyKey);
             var target = targetId is not null ? doc.GetElement(targetId) as ElementType : null;
 
             var status = SystemTypeSyncStatus.Updated;
             if (target is null)
             {
-                var prototype = FindPrototypeType(doc, categoryOrdinal, effectiveFamilyName);
+                var prototype = FindPrototypeType(doc, categoryOrdinal, effectiveFamilyName, effectiveFamilyKey);
                 if (prototype is null)
                 {
                     // #183: no same-family prototype — the system family does
@@ -412,7 +418,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         }
     }
 
-    private static ElementType? FindPrototypeType(Document doc, int? categoryOrdinal, string? familyName)
+    private static ElementType? FindPrototypeType(Document doc, int? categoryOrdinal, string? familyName, string? familyKey)
     {
         // Without a category we must not create: duplicating a type of a
         // foreign category would produce a wrong-category type. Creation is
@@ -430,9 +436,12 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             // "Conduit without Fittings"). A null family name keeps the
             // legacy any-prototype behaviour (should not happen in practice —
             // every system ElementType reports a FamilyName).
+            // #190 (ADR-064): the locale-invariant key is the primary filter.
             return collector.Cast<ElementType>().FirstOrDefault(t =>
-                string.IsNullOrEmpty(familyName)
-                || string.Equals(t.FamilyName, familyName, StringComparison.OrdinalIgnoreCase));
+                !string.IsNullOrEmpty(familyKey)
+                    ? string.Equals(SystemFamilyKeyResolver.Resolve(t), familyKey, StringComparison.OrdinalIgnoreCase)
+                    : string.IsNullOrEmpty(familyName)
+                        || string.Equals(t.FamilyName, familyName, StringComparison.OrdinalIgnoreCase));
         }
         catch
         {

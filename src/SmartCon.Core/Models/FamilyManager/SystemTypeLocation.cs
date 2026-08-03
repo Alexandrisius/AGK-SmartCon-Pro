@@ -15,8 +15,12 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="FamilyName">Revit system family of the type (Issue #183) —
 /// collected so stale detection can match by (family, name) instead of
 /// name alone; <c>null</c> when the type reports no family name.</param>
+/// <param name="FamilyKey">Locale-invariant family identity (Issue #190,
+/// ADR-064) — always computed for system types; preferred over
+/// <paramref name="FamilyName"/> for matching.</param>
 public sealed record SystemTypeLocation(
     string TypeName,
     int CategoryOrdinal,
     ElementId TypeId,
-    string? FamilyName = null);
+    string? FamilyName = null,
+    string? FamilyKey = null);

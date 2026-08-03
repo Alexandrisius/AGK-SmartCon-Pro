@@ -33,7 +33,8 @@ public interface ISystemTypeSyncOrchestrator
         string catalogItemId,
         string typeName,
         int targetRevitVersion,
-        string? familyName = null);
+        string? familyName = null,
+        string? familyKey = null);
 
     /// <summary>
     /// Synchronize the given types of a system catalog item into the active

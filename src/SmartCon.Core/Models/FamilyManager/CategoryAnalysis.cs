@@ -22,8 +22,11 @@ public sealed record CategoryAnalysis(
 /// FamilyName — системная семья типа (Issue #183): идентичность типа —
 /// (FamilyName, Name), иначе «Стандарт» из «Conduit without Fittings»
 /// неотличим от «Conduit with Fittings». null для legacy-заполнителей.
+/// FamilyKey — locale-invariant идентичность семьи (Issue #190, ADR-064),
+/// предпочтительнее FamilyName при матчинге.
 /// </summary>
 public sealed record SystemTypeInfo(
     string Name,
     string UniqueId,
-    string? FamilyName = null);
+    string? FamilyName = null,
+    string? FamilyKey = null);

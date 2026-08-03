@@ -244,7 +244,58 @@ public static class SystemTypeStaleLogic
 ```csharp
 public sealed record SystemTypeRef(
     string Name,
-    string? FamilyName = null);
+    string? FamilyName = null,
+    string? FamilyKey = null);
+```
+
+Issue #190 (ADR-064): `FamilyKey` — locale-invariant идентичность семьи
+(`family_types.family_key`, схема V27); при наличии предпочтительнее
+локализованного `FamilyName`.
+
+---
+
+## SystemTypeIdentityKey
+
+Канонический identity-ключ системного типа — `"TOKEN|NAME"` (upper-invariant):
+TOKEN = `family_key`, если есть, иначе локализованный `family_name`, иначе
+пусто (legacy pre-V26). Единственное определение формата ключа (Issue #190/#191,
+ADR-064) — используется stale-детектором, репозиторием типов (карта результатов
+`SyncTypesAsync`), атрибутным пайплайном (`FamilyDataImportService`) и деревом,
+чтобы все слои строили ОДИН ключ для ОДНОГО дескриптора.
+
+**Файл:** `SystemTypeIdentityKey.cs`
+
+```csharp
+public static class SystemTypeIdentityKey
+{
+    public static string Build(string? familyKey, string? familyName, string typeName);
+}
+```
+
+---
+
+## SystemFamilyKeys
+
+Locale-invariant токены системных семей (Issue #190, ADR-064) — значения
+`family_types.family_key`. Вычисляются `SystemFamilyKeyResolver` (SmartCon.Revit)
+из per-category discriminator'ов: `IsWithFitting` (Conduit/CableTray),
+`WallType.Kind`, `StairsType.ConstructionMethod`; для односемейных категорий —
+`SingleFamily` (`"Single"`). Константы в Core, чтобы FamilyManager сравнивал
+ключи без ссылок на Revit API (I-09).
+
+**Файл:** `SystemFamilyKeys.cs`
+
+```csharp
+public static class SystemFamilyKeys
+{
+    public const string SingleFamily = "Single";
+    public const string ConduitWithFittings = "Conduit.WithFittings";
+    public const string ConduitWithoutFittings = "Conduit.WithoutFittings";
+    public const string CableTrayWithFittings = "CableTray.WithFittings";
+    public const string CableTrayWithoutFittings = "CableTray.WithoutFittings";
+    public const string WallBasic = "Wall.Basic";   // + WallCurtain, WallStacked, WallUnknown
+    public const string StairsAssembled = "Stairs.Assembled";  // + StairsCastInPlace, StairsPrecast
+}
 ```
 
 ---

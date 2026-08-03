@@ -16,6 +16,8 @@ public interface ISystemFamilyPlacementService
     /// <param name="familyName">Issue #183: Revit system family of the type —
     /// the sync and the placement lookup are restricted to it; null keeps
     /// the legacy first-name-match behaviour.</param>
+    /// <param name="familyKey">Issue #190 (ADR-064): locale-invariant family
+    /// key — preferred over <paramref name="familyName"/> when present.</param>
     SystemPlacementResult LoadAndPlaceSystemType(
-        string catalogItemId, string typeName, int targetRevitVersion, string? familyName = null);
+        string catalogItemId, string typeName, int targetRevitVersion, string? familyName = null, string? familyKey = null);
 }

@@ -147,6 +147,7 @@ internal static class FamilyCatalogSql
             extraction_run_id TEXT,
             type_unique_id TEXT,
             family_name TEXT NOT NULL DEFAULT '',
+            family_key TEXT NOT NULL DEFAULT '',
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
             FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
@@ -955,5 +956,20 @@ internal static class FamilyCatalogSql
         CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
         ON family_types (catalog_item_id, family_name, type_name)
         WHERE version_id IS NULL
+        """;
+
+    /// <summary>
+    /// V27 (#190, ADR-064): adds <c>family_key TEXT NOT NULL DEFAULT ''</c>
+    /// to <c>family_types</c> — the locale-invariant system family identity
+    /// (<c>SystemFamilyKeys</c>: IsWithFitting / WallType.Kind /
+    /// StairsType.ConstructionMethod discriminators). The UNIQUE identity is
+    /// unchanged: within one locale family_name already separates families;
+    /// family_key exists so MIXED-locale teams match by a stable token.
+    /// Plain ADD COLUMN (no recreate) — the key is metadata + matcher input,
+    /// not a constraint member. '' (never NULL) mirrors the family_name
+    /// convention; the domain model maps '' → null.
+    /// </summary>
+    public const string MigrateV27AddFamilyKeyColumn = """
+        ALTER TABLE family_types ADD COLUMN family_key TEXT NOT NULL DEFAULT ''
         """;
 }

@@ -37,12 +37,17 @@ public sealed record SystemFamilySnapshot(
 /// (FamilyName, Name, category), never by name alone. SYNC-ONLY field —
 /// NOT part of the content hash (FHV4 candidate, Issue #179). Nullable
 /// for backward compatibility with pre-#183 snapshot producers.</param>
+/// <param name="FamilyKey">Locale-invariant family identity (Issue #190,
+/// ADR-064) — one of <see cref="SystemFamilyKeys"/>. Preferred over
+/// <paramref name="FamilyName"/> for sync/stale matching when present.
+/// SYNC-ONLY field — NOT part of the content hash.</param>
 public sealed record SystemTypeSnapshot(
     string Name,
     IReadOnlyList<SystemParameterValue> Values,
     CompoundStructureSnapshot? Structure = null,
     RoutingPreferencesSnapshot? Routing = null,
-    string? FamilyName = null);
+    string? FamilyName = null,
+    string? FamilyKey = null);
 
 /// <summary>
 /// One parameter value on one system-family type. Same semantics as

@@ -1225,7 +1225,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             // #183: the system family is the identity key of the sync
             // (FamilyName + Name, never name alone). Sync-only — NOT part
             // of the content hash (FHV4 candidate, #179).
-            FamilyName: elementType.FamilyName);
+            FamilyName: elementType.FamilyName,
+            // #190 (ADR-064): locale-invariant family identity — the primary
+            // matcher on mixed-locale teams. Sync-only, not hashed.
+            FamilyKey: SystemFamilyKeyResolver.Resolve(elementType));
     }
 
     /// <summary>

@@ -298,13 +298,17 @@ public sealed record FamilySourceTypeInfo(
     string UniqueId,
     string Name,
     string CategoryName,
-    int CategoryId);
+    int CategoryId,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 ```
 
 - `UniqueId` — Revit unique id элемента типа. Extractor в managed `.rvt` ищет этот id.
 - `Name` — отображаемое имя типа.
 - `CategoryName` — отображаемое имя родительской категории (например `"OST_PipeFitting"`).
 - `CategoryId` — ordinal `BuiltInCategory`, переданный через границу FamilyManager→Core как plain `int`. Orchestrator и extractor никогда не видят enum напрямую.
+- `FamilyName` — системная семья типа (Issue #183) → `family_types.family_name`.
+- `FamilyKey` — locale-invariant идентичность семьи (Issue #190, ADR-064) → `family_types.family_key` (схема V27).
 
 Маппинг `SelectedSystemType → FamilySourceTypeInfo` выполняется на границе VM→Core в `FamilyManagerMainViewModel.Import.cs` (UC-3/UC-4 batch flow). В обратную сторону маппинг не нужен — extractor читает типы из managed `.rvt` по `UniqueId`/`Name`, ordinal ему не нужен.
 
@@ -325,7 +329,9 @@ public abstract record FamilyImportSource
         string DisplayName,
         int CategoryId,
         IReadOnlyList<string> TypeUniqueIds,
-        IReadOnlyList<string> TypeNames) : FamilyImportSource;
+        IReadOnlyList<string> TypeNames,
+        IReadOnlyList<string?>? TypeFamilyNames = null,
+        IReadOnlyList<string?>? TypeFamilyKeys = null) : FamilyImportSource;
 
     public sealed record LoadableSource(
         string FamilyName,

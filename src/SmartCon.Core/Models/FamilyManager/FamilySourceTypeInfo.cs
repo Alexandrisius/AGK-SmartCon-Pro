@@ -23,9 +23,12 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="FamilyName">Revit system family of the type (Issue #183) —
 /// persisted into <c>family_types.family_name</c> so the sync can match
 /// types by (family, name); null for legacy producers.</param>
+/// <param name="FamilyKey">Locale-invariant family identity (Issue #190,
+/// ADR-064) — persisted into <c>family_types.family_key</c> (V27).</param>
 public sealed record FamilySourceTypeInfo(
     string UniqueId,
     string Name,
     string CategoryName,
     int CategoryId,
-    string? FamilyName = null);
+    string? FamilyName = null,
+    string? FamilyKey = null);

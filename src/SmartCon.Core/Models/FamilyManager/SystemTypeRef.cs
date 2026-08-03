@@ -9,6 +9,10 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="FamilyName">Revit system family of the type, or
 /// <c>null</c> for legacy callers (first name match wins — the pre-#183
 /// behaviour).</param>
+/// <param name="FamilyKey">Locale-invariant family identity (Issue #190,
+/// ADR-064); preferred over <paramref name="FamilyName"/> for matching
+/// when present.</param>
 public sealed record SystemTypeRef(
     string Name,
-    string? FamilyName = null);
+    string? FamilyName = null,
+    string? FamilyKey = null);

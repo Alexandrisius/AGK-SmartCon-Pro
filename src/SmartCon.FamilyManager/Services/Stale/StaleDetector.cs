@@ -358,7 +358,7 @@ internal sealed class StaleDetector : IStaleDetector
             ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
 
-        var typesByCategoryAndName = new Dictionary<(int Category, string Name), List<(string? Family, ElementId Id)>>();
+        var typesByCategoryAndName = new Dictionary<(int Category, string Name), List<(string? FamilyKey, string? Family, ElementId Id)>>();
         foreach (var location in projectTypes)
         {
             // Names are matched case-insensitively (same semantics as
@@ -368,13 +368,16 @@ internal sealed class StaleDetector : IStaleDetector
             // "Стандарт" exists in both conduit families; the descriptor's
             // family disambiguates (legacy null family → first candidate,
             // the pre-#183 behaviour).
+            // #190 (ADR-064): each candidate carries the locale-invariant
+            // key AND the localized name — descriptors with a key match by
+            // key, legacy descriptors fall back to the name.
             var key = (location.CategoryOrdinal, location.TypeName.ToUpperInvariant());
             if (!typesByCategoryAndName.TryGetValue(key, out var candidates))
             {
-                candidates = new List<(string?, ElementId)>();
+                candidates = new List<(string?, string?, ElementId)>();
                 typesByCategoryAndName[key] = candidates;
             }
-            candidates.Add((location.FamilyName, location.TypeId));
+            candidates.Add((location.FamilyKey, location.FamilyName, location.TypeId));
         }
 
         var matched = new List<(FamilyCatalogItem Item, List<ElementId> TypeIds)>();
@@ -397,13 +400,18 @@ internal sealed class StaleDetector : IStaleDetector
                     continue;
                 }
 
-                if (descriptor.FamilyName is not null)
+                if (descriptor.FamilyKey is not null || descriptor.FamilyName is not null)
                 {
-                    // Exact identity match (family, name) — never read the
-                    // marker of a foreign family's type.
-                    foreach (var (family, id) in candidates)
+                    // Exact identity match — never read the marker of a
+                    // foreign family's type. #190 (ADR-064): key first
+                    // (locale-invariant), legacy descriptors (pre-V27 rows
+                    // have no key) match by the localized family name.
+                    foreach (var (familyKey, family, id) in candidates)
                     {
-                        if (string.Equals(family, descriptor.FamilyName, StringComparison.OrdinalIgnoreCase))
+                        var isMatch = descriptor.FamilyKey is not null
+                            ? string.Equals(familyKey, descriptor.FamilyKey, StringComparison.OrdinalIgnoreCase)
+                            : string.Equals(family, descriptor.FamilyName, StringComparison.OrdinalIgnoreCase);
+                        if (isMatch)
                         {
                             ids.Add(id);
                             matchedByDescriptor.Add((item, descriptor, id));
@@ -466,7 +474,7 @@ internal sealed class StaleDetector : IStaleDetector
                         ? StaleReason.NoEntityStorage
                         : SystemTypeStaleLogic.ComputeReason(
                             marker, item.Id, item.CurrentVersionLabel, targetRevit);
-                    typeMap[BuildSystemTypeKey(descriptor.FamilyName, descriptor.Name)] = reason != StaleReason.None;
+                    typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = reason != StaleReason.None;
                 }
                 _systemTypeStaleByType[group.Key] = typeMap;
             }
@@ -525,7 +533,7 @@ internal sealed class StaleDetector : IStaleDetector
                 foreach (var descriptor in descriptors)
                 {
                     var id = _systemTypeFinder.FindTypeByName(
-                        doc, descriptor.Name, categoryOrdinal, descriptor.FamilyName);
+                        doc, descriptor.Name, categoryOrdinal, descriptor.FamilyName, descriptor.FamilyKey);
                     if (id is not null && !pairs.Any(p => p.TypeId == id))
                     {
                         pairs.Add((descriptor, id));
@@ -562,7 +570,7 @@ internal sealed class StaleDetector : IStaleDetector
                 ? StaleReason.NoEntityStorage
                 : SystemTypeStaleLogic.ComputeReason(
                     marker, catalogItemId, catalogItem.CurrentVersionLabel, targetRevit);
-            typeMap[BuildSystemTypeKey(descriptor.FamilyName, descriptor.Name)] = typeReason != StaleReason.None;
+            typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = typeReason != StaleReason.None;
         }
         lock (_cacheLock)
         {
@@ -709,10 +717,16 @@ internal sealed class StaleDetector : IStaleDetector
         }
     }
 
-    /// <summary>#187: type key shared with the tree —
-    /// "FAMILY|NAME" (upper-invariant), "|NAME" for legacy rows without family.</summary>
-    internal static string BuildSystemTypeKey(string? familyName, string typeName)
-        => $"{(familyName ?? string.Empty).ToUpperInvariant()}|{typeName.ToUpperInvariant()}";
+    /// <summary>
+    /// #187: type key shared with the tree — "FAMILY|NAME" (upper-invariant),
+    /// "|NAME" for legacy rows without family.
+    /// #190 (ADR-064): the locale-invariant family_key is preferred over the
+    /// localized family_name — both the map builder (descriptor side) and the
+    /// tree lookup (node side) resolve the same effective token because the
+    /// node is built from the same descriptor.
+    /// </summary>
+    internal static string BuildSystemTypeKey(string? familyKey, string? familyName, string typeName)
+        => SystemTypeIdentityKey.Build(familyKey, familyName, typeName);
 
     private int ResolveTargetRevit()
     {

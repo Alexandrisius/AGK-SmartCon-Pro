@@ -80,7 +80,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                     dragData.CatalogItemId,
                     dragData.TypeName,
                     dragData.TargetRevitVersion,
-                    dragData.SystemFamilyName);
+                    dragData.SystemFamilyName,
+                    dragData.SystemFamilyKey);
 
                 if (result != Core.Models.FamilyManager.SystemPlacementResult.Failed)
                 {
