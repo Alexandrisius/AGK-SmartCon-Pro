@@ -19,7 +19,7 @@ The user (a senior MEP engineer) asked: *"у нас в модели могут �
 
 ## Revision History
 
-* **2026-07-31** — **Phase 2 implemented.** Все 14 системных категорий размещают
+* **2026-07-31** — **Phase 2 implemented.** Все 14 системных категорий (позже +#197/#199 → 16) размещают
   инстансы в staged мини-проекте (см. §"Phase 2 — implemented" ниже, заменяет
   прежний §"Phase 2 TODO"). Ключевые решения: handler'ы сами управляют
   транзакциями (StairsEditScope нельзя внутри активной транзакции); версионный
@@ -183,6 +183,8 @@ the reference is visually inspectable and the snapshot extractor reads types fro
 | `OST_StairsRailing` | `Railing.Create(CurveLoop)` | **R25+ only** → version gate |
 | `OST_PipeInsulations` | programmatic host `Pipe` + `PipeInsulation.Create` | All |
 | `OST_DuctInsulations` | programmatic host `Duct` + `DuctInsulation.Create` | All |
+| `OST_DuctLinings` (#197) | programmatic host `Duct` + `DuctLining.Create` | All |
+| `OST_Wire` (#199) | `Wire.Create(WiringType.Chamfer, …)` + plan view (`ViewPlan.Create` fallback) | All |
 
 > **Railing category correction (Issue #182, 2026-08-03):** railing instances and
 > `RailingType` live in **`OST_StairsRailing`**, not `OST_Railings` (Tammik,
@@ -197,15 +199,20 @@ the reference is visually inspectable and the snapshot extractor reads types fro
 |---|---|
 | 2019–2021 | `OST_Ceilings` (needs 2022+), `OST_StairsRailing` (needs 2025+) |
 | 2022–2024 | `OST_StairsRailing` (needs 2025+) |
-| 2025+ | none — all 14 categories |
+| 2025+ | none — all 16 categories |
 
 ### Not supported (tracked as follow-up issues)
 
+> **Product decision (2026-08-03):** неподдерживаемая категория скрывается
+> ЦЕЛИКОМ — не предлагается в пикере и не попадает в batch-диалог (источник
+> правды: `SystemCategoryRegistry.Entries` + `SystemCategoryPlacementAvailability`).
+> Type-only режимов и per-category исключений НЕ делаем — категория
+> активируется только когда её можно поддержать end-to-end. Причина
+> фиксируется комментарием в коде со ссылкой на эту таблицу и issue.
+
 | Category | Issue | Reason |
 |---|---|---|
-| `OST_Ramps` (пандусы) | #198 | no public `Ramp.Create` API — type-only import candidate |
-| `OST_Wire` (провода) | #199 | `Wire.Create` requires a plan view id — needs view handling in staging |
-| `OST_DuctLinings` (внутр. изоляция) | #197 | not yet registered; host-required like `DuctInsulation` |
+| `OST_Ramps` (пандусы) | #198 | no public `Ramp.Create` API (verified revitapidocs 2021–2026) — waiting for Revit API; hidden entirely per the product decision above (NO type-only fallback) |
 | `OST_CurtainWallPanels` (панель витража) | #196 | non-editable family — исключена из loadable-импорта сканером (`Family.IsEditable == false`); системный путь (типы панелей) — возможный follow-up |
 
 ### Decisions (Phase 2)

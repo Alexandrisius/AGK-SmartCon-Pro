@@ -1,6 +1,7 @@
 using System.Reflection;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
+using Autodesk.Revit.DB.Electrical;
 using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Logging;
@@ -15,7 +16,7 @@ namespace SmartCon.Revit.FamilyManager;
 /// в staged мини-проекте (ADR-027, Phase 1 + Phase 2).
 /// Содержит ОДНО место для добавления/удаления категорий.
 ///
-/// Все 14 категорий размещают инстансы. Версионная доступность задаётся
+/// Все 16 категорий размещают инстансы. Версионная доступность задаётся
 /// <see cref="SystemCategoryPlacementAvailability"/> (Core, единый источник
 /// правды): потолки — Revit 2022+ (<c>Ceiling.Create</c>), ограждения —
 /// Revit 2025+ (<c>Railing.Create</c> по <c>CurveLoop</c>). На версиях ниже
@@ -89,6 +90,16 @@ public static class SystemCategoryRegistry
 
     private static IReadOnlyList<Entry> BuildEntries()
     {
+        // Unsupported categories — hidden ENTIRELY (never in this registry,
+        // never in the picker, never in the batch dialog). Product decision
+        // 2026-08-03 (ADR-027 §"Not supported"): no type-only fallbacks, no
+        // per-category exceptions — a category is added only when it can be
+        // supported end-to-end. Waiting for API:
+        //   - OST_Ramps — no public Ramp.Create (verified revitapidocs
+        //     2021-2026). Issue #198.
+        //   - OST_CurtainWallPanels — panels are non-editable families
+        //     (Family.IsEditable == false); excluded from the loadable
+        //     scanner (#196). A system path needs a curtain-wall host.
         return new List<Entry>
         {
             new(BuiltInCategory.OST_PipeCurves,      "Трубы",        PlacePipe),
@@ -109,6 +120,14 @@ public static class SystemCategoryRegistry
             new(BuiltInCategory.OST_StairsRailing, "Ограждения",   PlaceRailing),
             new(BuiltInCategory.OST_PipeInsulations, "Материалы изоляции трубопроводов", PlacePipeInsulation),
             new(BuiltInCategory.OST_DuctInsulations, "Материалы изоляции воздуховодов", PlaceDuctInsulation),
+            // #197: lining (внутренняя изоляция) — host-required как и
+            // наружная изоляция; DuctLining : InsulationLiningBase, поэтому
+            // InsulationHostFilter покрывает lining-хосты автоматически.
+            new(BuiltInCategory.OST_DuctLinings, "Материалы футеровки воздуховодов", PlaceDuctLining),
+            // #199: Wire.Create (Since 2015) требует viewId плана этажа/RCP —
+            // handler переиспользует существующий план уровня или создаёт
+            // его (ViewPlan.Create).
+            new(BuiltInCategory.OST_Wire,          "Провода",      PlaceWire),
         };
     }
 
@@ -583,5 +602,78 @@ public static class SystemCategoryRegistry
             return null;
         }
         return created;
+    }
+
+    /// <summary>
+    /// Футеровка воздуховода (#197). <c>DuctLining.Create</c> требует host
+    /// (воздуховод/фитинг/аксессуар) — как и у наружной изоляции, в той же
+    /// транзакции размещается метровый воздуховод первого шаблонного типа.
+    /// </summary>
+    private static Element? PlaceDuctLining(Document doc, ITransactionService txService, Element type, Level level, XYZ start, XYZ end)
+    {
+        if (type is not DuctLiningType liningType) return null;
+        Element? created = null;
+        if (!txService.RunInTransaction(doc, "Place duct lining", d =>
+        {
+            var sysType = new FilteredElementCollector(d)
+                .OfClass(typeof(MechanicalSystemType))
+                .Cast<MechanicalSystemType>()
+                .First();
+            var ductType = new FilteredElementCollector(d)
+                .OfClass(typeof(DuctType))
+                .Cast<DuctType>()
+                .First();
+            var duct = Duct.Create(d, sysType.Id, ductType.Id, level.Id, start, end);
+            var thicknessFt = RevitUnitsCompat.MetersToInternal(0.025);
+            created = DuctLining.Create(d, duct.Id, liningType.Id, thicknessFt);
+        }))
+        {
+            return null;
+        }
+        return created;
+    }
+
+    /// <summary>
+    /// Провод (#199). <c>Wire.Create</c> (Since 2015) требует id вида —
+    /// только план этажа или RCP. В мини-проекте плана может не быть →
+    /// переиспользуем существующий план уровня или создаём
+    /// (<c>ViewPlan.Create</c> по ViewFamilyType с ViewFamily.FloorPlan).
+    /// <c>WiringType.Chamfer</c> — полилиния через все вершины; коннекторы
+    /// null (свободный провод).
+    /// </summary>
+    private static Element? PlaceWire(Document doc, ITransactionService txService, Element type, Level level, XYZ start, XYZ end)
+    {
+        if (type is not WireType wireType) return null;
+        Element? created = null;
+        if (!txService.RunInTransaction(doc, "Place wire", d =>
+        {
+            var view = FindOrCreateFloorPlanView(d, level);
+            if (view is null) return;
+            created = Wire.Create(d, wireType.Id, view.Id, WiringType.Chamfer,
+                new List<XYZ> { start, end }, null, null);
+        }))
+        {
+            return null;
+        }
+        return created;
+    }
+
+    /// <summary>Существующий план этажа уровня, иначе новый (null — нет FloorPlan ViewFamilyType).</summary>
+    private static ViewPlan? FindOrCreateFloorPlanView(Document doc, Level level)
+    {
+        var existing = new FilteredElementCollector(doc)
+            .OfClass(typeof(ViewPlan))
+            .Cast<ViewPlan>()
+            .FirstOrDefault(v => !v.IsTemplate
+                && v.ViewType == ViewType.FloorPlan
+                && v.GenLevel is not null
+                && v.GenLevel.Id == level.Id);
+        if (existing is not null) return existing;
+
+        var viewFamilyType = new FilteredElementCollector(doc)
+            .OfClass(typeof(ViewFamilyType))
+            .Cast<ViewFamilyType>()
+            .FirstOrDefault(v => v.ViewFamily == ViewFamily.FloorPlan);
+        return viewFamilyType is null ? null : ViewPlan.Create(doc, viewFamilyType.Id, level.Id);
     }
 }

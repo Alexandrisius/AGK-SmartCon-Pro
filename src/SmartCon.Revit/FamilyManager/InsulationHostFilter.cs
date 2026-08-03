@@ -6,7 +6,9 @@ namespace SmartCon.Revit.FamilyManager;
 /// Issue #181: shared insulation-host filter. Pipe/duct instances (including
 /// flex) carrying insulation exist ONLY as hosts — the insulation type cannot
 /// materialize without one (CF-4720) — so they are Revit API artifacts, not
-/// standalone content. Used by <c>SystemFamilyRevitOperations</c> (import
+/// standalone content. #197: the same applies to duct LINING hosts
+/// (DuctLining : InsulationLiningBase — covered automatically).
+/// Used by <c>SystemFamilyRevitOperations</c> (import
 /// analysis + picker) and <c>RevitFamilyMigrationExtractor</c> (staged
 /// mini-project category detection — a host pipe must not make an insulation
 /// mini-project detect as "Трубы").
