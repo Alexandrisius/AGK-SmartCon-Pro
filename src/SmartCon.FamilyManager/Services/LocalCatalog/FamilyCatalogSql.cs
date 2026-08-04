@@ -59,6 +59,7 @@ internal static class FamilyCatalogSql
             content_hash TEXT,
             hash_format_version INTEGER,
             glb_state INTEGER,
+            es_marker_version INTEGER NOT NULL DEFAULT 0,
             published_at_utc TEXT NOT NULL,
             published_by TEXT,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
@@ -971,5 +972,18 @@ internal static class FamilyCatalogSql
     /// </summary>
     public const string MigrateV27AddFamilyKeyColumn = """
         ALTER TABLE family_types ADD COLUMN family_key TEXT NOT NULL DEFAULT ''
+        """;
+
+    /// <summary>
+    /// V28 (#189): adds <c>es_marker_version INTEGER NOT NULL DEFAULT 0</c>
+    /// to <c>catalog_versions</c> — the SQL-visible state of the mini-project
+    /// ES marker (#188) per staged version row: 0 = pending (the actualization
+    /// task <c>mini-project-marker-v1</c> must write the marker into the
+    /// managed .rvt), 1 = marked, -1/-2 = terminal (unreadable / missing —
+    /// ADR-050 convention shared with the hash task). Plain ADD COLUMN with a
+    /// safe default: existing staged versions become pending exactly once.
+    /// </summary>
+    public const string MigrateV28AddEsMarkerVersionColumn = """
+        ALTER TABLE catalog_versions ADD COLUMN es_marker_version INTEGER NOT NULL DEFAULT 0
         """;
 }

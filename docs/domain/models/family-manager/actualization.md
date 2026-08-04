@@ -120,6 +120,32 @@ public enum ActualizationFailureKind
 
 ---
 
+## MiniProjectMarkFileOutcome
+
+Результат дозаписи ES-маркера мини-проекта в один staged .rvt (Issue #189,
+задача `mini-project-marker-v1`) — первой операции движка, изменяющей
+MANAGED-ФАЙЛ, а не БД. Задача маппит статус на маркер колонки V28
+`es_marker_version` (Marked/AlreadyMarked → 1, Missing → -2, Failed → -1).
+
+**Файл:** `Models/FamilyManager/MiniProjectMarkFileOutcome.cs`
+
+```csharp
+public sealed record MiniProjectMarkFileOutcome(
+    MiniProjectMarkFileStatus Status,
+    int BackupsDeleted,       // удалённые бэкапы Revit name.NNNN.rvt
+    string? ErrorMessage = null);
+
+public enum MiniProjectMarkFileStatus
+{
+    Marked = 0,         // маркер записан, файл сохранён на месте
+    AlreadyMarked = 1,  // валидный маркер уже был — перезапись пропущена (идемпотентность)
+    Missing = 2,        // managed-файл отсутствует (терминально, -2)
+    Failed = 3,         // open/mark/save упал (терминально, -1)
+}
+```
+
+---
+
 ## HashRecalculationMissingFile
 
 Версия каталога, чей managed-файл не найден на диске при миграции (Issue #126). Показывается на summary-экране; пользователь решает — удалить записи из каталога или оставить (файл может быть на временно недоступном диске).

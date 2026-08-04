@@ -84,6 +84,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunRebuildMigrationAsync(connection, 26, MigrateV26Async, ct);
         // V27 is a plain ADD COLUMN — no rebuild needed.
         await RunMigrationAsync(connection, 27, MigrateV27Async, ct);
+        await RunMigrationAsync(connection, 28, MigrateV28Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1217,6 +1218,48 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    private static async Task MigrateV28Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 28) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var columnAdded = false;
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "es_marker_version", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV28AddEsMarkerVersionColumn;
+                await cmd.ExecuteNonQueryAsync(ct);
+                columnAdded = true;
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '28' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            if (columnAdded)
+            {
+                SmartConLogger.Info(
+                    "Migration v28: added es_marker_version to catalog_versions — " +
+                    "existing staged versions become pending for mini-project-marker-v1 (#189)");
+            }
+            else
+            {
+                SmartConLogger.Debug("Migration v28: es_marker_version already present (fresh schema) — version bumped to 28");
+            }
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1346,6 +1389,13 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = FamilyCatalogSql.MigrateV27AddFamilyKeyColumn;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_versions", "es_marker_version", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV28AddEsMarkerVersionColumn;
             await cmd.ExecuteNonQueryAsync(ct);
         }
 

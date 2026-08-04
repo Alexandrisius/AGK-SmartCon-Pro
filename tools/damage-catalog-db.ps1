@@ -22,9 +22,12 @@
       C  -Glb         удаляет auto-extracted Model3D assets активного label
       D  -Hash        content_hash=NULL, hash_format_version=NULL (versions + items)
       E  -Counters    types_count/parameters_count=NULL
+      F  -MiniProjectMarker  es_marker_version=0 для ВСЕХ system-версий (#189) —
+                      задача mini-project-marker-v1 становится pending
 
     Если ни один флаг не указан — применяются ВСЕ повреждения.
-    Scope: только loadable, только АКТИВНАЯ версия — ровно scope миграции.
+    Scope: только loadable, только АКТИВНАЯ версия — ровно scope миграции
+    (режим F — единственный, кто трогает system-версии).
 
     КАК ПОЛЬЗОВАТЬСЯ (пошагово)
     ---------------------------
@@ -64,7 +67,8 @@
     ОГРАНИЧЕНИЯ
     -----------
     - НЕ запускай на БД, к которой сейчас подключён Revit.
-    - System-семейства скрипт не трогает (миграция их тоже не обслуживает).
+    - Loadable-режимы (A-E) system-семейства не трогают; -MiniProjectMarker
+      наоборот сбрасывает es_marker_version только у system-версий (#189).
     - Терминальные маркеры хэша (-1/-2) скрипт не выставляет — миграция их
       уважает и не ретраит (это семантика hash-v3, не backfill).
 
@@ -86,14 +90,16 @@ param(
     [switch]$Glb,
     [switch]$Hash,
     [switch]$Counters,
+    [switch]$MiniProjectMarker,
     [switch]$WhatIf
 )
 
 $ErrorActionPreference = 'Stop'
 
 # Если флаги не указаны — ломаем всё.
-$all = -not ($Attributes -or $BreakUnits -or $ReadError -or $Glb -or $Hash -or $Counters)
-if ($all) { $Attributes = $BreakUnits = $ReadError = $Glb = $Hash = $Counters = $true }
+$all = -not ($Attributes -or $BreakUnits -or $ReadError -or $Glb -or $Hash -or $Counters -or $MiniProjectMarker)
+if ($all) { $Attributes = $BreakUnits = $ReadError = $Glb = $Hash = $Counters = $MiniProjectMarker = $true }
+$damageLoadable = $Attributes -or $BreakUnits -or $ReadError -or $Glb -or $Hash -or $Counters
 
 $bin = "D:\Project\dotNET\AGK-SmartCon-Pro\src\SmartCon.Tests\bin\Debug.R25\net8.0-windows"
 $native = Join-Path $bin "runtimes\win-x64\native"
@@ -115,7 +121,9 @@ try {
     [void]($conn.CreateCommand() | ForEach-Object { $_.CommandText = "PRAGMA foreign_keys = ON"; $_.ExecuteNonQuery() })
 
     # --- Кандидаты: loadable айтемы, АКТИВНАЯ версия (scope миграции) ---
-    $sel = $conn.CreateCommand()
+    $byItem = @()
+    if ($damageLoadable) {
+        $sel = $conn.CreateCommand()
     $sel.CommandText = @"
         SELECT ci.id, ci.name, cv.id, cv.version_label, cv.revit_major_version
         FROM catalog_items ci
@@ -136,12 +144,13 @@ try {
     }
     $reader.Close()
 
-    # Группируем варианты одного label: ломаем по айтему (все варианты активного label).
-    $byItem = $candidates | Group-Object ItemId
-    if ($Limit -gt 0) { $byItem = $byItem | Select-Object -First $Limit }
-    if ($byItem.Count -eq 0) { throw "No loadable items matched pattern '$ItemNamePattern'" }
+        # Группируем варианты одного label: ломаем по айтему (все варианты активного label).
+        $byItem = @($candidates | Group-Object ItemId)
+        if ($Limit -gt 0) { $byItem = @($byItem | Select-Object -First $Limit) }
+        if ($byItem.Count -eq 0) { throw "No loadable items matched pattern '$ItemNamePattern'" }
+    }
 
-    Write-Host "=== Damaging $($byItem.Count) item(s)$(if ($WhatIf) { ' [WhatIf — no writes]' }) ==="
+    Write-Host "=== Damaging $(if ($damageLoadable) { $byItem.Count } else { 0 }) loadable item(s) + system marker reset$(if ($WhatIf) { ' [WhatIf — no writes]' }) ==="
 
     $tx = $null
     if (-not $WhatIf) { $tx = $conn.BeginTransaction() }
@@ -240,6 +249,21 @@ try {
             Write-Host ("  {0} ({1}, Revit {2}): {3}" -f $item.Name, $item.Label, $item.Revit, ($done -join '; '))
         }
 
+        if ($MiniProjectMarker) {
+            # #189: reset the V28 marker column for system versions — the
+            # mini-project-marker-v1 task must go pending (its ES check is
+            # inside the files; the SQL detection reads only this column).
+            $cmd = $conn.CreateCommand()
+            if ($tx) { $cmd.Transaction = $tx }
+            $cmd.CommandText = @"
+                UPDATE catalog_versions SET es_marker_version = 0
+                WHERE catalog_item_id IN (SELECT id FROM catalog_items WHERE family_source = 'system' AND name LIKE @p)
+"@
+            [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@p', $ItemNamePattern))
+            $n = if ($WhatIf) { 0 } else { $cmd.ExecuteNonQuery() }
+            Write-Host "  [system] F:es_marker_version reset ($n rows)"
+        }
+
         if ($tx) { $tx.Commit() }
     }
     catch {
@@ -282,6 +306,18 @@ try {
     Write-Host ""
     Write-Host "=== Expected backfill pending groups (Revit $RevitMajorVersion): $pending ==="
     Write-Host "В плагине: меню «Инструменты базы» → «Обновить базу» должно показать то же число."
+
+    if ($MiniProjectMarker) {
+        $mk = $conn.CreateCommand()
+        $mk.CommandText = @"
+            SELECT COUNT(DISTINCT cv.catalog_item_id || '|' || cv.version_label)
+            FROM catalog_versions cv
+            JOIN catalog_items ci ON ci.id = cv.catalog_item_id
+            WHERE ci.family_source = 'system' AND cv.es_marker_version = 0
+"@
+        $mkPending = $mk.ExecuteScalar()
+        Write-Host "=== Expected mini-project-marker-v1 pending groups: $mkPending ==="
+    }
 }
 finally {
     $conn.Close()

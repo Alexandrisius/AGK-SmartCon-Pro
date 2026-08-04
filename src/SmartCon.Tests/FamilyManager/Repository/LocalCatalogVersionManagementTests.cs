@@ -24,14 +24,14 @@ public sealed class LocalCatalogV17MigrationTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     [Fact]
-    public async Task Migrate_FreshDb_SetsSchemaVersion27()
+    public async Task Migrate_FreshDb_SetsSchemaVersion28()
     {
         using var conn = _fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key = 'schema_version'";
         var result = await cmd.ExecuteScalarAsync();
-        Assert.Equal("27", result?.ToString());
+        Assert.Equal("28", result?.ToString());
     }
 
     [Fact]

@@ -380,3 +380,34 @@ public interface IMiniProjectMarker
     string? ReadCatalogItemId(Document doc);
 }
 ```
+
+---
+
+## IMiniProjectActualizationService
+
+Дозапись ES-маркера мини-проекта в существующий staged .rvt на диске
+(Issue #189, задача актуализации `mini-project-marker-v1`) — **первая
+операция движка актуализации, изменяющая MANAGED-ФАЙЛ**, а не БД каталога.
+Реализация маршалит на UI-поток Revit сама (`IFamilyManagerAwaitableEvent`),
+вызывающий код работает вне Revit-потока.
+
+Контракт: open → skip при валидном маркере (идемпотентность, AlreadyMarked) →
+снять read-only (I-16, engine-level exception) → `MarkAsMiniProject` →
+`Document.Save()` на месте (НЕ SaveAs — тот же путь/версия, иначе сломался бы
+`family_files.relative_path`) → удалить бэкапы Revit `name.NNNN.rvt` (в папке
+версии обязан остаться один .rvt) → вернуть read-only → `Close(false)`.
+
+Деталь совместимости: unWrap `UIApplication` вынесен в отдельный метод —
+статическая ссылка на RevitAPIUI в основном пути ломала бы JIT в DB-only
+хосте интеграционных тестов (Nice3point не может загрузить RevitAPIUI).
+
+**Файл:** `IMiniProjectActualizationService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitMiniProjectActualizationService.cs`
+
+```csharp
+public interface IMiniProjectActualizationService
+{
+    Task<MiniProjectMarkFileOutcome> MarkManagedFileAsync(
+        string absolutePath, string catalogItemId, CancellationToken ct = default);
+}
+```

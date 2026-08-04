@@ -240,6 +240,9 @@ public static class ServiceRegistrar
         // family .rvt files; consumed by the staging writer, the active-doc
         // notifier (auto-DB-switch guard) and the post-import close (#186).
         services.AddSingleton<IMiniProjectMarker, RevitMiniProjectMarker>();
+        // #189: marker backfill into legacy staged .rvt — the actualization
+        // operation that writes into managed files (own Revit marshalling).
+        services.AddSingleton<IMiniProjectActualizationService, RevitMiniProjectActualizationService>();
         services.AddSingleton<ISystemFamilyIsolationProjectService, SmartCon.FamilyManager.Services.SystemFamilyIsolationProjectAdapter>();
         services.AddSingleton<ISystemFamilyAttributeExtractor, SmartCon.FamilyManager.Services.SystemFamilyAttributeExtractor>();
         services.AddSingleton<ISystemFamilyImportOrchestrator, SmartCon.FamilyManager.Services.SystemFamilyImportOrchestrator>();
@@ -274,6 +277,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.GlbPreviewActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.RevitCategoryActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.FamilyFactsActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.MiniProjectMarkerActualizationTask>();
         services.AddSingleton<ICatalogActualizationService, SmartCon.FamilyManager.Services.Actualization.CatalogActualizationService>();
         services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 

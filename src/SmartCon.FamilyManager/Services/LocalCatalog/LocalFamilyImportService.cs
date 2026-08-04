@@ -221,7 +221,7 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 }
 
                 await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
-                    request.ContentHash, request.HashFormatVersion, request.PublishedBy).ConfigureAwait(false);
+                    request.ContentHash, request.HashFormatVersion, request.PublishedBy, request.FamilySource).ConfigureAwait(false);
 
                 if (existingItem is null && request.Tags is not null)
                 {

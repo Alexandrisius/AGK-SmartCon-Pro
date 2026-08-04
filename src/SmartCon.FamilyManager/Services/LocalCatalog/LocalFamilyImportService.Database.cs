@@ -244,12 +244,24 @@ internal sealed partial class LocalFamilyImportService
         FamilyMetadataExtractionResult metadata, int revitVersion,
         DateTimeOffset now, CancellationToken ct,
         string? contentHash = null, int? hashFormatVersion = null,
-        string? publishedBy = null)
+        string? publishedBy = null, string? familySource = null)
     {
         using var cmd = connection.CreateCommand();
+        // #189: staged system versions carry the mini-project ES marker from
+        // staging (#188) — register them as already marked so the
+        // mini-project-marker-v1 task only ever touches LEGACY files.
+        // The update path (FamilyUpdateRequest) does not carry the source —
+        // resolved from the owning item when not supplied.
+        if (familySource is null)
+        {
+            using var sourceCmd = connection.CreateCommand();
+            sourceCmd.CommandText = "SELECT family_source FROM catalog_items WHERE id = @itemId";
+            sourceCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            familySource = Convert.ToString(await sourceCmd.ExecuteScalarAsync(ct).ConfigureAwait(false));
+        }
         cmd.CommandText = """
-            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, types_count, parameters_count, content_hash, hash_format_version, published_at_utc, published_by)
-            VALUES (@id, @catalogItemId, @fileId, @versionLabel, @revitMajorVersion, @typesCount, @parametersCount, @contentHash, @hashFmt, @publishedAtUtc, @publishedBy)
+            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, types_count, parameters_count, content_hash, hash_format_version, es_marker_version, published_at_utc, published_by)
+            VALUES (@id, @catalogItemId, @fileId, @versionLabel, @revitMajorVersion, @typesCount, @parametersCount, @contentHash, @hashFmt, @esMarker, @publishedAtUtc, @publishedBy)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", versionId));
         cmd.Parameters.Add(new SqliteParameter("@catalogItemId", catalogItemId));
@@ -262,6 +274,7 @@ internal sealed partial class LocalFamilyImportService
             metadata.Parameters is not null ? (object)metadata.Parameters.Count : DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@esMarker", familySource == "system" ? 1 : 0));
         cmd.Parameters.Add(new SqliteParameter("@publishedAtUtc", now.ToString("o")));
         cmd.Parameters.Add(new SqliteParameter("@publishedBy", publishedBy ?? (object)DBNull.Value));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -279,15 +292,18 @@ internal sealed partial class LocalFamilyImportService
         DateTimeOffset now,
         string? contentHash, int? hashFormatVersion,
         string? publishedBy,
-        CancellationToken ct)
+        CancellationToken ct, string? familySource = null)
     {
         using var cmd = connection.CreateCommand();
+        // #189 (review m1): an overwrite re-stages the file WITH the marker —
+        // register it so a legacy 0/-1/-2 cell converges to the truth.
         cmd.CommandText = """
             UPDATE catalog_versions
             SET types_count = @typesCount,
                 parameters_count = @parametersCount,
                 content_hash = @contentHash,
                 hash_format_version = @hashFmt,
+                es_marker_version = CASE WHEN @esMarker IS NULL THEN es_marker_version ELSE @esMarker END,
                 published_at_utc = @publishedAtUtc,
                 published_by = @publishedBy
             WHERE id = @versionId
@@ -299,6 +315,8 @@ internal sealed partial class LocalFamilyImportService
             metadata.Parameters is not null ? (object)metadata.Parameters.Count : DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@contentHash", contentHash ?? (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@hashFmt", hashFormatVersion ?? (object)DBNull.Value));
+        cmd.Parameters.Add(new SqliteParameter("@esMarker",
+            familySource == "system" ? 1 : (object)DBNull.Value));
         cmd.Parameters.Add(new SqliteParameter("@publishedAtUtc", now.ToString("o")));
         cmd.Parameters.Add(new SqliteParameter("@publishedBy", publishedBy ?? (object)DBNull.Value));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -500,7 +518,7 @@ internal sealed partial class LocalFamilyImportService
             // content; id/version_label/revit_major_version stay the same
             // so FK references (family_types.version_id) remain valid.
             await UpdateVersionAsync(connection, currentVersion.Id, finalMetadata, now,
-                item.ContentHash, item.HashFormatVersion, item.PublishedByUser, ct);
+                item.ContentHash, item.HashFormatVersion, item.PublishedByUser, ct, item.FamilySource);
 
             tx.Commit();
 
