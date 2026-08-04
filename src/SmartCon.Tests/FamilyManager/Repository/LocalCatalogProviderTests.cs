@@ -154,6 +154,27 @@ public sealed class LocalCatalogProviderTests
     }
 
     [Fact]
+    public async Task GetItemAsync_WithTags_PreservesRevitCategoryId()
+    {
+        // Manual test 2026-08-04 (round 4): GetItemAsync rebuilt the record
+        // field-by-field like SearchAsync did before #187 — and dropped
+        // RevitCategoryId (+ Active/MinRevitMajorVersion). Every consumer
+        // resolving the category from GetItemAsync (sync orchestrator,
+        // placement, stale detector) silently fell back to an unscoped
+        // name match — the wire sync bound a settings object and wrote
+        // params + the ES marker to the wrong element.
+        using var fixture = await CreateAndMigrate();
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Стены", tags: new[] { "mep" });
+
+        var item = await fixture.GetProvider().GetItemAsync("sys1");
+
+        Assert.NotNull(item);
+        Assert.Equal(-2000011, item.RevitCategoryId);
+        Assert.Equal("system", item.FamilySource);
+        Assert.Contains("mep", item.Tags);
+    }
+
+    [Fact]
     public async Task FindByRevitCategoryIdAsync_Found_ReturnsItem()
     {
         using var fixture = await CreateAndMigrate();

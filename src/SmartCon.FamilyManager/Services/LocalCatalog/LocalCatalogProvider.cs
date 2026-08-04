@@ -253,32 +253,12 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             {
                 tagsMap.TryGetValue(items[i].Id, out var tags);
                 tags ??= [];
-                var old = items[i];
-                items[i] = new FamilyCatalogItem(
-                    old.Id,
-                    old.Name,
-                    old.NormalizedName,
-                    old.Description,
-                    old.CategoryPath,
-                    old.CategoryId,
-                    old.Manufacturer,
-                    old.ContentStatus,
-                    old.CurrentVersionLabel,
-                    tags,
-                    old.PublishedBy,
-                    old.CreatedAtUtc,
-                    old.UpdatedAtUtc,
-                    old.FamilySource,
-                    old.RevitCategory,
-                    old.ContentHash,
-                    old.HashFormatVersion,
-                    old.ActiveRevitMajorVersion,
-                    old.MinRevitMajorVersion,
-                    // #187: tags enrichment rebuilt the record WITHOUT this
-                    // field — SearchAsync always returned RevitCategoryId=null,
-                    // silently breaking presence badges AND the batch stale
-                    // check for system items (both filter on it).
-                    old.RevitCategoryId);
+                // #187: tags enrichment must never rebuild the record
+                // field-by-field — a rebuild dropped RevitCategoryId once
+                // (SearchAsync always returned null, silently breaking
+                // presence badges and the batch stale check). The `with`
+                // expression carries every field, present and future.
+                items[i] = items[i] with { Tags = tags };
             }
         }
 
@@ -299,24 +279,7 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
 
         var item = ReadCatalogItem(reader);
         var tags = await LoadTagsAsync(connection, id, ct).ConfigureAwait(false);
-        return new FamilyCatalogItem(
-            item.Id,
-            item.Name,
-            item.NormalizedName,
-            item.Description,
-            item.CategoryPath,
-            item.CategoryId,
-            item.Manufacturer,
-            item.ContentStatus,
-            item.CurrentVersionLabel,
-            tags,
-            item.PublishedBy,
-            item.CreatedAtUtc,
-            item.UpdatedAtUtc,
-            item.FamilySource,
-            item.RevitCategory,
-            item.ContentHash,
-            item.HashFormatVersion);
+        return item with { Tags = tags };
     }
 
     public async Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default)

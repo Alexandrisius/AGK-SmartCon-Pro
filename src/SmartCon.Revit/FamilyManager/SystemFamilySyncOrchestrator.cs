@@ -136,6 +136,9 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
             // settings objects like DistributionSysType share the name and
             // the degenerate 'Single' family key with the real WireType).
             var categoryOrdinal = ResolveCategoryOrdinal(catalogItemId);
+            SmartConLogger.Debug(
+                $"SyncTypes[{catalogItemId}]: reference lookups scoped to category " +
+                $"{categoryOrdinal?.ToString() ?? "<none — unscoped fallback>"}.");
             var results = new List<SystemTypeSyncResult>(types.Count);
             foreach (var type in types)
             {
