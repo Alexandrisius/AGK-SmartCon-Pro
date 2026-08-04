@@ -130,6 +130,12 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
 
         try
         {
+            // Manual test 2026-08-04 (round 3): resolve the category ONCE per
+            // batch and scope every reference lookup with it — an unscoped
+            // name match can bind an unrelated ElementType (electrical
+            // settings objects like DistributionSysType share the name and
+            // the degenerate 'Single' family key with the real WireType).
+            var categoryOrdinal = ResolveCategoryOrdinal(catalogItemId);
             var results = new List<SystemTypeSyncResult>(types.Count);
             foreach (var type in types)
             {
@@ -143,7 +149,8 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
                         resolved.VersionLabel ?? string.Empty,
                         targetRevitVersion,
                         type.FamilyName,
-                        type.FamilyKey));
+                        type.FamilyKey,
+                        categoryOrdinal));
                 }
                 catch (Exception ex)
                 {

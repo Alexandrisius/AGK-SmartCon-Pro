@@ -85,6 +85,76 @@ public sealed class WireSettingsSyncTests : RevitApiTest
         }
     }
 
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task Sync_WireType_SameNameDistributionSystemInSource_BindsRealWireType()
+    {
+        // Manual test 2026-08-04 (round 3): the source mini-project contains
+        // electrical settings ElementTypes (DistributionSysType etc.) sharing
+        // the name and the degenerate 'Single' family key with the real
+        // WireType. The category-scoped reference lookup must bind the
+        // WireType — an unscoped match synced the distribution system's
+        // parameters into the project instead.
+        var sourceDoc = Application.NewProjectDocument(UnitSystem.Metric);
+        var targetDoc = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var sourceTx = new RevitTransactionService(new StubRevitContext(sourceDoc));
+            var targetTx = new RevitTransactionService(new StubRevitContext(targetDoc));
+            var materialSync = new RevitMaterialSyncService();
+            var sync = new SystemTypeSyncService(
+                targetTx, new RevitFamilySnapshotExtractor(), new RevitSystemTypeFinder(), new SystemClock(),
+                materialSync, new RevitSegmentSyncService(materialSync), new NullFittingDependencyResolver(),
+                new RevitCompoundStructureSyncService(materialSync));
+
+            var seeded = false;
+            sourceTx.RunInTransaction(sourceDoc, "Seed shared-name source", d =>
+            {
+                var wireType = new FilteredElementCollector(d)
+                    .OfClass(typeof(WireType)).Cast<WireType>().FirstOrDefault();
+                var distributionSystem = new FilteredElementCollector(d)
+                    .OfClass(typeof(DistributionSysType)).Cast<DistributionSysType>().FirstOrDefault();
+                if (wireType is null || distributionSystem is null) return;
+
+                var sharedWire = (WireType)wireType.Duplicate("SC_Shared");
+                sharedWire.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_COMMENTS)
+                    ?.Set("real-wire");
+                distributionSystem.Duplicate("SC_Shared");
+                seeded = true;
+            });
+            if (!seeded)
+            {
+                Skip.Test("В шаблоне нет WireType/DistributionSysType — сидирование невозможно");
+                return;
+            }
+
+            var result = sync.SyncTypeFromSource(
+                sourceDoc, targetDoc, "SC_Shared", "item-wire", "v1",
+                int.Parse(Application.VersionNumber),
+                categoryOrdinal: (int)BuiltInCategory.OST_Wire);
+            await Assert.That(result.IsSuccess).IsTrue();
+
+            var finder = new RevitSystemTypeFinder();
+            var targetTypeId = finder.FindTypeByName(
+                targetDoc, "SC_Shared", (int)BuiltInCategory.OST_Wire);
+            await Assert.That(targetTypeId).IsNotNull();
+
+            var targetType = targetDoc.GetElement(targetTypeId!)!;
+            using (Assert.Multiple())
+            {
+                await Assert.That(targetType is WireType).IsTrue();
+                await Assert.That(
+                    targetType.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_COMMENTS)?.AsString())
+                    .IsEqualTo("real-wire");
+            }
+        }
+        finally
+        {
+            sourceDoc.Close(false);
+            targetDoc.Close(false);
+        }
+    }
+
     private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
     {
         public ElementId? EnsureFitting(

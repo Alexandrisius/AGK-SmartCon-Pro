@@ -110,7 +110,8 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
         Autodesk.Revit.DB.Electrical.WireMaterialType or
         Autodesk.Revit.DB.Electrical.TemperatureRatingType or
         Autodesk.Revit.DB.Electrical.InsulationType or
-        Autodesk.Revit.DB.Electrical.VoltageType;
+        Autodesk.Revit.DB.Electrical.VoltageType or
+        Autodesk.Revit.DB.Electrical.DistributionSysType;
 
     private static FilteredElementCollector CreateCollector(Document doc, int? categoryOrdinal)
     {

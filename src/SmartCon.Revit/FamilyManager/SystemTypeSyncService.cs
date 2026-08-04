@@ -73,7 +73,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         string versionLabel,
         int sourceRevitVersion,
         string? familyName = null,
-        string? familyKey = null)
+        string? familyKey = null,
+        int? categoryOrdinal = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(sourceDoc);
@@ -93,7 +94,14 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             ("TypeName", typeName),
             ("CatalogItemId", catalogItemId));
 
-        var sourceTypeId = _typeFinder.FindTypeByName(sourceDoc, typeName, null, familyName, familyKey);
+        // Manual test 2026-08-04 (round 3): the reference lookup MUST be
+        // category-scoped whenever the caller knows the category. Without it
+        // the name match can bind an ElementType of a completely different
+        // category that shares the name and the degenerate family key
+        // ('Single') — e.g. a DistributionSysType/VoltageType named
+        // "По умолчанию" was synced instead of the real WireType, and its
+        // parameters + ES marker were written to the wrong element kind.
+        var sourceTypeId = _typeFinder.FindTypeByName(sourceDoc, typeName, categoryOrdinal, familyName, familyKey);
         if (sourceTypeId is null)
         {
             SmartConLogger.Warn(
@@ -105,7 +113,10 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         }
 
         var sourceType = sourceDoc.GetElement(sourceTypeId) as ElementType;
-        var categoryOrdinal = GetCategoryOrdinal(sourceType);
+        // The caller-supplied category is authoritative (catalog truth);
+        // the document-derived value is the fallback when the catalog row
+        // carries no category (legacy data).
+        var effectiveCategoryOrdinal = categoryOrdinal ?? GetCategoryOrdinal(sourceType);
         // #183: the system family of the reference type is the identity key —
         // the target is matched by (family, name, category) and a created
         // type is duplicated from a prototype of the SAME family, never from
@@ -136,13 +147,13 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         SystemTypeSyncResult? result = null;
         var committed = _tx.RunInTransaction(activeDoc, $"SmartCon: Sync system type '{typeName}'", doc =>
         {
-            var targetId = _typeFinder.FindTypeByName(doc, typeName, categoryOrdinal, effectiveFamilyName, effectiveFamilyKey);
+            var targetId = _typeFinder.FindTypeByName(doc, typeName, effectiveCategoryOrdinal, effectiveFamilyName, effectiveFamilyKey);
             var target = targetId is not null ? doc.GetElement(targetId) as ElementType : null;
 
             var status = SystemTypeSyncStatus.Updated;
             if (target is null)
             {
-                var prototype = FindPrototypeType(doc, categoryOrdinal, effectiveFamilyName, effectiveFamilyKey);
+                var prototype = FindPrototypeType(doc, effectiveCategoryOrdinal, effectiveFamilyName, effectiveFamilyKey);
                 if (prototype is null)
                 {
                     // #183: no same-family prototype — the system family does

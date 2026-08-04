@@ -41,6 +41,14 @@ public interface ISystemTypeSyncService
     /// <param name="familyKey">Issue #190 (ADR-064): locale-invariant family
     /// key — preferred over <paramref name="familyName"/> for both the
     /// reference lookup and the target match when present.</param>
+    /// <param name="categoryOrdinal">Category of the catalog item, resolved
+    /// by the caller from the catalog. Scopes the reference lookup to the
+    /// category — without it a name match can bind an unrelated
+    /// ElementType of another category that happens to share the name and
+    /// the (usually degenerate) family key, e.g. the electrical
+    /// settings-graph types DistributionSysType/VoltageType named
+    /// "По умолчанию" vs the real WireType (manual test 2026-08-04, round 3).
+    /// <c>null</c> keeps the unscoped legacy behaviour.</param>
     SystemTypeSyncResult SyncTypeFromSource(
         Document sourceDoc,
         Document activeDoc,
@@ -49,5 +57,6 @@ public interface ISystemTypeSyncService
         string versionLabel,
         int sourceRevitVersion,
         string? familyName = null,
-        string? familyKey = null);
+        string? familyKey = null,
+        int? categoryOrdinal = null);
 }
