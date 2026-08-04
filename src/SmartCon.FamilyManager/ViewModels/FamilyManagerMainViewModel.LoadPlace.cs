@@ -442,6 +442,7 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return;
 
+        var syncSucceeded = false;
         await _awaitableEvent.RaiseAsync(_ =>
         {
             try
@@ -453,7 +454,8 @@ public sealed partial class FamilyManagerMainViewModel
                     CurrentRevitVersion);
 
                 var typeResult = result.TypeResults.Count > 0 ? result.TypeResults[0] : null;
-                StatusMessage = typeResult is not null && typeResult.IsSuccess
+                syncSucceeded = typeResult is not null && typeResult.IsSuccess;
+                StatusMessage = syncSucceeded
                     ? string.Format(
                         LocalizationService.GetString("FM_SystemTypesSynced")
                             ?? "\"{0}\": synchronized {1} of {2} types",
@@ -465,7 +467,7 @@ public sealed partial class FamilyManagerMainViewModel
                 // #187 (review M1): the just-synced type carries a fresh ES
                 // marker — clear its per-type stale verdict so the orange dot
                 // drops immediately instead of waiting for a full "Проверить".
-                if (typeResult is not null && typeResult.IsSuccess)
+                if (syncSucceeded)
                 {
                     _staleDetector.MarkSystemTypeUpdated(
                         leaf.CatalogItemId,
@@ -481,9 +483,26 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }).ConfigureAwait(true);
 
-        // The stale snapshot is intentionally NOT pruned here: a single-type
-        // load leaves the item's other types untouched, so the item-level
-        // verdict can only be re-evaluated by the next "Проверить".
+        // Manual test 2026-08-04: the per-type verdict cleared above is not
+        // enough — the ITEM-level badge must be re-evaluated too. For a
+        // single-type item (or when this was the last stale type) the family
+        // is now current, and keeping the stale snapshot entry would show a
+        // phantom badge until the next "Проверить". The check reads the
+        // just-written ES marker and upserts the true verdict; for a
+        // multi-type item with other stale types it correctly stays stale.
+        if (syncSucceeded)
+        {
+            var systemResult = await _staleDetector.CheckSystemFamilyAsync(
+                leaf.CatalogItemId, leaf.DisplayName, _revitContext.GetDocument(), CancellationToken.None)
+                .ConfigureAwait(true);
+            if (systemResult is not null)
+            {
+                leaf.IsStale = systemResult.IsStale;
+                leaf.StaleReason = systemResult.Reason;
+                await ApplyStaleResultsToTreeAsync([], CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+        }
     }
 
     private bool CanLoadSystemTypeToProject(FamilyTypeNodeViewModel? typeNode)
