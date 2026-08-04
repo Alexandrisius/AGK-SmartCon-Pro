@@ -806,13 +806,22 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         // (revitapidocs) — they follow the assigned handrail TYPE. So the
         // handrail/top-rail types are synced as referenced subtypes (their
         // own parameters included) and only the reference + position are
-        // assigned on the railing type.
+        // assigned on the railing type. The position setter throws "The
+        // rail has no primary/secondary hand rail" when the railing has no
+        // such handrail at all — skip it then (stress test 2026-08-04:
+        // false NotConverged noise on handrail-less railings).
         notConverged += SyncReferencedSubtype(sourceDoc, doc, source.TopRailType,
             typeof(TopRailType), null, "TopRailType", id => target.TopRailType = id, elementIdCache);
-        notConverged += TrySetRailingMember("PrimaryHandRailPosition", () => target.PrimaryHandRailPosition = source.PrimaryHandRailPosition);
+        if (IsValidId(source.PrimaryHandrailType))
+        {
+            notConverged += TrySetRailingMember("PrimaryHandRailPosition", () => target.PrimaryHandRailPosition = source.PrimaryHandRailPosition);
+        }
         notConverged += SyncReferencedSubtype(sourceDoc, doc, source.PrimaryHandrailType,
             typeof(HandRailType), null, "PrimaryHandrailType", id => target.PrimaryHandrailType = id, elementIdCache);
-        notConverged += TrySetRailingMember("SecondaryHandRailPosition", () => target.SecondaryHandRailPosition = source.SecondaryHandRailPosition);
+        if (IsValidId(source.SecondaryHandrailType))
+        {
+            notConverged += TrySetRailingMember("SecondaryHandRailPosition", () => target.SecondaryHandRailPosition = source.SecondaryHandRailPosition);
+        }
         notConverged += SyncReferencedSubtype(sourceDoc, doc, source.SecondaryHandrailType,
             typeof(HandRailType), null, "SecondaryHandrailType", id => target.SecondaryHandrailType = id, elementIdCache);
 
@@ -1100,6 +1109,9 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             "(impedance factors follow the base; adjust in the electrical settings if they differ).");
         return setting.AddWireMaterialType(name, baseMaterial);
     }
+
+    private static bool IsValidId(ElementId? id) =>
+        id is not null && id != ElementId.InvalidElementId;
 
     private static List<ElementType> CollectSubtypeCandidates(
         Document doc, Type? subtypeClass, BuiltInCategory? subtypeCategory)
