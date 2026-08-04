@@ -102,11 +102,15 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
     /// Settings-graph object types (electrical) that surface in ElementType
     /// collectors with the same name/family/category as the real wire type
     /// but are never legitimate sync or import targets (manual test
-    /// 2026-08-04). WireConduitType is not Element-derived and never reaches
-    /// a collector — not listed.
+    /// 2026-08-04). All three inherit ElementType (since the 2011 API);
+    /// WireConduitType is not Element-derived and never reaches a
+    /// collector — not listed.
     /// </summary>
     internal static bool IsElectricalSettingsObject(ElementType type) => type is
-        Autodesk.Revit.DB.Electrical.WireMaterialType;
+        Autodesk.Revit.DB.Electrical.WireMaterialType or
+        Autodesk.Revit.DB.Electrical.TemperatureRatingType or
+        Autodesk.Revit.DB.Electrical.InsulationType or
+        Autodesk.Revit.DB.Electrical.VoltageType;
 
     private static FilteredElementCollector CreateCollector(Document doc, int? categoryOrdinal)
     {

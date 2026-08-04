@@ -88,6 +88,11 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             .OfClass(typeof(ElementType))
             .Cast<ElementType>()
             .Where(et => et.Category is not null)
+            // Electrical settings-graph types (WireMaterialType/
+            // TemperatureRatingType/InsulationType) share name/family/
+            // category with the real WireType and are never catalog types
+            // (manual test 2026-08-04).
+            .Where(et => !RevitSystemTypeFinder.IsElectricalSettingsObject(et))
             .ToList();
 
         SmartConLogger.Info($"Project contains {typeCollector.Count} element types. Filter: {requestedSet?.Count.ToString() ?? "none"}");
